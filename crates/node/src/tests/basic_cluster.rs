@@ -5,7 +5,9 @@ use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{
+    infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme,
+};
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -32,16 +34,19 @@ async fn test_basic_cluster() {
     let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
+        purpose: infer_purpose_from_scheme(SignatureScheme::Secp256k1),
     };
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
         scheme: SignatureScheme::Ed25519,
+        purpose: infer_purpose_from_scheme(SignatureScheme::Ed25519),
     };
 
     let ckd_domain = DomainConfig {
         id: DomainId(2),
         scheme: SignatureScheme::Bls12381,
+        purpose: infer_purpose_from_scheme(SignatureScheme::Bls12381),
     };
 
     let domains = vec![

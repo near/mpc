@@ -6,6 +6,29 @@ use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+/// The set of compatible (scheme, purpose) pairs.
+pub fn is_scheme_purpose_compatible(scheme: SignatureScheme, purpose: DomainPurpose) -> bool {
+    match purpose {
+        DomainPurpose::Sign => matches!(
+            scheme,
+            SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 | SignatureScheme::V2Secp256k1
+        ),
+        DomainPurpose::ForeignTx => scheme == SignatureScheme::Secp256k1,
+        DomainPurpose::CKD => scheme == SignatureScheme::Bls12381,
+    }
+}
+
+/// Infer the default purpose for a given signature scheme.
+/// Used during migration from legacy state that lacks explicit purposes.
+pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
+    match scheme {
+        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 | SignatureScheme::V2Secp256k1 => {
+            DomainPurpose::Sign
+        }
+        SignatureScheme::Bls12381 => DomainPurpose::CKD,
+    }
+}
+
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
@@ -49,27 +72,13 @@ impl Default for SignatureScheme {
     }
 }
 
-pub trait InferFromScheme {
-    fn infer_from_scheme(scheme: SignatureScheme) -> Self;
-}
-
-impl InferFromScheme for DomainPurpose {
-    fn infer_from_scheme(scheme: SignatureScheme) -> Self {
-        match scheme {
-            SignatureScheme::Secp256k1
-            | SignatureScheme::Ed25519
-            | SignatureScheme::V2Secp256k1 => DomainPurpose::Sign,
-            SignatureScheme::Bls12381 => DomainPurpose::CKD,
-        }
-    }
-}
-
-/// Describes the configuration of a domain: the domain ID and the protocol it uses.
+/// Describes the configuration of a domain: the domain ID, the protocol it uses, and its purpose.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
+    pub purpose: DomainPurpose,
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -90,16 +99,17 @@ impl DomainRegistry {
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
     pub fn new_single_ecdsa_key_from_legacy() -> Self {
         let mut registry = Self::default();
-        registry.add_domain(SignatureScheme::Secp256k1);
+        registry.add_domain(SignatureScheme::Secp256k1, DomainPurpose::Sign);
         registry
     }
 
-    /// Add a single domain with the given protocol, returning the DomainId of the added
-    /// domain.
-    fn add_domain(&mut self, scheme: SignatureScheme) -> DomainId {
+    /// Add a single domain with the given protocol and purpose, returning the DomainId of the
+    /// added domain.
+    fn add_domain(&mut self, scheme: SignatureScheme, purpose: DomainPurpose) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
             scheme,
+            purpose,
         };
         self.next_domain_id += 1;
         self.domains.push(domain.clone());
@@ -112,7 +122,7 @@ impl DomainRegistry {
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
-            let new_domain_id = new_registry.add_domain(domain.scheme);
+            let new_domain_id = new_registry.add_domain(domain.scheme, domain.purpose);
             if new_domain_id != domain.id {
                 return Err(DomainError::NewDomainIdsNotContiguous {
                     expected_id: new_domain_id,
@@ -184,8 +194,7 @@ impl DomainRegistry {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AddDomainsVotes {
-    pub(crate) proposal_by_account:
-        BTreeMap<AuthenticatedParticipantId, Vec<(DomainConfig, DomainPurpose)>>,
+    pub(crate) proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
 }
 
 impl AddDomainsVotes {
@@ -194,7 +203,7 @@ impl AddDomainsVotes {
     /// If the participant had voted already, this replaces the existing vote.
     pub fn vote(
         &mut self,
-        proposal: Vec<(DomainConfig, DomainPurpose)>,
+        proposal: Vec<DomainConfig>,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
         if self
@@ -217,7 +226,8 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        DomainConfig, DomainId, DomainPurpose, DomainRegistry, InferFromScheme, SignatureScheme,
+        infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
+        SignatureScheme,
     };
 
     #[test]
@@ -227,10 +237,12 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(0),
                 scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
                 scheme: SignatureScheme::Ed25519,
+                purpose: DomainPurpose::Sign,
             },
         ];
         let new_registry = registry.add_domains(domains1.clone()).unwrap();
@@ -240,10 +252,12 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(2),
                 scheme: SignatureScheme::Bls12381,
+                purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(3),
                 scheme: SignatureScheme::V2Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
         ];
         let new_registry = new_registry.add_domains(domains2.clone()).unwrap();
@@ -254,6 +268,7 @@ pub mod tests {
         let domains3 = vec![DomainConfig {
             id: DomainId(5),
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         }];
         let _ = new_registry.add_domains(domains3).unwrap_err();
 
@@ -262,10 +277,12 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(5),
                 scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
                 scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
         ];
         let _ = new_registry.add_domains(domains4).unwrap_err();
@@ -277,18 +294,22 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(0),
                 scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
                 scheme: SignatureScheme::Ed25519,
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
                 scheme: SignatureScheme::Bls12381,
+                purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(4),
                 scheme: SignatureScheme::V2Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
         ];
         let mut registry = DomainRegistry::from_raw_validated(expected.clone(), 6).unwrap();
@@ -312,14 +333,17 @@ pub mod tests {
                 DomainConfig {
                     id: DomainId(0),
                     scheme: SignatureScheme::Secp256k1,
+                    purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     scheme: SignatureScheme::Ed25519,
+                    purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
                     scheme: SignatureScheme::Secp256k1,
+                    purpose: DomainPurpose::Sign,
                 },
             ],
             6,
@@ -340,31 +364,33 @@ pub mod tests {
         let domain_config = DomainConfig {
             id: DomainId(3),
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         };
         let json = serde_json::to_string(&domain_config).unwrap();
-        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1"}"#);
+        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#);
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
+        assert_eq!(domain_config.purpose, DomainPurpose::Sign);
     }
 
     #[test]
-    fn test_infer_domain_purpose_from_scheme() {
+    fn test_infer_purpose_from_scheme() {
         assert_eq!(
-            DomainPurpose::infer_from_scheme(SignatureScheme::Secp256k1),
+            infer_purpose_from_scheme(SignatureScheme::Secp256k1),
             DomainPurpose::Sign
         );
         assert_eq!(
-            DomainPurpose::infer_from_scheme(SignatureScheme::Ed25519),
+            infer_purpose_from_scheme(SignatureScheme::Ed25519),
             DomainPurpose::Sign
         );
         assert_eq!(
-            DomainPurpose::infer_from_scheme(SignatureScheme::V2Secp256k1),
+            infer_purpose_from_scheme(SignatureScheme::V2Secp256k1),
             DomainPurpose::Sign
         );
         assert_eq!(
-            DomainPurpose::infer_from_scheme(SignatureScheme::Bls12381),
+            infer_purpose_from_scheme(SignatureScheme::Bls12381),
             DomainPurpose::CKD
         );
     }

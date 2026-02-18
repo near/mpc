@@ -15,7 +15,8 @@ use crate::sandbox::{
 };
 use assert_matches::assert_matches;
 use contract_interface::{method_names, types as dtos};
-use dtos::{AttemptId, DomainPurpose, KeyEventId, ProtocolContractState, RunningContractState};
+use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
+use mpc_contract::primitives::domain::DomainPurpose;
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
@@ -46,13 +47,11 @@ async fn test_keygen() -> anyhow::Result<()> {
     vote_add_domains(
         &contract,
         &mpc_signer_accounts,
-        &[(
-            DomainConfig {
-                id: domain_id.into(),
-                scheme,
-            },
-            DomainPurpose::Sign,
-        )],
+        &[DomainConfig {
+            id: domain_id.into(),
+            scheme,
+            purpose: DomainPurpose::Sign,
+        }],
     )
     .await
     .unwrap();
@@ -64,6 +63,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
         scheme: scheme.into_interface_type(),
+        purpose: Some(dtos::DomainPurpose::Sign),
     };
     let found = init
         .domains
@@ -153,13 +153,11 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         vote_add_domains(
             &contract,
             &mpc_signer_accounts,
-            &[(
-                DomainConfig {
-                    id: next_domain_id.into(),
-                    scheme: *scheme,
-                },
+            &[DomainConfig {
+                id: next_domain_id.into(),
+                scheme: *scheme,
                 purpose,
-            )],
+            }],
         )
         .await
         .unwrap();
@@ -172,6 +170,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
             scheme: (*scheme).into_interface_type(),
+            purpose: Some(purpose),
         };
         let found = init
             .domains

@@ -1,5 +1,5 @@
 use super::domain::{
-    DomainConfig, DomainId, DomainPurpose, DomainRegistry, InferFromScheme, SignatureScheme,
+    infer_purpose_from_scheme, DomainConfig, DomainId, DomainRegistry, SignatureScheme,
 };
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
@@ -26,9 +26,11 @@ pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
     for i in 0..num_domains {
+        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
-            scheme: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
+            scheme,
+            purpose: infer_purpose_from_scheme(scheme),
         });
     }
     DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
@@ -38,27 +40,33 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
 pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<DomainConfig> {
     let mut new_domains = Vec::new();
     for i in 0..num_domains {
+        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
-            scheme: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
+            scheme,
+            purpose: infer_purpose_from_scheme(scheme),
         });
     }
     new_domains
 }
 
-/// Generates a valid list of (DomainConfig, DomainPurpose) to add to the given registry.
-pub fn gen_domains_to_add_with_purposes(
+/// Generates a valid list of legacy DomainConfig (without purpose) for migration tests.
+#[cfg(test)]
+pub(crate) fn gen_legacy_domains_to_add(
     registry: &DomainRegistry,
     num_domains: usize,
-) -> Vec<(DomainConfig, DomainPurpose)> {
-    gen_domains_to_add(registry, num_domains)
-        .into_iter()
-        .map(|d| {
-            let purpose = DomainPurpose::infer_from_scheme(d.scheme);
-            (d, purpose)
-        })
-        .collect()
+) -> Vec<crate::v3_4_1_state::DomainConfig> {
+    let mut new_domains = Vec::new();
+    for i in 0..num_domains {
+        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
+        new_domains.push(crate::v3_4_1_state::DomainConfig {
+            id: DomainId(registry.next_domain_id() + i as u64),
+            scheme,
+        });
+    }
+    new_domains
 }
+
 fn gen_random_edwards_point() -> (SerializableEdwardsPoint, CompressedEdwardsY) {
     let rng = rand::thread_rng();
     let edwards_point = SerializableEdwardsPoint::random(rng);

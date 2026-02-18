@@ -1,8 +1,6 @@
 use super::resharing::ResharingContractState;
 use super::InitializingContractState;
-use crate::primitives::test_utils::{
-    bogus_ed25519_public_key_extended, gen_domains_to_add_with_purposes,
-};
+use crate::primitives::test_utils::{bogus_ed25519_public_key_extended, gen_domains_to_add};
 use crate::primitives::{key_state::AttemptId, test_utils::gen_domain_registry};
 use crate::state::key_event::tests::Environment;
 use crate::state::running::RunningContractState;
@@ -106,17 +104,13 @@ pub fn gen_initializing_state(
 ) -> (Environment, InitializingContractState) {
     let mut env = Environment::new(None, None, None);
     let mut running = gen_running_state(num_generated);
-    let domains_to_add =
-        gen_domains_to_add_with_purposes(&running.domains, num_domains - num_generated);
+    let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
     let mut initializing_state = None;
     for (account, _, _) in running.parameters.participants().participants().clone() {
         env.set_signer(&account);
         assert!(initializing_state.is_none());
-        initializing_state = running
-            .vote_add_domains(domains_to_add.clone())
-            .unwrap()
-            .map(|outcome| outcome.new_state);
+        initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();
     }
     let initializing_state = initializing_state
         .expect("Enough votes to add domains should transition into initializing");

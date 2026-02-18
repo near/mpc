@@ -3,9 +3,7 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{
-        AddDomainsVotes, DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme,
-    },
+    domain::{is_scheme_purpose_compatible, AddDomainsVotes, DomainConfig, DomainRegistry},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
@@ -151,11 +149,11 @@ impl RunningContractState {
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
     /// If the number of votes for the same set of new domains reaches the number of participants,
     /// returns the InitializingContractState we should transition into to generate keys for these
-    /// new domains, along with the purposes for each new domain.
+    /// new domains.
     pub fn vote_add_domains(
         &mut self,
-        domains: Vec<(DomainConfig, DomainPurpose)>,
-    ) -> Result<Option<AddDomainsOutcome>, Error> {
+        domains: Vec<DomainConfig>,
+    ) -> Result<Option<InitializingContractState>, Error> {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
@@ -163,25 +161,17 @@ impl RunningContractState {
         Self::validate_domain_purpose_compatibility(&domains)?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {
-            let (domain_configs, purposes): (Vec<DomainConfig>, Vec<(DomainId, DomainPurpose)>) =
-                domains
-                    .iter()
-                    .map(|(domain, purpose)| (domain.clone(), (domain.id, *purpose)))
-                    .unzip();
-            let new_domains = self.domains.add_domains(domain_configs.clone())?;
-            Ok(Some(AddDomainsOutcome {
-                new_state: InitializingContractState {
-                    generated_keys: self.keyset.domains.clone(),
-                    domains: new_domains,
-                    epoch_id: self.keyset.epoch_id,
-                    generating_key: KeyEvent::new(
-                        self.keyset.epoch_id,
-                        domain_configs[0].clone(),
-                        self.parameters.clone(),
-                    ),
-                    cancel_votes: BTreeSet::new(),
-                },
-                purposes,
+            let new_domains = self.domains.add_domains(domains.clone())?;
+            Ok(Some(InitializingContractState {
+                generated_keys: self.keyset.domains.clone(),
+                domains: new_domains,
+                epoch_id: self.keyset.epoch_id,
+                generating_key: KeyEvent::new(
+                    self.keyset.epoch_id,
+                    domains[0].clone(),
+                    self.parameters.clone(),
+                ),
+                cancel_votes: BTreeSet::new(),
             }))
         } else {
             Ok(None)
@@ -192,38 +182,20 @@ impl RunningContractState {
         self.parameters.participants().is_participant(account_id)
     }
 
-    fn validate_domain_purpose_compatibility(
-        domains: &[(DomainConfig, DomainPurpose)],
-    ) -> Result<(), Error> {
-        for (domain, purpose) in domains {
-            let compatible = match purpose {
-                DomainPurpose::Sign => matches!(
-                    domain.scheme,
-                    SignatureScheme::Secp256k1
-                        | SignatureScheme::Ed25519
-                        | SignatureScheme::V2Secp256k1
-                ),
-                DomainPurpose::ForeignTx => domain.scheme == SignatureScheme::Secp256k1,
-                DomainPurpose::CKD => domain.scheme == SignatureScheme::Bls12381,
-            };
-            if !compatible {
+    fn validate_domain_purpose_compatibility(domains: &[DomainConfig]) -> Result<(), Error> {
+        for domain in domains {
+            if !is_scheme_purpose_compatible(domain.scheme, domain.purpose) {
                 return Err(InvalidParameters::DomainPurposeMismatch {
                     domain_id: domain.id,
                 }
                 .message(format!(
-                    "purpose {purpose:?} is incompatible with scheme {:?}",
-                    domain.scheme
+                    "purpose {:?} is incompatible with scheme {:?}",
+                    domain.purpose, domain.scheme
                 )));
             }
         }
         Ok(())
     }
-}
-
-/// Result of a successful `vote_add_domains` that reached threshold.
-pub struct AddDomainsOutcome {
-    pub new_state: InitializingContractState,
-    pub purposes: Vec<(DomainId, DomainPurpose)>,
 }
 
 #[cfg(test)]
@@ -240,6 +212,9 @@ pub mod running_tests {
     use crate::{
         primitives::votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
     };
+
+    #[allow(unused_imports)]
+    use crate::primitives::domain::infer_purpose_from_scheme;
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);
@@ -369,7 +344,6 @@ pub mod running_tests {
     #[rstest]
     #[case(SignatureScheme::Bls12381, DomainPurpose::ForeignTx)]
     #[case(SignatureScheme::Secp256k1, DomainPurpose::CKD)]
-    #[allow(non_snake_case)]
     fn vote_add_domains__should_reject_incompatible_purpose_scheme_pairs_when_purpose_does_not_match_scheme(
         #[case] scheme: SignatureScheme,
         #[case] purpose: DomainPurpose,
@@ -383,10 +357,11 @@ pub mod running_tests {
         let invalid_domain = DomainConfig {
             id: DomainId(state.domains.next_domain_id()),
             scheme,
+            purpose,
         };
 
         // When
-        let err = match state.vote_add_domains(vec![(invalid_domain.clone(), purpose)]) {
+        let err = match state.vote_add_domains(vec![invalid_domain.clone()]) {
             Ok(_) => panic!("expected incompatible purpose/scheme pair to fail"),
             Err(err) => err,
         };

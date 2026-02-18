@@ -104,6 +104,7 @@ impl TestSetupBuilder {
         let domains = vec![DomainConfig {
             id: DomainId::default(),
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         }];
 
         let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
@@ -117,15 +118,9 @@ impl TestSetupBuilder {
         testing_env!(context);
 
         let init_config = self.init_config;
-        let contract = MpcContract::init_running(
-            domains,
-            1,
-            keyset,
-            parameters.clone(),
-            init_config.clone(),
-            None,
-        )
-        .unwrap();
+        let contract =
+            MpcContract::init_running(domains, 1, keyset, parameters.clone(), init_config.clone())
+                .unwrap();
 
         let mut setup = TestSetup {
             contract,
@@ -153,13 +148,11 @@ impl TestSetupBuilder {
 
                     setup
                         .contract
-                        .vote_add_domains(vec![(
-                            DomainConfig {
-                                id: DomainId(1),
-                                scheme: SignatureScheme::Ed25519,
-                            },
-                            DomainPurpose::Sign,
-                        )])
+                        .vote_add_domains(vec![DomainConfig {
+                            id: DomainId(1),
+                            scheme: SignatureScheme::Ed25519,
+                            purpose: DomainPurpose::Sign,
+                        }])
                         .unwrap();
                 }
 

@@ -274,6 +274,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let domain = DomainConfig {
             id: domain_id,
             scheme: SignatureScheme::Secp256k1,
+            purpose: mpc_contract::primitives::domain::DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();
         let public_key: PublicKeyExtended = dto_pk.try_into().unwrap();

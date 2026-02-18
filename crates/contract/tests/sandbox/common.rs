@@ -3,6 +3,7 @@ use crate::sandbox::utils::{
     contract_build::current_contract,
     initializing_utils::{
         start_keygen_instance, vote_add_domains, vote_add_domains_legacy, vote_public_key,
+        LegacyDomainConfig,
     },
     interface::IntoInterfaceType,
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
@@ -211,17 +212,20 @@ pub async fn init_with_candidates(
                     dtos::PublicKey::Bls12381(_) => SignatureScheme::Bls12381,
                 };
                 let key: PublicKeyExtended = pk.try_into().unwrap();
+                let purpose = mpc_contract::primitives::domain::infer_purpose_from_scheme(scheme);
                 ret_domains.push(DomainPublicKey {
                     public_key: key.clone(),
                     config: DomainConfig {
                         id: domain_id,
                         scheme,
+                        purpose,
                     },
                 });
                 (
                     DomainConfig {
                         id: domain_id,
                         scheme,
+                        purpose,
                     },
                     KeyForDomain {
                         attempt: AttemptId::new(),
@@ -423,7 +427,7 @@ pub async fn submit_attestations(
 /// Returns the shared_secret_key in the same order as
 /// the corresponding domain configs supplied.
 pub async fn call_contract_key_generation<const N: usize>(
-    domains_to_add: &[(DomainConfig, dtos::DomainPurpose); N],
+    domains_to_add: &[DomainConfig; N],
     accounts: &[Account],
     contract: &Contract,
     expected_epoch_id: u64,
@@ -453,7 +457,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         _ => panic!("should be in initializing state"),
     };
 
-    for (domain, _purpose) in domains_to_add.iter() {
+    for domain in domains_to_add.iter() {
         let key_event_id = dtos::KeyEventId {
             epoch_id: dtos::EpochId(expected_epoch_id),
             domain_id: dtos::DomainId(*domain.id),
@@ -527,27 +531,21 @@ pub async fn execute_key_generation_and_add_random_state(
 
     // 2. Add multiple domains.
     let domains_to_add = [
-        (
-            DomainConfig {
-                id: 0.into(),
-                scheme: SignatureScheme::Ed25519,
-            },
-            dtos::DomainPurpose::Sign,
-        ),
-        (
-            DomainConfig {
-                id: 1.into(),
-                scheme: SignatureScheme::Secp256k1,
-            },
-            dtos::DomainPurpose::Sign,
-        ),
-        (
-            DomainConfig {
-                id: 2.into(),
-                scheme: SignatureScheme::Ed25519,
-            },
-            dtos::DomainPurpose::Sign,
-        ),
+        DomainConfig {
+            id: 0.into(),
+            scheme: SignatureScheme::Ed25519,
+            purpose: mpc_contract::primitives::domain::DomainPurpose::Sign,
+        },
+        DomainConfig {
+            id: 1.into(),
+            scheme: SignatureScheme::Secp256k1,
+            purpose: mpc_contract::primitives::domain::DomainPurpose::Sign,
+        },
+        DomainConfig {
+            id: 2.into(),
+            scheme: SignatureScheme::Ed25519,
+            purpose: mpc_contract::primitives::domain::DomainPurpose::Sign,
+        },
     ];
     let domain_keys =
         call_contract_key_generation(&domains_to_add, accounts, contract, EPOCH_ID).await;
@@ -565,7 +563,7 @@ pub async fn execute_key_generation_and_add_random_state(
 /// Legacy version of `call_contract_key_generation` for old contracts that don't
 /// have `DomainPurpose` in the `vote_add_domains` API.
 pub async fn call_contract_key_generation_legacy<const N: usize>(
-    domains_to_add: &[DomainConfig; N],
+    domains_to_add: &[LegacyDomainConfig; N],
     accounts: &[Account],
     contract: &Contract,
     expected_epoch_id: u64,
@@ -607,7 +605,11 @@ pub async fn call_contract_key_generation_legacy<const N: usize>(
         let (public_key, shared_secret_key) = make_key_for_domain(domain.scheme);
 
         domain_keys.push(DomainKey {
-            domain_config: domain.clone(),
+            domain_config: DomainConfig {
+                id: domain.id,
+                scheme: domain.scheme,
+                purpose: mpc_contract::primitives::domain::infer_purpose_from_scheme(domain.scheme),
+            },
             domain_secret_key: shared_secret_key,
             domain_public_key: public_key.clone().try_into().unwrap(),
         });
@@ -660,15 +662,15 @@ pub async fn execute_key_generation_and_add_random_state_legacy(
         .unwrap();
 
     let domains_to_add = [
-        DomainConfig {
+        LegacyDomainConfig {
             id: 0.into(),
             scheme: SignatureScheme::Ed25519,
         },
-        DomainConfig {
+        LegacyDomainConfig {
             id: 1.into(),
             scheme: SignatureScheme::Secp256k1,
         },
-        DomainConfig {
+        LegacyDomainConfig {
             id: 2.into(),
             scheme: SignatureScheme::Ed25519,
         },

@@ -17,7 +17,7 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
-        domain::{DomainConfig, DomainPurpose, DomainRegistry, InferFromScheme},
+        domain::{infer_purpose_from_scheme, SignatureScheme},
         key_state::{
             AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
         },
@@ -33,6 +33,7 @@ use crate::{
 
 /// The contract state layout of the current production contract.
 /// This does not have `pending_verify_foreign_tx_requests` or `domain_purposes`.
+/// `DomainConfig` does not have a `purpose` field.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -54,6 +55,20 @@ enum ProtocolContractState {
     Initializing(InitializingContractState),
     Running(RunningContractState),
     Resharing(ResharingContractState),
+}
+
+/// Legacy `DomainConfig` without a `purpose` field.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub(crate) struct DomainConfig {
+    pub(crate) id: crate::primitives::domain::DomainId,
+    pub(crate) scheme: SignatureScheme,
+}
+
+/// Legacy `DomainRegistry` containing `Vec<DomainConfig>` without purposes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+struct DomainRegistry {
+    domains: Vec<DomainConfig>,
+    next_domain_id: u64,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -102,7 +117,6 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {},
-            domain_purposes: BTreeMap::new(),
         }
     }
 }
@@ -118,10 +132,30 @@ impl From<ProtocolContractState> for crate::state::ProtocolContractState {
     }
 }
 
+impl From<DomainConfig> for crate::primitives::domain::DomainConfig {
+    fn from(value: DomainConfig) -> Self {
+        Self {
+            id: value.id,
+            scheme: value.scheme,
+            purpose: infer_purpose_from_scheme(value.scheme),
+        }
+    }
+}
+
+impl From<DomainRegistry> for crate::primitives::domain::DomainRegistry {
+    fn from(value: DomainRegistry) -> Self {
+        let domains: Vec<crate::primitives::domain::DomainConfig> =
+            value.domains.into_iter().map(Into::into).collect();
+        // Safe: the legacy registry was valid, and adding purpose doesn't affect ID ordering.
+        Self::from_raw_validated(domains, value.next_domain_id)
+            .expect("legacy DomainRegistry should be valid")
+    }
+}
+
 impl From<RunningContractState> for crate::state::running::RunningContractState {
     fn from(value: RunningContractState) -> Self {
         Self {
-            domains: value.domains,
+            domains: value.domains.into(),
             keyset: value.keyset,
             parameters: value.parameters,
             parameters_votes: value.parameters_votes,
@@ -148,13 +182,7 @@ impl From<AddDomainsVotes> for crate::primitives::domain::AddDomainsVotes {
             .proposal_by_account
             .into_iter()
             .map(|(participant, proposed_domains)| {
-                let proposal = proposed_domains
-                    .into_iter()
-                    .map(|domain| {
-                        let scheme = domain.scheme;
-                        (domain, DomainPurpose::infer_from_scheme(scheme))
-                    })
-                    .collect();
+                let proposal = proposed_domains.into_iter().map(Into::into).collect();
                 (participant, proposal)
             })
             .collect();
@@ -165,9 +193,27 @@ impl From<AddDomainsVotes> for crate::primitives::domain::AddDomainsVotes {
     }
 }
 
+/// Convert new `DomainRegistry` back to legacy format (for tests).
+#[cfg(test)]
+impl From<crate::primitives::domain::DomainRegistry> for DomainRegistry {
+    fn from(value: crate::primitives::domain::DomainRegistry) -> Self {
+        Self {
+            domains: value
+                .domains()
+                .iter()
+                .map(|d| DomainConfig {
+                    id: d.id,
+                    scheme: d.scheme,
+                })
+                .collect(),
+            next_domain_id: value.next_domain_id(),
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(non_snake_case)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::BTreeMap;
 
     use borsh::{to_vec, BorshDeserialize};
@@ -175,9 +221,8 @@ mod tests {
 
     use super::{AddDomainsVotes, ProtocolContractState, RunningContractState};
     use crate::primitives::{
-        domain::{DomainPurpose, InferFromScheme},
-        key_state::AuthenticatedParticipantId,
-        test_utils::gen_domains_to_add,
+        domain::infer_purpose_from_scheme, key_state::AuthenticatedParticipantId,
+        test_utils::gen_legacy_domains_to_add,
     };
     use crate::state::test_utils::gen_running_state;
 
@@ -195,19 +240,21 @@ mod tests {
 
         let participant =
             AuthenticatedParticipantId::new(running.parameters.participants()).unwrap();
-        let proposed_domains = gen_domains_to_add(&running.domains, 2);
-        let expected_domains_with_purpose = proposed_domains
-            .iter()
-            .map(|domain| {
-                (
-                    domain.clone(),
-                    DomainPurpose::infer_from_scheme(domain.scheme),
-                )
-            })
-            .collect::<Vec<_>>();
+        let proposed_domains = gen_legacy_domains_to_add(&running.domains, 2);
+        let expected_domains_with_purpose: Vec<crate::primitives::domain::DomainConfig> =
+            proposed_domains
+                .iter()
+                .map(|domain| crate::primitives::domain::DomainConfig {
+                    id: domain.id,
+                    scheme: domain.scheme,
+                    purpose: infer_purpose_from_scheme(domain.scheme),
+                })
+                .collect();
+
+        let legacy_domains: super::DomainRegistry = running.domains.clone().into();
 
         let legacy_protocol_state = ProtocolContractState::Running(RunningContractState {
-            domains: running.domains.clone(),
+            domains: legacy_domains,
             keyset: running.keyset.clone(),
             parameters: running.parameters.clone(),
             parameters_votes: running.parameters_votes.clone(),
@@ -227,7 +274,7 @@ mod tests {
         };
 
         // Then
-        // Current-state decode fails on legacy `Vec<DomainConfig>` vote payloads.
+        // Current-state decode fails on legacy payloads (missing `purpose` field in DomainConfig).
         let _ = crate::state::ProtocolContractState::try_from_slice(&serialized).unwrap_err();
 
         let migrated_vote = migrated_running

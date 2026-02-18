@@ -639,6 +639,7 @@ impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
         dtos::DomainConfig {
             id: self.id.into_dto_type(),
             scheme: self.scheme.into_dto_type(),
+            purpose: Some(self.purpose),
         }
     }
 }
@@ -763,10 +764,7 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
                 .map(|(participant, domains)| {
                     (
                         participant.into_dto_type(),
-                        domains
-                            .iter()
-                            .map(|(d, p)| (d.into_dto_type(), *p))
-                            .collect(),
+                        domains.iter().map(|d| d.into_dto_type()).collect(),
                     )
                 })
                 .collect(),

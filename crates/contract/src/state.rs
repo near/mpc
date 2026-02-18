@@ -8,7 +8,7 @@ pub mod test_utils;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
-    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
+    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
     thresholds::{Threshold, ThresholdParameters},
@@ -140,12 +140,13 @@ impl ProtocolContractState {
 
     pub fn vote_add_domains(
         &mut self,
-        domains: Vec<(DomainConfig, DomainPurpose)>,
-    ) -> Result<Option<running::AddDomainsOutcome>, Error> {
+        domains: Vec<DomainConfig>,
+    ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
             ProtocolContractState::Running(state) => state.vote_add_domains(domains),
             _ => Err(InvalidState::ProtocolStateNotRunning.into()),
         }
+        .map(|x| x.map(ProtocolContractState::Initializing))
     }
 
     pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {

@@ -69,9 +69,7 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{
-        DomainConfig, DomainId, DomainPurpose, DomainRegistry, InferFromScheme, SignatureScheme,
-    },
+    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -115,7 +113,6 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
-    domain_purposes: BTreeMap<DomainId, DomainPurpose>,
 }
 
 /// A container for "orphaned" state that persists across contract migrations.
@@ -213,13 +210,11 @@ impl MpcContract {
     }
 
     fn assert_domain_purpose(
-        &self,
         domain_config: &DomainConfig,
         expected: DomainPurpose,
         requirement: &str,
     ) {
-        let purpose = self.domain_purpose(domain_config);
-        if purpose != expected {
+        if domain_config.purpose != expected {
             env::panic_str(
                 &InvalidParameters::DomainPurposeMismatch {
                     domain_id: domain_config.id,
@@ -228,25 +223,6 @@ impl MpcContract {
                 .to_string(),
             );
         }
-    }
-
-    fn domain_purpose(&self, domain_config: &DomainConfig) -> DomainPurpose {
-        self.domain_purposes
-            .get(&domain_config.id)
-            .copied()
-            .unwrap_or_else(|| DomainPurpose::infer_from_scheme(domain_config.scheme))
-    }
-
-    fn prune_domain_purposes_to_current_domains(&mut self) {
-        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
-            return;
-        };
-        self.domain_purposes.retain(|domain_id, _| {
-            running_state
-                .domains
-                .get_domain_by_domain_id(*domain_id)
-                .is_some()
-        });
     }
 }
 
@@ -280,7 +256,7 @@ impl MpcContract {
             );
         };
 
-        self.assert_domain_purpose(
+        Self::assert_domain_purpose(
             domain_config,
             DomainPurpose::Sign,
             "sign() requires a domain with purpose Sign",
@@ -464,7 +440,7 @@ impl MpcContract {
                 .to_string(),
             );
         };
-        self.assert_domain_purpose(
+        Self::assert_domain_purpose(
             domain_config,
             DomainPurpose::CKD,
             "request_app_private_key() requires a domain with purpose CKD",
@@ -580,7 +556,7 @@ impl MpcContract {
             );
         };
 
-        self.assert_domain_purpose(
+        Self::assert_domain_purpose(
             domain_config,
             DomainPurpose::ForeignTx,
             "verify_foreign_transaction() requires a domain with purpose ForeignTx",
@@ -1019,24 +995,17 @@ impl MpcContract {
     ///
     /// The specified list of domains must have increasing and contiguous IDs, and the first ID
     /// must be the same as the `next_domain_id` returned by state().
-    /// Each domain must be accompanied by a `DomainPurpose` that determines which endpoints
-    /// can use the domain.
+    /// Each domain's `purpose` field determines which endpoints can use the domain.
     #[handle_result]
-    pub fn vote_add_domains(
-        &mut self,
-        domains: Vec<(DomainConfig, DomainPurpose)>,
-    ) -> Result<(), Error> {
+    pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
         log!(
             "vote_add_domains: signer={}, domains={:?}",
             env::signer_account_id(),
             domains,
         );
 
-        if let Some(outcome) = self.protocol_state.vote_add_domains(domains)? {
-            self.protocol_state = ProtocolContractState::Initializing(outcome.new_state);
-            for (domain_id, purpose) in outcome.purposes {
-                self.domain_purposes.insert(domain_id, purpose);
-            }
+        if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
+            self.protocol_state = new_state;
         }
         Ok(())
     }
@@ -1252,7 +1221,6 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
             self.protocol_state = new_state;
-            self.prune_domain_purposes_to_current_domains();
         }
         Ok(())
     }
@@ -1569,7 +1537,6 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
-            domain_purposes: BTreeMap::new(),
         })
     }
 
@@ -1583,7 +1550,6 @@ impl MpcContract {
         keyset: Keyset,
         parameters: ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
-        domain_purposes: Option<BTreeMap<DomainId, DomainPurpose>>,
     ) -> Result<Self, Error> {
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
@@ -1631,7 +1597,6 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
-            domain_purposes: domain_purposes.unwrap_or_default(),
         })
     }
 
@@ -1712,13 +1677,6 @@ impl MpcContract {
 
     pub fn get_foreign_chain_policy_proposals(&self) -> dtos::ForeignChainPolicyVotes {
         self.foreign_chain_policy_votes.to_dto()
-    }
-
-    pub fn get_domain_purposes(&self) -> BTreeMap<dtos::DomainId, dtos::DomainPurpose> {
-        self.domain_purposes
-            .iter()
-            .map(|(id, purpose)| (id.into_dto_type(), *purpose))
-            .collect()
     }
 
     // contract version
@@ -2235,12 +2193,13 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
-        basic_setup_with_purpose(scheme, None, rng)
+        use crate::primitives::domain::infer_purpose_from_scheme;
+        basic_setup_with_purpose(scheme, infer_purpose_from_scheme(scheme), rng)
     }
 
     fn basic_setup_with_purpose(
         scheme: SignatureScheme,
-        purpose: Option<DomainPurpose>,
+        purpose: DomainPurpose,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
         let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
@@ -2254,6 +2213,7 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             scheme,
+            purpose,
         }];
         let epoch_id = EpochId::new(0);
         let (pk, sk) = make_public_key_for_domain(scheme, rng);
@@ -2264,10 +2224,7 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-        let domain_purposes = purpose.map(|p| BTreeMap::from([(domain_id, p)]));
-        let contract =
-            MpcContract::init_running(domains, 1, keyset, parameters, None, domain_purposes)
-                .unwrap();
+        let contract = MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
         (context, contract, sk)
     }
 
@@ -2502,7 +2459,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) = basic_setup_with_purpose(
             SignatureScheme::Secp256k1,
-            Some(DomainPurpose::ForeignTx),
+            DomainPurpose::ForeignTx,
             &mut rng,
         );
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
@@ -2588,7 +2545,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _secret_key) = basic_setup_with_purpose(
             SignatureScheme::Secp256k1,
-            Some(DomainPurpose::ForeignTx),
+            DomainPurpose::ForeignTx,
             &mut rng,
         );
         let request_args = VerifyForeignTransactionRequestArgs {
@@ -2999,7 +2956,6 @@ mod tests {
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
                 stale_data: Default::default(),
-                domain_purposes: BTreeMap::new(),
             }
         }
     }
@@ -3995,6 +3951,7 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         }];
         let (pk, _) = make_public_key_for_domain(SignatureScheme::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {
@@ -4004,15 +3961,9 @@ mod tests {
         };
         let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
 
-        let mut contract = MpcContract::init_running(
-            domains.clone(),
-            1,
-            keyset.clone(),
-            parameters.clone(),
-            None,
-            None,
-        )
-        .unwrap();
+        let mut contract =
+            MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
+                .unwrap();
 
         assert!(matches!(
             contract.protocol_state,
@@ -4453,70 +4404,5 @@ mod tests {
         assert!(votes
             .proposal_by_account
             .contains_key(&dtos::AccountId(first_account.to_string())));
-    }
-
-    #[test]
-    fn vote_cancel_keygen__should_prune_domain_purposes_for_deleted_domains_when_keygen_is_cancelled(
-    ) {
-        // Given
-        let (mut env, initializing_state) = gen_initializing_state(4, 1);
-        let next_domain_id = initializing_state.domains.next_domain_id();
-        let generated_len = initializing_state.generated_keys.len();
-        let participants = initializing_state
-            .generating_key
-            .proposed_parameters()
-            .participants()
-            .clone();
-        let required_votes = initializing_state
-            .generating_key
-            .proposed_parameters()
-            .threshold()
-            .value() as usize;
-
-        let retained_domain_ids: BTreeSet<_> = initializing_state
-            .domains
-            .domains()
-            .iter()
-            .take(generated_len)
-            .map(|domain| domain.id)
-            .collect();
-        let removed_domain_ids: BTreeSet<_> = initializing_state
-            .domains
-            .domains()
-            .iter()
-            .skip(generated_len)
-            .map(|domain| domain.id)
-            .collect();
-
-        let mut contract = MpcContract::new_from_protocol_state(
-            ProtocolContractState::Initializing(initializing_state),
-        );
-        for domain_id in retained_domain_ids
-            .iter()
-            .chain(removed_domain_ids.iter())
-            .copied()
-        {
-            contract
-                .domain_purposes
-                .insert(domain_id, DomainPurpose::Sign);
-        }
-
-        // When
-        for (account_id, _, _) in participants.participants().iter().take(required_votes) {
-            env.set_signer(account_id);
-            contract.vote_cancel_keygen(next_domain_id).unwrap();
-        }
-
-        // Then
-        let ProtocolContractState::Running(running_state) = &contract.protocol_state else {
-            panic!("expected running state after enough cancel votes");
-        };
-        assert_eq!(running_state.domains.domains().len(), generated_len);
-
-        let purpose_domain_ids: BTreeSet<_> = contract.domain_purposes.keys().copied().collect();
-        assert_eq!(purpose_domain_ids, retained_domain_ids);
-        for removed_domain_id in removed_domain_ids {
-            assert!(!contract.domain_purposes.contains_key(&removed_domain_id));
-        }
     }
 }

@@ -5,7 +5,7 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
 use near_account_id::AccountId;
 use near_time::Clock;
 use rand::Rng;
@@ -37,6 +37,7 @@ async fn test_faulty_cluster() {
     let domain = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
+        purpose: DomainPurpose::Sign,
     };
 
     {
@@ -171,6 +172,7 @@ async fn test_indexer_stuck() {
     let domain = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
+        purpose: DomainPurpose::Sign,
     };
 
     {

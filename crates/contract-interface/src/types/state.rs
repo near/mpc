@@ -196,6 +196,10 @@ pub enum DomainPurpose {
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
+    /// The intended purpose of this domain. When reading state from an older contract
+    /// that does not include this field, it will be `None` and should be inferred from the scheme.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<DomainPurpose>,
 }
 
 /// Registry of all signature domains.
@@ -316,8 +320,7 @@ pub struct ThresholdParametersVotes {
     derive(schemars::JsonSchema)
 )]
 pub struct AddDomainsVotes {
-    pub proposal_by_account:
-        BTreeMap<AuthenticatedParticipantId, Vec<(DomainConfig, DomainPurpose)>>,
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
 }
 
 // =============================================================================

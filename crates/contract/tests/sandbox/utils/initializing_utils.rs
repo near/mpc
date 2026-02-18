@@ -1,6 +1,6 @@
 use contract_interface::method_names;
 use contract_interface::types::{self as dtos};
-use dtos::{DomainPurpose, KeyEventId};
+use dtos::KeyEventId;
 use mpc_contract::primitives::domain::DomainConfig;
 use near_workspaces::{Account, Contract};
 use serde_json::json;
@@ -12,26 +12,6 @@ use super::{
 };
 
 pub async fn vote_add_domains(
-    contract: &Contract,
-    accounts: &[Account],
-    domains: &[(DomainConfig, DomainPurpose)],
-) -> anyhow::Result<()> {
-    let args = json!({
-        "domains": domains,
-    });
-    execute_async_transactions(
-        accounts,
-        contract,
-        "vote_add_domains",
-        &args,
-        GAS_FOR_VOTE_NEW_DOMAIN,
-    )
-    .await
-}
-
-/// Legacy version of `vote_add_domains` for old contracts that don't have
-/// `DomainPurpose` in the `vote_add_domains` API.
-pub async fn vote_add_domains_legacy(
     contract: &Contract,
     accounts: &[Account],
     domains: &[DomainConfig],
@@ -47,6 +27,34 @@ pub async fn vote_add_domains_legacy(
         GAS_FOR_VOTE_NEW_DOMAIN,
     )
     .await
+}
+
+/// Legacy version of `vote_add_domains` for old contracts that don't have
+/// `DomainPurpose` in the `vote_add_domains` API. Sends DomainConfig without
+/// the `purpose` field (which the old contract doesn't expect).
+pub async fn vote_add_domains_legacy(
+    contract: &Contract,
+    accounts: &[Account],
+    domains: &[LegacyDomainConfig],
+) -> anyhow::Result<()> {
+    let args = json!({
+        "domains": domains,
+    });
+    execute_async_transactions(
+        accounts,
+        contract,
+        method_names::VOTE_ADD_DOMAINS,
+        &args,
+        GAS_FOR_VOTE_NEW_DOMAIN,
+    )
+    .await
+}
+
+/// DomainConfig without the `purpose` field, for calling old contracts.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct LegacyDomainConfig {
+    pub id: mpc_contract::primitives::domain::DomainId,
+    pub scheme: mpc_contract::primitives::domain::SignatureScheme,
 }
 
 pub async fn start_keygen_instance(

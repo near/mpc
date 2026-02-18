@@ -12,7 +12,7 @@ use crate::sandbox::{
     },
 };
 use contract_interface::method_names;
-use contract_interface::types::{self as dtos, ProtocolContractState};
+use contract_interface::types::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
@@ -350,20 +350,16 @@ async fn upgrade_allows_new_request_types(
 
     // 2. Add new domains
     let domains_to_add = [
-        (
-            DomainConfig {
-                id: first_available_domain_id.into(),
-                scheme: SignatureScheme::Bls12381,
-            },
-            dtos::DomainPurpose::CKD,
-        ),
-        (
-            DomainConfig {
-                id: (first_available_domain_id + 1).into(),
-                scheme: SignatureScheme::Ed25519,
-            },
-            dtos::DomainPurpose::Sign,
-        ),
+        DomainConfig {
+            id: first_available_domain_id.into(),
+            scheme: SignatureScheme::Bls12381,
+            purpose: mpc_contract::primitives::domain::DomainPurpose::CKD,
+        },
+        DomainConfig {
+            id: (first_available_domain_id + 1).into(),
+            scheme: SignatureScheme::Ed25519,
+            purpose: mpc_contract::primitives::domain::DomainPurpose::Sign,
+        },
     ];
 
     const EPOCH_ID: u64 = 0;
