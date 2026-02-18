@@ -6,7 +6,11 @@ use k256::{
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic, PrimeField},
     Secp256k1,
 };
+#[cfg(target_arch = "wasm32")]
+use k256::EncodedPoint;
 use near_account_id::AccountId;
+#[cfg(target_arch = "wasm32")]
+use near_sdk::env;
 use sha3::{Digest, Sha3_256};
 
 use contract_interface::types as dtos;
@@ -129,8 +133,6 @@ pub fn recover(
     signature: &Signature,
     recovery_id: RecoveryId,
 ) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
-    use k256::EncodedPoint;
-    use near_sdk::env;
     // While this function also works on native code, it's a bit weird and unsafe.
     // I'm more comfortable using an existing library instead.
     let recovered_key_bytes =

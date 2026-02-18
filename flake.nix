@@ -139,6 +139,8 @@
           pythonTools = with pkgs; [
             python311
             python311Packages.keyring
+            python311Packages.tree-sitter
+            python311Packages.tree-sitter-rust
             ruff # linter and formatter
           ];
 

@@ -3,6 +3,7 @@ description = "Run all fast checks"
 dependencies = [
   "crate-names",
   "todo-format",
+  "use-in-fn",
   "ruff-format",
   "ruff-check",
   "fmt",
@@ -20,6 +21,7 @@ description = "Run all checks"
 dependencies = [
   "crate-names",
   "todo-format",
+  "use-in-fn",
   "ruff-format",
   "ruff-check",
   "fmt",
@@ -100,6 +102,11 @@ args = ["scripts/check-crates-kebab-case.sh"]
 [tasks.todo-format]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
+
+[tasks.use-in-fn]
+description = "Check for use statements inside function bodies"
+command = "python3"
+args = ["scripts/check-use-in-fn.py"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"

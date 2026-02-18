@@ -344,12 +344,12 @@ pub mod ed25519_types {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use k256::elliptic_curve::PrimeField;
     use rstest::rstest;
     use serde_json::json;
 
     #[test]
     fn serializeable_scalar_roundtrip() {
-        use k256::elliptic_curve::PrimeField;
         let test_vec = vec![
             k256::Scalar::ZERO,
             k256::Scalar::ONE,

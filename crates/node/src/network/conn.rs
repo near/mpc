@@ -356,7 +356,7 @@ mod tests {
     use crate::primitives::ParticipantId;
     use futures::FutureExt;
     use rstest::rstest;
-    use std::sync::Arc;
+    use std::sync::{Arc, Weak};
 
     use super::SenderConnectionId;
 
@@ -368,7 +368,6 @@ mod tests {
 
     #[test]
     fn test_connection_version() {
-        use super::*;
         let conn = ConnectionWithVersion {
             connection: Weak::<()>::new(),
             version: 0,

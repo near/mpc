@@ -156,8 +156,6 @@ async fn back_compatibility_without_state(
 async fn propose_upgrade_from_production_to_current_binary(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    use rand_core::OsRng;
-
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
