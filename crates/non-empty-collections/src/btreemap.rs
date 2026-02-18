@@ -67,16 +67,9 @@ impl<K: Ord, V> TryFrom<BTreeMap<K, V>> for NonEmptyBTreeMap<K, V> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("map must contain at least one entry")]
 pub struct EmptyMapError;
-
-impl std::fmt::Display for EmptyMapError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "map must contain at least one entry")
-    }
-}
-
-impl std::error::Error for EmptyMapError {}
 
 impl<K: Ord + Serialize, V: Serialize> Serialize for NonEmptyBTreeMap<K, V> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

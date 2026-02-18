@@ -49,16 +49,9 @@ impl<T: Ord> TryFrom<BTreeSet<T>> for NonEmptyBTreeSet<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("set must contain at least one element")]
 pub struct EmptySetError;
-
-impl std::fmt::Display for EmptySetError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "set must contain at least one element")
-    }
-}
-
-impl std::error::Error for EmptySetError {}
 
 impl<T: Ord + Serialize> Serialize for NonEmptyBTreeSet<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
