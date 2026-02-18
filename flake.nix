@@ -137,7 +137,7 @@
           ];
 
           pythonTools = with pkgs; [
-            python311Packages.keyring
+            python311
             python311Packages.keyring
             ruff # linter and formatter
           ];
