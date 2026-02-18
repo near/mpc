@@ -36,6 +36,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: read
+      id-token: write
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     steps:
       - name: Checkout repository
