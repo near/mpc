@@ -14,7 +14,6 @@ from common_lib.constants import TGAS
 from common_lib.contract_state import (
     ContractState,
     ProtocolState,
-    SignatureScheme,
     RunningProtocolState,
     infer_purpose_from_scheme,
 )
