@@ -92,8 +92,9 @@ jobs:
           fi
 
           # Format comments for Claude using external Python script
-          export COMMENTS_JSON
-          python3 .github/scripts/format_pr_comments.py > /tmp/pr_comments_context.txt
+          # Write to file instead of env var to avoid E2BIG on large PRs
+          echo "$COMMENTS_JSON" > /tmp/pr_comments_json.txt
+          python3 .github/scripts/format_pr_comments.py /tmp/pr_comments_json.txt > /tmp/pr_comments_context.txt
 
       - name: Build review prompt
         id: build-prompt
