@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
+use contract_interface::method_names;
 use contract_interface::types::{
     Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
 };
@@ -9,7 +10,12 @@ use mpc_primitives::hash::MpcDockerImageHash;
 use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
-    contract.view("state").await.unwrap().json().unwrap()
+    contract
+        .view(method_names::STATE)
+        .await
+        .unwrap()
+        .json()
+        .unwrap()
 }
 
 pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
@@ -24,7 +30,7 @@ pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participant
 /// Helper function to get TEE participants from contract.
 pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<NodeId>> {
     Ok(contract
-        .call("get_tee_accounts")
+        .call(method_names::GET_TEE_ACCOUNTS)
         .args_json(serde_json::json!({}))
         .max_gas()
         .transact()
@@ -42,7 +48,7 @@ pub async fn submit_participant_info(
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
     let result = account
-        .call(contract.id(), "submit_participant_info")
+        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
         .args_json((attestation, tls_key))
         .max_gas()
         .transact()
@@ -57,7 +63,7 @@ pub async fn get_participant_attestation(
 ) -> anyhow::Result<Option<Attestation>> {
     let result = contract
         .as_account()
-        .call(contract.id(), "get_attestation")
+        .call(contract.id(), method_names::GET_ATTESTATION)
         .args_json(serde_json::json!({
             "tls_public_key": tls_key
         }))
@@ -72,7 +78,7 @@ pub async fn assert_running_return_participants(
     contract: &Contract,
 ) -> anyhow::Result<Participants> {
     // Verify contract is back to running state with new threshold
-    let final_state: ProtocolContractState = contract.view("state").await?.json()?;
+    let final_state: ProtocolContractState = contract.view(method_names::STATE).await?.json()?;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(
             "Expected contract to be in Running state after resharing, but got: {:?}",
@@ -99,7 +105,7 @@ pub async fn vote_for_hash(
     image_hash: &MpcDockerImageHash,
 ) -> anyhow::Result<()> {
     let result = account
-        .call(contract.id(), "vote_code_hash")
+        .call(contract.id(), method_names::VOTE_CODE_HASH)
         .args_json(serde_json::json!({"code_hash": image_hash}))
         .transact()
         .await?;

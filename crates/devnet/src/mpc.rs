@@ -15,6 +15,7 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
+use contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::SigningKey;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
@@ -353,7 +354,7 @@ impl MpcInitContractCmd {
         access_key
             .submit_tx_to_call_function(
                 &contract,
-                "init",
+                method_names::INIT,
                 &args,
                 300,
                 0,
@@ -417,7 +418,7 @@ impl MpcViewContractCmd {
         let contract_state = setup
             .accounts
             .account(contract)
-            .query_contract("state", b"{}".to_vec())
+            .query_contract(method_names::STATE, b"{}".to_vec())
             .await
             .expect("state() call failed");
         println!(
@@ -475,7 +476,7 @@ impl MpcProposeUpdateContractCmd {
             .await
             .submit_tx_to_call_function(
                 &contract,
-                "propose_update",
+                method_names::PROPOSE_UPDATE,
                 &borsh::to_vec(&ProposeUpdateArgs {
                     contract: Some(contract_code),
                     config: None,
@@ -538,7 +539,7 @@ impl MpcVoteUpdateCmd {
             futs.push(async move {
                 key.submit_tx_to_call_function(
                     &contract,
-                    "vote_update",
+                    method_names::VOTE_UPDATE,
                     &serde_json::to_vec(&VoteUpdateArgs { id: self.update_id }).unwrap(),
                     300,
                     0,
@@ -629,7 +630,7 @@ impl MpcVoteAddDomainsCmd {
             futs.push(async move {
                 key.submit_tx_to_call_function(
                     &contract,
-                    "vote_add_domains",
+                    method_names::VOTE_ADD_DOMAINS,
                     &serde_json::to_vec(&VoteAddDomainsArgs { domains: proposal }).unwrap(),
                     300,
                     0,
@@ -740,7 +741,7 @@ impl MpcVoteNewParametersCmd {
             futs.push(async move {
                 key.submit_tx_to_call_function(
                     &contract,
-                    "vote_new_parameters",
+                    method_names::VOTE_NEW_PARAMETERS,
                     &serde_json::to_vec(&VoteNewParametersArgs {
                         prospective_epoch_id,
                         proposal,
@@ -809,7 +810,7 @@ impl MpcVoteApprovedHashCmd {
             voting_futures.push(async move {
                 key.submit_tx_to_call_function(
                     &contract,
-                    "vote_code_hash",
+                    method_names::VOTE_CODE_HASH,
                     &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
                     300,
                     0,
@@ -846,7 +847,7 @@ pub async fn read_contract_state(
         block_reference: BlockReference::Finality(Finality::Final),
         request: QueryRequest::CallFunction {
             account_id: contract.as_v1_account_id(),
-            method_name: "state".to_string(),
+            method_name: method_names::STATE.to_string(),
             args: FunctionArgs::from(b"{}".to_vec()),
         },
     };

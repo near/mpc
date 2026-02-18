@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 #![deny(clippy::mod_module_files)]
+pub mod method_names;
 pub mod types {
     pub use attestation::{
         AppCompose, Attestation, Collateral, DstackAttestation, EventLog, MockAttestation, TcbInfo,

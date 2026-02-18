@@ -7,6 +7,7 @@ use crate::sandbox::utils::{
     shared_key_utils::{make_key_for_domain, DomainKey},
     sign_utils::{make_and_submit_requests, PendingSignRequest},
 };
+use contract_interface::method_names;
 use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -138,7 +139,7 @@ pub async fn init_contract(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .call("init")
+        .call(method_names::INIT)
         .args_json(json!({
             "parameters": params,
             "init_config": init_config,
@@ -160,7 +161,7 @@ pub async fn init_contract_running(
     params: ThresholdParameters,
 ) -> ExecutionSuccess {
     let result = contract
-        .call("init_running")
+        .call(method_names::INIT_RUNNING)
         .args_json(json!({
             "domains": domains,
             "next_domain_id": next_domain_id,
@@ -301,7 +302,7 @@ pub async fn propose_and_vote_contract_binary(
     new_contract_binary: &[u8],
 ) {
     let propose_update_execution = accounts[0]
-        .call(contract.id(), "propose_update")
+        .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(ProposeUpdateArgs {
             code: Some(new_contract_binary.to_vec()),
             config: None,
@@ -321,7 +322,7 @@ pub async fn propose_and_vote_contract_binary(
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
-        .call(contract.id(), "state")
+        .call(contract.id(), method_names::STATE)
         .transact()
         .await
         .expect("state request succeeds");
@@ -347,7 +348,7 @@ pub async fn vote_update_till_completion(
 ) {
     for voter in accounts {
         let execution = voter
-            .call(contract.id(), "vote_update")
+            .call(contract.id(), method_names::VOTE_UPDATE)
             .args_json(serde_json::json!({
                 "id": proposal_id,
             }))
@@ -514,7 +515,7 @@ pub async fn execute_key_generation_and_add_random_state(
         "proposal": dummy_threshold_parameters,
     });
     accounts[0]
-        .call(contract.id(), "vote_new_parameters")
+        .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
         .args_json(dummy_proposal)
         .max_gas()
         .transact()
