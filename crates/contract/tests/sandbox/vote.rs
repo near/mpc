@@ -62,7 +62,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
         scheme: scheme.into_interface_type(),
-        purpose: dtos::DomainPurpose::Sign,
+        purpose: Some(dtos::DomainPurpose::Sign),
     };
     let found = init
         .domains
@@ -169,7 +169,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
             scheme: (*scheme).into_interface_type(),
-            purpose: expected_purpose,
+            purpose: Some(expected_purpose),
         };
         let found = init
             .domains

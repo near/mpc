@@ -639,7 +639,7 @@ impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
         dtos::DomainConfig {
             id: self.id.into_dto_type(),
             scheme: self.scheme.into_dto_type(),
-            purpose: self.purpose,
+            purpose: Some(self.purpose),
         }
     }
 }

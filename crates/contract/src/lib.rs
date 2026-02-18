@@ -533,9 +533,7 @@ impl MpcContract {
                     expected: DomainPurpose::ForeignTx,
                     actual: domain_config.purpose,
                 }
-                .message(
-                    "verify_foreign_transaction() requires a domain with purpose ForeignTx",
-                )
+                .message("verify_foreign_transaction() requires a domain with purpose ForeignTx")
                 .to_string(),
             );
         }

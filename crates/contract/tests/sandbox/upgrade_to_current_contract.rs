@@ -12,7 +12,7 @@ use crate::sandbox::{
     },
 };
 use contract_interface::method_names;
-use contract_interface::types::ProtocolContractState;
+use contract_interface::types::{self as dtos, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
@@ -106,6 +106,50 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
     Ok(())
 }
 
+/// Fill in `None` purposes on DTO `DomainConfig`s with the value inferred from scheme.
+/// Needed when comparing state read from an old contract (no `purpose` field) against
+/// state read from the new contract (which fills `purpose` during migration).
+fn fill_missing_purposes(state: &mut ProtocolContractState) {
+    fn infer_purpose(scheme: dtos::SignatureScheme) -> dtos::DomainPurpose {
+        match scheme {
+            dtos::SignatureScheme::Bls12381 => dtos::DomainPurpose::CKD,
+            _ => dtos::DomainPurpose::Sign,
+        }
+    }
+    fn fill_domain(d: &mut dtos::DomainConfig) {
+        if d.purpose.is_none() {
+            d.purpose = Some(infer_purpose(d.scheme));
+        }
+    }
+    fn fill_registry(r: &mut dtos::DomainRegistry) {
+        r.domains.iter_mut().for_each(fill_domain);
+    }
+    fn fill_votes(v: &mut dtos::AddDomainsVotes) {
+        for domains in v.proposal_by_account.values_mut() {
+            domains.iter_mut().for_each(fill_domain);
+        }
+    }
+    fn fill_key_event(e: &mut dtos::KeyEvent) {
+        fill_domain(&mut e.domain);
+    }
+    match state {
+        ProtocolContractState::NotInitialized => {}
+        ProtocolContractState::Running(r) => {
+            fill_registry(&mut r.domains);
+            fill_votes(&mut r.add_domains_votes);
+        }
+        ProtocolContractState::Initializing(i) => {
+            fill_registry(&mut i.domains);
+            fill_key_event(&mut i.generating_key);
+        }
+        ProtocolContractState::Resharing(r) => {
+            fill_registry(&mut r.previous_running_state.domains);
+            fill_votes(&mut r.previous_running_state.add_domains_votes);
+            fill_key_event(&mut r.resharing_key);
+        }
+    }
+}
+
 /// Checks the contract in the following order:
 /// 1. Are there any state-breaking changes?
 /// 2. If so, does `migrate()` still work correctly?
@@ -174,12 +218,13 @@ async fn propose_upgrade_from_production_to_current_binary(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
+    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
@@ -221,7 +266,7 @@ async fn upgrade_preserves_state_and_requests(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -231,6 +276,7 @@ async fn upgrade_preserves_state_and_requests(
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
+    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
@@ -331,7 +377,7 @@ async fn upgrade_allows_new_request_types(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -341,6 +387,7 @@ async fn upgrade_allows_new_request_types(
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
+    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
