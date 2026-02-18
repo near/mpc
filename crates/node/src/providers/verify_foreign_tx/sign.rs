@@ -6,7 +6,8 @@ use foreign_chain_inspector::starknet::inspector::{
 };
 use foreign_chain_inspector::ForeignChainInspector;
 use foreign_chain_inspector::{self, EthereumFinality};
-use rand::rngs::OsRng;
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
@@ -21,7 +22,7 @@ use crate::{
 };
 use contract_interface::types as dtos;
 use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
-use rand::seq::IteratorRandom;
+use near_indexer_primitives::CryptoHash;
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -54,15 +55,9 @@ where
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
 
-        let response_payload = self
-            .execute_foreign_chain_request(&foreign_tx_request.request)
-            .await?;
-
-        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
-
         let domain_data = self
             .ecdsa_signature_provider
-            .domain_data(sign_request.domain)?;
+            .domain_data(foreign_tx_request.domain_id)?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
@@ -72,6 +67,18 @@ where
             },
             participants,
         )?;
+
+        let my_participant_index = channel
+            .participants()
+            .iter()
+            .position(|&p| p == channel.my_participant_id())
+            .context("my participant ID not found in participants list")?;
+
+        let response_payload = self
+            .execute_foreign_chain_request(id, &foreign_tx_request.request, my_participant_index)
+            .await?;
+
+        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
         let response = self
             .ecdsa_signature_provider
@@ -94,8 +101,15 @@ where
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
+        let participants = channel.participants();
+        let my_participant_id = channel.my_participant_id();
+        let my_participant_index = participants
+            .iter()
+            .position(|&p| p == my_participant_id)
+            .context("my participant ID not found in participants list")?;
+
         let response_payload = self
-            .execute_foreign_chain_request(&foreign_tx_request.request)
+            .execute_foreign_chain_request(id, &foreign_tx_request.request, my_participant_index)
             .await?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
@@ -107,7 +121,9 @@ where
 
     async fn execute_foreign_chain_request(
         &self,
+        request_id: SignatureId,
         request: &dtos::ForeignChainRpcRequest,
+        my_participant_index: usize,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
         validate_foreign_chain_policy(
             &self.config.foreign_chains,
@@ -128,8 +144,14 @@ where
                     anyhow::bail!("bitcoin provider config is missing")
                 };
 
-                // TODO: implement a better algorithm here that guarantees that different nodes get different providers
-                let bitcoin_provider_config = bitcoin_config.providers.values().choose(&mut OsRng);
+                let provider_index = select_provider(
+                    bitcoin_config.providers.len(),
+                    &request_id,
+                    my_participant_index,
+                );
+
+                let bitcoin_provider_config =
+                    provider_index.and_then(|i| bitcoin_config.providers.values().nth(i));
 
                 let Some(bitcoin_provider_config) = bitcoin_provider_config else {
                     anyhow::bail!("found empty list of providers for bitcoin")
@@ -164,9 +186,15 @@ where
                 let Some(abstract_config) = &self.config.foreign_chains.abstract_chain else {
                     anyhow::bail!("abstract provider config is missing")
                 };
-                // TODO(#2088): implement a better algorithm here that guarantees that different nodes get different providers
+
+                let provider_index = select_provider(
+                    abstract_config.providers.len(),
+                    &request_id,
+                    my_participant_index,
+                );
+
                 let abstract_provider_config =
-                    abstract_config.providers.values().choose(&mut OsRng);
+                    provider_index.and_then(|i| abstract_config.providers.values().nth(i));
 
                 let Some(abstract_provider_config) = abstract_provider_config else {
                     anyhow::bail!("found empty list of providers for abstract")
@@ -202,8 +230,14 @@ where
                     anyhow::bail!("starknet provider config is missing")
                 };
 
+                let provider_index = select_provider(
+                    starknet_config.providers.len(),
+                    &request_id,
+                    my_participant_index,
+                );
+
                 let starknet_provider_config =
-                    starknet_config.providers.values().choose(&mut OsRng);
+                    provider_index.and_then(|i| starknet_config.providers.values().nth(i));
 
                 let Some(starknet_provider_config) = starknet_provider_config else {
                     anyhow::bail!("found empty list of providers for starknet")
@@ -297,6 +331,26 @@ async fn validate_foreign_chain_policy(
     Ok(())
 }
 
+/// Deterministically selects a provider index based on the request ID and the node's
+/// position within the participant set.
+///
+/// Uses the request ID as a seed to create a deterministic permutation of provider indices,
+/// then selects the index at position `my_participant_index % num_providers`. This ensures
+/// that RPC selection is balanced.
+fn select_provider(
+    num_providers: usize,
+    request_id: &CryptoHash,
+    my_participant_index: usize,
+) -> Option<usize> {
+    if num_providers == 0 {
+        return None;
+    }
+    let mut indices: Vec<usize> = (0..num_providers).collect();
+    let mut rng = rand::rngs::StdRng::from_seed(request_id.0);
+    indices.shuffle(&mut rng);
+    Some(indices[my_participant_index % num_providers])
+}
+
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod tests {
@@ -353,6 +407,70 @@ mod tests {
             .expect_get_foreign_chain_policy()
             .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
         reader
+    }
+
+    #[test]
+    fn select_provider__returns_none_for_zero_providers() {
+        let request_id = CryptoHash([0; 32]);
+        assert_eq!(select_provider(0, &request_id, 0), None);
+    }
+
+    #[test]
+    fn select_provider__returns_some_for_single_provider() {
+        let request_id = CryptoHash([1; 32]);
+        assert_eq!(select_provider(1, &request_id, 0), Some(0));
+        assert_eq!(select_provider(1, &request_id, 1), Some(0));
+        assert_eq!(select_provider(1, &request_id, 5), Some(0));
+    }
+
+    #[test]
+    fn select_provider__is_deterministic_for_same_inputs() {
+        let request_id = CryptoHash([42; 32]);
+        let result1 = select_provider(3, &request_id, 1);
+        let result2 = select_provider(3, &request_id, 1);
+        assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn select_provider__different_participants_get_different_providers_when_enough_providers() {
+        let request_id = CryptoHash([7; 32]);
+        let num_providers = 3;
+        let selections: Vec<usize> = (0..num_providers)
+            .map(|i| select_provider(num_providers, &request_id, i).unwrap())
+            .collect();
+        // With 3 participants and 3 providers, each should get a unique provider
+        let mut sorted = selections.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), num_providers);
+    }
+
+    #[test]
+    fn select_provider__different_requests_produce_different_permutations() {
+        let request_a = CryptoHash([1; 32]);
+        let request_b = CryptoHash([2; 32]);
+        let num_providers = 5;
+        let selections_a: Vec<usize> = (0..num_providers)
+            .map(|i| select_provider(num_providers, &request_a, i).unwrap())
+            .collect();
+        let selections_b: Vec<usize> = (0..num_providers)
+            .map(|i| select_provider(num_providers, &request_b, i).unwrap())
+            .collect();
+        // Different request IDs should (almost certainly) produce different permutations
+        assert_ne!(selections_a, selections_b);
+    }
+
+    #[test]
+    fn select_provider__wraps_around_when_more_participants_than_providers() {
+        let request_id = CryptoHash([99; 32]);
+        let num_providers = 3;
+        // Participant indices beyond num_providers should wrap around
+        for i in 0..num_providers {
+            assert_eq!(
+                select_provider(num_providers, &request_id, i),
+                select_provider(num_providers, &request_id, i + num_providers),
+            );
+        }
     }
 
     #[tokio::test]
