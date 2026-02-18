@@ -15,7 +15,7 @@ on:
 jobs:
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
-    runs-on: warp-ubuntu-2204-x64-16x
+    runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -25,6 +25,9 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
+
+      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install repro-env
         run: |
@@ -44,7 +47,7 @@ jobs:
 
   launcher-nontee-check:
     name: "MPC Launcher non-tee check"
-    runs-on: warp-ubuntu-2204-x64-2x
+    runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 60
     permissions:
       contents: read

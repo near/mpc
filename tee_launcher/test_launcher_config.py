@@ -22,7 +22,6 @@ from tee_launcher.launcher import (
     _is_allowed_container_env_key,
     MAX_ENV_VALUE_LEN,
     MAX_PASSTHROUGH_ENV_VARS,
-    MAX_TOTAL_ENV_BYTES,
 )
 from tee_launcher.launcher import (
     JSON_KEY_APPROVED_HASHES,
