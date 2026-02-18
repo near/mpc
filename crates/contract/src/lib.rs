@@ -212,6 +212,24 @@ impl MpcContract {
         Ok(())
     }
 
+    fn assert_domain_purpose(
+        &self,
+        domain_config: &DomainConfig,
+        expected: DomainPurpose,
+        requirement: &str,
+    ) {
+        let purpose = self.domain_purpose(domain_config);
+        if purpose != expected {
+            env::panic_str(
+                &InvalidParameters::DomainPurposeMismatch {
+                    domain_id: domain_config.id,
+                }
+                .message(requirement.to_string())
+                .to_string(),
+            );
+        }
+    }
+
     fn domain_purpose(&self, domain_config: &DomainConfig) -> DomainPurpose {
         self.domain_purposes
             .get(&domain_config.id)
@@ -250,16 +268,11 @@ impl MpcContract {
             );
         };
 
-        let purpose = self.domain_purpose(&domain_config);
-        if purpose != DomainPurpose::Sign {
-            env::panic_str(
-                &InvalidParameters::DomainPurposeMismatch {
-                    domain_id: request.domain_id,
-                }
-                .message("sign() requires a domain with purpose Sign")
-                .to_string(),
-            );
-        }
+        self.assert_domain_purpose(
+            domain_config,
+            DomainPurpose::Sign,
+            "sign() requires a domain with purpose Sign",
+        );
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -439,16 +452,11 @@ impl MpcContract {
                 .to_string(),
             );
         };
-        let purpose = self.domain_purpose(&domain_config);
-        if purpose != DomainPurpose::CKD {
-            env::panic_str(
-                &InvalidParameters::DomainPurposeMismatch {
-                    domain_id: request.domain_id,
-                }
-                .message("request_app_private_key() requires a domain with purpose CKD")
-                .to_string(),
-            );
-        }
+        self.assert_domain_purpose(
+            domain_config,
+            DomainPurpose::CKD,
+            "request_app_private_key() requires a domain with purpose CKD",
+        );
 
         if domain_config.scheme != SignatureScheme::Bls12381 {
             env::panic_str(
@@ -560,16 +568,11 @@ impl MpcContract {
             );
         };
 
-        let purpose = self.domain_purpose(&domain_config);
-        if purpose != DomainPurpose::ForeignTx {
-            env::panic_str(
-                &InvalidParameters::DomainPurposeMismatch {
-                    domain_id: request.domain_id.0.into(),
-                }
-                .message("verify_foreign_transaction() requires a domain with purpose ForeignTx")
-                .to_string(),
-            );
-        }
+        self.assert_domain_purpose(
+            domain_config,
+            DomainPurpose::ForeignTx,
+            "verify_foreign_transaction() requires a domain with purpose ForeignTx",
+        );
 
         if domain_config.scheme != SignatureScheme::Secp256k1 {
             env::panic_str(
