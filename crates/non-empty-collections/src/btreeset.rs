@@ -14,12 +14,6 @@ impl<T: Ord> NonEmptyBTreeSet<T> {
         Self(BTreeSet::from([item]))
     }
 
-    /// Constructs without checking emptiness. Caller must guarantee non-emptiness.
-    pub(crate) fn new_unchecked(set: BTreeSet<T>) -> Self {
-        debug_assert!(!set.is_empty());
-        Self(set)
-    }
-
     /// Adds a value to the set.
     ///
     /// Returns whether the value was newly inserted. That is:
@@ -30,6 +24,12 @@ impl<T: Ord> NonEmptyBTreeSet<T> {
     ///   the entry is not updated.
     pub fn insert(&mut self, item: T) -> bool {
         self.0.insert(item)
+    }
+
+    /// Constructs without checking emptiness. Caller must guarantee non-emptiness.
+    pub(crate) fn new_unchecked(set: BTreeSet<T>) -> Self {
+        debug_assert!(!set.is_empty());
+        Self(set)
     }
 }
 

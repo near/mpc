@@ -37,7 +37,7 @@ impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
         F: FnMut(&K, &V) -> T,
     {
         let set = self.0.iter().map(|(k, v)| f(k, v)).collect();
-        // SAFETY: self was non-empty, so the resulting set has at least one element.
+        // self is non-empty, so the resulting set has at least one element.
         NonEmptyBTreeSet::new_unchecked(set)
     }
 }
@@ -293,11 +293,7 @@ mod tests {
         // Then
         assert_eq!(
             *set,
-            BTreeSet::from([
-                "1:a".to_string(),
-                "2:b".to_string(),
-                "3:c".to_string()
-            ])
+            BTreeSet::from(["1:a".to_string(), "2:b".to_string(), "3:c".to_string()])
         );
     }
 
