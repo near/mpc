@@ -161,17 +161,6 @@ impl ForeignChainPolicyVotes {
 }
 
 impl MpcContract {
-    fn effective_domain_purpose(
-        &self,
-        domain_id: DomainId,
-        scheme: SignatureScheme,
-    ) -> DomainPurpose {
-        self.domain_purposes
-            .get(&domain_id)
-            .copied()
-            .unwrap_or_else(|| DomainPurpose::infer_from_scheme(scheme))
-    }
-
     pub(crate) fn public_key_extended(
         &self,
         domain_id: DomainId,
@@ -221,6 +210,17 @@ impl MpcContract {
             }
         }
         Ok(())
+    }
+
+    fn effective_domain_purpose(
+        &self,
+        domain_id: DomainId,
+        scheme: SignatureScheme,
+    ) -> DomainPurpose {
+        self.domain_purposes
+            .get(&domain_id)
+            .copied()
+            .unwrap_or_else(|| DomainPurpose::infer_from_scheme(scheme))
     }
 }
 
