@@ -92,6 +92,9 @@
 
             PYTHONPATH = "./pytest:./nearcore_pytest:./tee_launcher";
 
+            # Ensure native Python extensions (greenlet, gevent, etc.) can find libstdc++
+            LD_LIBRARY_PATH = "${stdenv.cc.cc.lib}/lib";
+
             # OpenSSL
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             OPENSSL_DIR = "${pkgs.openssl.dev}";
@@ -131,8 +134,15 @@
             rustPlatform.bindgenHook
           ];
 
+          pythonTools = with pkgs; [
+            python311
+            python311Packages.pip
+            python311Packages.virtualenv
+            # runtime dependency of near-cli to save keys to keychain
+            python311Packages.keyring
+          ];
+
           nearTools = with pkgs; [
-            python3Packages.keyring
             near-cli-rs
             cargo-near
           ];
@@ -177,7 +187,14 @@
             strictDeps = true;
 
             packages =
-              dockerTools ++ llvmTools ++ rustTools ++ cargoTools ++ nearTools ++ miscTools ++ buildLibs;
+              dockerTools
+              ++ llvmTools
+              ++ rustTools
+              ++ cargoTools
+              ++ pythonTools
+              ++ nearTools
+              ++ miscTools
+              ++ buildLibs;
 
             env = envCommon // envDarwin;
 
@@ -187,6 +204,20 @@
 
             shellHook = ''
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
+
+              # Auto-setup Python virtualenv for pytest
+              VENV_DIR="$PWD/pytest/venv"
+              if [ ! -d "$VENV_DIR" ]; then
+                printf "\e[33mCreating Python virtualenv in pytest/venv...\e[0m\n"
+                python3 -m venv "$VENV_DIR"
+              fi
+              source "$VENV_DIR/bin/activate"
+              if [ "$VENV_DIR/bin/pip" -nt "$VENV_DIR/.requirements-installed" ] || \
+                 [ "$PWD/pytest/requirements.txt" -nt "$VENV_DIR/.requirements-installed" ]; then
+                printf "\e[33mInstalling pytest requirements...\e[0m\n"
+                (cd "$PWD/pytest" && pip install -q -r requirements.txt)
+                touch "$VENV_DIR/.requirements-installed"
+              fi
             '';
           };
         }

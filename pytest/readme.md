@@ -26,6 +26,8 @@ Simply run `exec_pytest.sh` (optional flag `--verbose` and `--reset-submodules`)
 
 3. Set up virtualenv (optional, but recommended):
 
+   > **Note:** If you use `nix develop`, this step is handled automatically. You can safely skip it.
+
    ```bash
    cd pytest && python3 -m venv venv
    ```
