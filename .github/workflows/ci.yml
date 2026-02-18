@@ -15,7 +15,7 @@ on:
 jobs:
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
-    runs-on: warp-ubuntu-2204-x64-16x
+    runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -44,7 +44,7 @@ jobs:
 
   launcher-nontee-check:
     name: "MPC Launcher non-tee check"
-    runs-on: warp-ubuntu-2204-x64-2x
+    runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 60
     permissions:
       contents: read

@@ -13,7 +13,7 @@ on:
 jobs:
   build-and-push-images:
     name: "Build and push Docker node gcp image with commit hash"
-    runs-on: warp-ubuntu-2204-x64-16x
+    runs-on: warp-ubuntu-2404-x64-16x
     permissions:
       contents: read
 
