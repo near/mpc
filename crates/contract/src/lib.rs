@@ -44,6 +44,7 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
+use contract_interface::method_names;
 use contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
@@ -314,7 +315,7 @@ impl MpcContract {
         );
 
         let promise_index = env::promise_yield_create(
-            "return_signature_and_clean_state_on_success",
+            method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
             serde_json::to_vec(&(&request,)).unwrap(),
             callback_gas,
             GasWeight(0),
@@ -482,7 +483,7 @@ impl MpcContract {
         );
 
         let promise_index = env::promise_yield_create(
-            "return_ck_and_clean_state_on_success",
+            method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
             serde_json::to_vec(&(&request,)).unwrap(),
             callback_gas,
             GasWeight(0),
@@ -587,7 +588,7 @@ impl MpcContract {
         let request = args_into_verify_foreign_tx_request(request, &predecessor);
 
         let promise_index = env::promise_yield_create(
-            "return_verify_foreign_tx_and_clean_state_on_success",
+            method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
             serde_json::to_vec(&(&request,)).unwrap(),
             callback_gas,
             GasWeight(0),
@@ -1121,7 +1122,7 @@ impl MpcContract {
             // Note: MpcContract::vote_update uses filtering to ensure correctness even if this cleanup fails.
             Promise::new(env::current_account_id())
                 .function_call(
-                    "remove_non_participant_update_votes".to_string(),
+                    method_names::REMOVE_NON_PARTICIPANT_UPDATE_VOTES.to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
                     Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
@@ -1130,7 +1131,7 @@ impl MpcContract {
             // Spawn a promise to clean up TEE information for non-participants
             Promise::new(env::current_account_id())
                 .function_call(
-                    "clean_tee_status".to_string(),
+                    method_names::CLEAN_TEE_STATUS.to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
                     Gas::from_tgas(self.config.clean_tee_status_tera_gas),
@@ -1139,7 +1140,7 @@ impl MpcContract {
             // Spawn a promise to clean up orphaned node migrations for non-participants
             Promise::new(env::current_account_id())
                 .function_call(
-                    "cleanup_orphaned_node_migrations".to_string(),
+                    method_names::CLEANUP_ORPHANED_NODE_MIGRATIONS.to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
                     Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
@@ -1663,7 +1664,7 @@ impl MpcContract {
                 self.pending_signature_requests.remove(&request);
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
-                    "fail_on_timeout".to_string(),
+                    method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
                     NearToken::from_near(0),
                     fail_on_timeout_gas,
@@ -1688,7 +1689,7 @@ impl MpcContract {
                 self.pending_ckd_requests.remove(&request);
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
-                    "fail_on_timeout".to_string(),
+                    method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
                     NearToken::from_near(0),
                     fail_on_timeout_gas,
@@ -1713,7 +1714,7 @@ impl MpcContract {
                 self.pending_verify_foreign_tx_requests.remove(&request);
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
-                    "fail_on_timeout".to_string(),
+                    method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
                     NearToken::from_near(0),
                     fail_on_timeout_gas,
