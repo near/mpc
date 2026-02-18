@@ -10,7 +10,7 @@
             }
         },
         "derivation_path": "some_example_path",
-        "domain_id": 0,
+        "domain_id": 3,
         "payload_version": 1
     }
 }
