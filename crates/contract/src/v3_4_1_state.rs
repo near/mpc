@@ -1,5 +1,5 @@
 //! ## Overview
-//! This module stores the previous contract state—the one you want to migrate from.
+//! This module stores the previous contract state-the one you want to migrate from.
 //! The goal is to describe the data layout _exactly_ as it existed before.
 //!
 //! ## Guideline
@@ -31,95 +31,6 @@ use crate::{
     Config, ForeignChainPolicyVotes, StaleData, StorageKey,
 };
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct AddDomainsVotes {
-    proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
-}
-
-impl From<AddDomainsVotes> for crate::primitives::domain::AddDomainsVotes {
-    fn from(value: AddDomainsVotes) -> Self {
-        let proposal_by_account = value
-            .proposal_by_account
-            .into_iter()
-            .map(|(participant, proposed_domains)| {
-                let proposal = proposed_domains
-                    .into_iter()
-                    .map(|domain| {
-                        let scheme = domain.scheme;
-                        (domain, DomainPurpose::infer_from_scheme(scheme))
-                    })
-                    .collect();
-                (participant, proposal)
-            })
-            .collect();
-
-        Self {
-            proposal_by_account,
-        }
-    }
-}
-
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct RunningContractState {
-    domains: DomainRegistry,
-    keyset: Keyset,
-    parameters: ThresholdParameters,
-    parameters_votes: ThresholdParametersVotes,
-    add_domains_votes: AddDomainsVotes,
-    previously_cancelled_resharing_epoch_id: Option<EpochId>,
-}
-
-impl From<RunningContractState> for crate::state::running::RunningContractState {
-    fn from(value: RunningContractState) -> Self {
-        Self {
-            domains: value.domains,
-            keyset: value.keyset,
-            parameters: value.parameters,
-            parameters_votes: value.parameters_votes,
-            add_domains_votes: value.add_domains_votes.into(),
-            previously_cancelled_resharing_epoch_id: value.previously_cancelled_resharing_epoch_id,
-        }
-    }
-}
-
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct ResharingContractState {
-    previous_running_state: RunningContractState,
-    reshared_keys: Vec<KeyForDomain>,
-    resharing_key: KeyEvent,
-    cancellation_requests: HashSet<AuthenticatedAccountId>,
-}
-
-impl From<ResharingContractState> for crate::state::resharing::ResharingContractState {
-    fn from(value: ResharingContractState) -> Self {
-        Self {
-            previous_running_state: value.previous_running_state.into(),
-            reshared_keys: value.reshared_keys,
-            resharing_key: value.resharing_key,
-            cancellation_requests: value.cancellation_requests,
-        }
-    }
-}
-
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-enum ProtocolContractState {
-    NotInitialized,
-    Initializing(InitializingContractState),
-    Running(RunningContractState),
-    Resharing(ResharingContractState),
-}
-
-impl From<ProtocolContractState> for crate::state::ProtocolContractState {
-    fn from(value: ProtocolContractState) -> Self {
-        match value {
-            ProtocolContractState::NotInitialized => Self::NotInitialized,
-            ProtocolContractState::Initializing(state) => Self::Initializing(state),
-            ProtocolContractState::Running(state) => Self::Running(state.into()),
-            ProtocolContractState::Resharing(state) => Self::Resharing(state.into()),
-        }
-    }
-}
-
 /// The contract state layout of the current production contract.
 /// This does not have `pending_verify_foreign_tx_requests` or `domain_purposes`.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -135,6 +46,37 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+enum ProtocolContractState {
+    NotInitialized,
+    Initializing(InitializingContractState),
+    Running(RunningContractState),
+    Resharing(ResharingContractState),
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct RunningContractState {
+    domains: DomainRegistry,
+    keyset: Keyset,
+    parameters: ThresholdParameters,
+    parameters_votes: ThresholdParametersVotes,
+    add_domains_votes: AddDomainsVotes,
+    previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct ResharingContractState {
+    previous_running_state: RunningContractState,
+    reshared_keys: Vec<KeyForDomain>,
+    resharing_key: KeyEvent,
+    cancellation_requests: HashSet<AuthenticatedAccountId>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct AddDomainsVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
 }
 
 impl From<MpcContract> for crate::MpcContract {
@@ -161,6 +103,64 @@ impl From<MpcContract> for crate::MpcContract {
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {},
             domain_purposes: BTreeMap::new(),
+        }
+    }
+}
+
+impl From<ProtocolContractState> for crate::state::ProtocolContractState {
+    fn from(value: ProtocolContractState) -> Self {
+        match value {
+            ProtocolContractState::NotInitialized => Self::NotInitialized,
+            ProtocolContractState::Initializing(state) => Self::Initializing(state),
+            ProtocolContractState::Running(state) => Self::Running(state.into()),
+            ProtocolContractState::Resharing(state) => Self::Resharing(state.into()),
+        }
+    }
+}
+
+impl From<RunningContractState> for crate::state::running::RunningContractState {
+    fn from(value: RunningContractState) -> Self {
+        Self {
+            domains: value.domains,
+            keyset: value.keyset,
+            parameters: value.parameters,
+            parameters_votes: value.parameters_votes,
+            add_domains_votes: value.add_domains_votes.into(),
+            previously_cancelled_resharing_epoch_id: value.previously_cancelled_resharing_epoch_id,
+        }
+    }
+}
+
+impl From<ResharingContractState> for crate::state::resharing::ResharingContractState {
+    fn from(value: ResharingContractState) -> Self {
+        Self {
+            previous_running_state: value.previous_running_state.into(),
+            reshared_keys: value.reshared_keys,
+            resharing_key: value.resharing_key,
+            cancellation_requests: value.cancellation_requests,
+        }
+    }
+}
+
+impl From<AddDomainsVotes> for crate::primitives::domain::AddDomainsVotes {
+    fn from(value: AddDomainsVotes) -> Self {
+        let proposal_by_account = value
+            .proposal_by_account
+            .into_iter()
+            .map(|(participant, proposed_domains)| {
+                let proposal = proposed_domains
+                    .into_iter()
+                    .map(|domain| {
+                        let scheme = domain.scheme;
+                        (domain, DomainPurpose::infer_from_scheme(scheme))
+                    })
+                    .collect();
+                (participant, proposal)
+            })
+            .collect();
+
+        Self {
+            proposal_by_account,
         }
     }
 }
