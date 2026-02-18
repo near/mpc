@@ -1910,6 +1910,7 @@ dependencies = [
  "hex",
  "insta",
  "near-sdk",
+ "rstest",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -3277,8 +3278,10 @@ name = "foreign-chain-inspector"
 version = "3.4.1"
 dependencies = [
  "assert_matches",
+ "contract-interface",
  "derive_more 2.1.1",
  "ethereum-types",
+ "foreign-chain-rpc-interfaces",
  "http 1.4.0",
  "httpmock",
  "jsonrpsee",
@@ -3288,6 +3291,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "foreign-chain-rpc-interfaces"
+version = "3.4.1"
+dependencies = [
+ "derive_more 2.1.1",
+ "ethereum-types",
+ "jsonrpsee",
+ "mpc-primitives",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4758,9 +4773,9 @@ dependencies = [
 
 [[package]]
 name = "keccak"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
+checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
 dependencies = [
  "cpufeatures",
 ]

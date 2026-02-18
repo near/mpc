@@ -5,19 +5,21 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+contract-interface = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
+foreign-chain-rpc-interfaces = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
 httpmock = { workspace = true }
 rstest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

@@ -5,10 +5,16 @@ use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
+use contract_interface::method_names::{
+    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
+};
 use contract_interface::types as dtos;
 use contract_interface::types::VerifyForeignTransactionRequest;
 use contract_interface::types::VerifyForeignTransactionRequestArgs;
 use futures::StreamExt;
+use mpc_contract::crypto_shared::derive_foreign_tx_tweak;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
@@ -179,7 +185,7 @@ async fn handle_message(
             {
                 if let Some((args, method_name)) = try_extract_function_call_args(&receipt) {
                     match method_name.as_str() {
-                        "sign" => {
+                        SIGN => {
                             if let Some((signature_id, sign_args)) =
                                 try_get_sign_args(&receipt, next_receipt_id, args, method_name)
                             {
@@ -197,7 +203,7 @@ async fn handle_message(
                                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                             }
                         }
-                        "request_app_private_key" => {
+                        REQUEST_APP_PRIVATE_KEY => {
                             if let Some((ckd_id, ckd_args)) =
                                 try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
                             {
@@ -215,7 +221,7 @@ async fn handle_message(
                                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
                             }
                         }
-                        "verify_foreign_transaction" => {
+                        VERIFY_FOREIGN_TRANSACTION => {
                             if let Some((verify_foreign_tx_id, verify_foreign_tx_args)) =
                                 try_get_verify_foreign_tx_args(
                                     &receipt,
@@ -246,16 +252,16 @@ async fn handle_message(
             if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id) {
                 if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
                     match method_name.as_str() {
-                        "return_signature_and_clean_state_on_success" => {
+                        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_signatures.push(request_id);
                             metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
                         }
-                        "return_ck_and_clean_state_on_success" => {
+                        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
                         // TODO(#1959): add this function to the contract
-                        "return_verify_foreign_tx_and_clean_state_on_success" => {
+                        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_verify_foreign_txs.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
                         }
@@ -428,10 +434,14 @@ fn try_get_verify_foreign_tx_args(
         }
     };
 
+    let tweak = derive_foreign_tx_tweak(
+        &receipt.predecessor_id,
+        &verify_foreign_tx_args.request.derivation_path,
+    );
+
     let verify_foreign_tx_request = VerifyForeignTransactionRequest {
         request: verify_foreign_tx_args.request.request.clone(),
-        // TODO(#1965): implement this correctly once the tweak derivation is implemented in the contract
-        tweak: [0u8; 32].into(),
+        tweak,
         domain_id: verify_foreign_tx_args.request.domain_id,
         payload_version: verify_foreign_tx_args.request.payload_version,
     };

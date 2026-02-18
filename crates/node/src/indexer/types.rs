@@ -1,5 +1,10 @@
 use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
+use contract_interface::method_names::{
+    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
+    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
+    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
+};
 use contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
@@ -231,21 +236,21 @@ pub enum ChainSendTransactionRequest {
 impl ChainSendTransactionRequest {
     pub fn method(&self) -> &'static str {
         match self {
-            ChainSendTransactionRequest::Respond(_) => "respond",
-            ChainSendTransactionRequest::CKDRespond(_) => "respond_ckd",
-            ChainSendTransactionRequest::VotePk(_) => "vote_pk",
-            ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
-            ChainSendTransactionRequest::VoteForeignChainPolicy(_) => "vote_foreign_chain_policy",
-            ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
-            ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
+            ChainSendTransactionRequest::Respond(_) => RESPOND,
+            ChainSendTransactionRequest::CKDRespond(_) => RESPOND_CKD,
+            ChainSendTransactionRequest::VotePk(_) => VOTE_PK,
+            ChainSendTransactionRequest::VoteReshared(_) => VOTE_RESHARED,
+            ChainSendTransactionRequest::VoteForeignChainPolicy(_) => VOTE_FOREIGN_CHAIN_POLICY,
+            ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,
+            ChainSendTransactionRequest::StartKeygen(_) => START_KEYGEN_INSTANCE,
             ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
-                "vote_abort_key_event_instance"
+                VOTE_ABORT_KEY_EVENT_INSTANCE
             }
-            ChainSendTransactionRequest::VerifyTee() => "verify_tee",
-            ChainSendTransactionRequest::SubmitParticipantInfo(_) => "submit_participant_info",
-            ChainSendTransactionRequest::ConcludeNodeMigration(_) => "conclude_node_migration",
+            ChainSendTransactionRequest::VerifyTee() => VERIFY_TEE,
+            ChainSendTransactionRequest::SubmitParticipantInfo(_) => SUBMIT_PARTICIPANT_INFO,
+            ChainSendTransactionRequest::ConcludeNodeMigration(_) => CONCLUDE_NODE_MIGRATION,
             ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
-                "respond_verify_foreign_tx"
+                RESPOND_VERIFY_FOREIGN_TX
             }
         }
     }
@@ -352,14 +357,14 @@ impl ChainCKDRespondArgs {
 impl ChainVerifyForeignTransactionRespondArgs {
     pub fn new(
         request: VerifyForeignTxRequest,
-        response_payload: dtos::ForeignTxSignPayload,
+        payload_hash: dtos::Hash256,
         signature: Signature,
         public_key: VerifyingKey,
     ) -> anyhow::Result<Self> {
         let recovery_id = ChainSignatureRespondArgs::brute_force_recovery_id(
             &public_key.to_element().to_affine(),
             &signature,
-            &response_payload.compute_msg_hash()?.0,
+            payload_hash.as_ref(),
         )?;
 
         // TODO: this code should be elsewhere
@@ -381,7 +386,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
                 payload_version: request.payload_version,
             },
             response: VerifyForeignTransactionResponse {
-                payload: response_payload,
+                payload_hash,
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
             },
         })

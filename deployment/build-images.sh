@@ -94,7 +94,7 @@ find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE_EPOCH" {} +
 
 # Create our own builder (build env) to enable reproducible images
 
-buildkit_version="0.24.0"
+buildkit_version="0.27.1"
 buildkit_image_name="buildkit_${buildkit_version}"
 
 if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then

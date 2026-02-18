@@ -259,9 +259,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
             })
             .collect::<Vec<_>>();
 
-        generate_triples.await??;
+        generate_triples.await?;
         for task in generate_presignatures {
-            task.await??;
+            task.await?;
         }
 
         Ok(())

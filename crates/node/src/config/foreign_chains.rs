@@ -5,15 +5,19 @@ use anyhow::Context;
 use contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
+mod abstract_chain;
 mod auth;
 mod bitcoin;
 mod ethereum;
 mod solana;
+mod starknet;
 
+pub use abstract_chain::{AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig};
 pub use auth::{AuthConfig, TokenConfig};
 pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
 pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
 pub use solana::{SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig};
+pub use starknet::{StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -24,11 +28,20 @@ pub struct ForeignChainsConfig {
     pub bitcoin: Option<BitcoinChainConfig>,
     #[serde(default)]
     pub ethereum: Option<EthereumChainConfig>,
+    #[serde(default)]
+    #[serde(rename = "abstract")]
+    pub abstract_chain: Option<AbstractChainConfig>,
+    #[serde(default)]
+    pub starknet: Option<StarknetChainConfig>,
 }
 
 impl ForeignChainsConfig {
     pub fn is_empty(&self) -> bool {
-        self.solana.is_none() && self.bitcoin.is_none() && self.ethereum.is_none()
+        self.solana.is_none()
+            && self.bitcoin.is_none()
+            && self.ethereum.is_none()
+            && self.abstract_chain.is_none()
+            && self.starknet.is_none()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -39,6 +52,12 @@ impl ForeignChainsConfig {
             config.validate()?;
         }
         if let Some(config) = &self.ethereum {
+            config.validate()?;
+        }
+        if let Some(config) = &self.abstract_chain {
+            config.validate()?;
+        }
+        if let Some(config) = &self.starknet {
             config.validate()?;
         }
         Ok(())
@@ -68,6 +87,20 @@ impl ForeignChainsConfig {
         if let Some(config) = &self.ethereum {
             chains.insert(dtos::ForeignChainConfig {
                 chain: dtos::ForeignChain::Ethereum,
+                providers: providers_to_set(&config.providers),
+            });
+        }
+
+        if let Some(config) = &self.abstract_chain {
+            chains.insert(dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Abstract,
+                providers: providers_to_set(&config.providers),
+            });
+        }
+
+        if let Some(config) = &self.starknet {
+            chains.insert(dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Starknet,
                 providers: providers_to_set(&config.providers),
             });
         }
@@ -141,7 +174,7 @@ mod tests {
     use crate::config::ConfigFile;
 
     #[test]
-    fn config_parsing__should_succeed_when_foreign_chains_are_unset() -> anyhow::Result<()> {
+    fn config_parsing__should_succeed_when_foreign_chains_are_unset() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -176,16 +209,18 @@ ckd:
 "#;
 
         // When
-        let config: ConfigFile = serde_yaml::from_str(yaml)?;
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
 
         // Then
-        config.validate()?;
+        config
+            .validate()
+            .expect("config without foreign_chains should be valid");
         assert!(config.foreign_chains.is_empty());
-        Ok(())
     }
 
     #[test]
-    fn config_parsing__should_succeed_when_foreign_chains_are_set() -> anyhow::Result<()> {
+    fn config_parsing__should_succeed_when_foreign_chains_are_set() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -285,14 +320,16 @@ foreign_chains:
 "#;
 
         // When
-        let config: ConfigFile = serde_yaml::from_str(yaml)?;
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
 
         // Then
-        config.validate()?;
+        config
+            .validate()
+            .expect("config with foreign_chains should be valid");
         assert!(config.foreign_chains.solana.is_some());
         assert!(config.foreign_chains.bitcoin.is_some());
         assert!(config.foreign_chains.ethereum.is_some());
-        Ok(())
     }
 
     #[test]
@@ -702,6 +739,117 @@ foreign_chains:
             .unwrap();
         let provider = solana_chain.providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_with_starknet_section() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      blast:
+        api_variant: blast
+        rpc_url: "https://starknet-mainnet.blastapi.io/"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config
+            .validate()
+            .expect("config with starknet section should be valid");
+        assert!(config.foreign_chains.starknet.is_some());
+    }
+
+    #[test]
+    fn config_parsing__should_fail_when_max_retries_is_zero_for_starknet() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  starknet:
+    timeout_sec: 30
+    max_retries: 0
+    providers:
+      blast:
+        api_variant: blast
+        rpc_url: "https://starknet-mainnet.blastapi.io/"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+        let result = config.validate();
+
+        // Then
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("max_retries must be > 0"));
     }
 
     #[test]

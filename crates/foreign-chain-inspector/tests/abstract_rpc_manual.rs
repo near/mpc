@@ -39,14 +39,22 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         .extract(
             transaction_id,
             threshold,
-            vec![AbstractExtractor::BlockHash],
+            vec![
+                AbstractExtractor::BlockHash,
+                AbstractExtractor::Log { log_index: 1 },
+            ],
         )
         .await
         .expect("extract should succeed");
 
     // then
-    let expected_extractions: Vec<AbstractExtractedValue> =
-        vec![AbstractExtractedValue::BlockHash(expected_block_hash)];
-
-    assert_eq!(expected_extractions, extracted_values);
+    assert_eq!(extracted_values.len(), 2);
+    assert_eq!(
+        extracted_values[0],
+        AbstractExtractedValue::BlockHash(expected_block_hash)
+    );
+    assert!(matches!(
+        extracted_values[1],
+        AbstractExtractedValue::Log(_)
+    ));
 }

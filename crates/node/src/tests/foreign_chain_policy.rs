@@ -45,6 +45,8 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         }),
         bitcoin: None,
         ethereum: None,
+        abstract_chain: None,
+        starknet: None,
     };
     for config in &mut setup.configs {
         config.config.foreign_chains = foreign_chains.clone();

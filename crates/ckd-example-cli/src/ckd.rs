@@ -29,7 +29,7 @@ pub fn run(args: Args) -> Result<()> {
         ephemeral_public_key,
         args.domain_id,
     ));
-    let function_name = "request_app_private_key";
+    let function_name = contract_interface::method_names::REQUEST_APP_PRIVATE_KEY;
     println!("Call the function {function_name} with parameters:");
 
     let ckd_params_json = serde_json::to_string(&ckd_params)?;

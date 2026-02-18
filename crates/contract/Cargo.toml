@@ -33,9 +33,6 @@ container_build_command = [
     "abi",
 ]
 
-[package.metadata.cargo-shear]
-ignored = ["schemars"]
-
 [lib]
 crate-type = ["cdylib", "lib"]
 

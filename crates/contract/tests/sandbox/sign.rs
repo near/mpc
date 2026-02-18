@@ -9,6 +9,7 @@ use crate::sandbox::{
     },
 };
 use anyhow::Context;
+use contract_interface::method_names;
 use mpc_contract::{
     errors,
     primitives::{
@@ -229,7 +230,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         let status = match &req {
             DomainResponseTest::Sign(req) => {
                 let status = contract
-                    .call("sign")
+                    .call(method_names::SIGN)
                     .args_json(req.request_json_args())
                     .max_gas()
                     .transact_async()
@@ -239,7 +240,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
             }
             DomainResponseTest::CKD(req) => {
                 let status = contract
-                    .call("request_app_private_key")
+                    .call(method_names::REQUEST_APP_PRIVATE_KEY)
                     .args_json(req.request_json_args())
                     .max_gas()
                     .transact_async()
@@ -292,7 +293,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         let req = gen_secp_256k1_sign_test(&mut rng, key.domain_id(), predecessor_id, sk);
 
         let status = contract
-            .call("sign")
+            .call(method_names::SIGN)
             .args_json(serde_json::json!({
                 "request": {
                     "payload": req.payload().as_ecdsa().unwrap(),
@@ -324,7 +325,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let threshold = Threshold::new(0);
     let proposed_parameters = ThresholdParameters::new_unvalidated(participants, threshold);
     let result = contract
-        .call("init")
+        .call(method_names::INIT)
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
         }))
@@ -338,7 +339,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let proposed_parameters =
         ThresholdParameters::new(candidates(None), Threshold::new(3)).unwrap();
     let result = contract
-        .call("init")
+        .call(method_names::INIT)
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
         }))
@@ -351,7 +352,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
     // Reinitializing after the first successful initialization should fail.
     let result = contract
-        .call("init")
+        .call(method_names::INIT)
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
             "config": "null",

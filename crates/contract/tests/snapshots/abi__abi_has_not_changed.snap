@@ -1787,34 +1787,6 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
-        "EthereumExtractor": {
-          "type": "string",
-          "enum": [
-            "BlockHash"
-          ]
-        },
-        "EthereumRpcRequest": {
-          "type": "object",
-          "required": [
-            "extractors",
-            "tx_id"
-          ],
-          "properties": {
-            "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/EthereumExtractor"
-              }
-            },
-            "tx_id": {
-              "$ref": "#/definitions/EthereumTxId"
-            }
-          }
-        },
-        "EthereumTxId": {
-          "type": "string",
-          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-        },
         "EventLog": {
           "description": "Represents an event log entry in the system",
           "type": "object",
@@ -1852,42 +1824,71 @@ expression: abi
             }
           }
         },
-        "ExtractedValue": {
+        "EvmExtractor": {
           "oneOf": [
             {
-              "type": "object",
-              "required": [
-                "U64"
-              ],
-              "properties": {
-                "U64": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
-                }
-              },
-              "additionalProperties": false
+              "type": "string",
+              "enum": [
+                "BlockHash"
+              ]
             },
             {
               "type": "object",
               "required": [
-                "Hash256"
+                "Log"
               ],
               "properties": {
-                "Hash256": {
-                  "$ref": "#/definitions/Hash256"
+                "Log": {
+                  "type": "object",
+                  "required": [
+                    "log_index"
+                  ],
+                  "properties": {
+                    "log_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    }
+                  }
                 }
               },
               "additionalProperties": false
             }
           ]
         },
-        "Finality": {
+        "EvmFinality": {
           "type": "string",
           "enum": [
-            "Optimistic",
-            "Final"
+            "Latest",
+            "Safe",
+            "Finalized"
           ]
+        },
+        "EvmRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EvmExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/EvmFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/EvmTxId"
+            }
+          }
+        },
+        "EvmTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "ForeignChain": {
           "type": "string",
@@ -1897,7 +1898,9 @@ expression: abi
             "Ethereum",
             "Base",
             "Bnb",
-            "Arbitrum"
+            "Arbitrum",
+            "Abstract",
+            "Starknet"
           ]
         },
         "ForeignChainConfig": {
@@ -1953,11 +1956,23 @@ expression: abi
             {
               "type": "object",
               "required": [
+                "Abstract"
+              ],
+              "properties": {
+                "Abstract": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
                 "Ethereum"
               ],
               "properties": {
                 "Ethereum": {
-                  "$ref": "#/definitions/EthereumRpcRequest"
+                  "$ref": "#/definitions/EvmRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -1985,43 +2000,20 @@ expression: abi
                 }
               },
               "additionalProperties": false
-            }
-          ]
-        },
-        "ForeignTxSignPayload": {
-          "description": "Canonical payload for foreign-chain transaction verification signatures.\n\nThis enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte `msg_hash` that the MPC network signs. Callers select the payload version via `VerifyForeignTransactionRequestArgs::payload_version`.\n\nIMPORTANT: Never reorder existing enum variants or struct fields, as this would change the Borsh encoding and break signature verification.",
-          "oneOf": [
+            },
             {
               "type": "object",
               "required": [
-                "V1"
+                "Starknet"
               ],
               "properties": {
-                "V1": {
-                  "$ref": "#/definitions/ForeignTxSignPayloadV1"
+                "Starknet": {
+                  "$ref": "#/definitions/StarknetRpcRequest"
                 }
               },
               "additionalProperties": false
             }
           ]
-        },
-        "ForeignTxSignPayloadV1": {
-          "type": "object",
-          "required": [
-            "request",
-            "values"
-          ],
-          "properties": {
-            "request": {
-              "$ref": "#/definitions/ForeignChainRpcRequest"
-            },
-            "values": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/ExtractedValue"
-              }
-            }
-          }
         },
         "Hash256": {
           "type": "string",
@@ -2676,12 +2668,12 @@ expression: abi
         "PromiseOrValueVerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
-            "payload",
+            "payload_hash",
             "signature"
           ],
           "properties": {
-            "payload": {
-              "$ref": "#/definitions/ForeignTxSignPayload"
+            "payload_hash": {
+              "$ref": "#/definitions/Hash256"
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"
@@ -3336,6 +3328,14 @@ expression: abi
             }
           ]
         },
+        "SolanaFinality": {
+          "type": "string",
+          "enum": [
+            "Processed",
+            "Confirmed",
+            "Finalized"
+          ]
+        },
         "SolanaRpcRequest": {
           "type": "object",
           "required": [
@@ -3351,7 +3351,7 @@ expression: abi
               }
             },
             "finality": {
-              "$ref": "#/definitions/Finality"
+              "$ref": "#/definitions/SolanaFinality"
             },
             "tx_id": {
               "$ref": "#/definitions/SolanaTxId"
@@ -3365,6 +3365,48 @@ expression: abi
             "format": "uint8",
             "minimum": 0.0
           }
+        },
+        "StarknetExtractor": {
+          "type": "string",
+          "enum": [
+            "BlockHash"
+          ]
+        },
+        "StarknetFelt": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "StarknetFinality": {
+          "type": "string",
+          "enum": [
+            "AcceptedOnL2",
+            "AcceptedOnL1"
+          ]
+        },
+        "StarknetRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/StarknetExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/StarknetFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/StarknetTxId"
+            }
+          }
+        },
+        "StarknetTxId": {
+          "$ref": "#/definitions/StarknetFelt"
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",
@@ -3661,12 +3703,12 @@ expression: abi
         "VerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
-            "payload",
+            "payload_hash",
             "signature"
           ],
           "properties": {
-            "payload": {
-              "$ref": "#/definitions/ForeignTxSignPayload"
+            "payload_hash": {
+              "$ref": "#/definitions/Hash256"
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"

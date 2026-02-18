@@ -4,14 +4,10 @@ Tests automatic voting of foreign chain policy from node-local config.
 """
 
 import pathlib
-import re
 import sys
-import time
-from typing import Any
 
 from cluster import atexit
 import pytest
-import yaml
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -19,54 +15,8 @@ from common_lib import shared
 from common_lib.contract_state import ProtocolState
 from common_lib.contracts import load_mpc_contract
 from common_lib.shared import MpcCluster
-
-
-def _node_config_path(node) -> pathlib.Path:
-    return pathlib.Path(node.home_dir) / "config.yaml"
-
-
-def _set_foreign_chains_config(node, foreign_chains: dict[str, Any] | None) -> None:
-    config_path = _node_config_path(node)
-
-    config_text = config_path.read_text(encoding="utf-8")
-    # Keep generated YAML tags intact by editing only the trailing `foreign_chains` section.
-    config_text = (
-        re.sub(r"\nforeign_chains:\n[\s\S]*\Z", "\n", config_text).rstrip() + "\n"
-    )
-
-    if foreign_chains is not None:
-        foreign_chains_text = yaml.safe_dump(
-            {"foreign_chains": foreign_chains}, sort_keys=False
-        )
-        config_text += "\n" + foreign_chains_text
-
-    config_path.write_text(config_text, encoding="utf-8")
-
-
-def _normalize_policy(policy: dict[str, Any]) -> list[tuple[str, tuple[str, ...]]]:
-    chains = policy.get("chains", [])
-    normalized = []
-    for chain_cfg in chains:
-        chain_name = chain_cfg["chain"]
-        providers = tuple(sorted(p["rpc_url"] for p in chain_cfg["providers"]))
-        normalized.append((chain_name, providers))
-    return sorted(normalized)
-
-
-def _wait_until(
-    predicate, description: str, timeout_sec: float = 30, poll_interval_sec: float = 0.5
-) -> None:
-    deadline = time.monotonic() + timeout_sec
-    last_error = None
-    while time.monotonic() < deadline:
-        try:
-            if predicate():
-                return
-        except Exception as err:
-            last_error = err
-        time.sleep(poll_interval_sec)
-
-    raise AssertionError(f"timed out waiting for {description}") from last_error
+from common_lib.shared import foreign_chains
+from common_lib.shared import utils
 
 
 FOREIGN_CHAINS_CONFIG = {
@@ -105,9 +55,9 @@ def foreign_chain_policy_cluster():
         3, 1, load_mpc_contract(), start_mpc_nodes=False
     )
 
-    _set_foreign_chains_config(mpc_nodes[0], FOREIGN_CHAINS_CONFIG)
-    _set_foreign_chains_config(mpc_nodes[1], FOREIGN_CHAINS_CONFIG)
-    _set_foreign_chains_config(mpc_nodes[2], None)
+    foreign_chains.set_foreign_chains_config(mpc_nodes[0], FOREIGN_CHAINS_CONFIG)
+    foreign_chains.set_foreign_chains_config(mpc_nodes[1], FOREIGN_CHAINS_CONFIG)
+    foreign_chains.set_foreign_chains_config(mpc_nodes[2], None)
 
     for node in mpc_nodes:
         node.run()
@@ -132,9 +82,9 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
             "proposal_by_account"
         ]
         policy = cluster.view_contract_function("get_foreign_chain_policy")
-        return len(votes) == 2 and _normalize_policy(policy) == []
+        return len(votes) == 2 and foreign_chains.normalize_policy(policy) == []
 
-    _wait_until(
+    utils.wait_until(
         partial_votes_visible,
         description="two policy votes without policy application",
     )
@@ -144,7 +94,9 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
     ]
     assert len(votes) == 2, "expected exactly two votes before unanimity"
     assert (
-        _normalize_policy(cluster.view_contract_function("get_foreign_chain_policy"))
+        foreign_chains.normalize_policy(
+            cluster.view_contract_function("get_foreign_chain_policy")
+        )
         == []
     ), "policy should not be applied before unanimous voting"
 
@@ -154,7 +106,7 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
         {"policy": EXPECTED_POLICY},
     )
 
-    expected_normalized_policy = _normalize_policy(EXPECTED_POLICY)
+    expected_normalized_policy = foreign_chains.normalize_policy(EXPECTED_POLICY)
 
     def policy_applied() -> bool:
         votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")[
@@ -162,10 +114,11 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
         ]
         policy = cluster.view_contract_function("get_foreign_chain_policy")
         return (
-            len(votes) == 0 and _normalize_policy(policy) == expected_normalized_policy
+            len(votes) == 0
+            and foreign_chains.normalize_policy(policy) == expected_normalized_policy
         )
 
-    _wait_until(
+    utils.wait_until(
         policy_applied,
         description="policy application after unanimous voting",
         timeout_sec=30,

@@ -1,32 +1,32 @@
-use crate::rpc_schema::to_rpc_params_impl;
+use crate::to_rpc_params_impl;
 
 use jsonrpsee::core::traits::ToRpcParams;
 use mpc_primitives::hash::Hash32;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct BlockHashMarker;
+pub struct BlockHashMarker;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct TransactionHashMarker;
+pub struct TransactionHashMarker;
 
-pub(crate) type TransportBitcoinBlockHash = Hash32<BlockHashMarker>;
-pub(crate) type TransportBitcoinTransactionHash = Hash32<TransactionHashMarker>;
+pub type TransportBitcoinBlockHash = Hash32<BlockHashMarker>;
+pub type TransportBitcoinTransactionHash = Hash32<TransactionHashMarker>;
 
 /// Partial RPC response for `getrawtransaction`. See link below for full spec;
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
-#[derive(Deserialize)]
-pub(crate) struct GetRawTransactionVerboseResponse {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct GetRawTransactionVerboseResponse {
     // The block hash the transaction is in
-    pub(crate) blockhash: TransportBitcoinBlockHash,
+    pub blockhash: TransportBitcoinBlockHash,
     // The number of confirmations
-    pub(crate) confirmations: u64,
+    pub confirmations: u64,
 }
 
 /// Partial RPC response for `getrawtransaction`. See link below for full spec;
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
-pub(crate) struct GetRawTransactionArgs {
-    pub(crate) transaction_hash: TransportBitcoinTransactionHash,
-    pub(crate) verbose: bool,
+pub struct GetRawTransactionArgs {
+    pub transaction_hash: TransportBitcoinTransactionHash,
+    pub verbose: bool,
 }
 
 impl Serialize for GetRawTransactionArgs {

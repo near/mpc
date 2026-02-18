@@ -107,49 +107,51 @@ pub struct VerifyForeignTransactionRequest {
 
 ```rust
 pub enum ForeignChainRpcRequest {
-    Ethereum(EthereumRpcRequest),
+    Ethereum(EvmRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
     // Future chains...
 }
 
-pub struct EthereumRpcRequest {
-    pub tx_id: EthereumTxId,
-    pub extractors: Vec<EthereumExtractor>,
+pub struct EvmRpcRequest {
+    pub tx_id: EvmTxId,
+    pub extractors: Vec<EvmExtractor>,
+    pub finality: EvmFinality,
 }
 
 pub struct SolanaRpcRequest {
     pub tx_id: SolanaTxId, // This is the payload we're signing
-    pub finality: Finality, // Optimistic or Final
+    pub finality: SolanaFinality, // Optimistic or Final
     pub extractors: Vec<SolanaExtractor>,
 }
 
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId, // This is the payload we're signing
-    pub confirmations: u64, // required confirmations before considering final
+    pub confirmations: BlockConfirmations, // required confirmations before considering final
     pub extractors: Vec<BitcoinExtractor>,
 }
 
-pub enum Finality {
-    Optimistic,
-    Final,
+pub enum EvmFinality {
+    Latest,
+    Safe,
+    Finalized,
+}
+pub enum SolanaFinality {
+    Processed,
+    Confirmed,
+    Finalized,
 }
 ```
 
 ### Response DTOs
 
-The response embeds the sign payload directly, so callers can verify the signature
-by calling `response.payload.compute_msg_hash()` without reconstructing the payload.
+The response contains the hash of the sign payload, so callers can verify the signature
+by checking it against the expected hash they reconstruct locally.
 
 ```rust
 pub struct VerifyForeignTransactionResponse {
-    pub payload: ForeignTxSignPayload,
+    pub payload_hash: Hash256,
     pub signature: SignatureResponse,
-}
-
-pub enum ExtractedValue {
-    U64(u64),
-    Hash256([u8; 32]),
 }
 ```
 
@@ -157,7 +159,7 @@ pub enum ExtractedValue {
 
 The MPC network signs a canonical hash derived from the request and its observed results.
 The payload is versioned to allow future format changes without breaking existing verifiers.
-It is embedded in the response so there is no duplication between payload and response fields.
+Only the hash is included in the response to stay within NEAR's promise data limits.
 
 ```rust
 pub enum ForeignTxSignPayload {

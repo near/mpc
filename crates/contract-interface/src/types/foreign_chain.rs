@@ -48,7 +48,7 @@ pub struct VerifyForeignTransactionRequest {
     derive(schemars::JsonSchema)
 )]
 pub struct VerifyForeignTransactionResponse {
-    pub payload: ForeignTxSignPayload,
+    pub payload_hash: Hash256,
     pub signature: SignatureResponse,
 }
 
@@ -71,9 +71,23 @@ pub struct VerifyForeignTransactionResponse {
 )]
 #[non_exhaustive]
 pub enum ForeignChainRpcRequest {
-    Ethereum(EthereumRpcRequest),
+    Abstract(EvmRpcRequest),
+    Ethereum(EvmRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
+    Starknet(StarknetRpcRequest),
+}
+
+impl ForeignChainRpcRequest {
+    pub fn chain(&self) -> ForeignChain {
+        match self {
+            Self::Abstract(_) => ForeignChain::Abstract,
+            Self::Ethereum(_) => ForeignChain::Ethereum,
+            Self::Solana(_) => ForeignChain::Solana,
+            Self::Bitcoin(_) => ForeignChain::Bitcoin,
+            Self::Starknet(_) => ForeignChain::Starknet,
+        }
+    }
 }
 
 #[derive(
@@ -93,9 +107,10 @@ pub enum ForeignChainRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct EthereumRpcRequest {
-    pub tx_id: EthereumTxId,
-    pub extractors: Vec<EthereumExtractor>,
+pub struct EvmRpcRequest {
+    pub tx_id: EvmTxId,
+    pub extractors: Vec<EvmExtractor>,
+    pub finality: EvmFinality,
 }
 
 #[derive(
@@ -117,7 +132,7 @@ pub struct EthereumRpcRequest {
 )]
 pub struct SolanaRpcRequest {
     pub tx_id: SolanaTxId,
-    pub finality: Finality,
+    pub finality: SolanaFinality,
     pub extractors: Vec<SolanaExtractor>,
 }
 
@@ -161,10 +176,81 @@ pub struct BitcoinRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+pub struct StarknetRpcRequest {
+    pub tx_id: StarknetTxId,
+    pub finality: StarknetFinality,
+    pub extractors: Vec<StarknetExtractor>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 #[non_exhaustive]
-pub enum Finality {
-    Optimistic,
-    Final,
+pub enum EvmFinality {
+    Latest,
+    Safe,
+    Finalized,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
+pub enum SolanaFinality {
+    Processed,
+    Confirmed,
+    Finalized,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
+pub enum StarknetFinality {
+    AcceptedOnL2,
+    AcceptedOnL1,
 }
 
 #[derive(
@@ -187,8 +273,38 @@ pub enum Finality {
 #[non_exhaustive]
 #[repr(u8)]
 #[borsh(use_discriminant = true)]
-pub enum EthereumExtractor {
+pub enum EvmExtractor {
     BlockHash = 0,
+    Log { log_index: u64 } = 1,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct EvmLog {
+    pub removed: bool,
+    pub log_index: u64,
+    pub transaction_index: u64,
+    pub transaction_hash: Hash256,
+    pub block_hash: Hash256,
+    pub block_number: u64,
+    pub address: Hash160,
+    pub data: String,
+    pub topics: Vec<Hash256>,
 }
 
 #[derive(
@@ -256,9 +372,100 @@ pub enum BitcoinExtractor {
     derive(schemars::JsonSchema)
 )]
 #[non_exhaustive]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum StarknetExtractor {
+    BlockHash = 0,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
 pub enum ExtractedValue {
-    U64(u64),
-    Hash256(Hash256),
+    BitcoinExtractedValue(BitcoinExtractedValue),
+    EvmExtractedValue(EvmExtractedValue),
+    StarknetExtractedValue(StarknetExtractedValue),
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
+pub enum EvmExtractedValue {
+    BlockHash(Hash256),
+    Log(EvmLog),
+}
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
+pub enum BitcoinExtractedValue {
+    BlockHash(Hash256),
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
+pub enum StarknetExtractedValue {
+    BlockHash(StarknetFelt),
 }
 
 #[derive(
@@ -286,6 +493,8 @@ pub enum ForeignChain {
     Base,
     Bnb,
     Arbitrum,
+    Abstract,
+    Starknet,
 }
 
 #[derive(
@@ -433,6 +642,7 @@ pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::Deref,
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
@@ -441,7 +651,30 @@ pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct EthereumTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
+pub struct Hash160(#[serde_as(as = "Hex")] pub [u8; 20]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
 #[serde_as]
 #[derive(
@@ -495,6 +728,51 @@ pub struct SolanaTxId(
     derive(schemars::JsonSchema)
 )]
 pub struct BitcoinTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StarknetFelt(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StarknetTxId(pub StarknetFelt);
 
 /// Canonical payload for foreign-chain transaction verification signatures.
 ///
@@ -559,16 +837,20 @@ impl ForeignTxSignPayload {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn foreign_tx_sign_payload_v1_ethereum__should_have_consistent_hash() {
         // Given
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: ForeignChainRpcRequest::Ethereum(EthereumRpcRequest {
-                tx_id: EthereumTxId([0xab; 32]),
-                extractors: vec![EthereumExtractor::BlockHash],
+            request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+                tx_id: EvmTxId([0xab; 32]),
+                extractors: vec![EvmExtractor::BlockHash],
+                finality: EvmFinality::Finalized,
             }),
-            values: vec![ExtractedValue::Hash256(Hash256([0xef; 32]))],
+            values: vec![ExtractedValue::EvmExtractedValue(
+                EvmExtractedValue::BlockHash(Hash256([0xef; 32])),
+            )],
         });
 
         // When
@@ -584,15 +866,19 @@ mod tests {
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Solana(SolanaRpcRequest {
                 tx_id: SolanaTxId([0x11; 64]),
-                finality: Finality::Final,
+                finality: SolanaFinality::Finalized,
                 extractors: vec![
                     SolanaExtractor::SolanaProgramIdIndex { ix_index: 0 },
                     SolanaExtractor::SolanaDataHash { ix_index: 1 },
                 ],
             }),
             values: vec![
-                ExtractedValue::Hash256(Hash256([0x33; 32])),
-                ExtractedValue::Hash256(Hash256([0x44; 32])),
+                ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(Hash256(
+                    [0x33; 32],
+                ))),
+                ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(Hash256(
+                    [0x44; 32],
+                ))),
             ],
         });
 
@@ -612,7 +898,9 @@ mod tests {
                 confirmations: BlockConfirmations(6),
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
-            values: vec![ExtractedValue::U64(42)],
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
         });
 
         // When
@@ -623,21 +911,97 @@ mod tests {
     }
 
     #[test]
+    fn foreign_tx_sign_payload_v1_starknet__should_have_consistent_hash() {
+        // Given
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+                tx_id: StarknetTxId(StarknetFelt([0x77; 32])),
+                finality: StarknetFinality::AcceptedOnL1,
+                extractors: vec![StarknetExtractor::BlockHash],
+            }),
+            values: vec![ExtractedValue::StarknetExtractedValue(
+                StarknetExtractedValue::BlockHash(StarknetFelt([0x88; 32])),
+            )],
+        });
+
+        // When
+        let hash = payload.compute_msg_hash().unwrap();
+
+        // Then
+        insta::assert_json_snapshot!(hex::encode(hash.0));
+    }
+
+    #[rstest]
+    #[case::abstract_(
+        ForeignChainRpcRequest::Abstract(EvmRpcRequest {
+            tx_id: EvmTxId([0; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Abstract,
+    )]
+    #[case::ethereum(
+        ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+            tx_id: EvmTxId([0; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Ethereum,
+    )]
+    #[case::solana(
+        ForeignChainRpcRequest::Solana(SolanaRpcRequest {
+            tx_id: SolanaTxId([0; 64]),
+            finality: SolanaFinality::Finalized,
+            extractors: vec![],
+        }),
+        ForeignChain::Solana,
+    )]
+    #[case::bitcoin(
+        ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+            tx_id: BitcoinTxId([0; 32]),
+            confirmations: BlockConfirmations(1),
+            extractors: vec![],
+        }),
+        ForeignChain::Bitcoin,
+    )]
+    #[case::starknet(
+        ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+            tx_id: StarknetTxId(StarknetFelt([0; 32])),
+            finality: StarknetFinality::AcceptedOnL1,
+            extractors: vec![],
+        }),
+        ForeignChain::Starknet,
+    )]
+    fn foreign_chain_rpc_request_chain__should_return_correct_chain(
+        #[case] request: ForeignChainRpcRequest,
+        #[case] expected_chain: ForeignChain,
+    ) {
+        assert_eq!(request.chain(), expected_chain);
+    }
+
+    #[test]
     fn foreign_tx_sign_payload_v1__should_produce_different_hashes_for_different_requests() {
         // Given
         let payload_a = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: ForeignChainRpcRequest::Ethereum(EthereumRpcRequest {
-                tx_id: EthereumTxId([0x01; 32]),
-                extractors: vec![EthereumExtractor::BlockHash],
+            request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+                tx_id: EvmTxId([0x01; 32]),
+                extractors: vec![EvmExtractor::BlockHash],
+                finality: EvmFinality::Finalized,
             }),
-            values: vec![ExtractedValue::Hash256(Hash256([0xbb; 32]))],
+
+            values: vec![ExtractedValue::EvmExtractedValue(
+                EvmExtractedValue::BlockHash(Hash256([0xbb; 32])),
+            )],
         });
         let payload_b = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: ForeignChainRpcRequest::Ethereum(EthereumRpcRequest {
-                tx_id: EthereumTxId([0x02; 32]),
-                extractors: vec![EthereumExtractor::BlockHash],
+            request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+                tx_id: EvmTxId([0x02; 32]),
+                extractors: vec![EvmExtractor::BlockHash],
+                finality: EvmFinality::Finalized,
             }),
-            values: vec![ExtractedValue::Hash256(Hash256([0xbb; 32]))],
+            values: vec![ExtractedValue::EvmExtractedValue(
+                EvmExtractedValue::BlockHash(Hash256([0xbb; 32])),
+            )],
         });
 
         // When
