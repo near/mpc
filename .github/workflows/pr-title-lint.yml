@@ -72,4 +72,4 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
           prompt: ${{ env.TITLE_CHECK_PROMPT }}
-          claude_args: '--model claude-haiku-4-5-20251001 --allowed-tools "Bash(gh pr comment:*)"'
+          claude_args: '--model claude-haiku-4-5 --allowed-tools "Bash(gh pr comment:*)"'
