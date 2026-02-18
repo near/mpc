@@ -5,6 +5,7 @@
 // macro expansion, we allow it in this file to avoid false positives.
 #![allow(clippy::disallowed_types)]
 
+use contract_interface::method_names;
 use elliptic_curve::group::Group;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::Serialize;
@@ -95,7 +96,7 @@ impl TestContract {
                         };
 
                         Promise::new(target_contract.clone()).function_call(
-                            "sign".to_string(),
+                            method_names::SIGN.to_string(),
                             serde_json::to_vec(&args).unwrap(),
                             NearToken::from_yoctonear(1),
                             Gas::from_tgas(30),
@@ -122,7 +123,7 @@ impl TestContract {
                         };
 
                         Promise::new(target_contract.clone()).function_call(
-                            "request_app_private_key".to_string(),
+                            method_names::REQUEST_APP_PRIVATE_KEY.to_string(),
                             serde_json::to_vec(&args).unwrap(),
                             NearToken::from_yoctonear(1),
                             Gas::from_tgas(30),

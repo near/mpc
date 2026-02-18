@@ -14,7 +14,7 @@ use crate::sandbox::{
     },
 };
 use assert_matches::assert_matches;
-use contract_interface::types as dtos;
+use contract_interface::{method_names, types as dtos};
 use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
@@ -115,7 +115,7 @@ async fn test_keygen() -> anyhow::Result<()> {
 
     // verify that the contract's `public_key` view method returns the key for the new domain
     let contract_public_key: dtos::PublicKey = contract
-        .view("public_key")
+        .view(method_names::PUBLIC_KEY)
         .args_json(json!({"domain_id": domain_id}))
         .await
         .unwrap()
@@ -175,7 +175,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         execute_async_transactions(
             &mpc_signer_accounts[0..threshold],
             &contract,
-            "vote_cancel_keygen",
+            method_names::VOTE_CANCEL_KEYGEN,
             &json!({"next_domain_id": next_domain_id+1}),
             GAS_FOR_VOTE_CANCEL_KEYGEN,
         )
@@ -199,7 +199,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
         // verify that the contract's `public_key` view method fails for the cancelled domain
         let public_key_result = contract
-            .view("public_key")
+            .view(method_names::PUBLIC_KEY)
             .args_json(json!({"domain_id": next_domain_id}))
             .await;
         assert!(
@@ -398,7 +398,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
     let account_1 = &persistent_participants[0];
     for _ in 0..initial_threshold {
         let result = account_1
-            .call(contract.id(), "vote_cancel_resharing")
+            .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
             .transact()
             .await?;
         assert!(result.is_success(), "{result:#?}");
@@ -471,7 +471,7 @@ async fn test_cancel_resharing_requires_threshold_votes(
 
     // Add one more vote to reach threshold
     let result = persistent_participants[initial_threshold - 1]
-        .call(contract.id(), "vote_cancel_resharing")
+        .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
         .transact()
         .await?;
     assert!(result.is_success(), "{result:#?}");
@@ -501,7 +501,7 @@ async fn test_cancel_resharing_only_previous_participants_can_vote(
     for new_participant_account in new_participant_accounts {
         assert!(
             new_participant_account
-                .call(contract.id(), "vote_cancel_resharing")
+                .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
                 .transact()
                 .await?
                 .is_failure(),
@@ -606,7 +606,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
     for account in &persistent_participants {
         assert!(
             account
-                .call(contract.id(), "vote_new_parameters")
+                .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
                 .args_json(json!({
                     "prospective_epoch_id": cancelled_epoch_id.0,
                     "proposal": threshold_parameters,
@@ -771,7 +771,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
     // Vote to transition to resharing state
     for account in &mpc_signer_accounts {
         let call_result = account
-            .call(contract.id(), "vote_new_parameters")
+            .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
             .max_gas()
             .args_json(json!({
                 "prospective_epoch_id": dtos::EpochId(epoch_id.0 + 1),

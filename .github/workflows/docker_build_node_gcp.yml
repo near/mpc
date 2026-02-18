@@ -13,7 +13,7 @@ on:
 jobs:
   build-and-push-images:
     name: "Build and push Docker node gcp image with commit hash"
-    runs-on: warp-ubuntu-2204-x64-16x
+    runs-on: warp-ubuntu-2404-x64-16x
     permissions:
       contents: read
 
@@ -28,6 +28,9 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install repro-env
         run: |
