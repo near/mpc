@@ -199,7 +199,9 @@ pub enum DomainPurpose {
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
-    pub purpose: DomainPurpose,
+    /// `None` when reading state from an old contract that predates domain purposes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<DomainPurpose>,
 }
 
 /// Registry of all signature domains.
