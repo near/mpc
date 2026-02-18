@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::sandbox::common::{init_env, SandboxTestSetup};
 use crate::sandbox::utils::consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN};
 use assert_matches::assert_matches;
