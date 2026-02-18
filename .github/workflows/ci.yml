@@ -82,6 +82,8 @@ jobs:
 
       - name: Build launcher docker image and verify its hash
         shell: bash
+        env:
+          DOCKER_API_VERSION: "1.40"
         run: |
           ./scripts/build-and-verify-launcher-docker-image.sh
 
