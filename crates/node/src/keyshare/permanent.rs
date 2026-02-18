@@ -102,7 +102,7 @@ impl PermanentKeyStorage {
     /// - It does not contain keshares for existing domains and public keys.
     /// - If has the **same epoch id** as the existing keyset, but **does not** extend the keyset.
     ///
-    /// Only if all checks succeed will the new keyset be stored via [`store_unchecked`].
+    /// Only if all checks succeed will the new keyset be stored via [`Self::store_unchecked`].
     ///
     /// # Errors
     /// Returns an [`anyhow::Error`] if validation fails or if persistence fails.
