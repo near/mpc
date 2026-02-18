@@ -465,8 +465,10 @@ pub enum FailurePolicy {
 /// Defines the timeout between consecutive attempts
 pub enum BackoffStrategy {
     Fixed(Duration),
+    /// watis for max(initial*e^(exponent*t), max)
     Exponential {
         initial: Duration,
+        exponent: Duration,
         max: Duration,
     },
 }
