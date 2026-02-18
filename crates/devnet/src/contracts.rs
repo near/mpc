@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use contract_interface::method_names;
 use mpc_contract::primitives::{
     ckd::CKDRequestArgs,
     domain::{DomainConfig, SignatureScheme},
@@ -81,7 +82,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
         ContractActionCall::Sign(args) => ActionCall {
             receiver_id: args.mpc_contract,
             actions: vec![make_action(
-                "sign",
+                method_names::SIGN,
                 &serde_json::to_vec(&SignArgsV2 {
                     request: SignRequestArgs {
                         domain_id: Some(args.domain_config.id),
@@ -98,7 +99,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
         ContractActionCall::LegacySign(args) => ActionCall {
             receiver_id: args.mpc_contract,
             actions: vec![make_action(
-                "sign",
+                method_names::SIGN,
                 &serde_json::to_vec(&SignArgsV1 {
                     request: SignRequestV1 {
                         key_version: 0,
@@ -114,7 +115,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
         ContractActionCall::Ckd(args) => ActionCall {
             receiver_id: args.mpc_contract,
             actions: vec![make_action(
-                "request_app_private_key",
+                method_names::REQUEST_APP_PRIVATE_KEY,
                 &serde_json::to_vec(&CKDArgs {
                     request: CKDRequestArgs {
                         derivation_path: "".to_string(),

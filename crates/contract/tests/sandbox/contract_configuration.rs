@@ -3,6 +3,7 @@ use crate::sandbox::{
     upgrade_from_current_contract::current_contract_proposal,
     utils::consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
 };
+use contract_interface::method_names;
 use mpc_contract::update::UpdateId;
 
 #[tokio::test]
@@ -38,7 +39,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         init_with_candidates(vec![], Some(init_config), number_of_participants).await;
 
     let execution = accounts[0]
-        .call(contract.id(), "propose_update")
+        .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(current_contract_proposal())
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
@@ -54,7 +55,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
 
     for voter in accounts {
         let execution = voter
-            .call(contract.id(), "vote_update")
+            .call(contract.id(), method_names::VOTE_UPDATE)
             .args_json(serde_json::json!({ "id": proposal_id }))
             .gas(GAS_FOR_VOTE_UPDATE)
             .transact()
@@ -99,8 +100,12 @@ async fn contract_configuration_can_be_set_on_initialization() {
     let (_, contract, _, _) =
         init_with_candidates(vec![], Some(init_config.clone()), number_of_participants).await;
 
-    let stored_config: contract_interface::types::InitConfig =
-        contract.view("config").await.unwrap().json().unwrap();
+    let stored_config: contract_interface::types::InitConfig = contract
+        .view(method_names::CONFIG)
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
 
     assert_eq!(stored_config, init_config);
 }

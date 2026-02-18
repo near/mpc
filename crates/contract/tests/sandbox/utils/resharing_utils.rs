@@ -3,6 +3,7 @@ use crate::sandbox::utils::{
     mpc_contract::get_state,
     transactions::execute_async_transactions,
 };
+use contract_interface::method_names;
 use contract_interface::types::{self as dtos, ProtocolContractState};
 use dtos::{AttemptId, EpochId, KeyEventId};
 use mpc_contract::primitives::thresholds::ThresholdParameters;
@@ -46,7 +47,7 @@ pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> 
     execute_async_transactions(
         accounts,
         contract,
-        "vote_cancel_resharing",
+        method_names::VOTE_CANCEL_RESHARING,
         &json!({}),
         GAS_FOR_VOTE_CANCEL_RESHARING,
     )
@@ -69,7 +70,7 @@ pub async fn vote_new_parameters(
     execute_async_transactions(
         persistent_participants,
         contract,
-        "vote_new_parameters",
+        method_names::VOTE_NEW_PARAMETERS,
         &json_args,
         GAS_FOR_VOTE_NEW_PARAMETERS,
     )
@@ -79,7 +80,7 @@ pub async fn vote_new_parameters(
     execute_async_transactions(
         new_participants,
         contract,
-        "vote_new_parameters",
+        method_names::VOTE_NEW_PARAMETERS,
         &json_args,
         GAS_FOR_VOTE_NEW_PARAMETERS,
     )
@@ -116,7 +117,7 @@ pub async fn start_reshare_instance(
         })
         .unwrap();
     let result = leader
-        .call(contract.id(), "start_reshare_instance")
+        .call(contract.id(), method_names::START_RESHARE_INSTANCE)
         .args_json(json!({"key_event_id": key_event_id}))
         .transact()
         .await?;
@@ -134,7 +135,7 @@ pub async fn vote_reshared(
     execute_async_transactions(
         accounts,
         contract,
-        "vote_reshared",
+        method_names::VOTE_RESHARED,
         &json!({"key_event_id": key_event_id}),
         GAS_FOR_VOTE_RESHARED,
     )
