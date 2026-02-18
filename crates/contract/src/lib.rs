@@ -2525,15 +2525,17 @@ mod tests {
             .is_none());
     }
 
-    #[test]
+    #[rstest]
+    #[case(DomainPurpose::ForeignTx)]
+    #[case(DomainPurpose::CKD)]
     #[should_panic(expected = "sign() may only target domains with purpose Sign")]
-    fn test_sign_rejects_non_sign_domain() {
+    fn sign__should_reject_non_sign_domain(#[case] purpose: DomainPurpose) {
+        // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
         contract.sign(SignRequestArgs {
             payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
             path: "test".to_string(),
@@ -2542,13 +2544,19 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
+    #[case(DomainPurpose::Sign)]
+    #[case(DomainPurpose::CKD)]
     #[should_panic(
         expected = "verify_foreign_transaction() requires a domain with purpose ForeignTx"
     )]
-    fn test_verify_foreign_tx_rejects_non_foreign_tx_domain() {
+    fn verify_foreign_tx__should_reject_non_foreign_tx_domain(#[case] purpose: DomainPurpose) {
+        // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) = basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
             derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
@@ -2561,11 +2569,17 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
+    #[case(DomainPurpose::Sign)]
+    #[case(DomainPurpose::ForeignTx)]
     #[should_panic(expected = "request_app_private_key() may only target domains with purpose CKD")]
-    fn test_ckd_rejects_non_ckd_domain() {
+    fn ckd__should_reject_non_ckd_domain(#[case] purpose: DomainPurpose) {
+        // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) = basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
         contract.request_app_private_key(CKDRequestArgs {
             domain_id: DomainId::default(),
             derivation_path: "test".to_string(),
