@@ -23,6 +23,22 @@ impl<T: Ord> NonEmptyBTreeSet<T> {
         debug_assert!(!set.is_empty());
         Self(set)
     }
+
+    pub fn with(item: T) -> Self {
+        Self(BTreeSet::from([item]))
+    }
+
+    /// Adds a value to the set.
+    ///
+    /// Returns whether the value was newly inserted. That is:
+    ///
+    /// - If the set did not previously contain an equal value, `true` is
+    ///   returned.
+    /// - If the set already contained an equal value, `false` is returned, and
+    ///   the entry is not updated.
+    pub fn insert(&mut self, item: T) -> bool {
+        self.0.insert(item)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -306,7 +306,8 @@ mod tests {
     };
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
-    use std::collections::BTreeSet;
+    use non_empty_collections::NonEmptyBTreeSet;
+    use std::collections::BTreeMap;
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -341,12 +342,12 @@ mod tests {
 
     fn bitcoin_chain_policy() -> dtos::ForeignChainPolicy {
         dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Bitcoin,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::with(dtos::RpcProvider {
                     rpc_url: "https://blockstream.info/api".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         }
     }
 
@@ -393,12 +394,12 @@ mod tests {
         let config = bitcoin_foreign_chains_config();
         // On-chain policy differs (different RPC URL)
         let reader = mock_policy_reader(dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Bitcoin,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::with(dtos::RpcProvider {
                     rpc_url: "https://different-provider.example.com/api".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         });
 
         let result = validate_foreign_chain_policy(&config, &reader, &bitcoin_request()).await;
