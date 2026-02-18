@@ -516,12 +516,12 @@ Specifically, we filter for receipts that match one of the following pattern:
 If we want this interface to be re-usable in othe parts of our code, we can create a more or less generic filter interface:
 
 ```rust
-impl BlockEventSubscriberBuilder {
+impl BlockEventSubscriber {
     pub fn new(subscription_replay: SubscriptionReplay) -> Self;
     
     /// Configure queue size between producer and consumer.
     /// we can define overflow behavior later, by default we could just stop producing (neard indexer will consume unlimited amount of memory).
-    pub fn buffer_size(self, n: usize) -> Self;
+    pub fn buffer_size(&mut self, n: usize) -> Self;
 
     /// Add a subscription and get a unique identifier for it.
     /// Can be called multiple times before build().
@@ -529,7 +529,7 @@ impl BlockEventSubscriberBuilder {
     pub fn add_subscription(&mut self, filter: SubscriptionFilter) -> SubscriptionId;
 
     /// Finalise and start streaming.
-    pub async fn build(self) -> Result<tokio::sync::mpsc::Receiver<BlockUpdate>, BuilderError>;
+    pub async fn start(&mut self) -> Result<tokio::sync::mpsc::Receiver<BlockUpdate>, BuilderError>;
 }
 
 /// an identifier for a subscription
@@ -562,23 +562,23 @@ pub enum SubscriptionReplay {
 Example usage:
 ```rust
 
-let mut builder = BlockEventSubscriberBuilder::new(SubscriptionReplay::None);
+let mut subscriber = BlockEventSubscriber::new(SubscriptionReplay::None);
 
-let signature_requests_id = builder.add_subscription(
+let signature_requests_id = subscriber.add_subscription(
     SubscriptionFilter::ExecutorFunctionCall {
         transaction_outcome_executor_id: "v1.signer".parse()?,
         method_name: "sign".to_string(),
     }
 );
 
-let ckd_request_id = builder.add_subscription(
+let ckd_request_id = subscriber.add_subscription(
     SubscriptionFilter::ExecutorFunctionCall {
         transaction_outcome_executor_id: "v1.signer".parse()?,
         method_name: "request_app_private_key".to_string(),
     }
 );
 
-let mut block_stream_receiver : tokio::sync::mpsc::Receiver<BlockUpdate> = builder.build().await?;
+let mut block_stream_receiver : tokio::sync::mpsc::Receiver<BlockUpdate> = subscriber.start().await?;
 
 while let Some(update) = block_stream_receiver.recv().await {
     for matched in update.events {
