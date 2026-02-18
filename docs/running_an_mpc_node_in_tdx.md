@@ -157,7 +157,7 @@ several providers to choose from, such as
       - `NEAR_BOOT_NODES`: can be obtained executing
 
       ```bash
-      curl -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" -d '{"jsonrpc": "2.0", "method": "network_info","params": [], "id": "dontcare"}'| jq -r '.result.active_peers[] as $active_peer | "\($active_peer.id)@\($active_peer.addr)"' | paste -sd',' -
+      curl -s -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" -d '{"jsonrpc": "2.0", "method": "network_info","params": [], "id": "dontcare"}'| jq -r '.result.active_peers | unique_by(.addr) | unique_by(.id) | map("\(.id)@\(.addr)") | .[]' | paste -sd',' -
       ```
 
    ```yml
