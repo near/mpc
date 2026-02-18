@@ -2034,6 +2034,7 @@ mod tests {
     };
     use mpc_primitives::hash::{Hash32, Image};
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
+    use non_empty_collections::NonEmptyBTreeSet;
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
@@ -4165,7 +4166,7 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::collections::NonEmptyBTreeSet::new(dtos::RpcProvider {
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
                 }),
             )]),
@@ -4207,7 +4208,7 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::collections::NonEmptyBTreeSet::new(dtos::RpcProvider {
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
                 }),
             )]),
@@ -4245,7 +4246,7 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::collections::NonEmptyBTreeSet::new(dtos::RpcProvider {
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
                 }),
             )]),

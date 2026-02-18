@@ -1,13 +1,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use non_empty_collections::NonEmptyBTreeSet;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
 use std::collections::BTreeMap;
 
-use crate::types::{
-    collections::NonEmptyBTreeSet,
-    primitives::{AccountId, DomainId, SignatureResponse, Tweak},
-};
+use crate::types::primitives::{AccountId, DomainId, SignatureResponse, Tweak};
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(

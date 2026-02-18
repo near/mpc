@@ -5274,6 +5274,7 @@ dependencies = [
  "near-account-id 2.5.0",
  "near-sdk",
  "near-workspaces",
+ "non-empty-collections",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "rstest",
