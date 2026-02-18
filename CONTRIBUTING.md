@@ -157,6 +157,22 @@ if let Some(z) = x.checked_add(y) {
 }
 ```
 
+## Don't be an `as`
+
+Rust's `as` keyword for type casting silently truncates, wraps, or loses precision
+without any compiler warning. Prefer explicit, fallible conversions instead.
+
+```rust
+// Don't
+let x: u32 = some_u64 as u32;
+
+// Do
+let x: u32 = some_u64.try_into().expect("value fits in u32");
+
+// Or, when the conversion is infallible
+let x: u64 = u64::from(some_u32);
+```
+
 ## Separate business logic from I/O
 Imagine you're asked to implement a function that
 posts incrementing fibonacci numbers after waiting the

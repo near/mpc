@@ -209,6 +209,9 @@ time = "0.3.41"
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"
 
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+
 [profile.test-release]
 inherits = "release"
 overflow-checks = true
