@@ -19,7 +19,6 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 pub mod v3_4_1_state;
-pub mod v_pre_domain_purpose_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -1561,12 +1560,12 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v_pre_domain_purpose_state::MpcContract>() {
+        match try_state_read::<v3_4_1_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
                 log!(
-                    "failed to deserialize state into pre-domain-purpose state: {:?}",
+                    "failed to deserialize state into v3.4.1 state: {:?}",
                     err
                 );
             }
