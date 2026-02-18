@@ -30,10 +30,9 @@ def set_foreign_chains_config(node, foreign_chains: dict[str, Any] | None) -> No
 
 
 def normalize_policy(policy: dict[str, Any]) -> list[tuple[str, tuple[str, ...]]]:
-    chains = policy.get("chains", [])
+    chains = policy.get("chains", {})
     normalized = []
-    for chain_cfg in chains:
-        chain_name = chain_cfg["chain"]
-        providers = tuple(sorted(p["rpc_url"] for p in chain_cfg["providers"]))
-        normalized.append((chain_name, providers))
+    for chain_name, providers in chains.items():
+        rpcs = tuple(sorted(p["rpc_url"] for p in providers))
+        normalized.append((chain_name, rpcs))
     return sorted(normalized)
