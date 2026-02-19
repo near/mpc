@@ -1,6 +1,6 @@
 # MPC Indexer Breakout
 
-This documents outlines the design and efforts for breaking out the indexer into its own crate.
+This document outlines the design and efforts for breaking out the indexer into its own crate.
 
 ## Background
 
@@ -19,7 +19,7 @@ Additionally, an MPC node writes data to chain, such as:
 - its own TEE attestation
 - migration confirmation
 
-The MPC nodes monitor and intract with the NEAR blockchain by spawning a neard node in the same process (but in a different thread, with its own tokio runtime, c.f. [`spawn_real_indexer`](https://github.com/near/mpc/blob/dacc610b92b8ef4d80b389d86e450a3488ae72ed/crates/node/src/indexer/real.rs#L49).
+The MPC nodes monitor and interact with the NEAR blockchain by spawning a neard node in the same process (but in a different thread, with its own tokio runtime, c.f. [`spawn_real_indexer`](https://github.com/near/mpc/blob/dacc610b92b8ef4d80b389d86e450a3488ae72ed/crates/node/src/indexer/real.rs#L49).
 
 The part of the code that is responsible for spawning the neard node, fetching data from it and forwarding transactions to it, is what we currently refer to as _MPC Indexer_.
 
@@ -61,13 +61,13 @@ subgraph INDEXER[MPC Indexer]
 end
 
 
-subgraph NEAR[Near Blockchain]
+subgraph NEAR[NEAR Blockchain]
     direction LR
     
-    subgraph MEMPOOL[Near Non-finalized blocks]
+    subgraph MEMPOOL[NEAR Non-finalized blocks]
         direction LR
         STREAMER[
-        <b>Near Block Stream</b><br/><br/>
+        <b>NEAR Block Stream</b><br/><br/>
         Non-finalized Transactions
         ]
     end
@@ -121,7 +121,7 @@ end
 CORE --> VIEW
 CORE --> WRITE
 
-%% Indexer --> Near Blockchain
+%% Indexer --> NEAR Blockchain
 VIEW --> CONTRACT_VIEW
 VIEW -->STREAMER 
 %%|Monitor Blocks for<br/>Signature & CKD Requests| STREAMER
@@ -145,7 +145,7 @@ class CONTRACT contract;
 class MEMPOOL mempool;
 ```
 
-The communication between the MPC Indexer currently offers the following API:
+The MPC Indexer currently offers the following API:
 
 ```rust
 pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
@@ -187,11 +187,10 @@ Currently, the MPC indexer tries to achieve two things:
     - informing the MPC node about jobs such as resharings, signature requests, ckd requests, etc.
     - informing the MPC node about relevant TEE information such as allowed docker images etc.
 
-The main concern with our current implementation is the lack of separation between abstraction layer 1 (neard-node-abstraction) and abstraction layer 2 (MPC orchestration). We would like to re-use the chain-spcific abstraction layer for our backup service implementation (c.f.[#1891](https://github.com/near/mpc/issues/1891), as well as the HOT wallet TEE application (c.f. [#2062](https://github.com/near/mpc/issues/2062), but this is not easy to do with the current design.
+The main concern with our current implementation is the lack of separation between abstraction layer 1 (neard-node-abstraction) and abstraction layer 2 (MPC orchestration). We would like to re-use the chain-specific abstraction layer for our backup service implementation (c.f.[#1891](https://github.com/near/mpc/issues/1891)), as well as the HOT wallet TEE application (c.f. [#2062](https://github.com/near/mpc/issues/2062)), but this is not possible with the current design.
 
-Additionally, the second abstraction layer is not enforced coherently. Looking at the `IndexerAPI` above, it reads pretty much verbatim like the corresponding contract endpoints. Additionally, the `TransactionSender` trait is relatively low-level.
-But there is _some_ abstraction happening, because the forwarded types are all node-internal and do not correspond to the types returned by the blockchain interface.
-Overall, this interface makes testing the node non-trivial. We have a `FakeIndexer` implementation, which is a bit annoying to set-up with the chosen interface.
+Additionally, the second abstraction layer is not enforced coherently. Looking at the `IndexerAPI` above, it reads pretty much verbatim like the corresponding contract endpoints and the `TransactionSender` trait is too low-level.
+Overall, this interface makes testing the node non-trivial, as evidenced by our `FakeIndexer` implementation.
 
 
 ### Design Goals
@@ -206,7 +205,7 @@ An improved indexer design should achieve the following goals:
 2. Improved testing:
     - we currently have a `FakeIndexer` to isolate the core logic of our node. This mostly achieves its goal, but if we had a more mature interface, we could increase test coverage;
 3. Isolation of nearcore internals:
-    - This ties into point 1., but is worth mentioning as a stand-alone goal. The interface exposed by the neard node has experienced braking changes in the past and due to the usage of nearcore internals in our code, we have no guarantee that this won't happen again. Since we will require this functionality in other applications, it makes sense to have a stand-alone crate that has an isolated dependency on the nearcore inernals. This way, in case we do experience breaking changes, we only need to fix them once.
+    - This ties into point 1., but is worth mentioning as a stand-alone goal. The interface exposed by the neard node has experienced breaking changes in the past and due to the usage of nearcore internals in our code, we have no guarantee that this won't happen again. Since we will require this functionality in other applications, it makes sense to have a stand-alone crate that has an isolated dependency on the nearcore internals. This way, in case we do experience breaking changes, we only need to fix them once.
 
 ### Design Proposal
 
@@ -222,13 +221,13 @@ This component is responsible for:
     - forward transactions to the NEAR blockchain
     - monitor non-finalized blocks for transactions matching a user-specified pattern;
 
-This is the first step and primary goal. This abstraction is a huge enabler for migrating the backup service into a TEE [(#1891)](https://github.com/near/mpc/issues/1891) and for the our long-term support of legacy keys [(#2062)](https://github.com/near/mpc/issues/2062)
+This is the first step and primary goal. This abstraction is a huge enabler for migrating the backup service into a TEE [(#1891)](https://github.com/near/mpc/issues/1891) and for our long-term support of legacy keys [(#2062)](https://github.com/near/mpc/issues/2062)
 
 As a secondary goal, we propose the **MPC Context**.
 This component is responsible for informing the MPC node about:
-    - pending jobs (signature, CKD, forein chain verification requests)
+    - pending jobs (signature, CKD, foreign chain verification requests)
     - network state (peers)
-    - protoocl state (resharing)
+    - protocol state (resharing)
 
 
 ```mermaid
@@ -281,10 +280,10 @@ subgraph CHAIN[Chain Indexer]
     end
 end
 
-subgraph NEAR[Near Blockchain]
+subgraph NEAR[NEAR Blockchain]
     direction TB
     
-    subgraph MEMPOOL[Near Mempool]
+    subgraph MEMPOOL[NEAR Mempool]
     end
 
     subgraph CONTRACT[MPC Smart Contract]
@@ -387,7 +386,7 @@ subgraph CHAIN[Chain Indexer]
 
 end
 
-subgraph NEAR[Near Blockchain]
+subgraph NEAR[NEAR Blockchain]
 end
 
 CHAIN --> NEAR
@@ -414,7 +413,7 @@ In this section, we propose API designs for the Chain Indexer and MPC Context.
 The chain indexer consists of three functionalities, each one with their own API:
 
 - **Contract State subscriber:** subscribe to arbitrary view methods on arbitrary contracts on the NEAR blockchain.
-- **Block Events:** Filter the mempool for transactions matching a specific pattern (receiptient or executor id and method names). Receive a stream of all matching transactions.
+- **Block Events:** Filter the mempool for transactions matching a specific pattern (receipient or executor id and method names). Receive a stream of all matching transactions.
 - **Transaction Sender:** send transactions to the NEAR blockchain.
 
 ##### Contract State Subscriber
@@ -430,7 +429,7 @@ trait ContractStateSnapshot<T> {
 trait ContractStateStream<T> {
     /// is synchronous, contains the last seen value
     fn latest(&self) -> Result<(BlockHeight, &T), Error>;
-    /// returns true if the value of type `T` has changed
+    /// returns if the value of type `T` has changed
     async fn changed(&mut self) -> Result<(), Error>;
 }
 
@@ -446,7 +445,7 @@ impl ContractStateSubscriber {
         &self,
         contract: AccountId,
         view_method: &str,
-    ) -> Result<impl ContractStateSnapshot<T> + Send, Error>
+    ) -> Result<impl ContractStateSnapshot<T> + Send, Error>;
 }
 
 pub struct ContractStateSubscriber {
@@ -458,16 +457,16 @@ pub struct ContractStateSubscriber {
 
 ##### Block Event Subscriber
 
-The purpose of this intreface is to enable easy subscription to block events. In the MPC node, we use this to monitor the mempool for requests to the MPC network and responses from the MPC network.
+The purpose of this interface is to enable easy subscription to block events. In the MPC node, we use this to monitor the mempool for requests to the MPC network and responses from the MPC network.
 
 
 Specifically, we filter for receipts that match one of the following pattern:
 - They are executed on a specific contract and call a specific method of that contract. We will call this `ExecutorFunctionCall`:
     - in case of our MPC node, we are looking for any calls to `sign`, `request_app_private_key` or `verify_foreign_chain_transaction` of our MPC contract.
-- They are addressed to a specfic contract and call a specefic method of that contract. We call those `ReceiverFunctionCall`:
+- They are addressed to a specific contract and call a specific method of that contract. We call those `ReceiverFunctionCall`:
     - in the case of our MPC node, we are looking for calls to  `return_signature_and_clean_state_on_success`, `return_ck_and_clean_state_on_success` or `return_verify_foreign_tx_and_clean_state_on_success` that originate from the contract.
 
-If we want this interface to be re-usable in othe parts of our code, we can create a more or less generic filter interface:
+If we want this interface to be re-usable in other parts of our code, we can create a more or less generic filter interface:
 
 ```rust
 impl BlockEventSubscriber {
@@ -505,7 +504,7 @@ pub enum SubscriptionFilter {
 
 /// we want to offer the possibility to re-play blocks if necessary (c.f. [#236](https://github.com/near/mpc/issues/236))
 pub enum SubscriptionReplay {
-    /// no replay, start once indexer has catched up to the current block height
+    /// no replay, start once indexer has caught up to the current block height
     None,
     /// Start at a specific height
     BlockHeight(u64),
@@ -579,17 +578,17 @@ pub enum EventData {
 
 /// This event is associated to a transaction that matched a specific (transaction_outcome_executor_id: AccountId, method_name: String) pattern.
 struct ExecutorFunctionCallEventData {
-    /// the receipt_id of the recipt this event came from
+    /// the receipt_id of the receipt this event came from
     receipt_id: CryptoHash,
     /// predecessor_id who signed the transaction
-    predecessor_id : AcccountId,
+    predecessor_id : AccountId,
     /// the receipt that will hold the outcome of this receipt
     next_receipt_id: CryptoHash,
     /// raw bytes used for function call. Could probably also be a String.
     args_raw: Vec<u8>,
 }
 
-/// This event is associated to a transaction that matched a specific ReeiverEventDefinition
+/// This event is associated to a transaction that matched a specific SubscriptionFilter
 struct ReceiverFunctionCallEventData {
     // the receipt id for the matched transaction
     receipt_id: CrpytoHash,
@@ -642,7 +641,7 @@ trait LatestFinalBlock {
 }
 ```
 
-Additonally, we will expose the following types and methods (omitting internals, c.f. tx_signer.rs)
+Additionally, we will expose the following types and methods (omitting internals, c.f. tx_signer.rs)
 ```rust
 pub struct TransactionSigner {
     signing_key: SigningKey,
@@ -673,7 +672,7 @@ TODO(#2138): handle in a separate discussion. This is not of priority right now.
 ## Appendix
 ### Current Block Update
 
-Currntly, the MPC indexer monitors the mempool for transactions of interest to the MPC node.
+Currently, the MPC indexer monitors the mempool for transactions of interest to the MPC node.
 It does so by filtering all receipts for:
 1. signature and CKD requests, as well as foreign transaction verifications. We do so by:
     1. matching the `executor_id` of a receipt with the MPC contracts `AccountId`. This means that this receipt is executed by the MPC contract;
@@ -685,13 +684,13 @@ It does so by filtering all receipts for:
         - arguments for the function call (note: we currently deserialize the json and return a type).
         - block entropy
         - block timestamp
-2. sigature responses, CKD response and foreign transaction verification responses. We do so by:
+2. signature responses, CKD responses and foreign transaction verification responses. We do so by:
     1. matching on the `receiver_id` of the receipt (must match the contract);
     2. matching the method called in the contract to one of the expected values (`return_signature_and_clean_state_on_success`, `return_ck_and_clean_state_on_success` or `return_verify_foreign_tx_and_clean_state_on_success`, for the MPC contract).
     3. In case we match, we track the following data:
         - receipt id (this will match the _next receipt id_ of the corresponding request from point 3 above)
 
-_Open Question: we should figure out if `receipt_id` and `executor_id` can be different from one another. If not, then we could simply our design slightly_
+_Open Question: we should figure out if `receipt_id` and `executor_id` can be different from one another. If not, then we could simplify our design slightly_
 
 For each block, the indexer composes a `BlockUpdate` for all of the above and sends that to the MPC node, together with some information about the block, such as:
 - block height
@@ -721,7 +720,7 @@ pub struct BlockViewLite {
 ```
 
 
-## related issues
+## Related issues
 
 https://github.com/near/mpc/issues/1956
 https://github.com/near/mpc/issues/592
@@ -733,6 +732,6 @@ https://github.com/near/mpc/issues/1957
 https://github.com/near/mpc/issues/155
 https://github.com/near/mpc/issues/236
 
-potentialy:
+potentially:
 https://github.com/near/mpc/issues/1643
 
