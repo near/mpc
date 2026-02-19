@@ -54,7 +54,6 @@ To ensure consistent high quality code, every PR must conform to the following p
 - [Don't panic](#dont-panic)
 - [Maintain local reasonability](#maintain-local-reasonability)
 - [Use safe arithmetic methods](#use-safe-arithmetic-methods)
-- [Don't be an `as`](#dont-be-an-as)
 - [Separate business logic from I/O](#separate-business-logic-from-io)
 - [Add tests](#add-tests)
 - [Measure performance](#measure-performance)
