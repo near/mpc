@@ -43,7 +43,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
 use contract_interface::method_names;
 use contract_interface::types::{
-    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
 use crypto_shared::{
@@ -110,6 +110,7 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+    metrics: Metrics,
 }
 
 /// A container for "orphaned" state that persists across contract migrations.
@@ -206,6 +207,14 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
+
+        if request.deprecated_payload.is_some() {
+            self.metrics.sign_with_v1_payload_count += 1;
+        }
+
+        if request.payload_v2.is_some() {
+            self.metrics.sign_with_v2_payload_count += 1;
+        }
 
         let request: SignRequest = request.try_into().unwrap();
 
@@ -1502,6 +1511,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            metrics: Default::default(),
         })
     }
 
@@ -1562,6 +1572,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            metrics: Default::default(),
         })
     }
 
@@ -1594,6 +1605,10 @@ impl MpcContract {
 
     pub fn state(&self) -> contract_interface::types::ProtocolContractState {
         (&self.protocol_state).into_dto_type()
+    }
+
+    pub fn metrics(&self) -> contract_interface::types::Metrics {
+        self.metrics.clone()
     }
 
     /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
@@ -2983,6 +2998,7 @@ mod tests {
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
                 stale_data: Default::default(),
+                metrics: Default::default(),
             }
         }
     }
@@ -3909,6 +3925,82 @@ mod tests {
             update_id,
             &expected_voters_after,
         );
+    }
+
+    #[test]
+    fn sign__increments_v1_payload_metric() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
+
+        // When
+        contract.sign(SignRequestArgs {
+            deprecated_payload: Some([7u8; 32]),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+
+        // Then
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 1);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
+    }
+
+    #[test]
+    fn sign__increments_v2_payload_metric() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
+
+        // When
+        contract.sign(SignRequestArgs {
+            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+
+        // Then
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
+    }
+
+    #[test]
+    fn sign__metrics_accumulate_across_multiple_calls() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+
+        // When — two v1 calls and one v2 call
+        contract.sign(SignRequestArgs {
+            deprecated_payload: Some([7u8; 32]),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+        contract.sign(SignRequestArgs {
+            deprecated_payload: Some([8u8; 32]),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+        contract.sign(SignRequestArgs {
+            payload_v2: Some(Payload::from_legacy_ecdsa([9u8; 32])),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+
+        // Then
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 2);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
     }
 
     #[rstest]
