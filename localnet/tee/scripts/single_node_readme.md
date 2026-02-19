@@ -16,6 +16,7 @@ This script:
 export BASE_PATH=/path/to/dstack
 export MACHINE_IP=<host-ip-reachable-from-CVM>
 export MPC_IMAGE_TAGS=3.3.0
+```
 
 ## dstack port
 If dstack VMM is not on port 10000:
