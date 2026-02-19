@@ -435,6 +435,16 @@ expression: abi
         }
       },
       {
+        "name": "metrics",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/Metrics"
+          }
+        }
+      },
+      {
         "name": "migrate",
         "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
         "kind": "call",
@@ -2378,6 +2388,25 @@ expression: abi
             },
             "epoch_id": {
               "$ref": "#/definitions/EpochId2"
+            }
+          }
+        },
+        "Metrics": {
+          "type": "object",
+          "required": [
+            "sign_with_v1_payload_count",
+            "sign_with_v2_payload_count"
+          ],
+          "properties": {
+            "sign_with_v1_payload_count": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "sign_with_v2_payload_count": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
             }
           }
         },
