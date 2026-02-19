@@ -23,16 +23,16 @@ pub use starknet::{StarknetApiVariant, StarknetChainConfig, StarknetProviderConf
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ForeignChainsConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<SolanaChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bitcoin: Option<BitcoinChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethereum: Option<EthereumChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "abstract")]
     pub abstract_chain: Option<AbstractChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub starknet: Option<StarknetChainConfig>,
 }
 
