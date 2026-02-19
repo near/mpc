@@ -231,6 +231,15 @@ foreign_chains:
         rpc_url: "https://bitcoin-rpc.publicnode.com"
         auth:
           kind: none
+  abstract:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://api.testnet.abs.xyz"
+        auth:
+          kind: none
 EOF
 ```
 
@@ -290,6 +299,15 @@ foreign_chains:
       public:
         api_variant: esplora
         rpc_url: "https://bitcoin-rpc.publicnode.com"
+        auth:
+          kind: none
+  abstract:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://api.testnet.abs.xyz"
         auth:
           kind: none
 EOF
@@ -459,10 +477,12 @@ INFO Function execution return value (printed to stdout):
 Tadaaa! Now you should have a fully functioning MPC network running on your
 machine ready to produce signatures.
 
-### Foreign transaction validation request
+### Foreign transaction validation requests
 
-This uses domain 3 (Secp256k1 with purpose `ForeignTx`). The `verify_foreign_transaction()` method
+These use domain 3 (Secp256k1 with purpose `ForeignTx`). The `verify_foreign_transaction()` method
 only accepts domains with purpose `ForeignTx`.
+
+#### Bitcoin
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
@@ -500,6 +520,12 @@ Function execution return value (printed to stdout):
     "scheme": "Secp256k1"
   }
 }
+```
+
+#### Abstract
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 7. Clean Up
