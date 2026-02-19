@@ -126,7 +126,7 @@ args = ["doc", "--workspace", "--no-deps"]
 
 [tasks.check-markdown-links]
 command = "lychee"
-args = ["--no-progress", "**/*.md"]
+args = ["--no-progress", "."]
 
 [config]
 default_to_workspace = false

@@ -9,4 +9,4 @@ offline = true
 # Check anchor/fragment links (e.g., #section-name)
 include_fragments = true
 
-exclude_path = ["libs/nearcore", "target", ".git", ".direnv"]
+exclude_path = ["libs/nearcore", "target", ".git"]
