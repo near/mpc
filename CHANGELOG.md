@@ -5,6 +5,177 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.5.0] - 2026-02-19
+
+### 🚀 Features
+
+- [#1980](https://github.com/near/mpc/pull/1980)(@DSharifi): Implement JSON rpc client and extractor for bitcoin (#1980)
+
+- [#1968](https://github.com/near/mpc/pull/1968)(@netrome): Foreign chain config & parsing (#1968)
+
+- [#1998](https://github.com/near/mpc/pull/1998)(@netrome): Canonical sign payload for foreign chain transactions (#1998)
+
+- [#2008](https://github.com/near/mpc/pull/2008)(@gilcu3): Implement verify foreign key logic in the contract (#2008)
+
+- [#1997](https://github.com/near/mpc/pull/1997)(@netrome): Automatic foreign chain policy voting (#1997)
+
+- [#2015](https://github.com/near/mpc/pull/2015)(@DSharifi): Foreign chain inspector for `abstract` block chain (#2015)
+
+- [#2039](https://github.com/near/mpc/pull/2039)(@andrei-near): Add claude reviewer (#2039)
+
+- [#2055](https://github.com/near/mpc/pull/2055)(@gilcu3): Integrate foreign chain tx feature in the node (#2055)
+
+- [#2065](https://github.com/near/mpc/pull/2065)(@netrome): Allow SecretDB to open unknown column families (#2065)
+
+- [#1990](https://github.com/near/mpc/pull/1990)(@pbeza): *(dtos)* Add Participants JSON serialization types to contract-interface (#1990)
+
+- [#2070](https://github.com/near/mpc/pull/2070)(@netrome): Remove observed_at_block special response field (#2070)
+
+- [#2075](https://github.com/near/mpc/pull/2075)(@DSharifi): Add extractor for evm `Log`s  (#2075)
+
+- [#2087](https://github.com/near/mpc/pull/2087)(@gilcu3): Integrate Abstract in the node (#2087)
+
+- [#2084](https://github.com/near/mpc/pull/2084)(@netrome): Starknet inspector (#2084)
+
+- [#2129](https://github.com/near/mpc/pull/2129)(@pbeza): Update Claude model to use Opus 4.6 for code reviews (#2129)
+
+- [#2126](https://github.com/near/mpc/pull/2126)(@DSharifi): Return payload hash instead of the payload for the sign foreign chain requests (#2126)
+
+- [#2158](https://github.com/near/mpc/pull/2158)(@gilcu3): Adding consistent hashing to select RPC providers (#2158)
+
+- [#2163](https://github.com/near/mpc/pull/2163)(@netrome): Domain separation (#2163)
+
+- [#2179](https://github.com/near/mpc/pull/2179)(@DSharifi): Add on chain metrics for sign request payload version (#2179)
+
+- [#2180](https://github.com/near/mpc/pull/2180)(@netrome): Add abstract rpc configuration in localnet guide + foreign policy serialization fix (#2180)
+
+
+### 🐛 Bug Fixes
+
+- [#2014](https://github.com/near/mpc/pull/2014)(@gilcu3): Broken reproducibility (#2014)
+
+- [#2043](https://github.com/near/mpc/pull/2043)(@netrome): Three small post-merge fixes from #1997 (#2043)
+
+- [#2107](https://github.com/near/mpc/pull/2107)(@netrome): Remove accidentally included prompt file (#2107)
+
+- [#2124](https://github.com/near/mpc/pull/2124)(@gilcu3): Make run_receive_messages_loop infallible, log error on internal failures (#2124)
+
+- [#2133](https://github.com/near/mpc/pull/2133)(@gilcu3): Ecdsa background tasks should be infallible (#2133)
+
+- [#2137](https://github.com/near/mpc/pull/2137)(@SimonRastikian): Updating the documentation (#2137)
+
+- [#2149](https://github.com/near/mpc/pull/2149)(@gilcu3): Boot nodes deduplication in docs (#2149)
+
+
+### 💼 Other
+
+- [#2048](https://github.com/near/mpc/pull/2048)(@DSharifi): Bump cargo resolver version to version `3` (#2048)
+
+- [#2092](https://github.com/near/mpc/pull/2092)(@DSharifi): Use nixpkgss to install cargo-nextest (#2092)
+
+- [#2184](https://github.com/near/mpc/pull/2184)(@DSharifi): Set Cargo linker for aarch64-darwin to resolve -lSystem (#2184)
+
+
+### 🚜 Refactor
+
+- [#2044](https://github.com/near/mpc/pull/2044)(@pbeza): Improve gas benchmark tests by optimizing account handling (#2044)
+
+- [#2141](https://github.com/near/mpc/pull/2141)(@SimonRastikian): Const string contract methods (#2141)
+
+
+### 📚 Documentation
+
+- [#2013](https://github.com/near/mpc/pull/2013)(@barakeinav1): Add node migration guide for operators (#2013)
+
+
+### 🧪 Testing
+
+- [#1993](https://github.com/near/mpc/pull/1993)(@gilcu3): Check if 100s is enough to avoid flaky tests (#1993)
+
+- [#2023](https://github.com/near/mpc/pull/2023)(@netrome): System test for foreign chain policy voting (#2023)
+
+- [#2072](https://github.com/near/mpc/pull/2072)(@netrome): System test for foreign transaction validation (#2072)
+
+- [#2125](https://github.com/near/mpc/pull/2125)(@gilcu3): Added system test for starknet (#2125)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1985](https://github.com/near/mpc/pull/1985)(@barakeinav1): Correct error codes (#1985)
+
+- [#1995](https://github.com/near/mpc/pull/1995)(@DSharifi): *(nix)* Bump cargo-near version to 0.19.1 (#1995)
+
+- [#2000](https://github.com/near/mpc/pull/2000)(@gilcu3): Make cargo-deny and license checks optional in CI (#2000)
+
+- [#1991](https://github.com/near/mpc/pull/1991)(@gilcu3): Add missing verify foreign chain functions to the contract (#1991)
+
+- [#1967](https://github.com/near/mpc/pull/1967)(@gilcu3): Bump gcloud-sdk to fix jsonwebsocket vuln (#1967)
+
+- [#2019](https://github.com/near/mpc/pull/2019)(@DSharifi): Move `rustfmt.toml` file to workspace root (#2019)
+
+- [#2010](https://github.com/near/mpc/pull/2010)(@DSharifi): Use `jsonrpsee` to support JSON-RPC v2 instead of manual implementation (#2010)
+
+- [#2028](https://github.com/near/mpc/pull/2028)(@DSharifi): *(cargo-deny)* Remove unnecessary skip for `prost` (#2028)
+
+- [#2034](https://github.com/near/mpc/pull/2034)(@gilcu3): Update ts reference (#2034)
+
+- [#2026](https://github.com/near/mpc/pull/2026)(@gilcu3): Update contract history to 3.4.1 (#2026)
+
+- [#2041](https://github.com/near/mpc/pull/2041)(@DSharifi): Remove `cargo-about` third-party licenses check from CI (#2041)
+
+- [#2046](https://github.com/near/mpc/pull/2046)(@DSharifi): Update near cli version in nix shell (#2046)
+
+- [#2049](https://github.com/near/mpc/pull/2049)(@DSharifi): Run `cargo-update` on lock file (#2049)
+
+- [#2027](https://github.com/near/mpc/pull/2027)(@DSharifi): Remove usage of `near_o11` for metrics and test logger (#2027)
+
+- [#2052](https://github.com/near/mpc/pull/2052)(@gilcu3): Upgrade and organize workspace deps (#2052)
+
+- [#2059](https://github.com/near/mpc/pull/2059)(@gilcu3): Disable flaky robust-ecdsa test (#2059)
+
+- [#2035](https://github.com/near/mpc/pull/2035)(@DSharifi): Revert the revert of using socket addresses (#2035)
+
+- [#2079](https://github.com/near/mpc/pull/2079)(@DSharifi): Make API types specific per chain (#2079)
+
+- [#2082](https://github.com/near/mpc/pull/2082)(@DSharifi): Make nix and ci version of tools in sync (#2082)
+
+- [#2097](https://github.com/near/mpc/pull/2097)(@gilcu3): Update keccak to 0.1.6 (#2097)
+
+- [#2098](https://github.com/near/mpc/pull/2098)(@gilcu3): Enable all steps in cargo deny except advisories in fast CI (#2098)
+
+- [#2100](https://github.com/near/mpc/pull/2100)(@SimonRastikian): Dependabot with exceptions (#2100)
+
+- [#2104](https://github.com/near/mpc/pull/2104)(@DSharifi): Add `From` and `TryFrom` conversions between dto and foreign chain inspector types (#2104)
+
+- [#2117](https://github.com/near/mpc/pull/2117)(@gilcu3): Add exceptions to dependabot that are known to fail because of devnet (#2117)
+
+- [#2115](https://github.com/near/mpc/pull/2115)(@pbeza): Extract Claude review prompt into standalone file (#2115)
+
+- [#2131](https://github.com/near/mpc/pull/2131)(@DSharifi): Validate local RPC provider config with on chain config (#2131)
+
+- [#2146](https://github.com/near/mpc/pull/2146)(@gilcu3): Bump buildkit and runner images versions to overcome build failure (#2146)
+
+- [#2153](https://github.com/near/mpc/pull/2153)(@gilcu3): Disable rust cache temporarily, as warpbuilds is providing different runners for the same label (#2153)
+
+- [#2144](https://github.com/near/mpc/pull/2144)(@DSharifi): *(nix)* Add jq and ruff to dev shell packages (#2144)
+
+- [#2155](https://github.com/near/mpc/pull/2155)(@pbeza): Add CI workflow to validate PR title type against changed files (#2155)
+
+- [#2139](https://github.com/near/mpc/pull/2139)(@DSharifi): Use non empty colletion types for foreign chain types (#2139)
+
+- [#2162](https://github.com/near/mpc/pull/2162)(@gilcu3): Enable back rust-cache (#2162)
+
+- [#2148](https://github.com/near/mpc/pull/2148)(@pbeza): Add `lychee` CI check for markdown link validation (#2148)
+
+- [#2152](https://github.com/near/mpc/pull/2152)(@pbeza): Update `format_pr_comments` script to read JSON from file argument (#2152)
+
+- [#2168](https://github.com/near/mpc/pull/2168)(@gilcu3): Fix flaky claude review permissions (#2168)
+
+- [#2176](https://github.com/near/mpc/pull/2176)(@DSharifi): Exclude .direnv from lychee link checker (#2176)
+
+- [#2181](https://github.com/near/mpc/pull/2181)(@gilcu3): Fix lychee not respecting gitignore (#2181)
+
+
 ## [3.4.1] - 2026-02-05
 
 ### 🚀 Features
@@ -72,6 +243,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1973](https://github.com/near/mpc/pull/1973)(@gilcu3): Remove extra license file (#1973)
 
 - [#1982](https://github.com/near/mpc/pull/1982)(@DSharifi): Add `git-cliff` to nix dev environment (#1982)
+
+- [#1972](https://github.com/near/mpc/pull/1972)(@SimonRastikian): Bump crate versions to 3.4.1 (#1972)
 
 
 ## [3.4.0] - 2026-01-29
