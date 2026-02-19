@@ -240,6 +240,15 @@ foreign_chains:
         rpc_url: "https://api.testnet.abs.xyz"
         auth:
           kind: none
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://starknet-rpc.publicnode.com"
+        auth:
+          kind: none
 EOF
 ```
 
@@ -308,6 +317,15 @@ foreign_chains:
       public:
         api_variant: standard
         rpc_url: "https://api.testnet.abs.xyz"
+        auth:
+          kind: none
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://starknet-rpc.publicnode.com"
         auth:
           kind: none
 EOF
@@ -526,6 +544,12 @@ Function execution return value (printed to stdout):
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+#### Starknet
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_starknet.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 7. Clean Up
