@@ -66,7 +66,7 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -221,6 +221,18 @@ impl MpcContract {
                 .to_string(),
             );
         };
+
+        if domain_config.purpose != DomainPurpose::Sign {
+            env::panic_str(
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::Sign,
+                    actual: domain_config.purpose,
+                }
+                .message("sign() may only target domains with purpose Sign")
+                .to_string(),
+            );
+        }
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -400,11 +412,15 @@ impl MpcContract {
                 .to_string(),
             );
         };
-        if domain_config.scheme != SignatureScheme::Bls12381 {
+        if domain_config.purpose != DomainPurpose::CKD {
             env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Provided domain ID key type is not Bls12381")
-                    .to_string(),
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::CKD,
+                    actual: domain_config.purpose,
+                }
+                .message("request_app_private_key() may only target domains with purpose CKD")
+                .to_string(),
             );
         }
 
@@ -510,11 +526,15 @@ impl MpcContract {
             );
         };
 
-        if domain_config.scheme != SignatureScheme::Secp256k1 {
+        if domain_config.purpose != DomainPurpose::ForeignTx {
             env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Provided domain ID key type is not Secp256k1")
-                    .to_string(),
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::ForeignTx,
+                    actual: domain_config.purpose,
+                }
+                .message("verify_foreign_transaction() requires a domain with purpose ForeignTx")
+                .to_string(),
             );
         }
 
@@ -1561,7 +1581,7 @@ impl MpcContract {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3_4_1 state: {:?}", err);
+                log!("failed to deserialize state into v3.4.1 state: {:?}", err);
             }
         };
 
@@ -2002,7 +2022,7 @@ mod tests {
         NUM_PROTOCOLS,
     };
     use crate::primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2139,6 +2159,14 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
+        basic_setup_with_purpose(scheme, infer_purpose_from_scheme(scheme), rng)
+    }
+
+    fn basic_setup_with_purpose(
+        scheme: SignatureScheme,
+        purpose: DomainPurpose,
+        rng: &mut impl CryptoRngCore,
+    ) -> (VMContext, MpcContract, SharedSecretKey) {
         let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
@@ -2150,6 +2178,7 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             scheme,
+            purpose,
         }];
         let epoch_id = EpochId::new(0);
         let (pk, sk) = make_public_key_for_domain(scheme, rng);
@@ -2393,7 +2422,11 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let (context, mut contract, secret_key) = basic_setup_with_purpose(
+            SignatureScheme::Secp256k1,
+            DomainPurpose::ForeignTx,
+            &mut rng,
+        );
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2475,8 +2508,11 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let (context, mut contract, _secret_key) = basic_setup_with_purpose(
+            SignatureScheme::Secp256k1,
+            DomainPurpose::ForeignTx,
+            &mut rng,
+        );
         let request_args = VerifyForeignTransactionRequestArgs {
             derivation_path: "".to_string(),
             domain_id: DomainId::default().0.into(),
@@ -2504,6 +2540,68 @@ mod tests {
         assert!(contract
             .get_pending_verify_foreign_tx_request(&request)
             .is_none());
+    }
+
+    #[rstest]
+    #[case(DomainPurpose::ForeignTx)]
+    #[case(DomainPurpose::CKD)]
+    #[should_panic(expected = "sign() may only target domains with purpose Sign")]
+    fn sign__should_reject_non_sign_domain(#[case] purpose: DomainPurpose) {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
+        contract.sign(SignRequestArgs {
+            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+    }
+
+    #[rstest]
+    #[case(DomainPurpose::Sign)]
+    #[case(DomainPurpose::CKD)]
+    #[should_panic(
+        expected = "verify_foreign_transaction() requires a domain with purpose ForeignTx"
+    )]
+    fn verify_foreign_tx__should_reject_non_foreign_tx_domain(#[case] purpose: DomainPurpose) {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
+        contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
+            derivation_path: "test".to_string(),
+            domain_id: DomainId::default().0.into(),
+            payload_version: 1,
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        });
+    }
+
+    #[rstest]
+    #[case(DomainPurpose::Sign)]
+    #[case(DomainPurpose::ForeignTx)]
+    #[should_panic(expected = "request_app_private_key() may only target domains with purpose CKD")]
+    fn ckd__should_reject_non_ckd_domain(#[case] purpose: DomainPurpose) {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
+        contract.request_app_private_key(CKDRequestArgs {
+            domain_id: DomainId::default(),
+            derivation_path: "test".to_string(),
+            app_public_key: dtos::Bls12381G1PublicKey::from([0u8; 48]),
+        });
     }
 
     fn setup_tee_test_contract(
@@ -3880,6 +3978,7 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         }];
         let (pk, _) = make_public_key_for_domain(SignatureScheme::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {

@@ -157,6 +157,18 @@ impl RunningContractState {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
+        for domain in &domains {
+            if !crate::primitives::domain::is_valid_scheme_for_purpose(
+                domain.purpose,
+                domain.scheme,
+            ) {
+                return Err(DomainError::InvalidSchemePurposeCombination {
+                    scheme: domain.scheme,
+                    purpose: domain.purpose,
+                }
+                .into());
+            }
+        }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {
@@ -183,10 +195,11 @@ impl RunningContractState {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 pub mod running_tests {
     use rstest::rstest;
 
-    use crate::primitives::domain::AddDomainsVotes;
+    use crate::primitives::domain::{AddDomainsVotes, DomainPurpose, SignatureScheme};
     use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
@@ -317,5 +330,38 @@ pub mod running_tests {
     #[case(2*NUM_PROTOCOLS)]
     fn test_running(#[case] n: usize) {
         test_running_for(n);
+    }
+
+    #[rstest]
+    #[case(SignatureScheme::Bls12381, DomainPurpose::Sign)]
+    #[case(SignatureScheme::Ed25519, DomainPurpose::ForeignTx)]
+    #[case(SignatureScheme::Secp256k1, DomainPurpose::CKD)]
+    fn vote_add_domains__should_reject_invalid_scheme_purpose(
+        #[case] scheme: SignatureScheme,
+        #[case] purpose: DomainPurpose,
+    ) {
+        use crate::primitives::domain::{DomainConfig, DomainId};
+
+        // Given
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let next_id = state.domains.next_domain_id();
+
+        let invalid_domain = vec![DomainConfig {
+            id: DomainId(next_id),
+            scheme,
+            purpose,
+        }];
+
+        // When
+        let err = state.vote_add_domains(invalid_domain).unwrap_err();
+
+        // Then
+        assert!(
+            err.to_string()
+                .contains("Invalid scheme-purpose combination"),
+            "Expected InvalidSchemePurposeCombination, got: {err}"
+        );
     }
 }

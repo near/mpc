@@ -4,11 +4,13 @@
       "domains": [
         {
           "id": 0,
-          "scheme": "Secp256k1"
+          "scheme": "Secp256k1",
+          "purpose": "Sign"
         },
         {
           "id": 1,
-          "scheme": "Ed25519"
+          "scheme": "Ed25519",
+          "purpose": "Sign"
         }
       ],
       "next_domain_id": 2

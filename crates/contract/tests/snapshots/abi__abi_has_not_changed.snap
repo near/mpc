@@ -1678,11 +1678,15 @@ expression: abi
           "type": "object",
           "required": [
             "id",
+            "purpose",
             "scheme"
           ],
           "properties": {
             "id": {
               "$ref": "#/definitions/DomainId"
+            },
+            "purpose": {
+              "$ref": "#/definitions/DomainPurpose"
             },
             "scheme": {
               "$ref": "#/definitions/SignatureScheme"
@@ -1700,6 +1704,17 @@ expression: abi
             "id": {
               "$ref": "#/definitions/DomainId2"
             },
+            "purpose": {
+              "description": "`None` when reading state from an old contract that predates domain purposes.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DomainPurpose"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "scheme": {
               "$ref": "#/definitions/SignatureScheme2"
             }
@@ -1715,6 +1730,32 @@ expression: abi
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "DomainPurpose": {
+          "description": "The purpose that a domain serves.",
+          "oneOf": [
+            {
+              "description": "Domain is used by `sign()`.",
+              "type": "string",
+              "enum": [
+                "Sign"
+              ]
+            },
+            {
+              "description": "Domain is used by `verify_foreign_transaction()`.",
+              "type": "string",
+              "enum": [
+                "ForeignTx"
+              ]
+            },
+            {
+              "description": "Domain is used by `request_app_private_key()` (Confidential Key Derivation).",
+              "type": "string",
+              "enum": [
+                "CKD"
+              ]
+            }
+          ]
         },
         "DomainRegistry": {
           "description": "Registry of all signature domains.",
