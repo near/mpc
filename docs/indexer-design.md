@@ -545,7 +545,7 @@ while let Some(update) = block_stream_receiver.recv().await {
 
 ```
 
-Specific types (c.f. [Appendix](current-block-update) and `indexer/handler.rs` for justification).
+Specific types (c.f. [Appendix](#current-block-update) and `indexer/handler.rs` for justification).
 ```rust
 /// The BlockUpdate returned by the Chain indexer. Similar to the current `BlockUpdate`
 pub struct BlockUpdate {
