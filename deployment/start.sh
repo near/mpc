@@ -39,7 +39,6 @@ if [ -n "$MPC_RESPONDER_ID" ]; then
 fi
 
 # In TEE (dstack), do NOT allow raw private keys to be provided via env.
-# Non-TEE deployments may still use this mechanism (e.g., GCP nodes / migration).
 if [ -n "$DSTACK_ENDPOINT" ]; then
   if [ -n "$MPC_P2P_PRIVATE_KEY" ] || [ -n "$MPC_ACCOUNT_SK" ]; then
     echo "ERROR: MPC_P2P_PRIVATE_KEY / MPC_ACCOUNT_SK must not be provided when running in TEE (DSTACK_ENDPOINT is set)" >&2
@@ -156,12 +155,8 @@ initialize_mpc_config() {
 my_near_account_id: $MPC_ACCOUNT_ID
 near_responder_account_id: $responder_id
 number_of_responder_keys: 50
-web_ui:
-  host: 0.0.0.0
-  port: 8080
-migration_web_ui:
-  host: 0.0.0.0
-  port: 8079
+web_ui: 0.0.0.0:8080
+migration_web_ui: 0.0.0.0:8079
 pprof_bind_address: 0.0.0.0:34001
 triple:
   concurrency: 2
@@ -215,8 +210,8 @@ generate_secrets_json() {
     fi
 
     # Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
-    if [ -z "$MPC_P2P_PRIVATE_KEY" ]; then
-        if [ -n "$GCP_PROJECT_ID" ] && [ -n "$GCP_P2P_PRIVATE_KEY_SECRET_ID" ]; then
+    if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
+        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_P2P_PRIVATE_KEY_SECRET_ID}" ]; then
             echo "MPC_P2P_PRIVATE_KEY not provided in environment, fetching from GCP Secret Manager..."
             MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_P2P_PRIVATE_KEY_SECRET_ID")
             export MPC_P2P_PRIVATE_KEY
@@ -226,8 +221,8 @@ generate_secrets_json() {
     fi
 
     # Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
-    if [ -z "$MPC_ACCOUNT_SK" ]; then
-        if [ -n "$GCP_PROJECT_ID" ] && [ -n "$GCP_ACCOUNT_SK_SECRET_ID" ]; then
+    if [ -z "${MPC_ACCOUNT_SK}" ]; then
+        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_ACCOUNT_SK_SECRET_ID}" ]; then
             echo "MPC_ACCOUNT_SK not provided in environment, fetching from GCP Secret Manager..."
             MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_ACCOUNT_SK_SECRET_ID")
             export MPC_ACCOUNT_SK
@@ -237,7 +232,7 @@ generate_secrets_json() {
     fi
 
     # Only generate secrets.json if we have the required keys
-    if [ -n "$MPC_P2P_PRIVATE_KEY" ] && [ -n "$MPC_ACCOUNT_SK" ]; then
+    if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
         echo "Generating secrets.json from provided keys..."
         if create_secrets_json_file "$secrets_file"; then
             echo "secrets.json created at $secrets_file"
@@ -275,9 +270,9 @@ update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 generate_secrets_json
 
 # Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
-if [ -z "$MPC_SECRET_STORE_KEY" ]; then
+if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
   echo "MPC_SECRET_STORE_KEY not provided in environment, will fetch from GCP Secret Manager..."
-  MPC_SECRET_STORE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_LOCAL_ENCRYPTION_KEY_SECRET_ID")
+  MPC_SECRET_STORE_KEY=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_LOCAL_ENCRYPTION_KEY_SECRET_ID)
   export MPC_SECRET_STORE_KEY
 else
   echo "Using provided MPC_SECRET_STORE_KEY from environment"
@@ -290,4 +285,4 @@ else
 fi
 
 echo "Starting mpc node..."
-/app/mpc-node start "$tee_authority"
+/app/mpc-node start $tee_authority
