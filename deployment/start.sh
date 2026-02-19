@@ -4,48 +4,6 @@ set -eo pipefail
 # This script is intended to be used for running nearone/mpc.
 # It will initialize the Near node in case it is not initialized yet and start the MPC node.
 
-# --- Minimal hardening helpers ---
-has_control_chars() {
-  # Reject newline and carriage return. (NUL can't be represented well in bash, but we still check for CR/LF.)
-  case "$1" in
-    *$'\n'*|*$'\r'*)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-require_clean_env() {
-  local name="$1"
-  local val="${!name}"
-  if has_control_chars "$val"; then
-    echo "ERROR: $name contains invalid control characters" >&2
-    exit 1
-  fi
-}
-
-# Validate env vars that are interpolated into YAML/Python snippets
-require_clean_env "MPC_HOME_DIR"
-require_clean_env "MPC_ENV"
-require_clean_env "MPC_CONTRACT_ID"
-require_clean_env "MPC_ACCOUNT_ID"
-require_clean_env "NEAR_BOOT_NODES"
-
-# Optional:
-if [ -n "$MPC_RESPONDER_ID" ]; then
-  require_clean_env "MPC_RESPONDER_ID"
-fi
-
-# In TEE (dstack), do NOT allow raw private keys to be provided via env.
-if [ -n "$DSTACK_ENDPOINT" ]; then
-  if [ -n "$MPC_P2P_PRIVATE_KEY" ] || [ -n "$MPC_ACCOUNT_SK" ]; then
-    echo "ERROR: MPC_P2P_PRIVATE_KEY / MPC_ACCOUNT_SK must not be provided when running in TEE (DSTACK_ENDPOINT is set)" >&2
-    exit 1
-  fi
-fi
-
 MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
@@ -75,53 +33,30 @@ initialize_near_node() {
 }
 
 update_near_node_config() {
-    # IMPORTANT: Use quoted heredoc to avoid bash interpolation injection.
-    # Pass values via environment variables into Python.
-    export NEAR_NODE_CONFIG_FILE
-    export MPC_ENV
-    export MPC_CONTRACT_ID
-
-    python3 <<'EOF'
-import json
-import os
-
-config_file = os.environ["NEAR_NODE_CONFIG_FILE"]
-mpc_env = os.environ["MPC_ENV"]
-contract_id = os.environ["MPC_CONTRACT_ID"]
-
-config = json.load(open(config_file))
+    python3 <<EOF
+import json;
+config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
 
 # boot nodes must be filled in or else the node will not have any peers.
 config['store']['load_mem_tries_for_tracked_shards'] = True
 
-if mpc_env == "mpc-localnet":
+if "$MPC_ENV" == "mpc-localnet":
     config['state_sync_enabled'] = False
 else:
-    # FAIL-FAST: crash if expected keys are missing (same behavior as before)
     config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
 
 # Track whichever shard the contract account is on.
-config['tracked_shards_config'] = {'Accounts': [contract_id]}
-
-json.dump(config, open(config_file, 'w'), indent=2)
+config['tracked_shards_config'] = {'Accounts': ["$MPC_CONTRACT_ID"]}
+json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
 
 create_secrets_json_file() {
-    local secrets_file="$1"
+    python3 <<EOF
+import json;
 
-    # IMPORTANT: do not embed secrets into the Python source via bash interpolation.
-    export MPC_P2P_PRIVATE_KEY
-    export MPC_ACCOUNT_SK
-
-    python3 - "$secrets_file" <<'EOF'
-import json
-import os
-import sys
-
-secrets_file = sys.argv[1]
-p2p_key_str = os.environ.get("MPC_P2P_PRIVATE_KEY", "")
-account_sk_str = os.environ.get("MPC_ACCOUNT_SK", "")
+p2p_key_str = "${MPC_P2P_PRIVATE_KEY}"
+account_sk_str = "${MPC_ACCOUNT_SK}"
 
 if not p2p_key_str or not account_sk_str:
     print("Error: MPC_P2P_PRIVATE_KEY and MPC_ACCOUNT_SK must be provided", file=sys.stderr)
@@ -134,7 +69,7 @@ secrets = {
 }
 
 # Write to secrets.json
-with open(secrets_file, 'w') as f:
+with open("$secrets_file", 'w') as f:
     json.dump(secrets, f, indent=2)
 
 print("secrets.json generated successfully")
@@ -234,7 +169,7 @@ generate_secrets_json() {
     # Only generate secrets.json if we have the required keys
     if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
         echo "Generating secrets.json from provided keys..."
-        if create_secrets_json_file "$secrets_file"; then
+        if create_secrets_json_file; then
             echo "secrets.json created at $secrets_file"
         else
             echo "Failed to generate secrets.json" >&2
