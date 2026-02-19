@@ -267,7 +267,7 @@ subgraph CHAIN[Chain Indexer]
 
     TX_SENDER[**Transaction Sender**<br/><br/>
         **Submits** transaction to the neard node
-        **Returns** transaction result
+        **Returns** transaction hash
     ]
 
     subgraph NEARD[**Neard node**]
@@ -422,31 +422,8 @@ The chain indexer consists of three functionalities, each one with their own API
 The chain indexer should offer a convenient method for viewing and subscribing to contract state. We assume that contract state is seen through view methods in the contract implementation and propose the following interface:
 
 ```rust
-/// one-time call to `view_method` on the contract at `contract_id`
-trait ContractStateView {
-    async fn get<T: DeserializeOwned>(
-        &self,
-        contract_id: AccountId,
-        contract_method: String,
-    ) -> Result<(BlockHeight, T)>;
-}
-
-/// subscriber for state view - the receiver passed trough the Oneshot channel is used to pass the latest output of the view method.
-/// Note that the receiver returns Result<(BlockHeight, T), Error>, meaning that errors encountered on the indexer side are passed to the receiver.
-trait ContractStateSubscriber {
-    async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
-        &self,
-        contract_id: AccountId,
-        contract_method: String,
-    ) -> Result<Oneshot<watch::Receiver<Result<(BlockHeight,T), Error>>>>;
-}
-```
-
-Alternatively, if we are concerned about having `tokio::watch` and `oneshot` channels in our API, we could return rely on a `latest()` and `next()` subscription interface:
-
-```rust
 trait ContractStateSnapshot<T> {
-    /// is synchronous, contains the last value
+    /// is synchronous, contains the last seen value
     fn latest(&self) -> Result<(BlockHeight, &T), Error>;
 }
 
