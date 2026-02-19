@@ -6,8 +6,10 @@ This script takes GitHub GraphQL API response JSON and formats it into
 a readable markdown structure for consumption by Claude AI code reviewer.
 """
 
+import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Dict, List, Any
 
 
@@ -251,17 +253,25 @@ def main() -> int:
     """
     Main entry point for the script.
 
-    Reads COMMENTS_JSON from environment variable and writes formatted
+    Reads comments JSON from a file path argument and writes formatted
     output to stdout.
 
     Returns:
         Exit code: 0 for success, 1 for error
     """
-    import os
+    parser = argparse.ArgumentParser(
+        description="Format GitHub PR comments for Claude Code Review"
+    )
+    parser.add_argument(
+        "json_file", type=Path, help="Path to JSON file from GitHub GraphQL API"
+    )
+    args = parser.parse_args()
 
-    comments_json = os.environ.get("COMMENTS_JSON")
-    if not comments_json:
-        print("⚠️ COMMENTS_JSON environment variable not set.", file=sys.stderr)
+    try:
+        with open(args.json_file, encoding="utf-8") as f:
+            comments_json = f.read()
+    except OSError as e:
+        print(f"⚠️ Failed to read input file: {e}", file=sys.stderr)
         return 1
 
     try:
