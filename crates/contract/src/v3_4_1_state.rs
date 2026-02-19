@@ -68,6 +68,7 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {},
+            metrics: Default::default(),
         }
     }
 }

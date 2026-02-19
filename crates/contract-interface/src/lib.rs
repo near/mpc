@@ -13,6 +13,7 @@ pub mod types {
     pub use foreign_chain::*;
     pub use participants::{ParticipantId, ParticipantInfo, Participants};
 
+    pub use metrics::Metrics;
     pub use primitives::{
         AccountId, CkdAppId, DomainId, K256AffinePoint, K256Scalar, K256Signature,
         SignatureResponse, Tweak,
@@ -30,6 +31,7 @@ pub mod types {
     mod config;
     mod crypto;
     mod foreign_chain;
+    mod metrics;
     mod participants;
     mod primitives;
     mod state;
