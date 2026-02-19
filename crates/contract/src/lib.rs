@@ -10,6 +10,7 @@
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
+pub mod metrics;
 pub mod node_migrations;
 pub mod primitives;
 pub mod state;
@@ -33,6 +34,7 @@ use crate::{
         TryIntoContractType, TryIntoInterfaceType,
     },
     errors::{Error, RequestError},
+    metrics::Metrics,
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     state::ContractNotInitialized,
     storage_keys::StorageKey,
@@ -110,6 +112,7 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+    metrics: Metrics,
 }
 
 /// A container for "orphaned" state that persists across contract migrations.
@@ -206,6 +209,14 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
+
+        if request.deprecated_payload.is_some() {
+            self.metrics.sign_with_v1_payload_count += 1;
+        }
+
+        if request.payload_v2.is_some() {
+            self.metrics.sign_with_v2_payload_count += 1;
+        }
 
         let request: SignRequest = request.try_into().unwrap();
 
@@ -1502,6 +1513,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            metrics: Default::default(),
         })
     }
 
@@ -1562,6 +1574,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            metrics: Default::default(),
         })
     }
 
