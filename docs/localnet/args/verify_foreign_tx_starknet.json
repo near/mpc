@@ -2,7 +2,7 @@
     "request": {
         "request": {
             "Starknet": {
-                "tx_id": "049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                "tx_id": "025c84e568751d2e3189357b3f48690e4e987084204bc82ebde1d51ec3948fd8",
                 "extractors": [
                     "BlockHash"
                 ],

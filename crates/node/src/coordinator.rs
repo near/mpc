@@ -787,7 +787,8 @@ where
     fn is_supported_foreign_chain(chain: &dtos::ForeignChain) -> bool {
         matches!(
             chain,
-            dtos::ForeignChain::Solana
+            dtos::ForeignChain::Abstract
+                | dtos::ForeignChain::Solana
                 | dtos::ForeignChain::Bitcoin
                 | dtos::ForeignChain::Ethereum
                 | dtos::ForeignChain::Starknet
@@ -968,6 +969,16 @@ mod tests {
             FakeForeignChainPolicyReader,
         >::is_supported_foreign_chain(
             &dtos::ForeignChain::Starknet
+        ));
+    }
+
+    #[test]
+    fn is_supported_foreign_chain__supports_abstract() {
+        assert!(Coordinator::<
+            MockTransactionSender,
+            FakeForeignChainPolicyReader,
+        >::is_supported_foreign_chain(
+            &dtos::ForeignChain::Abstract
         ));
     }
 }
