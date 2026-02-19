@@ -438,39 +438,7 @@ trait ContractStateSubscriber {
         &self,
         contract_id: AccountId,
         contract_method: String,
-        poll_strategy: PollStrategy,
     ) -> Result<Oneshot<watch::Receiver<Result<(BlockHeight,T), Error>>>>;
-}
-```
-
-The type `PollStategy` describes the desired interval to poll for new state, as well as behavior on error
-
-```rust
-pub struct PollStrategy {
-    /// duration between two consecutive polls
-    pub poll_interval: Duration,
-    pub on_failure: FailurePolicy,
-}
-
-/// Defines the behavior on failure
-pub enum FailurePolicy {
-    /// Abort the stream immediately on error
-    FailFast,
-    /// Retry after applying a backoff strategy
-    Retry {
-        backoff: BackoffStrategy,
-    },
-}
-
-/// Defines the timeout between consecutive attempts
-pub enum BackoffStrategy {
-    Fixed(Duration),
-    /// watis for max(initial*e^(exponent*t), max)
-    Exponential {
-        initial: Duration,
-        exponent: Duration,
-        max: Duration,
-    },
 }
 ```
 
@@ -496,7 +464,6 @@ trait ContractStateSubscriber {
         &self,
         contract: AccountId,
         view_method: str,
-        subscriber_policy: SubscriberPolicy,
     ) -> Result<Box<dyn ContractStateView<T> + Send>>;
 }
 ```
@@ -648,15 +615,21 @@ struct ReceiverFunctionCallEventData {
 We propose the following API for the transaction sender:
 ```rust
 
-pub struct TransactionSender {
+pub struct TransactionSender<V>
+where
+    V: LatestFinalBlock,
+{
     /// rpc handler for sending txs to the chain (internal type, c.f. indexer.rs)
     rpc_handler: IndexerRpcHandler,
     /// method to the view client to query the latest final block (needed for nonce computation)
-    view_client: impl LatestFinalBlock
+    view_client: V,
 }
 
 /// we could probably make this a trait for testing?
-impl TransactionSender {
+impl<V> TransactionSender<V>
+where
+    V: LatestFinalBlock
+{
     /// creates a function call transaction for contract `receiver_id` with method `method_name` and args `args`
     /// returns the CryptoHash for the receipt, such that the execution outcome can be tracked
     pub async fn submit_function_call_tx(
@@ -674,6 +647,11 @@ impl TransactionSender {
         /// gas to attach
         gas: Gas,
     ) -> Result<CryptoHash, TxSignerError>;
+}
+
+/// we will implement this for the view client
+trait LatestFinalBlock {
+    async fn latest_final_block(&self) -> Result<BlockView, Error>;
 }
 ```
 
