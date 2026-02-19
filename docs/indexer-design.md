@@ -428,20 +428,30 @@ trait ContractStateSnapshot<T> {
 }
 
 trait ContractStateStream<T> {
-    /// must be cancellation safe
-    /// returned BlockHeight is monotonically increasing
-    async fn next(&mut self) -> Result<(BlockHeight, &T), Error>;
+    /// is synchronous, contains the last seen value
+    fn latest(&self) -> Result<(BlockHeight, &T), Error>;
+    /// returns true if the value of type `T` has changed
+    async fn changed(&mut self) -> Result<bool, Error>;
 }
 
-trait ContractStateView<T>:
-    ContractStateSnapshot<T> + ContractStateStream<T> {}
 
-trait ContractStateSubscriber {
+impl ContractStateSubscriber {
     async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
         &self,
         contract: AccountId,
-        view_method: str,
-    ) -> Result<Box<dyn ContractStateView<T> + Send>>;
+        view_method: &str,
+    ) -> Result<impl ContractStateStream<T> + Send, Error>;
+
+    async fn view<T: DeserializeOwned + PartialEq + Send + 'static>(
+        &self,
+        contract: AccountId,
+        view_method: &str,
+    ) -> Result<impl ContractStateSnapshot<T> + Send, Error>
+}
+
+pub struct ContractStateSubscriber {
+    /// nearcore view client
+    view_client: IndexerViewClient
 }
 ```
 
