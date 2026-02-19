@@ -19,7 +19,7 @@ from tee_launcher.launcher import (
     Platform,
     is_safe_env_value,
     _has_control_chars,
-    _is_allowed_container_env_key,
+    is_allowed_container_env_key,
     MAX_ENV_VALUE_LEN,
     MAX_PASSTHROUGH_ENV_VARS,
 )
@@ -855,32 +855,32 @@ def test_is_safe_env_value_rejects_too_long_value():
 
 
 # -------------------------
-# 3) _is_allowed_container_env_key tests
+# 3) is_allowed_container_env_key tests
 # -------------------------
 
 
-def test_is_allowed_container_env_key_allows_mpc_prefix_uppercase():
-    assert _is_allowed_container_env_key("MPC_FOO") is True
-    assert _is_allowed_container_env_key("MPC_FOO_123") is True
-    assert _is_allowed_container_env_key("MPC_A_B_C") is True
+def testis_allowed_container_env_key_allows_mpc_prefix_uppercase():
+    assert is_allowed_container_env_key("MPC_FOO") is True
+    assert is_allowed_container_env_key("MPC_FOO_123") is True
+    assert is_allowed_container_env_key("MPC_A_B_C") is True
 
 
-def test_is_allowed_container_env_key_rejects_lowercase_or_invalid_chars():
-    assert _is_allowed_container_env_key("MPC_foo") is False
-    assert _is_allowed_container_env_key("MPC-FOO") is False
-    assert _is_allowed_container_env_key("MPC.FOO") is False
-    assert _is_allowed_container_env_key("MPC_") is False
+def testis_allowed_container_env_key_rejects_lowercase_or_invalid_chars():
+    assert is_allowed_container_env_key("MPC_foo") is False
+    assert is_allowed_container_env_key("MPC-FOO") is False
+    assert is_allowed_container_env_key("MPC.FOO") is False
+    assert is_allowed_container_env_key("MPC_") is False
 
 
-def test_is_allowed_container_env_key_allows_compat_non_mpc_keys():
-    assert _is_allowed_container_env_key("RUST_LOG") is True
-    assert _is_allowed_container_env_key("RUST_BACKTRACE") is True
-    assert _is_allowed_container_env_key("NEAR_BOOT_NODES") is True
+def testis_allowed_container_env_key_allows_compat_non_mpc_keys():
+    assert is_allowed_container_env_key("RUST_LOG") is True
+    assert is_allowed_container_env_key("RUST_BACKTRACE") is True
+    assert is_allowed_container_env_key("NEAR_BOOT_NODES") is True
 
 
-def test_is_allowed_container_env_key_denies_sensitive_keys():
-    assert _is_allowed_container_env_key("MPC_P2P_PRIVATE_KEY") is False
-    assert _is_allowed_container_env_key("MPC_ACCOUNT_SK") is False
+def testis_allowed_container_env_key_denies_sensitive_keys():
+    assert is_allowed_container_env_key("MPC_P2P_PRIVATE_KEY") is False
+    assert is_allowed_container_env_key("MPC_ACCOUNT_SK") is False
 
 
 # -------------------------

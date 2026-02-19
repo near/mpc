@@ -32,12 +32,14 @@ require_clean_env "MPC_ENV"
 require_clean_env "MPC_CONTRACT_ID"
 require_clean_env "MPC_ACCOUNT_ID"
 require_clean_env "NEAR_BOOT_NODES"
+
 # Optional:
 if [ -n "$MPC_RESPONDER_ID" ]; then
   require_clean_env "MPC_RESPONDER_ID"
 fi
 
 # In TEE (dstack), do NOT allow raw private keys to be provided via env.
+# Non-TEE deployments may still use this mechanism (e.g., GCP nodes / migration).
 if [ -n "$DSTACK_ENDPOINT" ]; then
   if [ -n "$MPC_P2P_PRIVATE_KEY" ] || [ -n "$MPC_ACCOUNT_SK" ]; then
     echo "ERROR: MPC_P2P_PRIVATE_KEY / MPC_ACCOUNT_SK must not be provided when running in TEE (DSTACK_ENDPOINT is set)" >&2
@@ -74,6 +76,8 @@ initialize_near_node() {
 }
 
 update_near_node_config() {
+    # IMPORTANT: Use quoted heredoc to avoid bash interpolation injection.
+    # Pass values via environment variables into Python.
     export NEAR_NODE_CONFIG_FILE
     export MPC_ENV
     export MPC_CONTRACT_ID
@@ -88,6 +92,7 @@ contract_id = os.environ["MPC_CONTRACT_ID"]
 
 config = json.load(open(config_file))
 
+# boot nodes must be filled in or else the node will not have any peers.
 config['store']['load_mem_tries_for_tracked_shards'] = True
 
 if mpc_env == "mpc-localnet":
@@ -96,17 +101,17 @@ else:
     # FAIL-FAST: crash if expected keys are missing (same behavior as before)
     config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
 
+# Track whichever shard the contract account is on.
 config['tracked_shards_config'] = {'Accounts': [contract_id]}
 
 json.dump(config, open(config_file, 'w'), indent=2)
 EOF
 }
 
-
-
 create_secrets_json_file() {
     local secrets_file="$1"
 
+    # IMPORTANT: do not embed secrets into the Python source via bash interpolation.
     export MPC_P2P_PRIVATE_KEY
     export MPC_ACCOUNT_SK
 
@@ -129,6 +134,7 @@ secrets = {
     "near_responder_keys": [account_sk_str]
 }
 
+# Write to secrets.json
 with open(secrets_file, 'w') as f:
     json.dump(secrets, f, indent=2)
 
@@ -150,8 +156,12 @@ initialize_mpc_config() {
 my_near_account_id: $MPC_ACCOUNT_ID
 near_responder_account_id: $responder_id
 number_of_responder_keys: 50
-web_ui: 0.0.0.0:8080
-migration_web_ui: 0.0.0.0:8079
+web_ui:
+  host: 0.0.0.0
+  port: 8080
+migration_web_ui:
+  host: 0.0.0.0
+  port: 8079
 pprof_bind_address: 0.0.0.0:34001
 triple:
   concurrency: 2
@@ -182,6 +192,7 @@ EOF
 }
 
 update_mpc_config() {
+    # Use sed to replace placeholder values
     sed -i "s/my_near_account_id:.*/my_near_account_id: $MPC_ACCOUNT_ID/" "$1"
     sed -i "s/mpc_contract_id:.*/mpc_contract_id: $MPC_CONTRACT_ID/" "$1"
 
@@ -197,11 +208,13 @@ update_mpc_config() {
 generate_secrets_json() {
     local secrets_file="$MPC_HOME_DIR/secrets.json"
 
+    # Skip if secrets.json already exists
     if [ -f "$secrets_file" ]; then
         echo "secrets.json already exists, skipping generation"
         return 0
     fi
 
+    # Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
     if [ -z "$MPC_P2P_PRIVATE_KEY" ]; then
         if [ -n "$GCP_PROJECT_ID" ] && [ -n "$GCP_P2P_PRIVATE_KEY_SECRET_ID" ]; then
             echo "MPC_P2P_PRIVATE_KEY not provided in environment, fetching from GCP Secret Manager..."
@@ -212,6 +225,7 @@ generate_secrets_json() {
         echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
     fi
 
+    # Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
     if [ -z "$MPC_ACCOUNT_SK" ]; then
         if [ -n "$GCP_PROJECT_ID" ] && [ -n "$GCP_ACCOUNT_SK_SECRET_ID" ]; then
             echo "MPC_ACCOUNT_SK not provided in environment, fetching from GCP Secret Manager..."
@@ -222,6 +236,7 @@ generate_secrets_json() {
         echo "Using provided MPC_ACCOUNT_SK from environment"
     fi
 
+    # Only generate secrets.json if we have the required keys
     if [ -n "$MPC_P2P_PRIVATE_KEY" ] && [ -n "$MPC_ACCOUNT_SK" ]; then
         echo "Generating secrets.json from provided keys..."
         if create_secrets_json_file "$secrets_file"; then
@@ -235,6 +250,7 @@ generate_secrets_json() {
     fi
 }
 
+# Check and initialize Near node config if needed
 if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
     echo "Near node is already initialized"
 else
@@ -242,8 +258,10 @@ else
     initialize_near_node "$MPC_HOME_DIR" && echo "Near node initialized"
 fi
 
+# Update the Near node config with the MPC ENV variables values
 update_near_node_config && echo "Near node config updated"
 
+# Check and initialize MPC config if needed
 if [ -r "$MPC_NODE_CONFIG_FILE" ]; then
     echo "MPC node is already initialized."
 else
@@ -253,8 +271,10 @@ fi
 
 update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 
+# Generate secrets.json from environment variables if needed (for 2.2.0 -> 3.0.0 upgrade)
 generate_secrets_json
 
+# Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
 if [ -z "$MPC_SECRET_STORE_KEY" ]; then
   echo "MPC_SECRET_STORE_KEY not provided in environment, will fetch from GCP Secret Manager..."
   MPC_SECRET_STORE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_LOCAL_ENCRYPTION_KEY_SECRET_ID")

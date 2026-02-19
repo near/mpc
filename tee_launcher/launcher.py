@@ -179,8 +179,8 @@ def _has_control_chars(s: str) -> bool:
 
 def is_safe_env_value(value: str) -> bool:
     """
-    Ensures that an environment variable value does not contain unsafe control characters
-    (newline/carriage return/NUL) that can lead to config injection in scripts, and is not huge.
+    Validates that an env value contains no unsafe control characters (CR/LF/NUL),
+    does not include LD_PRELOAD, and is within size limits to prevent injection or DoS.
     """
     if not isinstance(value, str):
         return False
@@ -188,7 +188,6 @@ def is_safe_env_value(value: str) -> bool:
         return False
     if _has_control_chars(value):
         return False
-    # Keep the original restriction LD_PRELOAD for documentation purposes
     if "LD_PRELOAD" in value:
         return False
     return True
@@ -762,7 +761,7 @@ def get_manifest_digest(
             print(
                 f"[Warning] {e}: Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
             )
-
+            # Q: Do we expect all requests to succeed?
     raise Exception("Image hash not found among tags.")
 
 
@@ -779,7 +778,7 @@ def get_bare_digest(full_digest: str) -> str:
     return full_digest.split(":", 1)[1]
 
 
-def _is_allowed_container_env_key(key: str) -> bool:
+def is_allowed_container_env_key(key: str) -> bool:
     if key in DENIED_CONTAINER_ENV_KEYS:
         return False
     # Allow MPC_* keys with strict regex (feature request).
@@ -847,7 +846,7 @@ def build_docker_cmd(
                     )
             continue
 
-        if not _is_allowed_container_env_key(key):
+        if not is_allowed_container_env_key(key):
             logging.warning(f"Ignoring unknown or unapproved env var: {key}")
             continue
 
