@@ -5,6 +5,9 @@ This script:
 - Deploys one MPC node into dstack CVM   (node is not garentied to be fully functional) 
 - Fetches `/public_data` and saves it to JSON
 
+It is used to generate real attestation data for testing only:
+See [UPDATING_LAUNCHER.md](../../../tee_launcher/UPDATING_LAUNCHER.md)
+
 ## Prerequisites
 - Local NEAR network running: `NEAR_ENV=mpc-localnet neard --home ~/.near/mpc-localnet run`
 - `mpc-localnet` configured in `near` CLI
