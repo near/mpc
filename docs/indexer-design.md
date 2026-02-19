@@ -431,7 +431,7 @@ trait ContractStateStream<T> {
     /// is synchronous, contains the last seen value
     fn latest(&self) -> Result<(BlockHeight, &T), Error>;
     /// returns true if the value of type `T` has changed
-    async fn changed(&mut self) -> Result<bool, Error>;
+    async fn changed(&mut self) -> Result<(), Error>;
 }
 
 
