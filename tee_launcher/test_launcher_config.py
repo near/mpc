@@ -879,7 +879,6 @@ def test_is_allowed_container_env_key_allows_compat_non_mpc_keys():
 
 
 def test_is_allowed_container_env_key_denies_sensitive_keys():
-    # These should be blocked by your new policy
     assert _is_allowed_container_env_key("MPC_P2P_PRIVATE_KEY") is False
     assert _is_allowed_container_env_key("MPC_ACCOUNT_SK") is False
 
