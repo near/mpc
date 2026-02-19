@@ -39,4 +39,4 @@ This will regenerate the following files:
 
 All files will be written into the specified output directory.
 
-In Addition look for the `VALID_ATTESTATION_TIMESTAMP` constant in `crates/test-utils/src/attestation.rs` and update it to a Unix timestamp that is after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
+In addition, look for the `VALID_ATTESTATION_TIMESTAMP` constant in `crates/test-utils/src/attestation.rs` and update it to a Unix timestamp that is after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
