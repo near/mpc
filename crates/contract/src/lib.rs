@@ -10,7 +10,6 @@
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
-pub mod metrics;
 pub mod node_migrations;
 pub mod primitives;
 pub mod state;
@@ -34,7 +33,6 @@ use crate::{
         TryIntoContractType, TryIntoInterfaceType,
     },
     errors::{Error, RequestError},
-    metrics::Metrics,
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     state::ContractNotInitialized,
     storage_keys::StorageKey,
@@ -45,7 +43,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
 use contract_interface::method_names;
 use contract_interface::types::{
-    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
 use crypto_shared::{
@@ -1610,7 +1608,7 @@ impl MpcContract {
     }
 
     pub fn metrics(&self) -> contract_interface::types::Metrics {
-        (&self.metrics).into_dto_type()
+        self.metrics.clone()
     }
 
     /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.

@@ -47,7 +47,6 @@ use crate::{
         ProtocolContractState,
     },
     update::{ProposedUpdates, Update},
-    Metrics,
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -886,15 +885,6 @@ impl TryIntoContractType<k256::Scalar> for dtos::K256Scalar {
     fn try_into_contract_type(self) -> Result<k256::Scalar, Self::Error> {
         k256::Scalar::from_repr_vartime(self.scalar.into())
             .ok_or(ConversionError::DataConversion.message("Failed to convert k256 scalar"))
-    }
-}
-
-impl IntoInterfaceType<dtos::Metrics> for &Metrics {
-    fn into_dto_type(self) -> dtos::Metrics {
-        dtos::Metrics {
-            sign_with_v1_payload_count: self.sign_with_v1_payload_count,
-            sign_with_v2_payload_count: self.sign_with_v2_payload_count,
-        }
     }
 }
 

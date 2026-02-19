@@ -2,6 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 #[derive(
+    Default,
     Debug,
     Clone,
     Eq,
