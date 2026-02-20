@@ -82,8 +82,11 @@ jobs:
       mpc_launcher_image_id: ${{ steps.digests.outputs.mpc_launcher_image_id }}
 
     steps:
-      # Trigger the launcher retag workflow.
+      # Dispatch each retag workflow and immediately capture its run ID.
+      # A brief sleep after each dispatch lets the run appear in the API
+      # before we query for it.
       - name: Retag mpc-launcher
+        id: launcher
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -91,9 +94,12 @@ jobs:
             --repo "${{ github.repository }}" \
             -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
             -f release-tag="${{ needs.create-tag.outputs.version }}"
+          sleep 5
+          RUN_ID=$(gh run list --workflow=docker_launcher_release.yml --repo "${{ github.repository }}" --limit=1 --json databaseId -q '.[0].databaseId')
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
-      # Trigger the node retag workflow for mpc-node-gcp.
       - name: Retag mpc-node-gcp
+        id: node-gcp
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -102,9 +108,12 @@ jobs:
             -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
             -f release-tag="${{ needs.create-tag.outputs.version }}" \
             -f repository="mpc-node-gcp"
+          sleep 5
+          RUN_ID=$(gh run list --workflow=docker_node_release.yml --repo "${{ github.repository }}" --limit=1 --json databaseId -q '.[0].databaseId')
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
-      # Trigger the node retag workflow for mpc-node.
       - name: Retag mpc-node
+        id: node
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -113,18 +122,17 @@ jobs:
             -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
             -f release-tag="${{ needs.create-tag.outputs.version }}" \
             -f repository="mpc-node"
+          sleep 5
+          RUN_ID=$(gh run list --workflow=docker_node_release.yml --repo "${{ github.repository }}" --limit=1 --json databaseId -q '.[0].databaseId')
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
-      # Wait for all three dispatched retag workflows to complete.
-      # A brief pause lets the runs appear in the API, then gh run watch
-      # polls until each one finishes (with --exit-status to fail if the
-      # workflow itself fails).
+      # Wait for all three dispatched runs to complete.
+      # --exit-status makes gh run watch fail if the workflow itself fails.
       - name: Wait for retag workflows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sleep 5
-          for WORKFLOW in docker_launcher_release.yml docker_node_release.yml docker_node_release.yml; do
-            RUN_ID=$(gh run list --workflow="$WORKFLOW" --repo "${{ github.repository }}" --limit=1 --json databaseId -q '.[0].databaseId')
+          for RUN_ID in ${{ steps.launcher.outputs.run_id }} ${{ steps.node-gcp.outputs.run_id }} ${{ steps.node.outputs.run_id }}; do
             gh run watch "$RUN_ID" --repo "${{ github.repository }}" --exit-status
           done
 
