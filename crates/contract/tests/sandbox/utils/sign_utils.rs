@@ -4,6 +4,7 @@ use super::shared_key_utils::{
     derive_secret_key_ed25519, derive_secret_key_secp256k1, generate_random_app_public_key,
     DomainKey, SharedSecretKey,
 };
+use bounded_collections::BoundedVec;
 use contract_interface::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     SIGN,
@@ -25,7 +26,7 @@ use mpc_contract::{
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
         domain::DomainId,
-        signature::{Bytes, Payload, SignRequestArgs, SignatureRequest, YieldIndex},
+        signature::{Payload, SignRequestArgs, SignatureRequest, YieldIndex},
     },
 };
 use near_account_id::AccountId;
@@ -528,7 +529,7 @@ fn create_response_ed25519(
         .try_into()
         .unwrap();
 
-    let bytes = Bytes::new(payload.into()).unwrap();
+    let bytes = BoundedVec::from(payload);
     let payload = Payload::Eddsa(bytes);
 
     let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);

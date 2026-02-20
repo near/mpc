@@ -19,4 +19,5 @@ pub enum StorageKey {
     NodeMigrations,
     ForeignChainPolicyVotes,
     PendingVerifyForeignTxRequests,
+    PendingSignatureRequestsV3,
 }

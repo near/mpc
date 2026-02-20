@@ -1460,6 +1460,26 @@ expression: abi
         "Bls12381G2PublicKey": {
           "type": "string"
         },
+        "BoundedVec_uint8_Min32_Max1232": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 1232,
+          "minItems": 32
+        },
+        "BoundedVec_uint8_Min32_Max32": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
+        },
         "CKDRequest": {
           "type": "object",
           "required": [
@@ -2614,14 +2634,7 @@ expression: abi
               ],
               "properties": {
                 "Ecdsa": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
+                  "$ref": "#/definitions/BoundedVec_uint8_Min32_Max32"
                 }
               },
               "additionalProperties": false
@@ -2633,12 +2646,7 @@ expression: abi
               ],
               "properties": {
                 "Eddsa": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  }
+                  "$ref": "#/definitions/BoundedVec_uint8_Min32_Max1232"
                 }
               },
               "additionalProperties": false

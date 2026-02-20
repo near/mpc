@@ -1,5 +1,5 @@
 [package]
-name = "non-empty-collections"
+name = "bounded-collections"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

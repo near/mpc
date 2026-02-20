@@ -51,10 +51,11 @@ __abi-generate = ["near-sdk/__abi-generate"]
 anyhow = { workspace = true }
 assert_matches = { workspace = true }
 borsh = { workspace = true }
+bounded-collections = { workspace = true }
 contract-interface = { workspace = true }
 curve25519-dalek = { workspace = true }
 derive_more = { workspace = true, features = ["from", "deref"] }
-hex = { workspace = true, features = [] }
+hex = { workspace = true }
 k256 = { workspace = true, features = [
     "sha256",
     "ecdsa",
@@ -70,7 +71,6 @@ near-account-id = { workspace = true, features = [
     "serde",
 ] }
 near-sdk = { workspace = true }
-non-empty-collections = { workspace = true }
 rand = { workspace = true, optional = true }
 schemars = { workspace = true }
 serde = { workspace = true }

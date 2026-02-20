@@ -32,8 +32,9 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
+use bounded_collections::BoundedVec;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
-use mpc_contract::primitives::signature::{Bytes, Payload};
+use mpc_contract::primitives::signature::Payload;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
@@ -274,13 +275,21 @@ pub async fn request_signature_and_await_response(
         SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
-            Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
+
+            Payload::Ecdsa(payload.into())
         }
         SignatureScheme::Ed25519 => {
-            let len = rand::thread_rng().gen_range(32..1232);
+            const LOWER: usize = 32;
+            const UPPER: usize = 1232;
+            let len = rand::thread_rng().gen_range(LOWER..=UPPER);
+
             let mut payload = vec![0; len];
             rand::thread_rng().fill_bytes(payload.as_mut());
-            Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
+
+            let bounded_payload: BoundedVec<u8, LOWER, UPPER> =
+                BoundedVec::<u8, LOWER, UPPER>::try_from(payload).unwrap();
+
+            Payload::Eddsa(bounded_payload)
         }
         SignatureScheme::Bls12381 => unreachable!(),
     };
