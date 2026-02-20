@@ -148,3 +148,37 @@ echo "==> Bumping workspace version: ${OLD_VERSION} -> ${VERSION} in Cargo.toml"
 sed -i "0,/^version = \"${OLD_VERSION}\"/s//version = \"${VERSION}\"/" "$CARGO_TOML"
 
 echo "==> Cargo.toml version updated."
+
+# --- Verify contract ABI has changed ---
+
+# The version bump should cause the contract ABI to differ from the checked-in
+# snapshot. We run the ABI comparison test and expect it to fail — if it passes,
+# something is wrong (the ABI was not affected by the version change).
+echo "==> Verifying contract ABI has changed after version bump..."
+if cargo nextest run -p mpc-contract abi_has_not_changed 2>/dev/null; then
+    echo "Error: abi_has_not_changed test passed, but it should have failed after a version bump."
+    exit 1
+fi
+echo "==> ABI change confirmed (test failed as expected)."
+
+# --- Update ABI snapshot ---
+
+echo "==> Accepting updated ABI snapshot..."
+cargo insta accept
+
+# --- Update third-party licenses ---
+
+echo "==> Regenerating third-party licenses..."
+cd "${REPO_ROOT}/third-party-licences"
+cargo about generate --locked -m ../Cargo.toml about.hbs > licenses.html
+cd "$REPO_ROOT"
+echo "==> Third-party licenses updated."
+
+# --- Commit and push release changes ---
+
+echo "==> Committing release changes..."
+git add -A
+git commit -m "Release v${VERSION}"
+git push
+
+echo "==> Release v${VERSION} committed and pushed."
