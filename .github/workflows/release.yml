@@ -116,8 +116,6 @@ jobs:
 
       # Wait for the retag workflows to complete before inspecting.
       - name: Wait for retag workflows
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Waiting 60s for retag workflows to complete..."
           sleep 60
@@ -185,7 +183,6 @@ jobs:
         id: contract-hash
         run: |
           CONTRACT_HASH=$(sha256sum target/near/mpc_contract/mpc_contract.wasm | awk '{print $1}')
-          echo "CONTRACT_HASH=$CONTRACT_HASH" >> "$GITHUB_ENV"
           echo "sha256=$CONTRACT_HASH" >> "$GITHUB_OUTPUT"
 
       # Rename the build outputs to include the release version and
@@ -228,7 +225,6 @@ jobs:
 
       # Generate the changelog entries for this release only.
       - name: Generate changelog
-        id: changelog
         env:
           VERSION: ${{ needs.create-tag.outputs.version }}
         run: |
@@ -252,8 +248,8 @@ jobs:
           LAUNCHER_IMAGE_ID: ${{ needs.retag-docker-images.outputs.mpc_launcher_image_id }}
           CONTRACT_HASH: ${{ needs.build-contract.outputs.contract-hash }}
         run: |
-          cat > release-notes.md <<EOF
-          $(cat release-notes-raw.md)
+          cp release-notes-raw.md release-notes.md
+          cat >> release-notes.md <<EOF
 
           ## Docker images
 
@@ -274,7 +270,10 @@ jobs:
           digest: sha256:${CONTRACT_HASH}
           EOF
 
-      # Create the draft release on GitHub, attaching the contract archive.
+      # Create a draft release on GitHub using the gh CLI.
+      # --draft: the release is not published yet, allowing manual review before going live.
+      # --notes-file: uses the composed release notes (changelog + Docker images + contract hash).
+      # The contract .tar.gz is passed as a positional argument, which gh attaches as a release asset.
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
