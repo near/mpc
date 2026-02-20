@@ -1665,6 +1665,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "chain-indexer"
+version = "3.4.1"
+dependencies = [
+ "anyhow",
+ "humantime",
+ "near-account-id 2.5.0",
+ "near-async",
+ "near-client",
+ "near-indexer",
+ "near-indexer-primitives",
+ "near-o11y",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5338,6 +5360,7 @@ dependencies = [
  "bs58 0.5.1",
  "built",
  "bytes",
+ "chain-indexer",
  "clap",
  "contract-interface",
  "derive_more 2.1.1",

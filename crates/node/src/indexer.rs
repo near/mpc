@@ -12,6 +12,7 @@ use crate::{
 
 use self::stats::IndexerStats;
 use anyhow::Context;
+use chain_indexer::neard::ChainIndexer;
 use contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
     GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
@@ -61,39 +62,35 @@ pub mod types;
 pub mod fake;
 
 pub(crate) struct IndexerState {
-    /// For querying blockchain state.
-    view_client: IndexerViewClient,
-    /// For querying blockchain sync status.
-    client: IndexerClient,
-    /// For sending txs to the chain.
-    rpc_handler: IndexerRpcHandler,
+    /// Chain indexer to interact with the NEAR blockchain
+    chain_indexer: ChainIndexer,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
-    /// Stores runtime indexing statistics.
-    stats: Arc<Mutex<IndexerStats>>,
 }
 
 impl IndexerState {
     pub fn new(
-        view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
-        client: TokioRuntimeHandle<ClientActorInner>,
-        rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
+        chain_indexer: ChainIndexer,
+        //view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
+        //client: TokioRuntimeHandle<ClientActorInner>,
+        //rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
-            view_client: IndexerViewClient { view_client },
-            client: IndexerClient { client },
-            rpc_handler: IndexerRpcHandler { rpc_handler },
+            chain_indexer,
+            //view_client: IndexerViewClient { view_client },
+            //client: IndexerClient { client },
+            //rpc_handler: IndexerRpcHandler { rpc_handler },
             mpc_contract_id,
-            stats: Arc::new(Mutex::new(IndexerStats::new())),
+            //stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
     }
 }
 
-#[derive(Clone)]
-struct IndexerViewClient {
-    view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
-}
+//#[derive(Clone)]
+//struct IndexerViewClient {
+//    view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
+//}
 
 // TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
 // We should remove this account_id parameter...
@@ -104,7 +101,7 @@ struct IndexerViewClient {
 // indexer_state.view_client.get_mpc_tee_accounts().await
 // This pattern repeats for all the methods.
 // TODO(#1956): There is a lot of duplicate code here that could be simplified
-impl IndexerViewClient {
+impl IndexerState {
     pub(crate) async fn get_pending_request(
         &self,
         mpc_contract_id: &AccountId,
@@ -130,6 +127,8 @@ impl IndexerViewClient {
         };
 
         let query_response = self
+            .chain_indexer
+            .view_client()
             .view_client
             .send_async(query)
             .await
@@ -405,66 +404,66 @@ impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
     }
 }
 
-#[derive(Clone)]
-struct IndexerClient {
-    client: TokioRuntimeHandle<ClientActorInner>,
-}
-
-const INTERVAL: Duration = Duration::from_millis(500);
-
-impl IndexerClient {
-    async fn wait_for_full_sync(&self) {
-        loop {
-            tokio::time::sleep(INTERVAL).await;
-
-            let status_request = Status {
-                is_health_check: false,
-                detailed: false,
-            };
-            let status_response = self
-                .client
-                .send_async(
-                    near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
-                )
-                .await;
-
-            let Ok(Ok(status)) = status_response else {
-                continue;
-            };
-
-            if !status.sync_info.syncing {
-                return;
-            }
-        }
-    }
-}
-
-// #[derive(Debug)]
-struct IndexerRpcHandler {
-    rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
-}
-
-impl IndexerRpcHandler {
-    /// Creates, signs, and submits a function call with the given method and serialized arguments.
-    async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<()> {
-        let response = self
-            .rpc_handler
-            .send_async(near_client::ProcessTxRequest {
-                transaction,
-                is_forwarded: false,
-                check_only: false,
-            })
-            .await?;
-
-        match response {
-            // We're not a validator, so we should always be routing the transaction.
-            near_client::ProcessTxResponse::RequestRouted => Ok(()),
-            _ => {
-                anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
-            }
-        }
-    }
-}
+//#[derive(Clone)]
+//struct IndexerClient {
+//    client: TokioRuntimeHandle<ClientActorInner>,
+//}
+//
+//const INTERVAL: Duration = Duration::from_millis(500);
+//
+//impl IndexerClient {
+//    async fn wait_for_full_sync(&self) {
+//        loop {
+//            tokio::time::sleep(INTERVAL).await;
+//
+//            let status_request = Status {
+//                is_health_check: false,
+//                detailed: false,
+//            };
+//            let status_response = self
+//                .client
+//                .send_async(
+//                    near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
+//                )
+//                .await;
+//
+//            let Ok(Ok(status)) = status_response else {
+//                continue;
+//            };
+//
+//            if !status.sync_info.syncing {
+//                return;
+//            }
+//        }
+//    }
+//}
+//
+//// #[derive(Debug)]
+//struct IndexerRpcHandler {
+//    rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
+//}
+//
+//impl IndexerRpcHandler {
+//    /// Creates, signs, and submits a function call with the given method and serialized arguments.
+//    async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<()> {
+//        let response = self
+//            .rpc_handler
+//            .send_async(near_client::ProcessTxRequest {
+//                transaction,
+//                is_forwarded: false,
+//                check_only: false,
+//            })
+//            .await?;
+//
+//        match response {
+//            // We're not a validator, so we should always be routing the transaction.
+//            near_client::ProcessTxResponse::RequestRouted => Ok(()),
+//            _ => {
+//                anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
+//            }
+//        }
+//    }
+//}
 
 /// API to interact with the indexer. Can be replaced by a dummy implementation.
 /// The MPC node implementation needs this and only this to be able to interact

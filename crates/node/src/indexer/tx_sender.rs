@@ -141,7 +141,7 @@ async fn submit_tx(
     params_ser: String,
     gas: Gas,
 ) -> anyhow::Result<()> {
-    let block = indexer_state.view_client.latest_final_block().await?;
+    let block = indexer_state.chain_indexer.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
@@ -161,7 +161,7 @@ async fn submit_tx(
         transaction.transaction.nonce(),
     );
 
-    indexer_state.rpc_handler.submit_tx(transaction).await
+    indexer_state.chain_indexer.submit_tx(transaction).await
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
@@ -206,7 +206,7 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending verify foreign tx request still exists in the contract state
             let pending_request_response = indexer_state
-                .view_client
+                .view_client()
                 .get_pending_verify_foreign_tx_request(
                     &indexer_state.mpc_contract_id,
                     &respond_args.request,

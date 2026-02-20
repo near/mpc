@@ -10,6 +10,7 @@ use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
+use chain_indexer::neard::start_with_streamer;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
@@ -86,23 +87,25 @@ pub fn spawn_real_indexer(
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
         indexer_tokio_runtime.block_on(async {
             let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
+            let (chain_indexer, stream) = start_with_streamer(near_indexer_config).await;
 
-            let near_config = near_indexer_config
-                .load_near_config()
-                .expect("near config is present");
+            //let near_config = near_indexer_config
+            //    .load_near_config()
+            //    .expect("near config is present");
 
-            let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
-                .await
-                .expect("near node has started");
+            //let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
+            //    .await
+            //    .expect("near node has started");
 
-            let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
+            //let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 
-            let stream = indexer.streamer();
+            //let stream = indexer.streamer();
 
             let indexer_state = Arc::new(IndexerState::new(
-                near_node.view_client,
-                near_node.client,
-                near_node.rpc_handler,
+                chain_indexer,
+                //near_node.view_client,
+                //near_node.client,
+                //near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
 
