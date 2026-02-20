@@ -1,0 +1,84 @@
+use derive_more::{From, Into};
+
+use crate::near_internals_wrapper::view_client::{
+    errors::{GetBlockError, QueryError, ViewClientError},
+    request::ViewFunctionCall,
+};
+
+#[derive(Clone)]
+pub(crate) struct ViewClientWrapper {
+    view_client:
+        near_async::multithread::MultithreadRuntimeHandle<near_client::ViewClientActorInner>,
+}
+
+#[derive(Into, From, Copy, Clone)]
+pub struct BlockHeight(u64);
+
+#[derive(Clone)]
+pub struct ViewOutput {
+    pub observed_at: BlockHeight,
+    pub value: Vec<u8>,
+}
+
+impl ViewClientWrapper {
+    pub(crate) fn new(
+        view_client: near_async::multithread::MultithreadRuntimeHandle<
+            near_client::ViewClientActorInner,
+        >,
+    ) -> Self {
+        Self { view_client }
+    }
+    // todo: don't erturn the full BlockView, but only what you need
+    pub(crate) async fn latest_final_block(
+        &self,
+    ) -> Result<near_indexer_primitives::views::BlockView, ViewClientError> {
+        let block_query =
+            near_client::GetBlock(near_indexer_primitives::types::BlockReference::Finality(
+                near_indexer_primitives::types::Finality::Final,
+            ));
+        let send_result =
+            near_async::messaging::CanSendAsync::send_async(&self.view_client, block_query).await;
+        let response_result = send_result.map_err(|err| GetBlockError::Send {
+            source: Box::new(err),
+        })?;
+        let response = response_result.map_err(|err| GetBlockError::Response {
+            source: Box::new(err),
+        })?;
+        Ok(response)
+    }
+
+    pub(crate) async fn view_function_query(
+        &self,
+        request: &ViewFunctionCall,
+    ) -> Result<ViewOutput, ViewClientError> {
+        let query = near_client::Query {
+            block_reference: near_indexer_primitives::types::BlockReference::Finality(
+                near_indexer_primitives::types::Finality::Final,
+            ),
+            request: request.into(),
+        };
+        let send_result =
+            near_async::messaging::CanSendAsync::send_async(&self.view_client, query).await;
+        let response_result = send_result.map_err(|err| QueryError::Send {
+            op: request.clone(),
+            source: Box::new(err),
+        })?;
+        let response = response_result.map_err(|err| QueryError::Response {
+            op: request.clone(),
+            source: Box::new(err),
+        })?;
+        match response.kind {
+            near_indexer_primitives::views::QueryResponseKind::CallResult(call_result) => {
+                Ok(ViewOutput {
+                    observed_at: response.block_height.into(),
+                    value: call_result.result,
+                })
+            }
+            other => Err(QueryError::UnexpectedResponse {
+                view_call: request.clone(),
+                response: format!("{:?}", other),
+            }
+            .into()),
+        }
+    }
+}

@@ -211,7 +211,7 @@ An improved indexer design should achieve the following goals:
 
 We propose to split the two functionalities of the current indexer (MPC orchestration and Chain Indexing) into two separate components:
 
-The **Chain Indexer**:
+The **Chain Gateway**:
 This component is responsible for:
 - spinning-up a neard node;
 - abstracting the neard indexer interface such that no nearcore internals are exposed.
@@ -252,7 +252,7 @@ subgraph CONTEXT[MPC Context]
 
 end
 
-subgraph CHAIN[Chain Indexer]
+subgraph CHAIN[Chain Gateway]
     direction TB
     TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
         **Filters** non-finalized NEAR blocks for specific transactions
@@ -306,12 +306,12 @@ end
 CORE --> VIEW
 CORE --> WRITE
 
-%% Context --> Chain Indexer
+%% Context --> Chain Gateway
 VIEW --> CONTRACT_STATE_VIEWER
 VIEW --> TX_SUBSCRIBER
 WRITE --> TX_SENDER
 
-%% Chain Indexer --> Neard Node
+%% Chain Gateway --> Neard Node
 TX_SUBSCRIBER --> BLOCK_STREAMER
 CONTRACT_STATE_VIEWER --> VIEW_CLIENT
 TX_SENDER --> RPC_HANDLER
@@ -367,7 +367,7 @@ subgraph SERVICES[MPC Services]
     HOT_SERVICE[HOT MPC Service]
 end
 
-subgraph CHAIN[Chain Indexer]
+subgraph CHAIN[Chain Gateway]
     direction TB
     TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
         **Filters** non-finalized NEAR blocks for specific transactions
@@ -406,19 +406,21 @@ HOT_SERVICE --> TX_SENDER
 
 ### API Proposal
 
-In this section, we propose API designs for the Chain Indexer and MPC Context.
+In this section, we propose API designs for the Chain Gateway and MPC Context.
 
-#### Chain Indexer
+#### Chain Gateway
 
-The chain indexer consists of three functionalities, each one with their own API:
+The Chain Gateway consists of three functionalities, each one with their own API:
 
-- **Contract State subscriber:** subscribe to arbitrary view methods on arbitrary contracts on the NEAR blockchain.
+- **State viewer:** allows to:
+    - subscribe to arbitrary view methods on arbitrary contracts on the NEAR blockchain
+    - query arbitrary view methods on arbitrary contracts on the NEAR blockchain
 - **Block Events:** Filter the mempool for transactions matching a specific pattern (receipient or executor id and method names). Receive a stream of all matching transactions.
 - **Transaction Sender:** send transactions to the NEAR blockchain.
 
-##### Contract State Subscriber
+##### State Viewer
 
-The chain indexer should offer a convenient method for viewing and subscribing to contract state. We assume that contract state is seen through view methods in the contract implementation and propose the following interface:
+The Chain Gateway should offer a convenient method for viewing and subscribing to contract state. We assume that contract state is seen through view methods in the contract implementation and propose the following interface:
 
 ```rust
 trait ContractStateSnapshot<T> {
@@ -428,7 +430,7 @@ trait ContractStateSnapshot<T> {
 
 trait ContractStateStream<T> {
     /// is synchronous, contains the last seen value
-    fn latest(&self) -> Result<(BlockHeight, &T), Error>;
+    fn latest(&mut self) -> Result<(BlockHeight, &T), Error>;
     /// returns if the value of type `T` has changed
     async fn changed(&mut self) -> Result<(), Error>;
 }

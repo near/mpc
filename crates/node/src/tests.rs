@@ -103,8 +103,9 @@ impl OneNodeTestConfig {
                 let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
                 let (_, dummy_protocol_state_receiver) =
-                    watch::channel(ProtocolContractState::NotInitialized);
-                let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+                    watch::channel(Ok((0.into(), ProtocolContractState::NotInitialized)));
+                let (_, dummy_migration_state_receiver) =
+                    watch::channel(Ok((0.into(), BTreeMap::new())));
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),

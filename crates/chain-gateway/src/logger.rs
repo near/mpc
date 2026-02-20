@@ -1,31 +1,19 @@
+use crate::{near_internals_wrapper::ViewClientWrapper, stats::IndexerStats};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
-use crate::indexer::IndexerState;
-
-#[derive(Debug, Clone)]
-pub(crate) struct IndexerStats {
-    pub block_heights_processing: std::collections::BTreeSet<u64>,
-    pub blocks_processed_count: u64,
-    pub last_processed_block_height: u64,
-}
-
-impl IndexerStats {
-    pub fn new() -> Self {
-        Self {
-            block_heights_processing: std::collections::BTreeSet::new(),
-            blocks_processed_count: 0,
-            last_processed_block_height: 0,
-        }
-    }
-}
-
-pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
+// todo: rename this method
+// also, make it private and move into the IndexerStats module
+pub(crate) async fn indexer_logger(
+    stats: Arc<Mutex<IndexerStats>>,
+    view_client: Arc<ViewClientWrapper>,
+) {
     let interval_secs = 10;
     let mut prev_blocks_processed_count: u64 = 0;
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(interval_secs)).await;
-        let stats_lock = indexer_state.stats.lock().await;
+        let stats_lock = stats.lock().await;
         let stats_copy = stats_lock.clone();
         drop(stats_lock);
 
@@ -34,8 +22,7 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
             / (interval_secs as f64);
 
         let time_to_catch_the_tip_duration = if block_processing_speed > 0.0 {
-            if let Ok(block_height) = indexer_state
-                .view_client
+            if let Ok(block_height) = view_client
                 .latest_final_block()
                 .await
                 .map(|block| block.header.height)
@@ -57,7 +44,7 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
         };
 
         tracing::info!(
-            target: "indexer",
+            target: "chain gateway",
             "# {} | Blocks processing: {}| Blocks done: {}. Bps {:.2} b/s {}",
             stats_copy.last_processed_block_height,
             stats_copy.block_heights_processing.len(),

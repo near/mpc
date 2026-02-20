@@ -118,6 +118,7 @@ pub struct IndexerConfig {
     /// Tells whether to validate the genesis file before starting
     pub validate_genesis: bool,
     /// Sets the starting point for indexing
+    /// todo: #236: use block height from chain
     pub sync_mode: SyncMode,
     /// Sets the finality level at which blocks are streamed
     pub finality: Finality,

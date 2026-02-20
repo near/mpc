@@ -5,6 +5,7 @@ members = [
     "crates/attestation",
     "crates/backup-cli",
     "crates/bounded-collections",
+    "crates/chain-gateway",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
@@ -37,6 +38,7 @@ license = "MIT"
 #workspace members
 attestation = { path = "crates/attestation" }
 bounded-collections = { path = "crates/bounded-collections" }
+chain-gateway = { path = "crates/chain-gateway" }
 contract-history = { path = "crates/contract-history" }
 contract-interface = { path = "crates/contract-interface" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
@@ -132,6 +134,7 @@ lru = "0.16.3"
 mockall = "0.14.0"
 near-abi = "0.4.4"
 near-account-id = "2.5.0"
+near-client-primitives = "0.33.0"
 near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.6"
 near-primitives = "0.34.6"
