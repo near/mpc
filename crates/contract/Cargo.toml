@@ -55,7 +55,7 @@ bounded-collections = { workspace = true }
 contract-interface = { workspace = true }
 curve25519-dalek = { workspace = true }
 derive_more = { workspace = true, features = ["from", "deref"] }
-hex = { workspace = true }
+hex = { workspace = true, features = [] }
 k256 = { workspace = true, features = [
     "sha256",
     "ecdsa",
