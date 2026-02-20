@@ -165,7 +165,6 @@ pub enum SignatureScheme {
     Clone,
     Copy,
     Debug,
-    Default,
     Eq,
     PartialEq,
     Ord,
@@ -182,7 +181,6 @@ pub enum SignatureScheme {
 )]
 pub enum DomainPurpose {
     /// Domain is used by `sign()`.
-    #[default]
     Sign,
     /// Domain is used by `verify_foreign_transaction()`.
     ForeignTx,
