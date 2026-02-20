@@ -21,6 +21,7 @@ use contract_interface::types as dtos;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
+use mpc_contract::primitives::domain::AddDomainsVotes;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
@@ -111,6 +112,7 @@ impl FakeMpcContractState {
             DomainRegistry::default(),
             Keyset::new(EpochId::new(0), Vec::new()),
             participants_config_to_threshold_parameters(&participants),
+            AddDomainsVotes::default(),
         ));
     }
 
@@ -149,6 +151,7 @@ impl FakeMpcContractState {
                 previous_running_state.domains.clone(),
                 previous_running_state.keyset.clone(),
                 previous_running_state.parameters.clone(),
+                previous_running_state.add_domains_votes.clone(),
             ),
             reshared_keys: Vec::new(),
             resharing_key: KeyEvent::new(

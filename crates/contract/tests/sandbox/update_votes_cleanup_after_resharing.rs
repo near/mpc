@@ -1,8 +1,13 @@
 use crate::sandbox::{
     common::{init_env, SandboxTestSetup},
     utils::{
-        consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
-        mpc_contract::{assert_running_return_participants, assert_running_return_threshold},
+        consts::{
+            CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE,
+            PARTICIPANT_LEN,
+        },
+        mpc_contract::{
+            assert_running_return_participants, assert_running_return_threshold, get_state,
+        },
         resharing_utils::do_resharing,
         transactions::execute_async_transactions,
     },
@@ -133,6 +138,103 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .participants
         .iter()
         .any(|(a, _, _)| a.0.as_str() == voter_id.as_str()));
+
+    Ok(())
+}
+
+/// Tests that add_domain votes from participants who are removed during resharing
+/// are cleaned up, while votes from remaining participants are preserved.
+#[tokio::test]
+async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+
+    let initial_participants = assert_running_return_participants(&contract).await?;
+    let threshold = assert_running_return_threshold(&contract).await;
+
+    let next_domain_id = {
+        let state: dtos::ProtocolContractState = get_state(&contract).await;
+        let dtos::ProtocolContractState::Running(running) = &state else {
+            panic!("Expected running state");
+        };
+        running.domains.next_domain_id
+    };
+    let domains_to_add = vec![dtos::DomainConfig {
+        id: dtos::DomainId(next_domain_id),
+        scheme: dtos::SignatureScheme::Ed25519,
+        purpose: Some(dtos::DomainPurpose::Sign),
+    }];
+    execute_async_transactions(
+        &mpc_signer_accounts[0..2],
+        &contract,
+        method_names::VOTE_ADD_DOMAINS,
+        &json!({"domains": domains_to_add}),
+        GAS_FOR_VOTE_NEW_DOMAIN,
+    )
+    .await?;
+
+    let state: dtos::ProtocolContractState = get_state(&contract).await;
+    let dtos::ProtocolContractState::Running(running) = &state else {
+        panic!("Expected running state");
+    };
+    assert_eq!(running.add_domains_votes.proposal_by_account.len(), 2);
+
+    // When
+    let mut new_participants = Participants::new();
+    for (account_id, participant_id, participant_info) in initial_participants
+        .participants
+        .iter()
+        .skip(1)
+        .take(threshold.0 as usize)
+    {
+        new_participants
+            .insert_with_id(
+                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                mpc_contract::primitives::participants::ParticipantInfo {
+                    url: participant_info.url.clone(),
+                    sign_pk: participant_info.sign_pk.parse().unwrap(),
+                },
+                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
+    }
+
+    let new_threshold_parameters = ThresholdParameters::new(
+        new_participants,
+        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+    )
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let prospective_epoch_id = dtos::EpochId(6);
+
+    do_resharing(
+        &mpc_signer_accounts[1..threshold.0 as usize + 1],
+        &contract,
+        new_threshold_parameters,
+        prospective_epoch_id,
+    )
+    .await?;
+
+    // Then
+    let final_state: dtos::ProtocolContractState = get_state(&contract).await;
+    let dtos::ProtocolContractState::Running(final_running) = &final_state else {
+        panic!("Expected running state after resharing");
+    };
+
+    assert_eq!(final_running.add_domains_votes.proposal_by_account.len(), 1);
+
+    let expected_remaining_voter_id = &initial_participants.participants[1].1;
+    let remaining_voter_id = &final_running
+        .add_domains_votes
+        .proposal_by_account
+        .keys()
+        .next()
+        .expect("Expected one remaining vote")
+        .0;
+    assert_eq!(remaining_voter_id, expected_remaining_voter_id);
 
     Ok(())
 }
