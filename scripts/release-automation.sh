@@ -143,13 +143,11 @@ echo "==> Changelog written to CHANGELOG.md."
 # so this single substitution bumps every crate in the workspace.
 CARGO_TOML="${REPO_ROOT}/Cargo.toml"
 
-# Find the exact line number of the version under [workspace.package].
-# grep -n gives "29:version = ..." and we extract just the line number with cut.
-VERSION_LINE=$(grep -n '^version = ' "$CARGO_TOML" | head -1 | cut -d: -f1)
-OLD_VERSION=$(sed -n "${VERSION_LINE}p" "$CARGO_TOML" | grep -Po '[0-9]+\.[0-9]+\.[0-9]+')
-
-# Use the line number as a sed address so only that specific line is modified.
-echo "==> Bumping workspace version: ${OLD_VERSION} -> ${VERSION} in Cargo.toml (line ${VERSION_LINE})"
-sed -i "${VERSION_LINE}s/version = \"${OLD_VERSION}\"/version = \"${VERSION}\"/" "$CARGO_TOML"
+# Use a sed range address to target only the [workspace.package] section.
+# The range /\[workspace\.package\]/,/^version =/ selects from the section header
+# to the first "version = " line within it. The substitution only applies inside
+# that range, so dependency version strings elsewhere in the file are untouched.
+echo "==> Bumping workspace version in Cargo.toml to ${VERSION}"
+sed -i '/^\[workspace\.package\]$/,/^version = /{s/^version = ".*"/version = "'"${VERSION}"'"/}' "$CARGO_TOML"
 
 echo "==> Cargo.toml version updated."
