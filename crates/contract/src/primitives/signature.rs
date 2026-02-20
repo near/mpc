@@ -7,6 +7,10 @@ use near_account_id::AccountId;
 use near_sdk::{near, CryptoHash};
 use std::fmt::Debug;
 
+const ECDSA_PAYLOAD_SIZE_BYTES: usize = 32;
+const EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES: usize = 32;
+const EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES: usize = 1232;
+
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
 pub struct Tweak([u8; 32]);
@@ -30,17 +34,21 @@ pub enum Payload {
         #[serde(with = "hex_serde")]
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "hex_serde::HexString<32, 32>")
+            schemars(
+                with = "hex_serde::HexString<ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES>"
+            )
         )]
-        BoundedVec<u8, 32, 32>,
+        BoundedVec<u8, ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES>,
     ),
     Eddsa(
         #[serde(with = "hex_serde")]
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "hex_serde::HexString<32, 1232>")
+            schemars(
+                with = "hex_serde::HexString<EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>"
+            )
         )]
-        BoundedVec<u8, 32, 1232>,
+        BoundedVec<u8, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
     ),
 }
 
