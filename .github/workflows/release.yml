@@ -54,6 +54,7 @@ jobs:
           echo "short-sha=${SHA::7}" >> "$GITHUB_OUTPUT"
 
       # Checkout the main branch so the tag points to the merge commit.
+      # persist-credentials is needed for git push in the next step.
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -93,41 +94,50 @@ jobs:
         id: launcher
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHORT_SHA: ${{ needs.create-tag.outputs.short-sha }}
+          VERSION: ${{ needs.create-tag.outputs.version }}
         run: |
           gh workflow run docker_launcher_release.yml \
-            --repo "${{ github.repository }}" \
-            -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
-            -f release-tag="${{ needs.create-tag.outputs.version }}"
+            --repo "$REPO" \
+            -f source-tag="main-${SHORT_SHA}" \
+            -f release-tag="${VERSION}"
           sleep 5
-          RUN_ID=$(gh run list --workflow=docker_launcher_release.yml --repo "${{ github.repository }}" --limit=1 --json databaseId -q '.[0].databaseId')
+          RUN_ID=$(gh run list --workflow=docker_launcher_release.yml --repo "$REPO" --limit=1 --json databaseId -q '.[0].databaseId')
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Retag mpc-node-gcp
         id: node-gcp
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHORT_SHA: ${{ needs.create-tag.outputs.short-sha }}
+          VERSION: ${{ needs.create-tag.outputs.version }}
         run: |
           gh workflow run docker_node_release.yml \
-            --repo "${{ github.repository }}" \
-            -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
-            -f release-tag="${{ needs.create-tag.outputs.version }}" \
+            --repo "$REPO" \
+            -f source-tag="main-${SHORT_SHA}" \
+            -f release-tag="${VERSION}" \
             -f repository="mpc-node-gcp"
           sleep 5
-          RUN_ID=$(gh run list --workflow=docker_node_release.yml --repo "${{ github.repository }}" --limit=1 --json databaseId -q '.[0].databaseId')
+          RUN_ID=$(gh run list --workflow=docker_node_release.yml --repo "$REPO" --limit=1 --json databaseId -q '.[0].databaseId')
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Retag mpc-node
         id: node
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHORT_SHA: ${{ needs.create-tag.outputs.short-sha }}
+          VERSION: ${{ needs.create-tag.outputs.version }}
         run: |
           gh workflow run docker_node_release.yml \
-            --repo "${{ github.repository }}" \
-            -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
-            -f release-tag="${{ needs.create-tag.outputs.version }}" \
+            --repo "$REPO" \
+            -f source-tag="main-${SHORT_SHA}" \
+            -f release-tag="${VERSION}" \
             -f repository="mpc-node"
           sleep 5
-          RUN_ID=$(gh run list --workflow=docker_node_release.yml --repo "${{ github.repository }}" --limit=1 --json databaseId -q '.[0].databaseId')
+          RUN_ID=$(gh run list --workflow=docker_node_release.yml --repo "$REPO" --limit=1 --json databaseId -q '.[0].databaseId')
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       # Wait for all three dispatched runs to complete.
@@ -135,9 +145,13 @@ jobs:
       - name: Wait for retag workflows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          LAUNCHER_RUN: ${{ steps.launcher.outputs.run_id }}
+          NODE_GCP_RUN: ${{ steps.node-gcp.outputs.run_id }}
+          NODE_RUN: ${{ steps.node.outputs.run_id }}
         run: |
-          for RUN_ID in ${{ steps.launcher.outputs.run_id }} ${{ steps.node-gcp.outputs.run_id }} ${{ steps.node.outputs.run_id }}; do
-            gh run watch "$RUN_ID" --repo "${{ github.repository }}" --exit-status
+          for RUN_ID in $LAUNCHER_RUN $NODE_GCP_RUN $NODE_RUN; do
+            gh run watch "$RUN_ID" --repo "$REPO" --exit-status
           done
 
       - name: Install skopeo
@@ -183,6 +197,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: main
+          persist-credentials: false
 
       # Restore cached Rust dependencies to speed up the build.
       # save-if: false because we only want to read from the cache, not update it
@@ -238,12 +253,12 @@ jobs:
       contents: write
 
     steps:
-      # Checkout is needed for git-cliff to generate the changelog.
+      # Checkout is needed to read CHANGELOG.md.
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: main
-          fetch-depth: 0
+          persist-credentials: false
 
       # Extract the changelog section for this version from CHANGELOG.md.
       # Sections are delimited by "## [<version>]" headers, so we print
@@ -309,7 +324,7 @@ jobs:
           VERSION: ${{ needs.create-tag.outputs.version }}
         run: |
           gh release create "$TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "$GITHUB_REPOSITORY" \
             --title "MPC ${VERSION}" \
             --notes-file release-notes.md \
             --draft \
