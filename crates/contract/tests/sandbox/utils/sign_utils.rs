@@ -17,9 +17,8 @@ use k256::{
 };
 use mpc_contract::{
     crypto_shared::{
-        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types,
-        k256_types::SerializableAffinePoint, kdf::check_ec_signature, kdf::derive_app_id,
-        CKDResponse, SerializableScalar, SignatureResponse,
+        derive_key_secp256k1, derive_tweak, kdf::check_ec_signature, kdf::derive_app_id,
+        CKDResponse,
     },
     errors,
     primitives::{
@@ -29,8 +28,11 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
-use near_mpc_sdk::bounded_collections::BoundedVec;
-use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder};
+use near_mpc_sdk::sign::{Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature};
+use near_mpc_sdk::{
+    bounded_collections::BoundedVec,
+    sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse},
+};
 use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, types::NearToken, Account, Contract, Worker,
 };
@@ -158,7 +160,7 @@ impl SignRequestTest {
         let execution = status.await?;
         dbg!(&execution);
         let execution = execution.into_result()?;
-        let returned_resp: SignatureResponse = execution.json()?;
+        let returned_resp: SignatureRequestResponse = execution.json()?;
         assert_eq!(
             returned_resp, self.response.response,
             "Returned signature request does not match"
@@ -178,7 +180,7 @@ impl SignRequestTest {
 #[derive(Debug, Serialize)]
 pub struct SignResponseArgs {
     pub request: SignatureRequest,
-    pub response: SignatureResponse,
+    pub response: SignatureRequestResponse,
 }
 
 impl SignResponseArgs {
@@ -460,7 +462,7 @@ fn create_response_secp256k1(
     msg: &str,
     path: &str,
     signing_key: &ts_ecdsa::KeygenOutput,
-) -> (Payload, SignatureRequest, SignatureResponse) {
+) -> (Payload, SignatureRequest, SignatureRequestResponse) {
     let (digest, payload) = process_message(msg);
     let pk = signing_key.public_key;
     let tweak = derive_tweak(predecessor_id, path);
@@ -480,7 +482,6 @@ fn create_response_secp256k1(
     let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
-    let s: k256::Scalar = *s.as_ref();
 
     let recovery_id = if check_ec_signature(&derived_pk, &big_r, &s, payload.as_ecdsa().unwrap(), 0)
         .is_ok()
@@ -492,11 +493,16 @@ fn create_response_secp256k1(
         panic!("unable to use recovery id of 0 or 1");
     };
 
-    let respond_resp = SignatureResponse::Secp256k1(k256_types::Signature {
-        big_r: SerializableAffinePoint {
-            affine_point: big_r,
+    use k256::elliptic_curve::sec1::ToEncodedPoint;
+    let encoded_point = big_r.to_encoded_point(true);
+
+    let respond_resp = SignatureRequestResponse::Secp256k1(K256Signature {
+        big_r: K256AffinePoint {
+            affine_point: encoded_point.as_bytes().try_into().unwrap(),
         },
-        s: SerializableScalar { scalar: s },
+        s: K256Scalar {
+            scalar: s.to_bytes().into(),
+        },
         recovery_id,
     });
 
@@ -509,7 +515,7 @@ fn create_response_ed25519(
     msg: &str,
     path: &str,
     signing_key: &eddsa::KeygenOutput,
-) -> (Payload, SignatureRequest, SignatureResponse) {
+) -> (Payload, SignatureRequest, SignatureRequestResponse) {
     let tweak = derive_tweak(predecessor_id, path);
     let derived_signing_key = derive_secret_key_ed25519(signing_key, &tweak);
 
@@ -523,7 +529,7 @@ fn create_response_ed25519(
         frost_ed25519::SigningKey::from_scalar(derived_signing_key.private_share.to_scalar())
             .unwrap();
 
-    let signature = derived_signing_key
+    let signature: [u8; 64] = derived_signing_key
         .sign(OsRng, &payload)
         .serialize()
         .unwrap()
@@ -535,8 +541,8 @@ fn create_response_ed25519(
 
     let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);
 
-    let signature_response = SignatureResponse::Ed25519 {
-        signature: ed25519_types::Signature::new(signature),
+    let signature_response = SignatureRequestResponse::Ed25519 {
+        signature: Ed25519Signature::from(signature),
     };
 
     (payload, respond_req, signature_response)

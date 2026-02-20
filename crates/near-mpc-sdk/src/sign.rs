@@ -7,6 +7,11 @@ const EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES: usize = 32;
 const EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES: usize = 1232;
 
 pub use contract_interface::method_names::SIGN as SIGN_METHOD_NAME;
+// response types
+pub use contract_interface::types::{
+    Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature,
+    SignatureResponse as SignatureRequestResponse,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SignRequestArgs {
