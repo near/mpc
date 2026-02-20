@@ -20,9 +20,8 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use bounded_collections::BoundedVec;
 use contract_interface::types as dtos;
-use mpc_contract::primitives::signature::{Payload, Tweak};
+use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
 use near_indexer_primitives::CryptoHash;
 use tokio::time::{timeout, Duration};
 
@@ -33,8 +32,8 @@ fn build_signature_request(
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
     let payload_hash: [u8; 32] = foreign_tx_payload.compute_msg_hash()?.into();
-    let payload_bytes: BoundedVec<u8, 32, 32> = payload_hash.into();
-
+    let payload_bytes =
+        Bytes::new(payload_hash.to_vec()).map_err(|err| anyhow::format_err!("{err}"))?;
     Ok(SignatureRequest {
         id: request.id,
         receipt_id: request.receipt_id,

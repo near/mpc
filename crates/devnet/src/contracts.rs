@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
-use bounded_collections::BoundedVec;
 use contract_interface::method_names;
 use mpc_contract::primitives::{
     ckd::CKDRequestArgs,
     domain::{DomainConfig, SignatureScheme},
-    signature::{Payload, SignRequestArgs},
+    signature::{Bytes, Payload, SignRequestArgs},
 };
 use near_account_id::AccountId;
 use near_primitives::action::Action;
@@ -166,20 +165,13 @@ struct ParallelSignArgsV2 {
 fn make_payload(scheme: SignatureScheme) -> Payload {
     match scheme {
         SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
-            Payload::Ecdsa(rand::random::<[u8; 32]>().into())
+            Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
         }
         SignatureScheme::Ed25519 => {
-            const LOWER: usize = 32;
-            const UPPER: usize = 1232;
-            let len = rand::random_range(LOWER..=UPPER);
-
+            let len = rand::random_range(32..=1232);
             let mut payload = vec![0; len];
             rand::rng().fill_bytes(&mut payload);
-
-            let bounded_payload: BoundedVec<u8, LOWER, UPPER> =
-                BoundedVec::<u8, LOWER, UPPER>::try_from(payload).unwrap();
-
-            Payload::Eddsa(bounded_payload)
+            Payload::Eddsa(Bytes::new(payload).unwrap())
         }
         SignatureScheme::Bls12381 => {
             unreachable!("make_payload should not be called with `Bls12381` scheme")

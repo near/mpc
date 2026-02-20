@@ -5313,7 +5313,6 @@ version = "3.5.0"
 dependencies = [
  "anyhow",
  "borsh",
- "bounded-collections",
  "bs58 0.5.1",
  "clap",
  "contract-interface",

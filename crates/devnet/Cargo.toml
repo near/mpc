@@ -7,7 +7,6 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 borsh = { workspace = true }
-bounded-collections = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
 contract-interface = { workspace = true }
