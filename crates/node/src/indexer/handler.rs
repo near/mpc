@@ -140,7 +140,7 @@ pub(crate) async fn listen_blocks(
     mpc_contract_id: AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
 ) -> anyhow::Result<()> {
-    use chain_gateway::stats::IndexerStats;
+    
 
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {

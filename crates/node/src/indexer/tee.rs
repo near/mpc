@@ -4,7 +4,6 @@ use std::{sync::Arc, time::Duration};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_contract::tee::proposal::{LauncherDockerComposeHash, MpcDockerImageHash};
 use mpc_contract::tee::tee_state::NodeId;
-use near_account_id::AccountId;
 use tokio::sync::watch;
 
 use crate::indexer::IndexerState;
@@ -24,7 +23,6 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     FetcherResponseFuture: Future<Output = anyhow::Result<(u64, T)>> + Send,
 {
     let fetch_allowed_hashes = {
-        let indexer_state = indexer_state.clone();
         async move || {
             let mut backoff = ExponentialBuilder::default()
                 .with_min_delay(MIN_BACKOFF_DURATION)

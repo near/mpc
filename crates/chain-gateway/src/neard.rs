@@ -1,6 +1,4 @@
 use near_account_id::AccountId;
-use near_async::{multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle};
-use near_client::{RpcHandler, ViewClientActorInner, client_actor::ClientActorInner};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer::{Indexer, IndexerConfig, StreamerMessage};
 use near_indexer_primitives::views::BlockView;
@@ -9,7 +7,6 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::errors::ChainGatewayError;
 use crate::near_internals::client::IndexerClient;
-use crate::near_internals::errors::RpcClientError;
 use crate::near_internals::rpc::IndexerRpcHandler;
 use crate::near_internals::view_client::IndexerViewClient;
 use crate::near_internals::view_client::types::ViewFunctionCall;

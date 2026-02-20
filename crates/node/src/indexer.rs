@@ -29,21 +29,11 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
-use near_async::{
-    messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
-};
-use near_client::{client_actor::ClientActorInner, RpcHandler, Status, ViewClientActorInner};
-use near_indexer::near_primitives::transaction::SignedTransaction;
-use near_indexer_primitives::{
-    types::{BlockReference, Finality},
-    views::{BlockView, QueryRequest, QueryResponseKind},
-};
+use near_indexer_primitives::views::BlockView;
 use participants::ContractState;
 use serde::Deserialize;
-use std::{future::Future, sync::Arc, time::Duration};
-use tokio::sync::{
-    Mutex, {mpsc, watch},
-};
+use std::{future::Future, sync::Arc};
+use tokio::sync::{mpsc, watch};
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
