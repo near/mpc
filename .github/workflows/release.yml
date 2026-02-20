@@ -283,7 +283,7 @@ jobs:
         run: |
           gh release create "$TAG" \
             --repo "${{ github.repository }}" \
-            --title "v${VERSION}" \
+            --title "MPC ${VERSION}" \
             --notes-file release-notes.md \
             --draft \
             "mpc-contract-v${VERSION}.tar.gz"
