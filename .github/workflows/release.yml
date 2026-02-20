@@ -166,6 +166,13 @@ jobs:
       - name: Build contract
         run: cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
+      # Compute the SHA-256 hash of the compiled contract .wasm before renaming.
+      # Used later in the GitHub release notes so users can verify contract integrity.
+      - name: Compute contract hash
+        run: |
+          CONTRACT_HASH=$(sha256sum target/near/mpc_contract/mpc_contract.wasm | awk '{print $1}')
+          echo "CONTRACT_HASH=$CONTRACT_HASH" >> "$GITHUB_ENV"
+
       # Rename the build outputs to include the release version and
       # compress them into a single .tar.gz archive for distribution.
       # e.g. mpc-contract-v3.6.0.wasm, mpc-contract-v3.6.0-abi.json
