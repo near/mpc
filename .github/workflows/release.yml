@@ -131,3 +131,57 @@ jobs:
             echo "${SAFE_NAME}_manifest_digest=$MANIFEST_DIGEST" >> "$GITHUB_OUTPUT"
             echo "${SAFE_NAME}_image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
           done
+
+  # Build the smart contract using reproducible builds, rename the artifacts
+  # with the release version, and package them into a .tar.gz archive.
+  # This job runs in parallel with retag-docker-images since both only
+  # depend on create-tag.
+  build-contract:
+    name: "Build contract"
+    needs: create-tag
+    # Uses a 16x runner because the reproducible contract build is resource-intensive.
+    runs-on: warp-ubuntu-2404-x64-16x
+    permissions:
+      contents: read
+
+    steps:
+      # Checkout main so we build the code that includes the version bump.
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: main
+
+      # Restore cached Rust dependencies to speed up the build.
+      # save-if: false because we only want to read from the cache, not update it
+      # (the main CI workflow handles saving).
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: false
+          cache-provider: "warpbuild"
+
+      # Build the contract with reproducible-wasm to ensure deterministic output.
+      # This produces mpc_contract.wasm and mpc_contract_abi.json
+      # under target/near/mpc_contract/.
+      - name: Build contract
+        run: cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+
+      # Rename the build outputs to include the release version and
+      # compress them into a single .tar.gz archive for distribution.
+      # e.g. mpc-contract-v3.6.0.wasm, mpc-contract-v3.6.0-abi.json
+      - name: Package contract artifacts
+        env:
+          VERSION: ${{ needs.create-tag.outputs.version }}
+        run: |
+          cd target/near/mpc_contract/
+          mv mpc_contract.wasm "mpc-contract-v${VERSION}.wasm"
+          mv mpc_contract_abi.json "mpc-contract-v${VERSION}-abi.json"
+          tar -czf "mpc-contract-v${VERSION}.tar.gz" "mpc-contract-v${VERSION}.wasm" "mpc-contract-v${VERSION}-abi.json"
+
+      # Upload the .tar.gz as a GitHub Actions artifact so downstream jobs
+      # (e.g. creating the GitHub release) can download and attach it.
+      - name: Upload contract artifact
+        uses: actions/upload-artifact@ea165f8d65b6db9a6b7e75b195db6a7b2bcf4bac # v4.6.2
+        with:
+          name: mpc-contract
+          path: target/near/mpc_contract/mpc-contract-v${{ needs.create-tag.outputs.version }}.tar.gz
