@@ -43,13 +43,19 @@ pub enum Payload {
 }
 
 #[derive(Debug, Clone)]
-struct NotSet;
+pub struct NotSet;
 
 #[derive(Debug, Clone)]
 pub struct SignRequestBuilder<Path, Payload, DomainId> {
     path: Path,
     payload: Payload,
     domain_id: DomainId,
+}
+
+impl Default for SignRequestBuilder<NotSet, NotSet, NotSet> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SignRequestBuilder<NotSet, NotSet, NotSet> {
