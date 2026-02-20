@@ -25,10 +25,12 @@ use mpc_contract::{
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
         domain::DomainId,
-        signature::{Bytes, Payload, SignRequestArgs, SignatureRequest, YieldIndex},
+        signature::{Bytes, Payload, SignatureRequest, YieldIndex},
     },
 };
 use near_account_id::AccountId;
+use near_mpc_sdk::bounded_collections::BoundedVec;
+use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder};
 use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, types::NearToken, Account, Contract, Worker,
 };
@@ -570,12 +572,13 @@ fn gen_ed25519_sign_test(
     let path: String = rng.gen::<usize>().to_string();
     let (payload, request, response) =
         create_response_ed25519(domain_id, predecessor_id, &msg, &path, sk);
-    let args = SignRequestArgs {
-        payload_v2: Some(payload.clone()),
-        path,
-        domain_id: Some(domain_id),
-        ..Default::default()
-    };
+    let args = SignRequestBuilder::new()
+        .with_path(path)
+        .with_payload(
+            BoundedVec::<u8, 32, 1232>::from_vec(payload.as_eddsa().unwrap().to_vec()).unwrap(),
+        )
+        .with_domain_id(domain_id.0)
+        .build();
     SignRequestTest {
         response: SignResponseArgs { request, response },
         args,
@@ -592,12 +595,11 @@ pub fn gen_secp_256k1_sign_test(
     let path: String = rng.gen::<usize>().to_string();
     let (payload, request, response) =
         create_response_secp256k1(domain_id, predecessor_id, &msg, &path, sk);
-    let args = SignRequestArgs {
-        payload_v2: Some(payload.clone()),
-        path,
-        domain_id: Some(domain_id),
-        ..Default::default()
-    };
+    let args = SignRequestBuilder::new()
+        .with_path(path)
+        .with_payload(BoundedVec::<u8, 32, 32>::from(*payload.as_ecdsa().unwrap()))
+        .with_domain_id(domain_id.0)
+        .build();
     SignRequestTest {
         response: SignResponseArgs { request, response },
         args,
