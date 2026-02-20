@@ -169,7 +169,7 @@ cargo insta accept
 # --- Update third-party licenses ---
 
 echo "==> Regenerating third-party licenses..."
-cd "${REPO_ROOT}/third-party-licences"
+cd "${REPO_ROOT}/third-party-licenses"
 cargo about generate --locked -m ../Cargo.toml about.hbs > licenses.html
 cd "$REPO_ROOT"
 echo "==> Third-party licenses updated."
