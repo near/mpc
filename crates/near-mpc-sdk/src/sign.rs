@@ -132,7 +132,7 @@ mod test {
         let built_sign_request_args = SignRequestBuilder::new()
             .with_path(path.clone())
             .with_payload(payload.clone())
-            .with_domain_id(domain_id.clone())
+            .with_domain_id(domain_id)
             .build();
 
         // then
