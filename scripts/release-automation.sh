@@ -8,6 +8,8 @@
 #   3. Creates a release branch "release/v<VERSION>" or switches to it if
 #      it already exists.
 #   4. Pushes the branch to origin with upstream tracking.
+#   5. Generates the changelog using git-cliff.
+#   6. Bumps the workspace version in the root Cargo.toml.
 #
 # Usage:
 #   ./release-automation.sh <VERSION>
@@ -49,6 +51,15 @@ VERSION="$1"
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Error: '$VERSION' is not a valid semver version."
     echo "       Expected format: MAJOR.MINOR.PATCH (e.g. 3.6.0)"
+    exit 1
+fi
+
+# --- Dependency checks ---
+
+# Verify that git-cliff is available (provided by nix develop shell).
+if ! command -v git-cliff &>/dev/null; then
+    echo "Error: 'git-cliff' not found on PATH."
+    echo "       Run this script from within 'nix develop' or install git-cliff manually."
     exit 1
 fi
 
@@ -97,3 +108,28 @@ echo "==> Pushing '${BRANCH}' to origin..."
 git push -u origin "$BRANCH"
 
 echo "==> Done. Branch '${BRANCH}' is pushed and tracking origin/${BRANCH}."
+
+# --- Generate changelog ---
+
+# git-cliff generates a changelog from conventional commits up to the given tag.
+# The tag doesn't need to exist yet — git-cliff uses it as a label for unreleased commits.
+# Note: the branch must be pushed to origin first, otherwise git-cliff cannot
+# resolve PR links in the generated notes.
+echo "==> Generating changelog for version ${VERSION}..."
+git-cliff -t "$VERSION" > CHANGELOG.md
+
+echo "==> Changelog written to CHANGELOG.md."
+
+# --- Bump workspace version in Cargo.toml ---
+
+# All crates inherit their version from [workspace.package] in the root Cargo.toml,
+# so this single substitution bumps every crate in the workspace.
+# The sed pattern matches the exact line under [workspace.package] to avoid
+# accidentally replacing version strings elsewhere in the file (e.g. dependencies).
+CARGO_TOML="${REPO_ROOT}/Cargo.toml"
+OLD_VERSION=$(grep -Po '(?<=^version = ")[0-9]+\.[0-9]+\.[0-9]+(?=")' "$CARGO_TOML")
+
+echo "==> Bumping workspace version: ${OLD_VERSION} -> ${VERSION} in Cargo.toml"
+sed -i "s/^version = \"${OLD_VERSION}\"/version = \"${VERSION}\"/" "$CARGO_TOML"
+
+echo "==> Cargo.toml version updated."
