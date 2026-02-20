@@ -124,12 +124,12 @@ echo "==> Changelog written to CHANGELOG.md."
 
 # All crates inherit their version from [workspace.package] in the root Cargo.toml,
 # so this single substitution bumps every crate in the workspace.
-# The sed pattern matches the exact line under [workspace.package] to avoid
-# accidentally replacing version strings elsewhere in the file (e.g. dependencies).
 CARGO_TOML="${REPO_ROOT}/Cargo.toml"
-OLD_VERSION=$(grep -Po '(?<=^version = ")[0-9]+\.[0-9]+\.[0-9]+(?=")' "$CARGO_TOML")
+OLD_VERSION=$(grep -Po -m1 '(?<=^version = ")[0-9]+\.[0-9]+\.[0-9]+(?=")' "$CARGO_TOML")
 
+# The sed 0,/pattern/ address range ensures only the first match is replaced,
+# which is the version under [workspace.package], not any dependency versions.
 echo "==> Bumping workspace version: ${OLD_VERSION} -> ${VERSION} in Cargo.toml"
-sed -i "s/^version = \"${OLD_VERSION}\"/version = \"${VERSION}\"/" "$CARGO_TOML"
+sed -i "0,/^version = \"${OLD_VERSION}\"/s//version = \"${VERSION}\"/" "$CARGO_TOML"
 
 echo "==> Cargo.toml version updated."
