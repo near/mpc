@@ -457,22 +457,23 @@ async fn upgrade_allows_new_request_types(
     }
 }
 
-/// Verifies that a 3.5.0 node can deserialize the `state()` JSON from a 3.4.1 contract.
+/// Verifies that `mpc_contract::state::ProtocolContractState` (the internal type) can be
+/// deserialized from the JSON produced by an older contract that lacks the `purpose` field
+/// in `DomainConfig`.
 ///
-/// The node deserializes into `mpc_contract::state::ProtocolContractState` (the internal type),
-/// not the DTO type. Before the fix, this would fail with "missing field `purpose`" because
-/// the old contract's JSON output omits `purpose` entirely.
+/// This matters because the node deserializes `state()` into the internal type
+/// (see `crates/node/src/indexer.rs`), so it must tolerate JSON from older contracts.
 #[rstest]
 #[tokio::test]
-async fn node_can_read_old_contract_state(
+async fn protocol_contract_state__should_deserialize_from_old_contract_json(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
+    // Given: an old contract with populated Running state
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
-
     execute_key_generation_and_add_random_state(
         &accounts,
         participants,
@@ -482,16 +483,18 @@ async fn node_can_read_old_contract_state(
     )
     .await;
 
-    // Get raw JSON bytes from the old contract's state() view — exactly what the node does.
+    // When: we read the raw JSON bytes and deserialize into the internal type
     let view_result = contract.view(method_names::STATE).await.unwrap();
-
-    // Deserialize into the internal type (what the node uses at crates/node/src/indexer.rs).
     let state: mpc_contract::state::ProtocolContractState =
         serde_json::from_slice(&view_result.result)
-            .expect("node must be able to deserialize old contract state");
+            .expect("should deserialize old contract state into internal ProtocolContractState");
 
+    // Then: the state is Running
     assert!(
-        matches!(state, mpc_contract::state::ProtocolContractState::Running(_)),
+        matches!(
+            state,
+            mpc_contract::state::ProtocolContractState::Running(_)
+        ),
         "Expected Running state, got: {:?}",
         state
     );
