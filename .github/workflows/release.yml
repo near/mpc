@@ -104,3 +104,30 @@ jobs:
             -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
             -f release-tag="${{ needs.create-tag.outputs.version }}" \
             -f repository="mpc-node"
+
+      # Wait for the retag workflows to complete before inspecting.
+      - name: Wait for retag workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Waiting 60s for retag workflows to complete..."
+          sleep 60
+
+      - name: Install skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      # Inspect each retagged image and store Manifest digest and Image ID as outputs.
+      - name: Get image digests
+        id: digests
+        env:
+          RELEASE_TAG: ${{ needs.create-tag.outputs.version }}
+        run: |
+          for REPO in mpc-launcher mpc-node-gcp mpc-node; do
+            SAFE_NAME="${REPO//-/_}"
+            MANIFEST_DIGEST=$(skopeo inspect docker://nearone/$REPO:$RELEASE_TAG | jq -r '.Digest')
+            IMAGE_ID=$(skopeo inspect --raw docker://nearone/$REPO:$RELEASE_TAG | jq -r '.config.digest')
+            echo "${SAFE_NAME}_manifest_digest=$MANIFEST_DIGEST" >> "$GITHUB_OUTPUT"
+            echo "${SAFE_NAME}_image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
+          done
