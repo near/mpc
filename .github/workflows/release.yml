@@ -223,12 +223,14 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      # Generate the changelog entries for this release only.
-      - name: Generate changelog
+      # Extract the changelog section for this version from CHANGELOG.md.
+      # Sections are delimited by "## [<version>]" headers, so we print
+      # everything between the current version's header and the next one.
+      - name: Extract changelog
         env:
           VERSION: ${{ needs.create-tag.outputs.version }}
         run: |
-          git-cliff -t "$VERSION" --latest > release-notes-raw.md
+          awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > release-notes-raw.md
 
       # Download the contract .tar.gz uploaded by the build-contract job.
       - name: Download contract artifact
