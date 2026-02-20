@@ -90,6 +90,18 @@ Add the following to your project settings in `.vscode/settings.json`:
 }
 ```
 
+### Verifying the Nix shell is complete
+
+Because `nix develop` inherits the system `$PATH`, missing packages can go unnoticed
+if the host already has them installed. To verify the shell provides everything needed,
+run the checks in a clean environment that hides system binaries:
+
+```shell
+nix develop --ignore-environment --command bash -c 'cargo make check-all-fast'
+```
+
+This should be done after modifying `flake.nix` or adding new tool dependencies.
+
 ## How it works
 
 There are two main parts of the binary: NEAR indexer and MPC signing:

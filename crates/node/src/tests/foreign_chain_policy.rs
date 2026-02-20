@@ -26,7 +26,7 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         DEFAULT_BLOCK_TIME,
     );
 
-    let providers = non_empty_collections::NonEmptyBTreeMap::new(
+    let providers = bounded_collections::NonEmptyBTreeMap::new(
         "public".to_string(),
         SolanaProviderConfig {
             rpc_url: "https://rpc.public.example.com".to_string(),
