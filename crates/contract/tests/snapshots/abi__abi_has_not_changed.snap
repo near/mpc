@@ -1688,7 +1688,6 @@ expression: abi
           "type": "object",
           "required": [
             "id",
-            "purpose",
             "scheme"
           ],
           "properties": {
@@ -1696,7 +1695,12 @@ expression: abi
               "$ref": "#/definitions/DomainId"
             },
             "purpose": {
-              "$ref": "#/definitions/DomainPurpose"
+              "default": "Sign",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainPurpose"
+                }
+              ]
             },
             "scheme": {
               "$ref": "#/definitions/SignatureScheme"
