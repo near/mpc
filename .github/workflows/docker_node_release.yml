@@ -1,7 +1,7 @@
 name: Release Node Docker Image
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.repository }}
   cancel-in-progress: true
 
 on:
