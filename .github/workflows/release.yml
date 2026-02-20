@@ -45,6 +45,10 @@ jobs:
           SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           VERSION="${BRANCH#release/v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid semver: $VERSION"
+            exit 1
+          fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "short-sha=${SHA::7}" >> "$GITHUB_OUTPUT"
@@ -150,7 +154,9 @@ jobs:
           for REPO in mpc-launcher mpc-node-gcp mpc-node; do
             SAFE_NAME="${REPO//-/_}"
             MANIFEST_DIGEST=$(skopeo inspect docker://nearone/$REPO:$RELEASE_TAG | jq -r '.Digest')
-            IMAGE_ID=$(skopeo inspect --raw docker://nearone/$REPO:$RELEASE_TAG | jq -r '.config.digest')
+            # Use --override-os/--override-arch to resolve multi-arch manifest lists
+            # to the platform-specific image manifest, where .config.digest is the Image ID.
+            IMAGE_ID=$(skopeo inspect --raw --override-os linux --override-arch amd64 docker://nearone/$REPO:$RELEASE_TAG | jq -r '.config.digest')
             echo "${SAFE_NAME}_manifest_digest=$MANIFEST_DIGEST" >> "$GITHUB_OUTPUT"
             echo "${SAFE_NAME}_image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
           done
