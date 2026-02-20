@@ -33,7 +33,10 @@ use crate::{
         TryIntoContractType, TryIntoInterfaceType,
     },
     errors::{Error, RequestError},
-    primitives::ckd::{CKDRequest, CKDRequestArgs},
+    primitives::{
+        ckd::{CKDRequest, CKDRequestArgs},
+        domain::AddDomainsVotes,
+    },
     state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
@@ -952,7 +955,8 @@ impl MpcContract {
                     .participants()
                     .iter()
                     .filter(|(account_id, _, _)| {
-                        !participants_with_valid_attestation.is_participant(account_id)
+                        !participants_with_valid_attestation
+                            .is_participant_given_account_id(account_id)
                     })
                     .collect();
 
@@ -1497,6 +1501,7 @@ impl MpcContract {
                 DomainRegistry::default(),
                 Keyset::new(EpochId::new(0), Vec::new()),
                 parameters,
+                AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
@@ -1558,7 +1563,10 @@ impl MpcContract {
         Ok(MpcContract {
             config: init_config.map(Into::into).unwrap_or_default(),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
-                domains, keyset, parameters,
+                domains,
+                keyset,
+                parameters,
+                AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
@@ -1892,7 +1900,7 @@ impl MpcContract {
             ));
         };
 
-        if !running_state.is_participant(&account_id) {
+        if !running_state.is_participant_given_account_id(&account_id) {
             return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus not eligible to initiate a node migration.", account_id)));
         }
         self.node_migrations
@@ -1931,7 +1939,7 @@ impl MpcContract {
             ));
         };
 
-        if !running_state.is_participant(&account_id) {
+        if !running_state.is_participant_given_account_id(&account_id) {
             return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus eligible to initiate a node migration.", account_id)));
         }
 

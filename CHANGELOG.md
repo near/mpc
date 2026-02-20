@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.5.1] - 2026-02-20
+
+### 🐛 Bug Fixes
+
+- [#2189](https://github.com/near/mpc/pull/2189)(@netrome): Ensure nodes can read 3.4.1 state (#2189)
+
+- [#2190](https://github.com/near/mpc/pull/2190)(@gilcu3): Add_domain_votes are preserver after resharing (#2190)
+
+
+### 📚 Documentation
+
+- [#2103](https://github.com/near/mpc/pull/2103)(@kevindeforth): Indexer proposal (#2103)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#2174](https://github.com/near/mpc/pull/2174)(@gilcu3): Make logs -error reading config from chain- explicit (#2174)
+
+- [#2192](https://github.com/near/mpc/pull/2192)(@gilcu3): Resolve rustdoc warnings and enforce warnings check in CI (#2192)
+
+- : Update changelog and bump crate versions for 3.5.1
+
+
 ## [3.5.0] - 2026-02-19
 
 ### 🚀 Features
@@ -174,6 +197,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2176](https://github.com/near/mpc/pull/2176)(@DSharifi): Exclude .direnv from lychee link checker (#2176)
 
 - [#2181](https://github.com/near/mpc/pull/2181)(@gilcu3): Fix lychee not respecting gitignore (#2181)
+
+- [#2187](https://github.com/near/mpc/pull/2187)(@SimonRastikian): Bump crate versions to 3.5.0 and update changelog (#2187)
 
 
 ## [3.4.1] - 2026-02-05

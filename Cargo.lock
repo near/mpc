@@ -953,7 +953,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "attestation"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "assert_matches",
  "borsh",
@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "backup-cli"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1424,7 +1424,7 @@ dependencies = [
 
 [[package]]
 name = "bounded-collections"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "assert_matches",
  "borsh",
@@ -1705,7 +1705,7 @@ dependencies = [
 
 [[package]]
 name = "ckd-example-cli"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "anyhow",
  "blstrs",
@@ -1904,7 +1904,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "contract-history"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "bs58 0.5.1",
  "clap",
@@ -1917,7 +1917,7 @@ dependencies = [
 
 [[package]]
 name = "contract-interface"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "borsh",
  "bounded-collections",
@@ -3291,7 +3291,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreign-chain-inspector"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "assert_matches",
  "contract-interface",
@@ -3311,7 +3311,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-rpc-interfaces"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "derive_more 2.1.1",
  "ethereum-types",
@@ -4389,7 +4389,7 @@ dependencies = [
 
 [[package]]
 name = "include-measurements"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "anyhow",
  "attestation",
@@ -5245,7 +5245,7 @@ checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
 
 [[package]]
 name = "mpc-attestation"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "assert_matches",
  "attestation",
@@ -5264,7 +5264,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -5309,7 +5309,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-devnet"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "anyhow",
  "borsh",
@@ -5340,7 +5340,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5421,7 +5421,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-primitives"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -5436,7 +5436,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-tls"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "anyhow",
  "ed25519-dalek",
@@ -7221,7 +7221,7 @@ dependencies = [
 
 [[package]]
 name = "node-types"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "anyhow",
  "bs58 0.5.1",
@@ -10346,7 +10346,7 @@ checksum = "b1dd07eb858a2067e2f3c7155d54e929265c264e6f37efe3ee7a8d1b5a1dd0ba"
 
 [[package]]
 name = "tee-authority"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -10416,7 +10416,7 @@ dependencies = [
 
 [[package]]
 name = "test-migration-contract"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "borsh",
  "near-sdk",
@@ -10424,7 +10424,7 @@ dependencies = [
 
 [[package]]
 name = "test-parallel-contract"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "assert_matches",
  "blstrs",
@@ -10440,7 +10440,7 @@ dependencies = [
 
 [[package]]
 name = "test-utils"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "contract-interface",
  "hex",
@@ -11218,7 +11218,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utilities"
-version = "3.5.0"
+version = "3.5.1"
 dependencies = [
  "near-account-id 1.1.4",
  "near-account-id 2.5.0",
