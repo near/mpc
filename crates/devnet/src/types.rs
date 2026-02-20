@@ -182,7 +182,7 @@ pub async fn load_config() -> ParsedConfig {
 }
 
 /// 1. We need to serialize the keys with [`bs58`] encoding, to maintain
-///    backwards compatibility with the binary version previous to https://github.com/near/mpc/issues/880
+///    backwards compatibility with the binary version previous to <https://github.com/near/mpc/issues/880>
 ///    which removes [`near_crypto`] representation of keys on the node in favor of the [`ed25519_dalek`] crate.
 ///
 /// 2. [`serde_yaml`] serialization will fail as [`SigningKey`] and [`VerifyingKey`] serialize into bytes, and [`serde_yaml`] does
