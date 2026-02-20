@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
-## [3.3.1] - 2026-02-20
+## [3.5.1] - 2026-02-20
 
 ### 🐛 Bug Fixes
 
@@ -24,6 +24,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2174](https://github.com/near/mpc/pull/2174)(@gilcu3): Make logs -error reading config from chain- explicit (#2174)
 
 - [#2192](https://github.com/near/mpc/pull/2192)(@gilcu3): Resolve rustdoc warnings and enforce warnings check in CI (#2192)
+
+- : Update changelog and bump crate versions for 3.5.1
 
 
 ## [3.5.0] - 2026-02-19
@@ -371,7 +373,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1806](https://github.com/near/mpc/pull/1806)(@kevindeforth): Bump crate versions to 3.3.2 and update changelog (#1806)
 
 
-## [3.3.1] - 2026-02-20
+## [3.3.1] - 2026-01-19
 
 ### 🐛 Bug Fixes
 
