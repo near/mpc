@@ -58,6 +58,7 @@ backon = { version = "1.6.0", features = ["tokio-sleep"] }
 base64 = "0.22.1"
 blstrs = "0.7.1"
 borsh = { version = "1.6.0", features = ["derive"] }
+bounded-vec = "0.9"
 bs58 = { version = "0.5.1" }
 built = { version = "0.8", features = ["git2", "chrono"] }
 bytes = { version = "1.11.1" }

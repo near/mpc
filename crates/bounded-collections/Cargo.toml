@@ -9,6 +9,7 @@ abi = ["borsh/unstable__schema", "schemars"]
 
 [dependencies]
 borsh = { workspace = true }
+bounded-vec = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }

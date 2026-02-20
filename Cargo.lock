@@ -1428,12 +1428,22 @@ version = "3.5.0"
 dependencies = [
  "assert_matches",
  "borsh",
+ "bounded-vec",
  "derive_more 2.1.1",
  "hex",
  "rstest",
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bounded-vec"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09dc0086e469182132244e9b8d313a0742e1132da43a08c24b9dd3c18e0faf3a"
+dependencies = [
  "thiserror 2.0.18",
 ]
 
