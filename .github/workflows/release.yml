@@ -1,4 +1,4 @@
-name: Create Release Tag
+name: Release
 
 # Prevent duplicate runs for the same workflow + branch combination.
 # If a new run starts while one is in progress, the older run is cancelled.
