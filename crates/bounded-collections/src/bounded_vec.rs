@@ -76,7 +76,7 @@ pub mod witnesses {
 }
 
 impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
-    /// Creates new BoundedVec or returns error if items count is out of bounds
+    /// Creates new [`BoundedVec`] or returns error if items count is out of bounds
     ///
     /// # Parameters
     ///
@@ -109,7 +109,7 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
         }
     }
 
-    /// Returns the first element of the vector, or `None` if it is empty
+    /// Returns the first element of the vector, or [`None`] if it is empty
     ///
     /// # Example
     /// ```
@@ -139,7 +139,7 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
         self.inner.is_empty()
     }
 
-    /// Returns the last element of the vector, or `None` if it is empty
+    /// Returns the last element of the vector, or [`None`] if it is empty
     ///
     /// # Example
     /// ```
@@ -157,7 +157,7 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
 
 /// Methods which works for all witnesses
 impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
-    /// Returns a reference to underlying `Vec`
+    /// Returns a reference to underlying [`Vec`]
     ///
     /// # Example
     /// ```
@@ -171,7 +171,7 @@ impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
         &self.inner
     }
 
-    /// Returns an underlying `Vec`
+    /// Returns an underlying [`Vec`]
     ///
     /// # Example
     /// ```
@@ -595,9 +595,9 @@ impl<T, const N: usize> AsRef<[T; N]> for BoundedVec<T, N, N, witnesses::NonEmpt
     }
 }
 
-/// Option<BoundedVec<T, _, _>> to Vec<T>
+/// [`Option<BoundedVec<T, _, _>>`] to [`Vec<T>`]
 pub trait OptBoundedVecToVec<T> {
-    /// Option<BoundedVec<T, _, _>> to Vec<T>
+    /// [`Option<BoundedVec<T, _, _>>`] to [`Vec<T>`]
     fn to_vec(self) -> Vec<T>;
 }
 
