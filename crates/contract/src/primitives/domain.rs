@@ -73,11 +73,34 @@ pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureSche
 
 /// Describes the configuration of a domain: the domain ID and the protocol it uses.
 #[near(serializers=[borsh, json])]
+#[serde(from = "DomainConfigCompat")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
     pub purpose: DomainPurpose,
+}
+
+/// JSON-only compatibility helper:
+/// old 3.4.x state omitted `purpose`, so we infer it from `scheme` when absent.
+#[derive(serde::Deserialize)]
+struct DomainConfigCompat {
+    id: DomainId,
+    scheme: SignatureScheme,
+    #[serde(default)]
+    purpose: Option<DomainPurpose>,
+}
+
+impl From<DomainConfigCompat> for DomainConfig {
+    fn from(value: DomainConfigCompat) -> Self {
+        Self {
+            id: value.id,
+            scheme: value.scheme,
+            purpose: value
+                .purpose
+                .unwrap_or_else(|| infer_purpose_from_scheme(value.scheme)),
+        }
+    }
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -373,6 +396,28 @@ pub mod tests {
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
+    }
+
+    #[rstest]
+    #[case(
+        r#"{"id":0,"scheme":"Secp256k1"}"#,
+        SignatureScheme::Secp256k1,
+        DomainPurpose::Sign
+    )]
+    #[case(
+        r#"{"id":1,"scheme":"Bls12381"}"#,
+        SignatureScheme::Bls12381,
+        DomainPurpose::CKD
+    )]
+    fn test_deserialization_without_purpose(
+        #[case] json: &str,
+        #[case] expected_scheme: SignatureScheme,
+        #[case] expected_purpose: DomainPurpose,
+    ) {
+        // Simulates JSON from a 3.4.1 contract that lacks the `purpose` field.
+        let config: DomainConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.scheme, expected_scheme);
+        assert_eq!(config.purpose, expected_purpose);
     }
 
     #[rstest]
