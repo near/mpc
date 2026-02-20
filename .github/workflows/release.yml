@@ -72,6 +72,15 @@ jobs:
     permissions:
       actions: write
 
+    # Expose image digests to downstream jobs.
+    outputs:
+      mpc_node_manifest_digest: ${{ steps.digests.outputs.mpc_node_manifest_digest }}
+      mpc_node_image_id: ${{ steps.digests.outputs.mpc_node_image_id }}
+      mpc_node_gcp_manifest_digest: ${{ steps.digests.outputs.mpc_node_gcp_manifest_digest }}
+      mpc_node_gcp_image_id: ${{ steps.digests.outputs.mpc_node_gcp_image_id }}
+      mpc_launcher_manifest_digest: ${{ steps.digests.outputs.mpc_launcher_manifest_digest }}
+      mpc_launcher_image_id: ${{ steps.digests.outputs.mpc_launcher_image_id }}
+
     steps:
       # Trigger the launcher retag workflow.
       - name: Retag mpc-launcher
@@ -144,6 +153,10 @@ jobs:
     permissions:
       contents: read
 
+    # Expose contract hash to downstream jobs.
+    outputs:
+      contract-hash: ${{ steps.contract-hash.outputs.sha256 }}
+
     steps:
       # Checkout main so we build the code that includes the version bump.
       - name: Checkout
@@ -169,9 +182,11 @@ jobs:
       # Compute the SHA-256 hash of the compiled contract .wasm before renaming.
       # Used later in the GitHub release notes so users can verify contract integrity.
       - name: Compute contract hash
+        id: contract-hash
         run: |
           CONTRACT_HASH=$(sha256sum target/near/mpc_contract/mpc_contract.wasm | awk '{print $1}')
           echo "CONTRACT_HASH=$CONTRACT_HASH" >> "$GITHUB_ENV"
+          echo "sha256=$CONTRACT_HASH" >> "$GITHUB_OUTPUT"
 
       # Rename the build outputs to include the release version and
       # compress them into a single .tar.gz archive for distribution.
@@ -192,3 +207,83 @@ jobs:
         with:
           name: mpc-contract
           path: target/near/mpc_contract/mpc-contract-v${{ needs.create-tag.outputs.version }}.tar.gz
+
+  # Create a draft GitHub release with the changelog, Docker image info,
+  # and the contract artifact attached.
+  # Runs after both retag-docker-images and build-contract complete.
+  create-release:
+    name: "Create draft GitHub release"
+    needs: [create-tag, retag-docker-images, build-contract]
+    runs-on: warp-ubuntu-2404-x64-2x
+    permissions:
+      contents: write
+
+    steps:
+      # Checkout is needed for git-cliff to generate the changelog.
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # Generate the changelog entries for this release only.
+      - name: Generate changelog
+        id: changelog
+        env:
+          VERSION: ${{ needs.create-tag.outputs.version }}
+        run: |
+          git-cliff -t "$VERSION" --latest > release-notes-raw.md
+
+      # Download the contract .tar.gz uploaded by the build-contract job.
+      - name: Download contract artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mpc-contract
+
+      # Compose the full release body: changelog + Docker images + contract hash.
+      - name: Compose release body
+        env:
+          VERSION: ${{ needs.create-tag.outputs.version }}
+          NODE_MANIFEST: ${{ needs.retag-docker-images.outputs.mpc_node_manifest_digest }}
+          NODE_IMAGE_ID: ${{ needs.retag-docker-images.outputs.mpc_node_image_id }}
+          NODE_GCP_MANIFEST: ${{ needs.retag-docker-images.outputs.mpc_node_gcp_manifest_digest }}
+          NODE_GCP_IMAGE_ID: ${{ needs.retag-docker-images.outputs.mpc_node_gcp_image_id }}
+          LAUNCHER_MANIFEST: ${{ needs.retag-docker-images.outputs.mpc_launcher_manifest_digest }}
+          LAUNCHER_IMAGE_ID: ${{ needs.retag-docker-images.outputs.mpc_launcher_image_id }}
+          CONTRACT_HASH: ${{ needs.build-contract.outputs.contract-hash }}
+        run: |
+          cat > release-notes.md <<EOF
+          $(cat release-notes-raw.md)
+
+          ## Docker images
+
+              nearone/mpc-node:${VERSION}
+              Manifest digest: ${NODE_MANIFEST}
+              Image ID: ${NODE_IMAGE_ID}
+
+              nearone/mpc-node-gcp:${VERSION}
+              Manifest digest: ${NODE_GCP_MANIFEST}
+              Image ID: ${NODE_GCP_IMAGE_ID}
+
+              nearone/mpc-launcher:${VERSION}
+              Manifest digest: ${LAUNCHER_MANIFEST}
+              Image ID: ${LAUNCHER_IMAGE_ID}
+
+          ## MPC contract
+
+              digest: sha256:${CONTRACT_HASH}
+          EOF
+
+      # Create the draft release on GitHub, attaching the contract archive.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-tag.outputs.tag }}
+          VERSION: ${{ needs.create-tag.outputs.version }}
+        run: |
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "v${VERSION}" \
+            --notes-file release-notes.md \
+            --draft \
+            "mpc-contract-v${VERSION}.tar.gz"
