@@ -1,7 +1,7 @@
 use crate::crypto_shared;
 use crate::errors::{Error, InvalidParameters};
 use crate::DomainId;
-use bounded_collections::BoundedVec;
+use bounded_collections::{hex_serde, BoundedVec};
 use crypto_shared::derive_tweak;
 use near_account_id::AccountId;
 use near_sdk::{near, CryptoHash};
@@ -24,70 +24,24 @@ impl Tweak {
 /// A signature payload; the right payload must be passed in for the curve.
 /// The json encoding for this payload converts the bytes to hex string.
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-#[near(serializers=[borsh])]
+#[near(serializers=[borsh, json])]
 pub enum Payload {
-    Ecdsa(BoundedVec<u8, 32, 32>),
-    Eddsa(BoundedVec<u8, 32, 1232>),
-}
-
-/// Custom JSON serialization preserving the hex-encoded string format
-/// used by the original `Bytes` type, so the on-chain API stays backwards-compatible.
-impl near_sdk::serde::Serialize for Payload {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: near_sdk::serde::Serializer,
-    {
-        #[derive(near_sdk::serde::Serialize)]
-        #[serde(crate = "near_sdk::serde")]
-        enum Helper<'a> {
-            Ecdsa(&'a str),
-            Eddsa(&'a str),
-        }
-        match self {
-            Payload::Ecdsa(bytes) => {
-                let hex = hex::encode(bytes.as_slice());
-                Helper::Ecdsa(&hex).serialize(serializer)
-            }
-            Payload::Eddsa(bytes) => {
-                let hex = hex::encode(bytes.as_slice());
-                Helper::Eddsa(&hex).serialize(serializer)
-            }
-        }
-    }
-}
-
-impl<'de> near_sdk::serde::Deserialize<'de> for Payload {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: near_sdk::serde::Deserializer<'de>,
-    {
-        #[derive(near_sdk::serde::Deserialize)]
-        #[serde(crate = "near_sdk::serde")]
-        enum Helper {
-            Ecdsa(String),
-            Eddsa(String),
-        }
-        match Helper::deserialize(deserializer)? {
-            Helper::Ecdsa(hex) => {
-                let bytes = hex::decode(&hex).map_err(near_sdk::serde::de::Error::custom)?;
-                let bounded: BoundedVec<u8, 32, 32> = bytes
-                    .try_into()
-                    .map_err(near_sdk::serde::de::Error::custom)?;
-                Ok(Payload::Ecdsa(bounded))
-            }
-            Helper::Eddsa(hex) => {
-                let bytes = hex::decode(&hex).map_err(near_sdk::serde::de::Error::custom)?;
-                let bounded: BoundedVec<u8, 32, 1232> = bytes
-                    .try_into()
-                    .map_err(near_sdk::serde::de::Error::custom)?;
-                Ok(Payload::Eddsa(bounded))
-            }
-        }
-    }
+    Ecdsa(
+        #[serde(with = "hex_serde")]
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "hex_serde::HexString<32, 32>")
+        )]
+        BoundedVec<u8, 32, 32>,
+    ),
+    Eddsa(
+        #[serde(with = "hex_serde")]
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "hex_serde::HexString<32, 1232>")
+        )]
+        BoundedVec<u8, 32, 1232>,
+    ),
 }
 
 impl Payload {

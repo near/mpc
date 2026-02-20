@@ -1460,26 +1460,6 @@ expression: abi
         "Bls12381G2PublicKey": {
           "type": "string"
         },
-        "BoundedVec_uint8_Min32_Max1232": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 1232,
-          "minItems": 32
-        },
-        "BoundedVec_uint8_Min32_Max32": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
-        },
         "CKDRequest": {
           "type": "object",
           "required": [
@@ -2056,6 +2036,18 @@ expression: abi
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "HexString_Min32_Max1232": {
+          "type": "string",
+          "maxLength": 2464,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]*$"
+        },
+        "HexString_Min32_Max32": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]*$"
         },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
@@ -2634,7 +2626,7 @@ expression: abi
               ],
               "properties": {
                 "Ecdsa": {
-                  "$ref": "#/definitions/BoundedVec_uint8_Min32_Max32"
+                  "$ref": "#/definitions/HexString_Min32_Max32"
                 }
               },
               "additionalProperties": false
@@ -2646,7 +2638,7 @@ expression: abi
               ],
               "properties": {
                 "Eddsa": {
-                  "$ref": "#/definitions/BoundedVec_uint8_Min32_Max1232"
+                  "$ref": "#/definitions/HexString_Min32_Max1232"
                 }
               },
               "additionalProperties": false

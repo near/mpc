@@ -1429,6 +1429,7 @@ dependencies = [
  "assert_matches",
  "borsh",
  "derive_more 2.1.1",
+ "hex",
  "rstest",
  "schemars 0.8.22",
  "serde",

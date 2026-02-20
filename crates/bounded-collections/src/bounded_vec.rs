@@ -728,6 +728,85 @@ mod serde_impl {
     }
 }
 
+/// Serde helper for serializing/deserializing `BoundedVec<u8, L, U>` as a hex string.
+///
+/// Use with `#[serde(with = "bounded_collections::hex_serde")]` on fields
+/// whose type is `BoundedVec<u8, L, U>`.
+///
+/// When the `abi` feature is enabled, pair with
+/// `#[schemars(with = "bounded_collections::hex_serde::HexString<L, U>")]`
+/// to generate a string schema with hex length constraints.
+///
+/// # Example
+/// ```ignore
+/// use bounded_collections::BoundedVec;
+///
+/// #[derive(serde::Serialize, serde::Deserialize)]
+/// #[cfg_attr(feature = "abi", derive(schemars::JsonSchema))]
+/// struct MyStruct {
+///     #[serde(with = "bounded_collections::hex_serde")]
+///     #[cfg_attr(feature = "abi", schemars(with = "bounded_collections::hex_serde::HexString<1, 64>"))]
+///     data: BoundedVec<u8, 1, 64>,
+/// }
+/// ```
+pub mod hex_serde {
+    use super::*;
+    use serde::Deserialize;
+
+    #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+    const HEX_PATTERN: &str = "^[0-9a-fA-F]*$";
+
+    pub fn serialize<S, const L: usize, const U: usize, W>(
+        value: &BoundedVec<u8, L, U, W>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&hex::encode(value.as_slice()))
+    }
+
+    pub fn deserialize<'de, D, const L: usize, const U: usize>(
+        deserializer: D,
+    ) -> Result<BoundedVec<u8, L, U>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let hex_str = String::deserialize(deserializer)?;
+        let bytes: Vec<u8> = hex::decode(&hex_str).map_err(serde::de::Error::custom)?;
+        bytes.try_into().map_err(serde::de::Error::custom)
+    }
+
+    /// Marker type for JSON schema generation of hex-encoded `BoundedVec<u8, L, U>`.
+    ///
+    /// Use with `#[schemars(with = "bounded_collections::hex_serde::HexString<L, U>")]`
+    /// alongside `#[serde(with = "bounded_collections::hex_serde")]`.
+    #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+    pub struct HexString<const L: usize, const U: usize>;
+
+    #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+    impl<const L: usize, const U: usize> schemars::JsonSchema for HexString<L, U> {
+        fn schema_name() -> String {
+            format!("HexString_Min{}_Max{}", L, U)
+        }
+
+        fn json_schema(
+            _generator: &mut schemars::r#gen::SchemaGenerator,
+        ) -> schemars::schema::Schema {
+            schemars::schema::SchemaObject {
+                instance_type: Some(schemars::schema::InstanceType::String.into()),
+                string: Some(Box::new(schemars::schema::StringValidation {
+                    min_length: Some((L * 2) as u32),
+                    max_length: Some((U * 2) as u32),
+                    pattern: Some(HEX_PATTERN.to_string()),
+                })),
+                ..Default::default()
+            }
+            .into()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
@@ -1080,6 +1159,47 @@ mod serde_tests {
         let result = serde_json::from_str::<EmptyBoundedVec<u8, 3>>(json);
         // Then
         assert_matches!(result, Ok(_));
+    }
+}
+
+#[cfg(test)]
+mod hex_serde_tests {
+    use assert_matches::assert_matches;
+
+    use super::*;
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    struct Wrapper {
+        #[serde(with = "hex_serde")]
+        data: BoundedVec<u8, 2, 4>,
+    }
+
+    #[test]
+    fn roundtrip() {
+        let original = Wrapper {
+            data: vec![0xAB, 0xCD, 0xEF].try_into().unwrap(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        assert_eq!(json, r#"{"data":"abcdef"}"#);
+        let deserialized: Wrapper = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, original);
+    }
+
+    #[test]
+    fn rejects_invalid_hex() {
+        let json = r#"{"data":"zzzz"}"#;
+        assert_matches!(serde_json::from_str::<Wrapper>(json), Err(_));
+    }
+
+    #[test]
+    fn rejects_out_of_bounds() {
+        // 1 byte is below lower bound of 2
+        let json = r#"{"data":"ab"}"#;
+        assert_matches!(serde_json::from_str::<Wrapper>(json), Err(_));
+
+        // 5 bytes exceeds upper bound of 4
+        let json = r#"{"data":"abcdef0102"}"#;
+        assert_matches!(serde_json::from_str::<Wrapper>(json), Err(_));
     }
 }
 
