@@ -253,6 +253,10 @@ jobs:
           VERSION: ${{ needs.create-tag.outputs.version }}
         run: |
           awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > release-notes-raw.md
+          if [ ! -s release-notes-raw.md ]; then
+            echo "::error::No changelog found for version ${VERSION} in CHANGELOG.md"
+            exit 1
+          fi
 
       # Download the contract .tar.gz uploaded by the build-contract job.
       - name: Download contract artifact
