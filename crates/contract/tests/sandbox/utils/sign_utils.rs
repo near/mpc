@@ -29,10 +29,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_sdk::sign::{Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature};
-use near_mpc_sdk::{
-    bounded_collections::BoundedVec,
-    sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse},
-};
+use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, types::NearToken, Account, Contract, Worker,
 };
@@ -580,9 +577,9 @@ fn gen_ed25519_sign_test(
         create_response_ed25519(domain_id, predecessor_id, &msg, &path, sk);
     let args = SignRequestBuilder::new()
         .with_path(path)
-        .with_payload(
-            BoundedVec::<u8, 32, 1232>::from_vec(payload.as_eddsa().unwrap().to_vec()).unwrap(),
-        )
+        .with_payload(near_mpc_sdk::sign::Payload::Eddsa(
+            payload.as_eddsa().unwrap().to_vec().try_into().unwrap(),
+        ))
         .with_domain_id(domain_id.0)
         .build();
     SignRequestTest {
@@ -601,9 +598,12 @@ pub fn gen_secp_256k1_sign_test(
     let path: String = rng.gen::<usize>().to_string();
     let (payload, request, response) =
         create_response_secp256k1(domain_id, predecessor_id, &msg, &path, sk);
+
+    let payload_bytes: [u8; 32] = *payload.as_ecdsa().unwrap();
+
     let args = SignRequestBuilder::new()
         .with_path(path)
-        .with_payload(BoundedVec::<u8, 32, 32>::from(*payload.as_ecdsa().unwrap()))
+        .with_payload(near_mpc_sdk::sign::Payload::Ecdsa(payload_bytes.into()))
         .with_domain_id(domain_id.0)
         .build();
     SignRequestTest {

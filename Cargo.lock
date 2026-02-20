@@ -6250,7 +6250,6 @@ version = "3.5.1"
 dependencies = [
  "bounded-collections",
  "contract-interface",
- "derive_more 2.1.1",
  "serde",
 ]
 

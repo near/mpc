@@ -21,19 +21,7 @@ pub struct SignRequestArgs {
     pub domain_id: DomainId,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    // TOOD: maybe remove the from implementation to be explicit on payload type
-    derive_more::From,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Payload {
     Ecdsa(
         #[serde(with = "hex_serde")]
@@ -123,7 +111,7 @@ mod test {
     fn builder_builds_as_expected() {
         // given
         let path = "test_path".to_string();
-        let payload: BoundedVec<u8, 32, 32> = BoundedVec::from([1_u8; 32]);
+        let payload = Payload::Ecdsa(BoundedVec::from([1_u8; 32]));
         let domain_id = DomainId(2);
 
         // when
@@ -136,7 +124,7 @@ mod test {
         // then
         let expected = SignRequestArgs {
             path,
-            payload: payload.into(),
+            payload,
             domain_id,
         };
 
@@ -159,7 +147,7 @@ mod test {
     fn with_payload_sets_expected_value() {
         // given
         let path = "test_path".to_string();
-        let payload: BoundedVec<u8, 32, 32> = BoundedVec::from([1_u8; 32]);
+        let payload = Payload::Ecdsa(BoundedVec::from([1_u8; 32]));
 
         let builder = SignRequestBuilder::new().with_path(path);
 
@@ -167,14 +155,14 @@ mod test {
         let builder = builder.with_payload(payload.clone());
 
         // then
-        assert_eq!(builder.payload, Payload::Ecdsa(payload));
+        assert_eq!(builder.payload, payload);
     }
 
     #[test]
     fn with_domain_id_sets_expected_value() {
         // given
         let path = "test_path".to_string();
-        let payload: BoundedVec<u8, 32, 32> = BoundedVec::from([1_u8; 32]);
+        let payload = Payload::Ecdsa(BoundedVec::from([1_u8; 32]));
         let domain_id = 420;
 
         let builder = SignRequestBuilder::new()
