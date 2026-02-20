@@ -1,0 +1,57 @@
+name: Create Release Tag
+
+# Prevent duplicate runs for the same workflow + branch combination.
+# If a new run starts while one is in progress, the older run is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Trigger this workflow when a pull request targeting main is closed.
+# Note: "closed" fires for both merged and unmerged PRs — the job-level
+# `if` condition below filters to only merged release PRs.
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+jobs:
+  create-tag:
+    name: "Create release tag"
+    # Only run when:
+    #   1. The PR was actually merged (not just closed/dismissed).
+    #   2. The source branch follows the release naming convention (release/v*).
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: warp-ubuntu-2404-x64-2x
+    # Write permission on contents is required to push a new tag.
+    permissions:
+      contents: write
+
+    steps:
+      # Extract the semver version from the branch name.
+      # e.g. "release/v3.6.0" -> version="3.6.0", tag="v3.6.0"
+      - name: Extract version from branch name
+        id: version
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          VERSION="${BRANCH#release/v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      # Checkout the main branch so the tag points to the merge commit.
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: main
+
+      # Create a lightweight git tag and push it to origin.
+      # This tag can then be used by other workflows (e.g. Docker release)
+      # or to create a GitHub release.
+      - name: Create and push tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
