@@ -182,3 +182,8 @@ git commit -m "Release v${VERSION}"
 git push
 
 echo "==> Release v${VERSION} committed and pushed."
+
+# --- Switch back to main ---
+
+git checkout main
+echo "==> Back on main."
