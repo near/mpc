@@ -141,13 +141,21 @@ echo "==> Changelog written to CHANGELOG.md."
 
 # All crates inherit their version from [workspace.package] in the root Cargo.toml,
 # so this single substitution bumps every crate in the workspace.
+# We use awk to track which TOML section we're in:
+#   - When it sees [workspace.package], it sets a flag.
+#   - When the flag is set and it encounters a "version = " line, it replaces the
+#     version string and clears the flag so no other lines are touched.
+#   - All lines (modified or not) are printed.
 CARGO_TOML="${REPO_ROOT}/Cargo.toml"
 
-# Use a sed range address to target only the [workspace.package] section.
-# The range /\[workspace\.package\]/,/^version =/ selects from the section header
-# to the first "version = " line within it. The substitution only applies inside
-# that range, so dependency version strings elsewhere in the file are untouched.
-echo "==> Bumping workspace version in Cargo.toml to ${VERSION}"
-sed -i '/^\[workspace\.package\]$/,/^version = /{s/^version = ".*"/version = "'"${VERSION}"'"/}' "$CARGO_TOML"
+echo "==> Bumping workspace version to ${VERSION} in Cargo.toml"
+awk '
+    /^\[workspace\.package\]$/ { in_section = 1 }
+    in_section && /^version = / {
+        sub(/"[^"]*"/, "\"'"${VERSION}"'\"")
+        in_section = 0
+    }
+    { print }
+' "$CARGO_TOML" > "${CARGO_TOML}.tmp" && mv "${CARGO_TOML}.tmp" "$CARGO_TOML"
 
 echo "==> Cargo.toml version updated."
