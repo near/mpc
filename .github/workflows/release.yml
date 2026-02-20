@@ -257,21 +257,21 @@ jobs:
 
           ## Docker images
 
-              nearone/mpc-node:${VERSION}
-              Manifest digest: ${NODE_MANIFEST}
-              Image ID: ${NODE_IMAGE_ID}
+          nearone/mpc-node:${VERSION}
+          Manifest digest: ${NODE_MANIFEST}
+          Image ID: ${NODE_IMAGE_ID}
 
-              nearone/mpc-node-gcp:${VERSION}
-              Manifest digest: ${NODE_GCP_MANIFEST}
-              Image ID: ${NODE_GCP_IMAGE_ID}
+          nearone/mpc-node-gcp:${VERSION}
+          Manifest digest: ${NODE_GCP_MANIFEST}
+          Image ID: ${NODE_GCP_IMAGE_ID}
 
-              nearone/mpc-launcher:${VERSION}
-              Manifest digest: ${LAUNCHER_MANIFEST}
-              Image ID: ${LAUNCHER_IMAGE_ID}
+          nearone/mpc-launcher:${VERSION}
+          Manifest digest: ${LAUNCHER_MANIFEST}
+          Image ID: ${LAUNCHER_IMAGE_ID}
 
           ## MPC contract
 
-              digest: sha256:${CONTRACT_HASH}
+          digest: sha256:${CONTRACT_HASH}
           EOF
 
       # Create the draft release on GitHub, attaching the contract archive.
