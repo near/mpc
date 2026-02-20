@@ -93,6 +93,7 @@ futures = { workspace = true }
 insta = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 near-abi = { workspace = true }
+near-mpc-sdk = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
