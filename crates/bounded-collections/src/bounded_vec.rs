@@ -157,20 +157,6 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
 
 /// Methods which works for all witnesses
 impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
-    /// Returns a reference to underlying [`Vec`]
-    ///
-    /// # Example
-    /// ```
-    /// use bounded_collections::BoundedVec;
-    /// use std::convert::TryInto;
-    ///
-    /// let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
-    /// assert_eq!(data.as_vec(), &vec![1u8,2]);
-    /// ```
-    pub fn as_vec(&self) -> &Vec<T> {
-        &self.inner
-    }
-
     /// Returns an underlying [`Vec`]
     ///
     /// # Example
@@ -923,14 +909,6 @@ mod tests {
     }
 
     #[test]
-    fn as_vec_returns_reference_to_inner() {
-        // Given
-        let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
-        // When / Then
-        assert_eq!(data.as_vec(), &vec![1u8, 2]);
-    }
-
-    #[test]
     fn as_slice_returns_slice_of_elements() {
         // Given
         let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
@@ -1138,7 +1116,7 @@ mod serde_tests {
         // When
         let result = serde_json::from_str::<BoundedVec<u8, 2, 3>>(json).unwrap();
         // Then
-        assert_eq!(result.as_vec(), &vec![1, 2]);
+        assert_eq!(result.as_slice(), &[1, 2]);
     }
 
     #[test]
