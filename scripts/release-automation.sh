@@ -69,6 +69,12 @@ if ! cargo about --version &>/dev/null; then
     exit 1
 fi
 
+if ! cargo insta --version &>/dev/null; then
+    echo "Error: 'cargo-insta' not found."
+    echo "       Run this script from within 'nix develop' or install cargo-insta manually."
+    exit 1
+fi
+
 # git-cliff needs an authenticated GitHub token to resolve PR links without
 # hitting the API rate limit (60 req/hour unauthenticated vs 5,000 authenticated).
 # If GITHUB_TOKEN is not already set, try to get it from the gh CLI.
