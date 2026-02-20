@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::{borrow::Cow, collections::BTreeMap};
 
 use anyhow::Context;
+use bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use contract_interface::types as dtos;
-use non_empty_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use serde::{Deserialize, Serialize};
 
 mod abstract_chain;

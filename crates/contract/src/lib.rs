@@ -2058,6 +2058,7 @@ mod tests {
     };
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
+    use bounded_collections::NonEmptyBTreeSet;
     use contract_interface::types::{
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
         ForeignTxSignPayloadV1,
@@ -2077,7 +2078,6 @@ mod tests {
     };
     use mpc_primitives::hash::{Hash32, Image};
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
-    use non_empty_collections::NonEmptyBTreeSet;
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
