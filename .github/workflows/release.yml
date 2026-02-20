@@ -114,11 +114,19 @@ jobs:
             -f release-tag="${{ needs.create-tag.outputs.version }}" \
             -f repository="mpc-node"
 
-      # Wait for the retag workflows to complete before inspecting.
+      # Wait for all three dispatched retag workflows to complete.
+      # A brief pause lets the runs appear in the API, then gh run watch
+      # polls until each one finishes (with --exit-status to fail if the
+      # workflow itself fails).
       - name: Wait for retag workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Waiting 60s for retag workflows to complete..."
-          sleep 60
+          sleep 5
+          for WORKFLOW in docker_launcher_release.yml docker_node_release.yml docker_node_release.yml; do
+            RUN_ID=$(gh run list --workflow="$WORKFLOW" --repo "${{ github.repository }}" --limit=1 --json databaseId -q '.[0].databaseId')
+            gh run watch "$RUN_ID" --repo "${{ github.repository }}" --exit-status
+          done
 
       - name: Install skopeo
         run: |
