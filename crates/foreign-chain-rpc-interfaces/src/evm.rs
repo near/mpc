@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub use ethereum_types::{H160, H256, U64};
 
 /// Partial RPC response for `eth_getTransactionReceipt`.
-/// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
+/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetTransactionReceiptResponse {
@@ -18,13 +18,13 @@ pub struct GetTransactionReceiptResponse {
 }
 
 /// Request args for `eth_getTransactionReceipt`.
-/// https://ethereum.org/developers/docs/apis/json-rpc/#eth_getBlockByNumber
+/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_getBlockByNumber>
 pub struct GetTransactionReceiptARgs {
     pub transaction_hash: H256,
 }
 
 /// Partial RPC response for `eth_getTransactionReceipt`.
-/// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
+/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GetBlockByNumberResponse {
     /// the block number
@@ -32,7 +32,7 @@ pub struct GetBlockByNumberResponse {
 }
 
 /// Partial RPC arguments for `eth_getTransactionReceipt`.
-/// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
+/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt>
 #[derive(
     Constructor, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -60,7 +60,7 @@ impl Serialize for GetTransactionReceiptARgs {
 }
 
 /// An Ethereum log entry as defined in return
-/// section of https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
+/// section of <https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Log {

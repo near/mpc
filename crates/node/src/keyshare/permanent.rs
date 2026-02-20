@@ -90,6 +90,7 @@ impl PermanentKeyStorage {
         Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
     }
 
+    #[allow(rustdoc::private_intra_doc_links)]
     /// Attempts to store the given [`PermanentKeyshareData`] in persistent storage,
     /// replacing existing data only if the new keyset is considered valid.
     ///
