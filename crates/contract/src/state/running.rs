@@ -41,13 +41,20 @@ pub struct RunningContractState {
 }
 
 impl RunningContractState {
-    pub fn new(domains: DomainRegistry, keyset: Keyset, parameters: ThresholdParameters) -> Self {
+    pub fn new(
+        domains: DomainRegistry,
+        keyset: Keyset,
+        parameters: ThresholdParameters,
+        add_domains_votes: AddDomainsVotes,
+    ) -> Self {
+        let remaining_add_domain_votes =
+            add_domains_votes.get_remaining_votes(parameters.participants());
         RunningContractState {
             domains,
             keyset,
             parameters,
             parameters_votes: ThresholdParametersVotes::default(),
-            add_domains_votes: AddDomainsVotes::default(),
+            add_domains_votes: remaining_add_domain_votes,
             previously_cancelled_resharing_epoch_id: None,
         }
     }
@@ -64,6 +71,7 @@ impl RunningContractState {
                     self.domains.clone(),
                     self.keyset.clone(),
                     self.parameters.clone(),
+                    self.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(epoch_id, first_domain.clone(), proposal.clone()),
@@ -76,6 +84,7 @@ impl RunningContractState {
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
                 proposal.clone(),
+                self.add_domains_votes.clone(),
             );
             None
         }
@@ -189,8 +198,10 @@ impl RunningContractState {
         }
     }
 
-    pub fn is_participant(&self, account_id: &AccountId) -> bool {
-        self.parameters.participants().is_participant(account_id)
+    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
+        self.parameters
+            .participants()
+            .is_participant_given_account_id(account_id)
     }
 }
 
@@ -247,7 +258,7 @@ pub mod running_tests {
                 if i < participants.participants().len()
                     && !proposal
                         .participants()
-                        .is_participant(&participants.participants()[i].0)
+                        .is_participant_given_account_id(&participants.participants()[i].0)
                 {
                     continue;
                 }
@@ -271,7 +282,10 @@ pub mod running_tests {
         // existing participants vote
         let mut n_votes = 0;
         for (account_id, _, _) in participants.participants().iter() {
-            if !proposal.participants().is_participant(account_id) {
+            if !proposal
+                .participants()
+                .is_participant_given_account_id(account_id)
+            {
                 continue;
             }
             n_votes += 1;
@@ -287,7 +301,7 @@ pub mod running_tests {
         }
         // candidates vote
         for (account_id, _, _) in proposal.participants().participants().iter() {
-            if participants.is_participant(account_id) {
+            if participants.is_participant_given_account_id(account_id) {
                 continue;
             }
             n_votes += 1;

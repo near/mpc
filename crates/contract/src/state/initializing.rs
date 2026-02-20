@@ -2,7 +2,7 @@ use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::domain::DomainRegistry;
+use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
@@ -94,6 +94,7 @@ impl InitializingContractState {
                     self.domains.clone(),
                     Keyset::new(self.epoch_id, self.generated_keys.clone()),
                     self.generating_key.proposed_parameters().clone(),
+                    AddDomainsVotes::default(),
                 )));
             }
         }
@@ -135,16 +136,17 @@ impl InitializingContractState {
                 domains,
                 Keyset::new(self.epoch_id, self.generated_keys.clone()),
                 self.generating_key.proposed_parameters().clone(),
+                AddDomainsVotes::default(),
             )));
         }
         Ok(None)
     }
 
-    pub fn is_participant(&self, account_id: &AccountId) -> bool {
+    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
         self.generating_key
             .proposed_parameters()
             .participants()
-            .is_participant(account_id)
+            .is_participant_given_account_id(account_id)
     }
 }
 
