@@ -150,6 +150,7 @@
             git
             binaryen
             jq
+            perl
           ];
 
           buildLibs =
