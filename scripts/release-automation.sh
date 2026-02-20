@@ -63,6 +63,20 @@ if ! command -v git-cliff &>/dev/null; then
     exit 1
 fi
 
+# git-cliff needs an authenticated GitHub token to resolve PR links without
+# hitting the API rate limit (60 req/hour unauthenticated vs 5,000 authenticated).
+# If GITHUB_TOKEN is not already set, try to get it from the gh CLI.
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+    if command -v gh &>/dev/null && gh auth status &>/dev/null; then
+        echo "==> GITHUB_TOKEN not set, obtaining from 'gh auth token'."
+        export GITHUB_TOKEN=$(gh auth token)
+    else
+        echo "Error: GITHUB_TOKEN is not set and 'gh' CLI is not authenticated."
+        echo "       Either export GITHUB_TOKEN or run 'gh auth login' first."
+        exit 1
+    fi
+fi
+
 echo "==> Preparing release for version ${VERSION}"
 
 BRANCH="release/v${VERSION}"
