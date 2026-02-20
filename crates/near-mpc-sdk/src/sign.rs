@@ -17,7 +17,17 @@ pub struct SignRequestArgs {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, derive_more::From,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    // TOOD: maybe remove the from implementation to be explicit on payload type
+    derive_more::From,
 )]
 pub enum Payload {
     Ecdsa(
@@ -95,4 +105,75 @@ impl SignRequestBuilder<String, Payload, DomainId> {
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use super::*;
+
+    #[test]
+    fn builder_builds_as_expected() {
+        // given
+        let path = "test_path".to_string();
+        let payload: BoundedVec<u8, 32, 32> = BoundedVec::from([1_u8; 32]);
+        let domain_id = DomainId(2);
+
+        // when
+        let built_sign_request_args = SignRequestBuilder::new()
+            .with_path(path.clone())
+            .with_payload(payload.clone())
+            .with_domain_id(domain_id.clone())
+            .build();
+
+        // then
+        let expected = SignRequestArgs {
+            path,
+            payload: payload.into(),
+            domain_id,
+        };
+
+        assert_eq!(built_sign_request_args, expected);
+    }
+
+    #[test]
+    fn with_path_sets_expected_value() {
+        // given
+        let path = "test_path".to_string();
+
+        // when
+        let builder = SignRequestBuilder::new().with_path(path.clone());
+
+        // then
+        assert_eq!(builder.path, path);
+    }
+
+    #[test]
+    fn with_payload_sets_expected_value() {
+        // given
+        let path = "test_path".to_string();
+        let payload: BoundedVec<u8, 32, 32> = BoundedVec::from([1_u8; 32]);
+
+        let builder = SignRequestBuilder::new().with_path(path);
+
+        // when
+        let builder = builder.with_payload(payload.clone());
+
+        // then
+        assert_eq!(builder.payload, Payload::Ecdsa(payload));
+    }
+
+    #[test]
+    fn with_domain_id_sets_expected_value() {
+        // given
+        let path = "test_path".to_string();
+        let payload: BoundedVec<u8, 32, 32> = BoundedVec::from([1_u8; 32]);
+        let domain_id = 420;
+
+        let builder = SignRequestBuilder::new()
+            .with_path(path)
+            .with_payload(payload);
+
+        // when
+        let builder = builder.with_domain_id(domain_id);
+
+        // then
+        assert_eq!(builder.domain_id, DomainId::from(domain_id));
+    }
+}
