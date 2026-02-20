@@ -6,12 +6,11 @@ license.workspace = true
 
 [dependencies]
 bounded-collections = { workspace = true }
-derive_more = { workspace = true }
 contract-interface = { workspace = true }
+derive_more = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 
 [lints]
 workspace = true
