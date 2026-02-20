@@ -141,7 +141,7 @@ async fn submit_tx(
     params_ser: String,
     gas: Gas,
 ) -> anyhow::Result<()> {
-    let block = indexer_state.chain_indexer.latest_final_block().await?;
+    let block = indexer_state.chain_gateway.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
@@ -160,8 +160,11 @@ async fn submit_tx(
         tx_signer.public_key(),
         transaction.transaction.nonce(),
     );
-
-    indexer_state.chain_indexer.submit_tx(transaction).await
+    Ok(indexer_state
+        .chain_gateway
+        .submit_tx(transaction)
+        .await
+        .context("failed to submit transaction")?)
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
@@ -176,8 +179,7 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state
             let pending_request_response = indexer_state
-                .view_client
-                .get_pending_request(&indexer_state.mpc_contract_id, &respond_args.request)
+                .get_pending_request(&respond_args.request)
                 .await?;
 
             let transaction_status = match pending_request_response {
@@ -191,8 +193,7 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending ckd request still exists in the contract state
             let pending_request_response = indexer_state
-                .view_client
-                .get_pending_ckd_request(&indexer_state.mpc_contract_id, &respond_args.request)
+                .get_pending_ckd_request(&respond_args.request)
                 .await?;
 
             let transaction_status = match pending_request_response {
@@ -206,11 +207,7 @@ async fn observe_tx_result(
             // Confirm whether the respond call succeeded by checking whether the
             // pending verify foreign tx request still exists in the contract state
             let pending_request_response = indexer_state
-                .view_client()
-                .get_pending_verify_foreign_tx_request(
-                    &indexer_state.mpc_contract_id,
-                    &respond_args.request,
-                )
+                .get_pending_verify_foreign_tx_request(&respond_args.request)
                 .await?;
 
             let transaction_status = match pending_request_response {
@@ -224,8 +221,7 @@ async fn observe_tx_result(
             let tls_public_key = &submit_participant_info_args.tls_public_key;
 
             let attestation_stored_on_contract = indexer_state
-                .view_client
-                .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
+                .get_participant_attestation(tls_public_key)
                 .await?;
 
             let Some(stored_attestation) = attestation_stored_on_contract else {

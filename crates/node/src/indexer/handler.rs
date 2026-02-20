@@ -1,10 +1,10 @@
-use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::requests::recent_blocks_tracker::BlockViewLite;
 use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
+use chain_gateway::stats::IndexerStats;
 use contract_interface::method_names::{
     REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
@@ -100,6 +100,7 @@ pub struct ChainBlockUpdate {
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
 }
 
+// todo: clean this up
 #[cfg(feature = "network-hardship-simulation")]
 pub(crate) async fn listen_blocks(
     stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
@@ -109,6 +110,8 @@ pub(crate) async fn listen_blocks(
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
     mut process_blocks_receiver: tokio::sync::watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
+    use chain_gateway::stats::IndexerStats;
+
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
             handle_message(
@@ -137,6 +140,8 @@ pub(crate) async fn listen_blocks(
     mpc_contract_id: AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
 ) -> anyhow::Result<()> {
+    use chain_gateway::stats::IndexerStats;
+
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
             handle_message(

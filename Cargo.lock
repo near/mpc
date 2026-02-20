@@ -1665,7 +1665,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chain-indexer"
+name = "chain-gateway"
 version = "3.4.1"
 dependencies = [
  "anyhow",
@@ -5360,7 +5360,7 @@ dependencies = [
  "bs58 0.5.1",
  "built",
  "bytes",
- "chain-indexer",
+ "chain-gateway",
  "clap",
  "contract-interface",
  "derive_more 2.1.1",

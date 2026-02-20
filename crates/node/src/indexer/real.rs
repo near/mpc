@@ -10,7 +10,7 @@ use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use chain_indexer::neard::start_with_streamer;
+use chain_gateway::neard::start_with_streamer;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
@@ -87,7 +87,7 @@ pub fn spawn_real_indexer(
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
         indexer_tokio_runtime.block_on(async {
             let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
-            let (chain_indexer, stream) = start_with_streamer(near_indexer_config).await;
+            let (chain_gateway, stream) = start_with_streamer(near_indexer_config).await;
 
             //let near_config = near_indexer_config
             //    .load_near_config()
@@ -102,7 +102,7 @@ pub fn spawn_real_indexer(
             //let stream = indexer.streamer();
 
             let indexer_state = Arc::new(IndexerState::new(
-                chain_indexer,
+                chain_gateway,
                 //near_node.view_client,
                 //near_node.client,
                 //near_node.rpc_handler,
@@ -198,7 +198,7 @@ pub fn spawn_real_indexer(
             let indexer_result = listen_blocks(
                 stream,
                 mpc_indexer_config.concurrency,
-                Arc::clone(&indexer_state.stats),
+                Arc::clone(&indexer_state.chain_gateway.stats()),
                 mpc_indexer_config.mpc_contract_id,
                 block_update_sender,
                 process_blocks_receiver,
@@ -209,7 +209,7 @@ pub fn spawn_real_indexer(
             let indexer_result = listen_blocks(
                 stream,
                 mpc_indexer_config.concurrency,
-                Arc::clone(&indexer_state.stats),
+                Arc::clone(&indexer_state.chain_gateway.stats()),
                 mpc_indexer_config.mpc_contract_id,
                 block_update_sender,
             )

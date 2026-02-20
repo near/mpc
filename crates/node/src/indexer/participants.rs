@@ -272,15 +272,11 @@ pub async fn monitor_contract_state(
             //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
             //// We currently assume the participant set is static and do not detect or support any updates.
             tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-            indexer_state.client.wait_for_full_sync().await;
+            indexer_state.chain_gateway.wait_for_full_sync().await;
 
             tracing::debug!(target: "indexer", "querying contract state");
 
-            let (height, protocol_state) = match indexer_state
-                .view_client
-                .get_mpc_contract_state(indexer_state.mpc_contract_id.clone())
-                .await
-            {
+            let (height, protocol_state) = match indexer_state.get_mpc_contract_state().await {
                 Ok(contract_state) => contract_state,
                 Err(e) => {
                     tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);

@@ -20,7 +20,7 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     get_mpc_allowed_hashes: &Fetcher,
 ) where
     T: PartialEq,
-    Fetcher: Fn(AccountId) -> FetcherResponseFuture + Send + Sync,
+    Fetcher: Fn() -> FetcherResponseFuture + Send + Sync,
     FetcherResponseFuture: Future<Output = anyhow::Result<(u64, T)>> + Send,
 {
     let fetch_allowed_hashes = {
@@ -34,7 +34,7 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
                 .build();
 
             loop {
-                match get_mpc_allowed_hashes(indexer_state.mpc_contract_id.clone()).await {
+                match get_mpc_allowed_hashes().await {
                     Ok((_block_height, allowed_hashes)) => {
                         break allowed_hashes;
                     }
@@ -59,7 +59,7 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     };
 
     tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-    indexer_state.client.wait_for_full_sync().await;
+    indexer_state.chain_gateway.wait_for_full_sync().await;
 
     loop {
         tokio::time::sleep(ALLOWED_HASHES_REFRESH_INTERVAL).await;
@@ -83,8 +83,8 @@ pub async fn monitor_allowed_docker_images(
     sender: watch::Sender<Vec<MpcDockerImageHash>>,
     indexer_state: Arc<IndexerState>,
 ) {
-    let view_client = indexer_state.view_client.clone();
-    let fetcher = { |id| view_client.get_mpc_allowed_image_hashes(id) };
+    let indexer_state_clone = indexer_state.clone(); //view_client.clone();
+    let fetcher = { || indexer_state_clone.get_mpc_allowed_image_hashes() };
 
     monitor_allowed_hashes(sender, indexer_state, &fetcher).await
 }
@@ -97,8 +97,8 @@ pub async fn monitor_allowed_launcher_compose_hashes(
     sender: watch::Sender<Vec<LauncherDockerComposeHash>>,
     indexer_state: Arc<IndexerState>,
 ) {
-    let view_client = indexer_state.view_client.clone();
-    let fetcher = { |id| view_client.get_mpc_allowed_launcher_compose_hashes(id) };
+    let indexer_state_clone = indexer_state.clone();
+    let fetcher = { || indexer_state_clone.get_mpc_allowed_launcher_compose_hashes() };
 
     monitor_allowed_hashes(sender, indexer_state, &fetcher).await
 }
@@ -113,11 +113,7 @@ async fn fetch_tee_accounts_with_retry(indexer_state: &IndexerState) -> Vec<Node
         .build();
 
     loop {
-        match indexer_state
-            .view_client
-            .get_mpc_tee_accounts(indexer_state.mpc_contract_id.clone())
-            .await
-        {
+        match indexer_state.get_mpc_tee_accounts().await {
             Ok((_block_height, tee_accounts)) => return tee_accounts,
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading TEE accounts from chain: {:?}", e);
@@ -133,7 +129,7 @@ pub async fn monitor_tee_accounts(
     sender: watch::Sender<Vec<NodeId>>,
     indexer_state: Arc<IndexerState>,
 ) {
-    indexer_state.client.wait_for_full_sync().await;
+    indexer_state.chain_gateway.wait_for_full_sync().await;
 
     loop {
         let tee_accounts = fetch_tee_accounts_with_retry(&indexer_state).await;

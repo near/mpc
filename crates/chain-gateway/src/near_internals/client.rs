@@ -6,12 +6,15 @@ use std::time::Duration;
 const INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Clone)]
-pub struct IndexerClient {
-    pub client: TokioRuntimeHandle<ClientActorInner>,
+pub(crate) struct IndexerClient {
+    client: TokioRuntimeHandle<ClientActorInner>,
 }
 
 impl IndexerClient {
-    pub async fn wait_for_full_sync(&self) {
+    pub(crate) fn new(client: TokioRuntimeHandle<ClientActorInner>) -> Self {
+        Self { client }
+    }
+    pub(crate) async fn wait_for_full_sync(&self) {
         loop {
             tokio::time::sleep(INTERVAL).await;
 

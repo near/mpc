@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-pub(crate) struct IndexerStats {
+pub struct IndexerStats {
     pub block_heights_processing: std::collections::BTreeSet<u64>,
     pub blocks_processed_count: u64,
     pub last_processed_block_height: u64,

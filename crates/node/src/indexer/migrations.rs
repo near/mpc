@@ -77,15 +77,11 @@ pub async fn monitor_migrations(
 async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, ContractMigrationInfo) {
     loop {
         tracing::debug!(target: "indexer", "awaiting indexer full sync to read mpc contract state");
-        indexer_state.client.wait_for_full_sync().await;
+        indexer_state.chain_gateway.wait_for_full_sync().await;
 
         tracing::debug!(target: "indexer", "querying migration state");
 
-        match indexer_state
-            .view_client
-            .get_mpc_migration_info(indexer_state.mpc_contract_id.clone())
-            .await
-        {
+        match indexer_state.get_mpc_migration_info().await {
             Ok(res) => {
                 return res;
             }

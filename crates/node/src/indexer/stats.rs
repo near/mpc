@@ -1,23 +1,23 @@
 use std::sync::Arc;
 
-use crate::indexer::IndexerState;
+use super::IndexerState;
 
-#[derive(Debug, Clone)]
-pub(crate) struct IndexerStats {
-    pub block_heights_processing: std::collections::BTreeSet<u64>,
-    pub blocks_processed_count: u64,
-    pub last_processed_block_height: u64,
-}
+//#[derive(Debug, Clone)]
+//pub(crate) struct IndexerStats {
+//    pub block_heights_processing: std::collections::BTreeSet<u64>,
+//    pub blocks_processed_count: u64,
+//    pub last_processed_block_height: u64,
+//}
 
-impl IndexerStats {
-    pub fn new() -> Self {
-        Self {
-            block_heights_processing: std::collections::BTreeSet::new(),
-            blocks_processed_count: 0,
-            last_processed_block_height: 0,
-        }
-    }
-}
+//impl IndexerStats {
+//    pub fn new() -> Self {
+//        Self {
+//            block_heights_processing: std::collections::BTreeSet::new(),
+//            blocks_processed_count: 0,
+//            last_processed_block_height: 0,
+//        }
+//    }
+//}
 
 pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
     let interval_secs = 10;
@@ -25,7 +25,8 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(interval_secs)).await;
-        let stats_lock = indexer_state.stats.lock().await;
+        let stats = indexer_state.chain_gateway.stats();
+        let stats_lock = stats.lock().await;
         let stats_copy = stats_lock.clone();
         drop(stats_lock);
 
@@ -35,7 +36,6 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
 
         let time_to_catch_the_tip_duration = if block_processing_speed > 0.0 {
             if let Ok(block_height) = indexer_state
-                .view_client
                 .latest_final_block()
                 .await
                 .map(|block| block.header.height)

@@ -18,7 +18,7 @@ base64 = { workspace = true }
 borsh = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
-chain-indexer = { workspace = true }
+chain-gateway = { workspace = true }
 clap = { workspace = true }
 contract-interface = { workspace = true }
 derive_more = { workspace = true }

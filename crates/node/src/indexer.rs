@@ -10,9 +10,8 @@ use crate::{
     migration_service::types::MigrationInfo,
 };
 
-use self::stats::IndexerStats;
 use anyhow::Context;
-use chain_indexer::neard::ChainIndexer;
+use chain_gateway::neard::ChainGateway;
 use contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
     GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
@@ -63,21 +62,21 @@ pub mod fake;
 
 pub(crate) struct IndexerState {
     /// Chain indexer to interact with the NEAR blockchain
-    chain_indexer: ChainIndexer,
+    chain_gateway: ChainGateway,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
 }
 
 impl IndexerState {
     pub fn new(
-        chain_indexer: ChainIndexer,
+        chain_gateway: ChainGateway,
         //view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
         //client: TokioRuntimeHandle<ClientActorInner>,
         //rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
-            chain_indexer,
+            chain_gateway,
             //view_client: IndexerViewClient { view_client },
             //client: IndexerClient { client },
             //rpc_handler: IndexerRpcHandler { rpc_handler },
@@ -104,264 +103,150 @@ impl IndexerState {
 impl IndexerState {
     pub(crate) async fn get_pending_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_signature_request: &ChainSignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
-                request: chain_signature_request.clone(),
-            })
-            .unwrap()
-            .into_bytes();
+        let args: Vec<u8> = serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
+            request: chain_signature_request.clone(),
+        })
+        .unwrap()
+        .into_bytes();
 
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_PENDING_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .chain_indexer
-            .view_client()
-            .view_client
-            .send_async(query)
+        let (_, call_result) = self
+            .chain_gateway
+            .function_query(&self.mpc_contract_id, GET_PENDING_REQUEST, args.into())
             .await
-            .context("failed to query for pending request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
+            .context("failed to query for pending request")?;
+        serde_json::from_slice::<Option<YieldIndex>>(&call_result)
+            .context("failed to deserialize pending request response")
     }
 
     pub(crate) async fn get_pending_ckd_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_ckd_request: &ChainCKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingCKDRequestArgs {
-                request: chain_ckd_request.clone(),
-            })
-            .unwrap()
-            .into_bytes();
+        let args: Vec<u8> = serde_json::to_string(&ChainGetPendingCKDRequestArgs {
+            request: chain_ckd_request.clone(),
+        })
+        .unwrap()
+        .into_bytes();
 
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_PENDING_CKD_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
+        let (_, call_result) = self
+            .chain_gateway
+            .function_query(&self.mpc_contract_id, GET_PENDING_CKD_REQUEST, args)
             .await
-            .context("failed to query for pending CKD request")??;
+            .context("failed to query for pending CKD request")?;
 
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending CKD request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
+        serde_json::from_slice::<Option<YieldIndex>>(&call_result)
+            .context("failed to deserialize pending CKD request response")
     }
 
     pub(crate) async fn get_pending_verify_foreign_tx_request(
         &self,
-        mpc_contract_id: &AccountId,
         chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
-                request: chain_verify_foreign_tx_request.clone(),
-            })
-            .unwrap()
-            .into_bytes();
+        let args: Vec<u8> = serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
+            request: chain_verify_foreign_tx_request.clone(),
+        })
+        .unwrap()
+        .into_bytes();
 
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            // TODO(#1959): add this function in the contract
-            method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
+        let (_, call_result) = self
+            .chain_gateway
+            .function_query(
+                &self.mpc_contract_id,
+                GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
+                args,
+            )
             .await
-            .context("failed to query for pending verify foreign tx request")??;
+            .context("failed to query for pending verify foreign tx request")?;
 
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending verify foreign tx request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
+        serde_json::from_slice::<Option<YieldIndex>>(&call_result)
+            .context("failed to deserialize pending verify foreign tx request response")
     }
 
     pub(crate) async fn get_participant_attestation(
         &self,
-        mpc_contract_id: &AccountId,
         participant_tls_public_key: &contract_interface::types::Ed25519PublicKey,
     ) -> anyhow::Result<Option<contract_interface::types::VerifiedAttestation>> {
-        let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
+        let args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
             tls_public_key: participant_tls_public_key,
         })
         .unwrap()
         .into_bytes();
 
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_ATTESTATION.to_string(),
-            args: get_attestation_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
+        let (_, call_result) = self
+            .chain_gateway
+            .function_query(&self.mpc_contract_id, GET_ATTESTATION, args)
             .await
-            .context("failed to query for pending request")??;
+            .context("failed to query for pending request")?;
 
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
-                Option<contract_interface::types::VerifiedAttestation>,
-            >(&call_result.result)
-            .context("failed to deserialize pending request response"),
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
+        serde_json::from_slice::<Option<contract_interface::types::VerifiedAttestation>>(
+            &call_result,
+        )
+        .context("failed to deserialize pending request response")
     }
 
     pub(crate) async fn get_foreign_chain_policy(
         &self,
-        mpc_contract_id: &AccountId,
     ) -> anyhow::Result<dtos::ForeignChainPolicy> {
-        let (_height, policy) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAIN_POLICY)
-            .await?;
+        let (_height, policy) = self.get_mpc_state(GET_FOREIGN_CHAIN_POLICY).await?;
         Ok(policy)
     }
 
     pub(crate) async fn get_foreign_chain_policy_proposals(
         &self,
-        mpc_contract_id: &AccountId,
     ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
         let (_height, proposals) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
+            .get_mpc_state(GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
             .await?;
         Ok(proposals)
     }
 
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
-        let block_query = near_client::GetBlock(BlockReference::Finality(Finality::Final));
-        self.view_client
-            .send_async(block_query)
-            .await?
-            .context("failed to get query for final block")
+        Ok(self
+            .chain_gateway
+            .latest_final_block()
+            .await
+            .context("failed to get query for final block")?)
     }
 
     pub(crate) async fn get_mpc_contract_state(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, ProtocolContractState)> {
-        self.get_mpc_state(mpc_contract_id, STATE).await
+        self.get_mpc_state(STATE).await
     }
 
     pub(crate) async fn get_mpc_allowed_image_hashes(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
-            .await
+        self.get_mpc_state(ALLOWED_DOCKER_IMAGE_HASHES).await
     }
     pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES)
-            .await
+        self.get_mpc_state(ALLOWED_LAUNCHER_COMPOSE_HASHES).await
     }
 
-    pub(crate) async fn get_mpc_tee_accounts(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<NodeId>)> {
-        self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
+    pub(crate) async fn get_mpc_tee_accounts(&self) -> anyhow::Result<(u64, Vec<NodeId>)> {
+        self.get_mpc_state(GET_TEE_ACCOUNTS).await
     }
 
     pub(crate) async fn get_mpc_migration_info(
         &self,
-        mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, ContractMigrationInfo)> {
-        self.get_mpc_state(mpc_contract_id, MIGRATION_INFO).await
+        self.get_mpc_state(MIGRATION_INFO).await
     }
 
-    async fn get_mpc_state<State>(
-        &self,
-        mpc_contract_id: AccountId,
-        endpoint: &str,
-    ) -> anyhow::Result<(u64, State)>
+    async fn get_mpc_state<State>(&self, endpoint: &str) -> anyhow::Result<(u64, State)>
     where
         State: for<'de> Deserialize<'de>,
     {
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
-            method_name: endpoint.to_string(),
-            args: vec![].into(),
-        };
-
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
-
-        let response = self.view_client.send_async(query).await??;
-
-        match response.kind {
-            QueryResponseKind::CallResult(result) => Ok((
-                response.block_height,
-                serde_json::from_slice(&result.result)?,
-            )),
-            _ => {
-                anyhow::bail!("got unexpected response querying mpc contract state")
-            }
-        }
+        let (block_height, call_result) = self
+            .chain_gateway
+            .function_query(&self.mpc_contract_id, endpoint, vec![].into())
+            .await
+            .context("failed to query contract")?;
+        Ok((block_height, serde_json::from_slice(&call_result)?))
     }
 }
 
@@ -388,18 +273,14 @@ impl RealForeignChainPolicyReader {
 
 impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
     async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
-        self.indexer_state
-            .view_client
-            .get_foreign_chain_policy(&self.indexer_state.mpc_contract_id)
-            .await
+        self.indexer_state.get_foreign_chain_policy().await
     }
 
     async fn get_foreign_chain_policy_proposals(
         &self,
     ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
         self.indexer_state
-            .view_client
-            .get_foreign_chain_policy_proposals(&self.indexer_state.mpc_contract_id)
+            .get_foreign_chain_policy_proposals()
             .await
     }
 }

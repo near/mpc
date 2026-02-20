@@ -4,7 +4,7 @@ exclude = ["libs/nearcore"]
 members = [
     "crates/attestation",
     "crates/backup-cli",
-    "crates/chain-indexer",
+    "crates/chain-gateway",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
@@ -34,7 +34,7 @@ license = "MIT"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-chain-indexer = { path = "crates/chain-indexer" }
+chain-gateway = { path = "crates/chain-gateway" }
 contract-history = { path = "crates/contract-history" }
 contract-interface = { path = "crates/contract-interface" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
