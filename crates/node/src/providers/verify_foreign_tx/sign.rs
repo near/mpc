@@ -20,8 +20,9 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
+use bounded_collections::BoundedVec;
 use contract_interface::types as dtos;
-use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
+use mpc_contract::primitives::signature::{Payload, Tweak};
 use near_indexer_primitives::CryptoHash;
 use tokio::time::{timeout, Duration};
 
@@ -32,8 +33,8 @@ fn build_signature_request(
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
     let payload_hash: [u8; 32] = foreign_tx_payload.compute_msg_hash()?.into();
-    let payload_bytes =
-        Bytes::new(payload_hash.to_vec()).map_err(|err| anyhow::format_err!("{err}"))?;
+    let payload_bytes: BoundedVec<u8, 32, 32> = payload_hash.into();
+
     Ok(SignatureRequest {
         id: request.id,
         receipt_id: request.receipt_id,
@@ -360,7 +361,7 @@ mod tests {
     };
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
-    use non_empty_collections::NonEmptyBTreeSet;
+    use bounded_collections::NonEmptyBTreeSet;
     use std::collections::BTreeMap;
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
@@ -372,7 +373,7 @@ mod tests {
     }
 
     fn bitcoin_foreign_chains_config() -> ForeignChainsConfig {
-        let providers = non_empty_collections::NonEmptyBTreeMap::new(
+        let providers = bounded_collections::NonEmptyBTreeMap::new(
             "public".to_string(),
             BitcoinProviderConfig {
                 rpc_url: "https://blockstream.info/api".to_string(),

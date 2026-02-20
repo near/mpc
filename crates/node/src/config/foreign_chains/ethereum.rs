@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use non_empty_collections::NonEmptyBTreeMap;
+use bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::foreign_chains::auth;
