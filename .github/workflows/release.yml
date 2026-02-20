@@ -28,17 +28,26 @@ jobs:
     permissions:
       contents: write
 
+    # Expose version and commit hash to downstream jobs.
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      short-sha: ${{ steps.version.outputs.short-sha }}
+
     steps:
       # Extract the semver version from the branch name.
       # e.g. "release/v3.6.0" -> version="3.6.0", tag="v3.6.0"
+      # Also compute the 7-char commit hash used as the Docker source tag.
       - name: Extract version from branch name
         id: version
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           VERSION="${BRANCH#release/v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short-sha=${SHA::7}" >> "$GITHUB_OUTPUT"
 
       # Checkout the main branch so the tag points to the merge commit.
       - name: Checkout
@@ -47,11 +56,51 @@ jobs:
           ref: main
 
       # Create a lightweight git tag and push it to origin.
-      # This tag can then be used by other workflows (e.g. Docker release)
-      # or to create a GitHub release.
       - name: Create and push tag
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           git tag "$TAG"
           git push origin "$TAG"
+
+  # Trigger the existing Docker retag workflows for each image.
+  # These are the same workflows you'd normally trigger manually from the Actions UI.
+  retag-docker-images:
+    name: "Retag Docker images"
+    needs: create-tag
+    runs-on: warp-ubuntu-2404-x64-2x
+    permissions:
+      actions: write
+
+    steps:
+      # Trigger the launcher retag workflow.
+      - name: Retag mpc-launcher
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run docker_launcher_release.yml \
+            --repo "${{ github.repository }}" \
+            -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
+            -f release-tag="${{ needs.create-tag.outputs.version }}"
+
+      # Trigger the node retag workflow for mpc-node-gcp.
+      - name: Retag mpc-node-gcp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run docker_node_release.yml \
+            --repo "${{ github.repository }}" \
+            -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
+            -f release-tag="${{ needs.create-tag.outputs.version }}" \
+            -f repository="mpc-node-gcp"
+
+      # Trigger the node retag workflow for mpc-node.
+      - name: Retag mpc-node
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run docker_node_release.yml \
+            --repo "${{ github.repository }}" \
+            -f source-tag="main-${{ needs.create-tag.outputs.short-sha }}" \
+            -f release-tag="${{ needs.create-tag.outputs.version }}" \
+            -f repository="mpc-node"
