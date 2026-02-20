@@ -179,9 +179,9 @@ impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
-    /// assert_eq!(data.to_vec(), vec![1u8,2]);
+    /// assert_eq!(data.into_vec(), vec![1u8,2]);
     /// ```
-    pub fn to_vec(self) -> Vec<T> {
+    pub fn into_vec(self) -> Vec<T> {
         self.inner
     }
 
