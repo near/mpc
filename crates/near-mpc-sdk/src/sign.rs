@@ -16,10 +16,8 @@ pub use contract_interface::types::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SignRequestArgs {
     pub path: String,
-    // Either one of the following two must be present.
     #[serde(rename = "payload_v2")]
     pub payload: Payload,
-    // Either one of the following two must be present.
     pub domain_id: DomainId,
 }
 
