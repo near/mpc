@@ -292,6 +292,24 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
         self.inner.last().unwrap()
     }
 
+    /// Returns the last and all the rest of the elements
+    pub fn split_last(&self) -> (&T, &[T]) {
+        self.inner.split_last().unwrap()
+    }
+
+    /// Return a new BoundedVec with indices included
+    pub fn enumerated(self) -> BoundedVec<(usize, T), L, U, witnesses::NonEmpty<L, U>> {
+        BoundedVec {
+            inner: self.inner.into_iter().enumerate().collect(),
+            witness: self.witness,
+        }
+    }
+}
+
+impl<T, const L: usize, const U: usize, Witness> BoundedVec<T, L, U, Witness>
+where
+    Witness: Copy,
+{
     /// Create a new `BoundedVec` by consuming `self` and mapping each element.
     ///
     /// This is useful as it keeps the knowledge that the length is >= L, <= U,
@@ -305,7 +323,7 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
     /// let data = data.mapped(|x|x*2);
     /// assert_eq!(data, [2u8,4].into());
     /// ```
-    pub fn mapped<F, N>(self, map_fn: F) -> BoundedVec<N, L, U, witnesses::NonEmpty<L, U>>
+    pub fn mapped<F, N>(self, map_fn: F) -> BoundedVec<N, L, U, Witness>
     where
         F: FnMut(T) -> N,
     {
@@ -328,7 +346,7 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
     /// let data = data.mapped_ref(|x|x*2);
     /// assert_eq!(data, [2u8,4].into());
     /// ```
-    pub fn mapped_ref<F, N>(&self, map_fn: F) -> BoundedVec<N, L, U, witnesses::NonEmpty<L, U>>
+    pub fn mapped_ref<F, N>(&self, map_fn: F) -> BoundedVec<N, L, U, Witness>
     where
         F: FnMut(&T) -> N,
     {
@@ -363,10 +381,7 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
     /// let data: Result<BoundedVec<u8, 2, 8>, _> = data.try_mapped(|x| Err("failed"));
     /// assert_eq!(data, Err("failed"));
     /// ```
-    pub fn try_mapped<F, N, E>(
-        self,
-        mut map_fn: F,
-    ) -> Result<BoundedVec<N, L, U, witnesses::NonEmpty<L, U>>, E>
+    pub fn try_mapped<F, N, E>(self, mut map_fn: F) -> Result<BoundedVec<N, L, U, Witness>, E>
     where
         F: FnMut(T) -> Result<N, E>,
     {
@@ -401,10 +416,7 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
     /// let data: Result<BoundedVec<u8, 2, 8>, _> = data.try_mapped_ref(|x| Err("failed"));
     /// assert_eq!(data, Err("failed"));
     /// ```
-    pub fn try_mapped_ref<F, N, E>(
-        &self,
-        mut map_fn: F,
-    ) -> Result<BoundedVec<N, L, U, witnesses::NonEmpty<L, U>>, E>
+    pub fn try_mapped_ref<F, N, E>(&self, mut map_fn: F) -> Result<BoundedVec<N, L, U, Witness>, E>
     where
         F: FnMut(&T) -> Result<N, E>,
     {
@@ -418,42 +430,6 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
             inner: out,
             witness: self.witness,
         })
-    }
-
-    /// Returns the last and all the rest of the elements
-    pub fn split_last(&self) -> (&T, &[T]) {
-        self.inner.split_last().unwrap()
-    }
-
-    /// Return a new BoundedVec with indices included
-    pub fn enumerated(self) -> BoundedVec<(usize, T), L, U, witnesses::NonEmpty<L, U>> {
-        BoundedVec {
-            inner: self.inner.into_iter().enumerate().collect(),
-            witness: self.witness,
-        }
-    }
-
-    /// Return a Some(BoundedVec) or None if `v` is empty
-    /// # Example
-    /// ```
-    /// use bounded_collections::BoundedVec;
-    /// use bounded_collections::OptBoundedVecToVec;
-    ///
-    /// let opt_bv_none = BoundedVec::<u8, 2, 8>::opt_empty_vec(vec![]).unwrap();
-    /// assert!(opt_bv_none.is_none());
-    /// assert_eq!(opt_bv_none.to_vec(), Vec::<u8>::new());
-    /// let opt_bv_some = BoundedVec::<u8, 2, 8>::opt_empty_vec(vec![0u8, 2]).unwrap();
-    /// assert!(opt_bv_some.is_some());
-    /// assert_eq!(opt_bv_some.to_vec(), vec![0u8, 2]);
-    /// ```
-    pub fn opt_empty_vec(
-        v: Vec<T>,
-    ) -> Result<Option<BoundedVec<T, L, U, witnesses::NonEmpty<L, U>>>, BoundedVecOutOfBounds> {
-        if v.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(Self::from_vec(v)?))
-        }
     }
 }
 
