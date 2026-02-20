@@ -22,7 +22,6 @@ use contract_interface::types as dtos;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
-    state::ProtocolContractState,
     tee::{
         proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
         tee_state::NodeId,
@@ -47,6 +46,7 @@ use tokio::sync::{
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
+pub mod dto_conversions;
 pub mod handler;
 pub mod migrations;
 pub mod participants;
@@ -300,7 +300,7 @@ impl IndexerViewClient {
     pub(crate) async fn get_mpc_contract_state(
         &self,
         mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, ProtocolContractState)> {
+    ) -> anyhow::Result<(u64, dtos::ProtocolContractState)> {
         self.get_mpc_state(mpc_contract_id, STATE).await
     }
 

@@ -487,11 +487,20 @@ pub mod tests {
     const BLOCK_HEIGHT: u64 = 6;
     const PORT_OVERRIDE: Option<u16> = None;
     const NUM_DOMAINS: usize = 5;
+    /// Converts an internal ProtocolContractState to a DTO via serde roundtrip.
+    fn to_dto_state(
+        state: &ProtocolContractState,
+    ) -> contract_interface::types::ProtocolContractState {
+        serde_json::from_value(serde_json::to_value(state).unwrap())
+            .expect("internal state must round-trip to DTO")
+    }
+
     pub(crate) fn make_resharing_contract_case(
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> ContractCase {
+        let internal = ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1);
         let contract = ContractState::from_contract_state(
-            &ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1),
+            &to_dto_state(&internal),
             BLOCK_HEIGHT,
             PORT_OVERRIDE,
         )
@@ -502,8 +511,9 @@ pub mod tests {
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> (ContractCase, Keyset) {
         let running_state = gen_running_state(NUM_DOMAINS);
+        let internal = ProtocolContractState::Running(running_state.clone());
         let contract = ContractState::from_contract_state(
-            &ProtocolContractState::Running(running_state.clone()),
+            &to_dto_state(&internal),
             BLOCK_HEIGHT,
             PORT_OVERRIDE,
         )
@@ -517,8 +527,10 @@ pub mod tests {
     pub(crate) fn make_initializing_contract_case(
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> ContractCase {
+        let internal =
+            ProtocolContractState::Initializing(gen_initializing_state(NUM_DOMAINS, 0).1);
         let contract = ContractState::from_contract_state(
-            &ProtocolContractState::Initializing(gen_initializing_state(NUM_DOMAINS, 0).1),
+            &to_dto_state(&internal),
             BLOCK_HEIGHT,
             PORT_OVERRIDE,
         )

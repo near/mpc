@@ -6,11 +6,10 @@ use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
+use contract_interface::types as dtos;
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use mpc_attestation::attestation::Attestation;
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::utils::protocol_state_to_string;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use std::net::SocketAddr;
@@ -55,7 +54,7 @@ struct WebServerState {
     /// Sender for debug requests that need the MPC client to respond.
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
-    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
+    protocol_state_receiver: watch::Receiver<dtos::ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
 }
@@ -128,7 +127,7 @@ async fn contract_state(state: State<WebServerState>) -> String {
         // Clone to avoid holding a lock
         .clone();
 
-    protocol_state_to_string(&protocol_state)
+    serde_json::to_string_pretty(&protocol_state).unwrap_or_else(|e| format!("Error: {}", e))
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -193,7 +192,7 @@ pub async fn start_web_server(
     debug_request_sender: broadcast::Sender<DebugRequest>,
     bind_address: SocketAddr,
     static_web_data: StaticWebData,
-    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
+    protocol_state_receiver: watch::Receiver<dtos::ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;

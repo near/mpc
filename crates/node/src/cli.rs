@@ -23,9 +23,9 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use contract_interface::types as dtos;
 use hex::FromHex;
 use mpc_attestation::report_data::ReportDataV1;
-use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_time::Clock;
@@ -287,7 +287,7 @@ impl StartCmd {
         let root_task_handle = Arc::new(OnceLock::new());
 
         let (protocol_state_sender, protocol_state_receiver) =
-            watch::channel(ProtocolContractState::NotInitialized);
+            watch::channel(dtos::ProtocolContractState::NotInitialized);
 
         let (migration_state_sender, migration_state_receiver) =
             watch::channel((0, BTreeMap::new()));

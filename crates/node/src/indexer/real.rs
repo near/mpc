@@ -10,8 +10,8 @@ use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
+use contract_interface::types as dtos;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
 use near_indexer::Indexer;
 use std::path::PathBuf;
@@ -53,7 +53,7 @@ pub fn spawn_real_indexer(
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
+    protocol_state_sender: watch::Sender<dtos::ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {

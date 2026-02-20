@@ -34,7 +34,9 @@ pub fn random_verifying_key() -> VerifyingKey {
 pub fn gen_four_participants() -> (EpochData, ParticipantId) {
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());
     let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-    let participants: ParticipantsConfig = convert_participant_infos(parameters, None).unwrap();
+    let dto_params: contract_interface::types::ThresholdParameters =
+        serde_json::from_value(serde_json::to_value(&parameters).unwrap()).unwrap();
+    let participants: ParticipantsConfig = convert_participant_infos(&dto_params, None).unwrap();
     let epoch_data = EpochData {
         epoch_id,
         participants,

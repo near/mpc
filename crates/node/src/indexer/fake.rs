@@ -461,8 +461,11 @@ impl FakeIndexerCore {
                 loop {
                     {
                         let state = contract.lock().await;
+                        let dto_state: dtos::ProtocolContractState =
+                            serde_json::from_value(serde_json::to_value(&state.state).unwrap())
+                                .expect("internal state must round-trip to DTO");
                         let config = ContractState::from_contract_state(
-                            &state.state,
+                            &dto_state,
                             state.env.block_height,
                             None,
                         )

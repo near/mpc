@@ -47,6 +47,9 @@ impl AttemptId {
     pub fn get(&self) -> u64 {
         self.0
     }
+    pub fn from_raw(val: u64) -> Self {
+        AttemptId(val)
+    }
     pub fn legacy_attempt_id() -> Self {
         AttemptId(0)
     }
