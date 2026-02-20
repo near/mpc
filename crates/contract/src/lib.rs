@@ -4261,6 +4261,8 @@ mod tests {
         assert_matches::assert_matches!(result, Ok(()));
     }
 
+    /// Note - this test uses attestation data from a real MPC node. After Any change to the expected contract measurement, /test-utils/assets need to be updated.
+    ///  see crates/test-utils/assets/README.md for details.
     /// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
     /// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
     #[test]
