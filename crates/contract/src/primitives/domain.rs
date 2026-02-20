@@ -224,12 +224,14 @@ impl AddDomainsVotes {
 
     /// Filters out existing votes no longer in the participant set
     pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let mut remaining_votes = BTreeMap::new();
-        for (participant_id, vote) in &self.proposal_by_account {
-            if participants.is_participant_given_participant_id(&participant_id.get()) {
-                remaining_votes.insert(participant_id.clone(), vote.clone());
-            }
-        }
+        let remaining_votes = self
+            .proposal_by_account
+            .iter()
+            .filter(|&(participant_id, _vote)| {
+                participants.is_participant_given_participant_id(&participant_id.get())
+            })
+            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
+            .collect();
         AddDomainsVotes {
             proposal_by_account: remaining_votes,
         }
