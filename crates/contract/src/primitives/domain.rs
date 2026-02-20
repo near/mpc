@@ -77,6 +77,7 @@ pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureSche
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
+    #[serde(default)]
     pub purpose: DomainPurpose,
 }
 
@@ -373,6 +374,16 @@ pub mod tests {
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
+    }
+
+    #[test]
+    fn test_deserialization_without_purpose() {
+        // Simulates JSON from a 3.4.1 contract that lacks the `purpose` field.
+        let json = r#"{"id":0,"scheme":"Secp256k1"}"#;
+        let config: DomainConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.id, DomainId(0));
+        assert_eq!(config.scheme, SignatureScheme::Secp256k1);
+        assert_eq!(config.purpose, DomainPurpose::Sign);
     }
 
     #[rstest]
