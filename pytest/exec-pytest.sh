@@ -117,7 +117,6 @@ if [ $RESET_SUBMODULES == true ]; then
     fi
 fi
 
-
 if $SKIP_NEARCORE_BUILD; then
     PYTEST_FLAGS+=" --skip-nearcore-build"
 fi
@@ -133,7 +132,8 @@ if [ ! -d "$VENV_DIR" ]; then
         echo "Error: Directory $PYTEST_DIR not found"
         exit 1
     }
-    if ! log_output python3 -m venv venv; then
+    # note: replace this with uv: uv pip install -r requirements.txt
+    if ! log_output python3.12 -m venv venv; then
         echo "Failed to create virtualenv"
     fi
 fi

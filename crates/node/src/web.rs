@@ -6,6 +6,8 @@ use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
+use chain_gateway::errors::ChainGatewayError;
+use chain_gateway::types::ObservedState;
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
@@ -56,8 +58,10 @@ struct WebServerState {
     /// Sender for debug requests that need the MPC client to respond.
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
-    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
-    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    protocol_state_receiver:
+        watch::Receiver<Result<ObservedState<ProtocolContractState>, ChainGatewayError>>,
+    migration_state_receiver:
+        watch::Receiver<Result<ObservedState<ContractMigrationInfo>, ChainGatewayError>>,
     static_web_data: StaticWebData,
 }
 
@@ -118,18 +122,20 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
 }
 
-async fn migrations(state: State<WebServerState>) -> Json<(u64, ContractMigrationInfo)> {
-    Json(state.migration_state_receiver.borrow().clone())
+async fn migrations(state: State<WebServerState>) -> String {
+    match state.migration_state_receiver.borrow().clone() {
+        Ok(data) => serde_json::to_string_pretty(&(data.observed_at, data.value))
+            .unwrap_or_else(|e| e.to_string()),
+        Err(err) => err.to_string(),
+    }
 }
 
 async fn contract_state(state: State<WebServerState>) -> String {
-    let protocol_state = state
-        .protocol_state_receiver
-        .borrow()
-        // Clone to avoid holding a lock
-        .clone();
-
-    protocol_state_to_string(&protocol_state)
+    let protocol_state = state.protocol_state_receiver.borrow().clone();
+    match protocol_state {
+        Ok(data) => protocol_state_to_string(&data.value),
+        Err(err) => err.to_string(),
+    }
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -194,8 +200,12 @@ pub async fn start_web_server(
     debug_request_sender: broadcast::Sender<DebugRequest>,
     bind_address: SocketAddr,
     static_web_data: StaticWebData,
-    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
-    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    protocol_state_receiver: watch::Receiver<
+        Result<ObservedState<ProtocolContractState>, ChainGatewayError>,
+    >,
+    migration_state_receiver: watch::Receiver<
+        Result<ObservedState<ContractMigrationInfo>, ChainGatewayError>,
+    >,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
 

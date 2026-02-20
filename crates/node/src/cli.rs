@@ -7,7 +7,8 @@ use crate::{
     coordinator::Coordinator,
     db::SecretDB,
     indexer::{
-        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI, ReadForeignChainPolicy,
+        migrations::ContractMigrationInfo, real::spawn_real_indexer, tx_sender::TransactionSender,
+        IndexerAPI, ReadForeignChainPolicy,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
@@ -22,6 +23,7 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
+use chain_gateway::types::ObservedState;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_attestation::report_data::ReportDataV1;
@@ -287,10 +289,16 @@ impl StartCmd {
         let root_task_handle = Arc::new(OnceLock::new());
 
         let (protocol_state_sender, protocol_state_receiver) =
-            watch::channel(ProtocolContractState::NotInitialized);
+            watch::channel(Ok(ObservedState::<ProtocolContractState> {
+                observed_at: 0u64.into(),
+                value: ProtocolContractState::NotInitialized,
+            }));
 
         let (migration_state_sender, migration_state_receiver) =
-            watch::channel((0, BTreeMap::new()));
+            watch::channel(Ok(ObservedState::<ContractMigrationInfo> {
+                observed_at: 0u64.into(),
+                value: BTreeMap::new(),
+            }));
         let web_server = root_runtime
             .block_on(start_web_server(
                 root_task_handle.clone(),
@@ -436,6 +444,7 @@ impl StartCmd {
         let tx_sender_clone = indexer_api.txn_sender.clone();
         let tls_public_key_clone = tls_public_key.clone();
         let account_public_key_clone = account_public_key.clone();
+        // todo: group this in a TeeContext struct and pass those receivers
         let allowed_docker_images_receiver_clone =
             indexer_api.allowed_docker_images_receiver.clone();
         let allowed_launcher_compose_receiver_clone =

@@ -19,6 +19,7 @@ borsh = { workspace = true }
 bounded-collections = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
+chain-gateway = { workspace = true }
 clap = { workspace = true }
 contract-interface = { workspace = true, features = ["k256", "ed25519-dalek", "blstrs", "near"] }
 derive_more = { workspace = true }
