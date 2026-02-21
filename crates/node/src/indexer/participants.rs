@@ -283,7 +283,7 @@ pub async fn monitor_contract_state(
             {
                 Ok(contract_state) => contract_state,
                 Err(e) => {
-                    tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+                    tracing::error!(target: "mpc", "error reading config from chain during get_mpc_contract_state: {:?}", e);
                     tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
                     continue;
                 }
@@ -296,7 +296,7 @@ pub async fn monitor_contract_state(
             let state = match result {
                 Ok(state) => state,
                 Err(e) => {
-                    tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+                    tracing::error!(target: "mpc", "error converting contract state obtained from chain: {:?}", e);
                     continue;
                 }
             };

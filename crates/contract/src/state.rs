@@ -266,8 +266,12 @@ impl ProtocolContractState {
         account_id: &AccountId,
     ) -> Result<bool, Error> {
         let is_existing_or_prospective_participant = match &self {
-            ProtocolContractState::Initializing(state) => state.is_participant(account_id),
-            ProtocolContractState::Running(state) => state.is_participant(account_id),
+            ProtocolContractState::Initializing(state) => {
+                state.is_participant_given_account_id(account_id)
+            }
+            ProtocolContractState::Running(state) => {
+                state.is_participant_given_account_id(account_id)
+            }
             ProtocolContractState::Resharing(state) => {
                 state.is_participant_or_prospective_participant(account_id)
             }

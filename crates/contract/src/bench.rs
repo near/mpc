@@ -35,7 +35,7 @@ impl MpcContract {
         let account_id: AccountId = account_id.0.parse().unwrap();
         self.protocol_state
             .active_participants()
-            .is_participant(&account_id)
+            .is_participant_given_account_id(&account_id)
     }
 
     /// Benchmark: Get participant info using `info()`.

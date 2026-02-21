@@ -457,6 +457,49 @@ async fn upgrade_allows_new_request_types(
     }
 }
 
+/// Verifies that `mpc_contract::state::ProtocolContractState` (the internal type) can be
+/// deserialized from the JSON produced by an older contract that lacks the `purpose` field
+/// in `DomainConfig`.
+///
+/// This matters because the node deserializes `state()` into the internal type
+/// (see `crates/node/src/indexer.rs`), so it must tolerate JSON from older contracts.
+#[rstest]
+#[tokio::test]
+async fn protocol_contract_state__should_deserialize_from_old_contract_json(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) {
+    // Given: an old contract with populated Running state
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let contract = deploy_old(&worker, network).await.unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
+        .await
+        .unwrap();
+    execute_key_generation_and_add_random_state(
+        &accounts,
+        participants,
+        &contract,
+        &worker,
+        &mut OsRng,
+    )
+    .await;
+
+    // When: we read the raw JSON bytes and deserialize into the internal type
+    let view_result = contract.view(method_names::STATE).await.unwrap();
+    let state: mpc_contract::state::ProtocolContractState =
+        serde_json::from_slice(&view_result.result)
+            .expect("should deserialize old contract state into internal ProtocolContractState");
+
+    // Then: the state is Running
+    assert!(
+        matches!(
+            state,
+            mpc_contract::state::ProtocolContractState::Running(_)
+        ),
+        "Expected Running state, got: {:?}",
+        state
+    );
+}
+
 #[tokio::test]
 async fn init_running_rejects_external_callers_pre_initialization() {
     let (worker, contract) = init().await;

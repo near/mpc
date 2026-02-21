@@ -700,7 +700,7 @@ impl MpcVoteNewParametersCmd {
         for participant_index in &self.remove {
             let account_id = mpc_setup.participants[*participant_index].clone();
             assert!(
-                participants.is_participant(&account_id),
+                participants.is_participant_given_account_id(&account_id),
                 "Participant {} is not in the network",
                 account_id
             );
@@ -709,7 +709,7 @@ impl MpcVoteNewParametersCmd {
         for participant_index in &self.add {
             let account_id = mpc_setup.participants[*participant_index].clone();
             assert!(
-                !participants.is_participant(&account_id),
+                !participants.is_participant_given_account_id(&account_id),
                 "Participant {} is already in the network",
                 account_id
             );

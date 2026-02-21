@@ -13,7 +13,7 @@ pub type TransportBitcoinBlockHash = Hash32<BlockHashMarker>;
 pub type TransportBitcoinTransactionHash = Hash32<TransactionHashMarker>;
 
 /// Partial RPC response for `getrawtransaction`. See link below for full spec;
-/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
+/// <https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GetRawTransactionVerboseResponse {
     // The block hash the transaction is in
@@ -23,7 +23,7 @@ pub struct GetRawTransactionVerboseResponse {
 }
 
 /// Partial RPC response for `getrawtransaction`. See link below for full spec;
-/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
+/// <https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true>
 pub struct GetRawTransactionArgs {
     pub transaction_hash: TransportBitcoinTransactionHash,
     pub verbose: bool,
