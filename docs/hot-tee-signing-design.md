@@ -44,7 +44,7 @@ Several approaches were considered:
 ### Scope
 
 The HOT TEE Signing Application:
-- Receives signature requests via an HTTP API (_not_ on-chain). HOT's existing backend already sends sign requests via HTTP. Current volume is ~25k requests/day (bearish market baseline) with spikes to 25+ TPS during campaigns (airdrops, mints, claims). On-chain requests would add per-request gas costs (~$0.001/tx → ~$750/month at current low volume, scaling with activity), latency, and require the _Block Event Subscriber_.
+- Receives signature requests via an HTTP API (_not_ on-chain). HOT's existing backend already sends sign requests via HTTP. Current volume is \~25k requests/day (bearish market baseline) with spikes to 25+ TPS during campaigns (airdrops, mints, claims). On-chain requests would add per-request gas costs (\~$0.001/tx → \~$750/month at current low volume, scaling with activity), latency, and require the _Block Event Subscriber_.
 - Signs using the [reconstructed](#key-import-process) full private key directly with `k256` and `ed25519-dalek` (_not_ threshold signatures). With the full private key reconstructed inside the TEE, threshold signing provides no security benefit.
 - Submits TEE attestation on-chain to a dedicated HOT governance contract.
 - Monitors the HOT governance contract for allowed Docker image hashes and launcher compose hashes.
