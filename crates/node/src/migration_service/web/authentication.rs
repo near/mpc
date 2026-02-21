@@ -28,12 +28,12 @@ mod tests {
 
     use ed25519_dalek::SigningKey;
     use mpc_tls::tls::configure_tls;
+    use rand::SeedableRng as _;
 
     use crate::migration_service::web::authentication::authenticate_peer;
 
     #[tokio::test]
     async fn test_authenticate_peer() {
-        use rand::SeedableRng as _;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
         let server_key = SigningKey::generate(&mut rng);
