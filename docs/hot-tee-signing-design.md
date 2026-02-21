@@ -61,7 +61,6 @@ The HOT TEE Signing Application:
 [ed25519-dalek]: https://crates.io/crates/ed25519-dalek
 [domain-0]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/libs/chain-signatures/contract/src/primitives/domain.rs#L21-L24
 [domain-1]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/node/src/tests/multidomain.rs#L36-L37
-
 ## Architecture Overview
 
 ### Component Diagram
@@ -77,6 +76,7 @@ subgraph CVM["CVM (operated by HOT)"]
         LAUNCHER["Launcher<br/>(verifies image hash)"]
         subgraph HOT_APP["HOT TEE App Container"]
             HTTP["HTTP Server<br/>(axum)"]
+            VALIDATION["Validation SDK<br/>(hot-validation-core)"]
             SIGNER["Signing Engine<br/>(k256 + ed25519-dalek)"]
             KEYSTORE["In-Memory Key Store"]
             HOT_CTX["HOT Context<br/>(attestation lifecycle)"]
@@ -87,9 +87,12 @@ end
 
 CLIENT["Authenticated Accounts"]
 HOT_CONTRACT["HOT TEE Governance<br/>Contract (NEAR)"]
+RPC["Foreign Chain RPCs"]
 
 CLIENT -->|"POST /sign"| HTTP
-HTTP --> SIGNER
+HTTP --> VALIDATION
+VALIDATION -->|"verify proof"| RPC
+VALIDATION --> SIGNER
 SIGNER --> KEYSTORE
 
 HOT_CTX --> INDEXER
@@ -103,11 +106,16 @@ class CVM cvm;
 class HOT_APP app;
 class HOT_CONTRACT ext;
 class CLIENT ext;
+class RPC ext;
 ```
 
 ### Relationship to MPC Network Architecture
 
-The HOT TEE app reuses the chain indexer (Contract State Subscriber, Transaction Sender), TEE attestation crates (`tee-authority`, `mpc-attestation`), and the [Context pattern](indexer-design.md#mpc-context) (adapted as HOT Context for attestation lifecycle only). Everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
+The HOT TEE app reuses the chain indexer ([Contract State Subscriber, Transaction Sender][indexer-design] — proposed but not yet extracted as standalone crates), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the Context pattern (adapted as HOT Context for attestation lifecycle only). Everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
+
+[indexer-design]: indexer-design.md
+[tee-authority]: https://github.com/near/mpc/tree/main/crates/tee-authority
+[mpc-attestation]: https://github.com/near/mpc/blob/main/crates/mpc-attestation/src/attestation.rs
 
 ### Crate Dependencies
 
@@ -162,7 +170,7 @@ The HOT TEE app embeds a full `near-indexer` (which includes a `neard` node), th
 
 The signing flow itself is entirely off-chain — HTTP requests in, signatures out. Request authorization uses `hot-validation-core`'s own RPC clients (not the embedded neard) to query wallet contracts on NEAR and other chains.
 
-The Chain Indexer's `ContractStateSubscriber` and `TransactionSender` traits (from the [indexer design](indexer-design.md)) provide the interface. The HOT Context sits on top of the chain indexer, the same way the MPC Context does in the MPC node.
+The Chain Indexer's `ContractStateSubscriber` and `TransactionSender` traits (proposed in the [indexer design][indexer-design], not yet extracted) provide the interface. The HOT Context sits on top of the chain indexer, the same way the MPC Context does in the MPC node.
 
 ## Key Import Process
 
@@ -258,9 +266,11 @@ class HOT_CTX ctx;
 
 1. **Poll allowed hashes** — Periodically queries the HOT governance contract for `allowed_docker_image_hashes()` and `allowed_launcher_compose_hashes()` via the Contract State Subscriber.
 
-2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the HOT governance contract via `submit_participant_info()`. Follows the same pattern as [`crates/node/src/tee/remote_attestation.rs::periodic_attestation_submission`](https://github.com/near/mpc/blob/main/crates/node/src/tee/remote_attestation.rs), including exponential backoff retries.
+2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the HOT governance contract via `submit_participant_info()`. Follows the same pattern as [`periodic_attestation_submission`][remote-attestation], including exponential backoff retries.
 
-3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. Follows the pattern from [`monitor_attestation_removal`](https://github.com/near/mpc/blob/main/crates/node/src/tee/remote_attestation.rs).
+3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. Follows the pattern from [`monitor_attestation_removal`][remote-attestation].
+
+[remote-attestation]: https://github.com/near/mpc/blob/main/crates/node/src/tee/remote_attestation.rs
 
 ## HTTP Signing API
 
@@ -315,6 +325,8 @@ pub enum SignResponse {
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/sign` | Sign a message |
+| `GET` | `/import/public_key` | Get CVM's ephemeral public key + TDX attestation (first boot only) |
+| `POST` | `/import/keyshares` | Deliver encrypted keyshares (first boot only) |
 
 ### Request Authorization
 
@@ -376,7 +388,9 @@ async fn handle_sign(
 
 ### Overview
 
-A dedicated NEAR smart contract manages TEE governance for the HOT signing application. This is **separate** from the MPC signer contract (`v1.signer`). The contract is structurally similar to the TEE-related subset of the MPC contract (see [`crates/contract/src/tee/`](https://github.com/near/mpc/tree/main/crates/contract/src/tee)).
+A dedicated NEAR smart contract manages TEE governance for the HOT signing application. This is **separate** from the MPC signer contract (`v1.signer`). The contract is structurally similar to the TEE-related subset of the MPC contract (see [`crates/contract/src/tee/`][tee-dir]).
+
+[tee-dir]: https://github.com/near/mpc/tree/main/crates/contract/src/tee
 
 ### State
 
@@ -393,14 +407,16 @@ pub struct HotTeeContract {
 }
 ```
 
-The `TeeState` struct is reused from [`crates/contract/src/tee/tee_state.rs`](https://github.com/near/mpc/blob/main/crates/contract/src/tee/tee_state.rs):
+The [`TeeState`][tee-state] struct is reused from the MPC contract:
+
+[tee-state]: https://github.com/near/mpc/blob/main/crates/contract/src/tee/tee_state.rs
 
 ```rust
 pub struct TeeState {
-    pub allowed_docker_image_hashes: AllowedDockerImageHashes,
-    pub allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
-    pub votes: CodeHashesVotes,
-    pub stored_attestations: BTreeMap<PublicKey, NodeAttestation>,
+    pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
+    pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+    pub(crate) votes: CodeHashesVotes,
+    pub(crate) stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
 }
 ```
 
@@ -429,9 +445,12 @@ This follows the same multi-entity voting pattern as the MPC contract.
 
 ### Launcher Compose Hash Derivation
 
-When a Docker image hash is voted in and reaches the threshold, the contract automatically derives the corresponding **launcher compose hash**. This follows the same mechanism as the MPC signer contract (see [`crates/contract/src/tee/proposal.rs`](https://github.com/near/mpc/blob/main/crates/contract/src/tee/proposal.rs)):
+When a Docker image hash is voted in and reaches the threshold, the contract automatically derives the corresponding **launcher compose hash**. This follows the same mechanism as the MPC signer contract (see [`proposal.rs`][tee-proposal]):
 
-1. A YAML template ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) contains a `{{DEFAULT_IMAGE_DIGEST_HASH}}` placeholder.
+[tee-proposal]: https://github.com/near/mpc/blob/main/crates/contract/src/tee/proposal.rs
+[launcher-template]: https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template
+
+1. A YAML template ([`launcher_docker_compose.yaml.template`][launcher-template]) contains a `{{DEFAULT_IMAGE_DIGEST_HASH}}` placeholder.
 2. The placeholder is replaced with the approved Docker image hash.
 3. The filled YAML is SHA256-hashed to produce the `LauncherDockerComposeHash`.
 
@@ -458,18 +477,23 @@ sequenceDiagram
     LA ->> LA: Extend RTMR3 with app image hash
     LA ->> APP: Start HOT TEE App container
 
-    APP ->> APP: Generate ephemeral encryption key pair
-    APP ->> APP: Generate TDX attestation binding ephemeral public key
-    APP ->> OP: Expose GET /import/public_key (pubkey + attestation)
+    alt Keys found on encrypted disk (subsequent boot)
+        APP ->> APP: Load keys from encrypted disk
+        APP ->> APP: Verify keys are valid
+    else First boot (no keys on disk)
+        APP ->> APP: Generate ephemeral encryption key pair
+        APP ->> APP: Generate TDX attestation binding ephemeral public key
+        APP ->> OP: Expose GET /import/public_key (pubkey + attestation)
 
-    OP ->> OP: Verify TDX attestation
-    OP ->> OP: Encrypt keyshares to CVM's ephemeral public key
-    OP ->> APP: POST /import/keyshares (encrypted payloads)
+        OP ->> OP: Verify TDX attestation
+        OP ->> OP: Encrypt keyshares to CVM's ephemeral public key
+        OP ->> APP: POST /import/keyshares (encrypted payloads)
 
-    APP ->> APP: Decrypt keyshares (asymmetric decryption)
-    APP ->> APP: Reconstruct ECDSA + EdDSA private keys
-    APP ->> APP: Verify public keys match expected values
-    Note right of APP: Key import happens before image hash check.<br/>This is safe: operators already verified the<br/>TDX attestation (including image hash in RTMR3)<br/>before encrypting their keyshares.
+        APP ->> APP: Decrypt keyshares (asymmetric decryption)
+        APP ->> APP: Reconstruct ECDSA + EdDSA private keys
+        APP ->> APP: Verify public keys match expected values
+        Note right of APP: Key import happens before image hash check.<br/>This is safe: operators already verified the<br/>TDX attestation (including image hash in RTMR3)<br/>before encrypting their keyshares.
+    end
 
     APP ->> HC: Query allowed_docker_image_hashes()
     alt Image hash is approved
@@ -490,7 +514,7 @@ sequenceDiagram
 
 ### Attestation Generation
 
-The HOT TEE App uses `TeeAuthority` from [`crates/tee-authority`](https://github.com/near/mpc/tree/main/crates/tee-authority) to generate attestation quotes. The flow is identical to the MPC node:
+The HOT TEE App uses `TeeAuthority` from [`crates/tee-authority`][tee-authority] to generate attestation quotes. The flow is identical to the MPC node:
 
 1. Contact Dstack via Unix socket (`/var/run/dstack.sock`) to get `TcbInfo`.
 2. Request TDX quote with `report_data = Version || SHA384(tls_public_key)`.
@@ -543,7 +567,7 @@ TODO: For high availability, consider running a second CVM instance.
 
 ## Open Questions
 
-1. **EdDSA keyshare export:** The HOT `ExportKeyshareCmd` currently only exports ECDSA shares. It must be extended to also export EdDSA shares -- see the recommended export format in the [Key Import Process](#key-import-process) section. This work is on the HOT codebase side; we provide the format recommendation.
+1. **EdDSA keyshare export:** The HOT `ExportKeyshareCmd` currently only exports ECDSA shares. It must be extended to also export EdDSA shares. This work is on the HOT codebase side.
 
 2. **Response format byte-level compatibility:** Do `k256::AffinePoint` and `k256::Scalar` serialize to the same JSON as `cait_sith::frost_secp256k1::VerifyingKey` and `cait_sith::ecdsa::sign::FullSignature`? This must be validated. If not, we may need to depend on `cait_sith` types in the response or write adapter serialization.
 
