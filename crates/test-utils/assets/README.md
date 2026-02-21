@@ -3,6 +3,12 @@
 To update the test asset files, fetch `/public_data` from the MPC node’s public
 HTTP endpoint and save the response to a JSON file.
 
+See [single_node_readme.md](../../../localnet/tee/scripts/single_node_readme.md)
+for automation script instruction.
+
+This is needed when updating launcher code.  See [UPDATING_LAUNCHER.md](../../../tee_launcher/UPDATING_LAUNCHER.md)
+
+
 Example:
 
 ```shell
