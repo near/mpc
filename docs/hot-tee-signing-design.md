@@ -62,8 +62,6 @@ The HOT TEE Signing Application:
 [domain-0]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/libs/chain-signatures/contract/src/primitives/domain.rs#L21-L24
 [domain-1]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/node/src/tests/multidomain.rs#L36-L37
 
----
-
 ## Architecture Overview
 
 ### Component Diagram
@@ -166,190 +164,67 @@ The signing flow itself is entirely off-chain — HTTP requests in, signatures o
 
 The Chain Indexer's `ContractStateSubscriber` and `TransactionSender` traits (from the [indexer design](indexer-design.md)) provide the interface. The HOT Context sits on top of the chain indexer, the same way the MPC Context does in the MPC node.
 
----
-
 ## Key Import Process
 
 ### Overview
 
-Key import is a one-time operation performed at initial deployment. HOT MPC network operators export their threshold keyshares, which are then delivered to the TEE application. The application reconstructs the full private keys via Lagrange interpolation and verifies them against the expected public keys.
+Key import is a one-time operation performed at initial deployment. HOT MPC network operators export their threshold keyshares via the [`ExportKeyshare`](https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/cli.rs#L411-L459) CLI command, which are then encrypted to the CVM's ephemeral public key and delivered via an HTTP endpoint (see [Phase 2](#phase-2-encryption-and-delivery)). The application decrypts the keyshares, reconstructs the full private keys, and verifies them against the expected public keys.
 
 ### Phase 1: Export (HOT Operators)
 
 Each HOT MPC node operator runs the `ExportKeyshareCmd` CLI command (from [`hot-mpc/node/src/cli.rs`](https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/cli.rs#L411-L459)):
 
 ```rust
+#[derive(Parser, Debug)]
 pub struct ExportKeyshareCmd {
+    /// Path to home directory
+    #[arg(long, env("MPC_HOME_DIR"))]
     pub home_dir: String,
+
+    /// Hex-encoded 16 byte AES key for local storage encryption
+    #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
     pub local_encryption_key_hex: String,
 }
 ```
 
-This currently **only exports ECDSA keyshares** — it calls `legacy_ecdsa_key_from_keyshares()` (see [`keyshare/compat.rs`](https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/keyshare/compat.rs)) which only handles `KeyshareData::Secp256k1`. It must be extended to also export EdDSA keyshares (this work is on the HOT codebase side). Recommended extended export format:
-
-```rust
-/// Recommended export format for the HOT TEE import process.
-/// One of these is produced per HOT MPC node operator.
-#[derive(Serialize, Deserialize)]
-pub struct ExportedKeyshares {
-    /// Epoch ID of the exported keyshares.
-    pub epoch: u64,
-    /// Participant index of the exporting node (1-indexed, used for Lagrange).
-    pub participant_index: u32,
-    /// ECDSA (secp256k1) keyshare.
-    pub ecdsa: ExportedKeyshare,
-    /// EdDSA (ed25519) keyshare — requires extending the current export.
-    pub eddsa: ExportedKeyshare,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ExportedKeyshare {
-    /// The threshold secret share (scalar), hex-encoded.
-    pub private_share: String,
-    /// The group public key, hex-encoded (SEC1 for ECDSA, compressed for EdDSA).
-    pub public_key: String,
-}
-```
-
-The extension is straightforward: iterate over all keyshares in `PermanentKeyshareData` instead of just the first one, and handle both `KeyshareData::Secp256k1` and `KeyshareData::Ed25519` variants. The `participant_index` should be derived from the node's position in the participant set (available from the contract state or the node's config).
+This currently **only exports ECDSA keyshares** — it calls `legacy_ecdsa_key_from_keyshares()` (see [`keyshare/compat.rs`](https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/keyshare/compat.rs)) which only handles `KeyshareData::Secp256k1`. It must be extended to also export EdDSA keyshares (this work is on the HOT codebase side).
 
 ### Phase 2: Encryption and Delivery
 
-The exported keyshares are encrypted and delivered to the TEE as environment variables:
+Keyshares are encrypted **to the CVM's public key** so that only the TEE can decrypt them. This follows the same principle as [#2094](https://github.com/near/mpc/issues/2094) (secure provisioning of AES migration key for MPC nodes): the decryption key never exists outside the TEE, protecting against a compromised host intercepting keyshare material.
 
-1. Each keyshare is encrypted with AES-256-GCM using a strong symmetric key.
-2. The encrypted payloads are signed by the exporting operator for authenticity verification.
-3. The encrypted keyshares and decryption key are passed as environment variables to the CVM.
+The key import is a two-phase process:
 
-```rust
-/// Environment variables passed to the CVM (listed in app-compose.json allowed_envs)
-///
-/// HOT_ENCRYPTED_KEYSHARES: JSON array of encrypted keyshare payloads
-///   Each entry: { operator_id: u32, ciphertext: hex, nonce: hex, signature: hex }
-///
-/// HOT_KEYSHARE_DECRYPTION_KEY: hex-encoded AES-256-GCM key
-///
-/// HOT_EXPECTED_ECDSA_PUBLIC_KEY: hex-encoded SEC1 uncompressed public key
-///
-/// HOT_EXPECTED_EDDSA_PUBLIC_KEY: hex-encoded 32-byte compressed Edwards point
-```
+#### Phase 2a: CVM Boot and Encryption Key Publication
 
-The `allowed_envs` field in `app-compose.json` must list these environment variable names so they are measured into the attestation, ensuring no arbitrary env vars can be injected.
+1. The CVM boots and the HOT TEE app starts.
+2. On first boot (no keys on encrypted disk), the app generates an **ephemeral encryption key pair** inside the TEE.
+3. The app exposes the ephemeral public key via a local HTTP endpoint (`GET /import/public_key`). This endpoint is only available during the initial import phase and is disabled after key reconstruction succeeds.
+4. The app generates a TDX attestation quote binding the ephemeral public key in `report_data`, so operators can verify the public key belongs to a genuine TEE running the approved image.
 
-Since Dstack encrypts the CVM filesystem with a key derived from TDX measurements, env vars are protected at rest within the CVM.
+#### Phase 2b: Operator Encrypts and Delivers Keyshares
+
+1. Each operator fetches the CVM's ephemeral public key from `GET /import/public_key` and verifies the accompanying TDX attestation to confirm it originates from a genuine TEE.
+2. Each operator encrypts their exported keyshare to the CVM's ephemeral public key.
+3. The encrypted keyshares are delivered to the app via `POST /import/keyshares`.
+
+An attacker who controls the host could substitute a fake CVM with their own encryption key. The TDX attestation quote binding the ephemeral public key defends against this — operators must verify the attestation before encrypting. An attacker would need to compromise **both** the host and forge a valid TDX attestation.
 
 ### Phase 3: Reconstruction (Inside TEE)
 
-The TEE application decrypts the keyshares and reconstructs the full private keys via Lagrange interpolation:
-
-```rust
-/// Reconstructs a full secret key from threshold keyshares
-/// using Lagrange interpolation at x=0.
-///
-/// `shares` contains (participant_index, secret_share) pairs.
-/// At least `threshold` shares are required.
-fn reconstruct_secret<S: PrimeField>(
-    shares: &[(u32, S)],
-) -> S {
-    let mut secret = S::ZERO;
-    for (i, (_, share_i)) in shares.iter().enumerate() {
-        let x_i = S::from(shares[i].0 as u64 + 1); // 1-indexed
-        let mut lagrange_coeff = S::ONE;
-        for (j, _) in shares.iter().enumerate() {
-            if i != j {
-                let x_j = S::from(shares[j].0 as u64 + 1);
-                lagrange_coeff *= x_j * (x_j - x_i).invert().unwrap();
-            }
-        }
-        secret += *share_i * lagrange_coeff;
-    }
-    secret
-}
-```
-
-Applied to both curves:
-- **ECDSA:** `reconstruct_secret::<k256::Scalar>(ecdsa_shares)` → `k256::Scalar`
-- **EdDSA:** `reconstruct_secret::<curve25519_dalek::Scalar>(eddsa_shares)` → `curve25519_dalek::Scalar`
+The TEE application decrypts the keyshares using its ephemeral private key and reconstructs the full private keys (TODO: how? apparently via Lagrange interpolation).
 
 ### Phase 4: Verification
 
-After reconstruction, the application verifies the public keys match:
+After reconstruction, the application derives the ECDSA public key from the reconstructed ECDSA private key and the EdDSA public key from the reconstructed EdDSA private key, then compares each against the known HOT wallet root public key for that domain. This detects corrupted keyshares, tampered ciphertext, or shares from different key generation epochs (TODO: Not sure if this makes sense from a cryptography perspective — perhaps this check is redundant?)
 
-```rust
-fn verify_reconstructed_keys(
-    ecdsa_secret: &k256::Scalar,
-    eddsa_secret: &curve25519_dalek::Scalar,
-    expected_ecdsa_pk: &k256::AffinePoint,
-    expected_eddsa_pk: &curve25519_dalek::EdwardsPoint,
-) -> anyhow::Result<()> {
-    let derived_ecdsa = (k256::ProjectivePoint::GENERATOR * ecdsa_secret).to_affine();
-    anyhow::ensure!(derived_ecdsa == *expected_ecdsa_pk, "ECDSA key mismatch");
-
-    let derived_eddsa = curve25519_dalek::constants::ED25519_BASEPOINT_POINT * eddsa_secret;
-    anyhow::ensure!(derived_eddsa == *expected_eddsa_pk, "EdDSA key mismatch");
-
-    Ok(())
-}
-```
-
-If verification succeeds:
-1. Intermediate keyshare material is zeroized (using `zeroize` crate).
-2. Only the final reconstructed private keys are retained in memory.
-3. The keys are also written to the CVM's encrypted disk for subsequent boots (see [Redundancy & Recovery](#redundancy-and-recovery)).
+If verification succeeds, the keys are written to the CVM's encrypted disk for subsequent boots (see [Redundancy & Recovery](#redundancy-and-recovery)).
 
 If verification fails, the application logs the error and exits without starting the HTTP server.
-
-### Security Considerations
-
-- Keyshares are AES-256-GCM encrypted in transit.
-- The decryption key is used only once during initial boot.
-- Inside the TEE, keyshare material is zeroized after reconstruction.
-- The private keys never leave CVM memory (enforced by TDX hardware isolation).
-- The `allowed_envs` in `app-compose.json` constrains injectable env vars.
-- The expected public keys serve as a tamper-detection mechanism: if any keyshare is corrupted or substituted, reconstruction produces wrong public keys and verification fails.
-
----
 
 ## HOT Context
 
 The HOT Context is a lightweight analogue of the MPC Context. Where the MPC Context manages keygen, resharing, signing jobs, and network state, the HOT Context manages only the TEE attestation lifecycle.
-
-### Struct Definition
-
-```rust
-use tokio::sync::watch;
-
-/// Configuration for the HOT TEE application.
-pub struct HotConfig {
-    /// NEAR account ID for the HOT TEE governance contract.
-    pub hot_contract_id: AccountId,
-    /// NEAR account ID for this HOT TEE node operator.
-    pub node_account_id: AccountId,
-    /// HTTP server bind address.
-    pub http_bind_addr: std::net::SocketAddr,
-    /// NEAR RPC URL.
-    pub near_rpc_url: String,
-    /// Path to the NEAR account secret key file.
-    pub account_secret_key_path: std::path::PathBuf,
-    /// Re-attestation interval (default: 7 days).
-    pub attestation_interval: std::time::Duration,
-}
-
-/// The HOT-specific context that replaces the MPC Coordinator.
-/// Manages TEE attestation and chain interaction only.
-pub struct HotContext {
-    config: HotConfig,
-    /// TEE authority for generating attestation quotes.
-    /// Reused from `crates/tee-authority`.
-    tee_authority: TeeAuthority,
-    /// Watches allowed Docker image hashes from the HOT governance contract.
-    allowed_image_hashes: watch::Receiver<Vec<MpcDockerImageHash>>,
-    /// Watches allowed launcher compose hashes from the HOT governance contract.
-    allowed_launcher_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    /// Handle for submitting transactions to the NEAR chain.
-    tx_sender: TransactionSenderHandle,
-}
-```
 
 ### Responsibilities
 
@@ -381,13 +256,11 @@ classDef ctx stroke:#2563eb,stroke-width:2px;
 class HOT_CTX ctx;
 ```
 
-1. **Poll allowed hashes** — Periodically queries the HOT governance contract for `allowed_docker_image_hashes()` and `allowed_launcher_compose_hashes()` via the Contract State Subscriber. Publishes updates through `watch` channels.
+1. **Poll allowed hashes** — Periodically queries the HOT governance contract for `allowed_docker_image_hashes()` and `allowed_launcher_compose_hashes()` via the Contract State Subscriber.
 
 2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the HOT governance contract via `submit_participant_info()`. Follows the same pattern as [`crates/node/src/tee/remote_attestation.rs::periodic_attestation_submission`](https://github.com/near/mpc/blob/main/crates/node/src/tee/remote_attestation.rs), including exponential backoff retries.
 
 3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. Follows the pattern from [`monitor_attestation_removal`](https://github.com/near/mpc/blob/main/crates/node/src/tee/remote_attestation.rs).
-
----
 
 ## HTTP Signing API
 
@@ -445,7 +318,7 @@ pub enum SignResponse {
 
 ### Request Authorization
 
-The TEE app reuses HOT's existing authorization model via [`hot-validation-sdk`](https://github.com/hot-dao/hot-validation-sdk) (`hot-validation-core` and `hot-validation-primitives` crates) rather than reimplementing it. Request authentication is HOT's responsibility — reimplementing their validation would be error-prone and would shift responsibility onto NEAR. Using their SDK directly maintains the existing security boundary. Every sign request includes a caller-constructed `ProofModel`, and the TEE app verifies it before signing. The entire signing flow (request → validation → signature → response) is **off-chain** — no on-chain transactions are involved.
+The TEE app reuses HOT's existing authorization model via [`hot-validation-sdk`](https://github.com/hot-dao/hot-validation-sdk) (`hot-validation-core` and `hot-validation-primitives` crates). Every sign request includes a caller-constructed `ProofModel`, and the TEE app verifies it before signing. The entire signing flow (request → validation → signature → response) is **off-chain** — no on-chain transactions are involved.
 
 1. **Caller** (HOT's backend) sends a `SignRequest` containing `uid`, `message`, `key_type`, and `proof: ProofModel`.
 2. **TEE app** derives `wallet_id = SHA256(uid)` and calls [`Validation::verify(wallet_id, message, proof)`](https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143).
@@ -467,7 +340,7 @@ pub struct ProofModel {
 
 **Cross-chain RPC configuration:** The `Validation` struct requires RPC endpoints for every chain HOT wallets may reference in auth calls — NEAR included. Each chain is configured with a `ChainValidationConfig { threshold, servers }` (multiple RPC providers with threshold consensus). The validation SDK uses its own HTTP RPC clients for all chain calls (NEAR and foreign chains alike); the embedded neard is **not** used for validation — it is strictly for TEE governance.
 
-**Note:** This authorization flow is unrelated to NEAR MPC's [foreign transaction verification](foreign_chain_transactions.md) feature. Foreign TX verification is an on-chain feature for verifying events on other chains (bridges/intents). HOT's `hot_verify()` is an off-chain authorization mechanism for wallet signing — different use case, different infrastructure.
+**Note:** This authorization flow is unrelated to NEAR MPC's [foreign transaction verification](foreign_chain_transactions.md) feature. Foreign TX verification is an on-chain feature for verifying events on other chains (bridges/intents). HOT's `hot_verify()` is an off-chain authorization mechanism for wallet signing.
 
 ### Signing Endpoint
 
@@ -499,169 +372,18 @@ async fn handle_sign(
 }
 ```
 
-### ECDSA Signing
-
-```rust
-fn sign_ecdsa(
-    state: &AppState,
-    tweak_bytes: [u8; 32],
-    message: &[u8],
-) -> anyhow::Result<SignResponse> {
-    anyhow::ensure!(message.len() == 32, "ECDSA payload must be exactly 32 bytes");
-
-    // Derive tweaked private key: sk' = sk + tweak
-    let tweak = k256::Scalar::from_repr(tweak_bytes.into())
-        .into_option()
-        .ok_or_else(|| anyhow::anyhow!("invalid tweak scalar"))?;
-    let derived_secret = state.ecdsa_secret + tweak;
-
-    // Derive public key: pk' = G * tweak + root_pk
-    let derived_pk = (k256::ProjectivePoint::GENERATOR * derived_secret).to_affine();
-
-    // Sign using RFC 6979 deterministic ECDSA
-    let signing_key = k256::ecdsa::SigningKey::from(
-        k256::NonZeroScalar::new(derived_secret).into_option()
-            .ok_or_else(|| anyhow::anyhow!("derived secret is zero"))?,
-    );
-    let (signature, _recovery_id) = signing_key
-        .sign_prehash_recoverable(message)?;
-
-    // Extract (r, s) components as (big_r point, s scalar)
-    // to match HOT's FullSignature<Secp256k1> format
-    let (r_bytes, s_bytes) = signature.split_bytes();
-    let r_scalar = k256::Scalar::from_repr(r_bytes).into_option()
-        .ok_or_else(|| anyhow::anyhow!("invalid r scalar"))?;
-    let big_r = (k256::ProjectivePoint::GENERATOR * r_scalar).to_affine();
-    let s = k256::Scalar::from_repr(s_bytes).into_option()
-        .ok_or_else(|| anyhow::anyhow!("invalid s scalar"))?;
-
-    Ok(SignResponse::Ecdsa {
-        big_r,
-        s,
-        public_key: derived_pk,
-    })
-}
-```
-
-**Important:** The HOT MPC network's ECDSA response uses `cait_sith::ecdsa::sign::FullSignature<Secp256k1>` which contains `big_r: AffinePoint` (the R _point_, not just the r scalar) and `s: Scalar`. This is the FROST/threshold signature output format where `big_r` is the nonce commitment point. When signing directly with a full private key, we need to produce a compatible `(R_point, s)` pair rather than the standard `(r_scalar, s_scalar)` ECDSA signature encoding. This means we need to compute `big_r = k * G` (the nonce point) and return it directly. The `k256::ecdsa::SigningKey` internally computes this, but we need access to the intermediate `R` point. We may need to implement the RFC 6979 nonce generation and signing steps directly to access `R`, or use a lower-level API. **This is a key implementation detail that must be validated.**
-
-### EdDSA Signing
-
-```rust
-fn sign_eddsa(
-    state: &AppState,
-    tweak_bytes: [u8; 32],
-    message: &[u8],
-) -> anyhow::Result<SignResponse> {
-    anyhow::ensure!(
-        !message.is_empty() && message.len() <= 1232,
-        "EdDSA payload must be 1-1232 bytes"
-    );
-
-    // Derive tweaked private key: sk' = sk + tweak
-    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak_bytes);
-    let derived_secret = state.eddsa_secret + tweak;
-
-    // Derive public key
-    let derived_pk = curve25519_dalek::constants::ED25519_BASEPOINT_POINT * derived_secret;
-    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(
-        &derived_pk.compress().to_bytes()
-    )?;
-
-    // EdDSA signing with derived scalar.
-    // Standard ed25519 signing uses a specific nonce derivation from the
-    // secret key seed. Since our key is a derived scalar (not a seed), we
-    // must use Schnorr-style signing compatible with FROST's output format:
-    //   1. Generate deterministic nonce: k = H(derived_secret || message)
-    //   2. Compute R = k * G
-    //   3. Compute challenge: c = H(R || pk || message)
-    //   4. Compute s = k + c * derived_secret
-    //   5. Signature = (R, s)
-    let signature = sign_ed25519_with_scalar(
-        &derived_secret, &verifying_key, message
-    )?;
-
-    Ok(SignResponse::Eddsa {
-        signature,
-        public_key: verifying_key,
-    })
-}
-```
-
-**Note:** EdDSA signing with a derived scalar requires care. Standard `ed25519-dalek` expects a 32-byte seed that it hashes to produce the scalar and nonce prefix. Since our private key is already a scalar (from Lagrange reconstruction + tweak), we cannot use `SigningKey::from_bytes()`. Instead, we implement the Schnorr signing equation directly, matching the output format of FROST's `frost_ed25519::Signature`. The implementation must be verified to produce signatures that pass `ed25519-dalek::VerifyingKey::verify()`.
-
-### Key Derivation
-
-The tweak derivation replicates the exact same algorithm used by both NEAR's MPC network and the HOT MPC network (defined in [`contract/src/crypto_shared/kdf.rs`](https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/libs/chain-signatures/contract/src/crypto_shared/kdf.rs)):
-
-```rust
-const TWEAK_DERIVATION_PREFIX: &str =
-    "near-mpc-recovery v0.1.0 epsilon derivation:";
-
-/// Derives a tweak from an account ID and derivation path.
-/// MUST produce identical output to the MPC network's implementation.
-fn derive_tweak(predecessor_id: &str, path: &str) -> [u8; 32] {
-    use sha3::{Digest, Sha3_256};
-    let input = format!("{}{},{}", TWEAK_DERIVATION_PREFIX, predecessor_id, path);
-    Sha3_256::digest(input).into()
-}
-
-/// ECDSA: derived_pk = G * tweak + root_pk
-fn derive_ecdsa_public_key(
-    root_pk: &k256::AffinePoint,
-    tweak: &[u8; 32],
-) -> anyhow::Result<k256::AffinePoint> {
-    let scalar = k256::Scalar::from_repr((*tweak).into())
-        .into_option()
-        .ok_or_else(|| anyhow::anyhow!("tweak not a valid scalar"))?;
-    Ok((k256::ProjectivePoint::GENERATOR * scalar + root_pk).to_affine())
-}
-
-/// EdDSA: derived_pk = root_pk + G * tweak
-fn derive_eddsa_public_key(
-    root_pk: &curve25519_dalek::EdwardsPoint,
-    tweak: &[u8; 32],
-) -> curve25519_dalek::EdwardsPoint {
-    let scalar = curve25519_dalek::Scalar::from_bytes_mod_order(*tweak);
-    root_pk + curve25519_dalek::constants::ED25519_BASEPOINT_POINT * scalar
-}
-```
-
-In the HOT TEE app, the tweak is derived from the request's `uid` field via `uid.to_tweak()` (from the `hot-validation-primitives` crate), not from `derive_tweak()` directly. The `uid.to_tweak()` function encapsulates the same derivation logic but takes a HOT-specific user identifier as input. The TEE app must use the `hot-validation-primitives` crate to maintain compatibility.
-
-### Application State
-
-```rust
-/// Shared application state.
-pub struct AppState {
-    /// HOT validation SDK instance for authenticating requests.
-    validation: Arc<hot_validation_core::Validation>,
-    /// Reconstructed ECDSA root private key (secp256k1).
-    ecdsa_secret: k256::Scalar,
-    /// Reconstructed ECDSA root public key.
-    ecdsa_public_key: k256::AffinePoint,
-    /// Reconstructed EdDSA root private key (ed25519).
-    eddsa_secret: curve25519_dalek::Scalar,
-    /// Reconstructed EdDSA root public key.
-    eddsa_public_key: curve25519_dalek::EdwardsPoint,
-}
-```
-
----
-
 ## On-Chain Contract (HOT TEE Governance)
 
 ### Overview
 
-A dedicated NEAR smart contract manages TEE governance for the HOT signing application. This is **separate** from the MPC signer contract (`v1.signer`) — the HOT TEE app is operated by HOT, not NEAR, and mixing HOT's TEE governance into the MPC signer contract would couple two operationally independent systems with different upgrade cycles and ownership. The contract is structurally similar to the TEE-related subset of the MPC contract (see [`crates/contract/src/tee/`](https://github.com/near/mpc/tree/main/crates/contract/src/tee)).
+A dedicated NEAR smart contract manages TEE governance for the HOT signing application. This is **separate** from the MPC signer contract (`v1.signer`). The contract is structurally similar to the TEE-related subset of the MPC contract (see [`crates/contract/src/tee/`](https://github.com/near/mpc/tree/main/crates/contract/src/tee)).
 
 ### State
 
 ```rust
-#[near(contract_state)]
 pub struct HotTeeContract {
     /// Set of accounts that can vote on image hashes.
-    /// Multiple entities (per Bowen's requirement).
+    /// Multiple entities.
     governors: BTreeSet<AccountId>,
     /// Number of governor votes required to approve an action.
     vote_threshold: u32,
@@ -705,36 +427,6 @@ This follows the same multi-entity voting pattern as the MPC contract.
 | `allowed_launcher_compose_hashes()` | View | HOT TEE App | Query approved launcher hashes |
 | `get_tee_accounts()` | View | Anyone | Query nodes with valid attestations |
 
-```rust
-#[near]
-impl HotTeeContract {
-    /// Vote for a new Docker image hash. When vote_threshold is reached,
-    /// the hash is added to the allowed list.
-    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) {
-        let voter = env::predecessor_account_id();
-        assert!(self.governors.contains(&voter), "Not a governor");
-        // Delegate to TeeState voting logic.
-        // When threshold reached: hash is whitelisted, and the launcher
-        // compose hash is derived automatically (see below).
-    }
-
-    /// Submit TEE attestation. Reuses verification logic from mpc-attestation.
-    pub fn submit_participant_info(
-        &mut self,
-        attestation: Attestation,
-        tls_public_key: Ed25519PublicKey,
-    ) {
-        // Verify attestation against allowed hashes
-        // Store in tee_state.stored_attestations
-    }
-
-    /// Re-validate all stored attestations. Removes expired ones.
-    pub fn verify_tee(&mut self) -> bool {
-        // Delegate to tee_state.reverify_and_cleanup_participants()
-    }
-}
-```
-
 ### Launcher Compose Hash Derivation
 
 When a Docker image hash is voted in and reaches the threshold, the contract automatically derives the corresponding **launcher compose hash**. This follows the same mechanism as the MPC signer contract (see [`crates/contract/src/tee/proposal.rs`](https://github.com/near/mpc/blob/main/crates/contract/src/tee/proposal.rs)):
@@ -746,18 +438,6 @@ When a Docker image hash is voted in and reaches the threshold, the contract aut
 During attestation verification, the contract replays the TDX event log to reconstruct RTMR3 and checks that both the Docker image hash and launcher compose hash match the allowed lists. This ensures the attesting CVM is running an approved image via an approved launcher configuration.
 
 The HOT TEE governance contract will need its own launcher compose template, since the HOT TEE app has a different Docker Compose configuration than the MPC node.
-
-### Trust Boundaries
-
-| Responsibility | Owner |
-|---|---|
-| Contract deployment and upgrades | Governor multisig (HOT + NEAR + others) |
-| Docker image hash voting | Governors |
-| CVM operation (start/stop/restart) | HOT Wallet team |
-| HTTP API authentication | HOT Wallet team (via hot-validation-sdk) |
-| Attestation verification logic | Shared (mpc-attestation crate, audited by NEAR) |
-
----
 
 ## Attestation Flow
 
@@ -771,17 +451,25 @@ sequenceDiagram
     participant APP as HOT TEE App
     participant HC as HOT TEE Contract
 
-    OP ->> DS: Start CVM (env: encrypted keyshares)
+    OP ->> DS: Start CVM
     DS ->> DS: Boot, extend RTMR3 with docker_compose
     DS ->> LA: Start Launcher
     LA ->> LA: Verify app image hash (from disk or DEFAULT_IMAGE_DIGEST)
     LA ->> LA: Extend RTMR3 with app image hash
     LA ->> APP: Start HOT TEE App container
 
-    APP ->> APP: Decrypt keyshares from env vars
+    APP ->> APP: Generate ephemeral encryption key pair
+    APP ->> APP: Generate TDX attestation binding ephemeral public key
+    APP ->> OP: Expose GET /import/public_key (pubkey + attestation)
+
+    OP ->> OP: Verify TDX attestation
+    OP ->> OP: Encrypt keyshares to CVM's ephemeral public key
+    OP ->> APP: POST /import/keyshares (encrypted payloads)
+
+    APP ->> APP: Decrypt keyshares (asymmetric decryption)
     APP ->> APP: Reconstruct ECDSA + EdDSA private keys
     APP ->> APP: Verify public keys match expected values
-    APP ->> APP: Zeroize keyshare material
+    Note right of APP: Key import happens before image hash check.<br/>This is safe: operators already verified the<br/>TDX attestation (including image hash in RTMR3)<br/>before encrypting their keyshares.
 
     APP ->> HC: Query allowed_docker_image_hashes()
     alt Image hash is approved
@@ -819,8 +507,6 @@ The HOT governance contract verifies attestations using the same DCAP verificati
 4. Check Docker image hash against allowed list.
 5. Check launcher compose hash against allowed list.
 
----
-
 ## Upgrade Path
 
 ### Application Upgrade
@@ -836,94 +522,30 @@ Application upgrades follow the same Launcher pattern used by the MPC network (s
 7. The new app submits a fresh attestation.
 8. After the upgrade deadline (configurable, default 7 days), old image hashes expire.
 
-### Contract Upgrade
-
-The HOT TEE governance contract can be upgraded by the governor multisig through standard NEAR contract deployment. Governors should use a DAO or multisig pattern for contract upgrades.
-
-### Key Rotation
-
-Key rotation is **not supported** for legacy HOT keys. The reconstructed private keys are fixed for the lifetime of the application. If key compromise is suspected, the HOT TEE app should be shut down immediately and users migrated to NEAR's MPC network.
-
----
-
 ## Redundancy and Recovery
 
 Since the HOT TEE app is a single node holding the full private key, redundancy is critical. A hardware failure or misconfiguration must not result in permanent loss of user funds.
 
 ### Primary: Encrypted Disk Persistence
 
-Keys are held in memory for signing and persisted on the CVM's encrypted disk for restart resilience. Relying solely on env vars would require the operator to pass keyshares on every restart, increasing exposure. The CVM's encrypted disk (key derived from RTMR measurements) provides safe at-rest storage. The env var path is used only for initial import.
+Keys are held in memory for signing and persisted on the CVM's encrypted disk for restart resilience. The CVM's encrypted disk (key derived from RTMR measurements) provides safe at-rest storage.
 
 After successful key reconstruction and verification on first boot, the private keys are stored on the CVM's encrypted filesystem. Dstack's Gramine Key Provider derives the encryption key from TDX measurements, so only the same TEE image can decrypt this data.
 
-On subsequent boots, the app first attempts to load keys from the encrypted disk. If found and valid, it skips the env var import path. This means:
-- The HOT operator does not need to pass keyshare env vars on every restart.
-- The exposure window for keyshare material is limited to the initial deployment.
+On subsequent boots, the app first attempts to load keys from the encrypted disk. If found and valid, it skips the import flow entirely (the `/import/*` endpoints are never exposed).
 
-### Hot Standby (Recommended)
+### Hot Standby
 
-For high availability, run a second CVM instance in a different availability zone:
+TODO: For high availability, consider running a second CVM instance.
 
 - Both instances hold the same reconstructed keys (imported separately or copied via encrypted disk backup).
 - Both submit attestations to the HOT governance contract.
-- An HTTP load balancer routes traffic to the active instance.
-- ECDSA signing is deterministic (RFC 6979), so concurrent requests to both instances produce identical signatures.
-- EdDSA signing with derived scalars must use deterministic nonce generation to avoid nonce reuse across instances.
-
-### Offline Backup
-
-HOT operators must maintain encrypted backups of:
-1. The original encrypted keyshare payloads and decryption key, stored in geographically distributed secure storage (e.g., HSM, air-gapped vault).
-2. Periodically tested via dry-run recovery in a test CVM.
-
-### Disaster Recovery Matrix
-
-| Scenario | Recovery Path |
-|---|---|
-| CVM restart (no disk loss) | Keys loaded from encrypted disk. App re-attests. |
-| CVM disk loss | Re-import from encrypted keyshare env vars. |
-| Complete backup loss | **Unrecoverable.** Same risk as HOT's current MPC network losing keyshares. |
-| Suspected key compromise | Shut down HOT TEE app. Migrate users to NEAR MPC network. |
-
----
-
-## Acceptance Criteria
-
-1. **TEE proof submission** — See [Attestation Flow](#attestation-flow). The app generates TDX quotes via `TeeAuthority`, submits them to the governance contract via `submit_participant_info()`, and re-attests every 7 days.
-2. **Receiving keyshares** — See [Key Import Process](#key-import-process). Operators export encrypted keyshares → delivered as CVM env vars → reconstructed via Lagrange interpolation → verified against expected public keys → persisted on encrypted disk.
-3. **Future upgrades** — See [Upgrade Path](#upgrade-path). Governors vote on new image hashes on-chain → app detects via Contract State Subscriber → operator restarts CVM → Launcher pulls new image → app re-attests.
-
----
-
-## New Crate Structure
-
-**New crates:**
-- `hot-tee-app` -- HOT TEE signing application binary
-- `hot-tee-contract` -- HOT TEE governance contract
-
-**From `near/mpc`:**
-- `tee-authority` -- attestation quote generation
-- `mpc-attestation` -- attestation types and DCAP verification
-- `contract-interface` -- shared attestation DTOs
-- Chain Indexer (`ContractStateSubscriber`, `TransactionSender`) -- from [indexer design](indexer-design.md)
-
-**From `near/hot-mpc` (private):**
-- `hot-validation-core` -- request authentication (`Validation::verify()`)
-- `hot-validation-primitives` -- `Uid`, `KeyType`, `ProofModel`, `OffchainSignatureRequest` types
-
----
 
 ## Open Questions
 
 1. **EdDSA keyshare export:** The HOT `ExportKeyshareCmd` currently only exports ECDSA shares. It must be extended to also export EdDSA shares -- see the recommended export format in the [Key Import Process](#key-import-process) section. This work is on the HOT codebase side; we provide the format recommendation.
 
 2. **Response format byte-level compatibility:** Do `k256::AffinePoint` and `k256::Scalar` serialize to the same JSON as `cait_sith::frost_secp256k1::VerifyingKey` and `cait_sith::ecdsa::sign::FullSignature`? This must be validated. If not, we may need to depend on `cait_sith` types in the response or write adapter serialization.
-
-3. **EdDSA signing with derived scalar:** Standard `ed25519-dalek` does not support signing with an arbitrary scalar (it expects a seed). We need to implement Schnorr signing directly or use a library that supports this. The implementation must produce signatures verifiable by `ed25519-dalek::VerifyingKey::verify()`.
-
-4. **Number of HOT keyshares / threshold:** How many operators does HOT have, and what is their threshold? This determines how many keyshares we need for reconstruction.
-
-5. **Hot standby nonce safety:** If running multiple instances for HA, deterministic nonce generation (RFC 6979 for ECDSA, deterministic nonce for EdDSA) is critical to avoid nonce reuse. Is this sufficient, or do we need an active/passive failover mechanism?
 
 ## Related Issues
 
