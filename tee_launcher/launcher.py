@@ -285,6 +285,7 @@ class ResolvedImage:
             raise ValueError(
                 "image digest must be a non-empty string without whitespaces"
             )
+            # should we require specific lengths?
 
     def name(self) -> str:
         return self.spec.image_name
@@ -707,7 +708,6 @@ def get_manifest_digest(
     """
     Given an `image_digest` returns a manifest digest.
     `docker pull` requires a manifest digest. This function translates an image digest into a manifest digest by talking to the Docker registry.
-
     API doc for image registry https://distribution.github.io/distribution/spec/api/
     """
     if not docker_image.tags():
@@ -815,11 +815,6 @@ def build_docker_cmd(
 
         if key in ALLOWED_LAUNCHER_ENV_VARS:
             # launcher-only env vars: never pass to container
-            continue
-
-        # Never pass raw private keys into the container via launcher
-        if key in DENIED_CONTAINER_ENV_KEYS:
-            logging.warning(f"Ignoring denied secret env var: {key}")
             continue
 
         if key == "EXTRA_HOSTS":

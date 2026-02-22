@@ -801,9 +801,6 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     assert_subsequence(cmd, expected_core)
 
 
-# ---- tests for env var validation logic in build_docker_cmd ---
-
-
 def _base_env():
     # Minimal env for build_docker_cmd (launcher will add required MPC_IMAGE_HASH etc itself)
     return {
@@ -816,11 +813,6 @@ def _base_env():
     }
 
 
-# -------------------------
-# 1) _has_control_chars tests
-# -------------------------
-
-
 def test_has_control_chars_rejects_newline_and_cr():
     assert _has_control_chars("a\nb") is True
     assert _has_control_chars("a\rb") is True
@@ -831,11 +823,6 @@ def test_has_control_chars_rejects_other_control_chars_but_allows_tab():
     assert _has_control_chars("a\tb") is False
     # ASCII control char 0x1F should be rejected
     assert _has_control_chars("a" + chr(0x1F) + "b") is True
-
-
-# -------------------------
-# 2) is_safe_env_value tests
-# -------------------------
 
 
 def test_is_safe_env_value_rejects_control_chars():
@@ -852,11 +839,6 @@ def test_is_safe_env_value_rejects_ld_preload_substring():
 def test_is_safe_env_value_rejects_too_long_value():
     assert is_safe_env_value("a" * (MAX_ENV_VALUE_LEN + 1)) is False
     assert is_safe_env_value("a" * MAX_ENV_VALUE_LEN) is True
-
-
-# -------------------------
-# 3) is_allowed_container_env_key tests
-# -------------------------
 
 
 def testis_allowed_container_env_key_allows_mpc_prefix_uppercase():
@@ -881,11 +863,6 @@ def testis_allowed_container_env_key_allows_compat_non_mpc_keys():
 def testis_allowed_container_env_key_denies_sensitive_keys():
     assert is_allowed_container_env_key("MPC_P2P_PRIVATE_KEY") is False
     assert is_allowed_container_env_key("MPC_ACCOUNT_SK") is False
-
-
-# -------------------------
-# 4) build_docker_cmd behavior tests (end-to-end)
-# -------------------------
 
 
 def test_build_docker_cmd_allows_arbitrary_mpc_prefix_env_vars():
