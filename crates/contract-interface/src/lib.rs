@@ -13,16 +13,17 @@ pub mod types {
     pub use foreign_chain::*;
     pub use participants::{ParticipantId, ParticipantInfo, Participants};
 
+    pub use metrics::Metrics;
     pub use primitives::{
         AccountId, CkdAppId, DomainId, K256AffinePoint, K256Scalar, K256Signature,
         SignatureResponse, Tweak,
     };
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
-        DomainConfig, DomainRegistry, EpochId, InitializingContractState, KeyEvent, KeyEventId,
-        KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState, PublicKeyExtended,
-        ResharingContractState, RunningContractState, SignatureScheme, Threshold,
-        ThresholdParameters, ThresholdParametersVotes,
+        DomainConfig, DomainPurpose, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
+        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState,
+        PublicKeyExtended, ResharingContractState, RunningContractState, SignatureScheme,
+        Threshold, ThresholdParameters, ThresholdParametersVotes,
     };
     pub use updates::{ProposedUpdates, UpdateHash};
 
@@ -30,6 +31,7 @@ pub mod types {
     mod config;
     mod crypto;
     mod foreign_chain;
+    mod metrics;
     mod participants;
     mod primitives;
     mod state;

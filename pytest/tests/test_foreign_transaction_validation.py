@@ -331,26 +331,19 @@ def foreign_tx_validation_cluster():
     for node in mpc_nodes:
         node.run()
 
-    cluster.init_cluster(participants=mpc_nodes, threshold=2, domains=["Secp256k1"])
+    cluster.init_cluster(
+        participants=mpc_nodes, threshold=2, domains=[("Secp256k1", "ForeignTx")]
+    )
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     # Wait for the foreign chain policy to be applied (unanimous auto-vote).
     expected_policy = foreign_chains.normalize_policy(
         {
-            "chains": [
-                {
-                    "chain": "Bitcoin",
-                    "providers": [{"rpc_url": bitcoin_mock_rpc_url}],
-                },
-                {
-                    "chain": "Abstract",
-                    "providers": [{"rpc_url": abstract_mock_rpc_url}],
-                },
-                {
-                    "chain": "Starknet",
-                    "providers": [{"rpc_url": starknet_mock_rpc_url}],
-                },
-            ]
+            "chains": {
+                "Bitcoin": [{"rpc_url": bitcoin_mock_rpc_url}],
+                "Abstract": [{"rpc_url": abstract_mock_rpc_url}],
+                "Starknet": [{"rpc_url": starknet_mock_rpc_url}],
+            }
         }
     )
 

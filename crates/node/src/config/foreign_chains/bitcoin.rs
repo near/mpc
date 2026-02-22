@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 
+use bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::foreign_chains::auth;
@@ -10,7 +10,7 @@ use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
 pub struct BitcoinChainConfig {
     pub timeout_sec: u64,
     pub max_retries: u64,
-    pub providers: BTreeMap<String, BitcoinProviderConfig>,
+    pub providers: NonEmptyBTreeMap<String, BitcoinProviderConfig>,
 }
 
 impl BitcoinChainConfig {

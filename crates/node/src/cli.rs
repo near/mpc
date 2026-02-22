@@ -103,7 +103,7 @@ pub enum CliCommand {
         desired_presignatures_to_buffer: usize,
         #[arg(long, default_value = "1")]
         desired_responder_keys_per_participant: usize,
-        /// optional argument. If set, generates additional config for participants[id] for each id in migrating_nodes.
+        /// optional argument. If set, generates additional config for participants\[id\] for each id in migrating_nodes.
         #[arg(long, value_delimiter = ',')]
         migrating_nodes: Vec<usize>,
     },

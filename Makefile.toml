@@ -10,7 +10,9 @@ dependencies = [
   "cargo-shear",
   "cargo-deny-no-advisories",
   "zizmor",
+  "check-markdown-links",
   "check",
+  "check-docs",
   "clippy",
   "clippy-all-features",
 ]
@@ -27,7 +29,9 @@ dependencies = [
   "cargo-shear",
   "cargo-deny-no-advisories",
   "zizmor",
+  "check-markdown-links",
   "check",
+  "check-docs",
   "clippy",
   "clippy-all-features",
   "nextest",
@@ -114,6 +118,18 @@ args = ["deny", "--all-features", "check", "licenses", "bans", "sources"]
 [tasks.license-file]
 command = "bash"
 args = ["scripts/check-third-party-licenses.sh"]
+
+[tasks.check-docs]
+description = "Check rustdoc for broken intra-doc links"
+command = "cargo"
+args = ["doc", "--workspace", "--no-deps"]
+
+[tasks.check-docs.env]
+RUSTDOCFLAGS = "-D warnings"
+
+[tasks.check-markdown-links]
+command = "lychee"
+args = ["--no-progress", "."]
 
 [config]
 default_to_workspace = false

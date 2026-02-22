@@ -1,7 +1,8 @@
-use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use anyhow::Context;
+use bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
@@ -22,16 +23,16 @@ pub use starknet::{StarknetApiVariant, StarknetChainConfig, StarknetProviderConf
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ForeignChainsConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<SolanaChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bitcoin: Option<BitcoinChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethereum: Option<EthereumChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "abstract")]
     pub abstract_chain: Option<AbstractChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub starknet: Option<StarknetChainConfig>,
 }
 
@@ -68,41 +69,41 @@ impl ForeignChainsConfig {
             return None;
         }
 
-        let mut chains = BTreeSet::new();
+        let mut chains = BTreeMap::new();
 
         if let Some(config) = &self.solana {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(
+                dtos::ForeignChain::Solana,
+                providers_to_set(&config.providers),
+            );
         }
 
         if let Some(config) = &self.bitcoin {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Bitcoin,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(
+                dtos::ForeignChain::Bitcoin,
+                providers_to_set(&config.providers),
+            );
         }
 
         if let Some(config) = &self.ethereum {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Ethereum,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(
+                dtos::ForeignChain::Ethereum,
+                providers_to_set(&config.providers),
+            );
         }
 
         if let Some(config) = &self.abstract_chain {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Abstract,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(
+                dtos::ForeignChain::Abstract,
+                providers_to_set(&config.providers),
+            );
         }
 
         if let Some(config) = &self.starknet {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Starknet,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(
+                dtos::ForeignChain::Starknet,
+                providers_to_set(&config.providers),
+            );
         }
 
         Some(dtos::ForeignChainPolicy { chains })
@@ -110,14 +111,11 @@ impl ForeignChainsConfig {
 }
 
 fn providers_to_set<P: ForeignChainProviderConfig>(
-    providers: &BTreeMap<String, P>,
-) -> BTreeSet<dtos::RpcProvider> {
-    providers
-        .values()
-        .map(|provider| dtos::RpcProvider {
-            rpc_url: provider.rpc_url().trim().to_string(),
-        })
-        .collect()
+    providers: &NonEmptyBTreeMap<String, P>,
+) -> NonEmptyBTreeSet<dtos::RpcProvider> {
+    providers.map_to_set(|_name, provider| dtos::RpcProvider {
+        rpc_url: provider.rpc_url().trim().to_string(),
+    })
 }
 
 pub(crate) trait ForeignChainProviderConfig {
@@ -129,7 +127,7 @@ pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
     chain_label: &str,
     timeout_sec: u64,
     max_retries: u64,
-    providers: &BTreeMap<String, P>,
+    providers: &NonEmptyBTreeMap<String, P>,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
         timeout_sec > 0,
@@ -139,13 +137,9 @@ pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
         max_retries > 0,
         "foreign_chains.{chain_label}.max_retries must be > 0"
     );
-    anyhow::ensure!(
-        !providers.is_empty(),
-        "foreign_chains.{chain_label} must include at least one provider"
-    );
 
     let mut seen_rpc_urls = BTreeSet::new();
-    for (provider_name, provider) in providers {
+    for (provider_name, provider) in providers.iter() {
         let provider_rpc_url = provider.rpc_url();
         anyhow::ensure!(
             !provider_rpc_url.trim().is_empty(),
@@ -732,12 +726,11 @@ foreign_chains:
         let policy = config.foreign_chains.to_policy().unwrap();
 
         // Then
-        let solana_chain = policy
+        let solana_providers = policy
             .chains
-            .iter()
-            .find(|c| c.chain == contract_interface::types::ForeignChain::Solana)
+            .get(&contract_interface::types::ForeignChain::Solana)
             .unwrap();
-        let provider = solana_chain.providers.iter().next().unwrap();
+        let provider = solana_providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
     }
 
@@ -908,12 +901,11 @@ foreign_chains:
         let policy = config.foreign_chains.to_policy().unwrap();
 
         // Then
-        let eth_chain = policy
+        let eth_providers = policy
             .chains
-            .iter()
-            .find(|c| c.chain == contract_interface::types::ForeignChain::Ethereum)
+            .get(&contract_interface::types::ForeignChain::Ethereum)
             .unwrap();
-        let provider = eth_chain.providers.iter().next().unwrap();
+        let provider = eth_providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
     }
 }

@@ -90,7 +90,7 @@ async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, Contra
                 return res;
             }
             Err(e) => {
-                tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+                tracing::error!(target: "mpc", "error reading config from chain during get_mpc_migration_info: {:?}", e);
                 tokio::time::sleep(MIGRATION_INFO_REFRESH_INTERVAL).await;
             }
         }

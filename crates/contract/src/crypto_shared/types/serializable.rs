@@ -1,5 +1,5 @@
 //! Module that adds implementation of [`BorshSerialize`] and [`BorshDeserialize`] for
-//! [`PublicKeyExtended`].
+//! [`super::PublicKeyExtended`].
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use curve25519_dalek::EdwardsPoint;

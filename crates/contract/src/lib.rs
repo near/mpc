@@ -24,10 +24,7 @@ pub mod v3_4_1_state;
 mod bench;
 mod dto_mapping;
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    time::Duration,
-};
+use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
@@ -36,7 +33,10 @@ use crate::{
         TryIntoContractType, TryIntoInterfaceType,
     },
     errors::{Error, RequestError},
-    primitives::ckd::{CKDRequest, CKDRequestArgs},
+    primitives::{
+        ckd::{CKDRequest, CKDRequestArgs},
+        domain::AddDomainsVotes,
+    },
     state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
@@ -46,7 +46,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
 use contract_interface::method_names;
 use contract_interface::types::{
-    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
 use crypto_shared::{
@@ -69,7 +69,7 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -113,6 +113,7 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+    metrics: Metrics,
 }
 
 /// A container for "orphaned" state that persists across contract migrations.
@@ -193,21 +194,6 @@ impl MpcContract {
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
-
-    fn validate_foreign_chain_policy(policy: &dtos::ForeignChainPolicy) -> Result<(), Error> {
-        let mut seen_chains = BTreeSet::new();
-        for config in &policy.chains {
-            if config.providers.is_empty() {
-                return Err(InvalidParameters::MalformedPayload
-                    .message("foreign chain config must include at least one provider"));
-            }
-            if !seen_chains.insert(config.chain.clone()) {
-                return Err(InvalidParameters::MalformedPayload
-                    .message("duplicate foreign chain entries in policy"));
-            }
-        }
-        Ok(())
-    }
 }
 
 // User contract API
@@ -225,6 +211,14 @@ impl MpcContract {
             request
         );
 
+        if request.deprecated_payload.is_some() {
+            self.metrics.sign_with_v1_payload_count += 1;
+        }
+
+        if request.payload_v2.is_some() {
+            self.metrics.sign_with_v2_payload_count += 1;
+        }
+
         let request: SignRequest = request.try_into().unwrap();
 
         let domains = match self.protocol_state.domain_registry() {
@@ -239,6 +233,18 @@ impl MpcContract {
                 .to_string(),
             );
         };
+
+        if domain_config.purpose != DomainPurpose::Sign {
+            env::panic_str(
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::Sign,
+                    actual: domain_config.purpose,
+                }
+                .message("sign() may only target domains with purpose Sign")
+                .to_string(),
+            );
+        }
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -418,11 +424,15 @@ impl MpcContract {
                 .to_string(),
             );
         };
-        if domain_config.scheme != SignatureScheme::Bls12381 {
+        if domain_config.purpose != DomainPurpose::CKD {
             env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Provided domain ID key type is not Bls12381")
-                    .to_string(),
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::CKD,
+                    actual: domain_config.purpose,
+                }
+                .message("request_app_private_key() may only target domains with purpose CKD")
+                .to_string(),
             );
         }
 
@@ -528,11 +538,15 @@ impl MpcContract {
             );
         };
 
-        if domain_config.scheme != SignatureScheme::Secp256k1 {
+        if domain_config.purpose != DomainPurpose::ForeignTx {
             env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Provided domain ID key type is not Secp256k1")
-                    .to_string(),
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::ForeignTx,
+                    actual: domain_config.purpose,
+                }
+                .message("verify_foreign_transaction() requires a domain with purpose ForeignTx")
+                .to_string(),
             );
         }
 
@@ -941,7 +955,8 @@ impl MpcContract {
                     .participants()
                     .iter()
                     .filter(|(account_id, _, _)| {
-                        !participants_with_valid_attestation.is_participant(account_id)
+                        !participants_with_valid_attestation
+                            .is_participant_given_account_id(account_id)
                     })
                     .collect();
 
@@ -985,8 +1000,6 @@ impl MpcContract {
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
-
-        Self::validate_foreign_chain_policy(&policy)?;
 
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let voter = dtos::AccountId(voter.get().to_string());
@@ -1488,6 +1501,7 @@ impl MpcContract {
                 DomainRegistry::default(),
                 Keyset::new(EpochId::new(0), Vec::new()),
                 parameters,
+                AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
@@ -1502,6 +1516,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            metrics: Default::default(),
         })
     }
 
@@ -1548,7 +1563,10 @@ impl MpcContract {
         Ok(MpcContract {
             config: init_config.map(Into::into).unwrap_or_default(),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
-                domains, keyset, parameters,
+                domains,
+                keyset,
+                parameters,
+                AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
@@ -1562,6 +1580,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            metrics: Default::default(),
         })
     }
 
@@ -1581,7 +1600,7 @@ impl MpcContract {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3_4_1 state: {:?}", err);
+                log!("failed to deserialize state into v3.4.1 state: {:?}", err);
             }
         };
 
@@ -1594,6 +1613,10 @@ impl MpcContract {
 
     pub fn state(&self) -> contract_interface::types::ProtocolContractState {
         (&self.protocol_state).into_dto_type()
+    }
+
+    pub fn metrics(&self) -> contract_interface::types::Metrics {
+        self.metrics.clone()
     }
 
     /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
@@ -1877,7 +1900,7 @@ impl MpcContract {
             ));
         };
 
-        if !running_state.is_participant(&account_id) {
+        if !running_state.is_participant_given_account_id(&account_id) {
             return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus not eligible to initiate a node migration.", account_id)));
         }
         self.node_migrations
@@ -1916,7 +1939,7 @@ impl MpcContract {
             ));
         };
 
-        if !running_state.is_participant(&account_id) {
+        if !running_state.is_participant_given_account_id(&account_id) {
             return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus eligible to initiate a node migration.", account_id)));
         }
 
@@ -2009,7 +2032,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[allow(non_snake_case)]
 mod tests {
     use std::{
-        collections::{BTreeSet, HashSet},
+        collections::{BTreeMap, HashSet},
         str::FromStr,
     };
 
@@ -2022,7 +2045,7 @@ mod tests {
         NUM_PROTOCOLS,
     };
     use crate::primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2035,6 +2058,7 @@ mod tests {
     };
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
+    use bounded_collections::NonEmptyBTreeSet;
     use contract_interface::types::{
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
         ForeignTxSignPayloadV1,
@@ -2158,6 +2182,14 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
+        basic_setup_with_purpose(scheme, infer_purpose_from_scheme(scheme), rng)
+    }
+
+    fn basic_setup_with_purpose(
+        scheme: SignatureScheme,
+        purpose: DomainPurpose,
+        rng: &mut impl CryptoRngCore,
+    ) -> (VMContext, MpcContract, SharedSecretKey) {
         let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
@@ -2169,6 +2201,7 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             scheme,
+            purpose,
         }];
         let epoch_id = EpochId::new(0);
         let (pk, sk) = make_public_key_for_domain(scheme, rng);
@@ -2412,7 +2445,11 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let (context, mut contract, secret_key) = basic_setup_with_purpose(
+            SignatureScheme::Secp256k1,
+            DomainPurpose::ForeignTx,
+            &mut rng,
+        );
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2494,8 +2531,11 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let (context, mut contract, _secret_key) = basic_setup_with_purpose(
+            SignatureScheme::Secp256k1,
+            DomainPurpose::ForeignTx,
+            &mut rng,
+        );
         let request_args = VerifyForeignTransactionRequestArgs {
             derivation_path: "".to_string(),
             domain_id: DomainId::default().0.into(),
@@ -2523,6 +2563,68 @@ mod tests {
         assert!(contract
             .get_pending_verify_foreign_tx_request(&request)
             .is_none());
+    }
+
+    #[rstest]
+    #[case(DomainPurpose::ForeignTx)]
+    #[case(DomainPurpose::CKD)]
+    #[should_panic(expected = "sign() may only target domains with purpose Sign")]
+    fn sign__should_reject_non_sign_domain(#[case] purpose: DomainPurpose) {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
+        contract.sign(SignRequestArgs {
+            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+    }
+
+    #[rstest]
+    #[case(DomainPurpose::Sign)]
+    #[case(DomainPurpose::CKD)]
+    #[should_panic(
+        expected = "verify_foreign_transaction() requires a domain with purpose ForeignTx"
+    )]
+    fn verify_foreign_tx__should_reject_non_foreign_tx_domain(#[case] purpose: DomainPurpose) {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
+        contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
+            derivation_path: "test".to_string(),
+            domain_id: DomainId::default().0.into(),
+            payload_version: 1,
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        });
+    }
+
+    #[rstest]
+    #[case(DomainPurpose::Sign)]
+    #[case(DomainPurpose::ForeignTx)]
+    #[should_panic(expected = "request_app_private_key() may only target domains with purpose CKD")]
+    fn ckd__should_reject_non_ckd_domain(#[case] purpose: DomainPurpose) {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+
+        // When
+        contract.request_app_private_key(CKDRequestArgs {
+            domain_id: DomainId::default(),
+            derivation_path: "test".to_string(),
+            app_public_key: dtos::Bls12381G1PublicKey::from([0u8; 48]),
+        });
     }
 
     fn setup_tee_test_contract(
@@ -2904,6 +3006,7 @@ mod tests {
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
                 stale_data: Default::default(),
+                metrics: Default::default(),
             }
         }
     }
@@ -3832,6 +3935,82 @@ mod tests {
         );
     }
 
+    #[test]
+    fn sign__increments_v1_payload_metric() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
+
+        // When
+        contract.sign(SignRequestArgs {
+            deprecated_payload: Some([7u8; 32]),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+
+        // Then
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 1);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
+    }
+
+    #[test]
+    fn sign__increments_v2_payload_metric() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
+
+        // When
+        contract.sign(SignRequestArgs {
+            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+
+        // Then
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
+    }
+
+    #[test]
+    fn sign__metrics_accumulate_across_multiple_calls() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+
+        // When — two v1 calls and one v2 call
+        contract.sign(SignRequestArgs {
+            deprecated_payload: Some([7u8; 32]),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+        contract.sign(SignRequestArgs {
+            deprecated_payload: Some([8u8; 32]),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+        contract.sign(SignRequestArgs {
+            payload_v2: Some(Payload::from_legacy_ecdsa([9u8; 32])),
+            path: "test".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        });
+
+        // Then
+        assert_eq!(contract.metrics.sign_with_v1_payload_count, 2);
+        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
+    }
+
     #[rstest]
     #[case(ProtocolContractState::Running(gen_running_state(NUM_DOMAINS)))]
     #[case(ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1))]
@@ -3899,6 +4078,7 @@ mod tests {
         let domains = vec![DomainConfig {
             id: domain_id,
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         }];
         let (pk, _) = make_public_key_for_domain(SignatureScheme::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {
@@ -4173,63 +4353,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_foreign_chain_policy__should_reject_empty_providers() {
-        // Given
-        let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::new(),
-            }]),
-        };
-
-        // When
-        let result = MpcContract::validate_foreign_chain_policy(&policy);
-
-        // Then
-        let err = result.expect_err("expected validation to fail");
-        let kind = err.kind().clone();
-        assert_matches!(
-            kind,
-            ErrorKind::InvalidParameters(InvalidParameters::MalformedPayload)
-        );
-    }
-
-    #[test]
-    fn validate_foreign_chain_policy__should_reject_duplicate_chains() {
-        // Given
-        let providers_a = BTreeSet::from([dtos::RpcProvider {
-            rpc_url: "https://example-a".to_string(),
-        }]);
-        let providers_b = BTreeSet::from([dtos::RpcProvider {
-            rpc_url: "https://example-b".to_string(),
-        }]);
-
-        let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([
-                dtos::ForeignChainConfig {
-                    chain: dtos::ForeignChain::Solana,
-                    providers: providers_a,
-                },
-                dtos::ForeignChainConfig {
-                    chain: dtos::ForeignChain::Solana,
-                    providers: providers_b,
-                },
-            ]),
-        };
-
-        // When
-        let result = MpcContract::validate_foreign_chain_policy(&policy);
-
-        // Then
-        let err = result.expect_err("expected validation to fail");
-        let kind = err.kind().clone();
-        assert_matches!(
-            kind,
-            ErrorKind::InvalidParameters(InvalidParameters::MalformedPayload)
-        );
-    }
-
-    #[test]
     fn vote_foreign_chain_policy__should_store_vote_for_participant() {
         // Given
         let running_state = gen_running_state(1);
@@ -4242,12 +4365,12 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Solana,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         };
         let _env = Environment::new(None, Some(first_account.clone()), None);
 
@@ -4284,12 +4407,12 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Solana,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         };
         let mut env = Environment::new(None, Some(first_account.clone()), None);
 
@@ -4322,12 +4445,12 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Solana,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         };
         let non_participant = gen_account_id();
         contract

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 
+use bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::foreign_chains::auth;
@@ -10,7 +10,7 @@ use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
 pub struct StarknetChainConfig {
     pub timeout_sec: u64,
     pub max_retries: u64,
-    pub providers: BTreeMap<String, StarknetProviderConfig>,
+    pub providers: NonEmptyBTreeMap<String, StarknetProviderConfig>,
 }
 
 impl StarknetChainConfig {

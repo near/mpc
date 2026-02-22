@@ -113,6 +113,10 @@
 
             AR = "${stdenv.cc.bintools}/bin/ar";
             RANLIB = "${stdenv.cc.bintools}/bin/ranlib";
+
+            # Cargo resolves its linker separately from CC — force it to use the
+            # SDK-aware wrapper so -lSystem (and other SDK libs) are found.
+            CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${stdenv.cc}/bin/cc";
           };
 
           dockerTools = with pkgs; [
@@ -132,14 +136,21 @@
           ];
 
           nearTools = with pkgs; [
-            python3Packages.keyring
             near-cli-rs
             cargo-near
+          ];
+
+          pythonTools = with pkgs; [
+            python311
+            python311Packages.keyring
+            ruff # linter and formatter
           ];
 
           miscTools = with pkgs; [
             git
             binaryen
+            jq
+            perl
           ];
 
           buildLibs =
@@ -177,7 +188,14 @@
             strictDeps = true;
 
             packages =
-              dockerTools ++ llvmTools ++ rustTools ++ cargoTools ++ nearTools ++ miscTools ++ buildLibs;
+              dockerTools ++
+              llvmTools ++
+              rustTools ++
+              cargoTools ++
+              pythonTools ++
+              nearTools ++
+              miscTools ++
+              buildLibs;
 
             env = envCommon // envDarwin;
 

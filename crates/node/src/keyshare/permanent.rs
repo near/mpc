@@ -90,6 +90,7 @@ impl PermanentKeyStorage {
         Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
     }
 
+    #[allow(rustdoc::private_intra_doc_links)]
     /// Attempts to store the given [`PermanentKeyshareData`] in persistent storage,
     /// replacing existing data only if the new keyset is considered valid.
     ///
@@ -102,7 +103,7 @@ impl PermanentKeyStorage {
     /// - It does not contain keshares for existing domains and public keys.
     /// - If has the **same epoch id** as the existing keyset, but **does not** extend the keyset.
     ///
-    /// Only if all checks succeed will the new keyset be stored via [`store_unchecked`].
+    /// Only if all checks succeed will the new keyset be stored via [`Self::store_unchecked`].
     ///
     /// # Errors
     /// Returns an [`anyhow::Error`] if validation fails or if persistence fails.

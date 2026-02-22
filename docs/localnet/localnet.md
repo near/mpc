@@ -231,6 +231,24 @@ foreign_chains:
         rpc_url: "https://bitcoin-rpc.publicnode.com"
         auth:
           kind: none
+  abstract:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://api.testnet.abs.xyz"
+        auth:
+          kind: none
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://starknet-rpc.publicnode.com"
+        auth:
+          kind: none
 EOF
 ```
 
@@ -290,6 +308,24 @@ foreign_chains:
       public:
         api_variant: esplora
         rpc_url: "https://bitcoin-rpc.publicnode.com"
+        auth:
+          kind: none
+  abstract:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://api.testnet.abs.xyz"
+        auth:
+          kind: none
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://starknet-rpc.publicnode.com"
         auth:
           kind: none
 EOF
@@ -381,13 +417,18 @@ If this succeeded, you should now be able to query the contract state.
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
 
-## 5. Add a domain
+## 5. Add domains
 
 Now the contract should be initialized and both nodes are running.
-To verify that the network is working let's request a singature from it.
-To do this, we first need to add a domain.
+To verify that the network is working let's request a signature from it.
+To do this, we first need to add domains.
 
-Let's have Frodo and Sam both vote to add secp256k1, ed25519 and bls12381 domains.
+Each domain has a **purpose** that controls which contract methods can target it:
+- `Sign` — used by `sign()` (ECDSA / EdDSA signatures)
+- `CKD` — used by `request_app_private_key()` (Confidential Key Derivation, BLS12-381 only)
+- `ForeignTx` — used by `verify_foreign_transaction()` (foreign chain transaction validation)
+
+Let's have Frodo and Sam both vote to add four domains: Secp256k1 (Sign), Ed25519 (Sign), Bls12381 (CKD), and Secp256k1 (ForeignTx).
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
@@ -454,9 +495,15 @@ INFO Function execution return value (printed to stdout):
 Tadaaa! Now you should have a fully functioning MPC network running on your
 machine ready to produce signatures.
 
-### Foreign transaction validation request
+### Foreign transaction validation requests
+
+These use domain 3 (Secp256k1 with purpose `ForeignTx`). The `verify_foreign_transaction()` method
+only accepts domains with purpose `ForeignTx`.
+
+#### Bitcoin
+
 ```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ```log
@@ -491,6 +538,18 @@ Function execution return value (printed to stdout):
     "scheme": "Secp256k1"
   }
 }
+```
+
+#### Abstract
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+#### Starknet
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_starknet.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 7. Clean Up

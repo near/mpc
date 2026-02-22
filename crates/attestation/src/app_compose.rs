@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// Helper struct to deserialize the `app_compose` JSON from TCB info. This is a workaround due to
 /// current limitations in the Dstack SDK.
 ///
-/// See: https://github.com/Dstack-TEE/dstack/issues/267
+/// See: <https://github.com/Dstack-TEE/dstack/issues/267>
 #[derive(Debug, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
 pub struct AppCompose {
     pub manifest_version: u32,

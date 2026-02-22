@@ -14,8 +14,8 @@ from common_lib.constants import TGAS
 from common_lib.contract_state import (
     ContractState,
     ProtocolState,
-    SignatureScheme,
     RunningProtocolState,
+    infer_purpose_from_scheme,
 )
 from common_lib.contracts import ContractMethod
 from common_lib.migration_state import (
@@ -279,9 +279,15 @@ class MpcCluster:
 
     def add_domains(
         self,
-        schemes: List[SignatureScheme],
+        schemes,
         wait_for_running=True,
     ):
+        """Add domains to the contract.
+
+        Each item in `schemes` can be either:
+        - A scheme string like "Secp256k1" (purpose inferred from scheme)
+        - A tuple (scheme, purpose) like ("Secp256k1", "ForeignTx")
+        """
         print(f"\033[91m(Vote Domains) Adding domains: \033[93m{schemes}\033[0m")
         state = self.contract_state()
         state.print()
@@ -289,11 +295,17 @@ class MpcCluster:
         assert isinstance(state.protocol_state, RunningProtocolState)
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
-        for scheme in schemes:
+        for entry in schemes:
+            if isinstance(entry, tuple):
+                scheme, purpose = entry
+            else:
+                scheme = entry
+                purpose = infer_purpose_from_scheme(scheme)
             domains_to_add.append(
                 {
                     "id": next_domain_id,
                     "scheme": scheme,
+                    "purpose": purpose,
                 }
             )
             next_domain_id += 1

@@ -36,16 +36,13 @@ FOREIGN_CHAINS_CONFIG = {
 }
 
 EXPECTED_POLICY = {
-    "chains": [
-        {
-            "chain": "Solana",
-            "providers": [
-                {
-                    "rpc_url": "https://rpc.public.example.com",
-                }
-            ],
-        }
-    ]
+    "chains": {
+        "Solana": [
+            {
+                "rpc_url": "https://rpc.public.example.com",
+            }
+        ],
+    }
 }
 
 

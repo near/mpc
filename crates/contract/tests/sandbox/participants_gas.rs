@@ -17,7 +17,7 @@ use crate::sandbox::{
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
     },
 };
@@ -274,6 +274,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let domain = DomainConfig {
             id: domain_id,
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();
         let public_key: PublicKeyExtended = dto_pk.try_into().unwrap();

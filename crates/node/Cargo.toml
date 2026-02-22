@@ -16,6 +16,7 @@ axum = { workspace = true }
 backon = { workspace = true }
 base64 = { workspace = true }
 borsh = { workspace = true }
+bounded-collections = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }

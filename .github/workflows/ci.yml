@@ -304,6 +304,11 @@ jobs:
         with:
           tool: cargo-deny@0.19.0
 
+      - name: Install lychee
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: lychee@0.23.0
+
       - name: Install cargo-make
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:

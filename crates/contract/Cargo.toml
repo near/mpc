@@ -51,6 +51,7 @@ __abi-generate = ["near-sdk/__abi-generate"]
 anyhow = { workspace = true }
 assert_matches = { workspace = true }
 borsh = { workspace = true }
+bounded-collections = { workspace = true }
 contract-interface = { workspace = true }
 curve25519-dalek = { workspace = true }
 derive_more = { workspace = true, features = ["from", "deref"] }
