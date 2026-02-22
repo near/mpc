@@ -1,8 +1,8 @@
 {
     "manifest_version": 2,
-    "name": "mpc-local-node2-testnet-tee",
+    "name": "mpc-localnet-one-node-1771748631",
     "runner": "docker-compose",
-    "docker_compose_file": "version: '3.8'\n\nservices:\n  launcher:\n    image: nearone/mpc-launcher@sha256:296da33b9336ffcb31503a6640e827bca785025225f7bbc16e7b632a7ab26cfb\n\n    container_name: launcher\n\n    environment:\n      - PLATFORM=TEE\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:07bba7c60565750f6d5fe6800cd73513dd2d0d02e6893184064e209ff37c25a2\n\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\n\n    security_opt:\n      - no-new-privileges:true\n\n    read_only: true\n\n    tmpfs:\n      - /tmp\n\nvolumes:\n  shared-volume:\n    name: shared-volume\n",
+    "docker_compose_file": "version: '3.8'\n\nservices:\n  launcher:\n    image: nearone/mpc-launcher@sha256:e28cb0425db06255fe5fc7aadb79534ac63c94c7a721f75c1af1e934d2eb0701\n\n    container_name: launcher\n\n    environment:\n      - PLATFORM=TEE\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:6e5b08f91752fd7cb10349de45f74272f340fe42a172d2cbc237f3f1d5527a45\n\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\n\n    security_opt:\n      - no-new-privileges:true\n\n    read_only: true\n\n    tmpfs:\n      - /tmp\n\nvolumes:\n  shared-volume:\n    name: shared-volume\n",
     "kms_enabled": false,
     "gateway_enabled": false,
     "local_key_provider_enabled": true,
