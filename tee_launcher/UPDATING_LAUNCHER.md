@@ -9,14 +9,25 @@ The contract verifies a “compose hash” derived from the launcher compose fil
 > “MPC launcher compose hash … is not in the allowed hashes list”
 
 ---
+## 1) Create a docker image with the new launcher
+use the existing CI workflow for building the launcher image.
+https://github.com/near/mpc/actions/workflows/docker_build_launcher.yml
 
-## 1) Update the contract’s launcher compose template (verification input)
+This will produce a new docker image in 
+https://hub.docker.com/r/nearone/mpc-launcher
+
+Collect the new Manifest digest from Docker hub:
+```yaml
+sha256::<NEW>
+```
+
+## 2) Update the contract’s launcher compose template (verification input)
 
 This is the compose template the contract expects and hashes during verification.
 
 - `crates/contract/assets/launcher_docker_compose.yaml.template`
 
-Typical change: bump the launcher image digest:
+update the image reference to use the new digest:
 
 ```yaml
 services:
@@ -28,7 +39,7 @@ services:
 
 ---
 
-## 2) Update the launcher compose files used for deployment/docs
+## 3) Update the launcher compose files used for deployment/docs
 
 These are what operators actually run.
 
@@ -38,15 +49,24 @@ These are what operators actually run.
 
 Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`) consistent with the intended release.
 
----
-
-## 3) Update test fixtures that embed real attestation data
-
-Some contract tests use real-world attestation blobs/measurements stored under `crates/test-utils/assets`. When the expected measurements change, these must be regenerated/updated so the fixture’s measured compose matches what the contract expects.
 
 ---
 
-## 4) Update the test “measurements validity” timestamp
+## 4) Regenerate/refresh test assets (follow the README)
+
+1. manually or use the script in localnet/tee/scripts/single_node.sh (follow the  instructions in single_node_readme.md) to generate a new attestation with the updated launcher, then extract the measurements and update the test fixtures accordingly.
+
+2. Follow the instructions in  `crates/test-utils/assets/README.md` on how to update the test assets
+
+- `crates/test-utils/assets/README.md`
+
+This should regenerate/update the required assets so the fixture attestation measurements match the updated launcher/contract expectations.
+
+Then re-run the relevant contract tests (at minimum the TEE attestation ones) to confirm everything is consistent.
+
+---
+
+## 5) Update the test “measurements validity” timestamp
 
 Tests often treat the stored measurements as valid only after a given timestamp (to avoid accepting stale measurements).
 
@@ -63,17 +83,3 @@ Example:
 ```rust
 pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1771419095;
 ```
-
----
-
-## 5) Regenerate/refresh test assets (follow the README)
-
-1. manually or use the script in localnet/tee/scripts/single_node.sh (in instructions in  single_node_readme.md) to generate a new attestation with the updated launcher, then extract the measurements and update the test fixtures accordingly.
-
-2. Follow the instructions in  `crates/test-utils/assets/README.md` on how to update the test assets
-
-- `crates/test-utils/assets/README.md`
-
-This should regenerate/update the required assets so the fixture attestation measurements match the updated launcher/contract expectations.
-
-Then re-run the relevant contract tests (at minimum the TEE attestation ones) to confirm everything is consistent.
