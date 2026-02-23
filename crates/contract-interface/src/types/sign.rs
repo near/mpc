@@ -10,8 +10,7 @@ const EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES: usize = 1232;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SignRequestArgs {
     pub path: String,
-    #[serde(rename = "payload_v2")]
-    pub payload: Payload,
+    pub payload_v2: Payload,
     pub domain_id: DomainId,
 }
 
