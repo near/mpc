@@ -83,7 +83,7 @@ derive_more = { version = "2.1.1", features = [
     "from",
     "into",
 ] }
-digest = "0.10.7"
+digest = "0.11.0"
 dstack-sdk = { version = "0.1.2" }
 dstack-sdk-types = { version = "0.1.2", features = ["borsh"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
@@ -98,7 +98,7 @@ elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
 fs2 = "0.4.3"
-futures = "0.3.31"
+futures = "0.3.32"
 gcloud-sdk = { version = "0.28.5", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
