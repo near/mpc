@@ -69,8 +69,8 @@ create_node_account() {
 
 render_env_and_conf() {
   # Correct bootnode format for localnet
-  NODE_PUBKEY="${NODE_PUBKEY:-$(jq -r .public_key "$HOME/.near/mpc-localnet/node_key.json")}"
-  export NEAR_BOOT_NODES="${NEAR_BOOT_NODES:-${NODE_PUBKEY}@${MACHINE_IP}:${NEAR_P2P_PORT}}"
+  local node_pubkey="${NODE_PUBKEY:-$(jq -r .public_key "$HOME/.near/mpc-localnet/node_key.json")}"
+  export NEAR_BOOT_NODES="${NEAR_BOOT_NODES:-${node_pubkey}@${MACHINE_IP}:${NEAR_P2P_PORT}}"
 
   export APP_NAME="${APP_NAME:-mpc-localnet-one-node-$(date +%s)}"
   export VMM_RPC OS_IMAGE SEALING_KEY_TYPE DISK
