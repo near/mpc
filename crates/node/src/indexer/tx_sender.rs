@@ -141,7 +141,10 @@ async fn submit_tx(
     params_ser: String,
     gas: Gas,
 ) -> anyhow::Result<()> {
-    let block = indexer_state.chain_gateway.latest_final_block().await?;
+    let block = chain_gateway::chain_gateway::LatestFinalBlock::latest_final_block(
+        &indexer_state.chain_gateway,
+    )
+    .await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),

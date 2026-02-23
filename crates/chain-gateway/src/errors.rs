@@ -33,9 +33,19 @@ pub enum ChainGatewayError {
         #[source]
         source: DynError,
     },
+
     #[error("rpc client error")]
     RpcClient {
         #[source]
         source: DynError,
-    }, // ...
+    },
+
+    #[error("failure loading config")]
+    FailureLoadingConfig {
+        // work-around seems like nearcore is building anyhow without `std`
+        msg: String,
+    },
+
+    #[error("starting neard node failed")]
+    StartupFailed { msg: String },
 }

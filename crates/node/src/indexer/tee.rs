@@ -15,7 +15,6 @@ const TEE_ACCOUNTS_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::
 
 async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     sender: watch::Sender<T>,
-    indexer_state: Arc<IndexerState>,
     get_mpc_allowed_hashes: &Fetcher,
 ) where
     T: PartialEq,
@@ -55,10 +54,6 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
             }
         }
     };
-
-    tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-    indexer_state.chain_gateway.wait_for_full_sync().await;
-
     loop {
         tokio::time::sleep(ALLOWED_HASHES_REFRESH_INTERVAL).await;
         let allowed_hashes = fetch_allowed_hashes().await;
@@ -84,7 +79,7 @@ pub async fn monitor_allowed_docker_images(
     let indexer_state_clone = indexer_state.clone(); //view_client.clone();
     let fetcher = { || indexer_state_clone.get_mpc_allowed_image_hashes() };
 
-    monitor_allowed_hashes(sender, indexer_state, &fetcher).await
+    monitor_allowed_hashes(sender, &fetcher).await
 }
 
 /// This future waits for the indexer to fully sync, and returns
@@ -98,7 +93,7 @@ pub async fn monitor_allowed_launcher_compose_hashes(
     let indexer_state_clone = indexer_state.clone();
     let fetcher = { || indexer_state_clone.get_mpc_allowed_launcher_compose_hashes() };
 
-    monitor_allowed_hashes(sender, indexer_state, &fetcher).await
+    monitor_allowed_hashes(sender, &fetcher).await
 }
 
 /// Fetches TEE accounts from the contract with retry logic.
@@ -111,7 +106,10 @@ async fn fetch_tee_accounts_with_retry(indexer_state: &IndexerState) -> Vec<Node
         .build();
 
     loop {
-        match indexer_state.get_mpc_tee_accounts().await {
+        match indexer_state
+            .get_mpc_state(contract_interface::method_names::GET_TEE_ACCOUNTS)
+            .await
+        {
             Ok((_block_height, tee_accounts)) => return tee_accounts,
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading TEE accounts from chain: {:?}", e);
@@ -127,8 +125,6 @@ pub async fn monitor_tee_accounts(
     sender: watch::Sender<Vec<NodeId>>,
     indexer_state: Arc<IndexerState>,
 ) {
-    indexer_state.chain_gateway.wait_for_full_sync().await;
-
     loop {
         let tee_accounts = fetch_tee_accounts_with_retry(&indexer_state).await;
         sender.send_if_modified(|previous_tee_accounts| {

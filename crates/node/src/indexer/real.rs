@@ -1,7 +1,6 @@
 use super::handler::listen_blocks;
 use super::migrations::{monitor_migrations, ContractMigrationInfo};
 use super::participants::monitor_contract_state;
-use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
@@ -10,7 +9,7 @@ use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use chain_gateway::neard::start_with_streamer;
+use chain_gateway::chain_gateway::start_with_streamer;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
@@ -86,7 +85,9 @@ pub fn spawn_real_indexer(
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
         indexer_tokio_runtime.block_on(async {
             let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
-            let (chain_gateway, stream) = start_with_streamer(near_indexer_config).await;
+            let (chain_gateway, stream) = start_with_streamer(near_indexer_config)
+                .await
+                .expect("indexer startup must succeed");
 
             //let near_config = near_indexer_config
             //    .load_near_config()
@@ -141,7 +142,7 @@ pub fn spawn_real_indexer(
                 process_blocks_receiver
             };
 
-            tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
+            //tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
 
             tokio::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,

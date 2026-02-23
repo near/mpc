@@ -11,7 +11,7 @@ use crate::{
 };
 
 use anyhow::Context;
-use chain_gateway::neard::ChainGateway;
+use chain_gateway::chain_gateway::{ChainGateway, FinalizedStateView};
 use contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
     GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
@@ -29,7 +29,6 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
-use near_indexer_primitives::views::BlockView;
 use participants::ContractState;
 use serde::Deserialize;
 use std::{future::Future, sync::Arc};
@@ -41,7 +40,6 @@ pub mod handler;
 pub mod migrations;
 pub mod participants;
 pub mod real;
-pub mod stats;
 pub mod tee;
 pub mod tx_sender;
 pub mod tx_signer;
@@ -103,7 +101,7 @@ impl IndexerState {
 
         let (_, call_result) = self
             .chain_gateway
-            .function_query(&self.mpc_contract_id, GET_PENDING_REQUEST, args.into())
+            .view_call(&self.mpc_contract_id, GET_PENDING_REQUEST, args.into())
             .await
             .context("failed to query for pending request")?;
         serde_json::from_slice::<Option<YieldIndex>>(&call_result)
@@ -122,7 +120,7 @@ impl IndexerState {
 
         let (_, call_result) = self
             .chain_gateway
-            .function_query(&self.mpc_contract_id, GET_PENDING_CKD_REQUEST, args)
+            .view_call(&self.mpc_contract_id, GET_PENDING_CKD_REQUEST, args)
             .await
             .context("failed to query for pending CKD request")?;
 
@@ -142,7 +140,7 @@ impl IndexerState {
 
         let (_, call_result) = self
             .chain_gateway
-            .function_query(
+            .view_call(
                 &self.mpc_contract_id,
                 GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
                 args,
@@ -166,7 +164,7 @@ impl IndexerState {
 
         let (_, call_result) = self
             .chain_gateway
-            .function_query(&self.mpc_contract_id, GET_ATTESTATION, args)
+            .view_call(&self.mpc_contract_id, GET_ATTESTATION, args)
             .await
             .context("failed to query for pending request")?;
 
@@ -190,14 +188,6 @@ impl IndexerState {
             .get_mpc_state(GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
             .await?;
         Ok(proposals)
-    }
-
-    pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
-        Ok(self
-            .chain_gateway
-            .latest_final_block()
-            .await
-            .context("failed to get query for final block")?)
     }
 
     pub(crate) async fn get_mpc_contract_state(
@@ -233,7 +223,7 @@ impl IndexerState {
     {
         let (block_height, call_result) = self
             .chain_gateway
-            .function_query(&self.mpc_contract_id, endpoint, vec![].into())
+            .view_call(&self.mpc_contract_id, endpoint, vec![].into())
             .await
             .context("failed to query contract")?;
         Ok((block_height, serde_json::from_slice(&call_result)?))

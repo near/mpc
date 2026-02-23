@@ -1,7 +1,16 @@
-# Chain Indexer
+# Chain Gateway
 
-This crate can be used to spawn and intract with a neard indexer node.
-It is currently work in progress, but aims to offer the herein outlined API.
+This crate can be used to spawn and intract with a neard node.
+It is currently work in progress, but aims to offer the API outlined in [indexer-breakout](../../docs/indexer-breakout.md).
+
+current API (will gradually transition):
+
+```rust
+use chain_gateway::neard::start_with_streamer;
+
+let (chain_gateway, stream) = start_with_streamer(near_indexer_config).await;
+```
+
 
 The chain indexer consists of three functionalities, each one with their own API:
 

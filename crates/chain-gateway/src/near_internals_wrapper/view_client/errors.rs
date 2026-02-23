@@ -1,6 +1,6 @@
-use super::types::ViewFunctionCall;
-use near_indexer_primitives::views::QueryResponseKind;
 use thiserror::Error;
+
+use crate::near_internals_wrapper::view_client::request::ViewFunctionCall;
 
 pub type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -44,6 +44,7 @@ pub(crate) enum QueryError {
     #[error("unexpected response: {response:?} for view_call: {view_call}")]
     UnexpectedResponse {
         view_call: ViewFunctionCall,
-        response: QueryResponseKind,
+        // we don't want to leak nearcore internal types
+        response: String,
     },
 }

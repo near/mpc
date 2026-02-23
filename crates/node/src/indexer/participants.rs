@@ -3,6 +3,7 @@ use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
+use contract_interface::method_names::STATE;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::{
     domain::DomainConfig,
@@ -271,12 +272,11 @@ pub async fn monitor_contract_state(
 
             //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
             //// We currently assume the participant set is static and do not detect or support any updates.
-            tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-            indexer_state.chain_gateway.wait_for_full_sync().await;
-
             tracing::debug!(target: "indexer", "querying contract state");
-
-            let (height, protocol_state) = match indexer_state.get_mpc_contract_state().await {
+            let (height, protocol_state): (u64, ProtocolContractState) = match indexer_state
+                .get_mpc_state(contract_interface::method_names::STATE)
+                .await
+            {
                 Ok(contract_state) => contract_state,
                 Err(e) => {
                     tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);

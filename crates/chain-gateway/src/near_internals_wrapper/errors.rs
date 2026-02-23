@@ -13,3 +13,17 @@ pub(crate) enum RpcClientError {
     #[error("unexpected process transaction response: {response}")]
     UnexpectedProcessTransactionResponse { response: String },
 }
+
+#[derive(Debug, Error)]
+pub(crate) enum ClientError {
+    #[error("failed to send async")]
+    AsyncSendError {
+        #[source]
+        source: DynError,
+    },
+    #[error("received error response")]
+    ResponseError {
+        #[source]
+        source: DynError,
+    },
+}
