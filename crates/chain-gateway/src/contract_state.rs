@@ -1,20 +1,11 @@
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper, ViewFunctionCall};
-//use async_trait::async_trait;
 use near_account_id::AccountId;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 
-//pub type SharedContractViewer =
-//    Arc<dyn ContractViewMethodCaller<Error = ChainGatewayError> + Send + Sync>;
-//
-//#[async_trait]
-//pub trait ContractViewMethodCaller: Send + Sync {
-//    type Error;
-//    async fn view(&self, method_name: &str, args: Vec<u8>) -> Result<(u64, Vec<u8>), Self::Error>;
-//}
-
+#[derive(Clone)]
 pub struct ContractStateViewer {
     /// For querying blockchain sync status.
     pub(crate) client: Arc<ClientWrapper>,
@@ -34,11 +25,6 @@ impl ContractStateViewer {
         U: DeserializeOwned,
     {
         self.client.wait_for_full_sync().await;
-        //let args: Vec<u8> = serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
-        //    request: chain_signature_request.clone(),
-        //})
-        //.unwrap()
-        //.into_bytes();
         let args: Vec<u8> = serde_json::to_string(args)
             .map_err(|err| ChainGatewayError::Serialization {
                 op: ChainGatewayOp::ViewCall {
