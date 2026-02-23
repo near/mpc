@@ -1,6 +1,10 @@
 use crate::crypto_shared;
 use crate::errors::{Error, InvalidParameters};
 use crate::DomainId;
+use contract_interface::types::{
+    ECDSA_PAYLOAD_SIZE_BYTES, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+};
 use crypto_shared::derive_tweak;
 use near_account_id::AccountId;
 use near_sdk::{near, CryptoHash};
@@ -34,7 +38,7 @@ pub enum Payload {
                 definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
             ),))
         )]
-        Bytes<32, 32>,
+        Bytes<ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES>,
     ),
     Eddsa(
         #[cfg_attr(
@@ -45,7 +49,7 @@ pub enum Payload {
                 definitions = "<Vec<u8> as ::borsh::BorshSchema>::add_definitions_recursively"
             ),))
         )]
-        Bytes<32, 1232>,
+        Bytes<EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
     ),
 }
 

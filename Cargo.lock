@@ -5288,6 +5288,7 @@ dependencies = [
  "mpc-primitives",
  "near-abi",
  "near-account-id 2.5.0",
+ "near-mpc-sdk",
  "near-sdk",
  "near-workspaces",
  "rand 0.8.5",
@@ -6241,6 +6242,14 @@ dependencies = [
  "near-chain-configs 2.10.6",
  "near-primitives 2.10.6",
  "serde_json",
+]
+
+[[package]]
+name = "near-mpc-sdk"
+version = "3.5.1"
+dependencies = [
+ "bounded-collections",
+ "contract-interface",
 ]
 
 [[package]]
