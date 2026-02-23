@@ -22,6 +22,8 @@ pub struct ForeignChainSignatureVerifier {
 
 pub const DEFAULT_PAYLOAD_VERSION: u8 = 1;
 
+/// Marker trait for chain-specific request types that have all required fields set
+/// and can be converted into the contract's RPC request format with expected extracted values.
 pub trait RequestFinishedBuilding: Into<(ForeignChainRpcRequest, Vec<ExtractedValue>)> {}
 
 #[derive(Debug, Clone)]
@@ -57,7 +59,7 @@ impl<Request: RequestFinishedBuilding> ForeignChainRequestBuilder<Request, NotSe
         ForeignChainRequestBuilder {
             request: self.request,
             derivation_path,
-            domain_id: NotSet,
+            domain_id: self.domain_id,
             payload_version: self.payload_version,
         }
     }

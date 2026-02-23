@@ -64,8 +64,8 @@ impl ForeignChainRequestBuilder<NotSet, NotSet, NotSet> {
                 confirmations: NotSet,
                 expected_block_hash: None,
             },
-            derivation_path: NotSet,
-            domain_id: NotSet,
+            derivation_path: self.derivation_path,
+            domain_id: self.domain_id,
             payload_version: self.payload_version,
         }
     }
@@ -82,8 +82,8 @@ impl ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet, Not
                 confirmations: confirmations.into(),
                 expected_block_hash: None,
             },
-            derivation_path: NotSet,
-            domain_id: NotSet,
+            derivation_path: self.derivation_path,
+            domain_id: self.domain_id,
             payload_version: self.payload_version,
         }
     }
@@ -97,8 +97,8 @@ impl ForeignChainRequestBuilder<BuiltBitcoinRequest, NotSet, NotSet> {
                 confirmations: self.request.confirmations,
                 expected_block_hash: Some(block_hash.into()),
             },
-            derivation_path: NotSet,
-            domain_id: NotSet,
+            derivation_path: self.derivation_path,
+            domain_id: self.domain_id,
             payload_version: self.payload_version,
         }
     }
