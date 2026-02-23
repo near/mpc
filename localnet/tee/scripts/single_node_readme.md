@@ -14,21 +14,24 @@ See [UPDATING_LAUNCHER.md](../../../tee_launcher/UPDATING_LAUNCHER.md)
 - dstack running (`http://127.0.0.1:10000`)
 - Tools: `near`, `jq`, `curl`, `envsubst`, `docker`
 
-## Setup
+## Setup variables
+
+### Required
 ```bash
 export BASE_PATH=/path/to/dstack
 export MACHINE_IP=<host-ip-reachable-from-CVM>
 export MPC_IMAGE_TAGS=3.3.0
 ```
 
-## dstack port
+### dstack port
 If dstack VMM is not on port 10000:
 ```bash
 export VMM_RPC=http://127.0.0.1:<port>
 ```
 
-
-# Optional
+### Optional
+If you want to use specific NEAR accounts name intead of defaults:
+```bash
 export NODE_ACCOUNT=frodo.test.near
 export CONTRACT_ACCOUNT=mpc-contract.test.near
 ```

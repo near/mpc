@@ -49,7 +49,6 @@ CONF_OUT="$WORKDIR/node.conf"
 PUBLIC_DATA_JSON_OUT="${PUBLIC_DATA_JSON_OUT:-$WORKDIR/public_data.json}"
 
 log(){ echo -e "\033[1;34m[INFO]\033[0m $*"; }
-warn(){ echo -e "\033[1;33m[WARN]\033[0m $*"; }
 err(){ echo -e "\033[1;31m[ERROR]\033[0m $*"; }
 
 near_account_exists() {
