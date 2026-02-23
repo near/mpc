@@ -54,7 +54,9 @@ def main():
     crates_dir = root / "crates"
 
     if not crates_dir.is_dir():
-        print(f"error: {crates_dir} not found. Run from the repo root.", file=sys.stderr)
+        print(
+            f"error: {crates_dir} not found. Run from the repo root.", file=sys.stderr
+        )
         sys.exit(1)
 
     parser = Parser(RUST_LANGUAGE)
@@ -89,7 +91,9 @@ def main():
         )
         sys.exit(1)
     else:
-        print(f"All {files_checked} files checked. No `use` statements inside function bodies.")
+        print(
+            f"All {files_checked} files checked. No `use` statements inside function bodies."
+        )
         sys.exit(0)
 
 
