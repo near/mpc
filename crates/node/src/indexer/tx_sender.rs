@@ -140,44 +140,6 @@ pub enum TransactionStatus {
     Unknown,
 }
 
-/// todo: move this to the chain_gateway crate
-///// Creates, signs, and submits a function call with the given method and serialized arguments.
-//async fn submit_tx(
-//    tx_signer: Arc<TransactionSigner>,
-//    indexer_state: Arc<IndexerState>,
-//    method: String,
-//    params_ser: String,
-//    gas: Gas,
-//) -> anyhow::Result<()> {
-//    let block = chain_gateway::chain_gateway::LatestFinalBlock::latest_final_block(
-//        &indexer_state.chain_gateway,
-//    )
-//    .await?;
-//
-//    let transaction = tx_signer.create_and_sign_function_call_tx(
-//        indexer_state.mpc_contract_id.clone(),
-//        method,
-//        params_ser.into(),
-//        gas,
-//        block.header.hash,
-//        block.header.height,
-//    );
-//
-//    let tx_hash = transaction.get_hash();
-//    tracing::info!(
-//        target = "mpc",
-//        "sending tx {:?} with ak={:?} nonce={}",
-//        tx_hash,
-//        tx_signer.public_key(),
-//        transaction.transaction.nonce(),
-//    );
-//    Ok(indexer_state
-//        .chain_gateway
-//        .submit_tx(transaction)
-//        .await
-//        .context("failed to submit transaction")?)
-//}
-
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
 async fn observe_tx_result(
     mpc_contract: MpcContractStateViewer,

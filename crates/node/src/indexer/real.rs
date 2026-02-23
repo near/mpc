@@ -90,18 +90,6 @@ pub fn spawn_real_indexer(
                 .await
                 .expect("indexer startup must succeed");
 
-            //let near_config = near_indexer_config
-            //    .load_near_config()
-            //    .expect("near config is present");
-
-            //let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
-            //    .await
-            //    .expect("near node has started");
-
-            //let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
-
-            //let stream = indexer.streamer();
-
             let shared_contract_state_viewer =
                 chain_gateway.contract_state_viewer(mpc_indexer_config.mpc_contract_id.clone());
             let mpc_contract_state_viewer =
@@ -110,9 +98,6 @@ pub fn spawn_real_indexer(
 
             let indexer_state = Arc::new(IndexerState::new(
                 chain_gateway,
-                //near_node.view_client,
-                //near_node.client,
-                //near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
 
