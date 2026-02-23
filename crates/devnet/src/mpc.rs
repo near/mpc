@@ -21,7 +21,7 @@ use ed25519_dalek::SigningKey;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -615,6 +615,7 @@ impl MpcVoteAddDomainsCmd {
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
                 scheme: *scheme,
+                purpose: infer_purpose_from_scheme(*scheme),
             });
             next_domain += 1;
         }
@@ -699,7 +700,7 @@ impl MpcVoteNewParametersCmd {
         for participant_index in &self.remove {
             let account_id = mpc_setup.participants[*participant_index].clone();
             assert!(
-                participants.is_participant(&account_id),
+                participants.is_participant_given_account_id(&account_id),
                 "Participant {} is not in the network",
                 account_id
             );
@@ -708,7 +709,7 @@ impl MpcVoteNewParametersCmd {
         for participant_index in &self.add {
             let account_id = mpc_setup.participants[*participant_index].clone();
             assert!(
-                !participants.is_participant(&account_id),
+                !participants.is_participant_given_account_id(&account_id),
                 "Participant {} is already in the network",
                 account_id
             );

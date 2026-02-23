@@ -4,6 +4,7 @@ exclude = ["libs/nearcore"]
 members = [
     "crates/attestation",
     "crates/backup-cli",
+    "crates/bounded-collections",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
@@ -15,7 +16,6 @@ members = [
     "crates/mpc-attestation",
     "crates/node",
     "crates/node-types",
-    "crates/non-empty-collections",
     "crates/primitives",
     "crates/tee-authority",
     "crates/test-migration-contract",
@@ -26,13 +26,14 @@ members = [
 ]
 
 [workspace.package]
-version = "3.4.1"
+version = "3.5.1"
 edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+bounded-collections = { path = "crates/bounded-collections" }
 contract-history = { path = "crates/contract-history" }
 contract-interface = { path = "crates/contract-interface" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
@@ -44,7 +45,6 @@ mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
 node-types = { path = "crates/node-types" }
-non-empty-collections = { path = "crates/non-empty-collections" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
 utilities = { path = "crates/utilities" }

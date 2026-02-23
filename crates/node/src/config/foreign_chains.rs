@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::{borrow::Cow, collections::BTreeMap};
 
 use anyhow::Context;
+use bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use contract_interface::types as dtos;
-use non_empty_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use serde::{Deserialize, Serialize};
 
 mod abstract_chain;
@@ -23,16 +23,16 @@ pub use starknet::{StarknetApiVariant, StarknetChainConfig, StarknetProviderConf
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ForeignChainsConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<SolanaChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bitcoin: Option<BitcoinChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethereum: Option<EthereumChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "abstract")]
     pub abstract_chain: Option<AbstractChainConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub starknet: Option<StarknetChainConfig>,
 }
 

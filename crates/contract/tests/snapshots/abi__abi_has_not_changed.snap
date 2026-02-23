@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.4.1",
+    "version": "3.5.1",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -431,6 +431,16 @@ expression: abi
             "type": "integer",
             "format": "uint32",
             "minimum": 0.0
+          }
+        }
+      },
+      {
+        "name": "metrics",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/Metrics"
           }
         }
       },
@@ -1678,11 +1688,15 @@ expression: abi
           "type": "object",
           "required": [
             "id",
+            "purpose",
             "scheme"
           ],
           "properties": {
             "id": {
               "$ref": "#/definitions/DomainId"
+            },
+            "purpose": {
+              "$ref": "#/definitions/DomainPurpose"
             },
             "scheme": {
               "$ref": "#/definitions/SignatureScheme"
@@ -1700,6 +1714,17 @@ expression: abi
             "id": {
               "$ref": "#/definitions/DomainId2"
             },
+            "purpose": {
+              "description": "`None` when reading state from an old contract that predates domain purposes.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DomainPurpose"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "scheme": {
               "$ref": "#/definitions/SignatureScheme2"
             }
@@ -1715,6 +1740,32 @@ expression: abi
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "DomainPurpose": {
+          "description": "The purpose that a domain serves.",
+          "oneOf": [
+            {
+              "description": "Domain is used by `sign()`.",
+              "type": "string",
+              "enum": [
+                "Sign"
+              ]
+            },
+            {
+              "description": "Domain is used by `verify_foreign_transaction()`.",
+              "type": "string",
+              "enum": [
+                "ForeignTx"
+              ]
+            },
+            {
+              "description": "Domain is used by `request_app_private_key()` (Confidential Key Derivation).",
+              "type": "string",
+              "enum": [
+                "CKD"
+              ]
+            }
+          ]
         },
         "DomainRegistry": {
           "description": "Registry of all signature domains.",
@@ -2337,6 +2388,25 @@ expression: abi
             },
             "epoch_id": {
               "$ref": "#/definitions/EpochId2"
+            }
+          }
+        },
+        "Metrics": {
+          "type": "object",
+          "required": [
+            "sign_with_v1_payload_count",
+            "sign_with_v2_payload_count"
+          ],
+          "properties": {
+            "sign_with_v1_payload_count": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "sign_with_v2_payload_count": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
             }
           }
         },

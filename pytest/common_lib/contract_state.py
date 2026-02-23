@@ -45,10 +45,21 @@ class Keyset:
         raise KeyError(f"No key found for domain_id {domain_id}")
 
 
+DomainPurpose = Literal["Sign", "ForeignTx", "CKD"]
+
+
+def infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose:
+    """Infer the default purpose from the signature scheme."""
+    if scheme == "Bls12381":
+        return "CKD"
+    return "Sign"
+
+
 @dataclass
 class Domain:
     id: int
     scheme: SignatureScheme
+    purpose: DomainPurpose = "Sign"
 
 
 @dataclass
@@ -65,7 +76,12 @@ class Domains:
     def from_json(domains_data):
         next_domain_id = domains_data["next_domain_id"]
         domains = [
-            Domain(id=d["id"], scheme=d["scheme"]) for d in domains_data["domains"]
+            Domain(
+                id=d["id"],
+                scheme=d["scheme"],
+                purpose=d.get("purpose", infer_purpose_from_scheme(d["scheme"])),
+            )
+            for d in domains_data["domains"]
         ]
         res = Domains(next_domain_id, domains)
         return res
@@ -238,7 +254,13 @@ class KeyEvent:
     def from_json(event_data):
         instance = KeyEventInstance.from_json(event_data.get("instance"))
         domain_data = event_data["domain"]
-        event_key = Domain(id=domain_data["id"], scheme=domain_data["scheme"])
+        event_key = Domain(
+            id=domain_data["id"],
+            scheme=domain_data["scheme"],
+            purpose=domain_data.get(
+                "purpose", infer_purpose_from_scheme(domain_data["scheme"])
+            ),
+        )
         return KeyEvent(
             next_attempt_id=event_data["next_attempt_id"],
             event_key=event_key,

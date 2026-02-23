@@ -42,6 +42,24 @@ impl KeyEvent {
         }
     }
 
+    /// Reconstruct a `KeyEvent` from all raw fields.
+    /// Used by state migration when converting from a previous layout.
+    pub fn from_raw(
+        epoch_id: EpochId,
+        domain: DomainConfig,
+        parameters: ThresholdParameters,
+        instance: Option<KeyEventInstance>,
+        next_attempt_id: AttemptId,
+    ) -> Self {
+        KeyEvent {
+            epoch_id,
+            domain,
+            parameters,
+            instance,
+            next_attempt_id,
+        }
+    }
+
     /// Start a new key event instance as the leader, if one isn't already active.
     /// The leader is always the participant with the lowest participant ID.
     pub fn start(&mut self, key_event_id: KeyEventId, timeout_blocks: u64) -> Result<(), Error> {

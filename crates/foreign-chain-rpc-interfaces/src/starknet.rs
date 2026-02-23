@@ -21,7 +21,7 @@ pub enum StarknetExecutionStatus {
 }
 
 /// Partial RPC response for `starknet_getTransactionReceipt`.
-/// https://www.alchemy.com/docs/chains/starknet/starknet-api-endpoints/starknet-get-transaction-receipt
+/// <https://www.alchemy.com/docs/chains/starknet/starknet-api-endpoints/starknet-get-transaction-receipt>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GetTransactionReceiptResponse {
     #[serde(deserialize_with = "deserialize_starknet_felt")]

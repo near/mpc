@@ -12,12 +12,12 @@ use crate::sandbox::{
     },
 };
 use contract_interface::method_names;
-use contract_interface::types::ProtocolContractState;
+use contract_interface::types::{self as dtos, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
     primitives::{
-        domain::{DomainConfig, SignatureScheme},
+        domain::{DomainConfig, DomainPurpose, SignatureScheme},
         key_state::{EpochId, Keyset},
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
@@ -106,6 +106,50 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
     Ok(())
 }
 
+/// Fill in `None` purposes on DTO `DomainConfig`s with the value inferred from scheme.
+/// Needed when comparing state read from an old contract (no `purpose` field) against
+/// state read from the new contract (which fills `purpose` during migration).
+fn fill_missing_purposes(state: &mut ProtocolContractState) {
+    fn infer_purpose(scheme: dtos::SignatureScheme) -> dtos::DomainPurpose {
+        match scheme {
+            dtos::SignatureScheme::Bls12381 => dtos::DomainPurpose::CKD,
+            _ => dtos::DomainPurpose::Sign,
+        }
+    }
+    fn fill_domain(d: &mut dtos::DomainConfig) {
+        if d.purpose.is_none() {
+            d.purpose = Some(infer_purpose(d.scheme));
+        }
+    }
+    fn fill_registry(r: &mut dtos::DomainRegistry) {
+        r.domains.iter_mut().for_each(fill_domain);
+    }
+    fn fill_votes(v: &mut dtos::AddDomainsVotes) {
+        for domains in v.proposal_by_account.values_mut() {
+            domains.iter_mut().for_each(fill_domain);
+        }
+    }
+    fn fill_key_event(e: &mut dtos::KeyEvent) {
+        fill_domain(&mut e.domain);
+    }
+    match state {
+        ProtocolContractState::NotInitialized => {}
+        ProtocolContractState::Running(r) => {
+            fill_registry(&mut r.domains);
+            fill_votes(&mut r.add_domains_votes);
+        }
+        ProtocolContractState::Initializing(i) => {
+            fill_registry(&mut i.domains);
+            fill_key_event(&mut i.generating_key);
+        }
+        ProtocolContractState::Resharing(r) => {
+            fill_registry(&mut r.previous_running_state.domains);
+            fill_votes(&mut r.previous_running_state.add_domains_votes);
+            fill_key_event(&mut r.resharing_key);
+        }
+    }
+}
+
 /// Checks the contract in the following order:
 /// 1. Are there any state-breaking changes?
 /// 2. If so, does `migrate()` still work correctly?
@@ -172,12 +216,13 @@ async fn propose_upgrade_from_production_to_current_binary(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
+    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
@@ -219,7 +264,7 @@ async fn upgrade_preserves_state_and_requests(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -229,6 +274,7 @@ async fn upgrade_preserves_state_and_requests(
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
+    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
@@ -329,7 +375,7 @@ async fn upgrade_allows_new_request_types(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -339,6 +385,7 @@ async fn upgrade_allows_new_request_types(
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
+    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
@@ -351,10 +398,12 @@ async fn upgrade_allows_new_request_types(
         DomainConfig {
             id: first_available_domain_id.into(),
             scheme: SignatureScheme::Bls12381,
+            purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
             scheme: SignatureScheme::Ed25519,
+            purpose: DomainPurpose::Sign,
         },
     ];
 
@@ -404,6 +453,49 @@ async fn upgrade_allows_new_request_types(
             "Returned ckd response does not match"
         );
     }
+}
+
+/// Verifies that `mpc_contract::state::ProtocolContractState` (the internal type) can be
+/// deserialized from the JSON produced by an older contract that lacks the `purpose` field
+/// in `DomainConfig`.
+///
+/// This matters because the node deserializes `state()` into the internal type
+/// (see `crates/node/src/indexer.rs`), so it must tolerate JSON from older contracts.
+#[rstest]
+#[tokio::test]
+async fn protocol_contract_state__should_deserialize_from_old_contract_json(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) {
+    // Given: an old contract with populated Running state
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let contract = deploy_old(&worker, network).await.unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
+        .await
+        .unwrap();
+    execute_key_generation_and_add_random_state(
+        &accounts,
+        participants,
+        &contract,
+        &worker,
+        &mut OsRng,
+    )
+    .await;
+
+    // When: we read the raw JSON bytes and deserialize into the internal type
+    let view_result = contract.view(method_names::STATE).await.unwrap();
+    let state: mpc_contract::state::ProtocolContractState =
+        serde_json::from_slice(&view_result.result)
+            .expect("should deserialize old contract state into internal ProtocolContractState");
+
+    // Then: the state is Running
+    assert!(
+        matches!(
+            state,
+            mpc_contract::state::ProtocolContractState::Running(_)
+        ),
+        "Expected Running state, got: {:?}",
+        state
+    );
 }
 
 #[tokio::test]

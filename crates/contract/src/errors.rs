@@ -116,6 +116,12 @@ pub enum InvalidParameters {
     NextDomainIdMismatch,
     #[error("Invalid domain ID.")]
     InvalidDomainId,
+    #[error("Domain {domain_id} has purpose {actual:?}, but this method requires {expected:?}.")]
+    WrongDomainPurpose {
+        domain_id: DomainId,
+        expected: crate::primitives::domain::DomainPurpose,
+        actual: crate::primitives::domain::DomainPurpose,
+    },
     #[error("Invalid TEE Remote Attestation.")]
     InvalidTeeRemoteAttestation,
     #[error("Invalid app public key.")]
@@ -190,6 +196,11 @@ pub enum DomainError {
     InvalidDomains,
     #[error("Domains from keyset do not match the provided domains")]
     DomainsMismatch,
+    #[error("Invalid scheme-purpose combination: scheme {scheme:?} is not compatible with purpose {purpose:?}")]
+    InvalidSchemePurposeCombination {
+        scheme: crate::primitives::domain::SignatureScheme,
+        purpose: crate::primitives::domain::DomainPurpose,
+    },
 }
 
 /// A list specifying general categories of MPC Contract errors.

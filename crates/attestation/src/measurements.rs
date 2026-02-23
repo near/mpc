@@ -8,8 +8,8 @@ use serde_with::{Bytes, serde_as};
 /// should be updated when the underlying TEE environment changes.
 ///
 /// To learn more about the RTMRs, see:
-/// - https://docs.phala.network/phala-cloud/tees-attestation-and-zero-trust-security/attestation#runtime-measurement-fields
-/// - https://arxiv.org/pdf/2303.15540 (Section 9.1)
+/// - <https://docs.phala.network/phala-cloud/tees-attestation-and-zero-trust-security/attestation#runtime-measurement-fields>
+/// - <https://arxiv.org/pdf/2303.15540> (Section 9.1)
 #[serde_as]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct Measurements {

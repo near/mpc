@@ -17,7 +17,7 @@ def set_foreign_chains_config(node, foreign_chains: dict[str, Any] | None) -> No
     config_text = config_path.read_text(encoding="utf-8")
     # Keep generated YAML tags intact by editing only the trailing `foreign_chains` section.
     config_text = (
-        re.sub(r"\nforeign_chains:\n[\s\S]*\Z", "\n", config_text).rstrip() + "\n"
+        re.sub(r"\nforeign_chains:[\s\S]*\Z", "\n", config_text).rstrip() + "\n"
     )
 
     if foreign_chains is not None:

@@ -1,4 +1,6 @@
-use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
+use super::domain::{
+    infer_purpose_from_scheme, DomainConfig, DomainId, DomainRegistry, SignatureScheme,
+};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -24,9 +26,11 @@ pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
     for i in 0..num_domains {
+        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
-            scheme: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
+            scheme,
+            purpose: infer_purpose_from_scheme(scheme),
         });
     }
     DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
@@ -36,9 +40,11 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
 pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<DomainConfig> {
     let mut new_domains = Vec::new();
     for i in 0..num_domains {
+        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
-            scheme: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
+            scheme,
+            purpose: infer_purpose_from_scheme(scheme),
         });
     }
     new_domains

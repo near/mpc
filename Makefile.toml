@@ -131,9 +131,12 @@ description = "Check rustdoc for broken intra-doc links"
 command = "cargo"
 args = ["doc", "--workspace", "--no-deps"]
 
+[tasks.check-docs.env]
+RUSTDOCFLAGS = "-D warnings"
+
 [tasks.check-markdown-links]
 command = "lychee"
-args = ["--no-progress", "**/*.md"]
+args = ["--no-progress", "."]
 
 [config]
 default_to_workspace = false

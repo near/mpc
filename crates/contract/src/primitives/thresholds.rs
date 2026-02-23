@@ -221,7 +221,7 @@ mod tests {
             assert_eq!(participants, *tp.participants());
             // probably overkill to test below
             for (account_id, _, _) in participants.participants() {
-                assert!(tp.participants.is_participant(account_id));
+                assert!(tp.participants.is_participant_given_account_id(account_id));
                 let expected_id = participants.id(account_id).unwrap();
                 assert_eq!(expected_id, tp.participants.id(account_id).unwrap());
                 assert_eq!(

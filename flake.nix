@@ -113,6 +113,10 @@
 
             AR = "${stdenv.cc.bintools}/bin/ar";
             RANLIB = "${stdenv.cc.bintools}/bin/ranlib";
+
+            # Cargo resolves its linker separately from CC — force it to use the
+            # SDK-aware wrapper so -lSystem (and other SDK libs) are found.
+            CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${stdenv.cc}/bin/cc";
           };
 
           dockerTools = with pkgs; [
@@ -148,6 +152,7 @@
             git
             binaryen
             jq
+            perl
           ];
 
           buildLibs =
