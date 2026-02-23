@@ -194,7 +194,7 @@ For detailed information about our release process, compatibility guarantees, an
 
 ## TEE Integration
 
-Efforts are made to allow running MPC nodes inside a trusted execution environment (TEE). For more details, see the [TEE design doc](docs/securing_mpc_with_tee_design_doc.md).
+Efforts are made to allow running MPC nodes inside a trusted execution environment (TEE). For more details, see the [TEE design doc](docs/securing-mpc-with-tee-design-doc.md).
 
 ## Contributions
 

@@ -49,7 +49,7 @@ NEAR_ENV=mpc-localnet neard --home ~/.near/mpc-localnet run
 - MPC repository cloned
 - Script path:
   ```
-localnet/tee/scripts/deploy_tee_localnet.sh
+localnet/tee/scripts/deploy-tee-localnet.sh
   ```
 
 ---
@@ -108,7 +108,7 @@ unset START_FROM_PHASE STOP_AFTER_PHASE
 export MODE=localnet
 export RESUME=0
 
-bash localnet/tee/scripts/deploy_tee_localnet.sh
+bash localnet/tee/scripts/deploy-tee-localnet.sh
 ```
 
 ---
@@ -120,21 +120,21 @@ bash localnet/tee/scripts/deploy_tee_localnet.sh
 export START_FROM_PHASE=render
 export STOP_AFTER_PHASE=render
 export RESUME=0
-bash localnet/tee/scripts/deploy_tee_localnet.sh
+bash localnet/tee/scripts/deploy-tee-localnet.sh
 ```
 
 ### Resume from deploy
 ```bash
 export START_FROM_PHASE=deploy
 export RESUME=1
-bash localnet/tee/scripts/deploy_tee_localnet.sh
+bash localnet/tee/scripts/deploy-tee-localnet.sh
 ```
 
 ### Resume from contract initialization
 ```bash
 export START_FROM_PHASE=init_args
 export RESUME=1
-bash localnet/tee/scripts/deploy_tee_localnet.sh
+bash localnet/tee/scripts/deploy-tee-localnet.sh
 ```
 
 ---
