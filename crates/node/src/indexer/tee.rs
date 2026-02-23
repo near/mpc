@@ -121,6 +121,8 @@ pub async fn monitor_tee_accounts(
     sender: watch::Sender<Vec<NodeId>>,
     contract: MpcContractStateViewer,
 ) {
+    // here, we have:
+    // contract.
     loop {
         let tee_accounts = fetch_tee_accounts_with_retry(contract.clone()).await;
         sender.send_if_modified(|previous_tee_accounts| {

@@ -138,21 +138,26 @@ pub fn spawn_real_indexer(
 
             //tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
 
+            // mpc_contract_state_viewer.monitor_allowed_docker_images(allowed_docker_images_sender);
             tokio::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,
                 mpc_contract_state_viewer.clone(),
             ));
 
+            // mpc_contract_state_viewer.monitor_allowed_launcher_compose_hashes(allowed_launcher_compose_sender);
             tokio::spawn(monitor_allowed_launcher_compose_hashes(
                 allowed_launcher_compose_sender,
                 mpc_contract_state_viewer.clone(),
             ));
 
+            // mpc_contract_state_viewer.monitor_tee_accounts(tee_accounts_sender);
+            // underneath the hood, you can have a generic method to avoid code duplication
             tokio::spawn(monitor_tee_accounts(
                 tee_accounts_sender,
                 mpc_contract_state_viewer.clone(),
             ));
 
+            //  let contract_state_receiver = mpc_contract_state_viewer.monitor_contract_state(protocol_state_sender).await;
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
                 mpc_contract_state_viewer.clone(),
@@ -170,6 +175,7 @@ pub fn spawn_real_indexer(
                 )
             };
 
+            // let my_migration_info_receiver = mpc_contract_state_viewer.monitor_migrations().await;
             let my_migration_info_receiver = monitor_migrations(
                 mpc_contract_state_viewer.clone(),
                 migration_state_sender,
