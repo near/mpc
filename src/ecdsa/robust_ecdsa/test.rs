@@ -17,7 +17,7 @@ use crate::test_utils::{
 };
 use crate::thresholds::MaxMalicious;
 
-use rand::Rng;
+use rand::seq::SliceRandom as _;
 use rand_core::{CryptoRngCore, SeedableRng};
 
 /// Runs signing by calling the generic `run_sign` function from `crate::test`
@@ -33,8 +33,10 @@ pub fn run_sign_without_rerandomization(
     let msg_hash = scalar_hash_secp256k1(msg);
 
     // choose a coordinator at random
-    let index = rng.gen_range(0..participants_presign.len());
-    let coordinator = participants_presign[index].0;
+    let coordinator = participants_presign
+        .choose(rng)
+        .expect("participant list is not empty")
+        .0;
 
     // run sign instanciation with the necessary arguments
     let result = run_sign::<Secp256K1Sha256, _, _, _>(
@@ -112,8 +114,10 @@ pub fn run_sign_with_rerandomization(
         .collect::<Result<_, _>>()?;
 
     // choose a coordinator at random
-    let index = rng.gen_range(0..participants_presign.len());
-    let coordinator = participants_presign[index].0;
+    let coordinator = participants_presign
+        .choose(rng)
+        .expect("participant list is not empty")
+        .0;
 
     // run sign instantiation with the necessary arguments
     let result = run_sign::<Secp256K1Sha256, _, _, _>(

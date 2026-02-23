@@ -8,8 +8,12 @@ use rand_core::{CryptoRngCore, SeedableRng};
 use std::{env, sync::LazyLock};
 
 use threshold_signatures::{
-    ecdsa,
+    confidential_key_derivation::{
+        self as ckd,
+        ciphersuite::{Field as _, Group as _},
+    },
     ecdsa::{
+        self,
         ot_based_ecdsa::{
             self,
             triples::{generate_triple_many, TriplePub, TripleShare},
@@ -20,8 +24,8 @@ use threshold_signatures::{
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        create_rngs, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
-        run_keygen, Simulator,
+        ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
+        MockCryptoRng, Simulator,
     },
     MaxMalicious, ReconstructionLowerBound,
 };
@@ -66,7 +70,7 @@ pub struct PreparedSig<RerandomizedPresignOutput> {
 }
 
 #[allow(clippy::cast_precision_loss)]
-/// Analyzes the size of the received data by a participant accross the entire protocol
+/// Analyzes the size of the received data by a participant across the entire protocol
 pub fn analyze_received_sizes(
     sizes: &[usize],
     is_print: bool,
@@ -120,11 +124,11 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
 ) -> OTECDSAPreparedTriples {
     let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
         Vec::with_capacity(participant_num);
-    let rngs = create_rngs(participant_num, rng);
     let participants = generate_participants_with_random_ids(participant_num, rng);
 
-    for (i, p) in participants.iter().enumerate() {
-        let protocol = generate_triple_many::<2>(&participants, *p, threshold, rngs[i].clone())
+    for p in &participants {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = generate_triple_many::<2>(&participants, *p, threshold, rng_p)
             .expect("Triple generation should succeed");
         protocols.push((*p, Box::new(protocol)));
     }
@@ -278,7 +282,6 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
     num_participants: usize,
     rng: &mut R,
 ) -> RobustECDSAPreparedPresig {
-    let rngs = create_rngs(num_participants, rng);
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
     let mut protocols: Vec<(
@@ -286,7 +289,8 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
         Box<dyn Protocol<Output = robust_ecdsa::PresignOutput>>,
     )> = Vec::with_capacity(participants.len());
 
-    for (i, (p, keygen_out)) in key_packages.iter().enumerate() {
+    for (p, keygen_out) in &key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
         let protocol = robust_ecdsa::presign::presign(
             &participants,
             *p,
@@ -294,7 +298,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
                 keygen_out: keygen_out.clone(),
                 max_malicious: (*MAX_MALICIOUS).into(),
             },
-            rngs[i].clone(),
+            rng_p,
         )
         .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = robust_ecdsa::PresignOutput>>)
         .expect("Presignature should succeed");
@@ -379,7 +383,6 @@ pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     num_participants: usize,
     rng: &mut R,
 ) -> FrostEd25519PreparedPresig {
-    let rngs = create_rngs(num_participants, rng);
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
     let mut protocols: Vec<(
@@ -387,7 +390,8 @@ pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
         Box<dyn Protocol<Output = eddsa::PresignOutput>>,
     )> = Vec::with_capacity(participants.len());
 
-    for (i, (p, keygen_out)) in key_packages.iter().enumerate() {
+    for (p, keygen_out) in &key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
         let protocol = eddsa::presign(
             &participants,
             *p,
@@ -395,7 +399,7 @@ pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
                 keygen_out: keygen_out.clone(),
                 threshold: (*MAX_MALICIOUS + 1).into(),
             },
-            rngs[i].clone(),
+            rng_p,
         )
         .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = eddsa::PresignOutput>>)
         .expect("Presignature should succeed");
@@ -414,8 +418,6 @@ pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
     rng: &mut R,
 ) -> FrostEd25519SigV1 {
     let num_participants = threshold.value();
-    // collect all participants
-    let rngs = create_rngs(num_participants, rng);
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
 
@@ -432,7 +434,8 @@ pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
     rng.fill_bytes(&mut message);
     let message = message.to_vec();
 
-    for (i, (p, keygen_out)) in key_packages.iter().enumerate() {
+    for (p, keygen_out) in &key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
         let protocol = eddsa::sign::sign_v1(
             &participants,
             threshold,
@@ -440,7 +443,7 @@ pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
             coordinator,
             keygen_out.clone(),
             message.clone(),
-            rngs[i].clone(),
+            rng_p,
         )
         .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = eddsa::SignatureOption>>)
         .expect("Signing should succeed");
@@ -523,4 +526,67 @@ pub struct FrostEd25519SigV2 {
     pub presig: eddsa::PresignOutput,
     pub key_packages: Vec<(Participant, eddsa::KeygenOutput)>,
     pub message: Vec<u8>,
+}
+
+/********************* CKD *********************/
+pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
+    threshold: ReconstructionLowerBound,
+    rng: &mut R,
+) -> PreparedCkdPackage {
+    let num_participants = threshold.value();
+    // collect all participants
+    let participants = generate_participants_with_random_ids(num_participants, rng);
+    let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
+
+    // choose a coordinator at random
+    let coordinator_index = rng.gen_range(0..num_participants);
+    let coordinator = participants[coordinator_index];
+
+    let mut protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = ckd::CKDOutputOption>>,
+    )> = Vec::with_capacity(participants.len());
+
+    let mut app_id: [u8; 32] = [0u8; 32];
+    rng.fill_bytes(&mut app_id);
+    let app_id = ckd::AppId::try_new(app_id).expect("cannot fail");
+
+    let scalar_rng = MockCryptoRng::seed_from_u64(rng.next_u64());
+    let app_sk = ckd::Scalar::random(scalar_rng);
+    let app_pk = ckd::ElementG1::generator() * app_sk;
+
+    for (p, keygen_out) in &key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = ckd::protocol::ckd(
+            &participants,
+            coordinator,
+            *p,
+            keygen_out.clone(),
+            app_id.clone(),
+            app_pk,
+            rng_p,
+        )
+        .map(|ckd| Box::new(ckd) as Box<dyn Protocol<Output = ckd::CKDOutputOption>>)
+        .expect("Ckd should succeed");
+        protocols.push((*p, protocol));
+    }
+
+    PreparedCkdPackage {
+        protocols,
+        index: coordinator_index,
+        key_packages,
+        app_id,
+        app_pk,
+    }
+}
+
+pub struct PreparedCkdPackage {
+    pub protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = ckd::CKDOutputOption>>,
+    )>,
+    pub index: usize,
+    pub key_packages: Vec<(Participant, ckd::KeygenOutput)>,
+    pub app_id: ckd::AppId,
+    pub app_pk: ckd::ElementG1,
 }

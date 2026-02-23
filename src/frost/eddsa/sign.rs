@@ -454,7 +454,8 @@ mod test {
     };
     use frost_core::{Field, Group, Scalar};
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, VerifyingKey};
-    use rand::{Rng, RngCore, SeedableRng};
+    use rand::seq::SliceRandom as _;
+    use rand::{RngCore, SeedableRng};
 
     #[test]
     fn stress_v1() {
@@ -476,6 +477,7 @@ mod test {
                     coordinator,
                     min_signers,
                     msg_hash,
+                    &mut rng,
                 )
                 .unwrap();
                 one_coordinator_output(data, coordinator).unwrap();
@@ -518,8 +520,7 @@ mod test {
         let public_key = keys[0].1.public_key.to_element();
 
         let msg = b"hello world with near".to_vec();
-        let index = rng.gen_range(0..keys.len());
-        let coordinator = keys[index as usize].0;
+        let coordinator = keys.choose(&mut rng).expect("keys list is not empty").0;
 
         let participants_sign_builder = keys
             .iter()
@@ -566,8 +567,7 @@ mod test {
         let msg = b"hello world with near".to_vec();
 
         let mut rng = MockCryptoRng::seed_from_u64(40);
-        let index = rng.gen_range(0..keys.len());
-        let coordinator = keys[index as usize].0;
+        let coordinator = keys.choose(&mut rng).expect("keys list is not empty").0;
 
         // This checks the output signature validity internally
         let result = crate::test_utils::run_sign::<Ed25519Sha512, _, _, _>(
@@ -618,6 +618,7 @@ mod test {
                 coordinator,
                 threshold,
                 msg_hash,
+                &mut rng,
             )
             .unwrap();
             let signature = one_coordinator_output(data, coordinator).unwrap();
@@ -702,6 +703,7 @@ mod test {
                 coordinator,
                 threshold,
                 msg_hash,
+                &mut rng,
             )
             .unwrap();
             let signature = one_coordinator_output(data, coordinator).unwrap();
@@ -823,6 +825,7 @@ mod test {
                 coordinator,
                 threshold,
                 msg_hash,
+                &mut rng,
             )
             .unwrap();
             let signature = one_coordinator_output(data, coordinator).unwrap();

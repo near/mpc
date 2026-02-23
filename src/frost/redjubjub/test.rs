@@ -101,10 +101,8 @@ pub fn run_sign_with_presign(
         participants.iter().zip(presig.iter())
     {
         assert_eq!(participant, participant_redundancy);
-        if coordinator == *participant {
-            is_valid_coordinator = true;
-        }
         let randomize = if *participant == coordinator {
+            is_valid_coordinator = true;
             Some(randomizer)
         } else {
             None

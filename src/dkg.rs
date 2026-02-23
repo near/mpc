@@ -1,6 +1,6 @@
 use crate::crypto::{
     ciphersuite::Ciphersuite,
-    hash::{domain_separate_hash, HashOutput},
+    hash::{domain_separate_hash, DomainSeparator, HashOutput},
     polynomials::{Polynomial, PolynomialCommitment},
 };
 
@@ -40,7 +40,7 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
             //  return error if me is part of the old participants set
             if !old_participants.contains(me) {
                 return Err(ProtocolError::AssertionFailed(
-                    format!("{me:?} is running Resharing with a zero share but does belong to the old participant set")));
+                    format!("{me:?} is running Resharing with a non-zero share but does not belong to the old participant set")));
             }
         }
         Ok((Some(old_key), Some(old_participants)))
@@ -71,7 +71,7 @@ fn generate_coefficient_commitment<C: Ciphersuite>(
 /// Generates the challenge for the proof of knowledge
 /// H(`domain_separator`, id, g^{secret} , R)
 fn challenge<C: Ciphersuite>(
-    domain_separator: u32,
+    domain_separator: &mut DomainSeparator,
     session_id: &HashOutput,
     id: Scalar<C>,
     vk_share: &CoefficientCommitment<C>,
@@ -104,6 +104,8 @@ fn challenge<C: Ciphersuite>(
     preimage.extend_from_slice(serialized_vk_share.as_ref());
     preimage.extend_from_slice(serialized_big_r.as_ref());
 
+    domain_separator.increment();
+
     let hash = C::HDKG(&preimage[..]).ok_or(ProtocolError::DKGNotSupported)?;
     Ok(Challenge::from_scalar(hash))
 }
@@ -115,7 +117,7 @@ fn challenge<C: Ciphersuite>(
 /// Output (R, mu)
 fn proof_of_knowledge<C: Ciphersuite>(
     session_id: &HashOutput,
-    domain_separator: u32,
+    domain_separator: &mut DomainSeparator,
     me: Participant,
     coefficients: &Polynomial<C>,
     coefficient_commitment: &PolynomialCommitment<C>,
@@ -142,7 +144,7 @@ fn proof_of_knowledge<C: Ciphersuite>(
 /// public secret sharing commitment.
 fn internal_verify_proof_of_knowledge<C: Ciphersuite>(
     session_id: &HashOutput,
-    domain_separator: u32,
+    domain_separator: &mut DomainSeparator,
     participant: Participant,
     commitment: &VerifiableSecretSharingCommitment<C>,
     proof_of_knowledge: &Signature<C>,
@@ -169,7 +171,7 @@ fn internal_verify_proof_of_knowledge<C: Ciphersuite>(
 /// performing reshare and does not exist in the set of old participants
 fn verify_proof_of_knowledge<C: Ciphersuite>(
     session_id: &HashOutput,
-    domain_separator: u32,
+    domain_separator: &mut DomainSeparator,
     threshold: ReconstructionLowerBound,
     participant: Participant,
     old_participants: Option<ParticipantList>,
@@ -220,7 +222,7 @@ fn verify_proof_of_knowledge<C: Ciphersuite>(
 fn verify_commitment_hash<C: Ciphersuite>(
     session_id: &HashOutput,
     participant: Participant,
-    domain_separator: u32,
+    domain_separator: &mut DomainSeparator,
     commitment: &VerifiableSecretSharingCommitment<C>,
     all_hash_commitments: &ParticipantMap<'_, HashOutput>,
 ) -> Result<(), ProtocolError> {
@@ -347,7 +349,7 @@ async fn do_keyshare<C: Ciphersuite>(
     rng: &mut impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
     let mut all_full_commitments = ParticipantMap::new(&participants);
-    let mut domain_separator = 0;
+    let mut domain_separator = DomainSeparator::new();
     // Make sure you do not call do_keyshare with zero as secret on an old participant
     let (old_verification_key, old_participants) =
         assert_keyshare_inputs(me, &secret, old_reshare_package)?;
@@ -365,8 +367,7 @@ async fn do_keyshare<C: Ciphersuite>(
     // because the library does not allow serializing the zero and identity term,
     // this function does not add the zero coefficient
     // Step 2.2
-    let session_id = domain_separate_hash(domain_separator, &session_ids)?;
-    domain_separator += 1;
+    let session_id = domain_separate_hash(&mut domain_separator, &session_ids)?;
     // Step 2.3
     // the degree of the polynomial is threshold - 1
     let degree = threshold
@@ -380,24 +381,24 @@ async fn do_keyshare<C: Ciphersuite>(
     let coefficient_commitment = generate_coefficient_commitment::<C>(&secret_coefficients)?;
 
     // Generates a proof of knowledge if me is not holding the zero secret.
-    let proof_domain_separator = domain_separator;
+    let proof_domain_separator = domain_separator.clone();
     // Send none if me is a new participant
     let generate_proof: bool = old_participants.as_ref().is_none_or(|old| old.contains(me));
     // Step 2.5 2.6 2.7
     let proof_of_knowledge = if generate_proof {
         Some(proof_of_knowledge(
             &session_id,
-            domain_separator,
+            &mut domain_separator,
             me,
             &secret_coefficients,
             &coefficient_commitment,
             rng,
         )?)
     } else {
+        // increment domain separator to match the old participants
+        domain_separator.increment();
         None
     };
-
-    domain_separator += 1;
 
     // Create the public polynomial = secret coefficients times G
     let commitment =
@@ -405,8 +406,9 @@ async fn do_keyshare<C: Ciphersuite>(
 
     // hash commitment and send it
     // Step 2.8
-    let commit_domain_separator = domain_separator;
-    let commitment_hash = domain_separate_hash(domain_separator, &(&me, &commitment, &session_id))?;
+    let commit_domain_separator = domain_separator.clone();
+    let commitment_hash =
+        domain_separate_hash(&mut domain_separator, &(&me, &commitment, &session_id))?;
 
     // Step 2.9
     let wait_round_1 = chan.next_waitpoint();
@@ -449,7 +451,7 @@ async fn do_keyshare<C: Ciphersuite>(
         // and performing a resharing not a DKG
         verify_proof_of_knowledge(
             &session_id,
-            proof_domain_separator,
+            &mut proof_domain_separator.clone(), // you want to have the same state
             threshold,
             p,
             old_participants.clone(),
@@ -461,7 +463,7 @@ async fn do_keyshare<C: Ciphersuite>(
         verify_commitment_hash(
             &session_id,
             p,
-            commit_domain_separator,
+            &mut commit_domain_separator.clone(), // you want to have the same state
             commitment_i,
             &all_hash_commitments,
         )?;
@@ -671,6 +673,7 @@ pub mod test {
 
     use super::domain_separate_hash;
     use crate::crypto::ciphersuite::Ciphersuite;
+    use crate::crypto::hash::DomainSeparator;
     use crate::errors::InitializationError;
     use crate::participants::{Participant, ParticipantList};
     use crate::test_utils::{
@@ -684,13 +687,14 @@ pub mod test {
 
     #[test]
     fn test_domain_separate_hash() {
-        let cnt = 1;
+        let mut cnt = DomainSeparator::new();
         let participants_1 = generate_participants(3);
         let participants_2 = generate_participants(3);
-        let hash_1 = domain_separate_hash(cnt, &participants_1);
-        let hash_2 = domain_separate_hash(cnt, &participants_2);
+        let hash_1 = domain_separate_hash(&mut cnt.clone(), &participants_1);
+        let hash_2 = domain_separate_hash(&mut cnt, &participants_2);
         assert!(hash_1 == hash_2);
-        let hash_2 = domain_separate_hash(cnt + 1, &participants_2);
+        // incremented
+        let hash_2 = domain_separate_hash(&mut cnt, &participants_2);
         assert!(hash_1 != hash_2);
     }
 

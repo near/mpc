@@ -30,7 +30,6 @@ pub type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = C>>)>;
 pub use mockrng::MockCryptoRng;
 
 pub use dkg::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
-pub use mockrng::create_rngs;
 pub use participant_simulation::Simulator;
 pub use participants::{generate_participants, generate_participants_with_random_ids};
 pub use presign::{ecdsa_generate_rerandpresig_args, frost_run_presignature};

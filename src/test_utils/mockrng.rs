@@ -1,6 +1,5 @@
 use rand::{CryptoRng, RngCore};
 use rand_chacha::{rand_core::SeedableRng, ChaCha12Rng};
-use rand_core::CryptoRngCore;
 
 /// Used for deterministic Rngs and only in testing
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,36 +32,3 @@ impl RngCore for MockCryptoRng {
 }
 
 impl CryptoRng for MockCryptoRng {}
-
-/// Creates multiple Mock rngs for multiple participants using a seed
-pub fn create_rngs(size: usize, seed: &mut impl CryptoRngCore) -> Vec<MockCryptoRng> {
-    (0..size)
-        .map(|_| MockCryptoRng::seed_from_u64(seed.next_u64()))
-        .collect()
-}
-
-#[cfg(test)]
-pub mod test {
-    use super::create_rngs;
-    use crate::test_utils::MockCryptoRng;
-    use rand::{RngCore, SeedableRng};
-
-    #[test]
-    fn test_clone_rngs() {
-        let num = 5;
-        let mut rng = MockCryptoRng::seed_from_u64(42u64);
-        let mut rngs = create_rngs(num, &mut rng);
-        // Clone rng
-        let mut clone_rngs = rngs.clone();
-
-        let consumption = rngs.iter_mut().map(RngCore::next_u64).collect::<Vec<_>>();
-        let clone_consumption = clone_rngs
-            .iter_mut()
-            .map(RngCore::next_u64)
-            .collect::<Vec<_>>();
-
-        for (c1, c2) in consumption.iter().zip(clone_consumption.iter()) {
-            assert_eq!(c1, c2);
-        }
-    }
-}

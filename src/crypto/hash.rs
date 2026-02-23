@@ -30,14 +30,32 @@ pub fn hash<T: Serialize>(val: &T) -> Result<HashOutput, ProtocolError> {
     Ok(HashOutput(hasher.finalize().into()))
 }
 
+#[derive(Clone)]
+pub struct DomainSeparator(u32);
+
+impl DomainSeparator {
+    pub fn new() -> Self {
+        Self(0)
+    }
+
+    pub fn increment(&mut self) {
+        self.0 += 1;
+    }
+
+    pub fn to_le_bytes(&self) -> [u8; 4] {
+        self.0.to_le_bytes()
+    }
+}
+
 /// Hashes using a domain separator as follows:
 /// `SHA256(HASH_LABEL` || msgpack([`domain_separator`, data])
-/// This function DOES NOT internally increment the domain separator
+/// This function internally increments the domain separator
 pub fn domain_separate_hash<T: Serialize>(
-    domain_separator: u32,
+    domain_separator: &mut DomainSeparator,
     data: &T,
 ) -> Result<HashOutput, ProtocolError> {
-    let preimage = (domain_separator, data);
+    let preimage = (domain_separator.0, data);
+    domain_separator.increment();
     hash(&preimage)
 }
 
@@ -45,6 +63,8 @@ pub fn domain_separate_hash<T: Serialize>(
 pub mod test {
     use elliptic_curve::{ops::Reduce, Curve, CurveArithmetic};
     use subtle::ConstantTimeEq;
+
+    use crate::crypto::hash::DomainSeparator;
 
     use super::{domain_separate_hash, hash, HashOutput};
     use digest::{Digest, FixedOutput};
@@ -62,8 +82,9 @@ pub mod test {
     #[test]
     fn test_same_inputs_domain_separate_hash() {
         let val = ("abc", 123);
-        let hash1 = domain_separate_hash(42, &val).unwrap();
-        let hash2 = domain_separate_hash(42, &val).unwrap();
+        let mut domain_separator = DomainSeparator::new();
+        let hash1 = domain_separate_hash(&mut domain_separator.clone(), &val).unwrap();
+        let hash2 = domain_separate_hash(&mut domain_separator, &val).unwrap();
         assert_eq!(hash1.0, hash2.0);
     }
 
@@ -80,11 +101,18 @@ pub mod test {
     fn test_different_inputs_domain_separate_hash() {
         let val1 = ("abc", 123);
         let val2 = ("abc", 124);
-        let hash1 = domain_separate_hash(41, &val1).unwrap();
-        let hash2 = domain_separate_hash(42, &val1).unwrap();
+        let mut domain_separator = DomainSeparator::new();
+        let hash1 = domain_separate_hash(&mut domain_separator.clone(), &val1).unwrap();
+        let hash2 = domain_separate_hash(&mut domain_separator, &val2).unwrap();
         assert_ne!(hash1.0, hash2.0);
+    }
 
-        let hash2 = domain_separate_hash(41, &val2).unwrap();
+    #[test]
+    fn test_domain_separate_hash_increments_separator() {
+        let val = ("abc", 123);
+        let mut domain_separator = DomainSeparator::new();
+        let hash1 = domain_separate_hash(&mut domain_separator, &val).unwrap();
+        let hash2 = domain_separate_hash(&mut domain_separator, &val).unwrap();
         assert_ne!(hash1.0, hash2.0);
     }
 

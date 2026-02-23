@@ -131,6 +131,7 @@ mod test {
     use crate::SigningShare;
     use frost_secp256k1::VerifyingKey;
     use k256::ProjectivePoint;
+    use rand::RngCore as _;
     use rand_core::{CryptoRngCore, SeedableRng};
 
     fn generate_random_received_snap(rng: &mut impl CryptoRngCore) -> ReceivedMessageSnapshot {
@@ -200,16 +201,17 @@ mod test {
         let f = Polynomial::generate_polynomial(None, max_malicious, &mut rng).unwrap();
         let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
 
-        // create rngs for first and second snapshots
-        let rngs = crate::test_utils::mockrng::create_rngs(num_participants, &mut rng);
-
         let mut results = Vec::new();
         let mut snapshots = Vec::new();
 
+        let root_rng_seed = rng.next_u64();
         // Running the protocol twice
         for _ in 0..2 {
+            // needed because each iteration must compute the same values
+            let mut root_rng = MockCryptoRng::seed_from_u64(root_rng_seed);
             let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
-            for (i, p) in participants.iter().enumerate() {
+            for p in &participants {
+                let rng_p = MockCryptoRng::seed_from_u64(root_rng.next_u64());
                 // simulating the key packages for each participant
                 let keygen_out = prepare_keys(*p, &f, big_x);
                 let protocol = presign(
@@ -219,7 +221,7 @@ mod test {
                         keygen_out,
                         max_malicious: max_malicious.into(),
                     },
-                    rngs[i].clone(),
+                    rng_p,
                 )
                 .unwrap();
                 protocols.push((*p, Box::new(protocol)));
