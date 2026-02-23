@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export NEAR_CLI_DISABLE_SPINNER=1
-export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | jq -r .secret_key)
+VALIDATOR_KEY="$(jq -r .secret_key ~/.near/mpc-localnet/validator_key.json)"
 
 # --- Required ---
 : "${BASE_PATH:?Set BASE_PATH (dstack base path)}"
