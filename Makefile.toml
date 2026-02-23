@@ -109,7 +109,7 @@ args = ["scripts/check-todo-format.sh"]
 
 [tasks.use-in-fn]
 description = "Check for use statements inside function bodies"
-command = "python3"
+command = "python"
 args = ["scripts/check-use-in-fn.py"]
 
 [tasks.cargo-deny]
