@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Usage: ./upload_secrets.sh -d DEST_PROJECT -f SECRETS_FILE.txt
+# Usage: ./upload-secrets.sh -d DEST_PROJECT -f SECRETS_FILE.txt
 
 # Secret file format:
 # multichain-account-sk-mainnet-0=foo

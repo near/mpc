@@ -5,13 +5,13 @@ This guide explains how to create and test a **Multi-Party Computation (MPC)** n
 It builds upon the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), which describes how to launch a local blockchain network.  
 However, instead of running MPC nodes as local binaries, this setup runs each MPC node inside a CVM, where the MPC node itself runs as a Docker container.
 
-For details on how to set up a TDX-based Confidential VM and prepare the DStack environment, refer to the [Running an MPC Node in TDX External Guide](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md).
+For details on how to set up a TDX-based Confidential VM and prepare the DStack environment, refer to the [Running an MPC Node in TDX External Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).
 
 ---
 
 ## High-Level Steps
 
-1. Prepare a TDX-enabled setup as described in the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md).  
+1. Prepare a TDX-enabled setup as described in the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).  
 2. Prepare the localnet setup as described in the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), excluding the startup of the MPC nodes.  
 3. Start two MPC nodes that will run inside CVMs.  
 4. Extract the public keys from the nodes and add them to the contract and user accounts.  
@@ -21,7 +21,7 @@ For details on how to set up a TDX-based Confidential VM and prepare the DStack 
 
 ---
 ## Step 1: Prepare a TDX-enabled setup 
-Follow the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md). Up until (but not including **MPC Node Setup and Deployment**
+Follow the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md). Up until (but not including **MPC Node Setup and Deployment**
 )
 
 Note - You can use the instructions in **MPC Node Setup and Deployment** section - as guidelines on how to configure and manage an MPC node in a CVMs (but the actual configuration values will differ)

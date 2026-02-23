@@ -23,7 +23,7 @@ curl http://<MPC_NODE_IP>:<MPC_NODE_PORT>/public_data -o public_data.json
 3. Run the asset extraction script:
 
    ```shell
-   bash ./create_assets.sh public_data.json .
+   bash ./create-assets.sh public_data.json .
    ```
 
 This will regenerate the following files:

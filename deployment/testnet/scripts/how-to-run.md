@@ -1,6 +1,6 @@
-# Running `scale_testnet_tee.sh`
+# Running `scale-testnet-tee.sh`
 
-This document explains how to run the `scale_testnet_tee.sh` script:
+This document explains how to run the `scale-testnet-tee.sh` script:
 - From scratch (new network)
 - From specific phases
 - For scaling an existing network
@@ -13,7 +13,7 @@ This document explains how to run the `scale_testnet_tee.sh` script:
 Run from the **repository root**:
 
 ```bash
-bash deployment/testnet/scripts/scale_testnet_tee.sh
+bash deployment/testnet/scripts/scale-testnet-tee.sh
 ```
 
 The script relies on repo-relative paths and should not be run from inside the `scripts/` directory.
@@ -139,7 +139,7 @@ export NEAR_TX_SLEEP_SEC=5
 export RESUME=0
 export NO_PAUSE=0
 
-bash deployment/testnet/scripts/scale_testnet_tee.sh
+bash deployment/testnet/scripts/scale-testnet-tee.sh
 ```
 
 ---
@@ -150,7 +150,7 @@ bash deployment/testnet/scripts/scale_testnet_tee.sh
 export RESUME=1
 export START_FROM_PHASE=auto
 
-bash deployment/testnet/scripts/scale_testnet_tee.sh
+bash deployment/testnet/scripts/scale-testnet-tee.sh
 ```
 
 ---
@@ -163,7 +163,7 @@ Example: restart from key collection
 export START_FROM_PHASE=collect
 export RESUME=1
 
-bash deployment/testnet/scripts/scale_testnet_tee.sh
+bash deployment/testnet/scripts/scale-testnet-tee.sh
 ```
 
 ---
@@ -176,7 +176,7 @@ Example: only add keys to accounts
 export START_FROM_PHASE=near_keys
 export STOP_AFTER_PHASE=near_keys
 
-bash deployment/testnet/scripts/scale_testnet_tee.sh
+bash deployment/testnet/scripts/scale-testnet-tee.sh
 ```
 
 ---
@@ -202,7 +202,7 @@ export NEAR_CLI_DISABLE_SPINNER=1
 export NEAR_TX_SLEEP_SEC=5
 export NO_PAUSE=0
 
-bash deployment/testnet/scripts/scale_testnet_tee.sh
+bash deployment/testnet/scripts/scale-testnet-tee.sh
 ```
 
 ---
@@ -228,7 +228,7 @@ export NEAR_CLI_DISABLE_SPINNER=1
 export NEAR_TX_SLEEP_SEC=5
 export NO_PAUSE=0
 
-bash deployment/testnet/scripts/scale_testnet_tee.sh
+bash deployment/testnet/scripts/scale-testnet-tee.sh
 ```
 
 ---

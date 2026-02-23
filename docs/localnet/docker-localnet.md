@@ -25,11 +25,11 @@ We can now start their nodes in docker.
 Frodo's node:
 
 ```shell
-docker run --name frodo-mpc-node -v /tmp/frodo:/data -p 3000:3000 -p 8081:8080 --env-file docs/localnet/docker_envs/frodo.env mpc-node
+docker run --name frodo-mpc-node -v /tmp/frodo:/data -p 3000:3000 -p 8081:8080 --env-file docs/localnet/docker-envs/frodo.env mpc-node
 ```
 
 ```shell
-docker run --name sam-mpc-node -v /tmp/sam:/data -p 3001:3001 -p 8082:8080 --env-file docs/localnet/docker_envs/sam.env mpc-node
+docker run --name sam-mpc-node -v /tmp/sam:/data -p 3001:3001 -p 8082:8080 --env-file docs/localnet/docker-envs/sam.env mpc-node
 ```
 
 Great success!!! The dockerfiles seems have connected :)
