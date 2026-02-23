@@ -25,9 +25,9 @@ EXEMPT_FILES=(
     AGENTS.md
     CLAUDE.md
     Makefile.md
-    launcher_docker_compose.yaml           # TEE attestation artifact
-    launcher_docker_compose_nontee.yaml    # TEE attestation artifact (non-TEE variant)
-    launcher_image_compose.yaml            # TEE test asset
+    launcher_docker_compose.yaml
+    launcher_docker_compose_nontee.yaml
+    launcher_image_compose.yaml
 )
 
 # Build a regex that matches any of the allowed non-kebab-case filenames
@@ -36,9 +36,9 @@ EXEMPT_PATTERN="^($( IFS='|'; echo "${EXEMPT_FILES[*]}" ))$"
 OFFENDERS=$(
     # List every file under the directories we enforce conventions on
     find "${SEARCH_DIRS[@]}" -type f -exec basename {} \; |
-    # Keep only the extensions we care about (.sh, .yml, .yaml, .md)
+    # Keep only the extensions we care about
     grep -E "$EXT_PATTERN" |
-    # Exclude allowed non-kebab-case filenames (README.md, CHANGELOG.md, …)
+    # Exclude allowed non-kebab-case filenames
     grep -vE "$EXEMPT_PATTERN" |
     # Flag anything containing underscores or uppercase letters
     grep -E '[_A-Z]' |
