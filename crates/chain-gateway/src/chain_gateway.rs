@@ -2,108 +2,34 @@ use near_account_id::AccountId;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
-use crate::contract_state::{ContractStateViewer, SharedContractViewer};
-use crate::errors::{ChainGatewayError, ChainGatewayOp};
-use crate::near_internals_wrapper::{
-    ClientWrapper, RpcHandlerWrapper, ViewClientWrapper, ViewFunctionCall,
-};
+use crate::contract_state::ContractStateViewer;
+use crate::errors::ChainGatewayError;
+use crate::near_internals_wrapper::{ClientWrapper, RpcHandlerWrapper, ViewClientWrapper};
 use crate::stats::IndexerStats;
 use crate::transaction_sender::TransactionSender;
-
 
 #[derive(Clone)]
 pub struct ChainGateway {
     /// For querying blockchain state.
-    view_client: ViewClientWrapper,
+    view_client: Arc<ViewClientWrapper>,
     /// For querying blockchain sync status.
-    client: ClientWrapper,
+    client: Arc<ClientWrapper>,
     /// For sending txs to the chain.
-    rpc_handler: RpcHandlerWrapper,
+    rpc_handler: Arc<RpcHandlerWrapper>,
     /// Stores runtime indexing statistics.
     _stats: Arc<Mutex<IndexerStats>>,
 }
 
-//pub type SharedContractViewer =
-//    Arc<dyn ContractViewMethodCaller<Error = ChainGatewayError> + Send + Sync>;
-//
-//#[async_trait]
-//pub trait ContractViewMethodCaller: Send + Sync {
-//    type Error;
-//    async fn view(&self, method_name: &str, args: Vec<u8>) -> Result<(u64, Vec<u8>), Self::Error>;
-//}
-
 impl ChainGateway {
-    pub fn contract_state_viewer(&self, contract_id: AccountId) -> SharedContractViewer {
-        Arc::new(ContractStateViewer {
+    pub fn contract_state_viewer(&self, contract_id: AccountId) -> ContractStateViewer {
+        ContractStateViewer {
             client: self.client.clone(),
             view_client: self.view_client.clone(),
             contract_id,
-        })
+        }
     }
     pub fn transaction_sender(&self) -> TransactionSender {
         TransactionSender::new(self.rpc_handler.clone(), self.view_client.clone())
-    }
-}
-
-#[allow(async_fn_in_trait)]
-pub trait LatestFinalBlock {
-    type Error;
-    async fn latest_final_block(
-        &self,
-    ) -> Result<near_indexer_primitives::views::BlockView, Self::Error>;
-}
-
-impl LatestFinalBlock for ChainGateway {
-    type Error = ChainGatewayError;
-    async fn latest_final_block(
-        &self,
-    ) -> Result<near_indexer_primitives::views::BlockView, Self::Error> {
-        self.view_client
-            .latest_final_block()
-            .await
-            .map_err(|err| ChainGatewayError::ViewClient {
-                op: ChainGatewayOp::FetchFinalBlock,
-                source: Box::new(err),
-            })
-    }
-}
-
-/// waits for full sync and then queries account_id with method_name and args.
-#[allow(async_fn_in_trait)]
-pub trait FinalizedStateView {
-    type Error;
-    async fn view_call(
-        &self,
-        account_id: &near_account_id::AccountId,
-        method_name: &str,
-        args: Vec<u8>,
-    ) -> Result<(u64, Vec<u8>), Self::Error>;
-}
-
-impl FinalizedStateView for ChainGateway {
-    type Error = ChainGatewayError;
-    async fn view_call(
-        &self,
-        account_id: &near_account_id::AccountId,
-        method_name: &str,
-        args: Vec<u8>,
-    ) -> Result<(u64, Vec<u8>), Self::Error> {
-        self.wait_for_full_sync().await;
-        self.view_client
-            .view_function_query(&ViewFunctionCall {
-                account_id: account_id.clone(),
-                method_name: method_name.to_string(),
-                args,
-            })
-            .await
-            .map_err(|err| ChainGatewayError::ViewClient {
-                // note: not sure we need to log account_id and method name here. It can be read in the boxed error
-                op: ChainGatewayOp::ViewCall {
-                    account_id: account_id.to_string(),
-                    method_name: method_name.to_string(),
-                },
-                source: Box::new(err),
-            })
     }
 }
 
@@ -111,36 +37,6 @@ impl ChainGateway {
     // todo: remove this method soon. Stats should be internal to this crate
     pub fn stats(&self) -> Arc<Mutex<IndexerStats>> {
         self._stats.clone()
-    }
-
-    pub async fn wait_for_full_sync(&self) {
-        const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
-        loop {
-            tokio::time::sleep(INTERVAL).await;
-            match self.client.is_syncing().await {
-                Ok(is_syncing) => {
-                    if !is_syncing {
-                        return;
-                    }
-                    tracing::info!("wating for full sync");
-                }
-                Err(err) => {
-                    tracing::warn!(err = %err, "error while waiting for sync");
-                }
-            }
-        }
-    }
-
-    pub async fn submit_tx(
-        &self,
-        transaction: near_indexer::near_primitives::transaction::SignedTransaction,
-    ) -> Result<(), ChainGatewayError> {
-        self.rpc_handler
-            .submit_tx(transaction)
-            .await
-            .map_err(|err| ChainGatewayError::RpcClient {
-                source: Box::new(err),
-            })
     }
 }
 
@@ -164,9 +60,9 @@ pub async fn start_with_streamer(
 
     let stream = indexer.streamer();
 
-    let view_client = ViewClientWrapper::new(near_node.view_client);
-    let client = ClientWrapper::new(near_node.client);
-    let rpc_handler = RpcHandlerWrapper::new(near_node.rpc_handler);
+    let view_client = Arc::new(ViewClientWrapper::new(near_node.view_client));
+    let client = Arc::new(ClientWrapper::new(near_node.client));
+    let rpc_handler = Arc::new(RpcHandlerWrapper::new(near_node.rpc_handler));
     let stats = Arc::new(Mutex::new(IndexerStats::new()));
     tokio::spawn(indexer_logger(stats.clone(), view_client.clone()));
 
@@ -183,7 +79,7 @@ pub async fn start_with_streamer(
 
 pub(crate) async fn indexer_logger(
     stats: Arc<Mutex<IndexerStats>>,
-    view_client: ViewClientWrapper,
+    view_client: Arc<ViewClientWrapper>,
 ) {
     let interval_secs = 10;
     let mut prev_blocks_processed_count: u64 = 0;

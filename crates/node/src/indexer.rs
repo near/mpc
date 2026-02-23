@@ -1,17 +1,14 @@
 use crate::migration_service::types::MigrationInfo;
-
-use anyhow::Context;
-use chain_gateway::chain_gateway::{ChainGateway, FinalizedStateView};
+use chain_gateway::chain_gateway::ChainGateway;
 use contract_interface::types as dtos;
 use contract_state_viewer::MpcContractStateViewer;
 use handler::ChainBlockUpdate;
 use mpc_contract::tee::{
-        proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
-        tee_state::NodeId,
-    };
+    proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
+    tee_state::NodeId,
+};
 use near_account_id::AccountId;
 use participants::ContractState;
-use serde::Deserialize;
 use std::{future::Future, sync::Arc};
 use tokio::sync::{mpsc, watch};
 use types::ChainSendTransactionRequest;
@@ -31,7 +28,6 @@ pub mod types;
 pub mod fake;
 
 pub(crate) struct IndexerState {
-    //    contract_state_viewer: SharedContractViewer,
     /// Chain indexer to interact with the NEAR blockchain
     chain_gateway: ChainGateway,
     /// AccountId for the mpc contract.
@@ -44,175 +40,6 @@ impl IndexerState {
             chain_gateway,
             mpc_contract_id,
         }
-    }
-}
-
-//#[async_trait]
-//pub(crate) trait MpcContractStateViewer {
-//    async fn get_pending_request(
-//        &self,
-//        chain_signature_request: &ChainSignatureRequest,
-//    ) -> anyhow::Result<Option<YieldIndex>>;
-//    async fn get_pending_ckd_request(
-//        &self,
-//        chain_ckd_request: &ChainCKDRequest,
-//    ) -> anyhow::Result<Option<YieldIndex>>;
-//
-//    async fn get_pending_verify_foreign_tx_request(
-//        &self,
-//        chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
-//    ) -> anyhow::Result<Option<YieldIndex>>;
-//
-//    async fn get_participant_attestation(
-//        &self,
-//        participant_tls_public_key: &contract_interface::types::Ed25519PublicKey,
-//    ) -> anyhow::Result<Option<contract_interface::types::VerifiedAttestation>>;
-//
-//    async fn get_mpc_contract_state(&self) -> anyhow::Result<(u64, ProtocolContractState)>;
-//
-//    async fn get_mpc_allowed_image_hashes(&self) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)>;
-//    async fn get_mpc_allowed_launcher_compose_hashes(
-//        &self,
-//    ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)>;
-//
-//    async fn get_mpc_tee_accounts(&self) -> anyhow::Result<(u64, Vec<NodeId>)>;
-//    async fn get_mpc_migration_info(&self) -> anyhow::Result<(u64, ContractMigrationInfo)>;
-//
-//    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy>;
-//    async fn get_foreign_chain_policy_proposals(
-//        &self,
-//    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes>;
-//}
-
-/// TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
-/// TODO(#1956): There is a lot of duplicate code here that could be simplified
-//#[async_trait]
-//impl MpcContractStateViewer for IndexerState {
-//    async fn get_pending_request(
-//        &self,
-//        chain_signature_request: &ChainSignatureRequest,
-//    ) -> anyhow::Result<Option<YieldIndex>> {
-//        let args: Vec<u8> = serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
-//            request: chain_signature_request.clone(),
-//        })
-//        .unwrap()
-//        .into_bytes();
-//
-//        let (_, call_result) = self
-//            .call_view_method(GET_PENDING_REQUEST, args)
-//            .await
-//            .context("failed to query for pending request")?;
-//        Ok(call_result)
-//    }
-//
-//    async fn get_pending_ckd_request(
-//        &self,
-//        chain_ckd_request: &ChainCKDRequest,
-//    ) -> anyhow::Result<Option<YieldIndex>> {
-//        let args: Vec<u8> = serde_json::to_string(&ChainGetPendingCKDRequestArgs {
-//            request: chain_ckd_request.clone(),
-//        })
-//        .unwrap()
-//        .into_bytes();
-//
-//        let (_, call_result) = self
-//            .call_view_method(GET_PENDING_CKD_REQUEST, args)
-//            .await
-//            .context("failed to query for pending CKD request")?;
-//
-//        Ok(call_result)
-//    }
-//
-//    async fn get_pending_verify_foreign_tx_request(
-//        &self,
-//        chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
-//    ) -> anyhow::Result<Option<YieldIndex>> {
-//        let args: Vec<u8> = serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
-//            request: chain_verify_foreign_tx_request.clone(),
-//        })
-//        .unwrap()
-//        .into_bytes();
-//
-//        let (_, call_result) = self
-//            .call_view_method(GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, args)
-//            .await
-//            .context("failed to query for pending verify foreign tx request")?;
-//
-//        Ok(call_result)
-//    }
-//
-//    async fn get_participant_attestation(
-//        &self,
-//        participant_tls_public_key: &contract_interface::types::Ed25519PublicKey,
-//    ) -> anyhow::Result<Option<contract_interface::types::VerifiedAttestation>> {
-//        let args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
-//            tls_public_key: participant_tls_public_key,
-//        })
-//        .unwrap()
-//        .into_bytes();
-//
-//        let (_, call_result) = self
-//            .call_view_method(GET_ATTESTATION, args)
-//            .await
-//            .context("failed to query for pending request")?;
-//        Ok(call_result)
-//    }
-//
-//    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
-//        let (_height, policy) = self
-//            .call_view_method(GET_FOREIGN_CHAIN_POLICY, vec![])
-//            .await?;
-//        Ok(policy)
-//    }
-//
-//    async fn get_foreign_chain_policy_proposals(
-//        &self,
-//    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
-//        let (_height, proposals) = self
-//            .call_view_method(GET_FOREIGN_CHAIN_POLICY_PROPOSALS, vec![])
-//            .await?;
-//        Ok(proposals)
-//    }
-//
-//    async fn get_mpc_contract_state(&self) -> anyhow::Result<(u64, ProtocolContractState)> {
-//        self.call_view_method(STATE, vec![]).await
-//    }
-//
-//    async fn get_mpc_allowed_image_hashes(&self) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
-//        self.call_view_method(ALLOWED_DOCKER_IMAGE_HASHES, vec![])
-//            .await
-//    }
-//    async fn get_mpc_allowed_launcher_compose_hashes(
-//        &self,
-//    ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-//        self.call_view_method(ALLOWED_LAUNCHER_COMPOSE_HASHES, vec![])
-//            .await
-//    }
-//
-//    async fn get_mpc_tee_accounts(&self) -> anyhow::Result<(u64, Vec<NodeId>)> {
-//        self.call_view_method(GET_TEE_ACCOUNTS, vec![]).await
-//    }
-//
-//    async fn get_mpc_migration_info(&self) -> anyhow::Result<(u64, ContractMigrationInfo)> {
-//        self.call_view_method(MIGRATION_INFO, vec![]).await
-//    }
-//}
-
-impl IndexerState {
-    async fn call_view_method<State>(
-        &self,
-        method: &str,
-        args: Vec<u8>,
-    ) -> anyhow::Result<(u64, State)>
-    where
-        State: for<'de> Deserialize<'de>,
-    {
-        let (block_height, call_result) = self
-            .chain_gateway
-            .view_call(&self.mpc_contract_id, method, args)
-            .await
-            .context("failed to query contract")?;
-        Ok((block_height, serde_json::from_slice(&call_result)?))
     }
 }
 

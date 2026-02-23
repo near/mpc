@@ -1,10 +1,9 @@
-
 use crate::indexer::{
     migrations::ContractMigrationInfo,
     types::{ChainCKDRequest, ChainSignatureRequest, ChainVerifyForeignTransactionRequest},
 };
 use anyhow::Context;
-use chain_gateway::contract_state::SharedContractViewer;
+use chain_gateway::contract_state::{ContractStateViewer, SharedContractViewer};
 // todo: do not directly import and move ShardeContractViewer to a different module
 //use chain_gateway::chain_gateway::SharedContractViewer;
 use mpc_contract::{
@@ -24,11 +23,11 @@ use super::types::{
 /// this is just a wrapper around a shared contract viewer
 #[derive(Clone)]
 pub(crate) struct MpcContractStateViewer {
-    mpc_contract_viewer: SharedContractViewer,
+    mpc_contract_viewer: ContractStateViewer,
 }
 
 impl MpcContractStateViewer {
-    pub fn new(mpc_contract_viewer: SharedContractViewer) -> Self {
+    pub fn new(mpc_contract_viewer: ContractStateViewer) -> Self {
         Self {
             mpc_contract_viewer,
         }
@@ -43,18 +42,15 @@ impl MpcContractStateViewer {
         &self,
         chain_signature_request: &ChainSignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let args: Vec<u8> = serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
+        let args = ChainGetPendingSignatureRequestArgs {
             request: chain_signature_request.clone(),
-        })
-        .unwrap()
-        .into_bytes();
-
+        };
         let (_, call_result) = self
             .mpc_contract_viewer
-            .view(contract_interface::method_names::GET_PENDING_REQUEST, args)
+            .view(contract_interface::method_names::GET_PENDING_REQUEST, &args)
             .await
             .context("failed to query for pending request")?;
-        Ok(serde_json::from_slice(&call_result)?)
+        Ok(call_result)
     }
 
     pub(crate) async fn get_pending_ckd_request(

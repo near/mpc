@@ -34,6 +34,20 @@ pub enum ChainGatewayError {
         source: DynError,
     },
 
+    #[error("serialization error {op}")]
+    Serialization {
+        op: ChainGatewayOp,
+        #[source]
+        source: DynError,
+    },
+
+    #[error("deserialization error {op}")]
+    Deserialization {
+        op: ChainGatewayOp,
+        #[source]
+        source: DynError,
+    },
+
     #[error("rpc client error")]
     RpcClient {
         #[source]

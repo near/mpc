@@ -16,16 +16,20 @@ use std::sync::{Arc, Mutex};
 use crate::errors::ChainGatewayError;
 use crate::near_internals_wrapper::{RpcHandlerWrapper, ViewClientWrapper};
 
+#[derive(Clone)]
 pub struct TransactionSender {
     /// rpc handler for sending txs to the chain (internal type, c.f. indexer.rs)
-    rpc_handler: RpcHandlerWrapper,
+    rpc_handler: Arc<RpcHandlerWrapper>,
     /// method to the view client to query the latest final block (needed for nonce computation)
-    view_client: ViewClientWrapper,
+    view_client: Arc<ViewClientWrapper>,
 }
 
 /// we could probably make this a trait for testing?
 impl TransactionSender {
-    pub(crate) fn new(rpc_handler: RpcHandlerWrapper, view_client: ViewClientWrapper) -> Self {
+    pub(crate) fn new(
+        rpc_handler: Arc<RpcHandlerWrapper>,
+        view_client: Arc<ViewClientWrapper>,
+    ) -> Self {
         Self {
             rpc_handler,
             view_client,
