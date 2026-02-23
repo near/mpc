@@ -150,57 +150,6 @@ async fn multiplication_receiver(
     Ok(gamma0? + gamma1?)
 }
 
-pub(super) async fn multiplication(
-    comms: Comms,
-    sid: HashOutput,
-    participants: ParticipantList,
-    me: Participant,
-    a_i: Scalar,
-    b_i: Scalar,
-    rng: &mut impl CryptoRngCore,
-) -> Result<Scalar, ProtocolError> {
-    let mut tasks = Vec::with_capacity(participants.len() - 1);
-    for p in participants.others(me) {
-        let chan = comms.private_channel(me, p);
-        let fut: Pin<Box<dyn Future<Output = _> + Send>> = {
-            if p < me {
-                let precomputed_sender_package =
-                    MultiplicationSenderRandomPackage::generate_random_package(rng);
-                Box::pin(async move {
-                    #[allow(clippy::large_futures)]
-                    multiplication_sender(
-                        chan,
-                        sid.as_ref(),
-                        &a_i,
-                        &b_i,
-                        precomputed_sender_package,
-                    )
-                    .await
-                })
-            } else {
-                let precomputed_receiver_package =
-                    MultiplicationReceiverRandomPackage::generate_random_package(rng);
-                Box::pin(async move {
-                    multiplication_receiver(
-                        chan,
-                        sid.as_ref(),
-                        &a_i,
-                        &b_i,
-                        precomputed_receiver_package,
-                    )
-                    .await
-                })
-            }
-        };
-        tasks.push(fut);
-    }
-    let mut out = a_i * b_i;
-    for result in futures::future::try_join_all(tasks).await? {
-        out += result;
-    }
-    Ok(out)
-}
-
 pub(super) async fn multiplication_many<const N: usize>(
     comms: Comms,
     sid: Vec<HashOutput>,
@@ -299,61 +248,11 @@ mod test {
 
     use crate::{
         crypto::hash::hash,
-        ecdsa::ot_based_ecdsa::triples::multiplication::{multiplication, multiplication_many},
+        ecdsa::ot_based_ecdsa::triples::multiplication::multiplication_many,
         participants::ParticipantList,
         protocol::internal::{make_protocol, Comms},
         test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng},
     };
-
-    #[test]
-    fn test_multiplication() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = generate_participants(3);
-
-        let prep: Vec<_> = participants
-            .iter()
-            .map(|p| {
-                let a_i = Scalar::generate_biased(&mut rng);
-                let b_i = Scalar::generate_biased(&mut rng);
-                (*p, a_i, b_i)
-            })
-            .collect();
-        let a = prep.iter().fold(Scalar::ZERO, |acc, (_, a_i, _)| acc + a_i);
-        let b = prep.iter().fold(Scalar::ZERO, |acc, (_, _, b_i)| acc + b_i);
-
-        let mut protocols: GenProtocol<Scalar> = Vec::with_capacity(prep.len());
-
-        let sid = hash(b"sid").unwrap();
-
-        for (p, a_i, b_i) in prep {
-            let mut rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let ctx = Comms::new();
-
-            let prot = make_protocol(ctx.clone(), {
-                let participants_clone = participants.clone();
-                async move {
-                    multiplication(
-                        ctx,
-                        sid,
-                        ParticipantList::new(&participants_clone).unwrap(),
-                        p,
-                        a_i,
-                        b_i,
-                        &mut rng_p,
-                    )
-                    .await
-                }
-            });
-            protocols.push((p, Box::new(prot)));
-        }
-
-        let result = run_protocol(protocols).unwrap();
-        let c = result
-            .into_iter()
-            .fold(Scalar::ZERO, |acc, (_, c_i)| acc + c_i);
-
-        assert_eq!(a * b, c);
-    }
 
     #[test]
     fn test_multiplication_many() {
