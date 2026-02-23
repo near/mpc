@@ -17,14 +17,14 @@ EXT_PATTERN="\.($( IFS='|'; echo "${CHECK_EXTENSIONS[*]}" ))$"
 
 # Exact filenames exempt from kebab-case
 EXEMPT_FILES=(
-    README.md
+    AGENTS.md
     CHANGELOG.md
+    CLAUDE.md
     CONTRIBUTING.md
     LICENSE.md
-    RELEASES.md
-    AGENTS.md
-    CLAUDE.md
     Makefile.md
+    README.md
+    RELEASES.md
     launcher_docker_compose.yaml
     launcher_docker_compose_nontee.yaml
     launcher_image_compose.yaml
