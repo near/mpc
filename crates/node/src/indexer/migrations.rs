@@ -21,18 +21,19 @@ const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration
 ///
 /// The interval checking for new values is defined by [`MIGRATION_INFO_REFRESH_INTERVAL`]
 pub async fn monitor_migrations(
-    indexer_state: Arc<IndexerState>,
+    contract_state_viewer: MpcContractStateViewer,
 
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     my_near_account_id: AccountId,
     my_p2p_public_key: VerifyingKey,
 ) -> watch::Receiver<MigrationInfo> {
-    let init_response = fetch_migrations_once(indexer_state.clone()).await;
+    let init_response = fetch_migrations_once(contract_state_viewer.clone()).await;
     let init_migration_state = MigrationInfo::from_contract_state(
         &my_near_account_id,
         &my_p2p_public_key,
         &init_response.1,
     );
+    // todo: can you get rid of clones?
 
     let (sender, receiver) = watch::channel(init_migration_state);
 
@@ -41,7 +42,7 @@ pub async fn monitor_migrations(
         async move {
             loop {
                 interval.tick().await;
-                let response = fetch_migrations_once(indexer_state.clone()).await;
+                let response = fetch_migrations_once(contract_state_viewer.clone()).await;
                 tracing::debug!(target: "indexer", "fetched mpc migration state at block {}: {:?}", response.0, response.1);
 
                 migration_state_sender.send_if_modified(|watched_state| {
@@ -77,11 +78,11 @@ pub async fn monitor_migrations(
     receiver
 }
 
-async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, ContractMigrationInfo) {
+async fn fetch_migrations_once(contract: MpcContractStateViewer) -> (u64, ContractMigrationInfo) {
     loop {
         tracing::debug!(target: "indexer", "querying migration state");
 
-        match indexer_state.get_mpc_migration_info().await {
+        match contract.get_mpc_migration_info().await {
             Ok(res) => {
                 return res;
             }

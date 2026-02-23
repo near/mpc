@@ -1,11 +1,16 @@
+use near_account_id::AccountId;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
+use crate::contract_state::{ContractStateViewer, SharedContractViewer};
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::near_internals_wrapper::{
     ClientWrapper, RpcHandlerWrapper, ViewClientWrapper, ViewFunctionCall,
 };
 use crate::stats::IndexerStats;
+use crate::transaction_sender::TransactionSender;
+
+use async_trait::async_trait;
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -17,6 +22,28 @@ pub struct ChainGateway {
     rpc_handler: RpcHandlerWrapper,
     /// Stores runtime indexing statistics.
     _stats: Arc<Mutex<IndexerStats>>,
+}
+
+//pub type SharedContractViewer =
+//    Arc<dyn ContractViewMethodCaller<Error = ChainGatewayError> + Send + Sync>;
+//
+//#[async_trait]
+//pub trait ContractViewMethodCaller: Send + Sync {
+//    type Error;
+//    async fn view(&self, method_name: &str, args: Vec<u8>) -> Result<(u64, Vec<u8>), Self::Error>;
+//}
+
+impl ChainGateway {
+    pub fn contract_state_viewer(&self, contract_id: AccountId) -> SharedContractViewer {
+        Arc::new(ContractStateViewer {
+            client: self.client.clone(),
+            view_client: self.view_client.clone(),
+            contract_id,
+        })
+    }
+    pub fn transaction_sender(&self) -> TransactionSender {
+        TransactionSender::new(self.rpc_handler.clone(), self.view_client.clone())
+    }
 }
 
 #[allow(async_fn_in_trait)]
@@ -116,32 +143,6 @@ impl ChainGateway {
                 source: Box::new(err),
             })
     }
-
-    ///// waits for full sync and then queries account_id with method_name and args.
-    //pub async fn function_query(
-    //    &self,
-    //    account_id: &near_account_id::AccountId,
-    //    method_name: &str,
-    //    args: Vec<u8>,
-    //) -> Result<(u64, Vec<u8>), ChainGatewayError> {
-    //    self.wait_for_full_sync().await;
-    //    self.view_client
-    //        .view_function_query(&ViewFunctionCall {
-    //            account_id: account_id.clone(),
-    //            method_name: method_name.to_string(),
-    //            args,
-    //        })
-    //        .await
-    //        .map_err(|err| ChainGatewayError::ViewClient {
-    //            // note: not sure we need to log account_id and method name here. It can be read in                // the boxed error
-    //            // todo: no crate::errors
-    //            op: ChainGatewayOp::ViewCall {
-    //                account_id: account_id.to_string(),
-    //                method_name: method_name.to_string(),
-    //            },
-    //            source: Box::new(err),
-    //        })
-    //}
 }
 
 pub async fn start_with_streamer(

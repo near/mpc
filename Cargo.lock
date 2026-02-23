@@ -1669,10 +1669,14 @@ name = "chain-gateway"
 version = "3.4.1"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "ed25519-dalek",
  "humantime",
+ "k256",
  "near-account-id 2.5.0",
  "near-async",
  "near-client",
+ "near-crypto 2.10.6",
  "near-indexer",
  "near-indexer-primitives",
  "near-o11y",

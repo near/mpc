@@ -1,9 +1,12 @@
-use super::tx_signer::{TransactionSigner, TransactionSigners};
+use super::tx_signer::TransactionSigners;
+//use super::tx_signer::{TransactionSigner, TransactionSigners};
 use super::IndexerState;
 use super::{ChainSendTransactionRequest, MpcContractStateViewer};
 use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;
+use chain_gateway::transaction_sender::TransactionSigner;
+//use chain_gateway::chain_gateway::SharedContractViewer;
 use contract_interface::types::{Attestation, VerifiedAttestation};
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
@@ -47,7 +50,9 @@ impl TransactionProcessorHandle {
         owner_account_id: AccountId,
         owner_secret_key: SigningKey,
         config: RespondConfig,
-        indexer_state: Arc<IndexerState>,
+        mpc_contract_id: AccountId,
+        mpc_contract_state_viewer: MpcContractStateViewer,
+        tx_sender: Arc<chain_gateway::transaction_sender::TransactionSender>,
     ) -> anyhow::Result<impl TransactionSender> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
             .context("Failed to initialize transaction signers")?;
@@ -61,7 +66,9 @@ impl TransactionProcessorHandle {
                 let tx_response_channel = transaction_submission.response_sender;
 
                 let tx_signer = signers.signer_for(&tx_request);
-                let indexer_state = indexer_state.clone();
+                let mpc_contract_state_viewer_clone = mpc_contract_state_viewer.clone();
+                let tx_sender_clone = tx_sender.clone();
+                let mpc_contract_id_clone = mpc_contract_id.clone();
                 tokio::spawn(async move {
                     let Ok(txn_json) = serde_json::to_string(&tx_request) else {
                         tracing::error!(target: "mpc", "Failed to serialize response args");
@@ -70,9 +77,11 @@ impl TransactionProcessorHandle {
                     tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
                     let transaction_status = ensure_send_transaction(
                         tx_signer.clone(),
-                        indexer_state,
+                        tx_sender_clone,
+                        mpc_contract_id_clone,
                         tx_request,
                         txn_json,
+                        mpc_contract_state_viewer_clone,
                     )
                     .await;
 
@@ -133,59 +142,56 @@ pub enum TransactionStatus {
     Unknown,
 }
 
-// todo: move this to the chain_gateway crate
-/// Creates, signs, and submits a function call with the given method and serialized arguments.
-async fn submit_tx(
-    tx_signer: Arc<TransactionSigner>,
-    indexer_state: Arc<IndexerState>,
-    method: String,
-    params_ser: String,
-    gas: Gas,
-) -> anyhow::Result<()> {
-    let block = chain_gateway::chain_gateway::LatestFinalBlock::latest_final_block(
-        &indexer_state.chain_gateway,
-    )
-    .await?;
-
-    let transaction = tx_signer.create_and_sign_function_call_tx(
-        indexer_state.mpc_contract_id.clone(),
-        method,
-        params_ser.into(),
-        gas,
-        block.header.hash,
-        block.header.height,
-    );
-
-    let tx_hash = transaction.get_hash();
-    tracing::info!(
-        target = "mpc",
-        "sending tx {:?} with ak={:?} nonce={}",
-        tx_hash,
-        tx_signer.public_key(),
-        transaction.transaction.nonce(),
-    );
-    Ok(indexer_state
-        .chain_gateway
-        .submit_tx(transaction)
-        .await
-        .context("failed to submit transaction")?)
-}
+//// todo: move this to the chain_gateway crate
+///// Creates, signs, and submits a function call with the given method and serialized arguments.
+//async fn submit_tx(
+//    tx_signer: Arc<TransactionSigner>,
+//    indexer_state: Arc<IndexerState>,
+//    method: String,
+//    params_ser: String,
+//    gas: Gas,
+//) -> anyhow::Result<()> {
+//    let block = chain_gateway::chain_gateway::LatestFinalBlock::latest_final_block(
+//        &indexer_state.chain_gateway,
+//    )
+//    .await?;
+//
+//    let transaction = tx_signer.create_and_sign_function_call_tx(
+//        indexer_state.mpc_contract_id.clone(),
+//        method,
+//        params_ser.into(),
+//        gas,
+//        block.header.hash,
+//        block.header.height,
+//    );
+//
+//    let tx_hash = transaction.get_hash();
+//    tracing::info!(
+//        target = "mpc",
+//        "sending tx {:?} with ak={:?} nonce={}",
+//        tx_hash,
+//        tx_signer.public_key(),
+//        transaction.transaction.nonce(),
+//    );
+//    Ok(indexer_state
+//        .chain_gateway
+//        .submit_tx(transaction)
+//        .await
+//        .context("failed to submit transaction")?)
+//}
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
-async fn observe_tx_result<T>(
-    contract_viewer: Arc<T>,
+async fn observe_tx_result(
+    mpc_contract: MpcContractStateViewer,
     request: &ChainSendTransactionRequest,
-) -> anyhow::Result<TransactionStatus>
-where
-    T: MpcContractStateViewer + Send + Sync + 'static,
-{
+) -> anyhow::Result<TransactionStatus> {
     use ChainSendTransactionRequest::*;
 
     match request {
         Respond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state
-            let pending_request_response = contract_viewer
+            let pending_request_response = mpc_contract
                 .get_pending_request(&respond_args.request)
                 .await?;
 
@@ -199,7 +205,7 @@ where
         CKDRespond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending ckd request still exists in the contract state
-            let pending_request_response = contract_viewer
+            let pending_request_response = mpc_contract
                 .get_pending_ckd_request(&respond_args.request)
                 .await?;
 
@@ -213,7 +219,7 @@ where
         VerifyForeignTransactionRespond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending verify foreign tx request still exists in the contract state
-            let pending_request_response = contract_viewer
+            let pending_request_response = mpc_contract
                 .get_pending_verify_foreign_tx_request(&respond_args.request)
                 .await?;
 
@@ -227,7 +233,7 @@ where
         SubmitParticipantInfo(submit_participant_info_args) => {
             let tls_public_key = &submit_participant_info_args.tls_public_key;
 
-            let attestation_stored_on_contract = contract_viewer
+            let attestation_stored_on_contract = mpc_contract
                 .get_participant_attestation(tls_public_key)
                 .await?;
 
@@ -310,18 +316,21 @@ where
 /// Will make up to `num_attempts` attempts.
 async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
-    indexer_state: Arc<IndexerState>,
+    tx_sender: Arc<chain_gateway::transaction_sender::TransactionSender>,
+    contract_id: near_account_id::AccountId,
     request: ChainSendTransactionRequest,
     params_ser: String,
+    mpc_contract: MpcContractStateViewer,
 ) -> TransactionStatus {
-    if let Err(err) = submit_tx(
-        tx_signer.clone(),
-        indexer_state.clone(),
-        request.method().to_string(),
-        params_ser.clone(),
-        request.gas_required(),
-    )
-    .await
+    if let Err(err) = tx_sender
+        .submit_function_call_tx(
+            tx_signer.clone(),
+            contract_id,
+            request.method().to_string(),
+            params_ser.into(),
+            request.gas_required(),
+        )
+        .await
     {
         metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
             .with_label_values(&[request.method(), "local_error"])
@@ -334,7 +343,7 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
+    let transaction_status = observe_tx_result(mpc_contract, &request).await;
 
     match &transaction_status {
         Ok(TransactionStatus::Executed) => {

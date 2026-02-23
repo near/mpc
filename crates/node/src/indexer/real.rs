@@ -1,3 +1,4 @@
+use super::contract_state_viewer::MpcContractStateViewer;
 use super::handler::listen_blocks;
 use super::migrations::{monitor_migrations, ContractMigrationInfo};
 use super::participants::monitor_contract_state;
@@ -101,6 +102,12 @@ pub fn spawn_real_indexer(
 
             //let stream = indexer.streamer();
 
+            let shared_contract_state_viewer =
+                chain_gateway.contract_state_viewer(mpc_indexer_config.mpc_contract_id.clone());
+            let mpc_contract_state_viewer =
+                MpcContractStateViewer::new(shared_contract_state_viewer);
+            let transaction_sender = chain_gateway.transaction_sender();
+
             let indexer_state = Arc::new(IndexerState::new(
                 chain_gateway,
                 //near_node.view_client,
@@ -113,7 +120,9 @@ pub fn spawn_real_indexer(
                 my_near_account_id_clone,
                 account_secret_key.clone(),
                 respond_config_clone,
-                Arc::clone(&indexer_state),
+                indexer_state.mpc_contract_id.clone(),
+                mpc_contract_state_viewer.clone(),
+                transaction_sender.into(),
             );
 
             let Ok(txn_sender) = txn_sender_result else {
@@ -127,7 +136,7 @@ pub fn spawn_real_indexer(
             };
 
             let foreign_chain_policy_reader =
-                RealForeignChainPolicyReader::new(indexer_state.clone());
+                RealForeignChainPolicyReader::new(mpc_contract_state_viewer.clone());
             if foreign_chain_policy_reader_sender
                 .send(foreign_chain_policy_reader)
                 .is_err()
@@ -146,22 +155,22 @@ pub fn spawn_real_indexer(
 
             tokio::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,
-                indexer_state.clone(),
+                mpc_contract_state_viewer.clone(),
             ));
 
             tokio::spawn(monitor_allowed_launcher_compose_hashes(
                 allowed_launcher_compose_sender,
-                indexer_state.clone(),
+                mpc_contract_state_viewer.clone(),
             ));
 
             tokio::spawn(monitor_tee_accounts(
                 tee_accounts_sender,
-                indexer_state.clone(),
+                mpc_contract_state_viewer.clone(),
             ));
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
-                indexer_state.clone(),
+                mpc_contract_state_viewer.clone(),
                 mpc_indexer_config.port_override,
                 protocol_state_sender,
             )
@@ -177,7 +186,7 @@ pub fn spawn_real_indexer(
             };
 
             let my_migration_info_receiver = monitor_migrations(
-                indexer_state.clone(),
+                mpc_contract_state_viewer.clone(),
                 migration_state_sender,
                 my_near_account_id,
                 tls_public_key,

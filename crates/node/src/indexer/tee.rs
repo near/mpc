@@ -78,14 +78,11 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
 /// a [`watch::Receiver`] that will be continuously updated with the latest
 /// allowed [`AllowedDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
-pub async fn monitor_allowed_docker_images<T>(
+pub async fn monitor_allowed_docker_images(
     sender: watch::Sender<Vec<MpcDockerImageHash>>,
-    indexer_state: Arc<T>,
-) where
-    T: MpcContractStateViewer + Send + Sync,
-{
-    let indexer_state_clone = indexer_state.clone(); //view_client.clone();
-    let fetcher = { || indexer_state_clone.get_mpc_allowed_image_hashes() };
+    mpc_contract: MpcContractStateViewer,
+) {
+    let fetcher = { || mpc_contract.get_mpc_allowed_image_hashes() };
 
     monitor_allowed_hashes(sender, &fetcher).await
 }
@@ -94,27 +91,21 @@ pub async fn monitor_allowed_docker_images<T>(
 /// a [`watch::Receiver`] that will be continuously updated with the
 /// allowed [`LauncherDockerComposeHash`]es when a change is detected
 /// on the MPC smart contract.
-pub async fn monitor_allowed_launcher_compose_hashes<T>(
+pub async fn monitor_allowed_launcher_compose_hashes(
     sender: watch::Sender<Vec<LauncherDockerComposeHash>>,
-    indexer_state: Arc<T>,
-) where
-    T: MpcContractStateViewer + Send + Sync,
-{
-    let indexer_state_clone = indexer_state.clone();
-    let fetcher = { || indexer_state_clone.get_mpc_allowed_launcher_compose_hashes() };
+    mpc_contract: MpcContractStateViewer,
+) {
+    let fetcher = { || mpc_contract.get_mpc_allowed_launcher_compose_hashes() };
 
     monitor_allowed_hashes(sender, &fetcher).await
 }
 
 /// Fetches TEE accounts from the contract with retry logic.
-async fn fetch_tee_accounts_with_retry<T>(indexer_state: &Arc<T>) -> Vec<NodeId>
-where
-    T: MpcContractStateViewer,
-{
+async fn fetch_tee_accounts_with_retry(contract: MpcContractStateViewer) -> Vec<NodeId> {
     let mut backoff = new_backoff();
 
     loop {
-        match indexer_state.get_mpc_tee_accounts().await {
+        match contract.get_mpc_tee_accounts().await {
             Ok((_block_height, tee_accounts)) => return tee_accounts,
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading TEE accounts from chain: {:?}", e);
@@ -126,12 +117,12 @@ where
 }
 
 /// Monitor TEE accounts stored in the contract and update the watch channel when changes are detected.
-pub async fn monitor_tee_accounts<T>(sender: watch::Sender<Vec<NodeId>>, indexer_state: Arc<T>)
-where
-    T: MpcContractStateViewer + Send + Sync,
-{
+pub async fn monitor_tee_accounts(
+    sender: watch::Sender<Vec<NodeId>>,
+    contract: MpcContractStateViewer,
+) {
     loop {
-        let tee_accounts = fetch_tee_accounts_with_retry(&indexer_state).await;
+        let tee_accounts = fetch_tee_accounts_with_retry(contract.clone()).await;
         sender.send_if_modified(|previous_tee_accounts| {
             if *previous_tee_accounts != tee_accounts {
                 *previous_tee_accounts = tee_accounts;

@@ -48,4 +48,11 @@ pub enum ChainGatewayError {
 
     #[error("starting neard node failed")]
     StartupFailed { msg: String },
+
+    #[error("send transaction failed")]
+    SendTransactionError {
+        context: String,
+        #[source]
+        source: DynError,
+    },
 }

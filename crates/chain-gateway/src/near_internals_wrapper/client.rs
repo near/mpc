@@ -31,4 +31,22 @@ impl ClientWrapper {
         })?;
         Ok(status.sync_info.syncing)
     }
+
+    pub(crate) async fn wait_for_full_sync(&self) {
+        const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+        loop {
+            tokio::time::sleep(INTERVAL).await;
+            match self.is_syncing().await {
+                Ok(is_syncing) => {
+                    if !is_syncing {
+                        return;
+                    }
+                    tracing::info!("wating for full sync");
+                }
+                Err(err) => {
+                    tracing::warn!(err = %err, "error while waiting for sync");
+                }
+            }
+        }
+    }
 }

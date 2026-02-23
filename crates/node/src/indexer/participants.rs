@@ -256,14 +256,11 @@ impl ContractState {
 
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
-pub async fn monitor_contract_state<T>(
-    indexer_state: Arc<T>,
+pub async fn monitor_contract_state(
+    mpc_contract: MpcContractStateViewer,
     port_override: Option<u16>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
-) -> watch::Receiver<ContractState>
-where
-    T: MpcContractStateViewer + Send + Sync + 'static,
-{
+) -> watch::Receiver<ContractState> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut refresh_interval_tick = tokio::time::interval(CONTRACT_STATE_REFRESH_INTERVAL);
     // todo: use subscription logic
@@ -276,7 +273,7 @@ where
             //// We currently assume the participant set is static and do not detect or support any updates.
             tracing::debug!(target: "indexer", "querying contract state");
             let (height, protocol_state): (u64, ProtocolContractState) =
-                match indexer_state.get_mpc_contract_state().await {
+                match mpc_contract.get_mpc_contract_state().await {
                     Ok(contract_state) => contract_state,
                     Err(e) => {
                         tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
