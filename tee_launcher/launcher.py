@@ -105,6 +105,25 @@ SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
 JSON_KEY_APPROVED_HASHES = "approved_hashes"
 
 
+# --------------------------------------------------------------------------------------
+# Security policy for env passthrough
+# --------------------------------------------------------------------------------------
+
+# Allow all MPC_* keys, but keep validation strict.
+MPC_ENV_KEY_RE = re.compile(r"^MPC_[A-Z0-9_]{1,64}$")
+
+
+# Hard caps to prevent DoS via huge env payloads.
+MAX_PASSTHROUGH_ENV_VARS = 64
+MAX_ENV_VALUE_LEN = 1024
+MAX_TOTAL_ENV_BYTES = 32 * 1024  # 32KB total across passed envs
+
+# Never pass raw private keys via launcher (any platform)
+DENIED_CONTAINER_ENV_KEYS = {
+    "MPC_P2P_PRIVATE_KEY",
+    "MPC_ACCOUNT_SK",
+}
+
 # Example of .user-config file format:
 #
 # MPC_ACCOUNT_ID=mpc-user-123
@@ -122,6 +141,9 @@ JSON_KEY_APPROVED_HASHES = "approved_hashes"
 
 # Define an allow-list of permitted environment variables that will be passed to MPC container.
 # Note - extra hosts and port forwarding are explicitly defined in the docker run command generation.
+# NOTE: Kept for backwards compatibility and for documentation purposes; the effective policy is:
+#   - allow MPC_* keys that match MPC_ENV_KEY_RE
+#   - plus existing non-MPC keys below (RUST_LOG / RUST_BACKTRACE / NEAR_BOOT_NODES)
 ALLOWED_MPC_ENV_VARS = {
     "MPC_ACCOUNT_ID",  # ID of the MPC account on the network
     "MPC_LOCAL_ADDRESS",  # Local IP address or hostname used by the MPC node
@@ -134,11 +156,6 @@ ALLOWED_MPC_ENV_VARS = {
     "RUST_LOG",  # Logging level for Rust code
     "MPC_RESPONDER_ID",  # Unique responder ID for MPC communication
     "MPC_BACKUP_ENCRYPTION_KEY_HEX",  # encryption key for backups
-    # Workaround to allow MPC nodes to run against testnet
-    # since nearcore 2.9 was never deployed there.
-    # Set this to "now" to allow MPC nodes to sync with testnet 2.8.
-    # See #[1379](https://github.com/near/mpc/issues/1379) for more context.
-    "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE",
 }
 
 # Regex: hostnames must be alphanum + dash/dot, IPs must be valid IPv4
@@ -149,14 +166,31 @@ PORT_MAPPING_RE = re.compile(r"^(\d{1,5}):(\d{1,5})$")
 INVALID_HOST_ENTRY_PATTERN = re.compile(r"^[;&|`$\\<>-]|^--")
 
 
+def _has_control_chars(s: str) -> bool:
+    # Disallow NUL + CR/LF at minimum; also block other ASCII control chars (< 0x20) except tab.
+    for ch in s:
+        oc = ord(ch)
+        if ch in ("\n", "\r", "\x00"):
+            return True
+        if oc < 0x20 and ch != "\t":
+            return True
+    return False
+
+
 def is_safe_env_value(value: str) -> bool:
     """
-    Ensures that an environment variable value does not contain dangerous substrings
-    like LD_PRELOAD which may be used for injection.
+    Validates that an env value contains no unsafe control characters (CR/LF/NUL),
+    does not include LD_PRELOAD, and is within size limits to prevent injection or DoS.
     """
     if not isinstance(value, str):
         return False
-    return "LD_PRELOAD" not in value
+    if len(value) > MAX_ENV_VALUE_LEN:
+        return False
+    if _has_control_chars(value):
+        return False
+    if "LD_PRELOAD" in value:
+        return False
+    return True
 
 
 def is_valid_ip(ip: str) -> bool:
@@ -533,7 +567,6 @@ def curl_unix_socket_post(
 ) -> CompletedProcess:
     """
     Send a POST request via curl using the DSTACK UNIX socket.
-
     Python's requests package cannot natively talk HTTP over a unix socket (which is the API
     exposed by dstack's guest agent). To avoid installing another Python depdendency, namely
     requests-unixsocket, we just use curl.
@@ -674,10 +707,8 @@ def get_manifest_digest(
 ) -> str:
     """
     Given an `image_digest` returns a manifest digest.
-
-       `docker pull` requires a manifest digest. This function translates an image digest into a manifest digest by talking to the Docker registry.
-
-       API doc for image registry https://distribution.github.io/distribution/spec/api/
+    `docker pull` requires a manifest digest. This function translates an image digest into a manifest digest by talking to the Docker registry.
+    API doc for image registry https://distribution.github.io/distribution/spec/api/
     """
     if not docker_image.tags():
         raise Exception(f"No tags found for image {docker_image.spec.image_name}")
@@ -731,7 +762,6 @@ def get_manifest_digest(
                 f"[Warning] {e}: Exceeded number of maximum RPC requests for any given attempt. Will continue in the hopes of finding the matching image hash among remaining tags"
             )
             # Q: Do we expect all requests to succeed?
-
     raise Exception("Image hash not found among tags.")
 
 
@@ -746,6 +776,18 @@ def get_bare_digest(full_digest: str) -> str:
         raise ValueError(f"Invalid digest (missing sha256: prefix): {full_digest}")
 
     return full_digest.split(":", 1)[1]
+
+
+def is_allowed_container_env_key(key: str) -> bool:
+    if key in DENIED_CONTAINER_ENV_KEYS:
+        return False
+    # Allow MPC_* keys with strict regex
+    if MPC_ENV_KEY_RE.match(key):
+        return True
+    # Keep allowlist
+    if key in ALLOWED_MPC_ENV_VARS:
+        return True
+    return False
 
 
 def build_docker_cmd(
@@ -763,16 +805,19 @@ def build_docker_cmd(
         docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
         docker_cmd += ["-v", f"{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}"]
 
-    # MPC env vars and extra config
-    for key, value in user_env.items():
-        if key in ALLOWED_MPC_ENV_VARS:
-            if is_safe_env_value(value):
-                docker_cmd += ["--env", f"{key}={value}"]
-            else:
-                logging.warning(
-                    f"Ignoring environment variable with unsafe value: {key}"
-                )
-        elif key == "EXTRA_HOSTS":
+    # Track env passthrough size/caps
+    passed_env_count = 0
+    total_env_bytes = 0
+
+    # Deterministic iteration for stable logs/behavior
+    for key in sorted(user_env.keys()):
+        value = user_env[key]
+
+        if key in ALLOWED_LAUNCHER_ENV_VARS:
+            # launcher-only env vars: never pass to container
+            continue
+
+        if key == "EXTRA_HOSTS":
             for host_entry in value.split(","):
                 clean_host = host_entry.strip()
                 if is_safe_host_entry(clean_host) and is_valid_host_entry(clean_host):
@@ -781,7 +826,9 @@ def build_docker_cmd(
                     logging.warning(
                         f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean_host}"
                     )
-        elif key == "PORTS":
+            continue
+
+        if key == "PORTS":
             for port_pair in value.split(","):
                 clean_host = port_pair.strip()
                 if is_safe_port_mapping(clean_host) and is_valid_port_mapping(
@@ -792,11 +839,31 @@ def build_docker_cmd(
                     logging.warning(
                         f"Ignoring invalid or unsafe PORTS entry: {clean_host}"
                     )
-        elif key in ALLOWED_LAUNCHER_ENV_VARS:
-            # ignored here - launcher-only env vars
             continue
-        else:
+
+        if not is_allowed_container_env_key(key):
             logging.warning(f"Ignoring unknown or unapproved env var: {key}")
+            continue
+
+        if not is_safe_env_value(value):
+            logging.warning(f"Ignoring env var with unsafe value: {key}")
+            continue
+
+        # Enforce caps
+        passed_env_count += 1
+        if passed_env_count > MAX_PASSTHROUGH_ENV_VARS:
+            raise RuntimeError(
+                f"Too many env vars to pass through (>{MAX_PASSTHROUGH_ENV_VARS})."
+            )
+
+        # Approximate byte accounting (key=value plus overhead)
+        total_env_bytes += len(key) + 1 + len(value)
+        if total_env_bytes > MAX_TOTAL_ENV_BYTES:
+            raise RuntimeError(
+                f"Total env payload too large (>{MAX_TOTAL_ENV_BYTES} bytes)."
+            )
+
+        docker_cmd += ["--env", f"{key}={value}"]
 
     # Container run configuration
     docker_cmd += [
