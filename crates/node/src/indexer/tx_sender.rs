@@ -1,6 +1,5 @@
 use super::tx_signer::TransactionSigners;
 //use super::tx_signer::{TransactionSigner, TransactionSigners};
-use super::IndexerState;
 use super::{ChainSendTransactionRequest, MpcContractStateViewer};
 use crate::config::RespondConfig;
 use crate::metrics;
@@ -11,7 +10,6 @@ use contract_interface::types::{Attestation, VerifiedAttestation};
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Gas;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -142,7 +140,7 @@ pub enum TransactionStatus {
     Unknown,
 }
 
-//// todo: move this to the chain_gateway crate
+/// todo: move this to the chain_gateway crate
 ///// Creates, signs, and submits a function call with the given method and serialized arguments.
 //async fn submit_tx(
 //    tx_signer: Arc<TransactionSigner>,

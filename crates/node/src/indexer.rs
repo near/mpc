@@ -1,35 +1,14 @@
-use crate::{
-    indexer::{
-        migrations::ContractMigrationInfo,
-        types::{
-            ChainCKDRequest, ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
-            ChainGetPendingVerifyForeignTxRequestArgs, ChainSignatureRequest,
-            ChainVerifyForeignTransactionRequest, GetAttestationArgs,
-        },
-    },
-    migration_service::types::MigrationInfo,
-};
+use crate::migration_service::types::MigrationInfo;
 
 use anyhow::Context;
-use async_trait::async_trait;
 use chain_gateway::chain_gateway::{ChainGateway, FinalizedStateView};
-use contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
-    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
-    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
-    STATE,
-};
 use contract_interface::types as dtos;
 use contract_state_viewer::MpcContractStateViewer;
 use handler::ChainBlockUpdate;
-use mpc_contract::{
-    primitives::signature::YieldIndex,
-    state::ProtocolContractState,
-    tee::{
+use mpc_contract::tee::{
         proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
         tee_state::NodeId,
-    },
-};
+    };
 use near_account_id::AccountId;
 use participants::ContractState;
 use serde::Deserialize;
@@ -105,8 +84,8 @@ impl IndexerState {
 //    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes>;
 //}
 
-//// TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
-//// TODO(#1956): There is a lot of duplicate code here that could be simplified
+/// TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
+/// TODO(#1956): There is a lot of duplicate code here that could be simplified
 //#[async_trait]
 //impl MpcContractStateViewer for IndexerState {
 //    async fn get_pending_request(

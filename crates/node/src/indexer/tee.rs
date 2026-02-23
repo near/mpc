@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_contract::tee::proposal::{LauncherDockerComposeHash, MpcDockerImageHash};

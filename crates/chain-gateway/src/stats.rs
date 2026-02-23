@@ -5,6 +5,12 @@ pub struct IndexerStats {
     pub last_processed_block_height: u64,
 }
 
+impl Default for IndexerStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IndexerStats {
     pub fn new() -> Self {
         Self {

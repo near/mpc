@@ -10,7 +10,6 @@ use crate::near_internals_wrapper::{
 use crate::stats::IndexerStats;
 use crate::transaction_sender::TransactionSender;
 
-use async_trait::async_trait;
 
 #[derive(Clone)]
 pub struct ChainGateway {

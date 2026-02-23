@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
@@ -6,7 +6,7 @@ use near_account_id::AccountId;
 use tokio::sync::watch;
 
 use crate::{
-    indexer::{IndexerState, MpcContractStateViewer},
+    indexer::MpcContractStateViewer,
     migration_service::types::MigrationInfo,
 };
 

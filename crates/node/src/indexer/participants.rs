@@ -12,7 +12,6 @@ use mpc_contract::primitives::{
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
 use near_account_id::AccountId;
 use std::collections::BTreeSet;
-use std::sync::Arc;
 use tokio::sync::watch;
 use url::Url;
 

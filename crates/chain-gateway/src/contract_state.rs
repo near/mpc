@@ -1,12 +1,10 @@
 use near_account_id::AccountId;
 use std::sync::Arc;
-use tokio::sync::{Mutex, mpsc};
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::near_internals_wrapper::{
-    ClientWrapper, RpcHandlerWrapper, ViewClientWrapper, ViewFunctionCall,
+    ClientWrapper, ViewClientWrapper, ViewFunctionCall,
 };
-use crate::stats::IndexerStats;
 
 use async_trait::async_trait;
 

@@ -1,11 +1,9 @@
-use std::sync::Arc;
 
 use crate::indexer::{
     migrations::ContractMigrationInfo,
     types::{ChainCKDRequest, ChainSignatureRequest, ChainVerifyForeignTransactionRequest},
 };
 use anyhow::Context;
-use async_trait::async_trait;
 use chain_gateway::contract_state::SharedContractViewer;
 // todo: do not directly import and move ShardeContractViewer to a different module
 //use chain_gateway::chain_gateway::SharedContractViewer;
