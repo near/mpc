@@ -35,16 +35,16 @@ EXEMPT_PATTERN="^($( IFS='|'; echo "${EXEMPT_FILES[*]}" ))$"
 
 OFFENDERS=$(
     # List every file under the directories we enforce conventions on
-    find "${SEARCH_DIRS[@]}" -type f -exec basename {} \; \
+    find "${SEARCH_DIRS[@]}" -type f -exec basename {} \; |
     # Keep only the extensions we care about (.sh, .yml, .yaml, .md)
-    | grep -E "$EXT_PATTERN" \
-    # Exclude well-known uppercase names (README, CHANGELOG, …)
-    | grep -vE "$EXEMPT_PATTERN" \
+    grep -E "$EXT_PATTERN" |
+    # Exclude allowed non-kebab-case filenames (README.md, CHANGELOG.md, …)
+    grep -vE "$EXEMPT_PATTERN" |
     # Flag anything containing underscores or uppercase letters
-    | grep -E '[_A-Z]' \
+    grep -E '[_A-Z]' |
     # Deduplicate (same basename may appear in multiple directories)
-    | sort -u \
-    || true
+    sort -u ||
+    true
 )
 
 if [ -n "$OFFENDERS" ]; then
