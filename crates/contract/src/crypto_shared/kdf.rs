@@ -1,13 +1,13 @@
 use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak};
 use anyhow::Context;
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
+#[cfg(target_arch = "wasm32")]
+use k256::EncodedPoint;
 use k256::{
     ecdsa::{RecoveryId, Signature},
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic, PrimeField},
     Secp256k1,
 };
-#[cfg(target_arch = "wasm32")]
-use k256::EncodedPoint;
 use near_account_id::AccountId;
 #[cfg(target_arch = "wasm32")]
 use near_sdk::env;
