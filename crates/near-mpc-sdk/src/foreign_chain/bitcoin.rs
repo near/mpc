@@ -4,12 +4,15 @@ use crate::{
 };
 
 use contract_interface::types::{ExtractedValue, Hash256};
+
 // API types
 pub use contract_interface::types::{
     BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations,
     ForeignChainRpcRequest,
 };
 
+/// Type alias with concrete types for when [`BitcoinRequest`] is ready to be built
+/// as part of the [`ForeignChainRequestBuilder`] builder.
 type BuiltBitcoinRequest = BitcoinRequest<BitcoinTxId, BlockConfirmations>;
 
 #[derive(Debug, Clone, derive_more::From, derive_more::Deref)]
@@ -23,6 +26,9 @@ pub struct BitcoinRequest<TxId, Confirmations> {
     // Extractors
     expected_block_hash: Option<BitcoinBlockHash>,
 }
+
+// This means the request can be built
+impl RequestFinishedBuilding for BuiltBitcoinRequest {}
 
 impl From<BuiltBitcoinRequest> for (ForeignChainRpcRequest, Vec<ExtractedValue>) {
     fn from(built_request: BuiltBitcoinRequest) -> Self {
@@ -46,9 +52,6 @@ impl From<BuiltBitcoinRequest> for (ForeignChainRpcRequest, Vec<ExtractedValue>)
         )
     }
 }
-
-// This means the request can be built
-impl RequestFinishedBuilding for BuiltBitcoinRequest {}
 
 impl ForeignChainRequestBuilder<NotSet, NotSet, NotSet> {
     pub fn with_tx_id(
