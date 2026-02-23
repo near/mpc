@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use contract_interface::method_names;
+use contract_interface::{
+    method_names,
+    types::{EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES},
+};
 use mpc_contract::primitives::{
     ckd::CKDRequestArgs,
     domain::{DomainConfig, SignatureScheme},
@@ -168,7 +171,9 @@ fn make_payload(scheme: SignatureScheme) -> Payload {
             Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
         }
         SignatureScheme::Ed25519 => {
-            let len = rand::random_range(32..=1232);
+            let len = rand::random_range(
+                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+            );
             let mut payload = vec![0; len];
             rand::rng().fill_bytes(&mut payload);
             Payload::Eddsa(Bytes::new(payload).unwrap())

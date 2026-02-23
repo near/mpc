@@ -3,9 +3,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::DomainId;
 
-const ECDSA_PAYLOAD_SIZE_BYTES: usize = 32;
-const EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES: usize = 32;
-const EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES: usize = 1232;
+pub const ECDSA_PAYLOAD_SIZE_BYTES: usize = 32;
+
+pub const EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES: usize = 32;
+// Transaction signatures for Solana is over the whole transaction payload,
+// not the transaction hash. The max size for a solana transaction is 1232 bytes,
+// to fit in a single UDP packet, hence the 1232 byte upper bounds.
+pub const EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES: usize = 1232;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SignRequestArgs {
