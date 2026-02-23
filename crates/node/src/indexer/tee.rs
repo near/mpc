@@ -6,12 +6,21 @@ use mpc_contract::tee::proposal::{LauncherDockerComposeHash, MpcDockerImageHash}
 use mpc_contract::tee::tee_state::NodeId;
 use tokio::sync::watch;
 
-use crate::indexer::IndexerState;
+use super::MpcContractStateViewer;
 
 const ALLOWED_HASHES_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 const TEE_ACCOUNTS_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+fn new_backoff() -> backon::ExponentialBackoff {
+    ExponentialBuilder::default()
+        .with_min_delay(MIN_BACKOFF_DURATION)
+        .with_max_delay(MAX_BACKOFF_DURATION)
+        .without_max_times()
+        .with_jitter()
+        .build()
+}
 
 async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     sender: watch::Sender<T>,
@@ -23,12 +32,7 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
 {
     let fetch_allowed_hashes = {
         async move || {
-            let mut backoff = ExponentialBuilder::default()
-                .with_min_delay(MIN_BACKOFF_DURATION)
-                .with_max_delay(MAX_BACKOFF_DURATION)
-                .without_max_times()
-                .with_jitter()
-                .build();
+            let mut backoff = new_backoff();
 
             loop {
                 match get_mpc_allowed_hashes().await {
@@ -36,6 +40,8 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
                         break allowed_hashes;
                     }
                     Err(e) => {
+                        // todo: we can remove this exponential backoff now --> the contract
+                        // implements these methods
                         let error_msg = format!("{:?}", e);
                         if error_msg.contains(
                             "wasm execution failed with error: MethodResolveError(MethodNotFound)",
@@ -72,10 +78,12 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
 /// a [`watch::Receiver`] that will be continuously updated with the latest
 /// allowed [`AllowedDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
-pub async fn monitor_allowed_docker_images(
+pub async fn monitor_allowed_docker_images<T>(
     sender: watch::Sender<Vec<MpcDockerImageHash>>,
-    indexer_state: Arc<IndexerState>,
-) {
+    indexer_state: Arc<T>,
+) where
+    T: MpcContractStateViewer + Send + Sync,
+{
     let indexer_state_clone = indexer_state.clone(); //view_client.clone();
     let fetcher = { || indexer_state_clone.get_mpc_allowed_image_hashes() };
 
@@ -86,10 +94,12 @@ pub async fn monitor_allowed_docker_images(
 /// a [`watch::Receiver`] that will be continuously updated with the
 /// allowed [`LauncherDockerComposeHash`]es when a change is detected
 /// on the MPC smart contract.
-pub async fn monitor_allowed_launcher_compose_hashes(
+pub async fn monitor_allowed_launcher_compose_hashes<T>(
     sender: watch::Sender<Vec<LauncherDockerComposeHash>>,
-    indexer_state: Arc<IndexerState>,
-) {
+    indexer_state: Arc<T>,
+) where
+    T: MpcContractStateViewer + Send + Sync,
+{
     let indexer_state_clone = indexer_state.clone();
     let fetcher = { || indexer_state_clone.get_mpc_allowed_launcher_compose_hashes() };
 
@@ -97,19 +107,14 @@ pub async fn monitor_allowed_launcher_compose_hashes(
 }
 
 /// Fetches TEE accounts from the contract with retry logic.
-async fn fetch_tee_accounts_with_retry(indexer_state: &IndexerState) -> Vec<NodeId> {
-    let mut backoff = ExponentialBuilder::default()
-        .with_min_delay(MIN_BACKOFF_DURATION)
-        .with_max_delay(MAX_BACKOFF_DURATION)
-        .without_max_times()
-        .with_jitter()
-        .build();
+async fn fetch_tee_accounts_with_retry<T>(indexer_state: &Arc<T>) -> Vec<NodeId>
+where
+    T: MpcContractStateViewer,
+{
+    let mut backoff = new_backoff();
 
     loop {
-        match indexer_state
-            .get_mpc_state(contract_interface::method_names::GET_TEE_ACCOUNTS)
-            .await
-        {
+        match indexer_state.get_mpc_tee_accounts().await {
             Ok((_block_height, tee_accounts)) => return tee_accounts,
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading TEE accounts from chain: {:?}", e);
@@ -121,10 +126,10 @@ async fn fetch_tee_accounts_with_retry(indexer_state: &IndexerState) -> Vec<Node
 }
 
 /// Monitor TEE accounts stored in the contract and update the watch channel when changes are detected.
-pub async fn monitor_tee_accounts(
-    sender: watch::Sender<Vec<NodeId>>,
-    indexer_state: Arc<IndexerState>,
-) {
+pub async fn monitor_tee_accounts<T>(sender: watch::Sender<Vec<NodeId>>, indexer_state: Arc<T>)
+where
+    T: MpcContractStateViewer + Send + Sync,
+{
     loop {
         let tee_accounts = fetch_tee_accounts_with_retry(&indexer_state).await;
         sender.send_if_modified(|previous_tee_accounts| {

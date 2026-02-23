@@ -5,7 +5,10 @@ use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use near_account_id::AccountId;
 use tokio::sync::watch;
 
-use crate::{indexer::IndexerState, migration_service::types::MigrationInfo};
+use crate::{
+    indexer::{IndexerState, MpcContractStateViewer},
+    migration_service::types::MigrationInfo,
+};
 
 pub type ContractMigrationInfo =
     BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
@@ -78,10 +81,7 @@ async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, Contra
     loop {
         tracing::debug!(target: "indexer", "querying migration state");
 
-        match indexer_state
-            .get_mpc_state(contract_interface::method_names::MIGRATION_INFO)
-            .await
-        {
+        match indexer_state.get_mpc_migration_info().await {
             Ok(res) => {
                 return res;
             }

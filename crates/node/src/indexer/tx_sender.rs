@@ -1,6 +1,6 @@
 use super::tx_signer::{TransactionSigner, TransactionSigners};
-use super::ChainSendTransactionRequest;
 use super::IndexerState;
+use super::{ChainSendTransactionRequest, MpcContractStateViewer};
 use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;
@@ -133,6 +133,7 @@ pub enum TransactionStatus {
     Unknown,
 }
 
+// todo: move this to the chain_gateway crate
 /// Creates, signs, and submits a function call with the given method and serialized arguments.
 async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
@@ -171,17 +172,20 @@ async fn submit_tx(
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
-async fn observe_tx_result(
-    indexer_state: Arc<IndexerState>,
+async fn observe_tx_result<T>(
+    contract_viewer: Arc<T>,
     request: &ChainSendTransactionRequest,
-) -> anyhow::Result<TransactionStatus> {
+) -> anyhow::Result<TransactionStatus>
+where
+    T: MpcContractStateViewer + Send + Sync + 'static,
+{
     use ChainSendTransactionRequest::*;
 
     match request {
         Respond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state
-            let pending_request_response = indexer_state
+            let pending_request_response = contract_viewer
                 .get_pending_request(&respond_args.request)
                 .await?;
 
@@ -195,7 +199,7 @@ async fn observe_tx_result(
         CKDRespond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending ckd request still exists in the contract state
-            let pending_request_response = indexer_state
+            let pending_request_response = contract_viewer
                 .get_pending_ckd_request(&respond_args.request)
                 .await?;
 
@@ -209,7 +213,7 @@ async fn observe_tx_result(
         VerifyForeignTransactionRespond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending verify foreign tx request still exists in the contract state
-            let pending_request_response = indexer_state
+            let pending_request_response = contract_viewer
                 .get_pending_verify_foreign_tx_request(&respond_args.request)
                 .await?;
 
@@ -223,7 +227,7 @@ async fn observe_tx_result(
         SubmitParticipantInfo(submit_participant_info_args) => {
             let tls_public_key = &submit_participant_info_args.tls_public_key;
 
-            let attestation_stored_on_contract = indexer_state
+            let attestation_stored_on_contract = contract_viewer
                 .get_participant_attestation(tls_public_key)
                 .await?;
 
