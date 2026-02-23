@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # -------------------------------------------------------------------
-# Script Name: exec_pytest.sh
+# Script Name: exec-pytest.sh
 # Description: Compiles nearcore and mpc node,
 #              activates a virtual environment with the required python dependencies,
 #              saves output to `output.log`.
@@ -15,7 +15,7 @@
 #   --skip-nearcore-build : Disables nearcore build
 #
 # Example:
-#   bash exec_pytest.sh --reset-submodules --verbose --non-reproducible
+#   bash exec-pytest.sh --reset-submodules --verbose --non-reproducible
 #
 # Requirements:
 # - bash

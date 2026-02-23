@@ -17,7 +17,7 @@ You cannot migrate an existing MPC node out of its CVM without data loss (for ex
 
 From an operator’s perspective, the key differences between a **TEE-based** MPC node and a **non-TEE** node are:
 
-For a full architecture review of the TEE-based MPC, see: [design doc](securing_mpc_with_tee_design_doc.md)
+For a full architecture review of the TEE-based MPC, see: [design doc](securing-mpc-with-tee-design-doc.md)
 
 | Category/feature | Non TEE | With TEE |
 | :---- | :---- | :---- |
@@ -586,7 +586,7 @@ Adjust the variables as per your environment.
 
 * MPC_ACCOUNT_ID `-` use the near account ID that was created in the previous step  
   MPC\_CONTRACT\_ID is **v1.signer-prod.testnet** for testnet and **v1.signer** for mainnet
-* PORTS: Those are the port forwarding rules for the MPC container. Those should be a subset of the port forwarding for the CVM that are defined [Port Mapping](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#using-the-web-interface)
+* PORTS: Those are the port forwarding rules for the MPC container. Those should be a subset of the port forwarding for the CVM that are defined [Port Mapping](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#using-the-web-interface)
 * A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into NEAR\_BOOT\_NODES variable.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
@@ -695,7 +695,7 @@ Use the following custom settings for MPC:
 #### Using the script
 
 Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/tee_launcher/deploy-launcher.sh) described here
-[https://github.com/near/mpc/blob/main/tee\_deployment/deploy\_launcher\_guide.md](https://github.com/near/mpc/blob/main/tee_launcher/deploy_launcher_guide.md)  
+[https://github.com/near/mpc/blob/main/tee\_launcher/deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/tee_launcher/deploy-launcher-guide.md)  
 To configure and start your VM.
 
 ### Accessing MPC (or Launcher) Docker Logs

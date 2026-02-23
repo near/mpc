@@ -2,6 +2,7 @@
 description = "Run all fast checks"
 dependencies = [
   "crate-names",
+  "file-names",
   "todo-format",
   "ruff-format",
   "ruff-check",
@@ -21,6 +22,7 @@ dependencies = [
 description = "Run all checks"
 dependencies = [
   "crate-names",
+  "file-names",
   "todo-format",
   "ruff-format",
   "ruff-check",
@@ -100,6 +102,10 @@ args = [".github/"]
 [tasks.crate-names]
 command = "bash"
 args = ["scripts/check-crates-kebab-case.sh"]
+
+[tasks.file-names]
+command = "bash"
+args = ["scripts/check-kebab-case-files.sh"]
 
 [tasks.todo-format]
 command = "bash"
