@@ -35,12 +35,14 @@ def main():
         tree = parser.parse(filepath.read_bytes())
         for node in QueryCursor(USE_QUERY).captures(tree.root_node).get("use", []):
             if has_fn_ancestor(node):
-                violations.append((
-                    str(filepath.relative_to(root)),  # path
-                    node.start_point[0] + 1,  # line (1-indexed)
-                    node.start_point[1] + 1,  # column (1-indexed)
-                    node.text.decode() if node.text else "",  # source text
-                ))
+                violations.append(
+                    (
+                        str(filepath.relative_to(root)),  # path
+                        node.start_point[0] + 1,  # line (1-indexed)
+                        node.start_point[1] + 1,  # column (1-indexed)
+                        node.text.decode() if node.text else "",  # source text
+                    )
+                )
 
     if violations:
         print(
