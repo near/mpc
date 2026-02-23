@@ -78,9 +78,9 @@ impl ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet, Not
     ) -> ForeignChainRequestBuilder<BuiltBitcoinRequest, NotSet, NotSet> {
         ForeignChainRequestBuilder {
             request: BitcoinRequest {
-                tx_id: self.request.tx_id,
                 confirmations: confirmations.into(),
-                expected_block_hash: None,
+                tx_id: self.request.tx_id,
+                expected_block_hash: self.request.expected_block_hash,
             },
             derivation_path: self.derivation_path,
             domain_id: self.domain_id,
@@ -113,17 +113,60 @@ mod test {
     use super::*;
 
     #[test]
-    fn builder_builds_as_expected() {
+    fn with_tx_id_sets_expected_value() {
+        // given
+        let tx_id = BitcoinTxId::from([123; 32]);
+
+        // when
+        let builder = ForeignChainRequestBuilder::new().with_tx_id(tx_id.clone());
+
+        // then
+        assert_eq!(builder.request.tx_id, tx_id);
+    }
+
+    #[test]
+    fn with_block_confirmations_sets_expected_value() {
+        // given
+        let tx_id = BitcoinTxId::from([123; 32]);
+
+        // when
+        let builder = ForeignChainRequestBuilder::new()
+            .with_tx_id(tx_id)
+            .with_block_confirmations(10);
+
+        // then
+        assert_eq!(builder.request.confirmations, BlockConfirmations::from(10));
+    }
+
+    #[test]
+    fn with_expected_block_hash_sets_expected_value() {
+        // given
+        let tx_id = BitcoinTxId::from([123; 32]);
+        let expected_hash = [9; 32];
+
+        // when
+        let builder = ForeignChainRequestBuilder::new()
+            .with_tx_id(tx_id)
+            .with_block_confirmations(10)
+            .with_expected_block_hash(expected_hash);
+
+        // then
+        assert_eq!(
+            builder.request.expected_block_hash.as_deref(),
+            Some(&expected_hash)
+        );
+    }
+
+    #[test]
+    fn build_produces_correct_request_args() {
         // given
         let path = "test_path".to_string();
         let domain_id = DomainId::from(2);
         let tx_id = BitcoinTxId::from([123; 32]);
-        let confirmations = 10;
-
         let expected_hash = [9; 32];
 
         // when
-        let (verifier, built_sign_request_args) = ForeignChainRequestBuilder::new()
+        let (_verifier, request_args) = ForeignChainRequestBuilder::new()
             .with_tx_id(tx_id.clone())
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
@@ -132,32 +175,62 @@ mod test {
             .build();
 
         // then
-        let block_hash_extractor = BitcoinExtractor::BlockHash;
-        let example_extracted_value = BitcoinExtractedValue::BlockHash(expected_hash.into());
-
-        let expected_rpc_request = ForeignChainRpcRequest::Bitcoin({
-            BitcoinRpcRequest {
+        let expected = VerifyForeignTransactionRequestArgs {
+            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id,
-                confirmations: BlockConfirmations::from(confirmations),
-                extractors: vec![block_hash_extractor],
-            }
-        });
-
-        let expected_request = VerifyForeignTransactionRequestArgs {
-            request: expected_rpc_request,
+                confirmations: BlockConfirmations::from(10),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
             derivation_path: path,
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };
 
+        assert_eq!(request_args, expected);
+    }
+
+    #[test]
+    fn build_produces_correct_verifier() {
+        // given
+        let tx_id = BitcoinTxId::from([123; 32]);
+        let expected_hash = [9; 32];
+
+        // when
+        let (verifier, _request_args) = ForeignChainRequestBuilder::new()
+            .with_tx_id(tx_id.clone())
+            .with_block_confirmations(10)
+            .with_expected_block_hash(expected_hash)
+            .with_derivation_path("path".to_string())
+            .with_domain_id(DomainId::from(1))
+            .build();
+
+        // then
         let expected_verifier = ForeignChainSignatureVerifier {
             expected_extracted_values: vec![ExtractedValue::BitcoinExtractedValue(
-                example_extracted_value,
+                BitcoinExtractedValue::BlockHash(expected_hash.into()),
             )],
-            request: expected_request.request.clone(),
+            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id,
+                confirmations: BlockConfirmations::from(10),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
         };
 
-        assert_eq!(built_sign_request_args, expected_request);
         assert_eq!(verifier, expected_verifier);
+    }
+
+    #[test]
+    fn verifier_request_matches_request_args() {
+        // given
+        let (verifier, request_args) = ForeignChainRequestBuilder::new()
+            .with_tx_id(BitcoinTxId::from([123; 32]))
+            .with_block_confirmations(10)
+            .with_derivation_path("path".to_string())
+            .with_domain_id(DomainId::from(1))
+            // when
+            .build();
+
+        // then
+        assert_eq!(verifier.request, request_args.request);
     }
 }
