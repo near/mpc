@@ -1,0 +1,33 @@
+[package]
+name = "attestation-cli"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[[bin]]
+name = "attestation-cli"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+attestation = { workspace = true }
+bs58 = { workspace = true }
+clap = { workspace = true }
+hex = { workspace = true }
+include-measurements = { workspace = true }
+mpc-attestation = { workspace = true }
+mpc-primitives = { workspace = true }
+node-types = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+ed25519-dalek = { workspace = true }
+tempfile = { workspace = true }
+test-utils = { workspace = true }
+
+[lints]
+workspace = true
