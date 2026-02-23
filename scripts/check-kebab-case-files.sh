@@ -3,8 +3,9 @@
 # Checks that .sh, .yml/.yaml, and .md files use kebab-case filenames
 # (lowercase + hyphens only).
 #
-# Only searches directories listed in SEARCH_DIRS below.
+# Only checks git-tracked files in the directories listed in SEARCH_DIRS below.
 # Everything else (libs/, pytest/, .github/, infra/, etc.) is ignored.
+# Untracked local files are never flagged.
 
 # Directories to search recursively
 SEARCH_DIRS=(./crates ./docs ./scripts ./deployment ./localnet)
@@ -44,10 +45,10 @@ while IFS= read -r filepath; do
     # Flag filenames containing underscores or uppercase letters
     [[ $filename =~ [_A-Z] ]] && OFFENDERS+=("$filepath")
 done < <(
-    # Top-level repo files only (no recursion)
-    find . -maxdepth 1 -type f
-    # Subdirectories we enforce conventions on (recursive)
-    find "${SEARCH_DIRS[@]}" -type f
+    # Top-level tracked files only
+    git ls-files -- . | grep -v /
+    # Tracked files in directories we enforce conventions on
+    git ls-files -- "${SEARCH_DIRS[@]}"
 )
 
 if [ ${#OFFENDERS[@]} -gt 0 ]; then
