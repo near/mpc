@@ -11,6 +11,7 @@ use contract_interface::method_names::{
 use contract_interface::types::{self as dtos};
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier as _;
+use k256::elliptic_curve::sec1::ToEncodedPoint as _;
 use k256::{
     elliptic_curve::{point::DecompressPoint as _, Field as _, Group as _},
     AffinePoint, FieldBytes, Secp256k1,
@@ -490,7 +491,6 @@ fn create_response_secp256k1(
         panic!("unable to use recovery id of 0 or 1");
     };
 
-    use k256::elliptic_curve::sec1::ToEncodedPoint;
     let encoded_point = big_r.to_encoded_point(true);
 
     let respond_resp = SignatureRequestResponse::Secp256k1(K256Signature {
