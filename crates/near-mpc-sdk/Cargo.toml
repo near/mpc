@@ -7,7 +7,6 @@ license.workspace = true
 [dependencies]
 bounded-collections = { workspace = true }
 contract-interface = { workspace = true }
-serde = { workspace = true }
 
 [dev-dependencies]
 

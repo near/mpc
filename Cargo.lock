@@ -6250,7 +6250,6 @@ version = "3.5.1"
 dependencies = [
  "bounded-collections",
  "contract-interface",
- "serde",
 ]
 
 [[package]]
