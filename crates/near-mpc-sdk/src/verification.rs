@@ -26,7 +26,10 @@ pub fn check_ec_signature(
     public_key: &Secp256k1PublicKey,
 ) -> Result<(), VerificationError> {
     // x-coordinate is bytes [1..33] of the 33-byte compressed point
-    let r_bytes: [u8; 32] = signature.big_r.affine_point[1..].try_into().unwrap();
+    let r_bytes: [u8; 32] = signature.big_r.affine_point[1..]
+        .try_into()
+        .map_err(|_| VerificationError::InvalidSignature)?;
+
     let r = reduce_scalar(r_bytes.into());
     let s = reduce_scalar(signature.s.scalar.into());
     let ecdsa_sig = k256::ecdsa::Signature::from_scalars(r, s)
@@ -65,11 +68,6 @@ mod tests {
     use contract_interface::types::{
         Ed25519Signature, Hash256, K256AffinePoint, K256Scalar, K256Signature, Secp256k1PublicKey,
     };
-    use near_sdk::{test_utils::VMContextBuilder, testing_env};
-
-    fn init_env() {
-        testing_env!(VMContextBuilder::new().build());
-    }
 
     fn make_ec_test_case(
         key_seed: u8,
@@ -120,7 +118,6 @@ mod tests {
     #[test]
     fn ec_valid_signature() {
         // given
-        init_env();
         let (sig, msg, pk) = make_ec_test_case(1, [42u8; 32]);
 
         // when
@@ -133,7 +130,6 @@ mod tests {
     #[test]
     fn ec_wrong_message() {
         // given
-        init_env();
         let (sig, _, pk) = make_ec_test_case(1, [42u8; 32]);
         let wrong_msg = Hash256([43u8; 32]);
 
@@ -150,7 +146,6 @@ mod tests {
     #[test]
     fn ec_wrong_public_key() {
         // given
-        init_env();
         let (sig, msg, _) = make_ec_test_case(1, [42u8; 32]);
         let (_, _, other_pk) = make_ec_test_case(2, [42u8; 32]);
 
@@ -167,7 +162,6 @@ mod tests {
     #[test]
     fn ed_valid_signature() {
         // given
-        init_env();
         let (sig, msg, pk) = make_ed_test_case(1, [42u8; 32]);
 
         // when
@@ -180,7 +174,6 @@ mod tests {
     #[test]
     fn ed_wrong_message() {
         // given
-        init_env();
         let (sig, _, pk) = make_ed_test_case(1, [42u8; 32]);
         let wrong_msg = Hash256([43u8; 32]);
 
@@ -194,12 +187,56 @@ mod tests {
     #[test]
     fn ed_wrong_public_key() {
         // given
-        init_env();
         let (sig, msg, _) = make_ed_test_case(1, [42u8; 32]);
         let (_, _, other_pk) = make_ed_test_case(2, [42u8; 32]);
 
         // when
         let result = check_ed_signature(&sig, &msg, &other_pk);
+
+        // then
+        assert_matches!(result, Err(VerificationError::InvalidSignature));
+    }
+
+    #[test]
+    fn ec_wrong_recovery_id() {
+        // given
+        let (mut sig, msg, pk) = make_ec_test_case(1, [42u8; 32]);
+        sig.recovery_id ^= 1;
+
+        // when
+        let result = check_ec_signature(&sig, &msg, &pk);
+
+        // then
+        assert_matches!(
+            result,
+            Err(VerificationError::RecoveredPkDoesNotMatchExpectedKey)
+        );
+    }
+
+    #[test]
+    fn ec_tampered_s_scalar() {
+        // given
+        let (mut sig, msg, pk) = make_ec_test_case(1, [42u8; 32]);
+        sig.s.scalar = [u8::MAX; 32];
+
+        // when
+        let result = check_ec_signature(&sig, &msg, &pk);
+
+        // then
+        assert_matches!(
+            result,
+            Err(VerificationError::RecoveredPkDoesNotMatchExpectedKey)
+        );
+    }
+
+    #[test]
+    fn ed_tampered_signature() {
+        // given
+        let (_, msg, pk) = make_ed_test_case(1, [42u8; 32]);
+        let tampered_sig = Ed25519Signature::from([0u8; 64]);
+
+        // when
+        let result = check_ed_signature(&tampered_sig, &msg, &pk);
 
         // then
         assert_matches!(result, Err(VerificationError::InvalidSignature));
