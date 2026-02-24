@@ -3,6 +3,7 @@ pub use contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_F
 
 pub mod abstract_chain;
 pub mod bitcoin;
+pub mod starknet;
 
 // response types
 pub use contract_interface::types::{Hash256, SignatureResponse, VerifyForeignTransactionResponse};
