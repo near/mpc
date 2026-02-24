@@ -1,5 +1,5 @@
 use crate::{
-    foreign_chain::{ForeignChainRequestBuilder, RequestFinishedBuilding},
+    foreign_chain::{BuildableForeignChainRequest, ForeignChainRequestBuilder},
     sign::NotSet,
 };
 
@@ -13,7 +13,7 @@ pub use contract_interface::types::{
 
 /// Type alias with concrete types for when [`BitcoinRequest`] is ready to be built
 /// as part of the [`ForeignChainRequestBuilder`] builder.
-type BuiltBitcoinRequest = BitcoinRequest<BitcoinTxId, BlockConfirmations>;
+type BuildableBitcoinRequest = BitcoinRequest<BitcoinTxId, BlockConfirmations>;
 
 #[derive(Debug, Clone, derive_more::From, derive_more::Deref)]
 pub struct BitcoinBlockHash([u8; 32]);
@@ -28,10 +28,10 @@ pub struct BitcoinRequest<TxId, Confirmations> {
 }
 
 // This means the request can be built
-impl RequestFinishedBuilding for BuiltBitcoinRequest {}
+impl BuildableForeignChainRequest for BuildableBitcoinRequest {}
 
-impl From<BuiltBitcoinRequest> for (ForeignChainRpcRequest, Vec<ExtractedValue>) {
-    fn from(built_request: BuiltBitcoinRequest) -> Self {
+impl From<BuildableBitcoinRequest> for (ForeignChainRpcRequest, Vec<ExtractedValue>) {
+    fn from(built_request: BuildableBitcoinRequest) -> Self {
         let mut extractors = vec![];
         let mut expected_values = vec![];
 
@@ -75,7 +75,7 @@ impl ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet, Not
     pub fn with_block_confirmations(
         self,
         confirmations: impl Into<BlockConfirmations>,
-    ) -> ForeignChainRequestBuilder<BuiltBitcoinRequest, NotSet, NotSet> {
+    ) -> ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet, NotSet> {
         ForeignChainRequestBuilder {
             request: BitcoinRequest {
                 confirmations: confirmations.into(),
@@ -89,7 +89,7 @@ impl ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet, Not
     }
 }
 
-impl ForeignChainRequestBuilder<BuiltBitcoinRequest, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet, NotSet> {
     pub fn with_expected_block_hash(self, block_hash: impl Into<BitcoinBlockHash>) -> Self {
         ForeignChainRequestBuilder {
             request: BitcoinRequest {

@@ -24,7 +24,10 @@ pub const DEFAULT_PAYLOAD_VERSION: u8 = 1;
 
 /// Marker trait for chain-specific request types that have all required fields set
 /// and can be converted into the contract's RPC request format with expected extracted values.
-pub trait RequestFinishedBuilding: Into<(ForeignChainRpcRequest, Vec<ExtractedValue>)> {}
+pub trait BuildableForeignChainRequest:
+    Into<(ForeignChainRpcRequest, Vec<ExtractedValue>)>
+{
+}
 
 #[derive(Debug, Clone)]
 pub struct ForeignChainRequestBuilder<Request, DerivationPath, DomainId> {
@@ -51,7 +54,7 @@ impl ForeignChainRequestBuilder<NotSet, NotSet, NotSet> {
     }
 }
 
-impl<Request: RequestFinishedBuilding> ForeignChainRequestBuilder<Request, NotSet, NotSet> {
+impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, NotSet, NotSet> {
     pub fn with_derivation_path(
         self,
         derivation_path: String,
@@ -65,7 +68,7 @@ impl<Request: RequestFinishedBuilding> ForeignChainRequestBuilder<Request, NotSe
     }
 }
 
-impl<Request: RequestFinishedBuilding> ForeignChainRequestBuilder<Request, String, NotSet> {
+impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, String, NotSet> {
     pub fn with_domain_id(
         self,
         domain_id: impl Into<DomainId>,
@@ -79,7 +82,7 @@ impl<Request: RequestFinishedBuilding> ForeignChainRequestBuilder<Request, Strin
     }
 }
 
-impl<Request: RequestFinishedBuilding> ForeignChainRequestBuilder<Request, String, DomainId> {
+impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, String, DomainId> {
     pub fn build(
         self,
     ) -> (
