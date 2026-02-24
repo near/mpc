@@ -36,10 +36,10 @@ pub(crate) fn raw_ed25519_secret_key_to_keypair(
 mod tests {
     use crate::keygen::raw_ed25519_secret_key_to_keypair;
     use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
 
     #[test]
     fn test_public_key_match() {
-        use rand::rngs::OsRng;
         let sk: SigningKey = SigningKey::generate(&mut OsRng);
         let expected_pk: [u8; 32] = sk.verifying_key().to_bytes();
 
