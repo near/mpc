@@ -12,49 +12,44 @@ To support this, we'll provide a standalone application running inside a Trusted
 
 c.f. [#2062](https://github.com/near/mpc/issues/2062), [#2018](https://github.com/near/mpc/issues/2018), [#2021](https://github.com/near/mpc/pull/2021)
 
-### HOT MPC Network vs. NEAR MPC Network
-
-HOT's MPC network ([`near/hot-mpc`](https://github.com/near/hot-mpc)) is a fork of an earlier version of NEAR's MPC network ([`near/mpc`](https://github.com/near/mpc)). They share a common ancestor and the same high-level architecture, but have diverged significantly:
-
-| Aspect | NEAR MPC | HOT MPC |
-|---|---|---|
-| **Crypto library** | [`threshold-signatures`](https://github.com/near/threshold-signatures) (FROST-based) | `cait-sith` fork (Beaver triple-based) |
-| **Signature schemes** | ECDSA, EdDSA, Robust ECDSA, CKD | ECDSA, EdDSA |
-| **Sign request source** | On-chain (block event indexer) | Off-chain only (HTTP API via `hot_protocol::MpcClient`) |
-| **Sign authorization** | Implicit: on-chain contract checks caller and deposit | Explicit: each node calls [`Validation::verify()`](https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143) with a [`ProofModel`](https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/validation.rs#L7-L12) — looks up a wallet contract via the user's [`Uid`](https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/uid.rs#L11), which may delegate to cross-chain auth calls |
-| **Keygen / resharing** | Contract-driven (on-chain state machine: `Initializing`/`Resharing` → `Running`) | CLI-driven (`HotProtocolKeygen`, `HotProtocolReshare` commands) |
-| **Codebase structure** | Modular multi-crate workspace | Single monolithic node crate |
-| **TEE support** | Full attestation framework (`tee-authority`, `mpc-attestation`) | None |
-| **Contract** | TEE attestation, DCAP verification, launcher compose hashes | Basic code hash voting only, no attestation infrastructure |
-
-### Why a Custom Binary
-
-Several approaches were considered:
-
-1. **Running the existing MPC stack with a single node** — rejected because the [`threshold-signatures`](https://github.com/near/threshold-signatures) crate does not support fewer than 2 shares, and it carries significant unnecessary complexity (P2P networking, resharing, triple/presignature generation, block event indexing).
-
-2. **Running two MPC nodes inside one CVM** — rejected because it has a higher maintenance burden and is susceptible to the same bugs seen in mainnet/testnet deployments.
-
-3. **Custom lightweight binary** — chosen because:
-   - Light-weight, easy to reason about.
-   - Reuses modular TEE attestation logic and chain indexer components already being developed ([indexer design](indexer-design.md)).
-   - Future-proof: can be reused as a "graveyard" for NEAR's own deprecated domains.
-   - More in line with other ongoing priorities (backup service, [#1891](https://github.com/near/mpc/issues/1891)) — both reuse the same modular components (attestation, chain indexer) without the full MPC node stack.
-
 ### Scope
 
-The Archive Signer:
-- Receives signature requests via an HTTP API (_not_ on-chain). HOT's existing backend already sends sign requests via HTTP. Current volume is \~25k requests/day (bearish market baseline) with spikes to 25+ TPS during campaigns (airdrops, mints, claims). On-chain requests would add per-request gas costs (\~$0.001/tx → \~$750/month at current low volume, scaling with activity), latency, and require the _Block Event Subscriber_.
-- Signs using the [reconstructed](#key-import-process) full private key directly with `k256` and `ed25519-dalek` (_not_ threshold signatures). With the full private key reconstructed inside the TEE, threshold signing provides no security benefit.
-- Submits TEE attestation on-chain to a dedicated HOT governance contract.
-- Monitors the HOT governance contract for allowed Docker image hashes and launcher compose hashes.
+The Archive Signer is a custom lightweight binary that replaces HOT's MPC network ([`near/hot-mpc`][hot-mpc]). It must:
 
-### Supported Signature Schemes
+- **Sign ECDSA (secp256k1) and EdDSA (ed25519)** using the [reconstructed](#key-import-process) full private keys directly with `k256` and `ed25519-dalek` (_not_ threshold signatures).
+- **Receive signature requests via an off-chain HTTP API** compatible with [`hot_protocol::MpcClient`][mpc-client]. HOT's existing backend already sends sign requests via HTTP. Current volume is \~25k requests/day (bearish market baseline) with spikes to 25+ TPS during campaigns (airdrops, mints, claims). On-chain requests would add per-request gas costs (\~$0.001/tx → \~$750/month at current low volume, scaling with activity), latency, and require the [_Block Event Subscriber_][block-event-subscriber].
+- **Authorize requests** using HOT's existing [`Validation::verify()`][validation-verify] with [`ProofModel`][proof-model] — looks up wallet contract via user's [`Uid`][uid], may delegate to cross-chain auth calls.
+- **Submit TEE attestation** on-chain to a dedicated HOT governance contract.
+- **Monitor the HOT governance contract** for allowed Docker image hashes and launcher compose hashes.
 
-| Scheme | Curve | Library | HOT Domain |
-|--------|-------|---------|------------|
-| ECDSA | secp256k1 | [`k256`][k256] | [`DomainId(0)`][domain-0] |
-| EdDSA | ed25519 | [`ed25519-dalek`][ed25519-dalek] | [`DomainId(1)`][domain-1] |
+[block-event-subscriber]: indexer-design.md#block-event-subscriber
+[hot-mpc]: https://github.com/near/hot-mpc
+[mpc-client]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/mpc_client.rs
+[validation-verify]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143
+[proof-model]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/validation.rs#L7-L12
+[uid]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/uid.rs#L11
+[hot-keygen]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/keygen_cli.rs
+[hot-reshare]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/resharing_cli.rs
+
+Other approaches were considered and rejected:
+- **Running the existing MPC stack with a single node** — [`threshold-signatures`][threshold-sigs] does not support fewer than 2 shares, and carries unnecessary complexity (P2P networking, resharing, triple/presignature generation, block event indexing).
+- **Running two MPC nodes inside one CVM** — higher maintenance burden and susceptible to the same bugs seen in mainnet/testnet deployments.
+
+[threshold-sigs]: https://github.com/near/threshold-signatures
+
+A custom binary was chosen because it is light-weight and easy to reason about, reuses modular TEE attestation and chain indexer components already being developed ([indexer design](indexer-design.md)), is future-proof (can be reused as a "graveyard" for NEAR's own deprecated domains), and aligns with other ongoing priorities (backup service, [#1891](https://github.com/near/mpc/issues/1891)).
+
+The HOT MPC network characteristics the Archive Signer replaces:
+
+| Aspect | HOT MPC |
+|---|---|
+| **Crypto library** | `cait-sith` fork (ECDSA, Beaver triple-based) + FROST (EdDSA) |
+| **Signature schemes** | ECDSA (secp256k1) — [`k256`][k256], [`DomainId(0)`][domain-0]; EdDSA (ed25519) — [`ed25519-dalek`][ed25519-dalek], [`DomainId(1)`][domain-1] |
+| **Sign request source** | Off-chain only (HTTP API via [`hot_protocol::MpcClient`][mpc-client]) |
+| **Sign authorization** | [`Validation::verify()`][validation-verify] with [`ProofModel`][proof-model] via user's [`Uid`][uid] |
+| **Keygen / resharing** | CLI-driven ([`HotProtocolKeygen`][hot-keygen], [`HotProtocolReshare`][hot-reshare] commands) |
+| **TEE support** | None |
+| **Contract** | Basic code hash voting only, no attestation infrastructure |
 
 [k256]: https://crates.io/crates/k256
 [ed25519-dalek]: https://crates.io/crates/ed25519-dalek
