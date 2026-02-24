@@ -68,6 +68,7 @@ mod tests {
     use contract_interface::types::{
         Ed25519Signature, Hash256, K256AffinePoint, K256Scalar, K256Signature, Secp256k1PublicKey,
     };
+    use ed25519_dalek::Signer;
 
     fn make_ec_test_case(
         key_seed: u8,
@@ -104,7 +105,6 @@ mod tests {
         key_seed: u8,
         msg: [u8; 32],
     ) -> (Ed25519Signature, Hash256, Ed25519PublicKey) {
-        use ed25519_dalek::Signer;
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&[key_seed; 32]);
         let sig: ed25519_dalek::Signature = signing_key.sign(&msg);
         let pk = signing_key.verifying_key();
