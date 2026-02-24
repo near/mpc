@@ -1,5 +1,5 @@
 use crate::{
-    foreign_chain::{BuildableForeignChainRequest, ForeignChainRequestBuilder},
+    foreign_chain::{ForeignChainRequestBuilder, ForeignChainRpcRequestWithExpectations},
     sign::NotSet,
 };
 
@@ -34,10 +34,7 @@ struct ExpectedLog {
     log: EvmLog,
 }
 
-// This means the request can be built
-impl BuildableForeignChainRequest for BuildableAbstractRequest {}
-
-impl From<BuildableAbstractRequest> for (ForeignChainRpcRequest, Vec<ExtractedValue>) {
+impl From<BuildableAbstractRequest> for ForeignChainRpcRequestWithExpectations {
     fn from(built_request: BuildableAbstractRequest) -> Self {
         let mut extractors = vec![];
         let mut expected_values = vec![];
@@ -53,19 +50,19 @@ impl From<BuildableAbstractRequest> for (ForeignChainRpcRequest, Vec<ExtractedVa
             extractors.push(EvmExtractor::Log {
                 log_index: expected_log.log_index,
             });
-            expected_values.push(ExtractedValue::EvmExtractedValue(
-                EvmExtractedValue::Log(expected_log.log),
-            ));
+            expected_values.push(ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(
+                expected_log.log,
+            )));
         }
 
-        (
-            ForeignChainRpcRequest::Abstract(EvmRpcRequest {
+        ForeignChainRpcRequestWithExpectations {
+            request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
                 tx_id: built_request.tx_id,
                 finality: built_request.finality,
                 extractors,
             }),
             expected_values,
-        )
+        }
     }
 }
 
@@ -123,7 +120,9 @@ impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet, NotSet> {
     }
 
     pub fn with_expected_log(mut self, log_index: u64, log: EvmLog) -> Self {
-        self.request.expected_logs.push(ExpectedLog { log_index, log });
+        self.request
+            .expected_logs
+            .push(ExpectedLog { log_index, log });
         self
     }
 }
@@ -185,7 +184,7 @@ mod test {
     fn with_expected_log_sets_expected_value() {
         // given
         let tx_id = EvmTxId::from([123; 32]);
-        let log = make_test_log(3);
+        let log = test_evm_log(3);
 
         // when
         let builder = ForeignChainRequestBuilder::new()
@@ -203,8 +202,8 @@ mod test {
     fn with_expected_log_can_add_multiple_logs() {
         // given
         let tx_id = EvmTxId::from([123; 32]);
-        let log_a = make_test_log(1);
-        let log_b = make_test_log(2);
+        let log_a = test_evm_log(1);
+        let log_b = test_evm_log(2);
 
         // when
         let builder = ForeignChainRequestBuilder::new()
@@ -224,7 +223,7 @@ mod test {
         let domain_id = DomainId::from(2);
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
-        let log = make_test_log(5);
+        let log = test_evm_log(5);
 
         // when
         let (_verifier, request_args) = ForeignChainRequestBuilder::new()
@@ -241,10 +240,7 @@ mod test {
             request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
                 tx_id,
                 finality: EvmFinality::Finalized,
-                extractors: vec![
-                    EvmExtractor::BlockHash,
-                    EvmExtractor::Log { log_index: 5 },
-                ],
+                extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
             }),
             derivation_path: path,
             domain_id,
@@ -259,7 +255,7 @@ mod test {
         // given
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
-        let log = make_test_log(5);
+        let log = test_evm_log(5);
 
         // when
         let (verifier, _request_args) = ForeignChainRequestBuilder::new()
@@ -282,10 +278,7 @@ mod test {
             request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
                 tx_id,
                 finality: EvmFinality::Finalized,
-                extractors: vec![
-                    EvmExtractor::BlockHash,
-                    EvmExtractor::Log { log_index: 5 },
-                ],
+                extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
             }),
         };
 
@@ -326,7 +319,7 @@ mod test {
         }
     }
 
-    fn make_test_log(log_index: u64) -> EvmLog {
+    fn test_evm_log(log_index: u64) -> EvmLog {
         EvmLog {
             removed: false,
             log_index,
