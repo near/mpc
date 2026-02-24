@@ -48,6 +48,5 @@ skip-tree = [
 unknown-git = "deny"
 allow-git = [
   "https://github.com/near/nearcore",
-  "https://github.com/near/threshold-signatures",
   "https://github.com/near/reddsa"
 ]
