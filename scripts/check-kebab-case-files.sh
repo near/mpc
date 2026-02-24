@@ -22,6 +22,7 @@ EXEMPT_FILES=(
     CHANGELOG.md
     CLAUDE.md
     CONTRIBUTING.md
+    GEMINI.md
     LICENSE.md
     Makefile.md
     README.md
