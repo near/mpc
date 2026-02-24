@@ -401,7 +401,7 @@ pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
 
     for (p, keygen_out) in &key_packages {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = eddsa::sign::sign(
+        let protocol = eddsa::sign::sign_v1(
             &participants,
             threshold,
             *p,
