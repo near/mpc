@@ -88,7 +88,7 @@ where
             })?
             .into_bytes();
         let val = state_viewer
-            .view_raw(contract_id.clone(), &method_name, args.clone())
+            .view_raw(contract_id.clone(), method_name, args.clone())
             .await;
         let observed_state: Result<ObservedState, ChainGatewayError> = val.map(|val| val.into());
         let (sender, last_observed) = tokio::sync::watch::channel(observed_state.clone());

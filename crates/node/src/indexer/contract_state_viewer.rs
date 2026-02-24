@@ -7,10 +7,6 @@ use chain_gateway::{contract_state_stream::ContractStateStream, state_viewer::St
 use mpc_contract::{
     primitives::signature::YieldIndex,
     state::ProtocolContractState,
-    tee::{
-        proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
-        tee_state::NodeId,
-    },
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -232,48 +228,48 @@ impl MpcContractStateViewer {
         Ok((height.into(), call_result))
     }
 
-    pub(crate) async fn get_mpc_allowed_image_hashes(
-        &self,
-    ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
-        let (height, call_result) = self
-            .mpc_contract_viewer
-            .view(
-                self.mpc_contract_id.clone(),
-                contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
-                &NoArgs {},
-            )
-            .await?;
+    // pub(crate) async fn get_mpc_allowed_image_hashes(
+    //     &self,
+    // ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
+    //     let (height, call_result) = self
+    //         .mpc_contract_viewer
+    //         .view(
+    //             self.mpc_contract_id.clone(),
+    //             contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+    //             &NoArgs {},
+    //         )
+    //         .await?;
 
-        Ok((height.into(), call_result))
-    }
+    //     Ok((height.into(), call_result))
+    // }
 
-    pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
-        &self,
-    ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-        let (height, call_result) = self
-            .mpc_contract_viewer
-            .view(
-                self.mpc_contract_id.clone(),
-                contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
-                &NoArgs {},
-            )
-            .await?;
+    // pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
+    //     &self,
+    // ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
+    //     let (height, call_result) = self
+    //         .mpc_contract_viewer
+    //         .view(
+    //             self.mpc_contract_id.clone(),
+    //             contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
+    //             &NoArgs {},
+    //         )
+    //         .await?;
 
-        Ok((height.into(), call_result))
-    }
+    //     Ok((height.into(), call_result))
+    // }
 
-    pub(crate) async fn get_mpc_tee_accounts(&self) -> anyhow::Result<(u64, Vec<NodeId>)> {
-        let (height, call_result) = self
-            .mpc_contract_viewer
-            .view(
-                self.mpc_contract_id.clone(),
-                contract_interface::method_names::GET_TEE_ACCOUNTS,
-                &NoArgs {},
-            )
-            .await?;
+    // pub(crate) async fn get_mpc_tee_accounts(&self) -> anyhow::Result<(u64, Vec<NodeId>)> {
+    //     let (height, call_result) = self
+    //         .mpc_contract_viewer
+    //         .view(
+    //             self.mpc_contract_id.clone(),
+    //             contract_interface::method_names::GET_TEE_ACCOUNTS,
+    //             &NoArgs {},
+    //         )
+    //         .await?;
 
-        Ok((height.into(), call_result))
-    }
+    //     Ok((height.into(), call_result))
+    // }
 
     pub(crate) async fn get_mpc_migration_info(
         &self,

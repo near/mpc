@@ -6,9 +6,6 @@ use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
-use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
-};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use chain_gateway::chain_gateway::{start_with_streamer, NoArgs};
 use ed25519_dalek::{SigningKey, VerifyingKey};
