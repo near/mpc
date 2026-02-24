@@ -28,8 +28,6 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 [validation-verify]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143
 [proof-model]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/validation.rs#L7-L12
 [uid]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/uid.rs#L11
-[hot-keygen]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/keygen_cli.rs
-[hot-reshare]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/resharing_cli.rs
 
 Other approaches were considered and rejected:
 - **Running the existing MPC stack with a single node** — [`threshold-signatures`][threshold-sigs] does not support fewer than 2 shares, and carries unnecessary complexity (P2P networking, resharing, triple/presignature generation, block event indexing).
@@ -51,6 +49,8 @@ The HOT MPC network characteristics the Archive Signer replaces:
 | **TEE support** | None |
 | **Contract** | Basic code hash voting only, no attestation infrastructure |
 
+[hot-keygen]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/keygen_cli.rs
+[hot-reshare]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/resharing_cli.rs
 [k256]: https://crates.io/crates/k256
 [ed25519-dalek]: https://crates.io/crates/ed25519-dalek
 [domain-0]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/libs/chain-signatures/contract/src/primitives/domain.rs#L21-L24
@@ -346,7 +346,9 @@ pub struct ProofModel {
 }
 ```
 
-**Cross-chain RPC configuration:** The `Validation` struct requires RPC endpoints for every chain HOT wallets may reference in auth calls — NEAR included. Each chain is configured with a `ChainValidationConfig { threshold, servers }` (multiple RPC providers with threshold consensus). The validation SDK uses its own HTTP RPC clients for all chain calls (NEAR and foreign chains alike); the embedded neard is **not** used for validation — it is strictly for TEE governance.
+**Cross-chain RPC configuration:** The `Validation` struct requires RPC endpoints for every chain HOT wallets may reference in auth calls — NEAR included. Each chain is configured with a `ChainValidationConfig { threshold, servers }` (multiple RPC providers with threshold consensus). The validation SDK uses its own HTTP RPC clients for all chain calls (NEAR and foreign chains alike); the embedded neard is **not** used for validation — it is strictly for TEE governance. For improved security, NEAR smart contract verification can be routed through a [`chain-gateway`][chain-gateway] that runs its own neard node, avoiding reliance on external RPC providers for NEAR calls.
+
+[chain-gateway]: indexer-design.md#design-proposal
 
 **Note:** This authorization flow is unrelated to NEAR MPC's [foreign transaction verification](foreign_chain_transactions.md) feature. Foreign TX verification is an on-chain feature for verifying events on other chains (bridges/intents). HOT's `hot_verify()` is an off-chain authorization mechanism for wallet signing.
 
