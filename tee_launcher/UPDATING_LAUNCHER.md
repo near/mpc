@@ -27,7 +27,7 @@ This is the compose template the contract expects and hashes during verification
 
 - `crates/contract/assets/launcher_docker_compose.yaml.template`
 
-update the image reference to use the new digest:
+Update the image reference to use the new digest:
 
 ```yaml
 services:
