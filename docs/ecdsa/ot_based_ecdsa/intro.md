@@ -6,11 +6,11 @@ These docs provide a lower level description of the protocols used in Cait-Sith.
 
 Describes how the different protocols fit together.
 
-## [Proofs](./proofs.md)
+## [Proofs](../../crypto/proofs.md)
 
 Describes the conventions around transcripts and ZK Proofs.
 
-## [Key Generation](./key-generation.md)
+## [Key Generation](../../dkg.md)
 
 This describes the distributed key generation protocol.
 

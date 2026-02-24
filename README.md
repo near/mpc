@@ -22,7 +22,7 @@ generate deterministic keys in a confidential manner. The scheme is based on
 threshold BLS signatures and ElGamal encryption. Our intended use-case is to
 provide deterministic secrets to apps running inside a TEE. For more details,
 see the
-[CKD docs](docs/confidential_key_derivation/confidential_key_derivation.md).
+[CKD docs](docs/confidential_key_derivation/confidential-key-derivation.md).
 
 ## Code organization
 
@@ -125,7 +125,7 @@ The following functionalities are provided:
 3) **CKD (online)**: Corresponds to the online signing phase in which the
 signing parties produce a valid BLS signature encrypted with an ElGammal public
 key. More details in
-[docs](docs/confidential_key_derivation/confidential_key_derivation.md).
+[docs](docs/confidential_key_derivation/confidential-key-derivation.md).
 
 ### Comments
 
@@ -145,7 +145,7 @@ key. More details in
 
 * This implementation allows arbitrary number of parties and thresholds as long
   as the latter verifies some basic requirements (see the
-  [documentation](docs/ecdsa/orchestration.md)). However, it is worth mentioning
+  [documentation](docs/ecdsa/ot_based_ecdsa/orchestration.md)). However, it is worth mentioning
   that the ECDSA scheme scales non-efficiently with the number of participants
   (Benchmarks to be added soon).
 

@@ -471,7 +471,7 @@ pub fn compute_lagrange_coefficient<C: Ciphersuite>(
 /// 3) Combine: `lambda_i(x)` = `n_i` * (d_i^-1).
 ///
 /// Returns:
-/// - Vec<`SerializableScalar`<C>>: Lagrange coefficients corresponding to each `x_i`.
+/// - `Vec<SerializableScalar<C>>`: Lagrange coefficients corresponding to each `x_i`.
 ///
 /// Example (over reals for clarity):
 /// - `points_set` = [1, 2, 4], x = 3:

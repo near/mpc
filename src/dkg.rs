@@ -31,7 +31,7 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
         if is_zero_secret {
             //  return error if me is not a purely new joiner to the participants set
             //  prevents accidentally calling keyshare with extremely old keyshares
-            //  that have nothing todo with the current resharing
+            //  that have nothing to do with the current resharing
             if old_participants.contains(me) {
                 return Err(ProtocolError::AssertionFailed(
                     format!("{me:?} is running Resharing with a zero share but does belong to the old participant set")));

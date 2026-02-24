@@ -381,4 +381,4 @@ $$
 9. $\square$ Each $P_i$ returns $((a_i, b_i, c_i), (A, B, C))$.
 
 ---
->  [click to see the Notation reference](../../network_layer.md#documentation-notation).
+>  [click to see the Notation reference](../../network-layer.md#documentation-notation).

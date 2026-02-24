@@ -15,7 +15,7 @@
 //! There are two ways of generating these triples.
 //!
 //! One way is to have
-//! a trusted third party generate them. This is supported by the [deal] function.
+//! a trusted third party generate them. This is supported by the `deal` function.
 //!
 //! The other way is to run a protocol generating a secret shared triple without any party
 //! learning the secret values. This is better because no party learns the value of the

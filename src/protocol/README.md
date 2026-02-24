@@ -38,7 +38,7 @@ The `make_protocol(comms, future)` function converts an async future into a `Pro
 
 ### Echo Broadcast (`echo_broadcast.rs`)
 
-Implements Authenticated Double-Echo Broadcast (Byzantine Reliable Broadcast) following \[[CGR](https://link.springer.com/book/10.1007/978-3-642-15260-3)\]. See the [network layer documentation](../../docs/network_layer.md) for the full specification.
+Implements Authenticated Double-Echo Broadcast (Byzantine Reliable Broadcast) following \[[CGR](https://link.springer.com/book/10.1007/978-3-642-15260-3)\]. See the [network layer documentation](../../docs/network-layer.md) for the full specification.
 
 ```
 Phase 1: SEND   -- sender sends initial value to all parties
@@ -63,5 +63,5 @@ Every protocol constructor follows the same pattern:
 
 ## Further Reading
 
-- [`docs/network_layer.md`](../../docs/network_layer.md) -- formal specification of the communication model, channel types, and the echo broadcast protocol
+- [`docs/network_layer.md`](../../docs/network-layer.md) -- formal specification of the communication model, channel types, and the echo broadcast protocol
 - [`docs/dkg.md`](../../docs/dkg.md) -- the DKG protocol that most heavily uses echo broadcast

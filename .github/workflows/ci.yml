@@ -22,42 +22,53 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
-          cache-on-failure: true
-          cache-all-crates: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
-      - name: Run clippy fmt
-        run: |
-          CARGO_TARGET_DIR="target/clippy" \
-          RUSTFLAGS="-D warnings" \
-          cargo clippy --all-features --all-targets --locked
+      - name: Install cargo-shear
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-shear@1.9.1
 
-      - name: Run Cargo fmt
-        run: |
-          cargo fmt -- --check
+      - name: Install cargo-sort
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-sort@2.0.2
+
+      - name: Install zizmor
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: zizmor@1.22.0
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-deny@0.18.9
+          tool: cargo-deny@0.19.0
 
-      - name: Run cargo deny
-        run: cargo deny --all-features check
+      - name: Install lychee
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: lychee@0.23.0
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: nextest@0.9.106
+          tool: nextest@0.9.126
 
-      - name: Run cargo-nextest
-        run: cargo nextest run --locked --all-features --cargo-profile test-release
+      - name: Install cargo-make
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-make@0.37.24
+
+      - name: Run cargo-make checks
+        run: cargo make check-all
 
   ci-coverage:
     name: Coverage
@@ -93,26 +104,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: codecov.json
           fail_ci_if_error: false
-  
-  zizmor-check:
-    name: "zizmor github actions check"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Install zizmor
-        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
-        with:
-          tool: zizmor@1.16.2
-
-
-      - name: Check github actions with zizmor
-        run: |
-          zizmor .github/

@@ -6,7 +6,7 @@
 //!
 //! The protocol is based on a combination of Oblivious Transfer (OT) and Diffie-Hellman key exchange.
 //!
-//! For more details, refer to the `confidential_key_derivation.md` document in the `docs` folder.
+//! For more details, refer to the `confidential-key-derivation.md` document in the `docs` folder.
 
 pub mod app_id;
 pub mod ciphersuite;
