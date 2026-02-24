@@ -609,11 +609,11 @@ pub mod tests {
     };
 
     use crate::providers::PublicKeyConversion;
+    use tempfile::TempDir;
 
     use super::*;
     #[test]
     fn test_secret_gen() -> anyhow::Result<()> {
-        use tempfile::TempDir;
         let temp_dir = TempDir::new()?;
         let temp_dir_path = temp_dir.path();
 

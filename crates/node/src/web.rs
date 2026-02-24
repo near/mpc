@@ -8,6 +8,7 @@ use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
+use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
@@ -196,8 +197,6 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
-    use futures::FutureExt;
-
     tracing::info!(?bind_address, "attempting to bind web server to address");
 
     let router = axum::Router::new()

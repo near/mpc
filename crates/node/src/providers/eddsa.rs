@@ -177,8 +177,11 @@ impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rand::SeedableRng as _;
     use threshold_signatures::frost_ed25519::VerifyingKey;
+    use threshold_signatures::test_utils::TestGenerators;
 
     use crate::{
         providers::PublicKeyConversion,
@@ -187,7 +190,6 @@ mod tests {
     #[test]
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        use threshold_signatures::test_utils::TestGenerators;
         let x = TestGenerators::new(4, 3.into())
             .make_eddsa_keygens(&mut rng)
             .values()
@@ -200,7 +202,6 @@ mod tests {
 
     #[test]
     fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
-        use std::str::FromStr;
         let near_sdk =
             near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
         let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
