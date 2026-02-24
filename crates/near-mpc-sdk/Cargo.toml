@@ -13,6 +13,7 @@ near-sdk = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+ed25519-dalek = { workspace = true }
 
 [lints]
 workspace = true
