@@ -43,7 +43,7 @@ impl TransactionSender {
             .submit_tx(transaction)
             .await
             .map_err(|err| ChainGatewayError::RpcClient {
-                source: Box::new(err),
+                source: Arc::new(err),
             })
     }
     /// creates a function call transaction for contract `receiver_id` with method `method_name` and args `args`
@@ -64,7 +64,7 @@ impl TransactionSender {
         let block = self.view_client.latest_final_block().await.map_err(|err| {
             ChainGatewayError::SendTransactionError {
                 context: "could not query last final block".to_string(),
-                source: Box::new(err),
+                source: Arc::new(err),
             }
         })?;
 

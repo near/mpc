@@ -1,3 +1,5 @@
+use derive_more::{From, Into};
+
 use crate::near_internals_wrapper::view_client::{
     errors::{GetBlockError, QueryError, ViewClientError},
     request::ViewFunctionCall,
@@ -9,6 +11,14 @@ pub(crate) struct ViewClientWrapper {
         near_async::multithread::MultithreadRuntimeHandle<near_client::ViewClientActorInner>,
 }
 
+#[derive(Into, From, Copy, Clone)]
+pub struct BlockHeight(u64);
+
+pub struct ViewOutput {
+    pub block_height: BlockHeight,
+    pub value: Vec<u8>,
+}
+
 impl ViewClientWrapper {
     pub(crate) fn new(
         view_client: near_async::multithread::MultithreadRuntimeHandle<
@@ -17,6 +27,7 @@ impl ViewClientWrapper {
     ) -> Self {
         Self { view_client }
     }
+    // todo: don't erturn the full BlockView, but only what you need
     pub(crate) async fn latest_final_block(
         &self,
     ) -> Result<near_indexer_primitives::views::BlockView, ViewClientError> {
@@ -38,7 +49,7 @@ impl ViewClientWrapper {
     pub(crate) async fn view_function_query(
         &self,
         request: &ViewFunctionCall,
-    ) -> Result<(u64, Vec<u8>), ViewClientError> {
+    ) -> Result<ViewOutput, ViewClientError> {
         let query = near_client::Query {
             block_reference: near_indexer_primitives::types::BlockReference::Finality(
                 near_indexer_primitives::types::Finality::Final,
@@ -57,7 +68,10 @@ impl ViewClientWrapper {
         })?;
         match response.kind {
             near_indexer_primitives::views::QueryResponseKind::CallResult(call_result) => {
-                Ok((response.block_height, call_result.result))
+                Ok(ViewOutput {
+                    block_height: response.block_height.into(),
+                    value: call_result.result,
+                })
             }
             other => Err(QueryError::UnexpectedResponse {
                 view_call: request.clone(),

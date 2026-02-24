@@ -1,4 +1,4 @@
-use super::contract_state_viewer::MpcContractStateViewer;
+use super::contract_state_viewer::{spawn_subscriber, MpcContractStateViewer};
 use super::handler::listen_blocks;
 use super::migrations::{monitor_migrations, ContractMigrationInfo};
 use super::participants::monitor_contract_state;
@@ -10,7 +10,7 @@ use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use chain_gateway::chain_gateway::start_with_streamer;
+use chain_gateway::chain_gateway::{start_with_streamer, NoArgs};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
@@ -90,16 +90,13 @@ pub fn spawn_real_indexer(
                 .await
                 .expect("indexer startup must succeed");
 
-            let shared_contract_state_viewer =
-                chain_gateway.contract_state_viewer(mpc_indexer_config.mpc_contract_id.clone());
+            let state_viewer = chain_gateway.viewer();
+            let mpc_contract_id = mpc_indexer_config.mpc_contract_id.clone();
             let mpc_contract_state_viewer =
-                MpcContractStateViewer::new(shared_contract_state_viewer);
+                MpcContractStateViewer::new(mpc_contract_id.clone(), state_viewer);
             let transaction_sender = chain_gateway.transaction_sender();
 
-            let indexer_state = Arc::new(IndexerState::new(
-                chain_gateway,
-                mpc_indexer_config.mpc_contract_id.clone(),
-            ));
+            let indexer_state = Arc::new(IndexerState::new(chain_gateway, mpc_contract_id.clone()));
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
@@ -139,26 +136,45 @@ pub fn spawn_real_indexer(
             //tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
 
             // mpc_contract_state_viewer.monitor_allowed_docker_images(allowed_docker_images_sender);
-            tokio::spawn(monitor_allowed_docker_images(
+            spawn_subscriber(
                 allowed_docker_images_sender,
-                mpc_contract_state_viewer.clone(),
-            ));
+                indexer_state.clone(),
+                contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+                &NoArgs {},
+            );
+            //tokio::spawn(monitor_allowed_docker_images(
+            //    allowed_docker_images_sender,
+            //    indexer_state.clone(),
+            //));
 
             // mpc_contract_state_viewer.monitor_allowed_launcher_compose_hashes(allowed_launcher_compose_sender);
-            tokio::spawn(monitor_allowed_launcher_compose_hashes(
+            spawn_subscriber(
                 allowed_launcher_compose_sender,
-                mpc_contract_state_viewer.clone(),
-            ));
+                indexer_state.clone(),
+                contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
+                &NoArgs {},
+            );
+            //tokio::spawn(monitor_allowed_launcher_compose_hashes(
+            //    allowed_launcher_compose_sender,
+            //    mpc_contract_state_viewer.clone(),
+            //));
 
             // mpc_contract_state_viewer.monitor_tee_accounts(tee_accounts_sender);
             // underneath the hood, you can have a generic method to avoid code duplication
-            tokio::spawn(monitor_tee_accounts(
+            spawn_subscriber(
                 tee_accounts_sender,
-                mpc_contract_state_viewer.clone(),
-            ));
+                indexer_state.clone(),
+                contract_interface::method_names::GET_TEE_ACCOUNTS,
+                &NoArgs {},
+            );
+            //tokio::spawn(monitor_tee_accounts(
+            //    tee_accounts_sender,
+            //    mpc_contract_state_viewer.clone(),
+            //));
 
             //  let contract_state_receiver = mpc_contract_state_viewer.monitor_contract_state(protocol_state_sender).await;
             // Returns once the contract state is available.
+            // todo
             let contract_state_receiver = monitor_contract_state(
                 mpc_contract_state_viewer.clone(),
                 mpc_indexer_config.port_override,
@@ -175,6 +191,7 @@ pub fn spawn_real_indexer(
                 )
             };
 
+            // todo
             // let my_migration_info_receiver = mpc_contract_state_viewer.monitor_migrations().await;
             let my_migration_info_receiver = monitor_migrations(
                 mpc_contract_state_viewer.clone(),

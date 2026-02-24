@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use thiserror::Error;
 
-pub type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub type SharedError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
 #[derive(Debug, Clone)]
 pub enum ChainGatewayOp {
@@ -25,48 +27,53 @@ impl std::fmt::Display for ChainGatewayOp {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum ChainGatewayError {
+    #[error("monitoring task closed")]
+    MonitoringClosed,
+
     #[error("view client error while {op}")]
     ViewClient {
         op: ChainGatewayOp,
         #[source]
-        source: DynError,
+        source: SharedError,
     },
 
     #[error("serialization error {op}")]
     Serialization {
         op: ChainGatewayOp,
         #[source]
-        source: DynError,
+        source: SharedError,
     },
 
-    #[error("deserialization error {op}")]
+    #[error("deserialization error")]
     Deserialization {
-        op: ChainGatewayOp,
         #[source]
-        source: DynError,
+        source: SharedError,
     },
 
     #[error("rpc client error")]
     RpcClient {
         #[source]
-        source: DynError,
+        source: SharedError,
     },
 
-    #[error("failure loading config")]
+    #[error("failure loading config with {msg}")]
     FailureLoadingConfig {
         // work-around seems like nearcore is building anyhow without `std`
         msg: String,
     },
 
-    #[error("starting neard node failed")]
-    StartupFailed { msg: String },
+    #[error("starting neard node failed with {msg}")]
+    StartupFailed {
+        // work-around seems like nearcore is building anyhow without `std`
+        msg: String,
+    },
 
     #[error("send transaction failed")]
     SendTransactionError {
         context: String,
         #[source]
-        source: DynError,
+        source: SharedError,
     },
 }

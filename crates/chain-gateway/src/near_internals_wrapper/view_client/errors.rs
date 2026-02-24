@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::near_internals_wrapper::view_client::request::ViewFunctionCall;
 
-pub type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub type BoxedError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 #[derive(Debug, Error)]
 pub(crate) enum ViewClientError {
@@ -18,12 +18,12 @@ pub(crate) enum GetBlockError {
     #[error("get final block: send error")]
     Send {
         #[source]
-        source: DynError,
+        source: BoxedError,
     },
     #[error("get final block: response error")]
     Response {
         #[source]
-        source: DynError,
+        source: BoxedError,
     },
 }
 
@@ -33,13 +33,13 @@ pub(crate) enum QueryError {
     Send {
         op: ViewFunctionCall,
         #[source]
-        source: DynError,
+        source: BoxedError,
     },
     #[error("query view call {op}: response error")]
     Response {
         op: ViewFunctionCall,
         #[source]
-        source: DynError,
+        source: BoxedError,
     },
     #[error("unexpected response: {response:?} for view_call: {view_call}")]
     UnexpectedResponse {

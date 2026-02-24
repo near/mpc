@@ -1,12 +1,15 @@
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder};
+use chain_gateway::chain_gateway::{ChainGateway, NoArgs};
 use mpc_contract::tee::proposal::{LauncherDockerComposeHash, MpcDockerImageHash};
 use mpc_contract::tee::tee_state::NodeId;
 use tokio::sync::watch;
 
-use super::MpcContractStateViewer;
+use super::{IndexerState, MpcContractStateViewer};
 
 const ALLOWED_HASHES_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
@@ -74,17 +77,35 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     }
 }
 
+use chain_gateway::contract_state_stream::ContractStateStream;
+
 /// This future waits for the indexer to fully sync, and returns
 /// a [`watch::Receiver`] that will be continuously updated with the latest
 /// allowed [`AllowedDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
 pub async fn monitor_allowed_docker_images(
     sender: watch::Sender<Vec<MpcDockerImageHash>>,
-    mpc_contract: MpcContractStateViewer,
-) {
-    let fetcher = { || mpc_contract.get_mpc_allowed_image_hashes() };
+    // todo: no arc
+    indexer: Arc<IndexerState>,
+) -> anyhow::Result<()> {
+    let mut subscription = indexer
+        .chain_gateway
+        .subscribe::<NoArgs, Vec<MpcDockerImageHash>>(
+            indexer.mpc_contract_id.clone(),
+            contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+            &NoArgs {},
+        )
+        .await
+        .context("invalid arguments")?;
+    loop {
+        subscription.changed().await?;
+        let (_, hashes) = subscription.latest()?;
+        //tracing::info!(?height, ?hashes, "allowed docker image hashes updated");
+        //todo: handle error
+        sender.send(hashes)?;
+    }
 
-    monitor_allowed_hashes(sender, &fetcher).await
+    //    monitor_allowed_hashes(sender, &fetcher).await
 }
 
 /// This future waits for the indexer to fully sync, and returns

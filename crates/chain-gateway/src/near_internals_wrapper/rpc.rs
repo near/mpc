@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::near_internals_wrapper::errors::RpcClientError;
 
 #[derive(Clone)]
@@ -28,7 +30,7 @@ impl RpcHandlerWrapper {
         )
         .await
         .map_err(|e| RpcClientError::SubmitTransaction {
-            source: Box::new(e),
+            source: Arc::new(e),
         })?;
 
         match response {

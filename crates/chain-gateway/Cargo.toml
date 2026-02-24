@@ -9,8 +9,11 @@ anyhow = { workspace = true }
 near-async = { workspace = true }
 k256 = { workspace = true }
 near-client = { workspace = true }
+tokio-util = { workspace = true }
 async-trait = { workspace = true }
+near-client-primitives = { workspace = true }
 near-indexer = { workspace = true }
+derive_more = {workspace=true}
 near-indexer-primitives = { workspace = true }
 ed25519-dalek = { workspace = true }
 near-crypto = { workspace = true }

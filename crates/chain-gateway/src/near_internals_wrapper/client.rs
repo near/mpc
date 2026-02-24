@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::errors::ClientError;
 
 #[derive(Clone)]
@@ -24,10 +26,10 @@ impl ClientWrapper {
         )
         .await
         .map_err(|err| ClientError::AsyncSendError {
-            source: Box::new(err),
+            source: Arc::new(err),
         })?
         .map_err(|err| ClientError::ResponseError {
-            source: Box::new(err),
+            source: Arc::new(err),
         })?;
         Ok(status.sync_info.syncing)
     }
