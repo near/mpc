@@ -1,5 +1,5 @@
 use crate::sign::NotSet;
-use crate::verification;
+use crate::verification::{self, check_ec_signature, check_ed_signature};
 pub use contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
 
 pub mod abstract_chain;
@@ -25,6 +25,7 @@ pub struct ForeignChainSignatureVerifier {
 pub enum SignatureVerificationError {
     FailedToComputeMsgHash,
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
+    UnexpectedSignatureScheme,
 }
 
 impl ForeignChainSignatureVerifier {
@@ -32,7 +33,7 @@ impl ForeignChainSignatureVerifier {
     pub fn verify_signature(
         self,
         response: &VerifyForeignTransactionResponse,
-        public_key: PublicKey,
+        public_key: &PublicKey,
     ) -> Result<(), SignatureVerificationError> {
         // check that payload matches the expected payload
         let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
@@ -53,12 +54,19 @@ impl ForeignChainSignatureVerifier {
         }
 
         // check that signature is valid
-        match public_key {
-            PublicKey::Secp256k1(secp256k1_public_key) => verification::check_ec_signature(todo!()),
-            PublicKey::Ed25519(ed25519_public_key) => todo!(),
-            PublicKey::Bls12381(bls12381_g2_public_key) => {
-                unimplemented!("BLS signatures are not implemented for foreign chain requests.")
+        let verification_result = match (public_key, &response.signature) {
+            (
+                PublicKey::Secp256k1(secp256k1_public_key),
+                SignatureResponse::Secp256k1(k256_signature),
+            ) => check_ec_signature(k256_signature, &expected_payload_hash, secp256k1_public_key),
+            (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
+                check_ed_signature(signature, &expected_payload_hash, ed25519_public_key)
             }
+            // TODO: improve type system API so these errors can't happen
+            (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
+                return Err(SignatureVerificationError::UnexpectedSignatureScheme);
+            }
+            (_) => return Err(SignatureVerificationError::UnexpectedSignatureScheme),
         };
 
         Ok(())
