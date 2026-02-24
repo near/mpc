@@ -1,6 +1,6 @@
-# HOT TEE Signing Application
+# Archive Signer
 
-This document outlines the design of a TEE application for long-term support of legacy HOT Wallet keys.
+This document outlines the design of the Archive Signer — a TEE application for long-term support of legacy HOT Wallet keys.
 
 ## Background
 
@@ -43,7 +43,7 @@ Several approaches were considered:
 
 ### Scope
 
-The HOT TEE Signing Application:
+The Archive Signer:
 - Receives signature requests via an HTTP API (_not_ on-chain). HOT's existing backend already sends sign requests via HTTP. Current volume is \~25k requests/day (bearish market baseline) with spikes to 25+ TPS during campaigns (airdrops, mints, claims). On-chain requests would add per-request gas costs (\~$0.001/tx → \~$750/month at current low volume, scaling with activity), latency, and require the _Block Event Subscriber_.
 - Signs using the [reconstructed](#key-import-process) full private key directly with `k256` and `ed25519-dalek` (_not_ threshold signatures). With the full private key reconstructed inside the TEE, threshold signing provides no security benefit.
 - Submits TEE attestation on-chain to a dedicated HOT governance contract.
@@ -66,14 +66,14 @@ The HOT TEE Signing Application:
 
 ```mermaid
 ---
-title: HOT TEE Signing Application
+title: Archive Signer
 ---
 flowchart TB
 
 subgraph CVM["CVM"]
     subgraph DSTACK["Dstack Runtime"]
         LAUNCHER["Launcher<br/>(verifies image hash)"]
-        subgraph HOT_APP["HOT TEE App Container"]
+        subgraph HOT_APP["Archive Signer Container"]
             HTTP["HTTP Server<br/>(axum)"]
             VALIDATION["Validation SDK<br/>(hot-validation-core)"]
             SIGNER["Signing Engine<br/>(k256 + ed25519-dalek)"]
@@ -110,7 +110,7 @@ class RPC ext;
 
 ### Relationship to MPC Network Architecture
 
-The HOT TEE app reuses the chain indexer ([Contract State Subscriber, Transaction Sender][indexer-design] — proposed but not yet extracted as standalone crates), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the Context pattern (adapted as HOT Context for attestation lifecycle only). Everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
+The Archive Signer reuses the chain indexer ([Contract State Subscriber, Transaction Sender][indexer-design] — proposed but not yet extracted as standalone crates), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the Context pattern (adapted as HOT Context for attestation lifecycle only). Everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
 
 [indexer-design]: indexer-design.md
 [tee-authority]: https://github.com/near/mpc/tree/main/crates/tee-authority
@@ -120,7 +120,7 @@ The HOT TEE app reuses the chain indexer ([Contract State Subscriber, Transactio
 
 ```mermaid
 ---
-title: HOT TEE App Dependencies
+title: Archive Signer Dependencies
 ---
 flowchart TB
 
@@ -128,7 +128,7 @@ subgraph SERVICES["Services"]
     direction TB
     MPC_NODE["MPC Node<br/>(existing)"]
     BACKUP["Backup Service<br/>(planned)"]
-    HOT_APP["HOT TEE App<br/>(new)"]
+    HOT_APP["Archive Signer<br/>(new)"]
 end
 
 subgraph CHAIN["Chain Indexer"]
@@ -165,7 +165,7 @@ class HOT_APP new;
 
 ### Embedded Indexer Node
 
-The HOT TEE app embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used exclusively for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes and launcher compose hashes, and submitting TEE attestation transactions. Running `neard` inside the CVM eliminates external RPC trust assumptions — the app verifies chain state directly, with no external trust assumptions beyond the NEAR network itself.
+The Archive Signer embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used exclusively for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes and launcher compose hashes, and submitting TEE attestation transactions. Running `neard` inside the CVM eliminates external RPC trust assumptions — the app verifies chain state directly, with no external trust assumptions beyond the NEAR network itself.
 
 The signing flow itself is entirely off-chain — HTTP requests in, signatures out. Request authorization uses `hot-validation-core`'s own RPC clients (not the embedded neard) to query wallet contracts on NEAR and other chains.
 
@@ -204,7 +204,7 @@ The key import is a two-phase process:
 
 #### Phase 2a: CVM Boot and Encryption Key Publication
 
-1. The CVM boots and the HOT TEE app starts.
+1. The CVM boots and the Archive Signer starts.
 2. On first boot (no keys on encrypted disk), the app generates an **ephemeral encryption key pair** inside the TEE.
 3. The app exposes the ephemeral public key via a local HTTP endpoint (`GET /import/public_key`). This endpoint is only available during the initial import phase and is disabled after key reconstruction succeeds.
 4. The app generates a TDX attestation quote binding the ephemeral public key in `report_data`, so operators can verify the public key belongs to a genuine TEE running the approved image.
@@ -421,7 +421,7 @@ pub struct TeeState {
 
 ### Governance
 
-Although the HOT TEE app is a single node (not a multi-node network), the voting mechanism is still relevant because it governs **which code is allowed to touch the private keys**, not node coordination. Multiple stakeholders vote on approved Docker image hashes, ensuring no single party can unilaterally push a new image that handles the reconstructed keys.
+Although the Archive Signer is a single node (not a multi-node network), the voting mechanism is still relevant because it governs **which code is allowed to touch the private keys**, not node coordination. Multiple stakeholders vote on approved Docker image hashes, ensuring no single party can unilaterally push a new image that handles the reconstructed keys.
 
 The governor set should reflect the broader ecosystems on both sides:
 - **HOT side:** HOT Labs and affiliated companies in the HOT ecosystem that have a stake in the wallet's success.
@@ -431,7 +431,7 @@ Each side can have multiple governor accounts, giving both ecosystems proportion
 
 This follows the same multi-entity voting pattern as the MPC contract.
 
-Note: the MPC contract's [`vote_new_parameters`][vote-new-params] method does not have a direct equivalent here. In the MPC contract, `vote_new_parameters` changes the **participant set and threshold for the threshold signing protocol** (via [`ThresholdParameters`][threshold-params]), triggering a resharing. The HOT TEE app is a single node doing direct signing — there is no threshold protocol, no resharing, and no signing participant set to manage. Instead, the HOT governance contract needs methods for managing its own **governor set** (see below).
+Note: the MPC contract's [`vote_new_parameters`][vote-new-params] method does not have a direct equivalent here. In the MPC contract, `vote_new_parameters` changes the **participant set and threshold for the threshold signing protocol** (via [`ThresholdParameters`][threshold-params]), triggering a resharing. The Archive Signer is a single node doing direct signing — there is no threshold protocol, no resharing, and no signing participant set to manage. Instead, the HOT governance contract needs methods for managing its own **governor set** (see below).
 
 [vote-new-params]: https://github.com/near/mpc/blob/main/crates/contract/src/lib.rs#L921
 [threshold-params]: https://github.com/near/mpc/blob/main/crates/contract/src/primitives/thresholds.rs#L33
@@ -447,10 +447,10 @@ The initial governor set and vote threshold are configured at contract deploymen
 | `vote_code_hash(code_hash)` | Call | Governor | Vote for a new Docker image hash |
 | `vote_remove_code_hash(code_hash)` | Call | Governor | Vote to remove a Docker image hash before natural expiry |
 | `vote_update_governors(governors, threshold)` | Call | Governor | Vote to change the governor set and/or vote threshold |
-| `submit_participant_info(attestation, tls_public_key)` | Call | HOT TEE App | Submit TEE attestation |
+| `submit_participant_info(attestation, tls_public_key)` | Call | Archive Signer | Submit TEE attestation |
 | `verify_tee()` | Call | Anyone | Re-validate all stored attestations |
-| `allowed_docker_image_hashes()` | View | HOT TEE App | Query approved image hashes |
-| `allowed_launcher_compose_hashes()` | View | HOT TEE App | Query approved launcher hashes |
+| `allowed_docker_image_hashes()` | View | Archive Signer | Query approved image hashes |
+| `allowed_launcher_compose_hashes()` | View | Archive Signer | Query approved launcher hashes |
 | `get_tee_accounts()` | View | Anyone | Query nodes with valid attestations |
 
 ### Launcher Compose Hash Derivation
@@ -466,7 +466,7 @@ When a Docker image hash is voted in and reaches the threshold, the contract aut
 
 During attestation verification, the contract replays the TDX event log to reconstruct RTMR3 and checks that both the Docker image hash and launcher compose hash match the allowed lists. This ensures the attesting CVM is running an approved image via an approved launcher configuration.
 
-The HOT TEE governance contract will need its own launcher compose template, since the HOT TEE app has a different Docker Compose configuration than the MPC node.
+The HOT TEE governance contract will need its own launcher compose template, since the Archive Signer has a different Docker Compose configuration than the MPC node.
 
 ## Attestation Flow
 
@@ -477,7 +477,7 @@ sequenceDiagram
     participant OP as HOT Operator
     participant DS as Dstack
     participant LA as Launcher
-    participant APP as HOT TEE App
+    participant APP as Archive Signer
     participant HC as HOT TEE Contract
 
     OP ->> DS: Start CVM
@@ -485,7 +485,7 @@ sequenceDiagram
     DS ->> LA: Start Launcher
     LA ->> LA: Verify app image hash (from disk or DEFAULT_IMAGE_DIGEST)
     LA ->> LA: Extend RTMR3 with app image hash
-    LA ->> APP: Start HOT TEE App container
+    LA ->> APP: Start Archive Signer container
 
     alt Keys found on encrypted disk (subsequent boot)
         APP ->> APP: Load keys from encrypted disk
@@ -524,7 +524,7 @@ sequenceDiagram
 
 ### Attestation Generation
 
-The HOT TEE App uses `TeeAuthority` from [`crates/tee-authority`][tee-authority] to generate attestation quotes. The flow is identical to the MPC node:
+The Archive Signer uses `TeeAuthority` from [`crates/tee-authority`][tee-authority] to generate attestation quotes. The flow is identical to the MPC node:
 
 1. Contact Dstack via Unix socket (`/var/run/dstack.sock`) to get `TcbInfo`.
 2. Request TDX quote with `report_data = Version || SHA384(tls_public_key)`.
@@ -547,7 +547,7 @@ The HOT governance contract verifies attestations using the same DCAP verificati
 
 Application upgrades follow the same Launcher pattern used by the MPC network (see [TEE design doc](securing_mpc_with_tee_design_doc.md)):
 
-1. Governors vote for a new HOT TEE App Docker image hash on-chain via `vote_code_hash()`.
+1. Governors vote for a new Archive Signer Docker image hash on-chain via `vote_code_hash()`.
 2. When `vote_threshold` is reached, the new hash is added to the allowed list.
 3. The running app's Contract State Subscriber detects the new allowed hash.
 4. The app stores the new hash to an encrypted file on disk.
@@ -558,7 +558,7 @@ Application upgrades follow the same Launcher pattern used by the MPC network (s
 
 ## Redundancy and Recovery
 
-Since the HOT TEE app is a single node holding the full private key, redundancy is critical. A hardware failure or misconfiguration must not result in permanent loss of user funds.
+Since the Archive Signer is a single node holding the full private key, redundancy is critical. A hardware failure or misconfiguration must not result in permanent loss of user funds.
 
 ### Primary: Encrypted Disk Persistence
 
