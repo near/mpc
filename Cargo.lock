@@ -6252,6 +6252,8 @@ dependencies = [
  "bounded-collections",
  "contract-interface",
  "derive_more 2.1.1",
+ "k256",
+ "near-sdk",
 ]
 
 [[package]]

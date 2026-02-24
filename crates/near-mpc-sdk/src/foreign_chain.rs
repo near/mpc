@@ -14,11 +14,46 @@ pub use contract_interface::types::{
     VerifyForeignTransactionRequestArgs,
 };
 
-#[allow(dead_code, reason = "TODO(#2130): Implement verification")]
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ForeignChainSignatureVerifier {
     expected_extracted_values: Vec<ExtractedValue>,
     request: ForeignChainRpcRequest,
+}
+
+pub enum SignatureVerificationError {
+    FailedToComputeMsgHash,
+    IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
+}
+
+impl ForeignChainSignatureVerifier {
+    // todo, API type for public keys?
+    pub fn verify_signature(
+        self,
+        response: &VerifyForeignTransactionResponse,
+        public_key: [u8; 32],
+    ) -> Result<(), SignatureVerificationError> {
+        // check that payload matches the expected payload
+        let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: self.request,
+            values: self.expected_extracted_values,
+        });
+
+        let expected_payload_hash = expected_payload
+            .compute_msg_hash()
+            .map_err(|_| SignatureVerificationError::FailedToComputeMsgHash)?;
+
+        let payload_is_correct = expected_payload_hash == response.payload_hash;
+        if !payload_is_correct {
+            return Err(SignatureVerificationError::IncorrectPayloadSigned {
+                got: response.payload_hash.clone(),
+                expected: expected_payload_hash,
+            });
+        }
+
+        // check that signature is valid
+
+        Ok(())
+    }
 }
 
 pub const DEFAULT_PAYLOAD_VERSION: u8 = 1;
