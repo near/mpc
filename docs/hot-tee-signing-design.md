@@ -48,7 +48,6 @@ The HOT TEE Signing Application:
 - Signs using the [reconstructed](#key-import-process) full private key directly with `k256` and `ed25519-dalek` (_not_ threshold signatures). With the full private key reconstructed inside the TEE, threshold signing provides no security benefit.
 - Submits TEE attestation on-chain to a dedicated HOT governance contract.
 - Monitors the HOT governance contract for allowed Docker image hashes and launcher compose hashes.
-- Is operated by the HOT Wallet team, not NEAR.
 
 ### Supported Signature Schemes
 
