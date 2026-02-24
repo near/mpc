@@ -1,6 +1,66 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export NEAR_CLI_DISABLE_SPINNER=1
+
+log(){ echo -e "\033[1;34m[INFO]\033[0m $*"; }
+err(){ echo -e "\033[1;31m[ERROR]\033[0m $*"; }
+
+find_free_port() {
+  python3 -c '
+import socket, random
+while True:
+    port = random.randint(12000, 24000)
+    try:
+        s = socket.socket()
+        s.bind(("", port))
+        s.close()
+        print(port)
+        break
+    except OSError:
+        continue
+'
+}
+
+remove_cvm_app() {
+  local name_file="$1"
+  if [ ! -f "$name_file" ]; then
+    err "No app name file found at $name_file"
+    return 1
+  fi
+  local name
+  name="$(cat "$name_file")"
+  log "Looking up VM ID for $name ..."
+  local vm_id
+  vm_id="$(python3 "$BASE_PATH/vmm/src/vmm-cli.py" --url "$VMM_RPC" lsvm 2>/dev/null \
+    | grep "$name" | awk -F'│' '{gsub(/ /,"",$2); print $2}' | head -1)"
+  if [ -n "$vm_id" ]; then
+    log "Stopping CVM app: $name (vm_id=$vm_id)"
+    python3 "$BASE_PATH/vmm/src/vmm-cli.py" --url "$VMM_RPC" stop "$vm_id" 2>/dev/null || true
+    log "Waiting for VM to stop ..."
+    for (( i=1; i<=30; i++ )); do
+      if python3 "$BASE_PATH/vmm/src/vmm-cli.py" --url "$VMM_RPC" lsvm 2>/dev/null \
+          | grep "$vm_id" | grep -q "stopped"; then
+        break
+      fi
+      sleep 2
+    done
+    log "Removing CVM app: $name (vm_id=$vm_id)"
+    python3 "$BASE_PATH/vmm/src/vmm-cli.py" --url "$VMM_RPC" remove "$vm_id"
+  else
+    err "No VM found for $name"
+    return 1
+  fi
+}
+
+# --- Cleanup mode (only needs BASE_PATH) ---
+if [ "${1:-}" = "--cleanup" ]; then
+  : "${BASE_PATH:?Set BASE_PATH (dstack base path)}"
+  VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
+  workdir="${2:?Usage: $0 --cleanup <WORKDIR>}"
+  remove_cvm_app "$workdir/app_name"
+  exit $?
+fi
+
 VALIDATOR_KEY="$(jq -r .secret_key ~/.near/mpc-localnet/validator_key.json)"
 
 # --- Required ---
@@ -18,17 +78,18 @@ NODE_ACCOUNT="${NODE_ACCOUNT:-frodo.test.near}"
 CONTRACT_ACCOUNT="${CONTRACT_ACCOUNT:-mpc-contract.test.near}"
 NODE_INITIAL_BALANCE="${NODE_INITIAL_BALANCE:-100 NEAR}"
 
-# Ports (only the ones you actually use)
+# Ports – auto-pick free ports to avoid conflicts with other services.
+# Override any of these via environment variables if you need fixed values.
 NEAR_P2P_PORT="${NEAR_P2P_PORT:-24566}"
-PUBLIC_DATA_PORT="${PUBLIC_DATA_PORT:-18082}"
-STATE_SYNC_PORT="${STATE_SYNC_PORT:-24567}"
-MAIN_PORT="${MAIN_PORT:-80}"
-FUTURE_PORT="${FUTURE_PORT:-13001}"
+PUBLIC_DATA_PORT="${PUBLIC_DATA_PORT:-$(find_free_port)}"
+STATE_SYNC_PORT="${STATE_SYNC_PORT:-$(find_free_port)}"
+MAIN_PORT="${MAIN_PORT:-$(find_free_port)}"
+FUTURE_PORT="${FUTURE_PORT:-$(find_free_port)}"
 
-# Host-local ports (avoid tcp:: in vmm-cli)
-SSH_PORT="${SSH_PORT:-1220}"
-AGENT_PORT="${AGENT_PORT:-18090}"
-LOCAL_DEBUG_PORT="${LOCAL_DEBUG_PORT:-3031}"
+# Host-local ports
+SSH_PORT="${SSH_PORT:-$(find_free_port)}"
+AGENT_PORT="${AGENT_PORT:-$(find_free_port)}"
+LOCAL_DEBUG_PORT="${LOCAL_DEBUG_PORT:-$(find_free_port)}"
 
 # dstack
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
@@ -42,14 +103,12 @@ TEE_LAUNCHER_DIR="$REPO_ROOT/tee_launcher"
 ENV_TPL="${ENV_TPL:-$REPO_ROOT/localnet/tee/scripts/node.env.tpl}"
 CONF_TPL="${CONF_TPL:-$REPO_ROOT/localnet/tee/scripts/node.conf.localnet.tpl}"
 
-WORKDIR="${WORKDIR:-/tmp/$USER/mpc_localnet_one_node}"
+WORKDIR="${WORKDIR:-$(mktemp -d /tmp/mpc_localnet_one_node.XXXXXX)}"
 mkdir -p "$WORKDIR"
+log "Work directory: $WORKDIR"
 ENV_OUT="$WORKDIR/node.env"
 CONF_OUT="$WORKDIR/node.conf"
 PUBLIC_DATA_JSON_OUT="${PUBLIC_DATA_JSON_OUT:-$WORKDIR/public_data.json}"
-
-log(){ echo -e "\033[1;34m[INFO]\033[0m $*"; }
-err(){ echo -e "\033[1;31m[ERROR]\033[0m $*"; }
 
 near_account_exists() {
   near account view-account-summary "$1" network-config "$NEAR_NETWORK_CONFIG" now >/dev/null 2>&1
@@ -116,15 +175,70 @@ deploy_one_node() {
   ( cd "$TEE_LAUNCHER_DIR" && ./deploy-launcher.sh --yes --env-file "$ENV_OUT" --base-path "$BASE_PATH" --python-exec python )
 }
 
+wait_for_launcher() {
+  local agent_url="http://127.0.0.1:${AGENT_PORT}"
+  local logs_url="${agent_url}/logs/launcher?text&bare&timestamps&tail=20"
+
+  log "Waiting for dstack agent to become reachable at ${agent_url} ..."
+  if ! curl -fsS --retry 60 --retry-delay 2 --retry-all-errors "${agent_url}/" >/dev/null 2>&1; then
+    err "dstack agent never became reachable at ${agent_url}"
+    return 1
+  fi
+
+  log "Agent is up. Checking launcher logs for MPC container startup ..."
+  # Give the launcher a moment to pull and start the MPC container.
+  local max_attempts=30
+  for (( i=1; i<=max_attempts; i++ )); do
+    local logs
+    logs="$(curl -fsS "${logs_url}" 2>/dev/null || true)"
+
+    # Check for signs the MPC container is running
+    if echo "$logs" | grep -qi "MPC launched successfully"; then
+      log "Launcher started the MPC container successfully."
+      return 0
+    fi
+
+    # Check for fatal errors that mean it won't recover
+    if echo "$logs" | grep -qi "no such image\|pull.*error\|fatal\|exited with code"; then
+      err "Launcher failed to start the MPC container. Last launcher logs:"
+      echo "$logs" >&2
+      return 1
+    fi
+
+    sleep 5
+  done
+
+  # Timed out — dump whatever logs we have and let the caller decide
+  log "Launcher hasn't confirmed MPC container after $((max_attempts * 5))s. Launcher logs:"
+  curl -fsS "${logs_url}" 2>/dev/null || true
+  log "Continuing to fetch /public_data (the node may still be starting) ..."
+}
+
 fetch_public_data() {
   local url="http://${NODE_IP}:${PUBLIC_DATA_PORT}/public_data"
   log "Fetching /public_data -> $PUBLIC_DATA_JSON_OUT"
-  curl -fsS --retry 120 --retry-delay 2 --retry-all-errors "$url" | jq . > "$PUBLIC_DATA_JSON_OUT"
+  if ! curl -fs --retry 120 --retry-delay 2 --retry-all-errors "$url" 2>/dev/null | jq . > "$PUBLIC_DATA_JSON_OUT"; then
+    err "Failed to fetch /public_data from $url"
+    err "Debugging hints:"
+    err "  - Launcher logs: curl http://127.0.0.1:${AGENT_PORT}/logs/launcher?text&bare&timestamps&tail=40"
+    err "  - Rendered env file:  $ENV_OUT"
+    err "  - Rendered conf file: $CONF_OUT"
+    err "  - CVM app name: $APP_NAME"
+    return 1
+  fi
   log "Saved JSON: $PUBLIC_DATA_JSON_OUT"
 }
 
+# --- Main ---
 create_node_account
 render_env_and_conf
+
 deploy_one_node
+echo "$APP_NAME" > "$WORKDIR/app_name"
+log "Saved app name to $WORKDIR/app_name"
+
+wait_for_launcher
 fetch_public_data
-log "✅ Done"
+
+log "Done"
+log "To remove the CVM later:  $0 --cleanup $WORKDIR"

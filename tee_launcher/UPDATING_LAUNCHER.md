@@ -18,7 +18,7 @@ https://hub.docker.com/r/nearone/mpc-launcher
 
 Collect the new Manifest digest from Docker hub:
 ```yaml
-sha256::<NEW>
+sha256:<NEW>
 ```
 
 ## 2) Update the contract’s launcher compose template (verification input)
