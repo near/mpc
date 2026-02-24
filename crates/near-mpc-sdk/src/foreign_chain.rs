@@ -64,7 +64,7 @@ impl ForeignChainSignatureVerifier {
             (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
                 check_ed_signature(signature, &expected_payload_hash, ed25519_public_key)
             }
-            // TODO: improve type system API so these errors can't happen
+            // TODO(#2234): improve types so these errors can't happen
             (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
                 return Err(SignatureVerificationError::UnexpectedSignatureScheme);
             }
