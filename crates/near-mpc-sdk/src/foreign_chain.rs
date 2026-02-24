@@ -26,6 +26,7 @@ pub enum SignatureVerificationError {
     FailedToComputeMsgHash,
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
     UnexpectedSignatureScheme,
+    VerificationFailed,
 }
 
 impl ForeignChainSignatureVerifier {
@@ -66,10 +67,10 @@ impl ForeignChainSignatureVerifier {
             (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
                 return Err(SignatureVerificationError::UnexpectedSignatureScheme);
             }
-            (_) => return Err(SignatureVerificationError::UnexpectedSignatureScheme),
+            _ => return Err(SignatureVerificationError::UnexpectedSignatureScheme),
         };
 
-        Ok(())
+        verification_result.map_err(|_| SignatureVerificationError::VerificationFailed)
     }
 }
 
