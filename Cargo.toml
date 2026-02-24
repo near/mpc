@@ -22,6 +22,7 @@ members = [
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-utils",
+    "crates/threshold-signatures",
     "crates/tls",
     "crates/utilities",
 ]
@@ -49,6 +50,7 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
+threshold-signatures = { path = "crates/threshold-signatures" }
 utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
@@ -152,8 +154,6 @@ syn = "2.0"
 tempfile = "3.25.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
-# Last commit on main branch as of 10-02-2026
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "c2efb61b559f73cbba77b58b5eab491b997b1c76" }
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-metrics = { version = "0.4.7" }
 tokio-rustls = { version = "0.26.4", default-features = false }
