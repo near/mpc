@@ -1,10 +1,13 @@
 use contract_interface::types::{
-    Ed25519PublicKey, Ed25519Signature, Hash256, K256Signature, Payload, PublicKey,
-    Secp256k1PublicKey, SignatureResponse,
+    Ed25519PublicKey, Ed25519Signature, Hash256, K256Signature, Secp256k1PublicKey,
 };
 use k256::{
     EncodedPoint, Secp256k1,
-    elliptic_curve::{CurveArithmetic, point::AffineCoordinates, sec1::ToEncodedPoint},
+    elliptic_curve::{
+        CurveArithmetic,
+        point::AffineCoordinates,
+        sec1::{FromEncodedPoint, ToEncodedPoint},
+    },
 };
 
 pub enum VerificationError {
@@ -50,7 +53,22 @@ pub fn check_ec_signature(
     message: &Hash256,
     public_key: &Secp256k1PublicKey,
 ) -> Result<(), VerificationError> {
-    todo!("somehow verify. We can use check_ec_signature_helper.")
+    let big_r_encoded = k256::EncodedPoint::from_bytes(&signature.big_r.affine_point)
+        .map_err(|_| VerificationError::InvalidSignature)?;
+    let big_r =
+        Option::<k256::AffinePoint>::from(k256::AffinePoint::from_encoded_point(&big_r_encoded))
+            .ok_or(VerificationError::InvalidSignature)?;
+
+    let s = <<Secp256k1 as CurveArithmetic>::Scalar as k256::elliptic_curve::ops::Reduce<
+        <k256::Secp256k1 as k256::elliptic_curve::Curve>::Uint,
+    >>::reduce_bytes(&signature.s.scalar.into());
+
+    let pk_encoded = EncodedPoint::from_untagged_bytes(&public_key.0.into());
+    let pk_affine =
+        Option::<k256::AffinePoint>::from(k256::AffinePoint::from_encoded_point(&pk_encoded))
+            .ok_or(VerificationError::InvalidSignature)?;
+
+    check_ec_signature_helper(&pk_affine, &big_r, &s, &message.0, signature.recovery_id)
 }
 
 pub fn check_ed_signature(

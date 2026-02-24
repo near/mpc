@@ -1,5 +1,5 @@
 use crate::sign::NotSet;
-use crate::verification::{self, check_ec_signature, check_ed_signature};
+use crate::verification::{check_ec_signature, check_ed_signature};
 pub use contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
 
 pub mod abstract_chain;
