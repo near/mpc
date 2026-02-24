@@ -200,21 +200,40 @@ mod test {
     }
 
     #[test]
-    fn with_expected_log_can_add_multiple_logs() {
+    fn with_multiple_expected_logs_produces_correct_extractors_and_values() {
         // given
         let tx_id = EvmTxId::from([123; 32]);
         let log_a = test_evm_log(1);
         let log_b = test_evm_log(2);
 
         // when
-        let builder = ForeignChainRequestBuilder::new()
-            .with_abstract_tx_id(tx_id)
+        let (verifier, request_args) = ForeignChainRequestBuilder::new()
+            .with_abstract_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
-            .with_expected_log(1, log_a)
-            .with_expected_log(2, log_b);
+            .with_expected_log(1, log_a.clone())
+            .with_expected_log(2, log_b.clone())
+            .with_derivation_path("path".to_string())
+            .with_domain_id(DomainId::from(1))
+            .build();
 
         // then
-        assert_eq!(builder.request.expected_logs.len(), 2);
+        assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
+            assert_eq!(
+                rpc_request.extractors,
+                vec![
+                    EvmExtractor::Log { log_index: 1 },
+                    EvmExtractor::Log { log_index: 2 },
+                ]
+            );
+        });
+
+        assert_eq!(
+            verifier.expected_extracted_values,
+            vec![
+                ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(log_a)),
+                ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(log_b)),
+            ]
+        );
     }
 
     #[test]
