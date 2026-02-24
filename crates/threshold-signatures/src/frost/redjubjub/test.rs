@@ -10,6 +10,9 @@ use crate::test_utils::{
     GenProtocol, MockCryptoRng,
 };
 
+use std::collections::BTreeMap;
+use std::error::Error;
+
 use frost_core::{Field, Scalar};
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
@@ -17,7 +20,6 @@ use reddsa::frost::redjubjub::{
     keys::{generate_with_dealer, IdentifierList, SigningShare},
     JubjubBlake2b512, JubjubScalarField, Randomizer, SigningKey, VerifyingKey,
 };
-use std::error::Error;
 
 type C = JubjubBlake2b512;
 
@@ -27,8 +29,6 @@ pub fn build_key_packages_with_dealer(
     min_signers: u16,
     rng: &mut impl CryptoRngCore,
 ) -> GenOutput<C> {
-    use std::collections::BTreeMap;
-
     let mut identifiers = Vec::with_capacity(max_signers.into());
     for _ in 0..max_signers {
         // from 1 to avoid assigning 0 to a ParticipantId

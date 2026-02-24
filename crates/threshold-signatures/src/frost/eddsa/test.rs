@@ -8,13 +8,15 @@ use crate::{
     Participant, ReconstructionLowerBound,
 };
 
+use std::collections::BTreeMap;
+use std::error::Error;
+
 use frost_core::Scalar;
 use frost_ed25519::{keys::SigningShare, Ed25519Sha512, SigningKey, VerifyingKey};
-
-type C = Ed25519Sha512;
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
-use std::error::Error;
+
+type C = Ed25519Sha512;
 
 /// this is a centralized key generation
 pub fn build_key_packages_with_dealer(
@@ -22,8 +24,6 @@ pub fn build_key_packages_with_dealer(
     min_signers: u16,
     rng: &mut impl CryptoRngCore,
 ) -> GenOutput<C> {
-    use std::collections::BTreeMap;
-
     let mut identifiers = Vec::with_capacity(max_signers.into());
     for _ in 0..max_signers {
         // from 1 to avoid assigning 0 to a ParticipantId

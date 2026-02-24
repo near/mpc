@@ -623,6 +623,8 @@ pub fn batch_invert<C: Ciphersuite>(values: &[Scalar<C>]) -> Result<Vec<Scalar<C
 
 #[cfg(test)]
 mod test {
+    use std::ops::Neg;
+
     use super::*;
     use crate::test_utils::{
         generate_participants, generate_participants_with_random_ids, MockCryptoRng,
@@ -1224,9 +1226,6 @@ mod test {
 
     #[test]
     fn test_batch_compute_lagrange_coefficients_early_exit() {
-        use frost_core::Field;
-        use k256::Scalar;
-        use std::ops::Neg;
         let points_set = [Scalar::from(1u32), Scalar::from(2u32), Scalar::from(3u32)];
         let x_equals_point = Scalar::from(2u32); // x is equal to points_set[1]
 
