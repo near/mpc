@@ -30,10 +30,10 @@ pub enum SignatureVerificationError {
 }
 
 impl ForeignChainSignatureVerifier {
-    // todo, API type for public keys?
     pub fn verify_signature(
         self,
         response: &VerifyForeignTransactionResponse,
+        // TODO(#2232): don't use interface API types for public keys
         public_key: &PublicKey,
     ) -> Result<(), SignatureVerificationError> {
         // check that payload matches the expected payload
