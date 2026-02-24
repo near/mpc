@@ -21,6 +21,37 @@ while True:
 '
 }
 
+# Pretty-print JSON but keep arrays of primitives (e.g. byte arrays) on one line.
+format_json() {
+  python3 -c '
+import json, sys
+
+def fmt(obj, indent=2, level=0):
+    sp = " " * indent * level
+    sp1 = " " * indent * (level + 1)
+    if isinstance(obj, dict):
+        if not obj:
+            return "{}"
+        items = []
+        for k, v in obj.items():
+            items.append(sp1 + json.dumps(k) + ": " + fmt(v, indent, level + 1))
+        return "{\n" + ",\n".join(items) + "\n" + sp + "}"
+    elif isinstance(obj, list):
+        if not obj:
+            return "[]"
+        if all(not isinstance(i, (dict, list)) for i in obj):
+            return json.dumps(obj, separators=(", ", ": "))
+        items = []
+        for v in obj:
+            items.append(sp1 + fmt(v, indent, level + 1))
+        return "[\n" + ",\n".join(items) + "\n" + sp + "]"
+    else:
+        return json.dumps(obj)
+
+print(fmt(json.load(sys.stdin)))
+'
+}
+
 remove_cvm_app() {
   local name_file="$1"
   if [ ! -f "$name_file" ]; then
@@ -171,8 +202,13 @@ render_env_and_conf() {
 }
 
 deploy_one_node() {
-  log "Deploying dstack CVM app: $APP_NAME"
-  ( cd "$TEE_LAUNCHER_DIR" && ./deploy-launcher.sh --yes --env-file "$ENV_OUT" --base-path "$BASE_PATH" --python-exec python )
+  local deploy_log="$WORKDIR/deploy.log"
+  log "Deploying dstack CVM app: $APP_NAME (log: $deploy_log)"
+  if ! ( cd "$TEE_LAUNCHER_DIR" && ./deploy-launcher.sh --yes --env-file "$ENV_OUT" --base-path "$BASE_PATH" --python-exec python ) > "$deploy_log" 2>&1; then
+    err "deploy-launcher.sh failed. Output:"
+    cat "$deploy_log" >&2
+    return 1
+  fi
 }
 
 wait_for_launcher() {
@@ -217,7 +253,7 @@ wait_for_launcher() {
 fetch_public_data() {
   local url="http://${NODE_IP}:${PUBLIC_DATA_PORT}/public_data"
   log "Fetching /public_data -> $PUBLIC_DATA_JSON_OUT"
-  if ! curl -fs --retry 120 --retry-delay 2 --retry-all-errors "$url" 2>/dev/null | jq . > "$PUBLIC_DATA_JSON_OUT"; then
+  if ! curl -fs --retry 120 --retry-delay 2 --retry-all-errors "$url" 2>/dev/null | format_json > "$PUBLIC_DATA_JSON_OUT"; then
     err "Failed to fetch /public_data from $url"
     err "Debugging hints:"
     err "  - Launcher logs: curl http://127.0.0.1:${AGENT_PORT}/logs/launcher?text&bare&timestamps&tail=40"
