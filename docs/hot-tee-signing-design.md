@@ -70,7 +70,7 @@ title: HOT TEE Signing Application
 ---
 flowchart TB
 
-subgraph CVM["CVM (operated by HOT)"]
+subgraph CVM["CVM"]
     subgraph DSTACK["Dstack Runtime"]
         LAUNCHER["Launcher<br/>(verifies image hash)"]
         subgraph HOT_APP["HOT TEE App Container"]
