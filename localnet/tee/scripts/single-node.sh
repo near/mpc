@@ -241,4 +241,4 @@ wait_for_launcher
 fetch_public_data
 
 log "Done"
-log "To remove the CVM later:  $0 --cleanup $WORKDIR"
+log "To remove the CVM later:  bash $0 --cleanup $WORKDIR"
