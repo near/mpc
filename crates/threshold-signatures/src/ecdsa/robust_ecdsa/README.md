@@ -1,15 +1,40 @@
-# Robust ECDSA scheme
+# Robust Threshold ECDSA (`src/ecdsa/robust_ecdsa/`)
 
-This is an amended version of the Robust ECDSA scheme of \[[DJNPO](https://eprint.iacr.org/2020/501.pdf)\].
-The amendment can be found [here](https://docs.google.com/document/d/1FGxPg50lVzU3IRlUAlfinLWp6zh5uQqTJBvFXZj288c/edit?tab=t.0). It does away with several checks that the scheme requires to happen and thus dropping the security from active adversaries (under honest majority assumption) to honest-but-curious adversaries.
+This module implements an amended version of the threshold ECDSA scheme from \[[DJNPO20](https://eprint.iacr.org/2020/501)\]. Unlike OT-based ECDSA, it avoids Beaver triple generation entirely -- the offline phase consists of a single presigning protocol using degree-2t polynomials, resulting in fewer rounds and simpler orchestration.
 
-This implementation is meant to be integrated into a Trusted Execution Environment (TEE) which is meant prevent an adversary from deviating from the protocol. Additionally, the communication between the parties is assumed to be encrypted under secret keys integrated into the TEE.
+## Pipeline
 
-## ATTENTION:
-Some papers define the number of malicious parties (eg this exact paper) to be the same as the threshold.
-Other papers seem to define the number of malicious parties to be threshold - 1.
+```
+Presigning (offline)  -->  Signing (online)
+  3 rounds                   1 round
+```
 
-The first case corresponds to robust ecdsa implementation (explicit condition on the threshold e.g. $n \geq 3 \cdot t + 1$).
-The second case corresponds to the ot-based ecdsa implementation. (no explicit condition e.g.  $n \geq t$).
+Each presignature is consumed **exactly once** (one-time use).
 
-CARE TO UNIFY THE IMPLEMENTATION such as number of malicious parties = threshold. Discuss with the team such duality!
+## Modules
+
+### `presign.rs`
+
+Three-round presigning protocol that produces a `PresignOutput` from polynomial secret sharing. See the [protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md) for the full round description.
+
+### `sign.rs`
+
+One-round online signing protocol with a designated coordinator. Takes a rerandomized presignature and the message hash, produces a standard ECDSA signature (low-S normalized). See the [protocol specification](../../../docs/ecdsa/robust_ecdsa/signing.md) for details.
+
+## Types
+
+- **`PresignArguments`** -- input to presigning: keygen output + maximum number of malicious parties
+- **`PresignOutput`** -- presignature: `(big_r, c, e, alpha, beta)`
+- **`RerandomizedPresignOutput`** -- presignature after rerandomization via HKDF-SHA3-256 for a specific signing context
+
+## Threshold
+
+The threshold parameter is `MaxMalicious`, denoted `t`. Both presigning and signing require **exactly** `N = 2t + 1` participants. This constraint is enforced at initialization and prevents split-view attacks where different subsets sign different messages using shares from the same presignature.
+
+Additionally, `msg_hash == 0` is rejected to prevent a related-key split-view attack.
+
+## Further Reading
+
+- [`docs/ecdsa/robust_ecdsa/signing.md`](../../../docs/ecdsa/robust_ecdsa/signing.md) -- protocol specification with security analysis
+- [`docs/ecdsa/preliminaries.md`](../../../docs/ecdsa/preliminaries.md) -- standard ECDSA recap
+- [Parent ECDSA README](../README.md) -- comparison with OT-based ECDSA

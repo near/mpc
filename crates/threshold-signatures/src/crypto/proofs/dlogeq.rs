@@ -10,7 +10,6 @@ use crate::{
     Ciphersuite, Element, Scalar,
 };
 use frost_core::{serialization::SerializableScalar, Group};
-use rand_core::CryptoRngCore;
 use subtle::ConstantTimeEq;
 
 /// The public statement for this proof.
@@ -100,15 +99,14 @@ fn encode_two_points<C: Ciphersuite>(
     Ok(ser1)
 }
 
-/// Prove that a witness satisfies a given statement.
-/// We need some randomness for the proof, and also a transcript, which is
-/// used for the Fiat-Shamir transform.
-#[allow(dead_code)]
-pub fn prove<C: Ciphersuite>(
-    rng: &mut impl CryptoRngCore,
+/// Produce a proof for the given statement and witness, using a caller-provided nonce.
+/// The nonce `k` must be sampled from a cryptographically secure RNG by the caller.
+/// The challenge is derived via the Fiat-Shamir transform over the transcript.
+pub fn prove_with_nonce<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
     witness: Witness<C>,
+    k: Scalar<C>,
 ) -> Result<Proof<C>, ProtocolError>
 where
     Element<C>: ConstantTimeEq,
@@ -116,37 +114,8 @@ where
     if statement.generator1.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);
     }
+
     transcript.message(NEAR_DLOGEQ_STATEMENT_LABEL, &statement.encode()?);
-
-    let k = frost_core::random_nonzero::<C, _>(rng);
-    let (big_k_0, big_k_1) = statement.phi(&k);
-
-    // This will never raise error as k is not zero and generator1 is not the identity
-    let enc = encode_two_points::<C>(&big_k_0, &big_k_1)?;
-
-    transcript.message(NEAR_DLOGEQ_COMMITMENT_LABEL, &enc);
-    let mut rng = transcript.challenge_then_build_rng(NEAR_DLOGEQ_CHALLENGE_LABEL);
-    let e = frost_core::random_nonzero::<C, _>(&mut rng);
-
-    let s = k + e * witness.x.0;
-    Ok(Proof {
-        e: SerializableScalar::<C>(e),
-        s: SerializableScalar::<C>(s),
-    })
-}
-
-// Same as `prove` but using fixed nonce
-pub fn prove_with_nonce<C: Ciphersuite>(
-    transcript: &mut Transcript,
-    statement: Statement<'_, C>,
-    witness: Witness<C>,
-    k: Scalar<C>,
-) -> Result<Proof<C>, ProtocolError> {
-    transcript.message(NEAR_DLOGEQ_STATEMENT_LABEL, &statement.encode()?);
-
-    if *statement.generator1 == C::Group::identity() {
-        return Err(ProtocolError::IdentityElement);
-    }
 
     let (big_k_0, big_k_1) = statement.phi(&k);
 
@@ -220,15 +189,11 @@ mod test {
             x: SerializableScalar::<Secp256K1Sha256>(x),
         };
 
+        let k = frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut rng);
         let transcript = Transcript::new(b"protocol");
 
-        let proof = prove(
-            &mut rng,
-            &mut transcript.fork(b"party", &[1]),
-            statement,
-            witness,
-        )
-        .unwrap();
+        let proof =
+            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, witness, k).unwrap();
 
         let ok = verify(&mut transcript.fork(b"party", &[1]), statement, &proof).unwrap();
 
@@ -236,7 +201,7 @@ mod test {
     }
 
     #[test]
-    fn test_prove_fixed_randomness() {
+    fn test_prove_with_nonce_fixed_randomness() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let x = Scalar::generate_biased(&mut rng);
         let h = Scalar::generate_biased(&mut rng);
@@ -251,27 +216,15 @@ mod test {
             x: SerializableScalar::<Secp256K1Sha256>(x),
         };
 
+        let k = frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut rng);
         let transcript = Transcript::new(b"protocol");
 
-        let proof = prove(
-            &mut rng,
-            &mut transcript.fork(b"party", &[1]),
-            statement,
-            witness,
-        )
-        .unwrap();
-        assert_eq!(
-            Scalar::from_uint_unchecked(Uint::from_be_hex(
-                "0D5982BE2922D4BF893BFA4F0086C59738CA1F77BCA4316F28F263E2F1347C21"
-            )),
-            proof.s.0
-        );
-        assert_eq!(
-            Scalar::from_uint_unchecked(Uint::from_be_hex(
-                "2912F8772B0E33708AD3A3F8A587FCBE23A50109496F4A3F8669979F2B78AEFD"
-            )),
-            proof.e.0
-        );
+        let proof =
+            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, witness, k).unwrap();
+
+        // Snapshot values for deterministic nonce from MockCryptoRng(42)
+        insta::assert_snapshot!(format!("{:?}", proof.s.0), @"Scalar(Uint(0x0D5982BE2922D4BF893BFA4F0086C59738CA1F77BCA4316F28F263E2F1347C21))");
+        insta::assert_snapshot!(format!("{:?}", proof.e.0), @"Scalar(Uint(0x2912F8772B0E33708AD3A3F8A587FCBE23A50109496F4A3F8669979F2B78AEFD))");
     }
 
     #[test]
@@ -301,34 +254,26 @@ mod test {
     }
 
     #[test]
-    fn test_prove_with_identity_generator1_fails() {
+    fn test_prove_with_nonce_identity_generator1_fails() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let x = Scalar::generate_biased(&mut rng);
 
         let statement = Statement::<Secp256K1Sha256> {
             public0: &(ProjectivePoint::GENERATOR * x),
-            generator1: &<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity(), // Identity element
+            generator1: &<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity(),
             public1: &(<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity() * x),
         };
         let witness = Witness {
             x: SerializableScalar::<Secp256K1Sha256>(x),
         };
 
+        let k = frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut rng);
         let transcript = Transcript::new(b"protocol");
 
-        let proof_result = prove(
-            &mut rng,
-            &mut transcript.fork(b"party", &[1]),
-            statement,
-            witness,
-        );
+        let proof_result =
+            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, witness, k);
 
-        assert!(proof_result.is_err());
-        if let Err(e) = proof_result {
-            assert_eq!(e, ProtocolError::IdentityElement);
-        } else {
-            panic!("Expected an error, but got Ok");
-        }
+        assert!(matches!(proof_result, Err(ProtocolError::IdentityElement)));
     }
 
     #[test]
@@ -338,7 +283,7 @@ mod test {
 
         let statement = Statement::<Secp256K1Sha256> {
             public0: &(ProjectivePoint::GENERATOR * x),
-            generator1: &<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity(), // Identity element
+            generator1: &<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity(),
             public1: &(<Secp256K1Sha256 as frost_core::Ciphersuite>::Group::identity() * x),
         };
 
@@ -356,11 +301,6 @@ mod test {
             &dummy_proof,
         );
 
-        assert!(verify_result.is_err());
-        if let Err(e) = verify_result {
-            assert_eq!(e, ProtocolError::IdentityElement);
-        } else {
-            panic!("Expected an error, but got Ok");
-        }
+        assert!(matches!(verify_result, Err(ProtocolError::IdentityElement)));
     }
 }
