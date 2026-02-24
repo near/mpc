@@ -129,6 +129,7 @@ impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet, NotSet> {
 
 #[cfg(test)]
 mod test {
+    use assert_matches::assert_matches;
     use contract_interface::types::{DomainId, Hash160, VerifyForeignTransactionRequestArgs};
 
     use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
@@ -311,12 +312,9 @@ mod test {
             .build();
 
         // then
-        match &request_args.request {
-            ForeignChainRpcRequest::Abstract(req) => {
-                assert!(req.extractors.is_empty());
-            }
-            _ => panic!("Expected Abstract request"),
-        }
+        assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
+            assert_eq!(rpc_request.extractors, vec![]);
+        });
     }
 
     fn test_evm_log(log_index: u64) -> EvmLog {
