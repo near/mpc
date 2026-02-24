@@ -82,6 +82,7 @@ subgraph CVM["CVM"]
             INDEXER["Chain Indexer (neard)"]
         end
     end
+    DISK[("Encrypted Disk<br/>(Gramine Key Provider)")]
 end
 
 CLIENT["Authenticated Accounts"]
@@ -93,6 +94,7 @@ HTTP --> VALIDATION
 VALIDATION -->|"verify proof"| RPC
 VALIDATION --> SIGNER
 SIGNER --> KEYSTORE
+KEYSTORE ---|"persist / load on boot"| DISK
 
 HOT_CTX --> INDEXER
 INDEXER -->|"view: allowed hashes<br/>call: submit_participant_info"| HOT_CONTRACT
