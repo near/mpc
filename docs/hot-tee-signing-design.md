@@ -29,14 +29,6 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 [proof-model]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/validation.rs#L7-L12
 [uid]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/uid.rs#L11
 
-Other approaches were considered and rejected:
-- **Running the existing MPC stack with a single node** — [`threshold-signatures`][threshold-sigs] does not support fewer than 2 shares, and carries unnecessary complexity (P2P networking, resharing, triple/presignature generation, block event indexing).
-- **Running two MPC nodes inside one CVM** — higher maintenance burden and susceptible to the same bugs seen in mainnet/testnet deployments.
-
-[threshold-sigs]: https://github.com/near/threshold-signatures
-
-A custom binary was chosen because it is light-weight and easy to reason about, reuses modular TEE attestation and chain indexer components already being developed ([indexer design](indexer-design.md)), is future-proof (can be reused as a "graveyard" for NEAR's own deprecated domains), and aligns with other ongoing priorities (backup service, [#1891](https://github.com/near/mpc/issues/1891)).
-
 The HOT MPC network characteristics the Archive Signer replaces:
 
 | Aspect | HOT MPC |
@@ -55,6 +47,19 @@ The HOT MPC network characteristics the Archive Signer replaces:
 [ed25519-dalek]: https://crates.io/crates/ed25519-dalek
 [domain-0]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/libs/chain-signatures/contract/src/primitives/domain.rs#L21-L24
 [domain-1]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/node/src/tests/multidomain.rs#L36-L37
+
+### Why a Custom Binary
+
+Other approaches were considered and rejected:
+- **Running the existing MPC stack with a single node** — [`threshold-signatures`][threshold-sigs] does not support fewer than 2 shares, and carries unnecessary complexity (P2P networking, resharing, triple/presignature generation, block event indexing).
+- **Running two MPC nodes inside one CVM** — higher maintenance burden and susceptible to the same bugs seen in mainnet/testnet deployments.
+
+[threshold-sigs]: https://github.com/near/threshold-signatures
+
+A custom binary was chosen because it is light-weight and easy to reason about, reuses modular TEE attestation and chain indexer components already being developed ([indexer design](indexer-design.md)), is future-proof (can be reused as a "graveyard" for NEAR's own deprecated domains), and aligns with other ongoing priorities (backup service, [#1891](https://github.com/near/mpc/issues/1891)).
+
+See also: [#2062](https://github.com/near/mpc/issues/2062), [#2018](https://github.com/near/mpc/issues/2018), [#2021](https://github.com/near/mpc/pull/2021).
+
 ## Architecture Overview
 
 ### Component Diagram
