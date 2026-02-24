@@ -1,5 +1,5 @@
 use crate::{
-    foreign_chain::{BuildableForeignChainRequest, ForeignChainRequestBuilder},
+    foreign_chain::{ForeignChainRequestBuilder, ForeignChainRpcRequestWithExpectations},
     sign::NotSet,
 };
 
@@ -27,10 +27,7 @@ pub struct BitcoinRequest<TxId, Confirmations> {
     expected_block_hash: Option<BitcoinBlockHash>,
 }
 
-// This means the request can be built
-impl BuildableForeignChainRequest for BuildableBitcoinRequest {}
-
-impl From<BuildableBitcoinRequest> for (ForeignChainRpcRequest, Vec<ExtractedValue>) {
+impl From<BuildableBitcoinRequest> for ForeignChainRpcRequestWithExpectations {
     fn from(built_request: BuildableBitcoinRequest) -> Self {
         let mut extractors = vec![];
         let mut expected_values = vec![];
@@ -42,14 +39,14 @@ impl From<BuildableBitcoinRequest> for (ForeignChainRpcRequest, Vec<ExtractedVal
             ));
         }
 
-        (
-            ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+        ForeignChainRpcRequestWithExpectations {
+            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: built_request.tx_id,
                 confirmations: built_request.confirmations,
                 extractors,
             }),
             expected_values,
-        )
+        }
     }
 }
 

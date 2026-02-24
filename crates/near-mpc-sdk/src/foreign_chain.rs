@@ -22,13 +22,6 @@ pub struct ForeignChainSignatureVerifier {
 
 pub const DEFAULT_PAYLOAD_VERSION: u8 = 1;
 
-/// Marker trait for chain-specific request types that have all required fields set
-/// and can be converted into the contract's RPC request format with expected extracted values.
-pub trait BuildableForeignChainRequest:
-    Into<(ForeignChainRpcRequest, Vec<ExtractedValue>)>
-{
-}
-
 #[derive(Debug, Clone)]
 pub struct ForeignChainRequestBuilder<Request, DerivationPath, DomainId> {
     request: Request,
@@ -54,7 +47,9 @@ impl ForeignChainRequestBuilder<NotSet, NotSet, NotSet> {
     }
 }
 
-impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, NotSet, NotSet> {
+impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
+    ForeignChainRequestBuilder<Request, NotSet, NotSet>
+{
     pub fn with_derivation_path(
         self,
         derivation_path: String,
@@ -68,7 +63,9 @@ impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, 
     }
 }
 
-impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, String, NotSet> {
+impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
+    ForeignChainRequestBuilder<Request, String, NotSet>
+{
     pub fn with_domain_id(
         self,
         domain_id: impl Into<DomainId>,
@@ -82,14 +79,19 @@ impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, 
     }
 }
 
-impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, String, DomainId> {
+impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
+    ForeignChainRequestBuilder<Request, String, DomainId>
+{
     pub fn build(
         self,
     ) -> (
         ForeignChainSignatureVerifier,
         VerifyForeignTransactionRequestArgs,
     ) {
-        let (request, expected_values) = self.request.into();
+        let ForeignChainRpcRequestWithExpectations {
+            request,
+            expected_values,
+        } = self.request.into();
 
         let verifier = ForeignChainSignatureVerifier {
             expected_extracted_values: expected_values,
@@ -105,4 +107,9 @@ impl<Request: BuildableForeignChainRequest> ForeignChainRequestBuilder<Request, 
 
         (verifier, request_args)
     }
+}
+
+pub struct ForeignChainRpcRequestWithExpectations {
+    request: ForeignChainRpcRequest,
+    expected_values: Vec<ExtractedValue>,
 }
