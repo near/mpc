@@ -4,6 +4,7 @@ pub use contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_F
 
 pub mod abstract_chain;
 pub mod bitcoin;
+pub mod starknet;
 
 use contract_interface::types::PublicKey;
 // response types

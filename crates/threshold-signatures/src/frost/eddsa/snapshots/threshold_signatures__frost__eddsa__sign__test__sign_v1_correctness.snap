@@ -1,0 +1,5 @@
+---
+source: src/frost/eddsa/sign.rs
+expression: signature
+---
+"23c8edde9a5a3442a54e516a254a016fe3e4c7c359a72fc11fddd714d1246d1ea84ad455f41b13985be9a84113e5fd085d3bbd0cb91db1aa3337d11896a59403"
