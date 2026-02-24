@@ -4,7 +4,7 @@ This module implements a threshold protocol for generating deterministic keys in
 
 The intended use case is providing deterministic secrets to applications running inside a TEE (Trusted Execution Environment), where the application can derive a key without any single MPC node learning the derived secret.
 
-For a detailed description of the protocol, see the [full specification](../../docs/confidential_key_derivation/confidential_key_derivation.md).
+For a detailed description of the protocol, see the [full specification](../../docs/confidential_key_derivation/confidential-key-derivation.md).
 
 ## Modules
 
@@ -42,5 +42,5 @@ Uses the same curve-generic DKG as all other schemes: `keygen::<BLS12381SHA256>(
 
 ## Further Reading
 
-- [`docs/confidential_key_derivation/confidential_key_derivation.md`](../../docs/confidential_key_derivation/confidential_key_derivation.md) -- full protocol specification with security analysis
+- [`docs/confidential_key_derivation/confidential_key_derivation.md`](../../docs/confidential_key_derivation/confidential-key-derivation.md) -- full protocol specification with security analysis
 - [Main README](../../README.md) -- overview of CKD functionalities
