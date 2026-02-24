@@ -138,6 +138,8 @@ if [ ! -d "$VENV_DIR" ]; then
     fi
 fi
 
+# uv venv .venv --python 3.12
+# uv pip install -r requirements.txt
 printf "\nActivating virtual environment."
 if ! source "$VENV_DIR/bin/activate"; then
     echo "Error: could not activate virtual environment. $VENV_DIR/bin/activate"

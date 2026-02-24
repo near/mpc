@@ -2,6 +2,9 @@ use super::contract_state_viewer::{spawn_subscriber, MpcContractStateViewer};
 use super::handler::listen_blocks;
 use super::migrations::{monitor_migrations, ContractMigrationInfo};
 use super::participants::monitor_contract_state;
+use super::tee::{
+    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
+};
 use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
@@ -132,42 +135,42 @@ pub fn spawn_real_indexer(
 
             //tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
 
-            // mpc_contract_state_viewer.monitor_allowed_docker_images(allowed_docker_images_sender);
-            spawn_subscriber(
-                allowed_docker_images_sender,
-                indexer_state.clone(),
-                contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
-                &NoArgs {},
-            );
-            //tokio::spawn(monitor_allowed_docker_images(
+            //mpc_contract_state_viewer.monitor_allowed_docker_images(allowed_docker_images_sender);
+            //spawn_subscriber(
             //    allowed_docker_images_sender,
             //    indexer_state.clone(),
-            //));
+            //    contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+            //    &NoArgs {},
+            //);
+            tokio::spawn(monitor_allowed_docker_images(
+                allowed_docker_images_sender,
+                mpc_contract_state_viewer.clone(),
+            ));
 
-            // mpc_contract_state_viewer.monitor_allowed_launcher_compose_hashes(allowed_launcher_compose_sender);
-            spawn_subscriber(
-                allowed_launcher_compose_sender,
-                indexer_state.clone(),
-                contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
-                &NoArgs {},
-            );
-            //tokio::spawn(monitor_allowed_launcher_compose_hashes(
+            //mpc_contract_state_viewer.monitor_allowed_launcher_compose_hashes(allowed_launcher_compose_sender);
+            //spawn_subscriber(
             //    allowed_launcher_compose_sender,
-            //    mpc_contract_state_viewer.clone(),
-            //));
+            //    indexer_state.clone(),
+            //    contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
+            //    &NoArgs {},
+            //);
+            tokio::spawn(monitor_allowed_launcher_compose_hashes(
+                allowed_launcher_compose_sender,
+                mpc_contract_state_viewer.clone(),
+            ));
 
             // mpc_contract_state_viewer.monitor_tee_accounts(tee_accounts_sender);
             // underneath the hood, you can have a generic method to avoid code duplication
-            spawn_subscriber(
-                tee_accounts_sender,
-                indexer_state.clone(),
-                contract_interface::method_names::GET_TEE_ACCOUNTS,
-                &NoArgs {},
-            );
-            //tokio::spawn(monitor_tee_accounts(
+            //spawn_subscriber(
             //    tee_accounts_sender,
-            //    mpc_contract_state_viewer.clone(),
-            //));
+            //    indexer_state.clone(),
+            //    contract_interface::method_names::GET_TEE_ACCOUNTS,
+            //    &NoArgs {},
+            //);
+            tokio::spawn(monitor_tee_accounts(
+                tee_accounts_sender,
+                mpc_contract_state_viewer.clone(),
+            ));
 
             //  let contract_state_receiver = mpc_contract_state_viewer.monitor_contract_state(protocol_state_sender).await;
             // Returns once the contract state is available.
