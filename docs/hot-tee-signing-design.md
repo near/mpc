@@ -432,11 +432,22 @@ Each side can have multiple governor accounts, giving both ecosystems proportion
 
 This follows the same multi-entity voting pattern as the MPC contract.
 
+Note: the MPC contract's [`vote_new_parameters`][vote-new-params] method does not have a direct equivalent here. In the MPC contract, `vote_new_parameters` changes the **participant set and threshold for the threshold signing protocol** (via [`ThresholdParameters`][threshold-params]), triggering a resharing. The HOT TEE app is a single node doing direct signing — there is no threshold protocol, no resharing, and no signing participant set to manage. Instead, the HOT governance contract needs methods for managing its own **governor set** (see below).
+
+[vote-new-params]: https://github.com/near/mpc/blob/main/crates/contract/src/lib.rs#L921
+[threshold-params]: https://github.com/near/mpc/blob/main/crates/contract/src/primitives/thresholds.rs#L33
+
+### Governor Management
+
+The initial governor set and vote threshold are configured at contract deployment. After deployment, governors can vote to change the governor set and/or threshold via `vote_update_governors`. This requires `vote_threshold` votes on the same proposal to take effect — ensuring that governor changes go through the same multi-stakeholder approval as code hash changes.
+
 ### Contract Methods
 
 | Method | Type | Caller | Description |
 |--------|------|--------|-------------|
 | `vote_code_hash(code_hash)` | Call | Governor | Vote for a new Docker image hash |
+| `vote_remove_code_hash(code_hash)` | Call | Governor | Vote to remove a Docker image hash before natural expiry |
+| `vote_update_governors(governors, threshold)` | Call | Governor | Vote to change the governor set and/or vote threshold |
 | `submit_participant_info(attestation, tls_public_key)` | Call | HOT TEE App | Submit TEE attestation |
 | `verify_tee()` | Call | Anyone | Re-validate all stored attestations |
 | `allowed_docker_image_hashes()` | View | HOT TEE App | Query approved image hashes |
