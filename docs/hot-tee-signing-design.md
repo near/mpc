@@ -420,15 +420,7 @@ pub struct TeeState {
 
 ### Governance
 
-Although the Archive Signer is a single node (not a multi-node network), the voting mechanism is still relevant because it governs **which code is allowed to touch the private keys**, not node coordination. Multiple stakeholders vote on approved Docker image hashes, ensuring no single party can unilaterally push a new image that handles the reconstructed keys.
-
-The governor set should reflect the broader ecosystems on both sides:
-- **HOT side:** HOT Labs and affiliated companies in the HOT ecosystem that have a stake in the wallet's success.
-- **NEAR side:** NEAR Foundation and other NEAR ecosystem entities invested in MPC/HOT Wallet continuity.
-
-Each side can have multiple governor accounts, giving both ecosystems proportional influence. The `vote_threshold` should be set high enough that neither side can act unilaterally, but low enough that legitimate upgrades aren't blocked by a single absent governor. The exact governor set and threshold are to be decided.
-
-This follows the same multi-entity voting pattern as the MPC contract.
+Although the Archive Signer is a single node (not a multi-node network), the voting mechanism is still relevant because it governs **which code is allowed to touch the private keys**, not node coordination. The governance body consists of multiple actors with equal voting weight, ensuring no single party can unilaterally push a new image that handles the reconstructed keys. This follows the same multi-entity voting pattern as the MPC contract.
 
 Note: the MPC contract's [`vote_new_parameters`][vote-new-params] method does not have a direct equivalent here. In the MPC contract, `vote_new_parameters` changes the **participant set and threshold for the threshold signing protocol** (via [`ThresholdParameters`][threshold-params]), triggering a resharing. The Archive Signer is a single node doing direct signing — there is no threshold protocol, no resharing, and no signing participant set to manage. Instead, the HOT governance contract needs methods for managing its own **governor set** (see below).
 
