@@ -299,7 +299,7 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 mod tests {
     use crate::{
         dto_mapping::IntoInterfaceType,
-        primitives::test_utils::gen_account_id,
+        primitives::test_utils::{gen_account_id, gen_participants},
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
     };
     use near_account_id::AccountId;
@@ -705,8 +705,6 @@ mod tests {
 
     #[test]
     fn test_proposed_updates_remove_non_participant_votes() {
-        use crate::primitives::test_utils::gen_participants;
-
         let mut proposed_updates = ProposedUpdates::default();
         let update = Update::Contract([0; 1000].into());
         let bytes_used = bytes_used(&update);

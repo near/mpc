@@ -1,8 +1,7 @@
 pub use contract_interface::method_names::SIGN as SIGN_METHOD_NAME;
-use contract_interface::types::DomainId;
 // response types
 pub use contract_interface::types::{
-    Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature,
+    DomainId, Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature,
     SignatureResponse as SignatureRequestResponse,
 };
 

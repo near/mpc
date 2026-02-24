@@ -1,5 +1,5 @@
 use super::tx_signer::{TransactionSigner, TransactionSigners};
-use super::ChainSendTransactionRequest;
+use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
 use crate::config::RespondConfig;
 use crate::metrics;
@@ -169,8 +169,6 @@ async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
     request: &ChainSendTransactionRequest,
 ) -> anyhow::Result<TransactionStatus> {
-    use ChainSendTransactionRequest::*;
-
     match request {
         Respond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the

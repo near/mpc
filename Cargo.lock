@@ -6248,8 +6248,10 @@ dependencies = [
 name = "near-mpc-sdk"
 version = "3.5.1"
 dependencies = [
+ "assert_matches",
  "bounded-collections",
  "contract-interface",
+ "derive_more 2.1.1",
 ]
 
 [[package]]
