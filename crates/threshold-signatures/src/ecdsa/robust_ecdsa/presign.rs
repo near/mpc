@@ -1,0 +1,452 @@
+use super::{PresignArguments, PresignOutput};
+use crate::participants::{Participant, ParticipantList, ParticipantMap};
+use crate::{
+    ecdsa::{
+        CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
+        Secp256K1ScalarField, Secp256K1Sha256,
+    },
+    errors::{InitializationError, ProtocolError},
+    protocol::{
+        helpers::recv_from_others,
+        internal::{make_protocol, Comms, SharedChannel},
+        Protocol,
+    },
+    SigningShare,
+};
+use frost_core::serialization::SerializableScalar;
+use frost_secp256k1::{Group, Secp256K1Group};
+use rand_core::CryptoRngCore;
+use subtle::ConstantTimeEq;
+
+type C = Secp256K1Sha256;
+
+/// The presignature protocol.
+///
+/// This is the first phase of performing a signature, in which we perform
+/// all the work we can do without yet knowing the message to be signed.
+///
+/// This work does depend on the private key though, and it's crucial
+/// that a presignature is never reused.
+pub fn presign(
+    participants: &[Participant],
+    me: Participant,
+    args: PresignArguments,
+    rng: impl CryptoRngCore + Send + 'static,
+) -> Result<impl Protocol<Output = PresignOutput>, InitializationError> {
+    if participants.len() < 2 {
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len(),
+        });
+    }
+
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
+
+    if !participants.contains(me) {
+        return Err(InitializationError::MissingParticipant {
+            role: "self",
+            participant: me,
+        });
+    }
+
+    if args.max_malicious.value() > participants.len() {
+        return Err(InitializationError::BadParameters(
+            "max_malicious must be less than or equals to participant count".to_string(),
+        ));
+    }
+
+    let robust_ecdsa_threshold = args
+        .max_malicious
+        .value()
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(1))
+        .ok_or_else(|| {
+            InitializationError::BadParameters(
+                "2*max_malicious+1 must be less than usize::MAX".to_string(),
+            )
+        })?;
+    if robust_ecdsa_threshold > participants.len() {
+        return Err(InitializationError::BadParameters(
+            "2*max_malicious+1 must be less than or equals to participant count".to_string(),
+        ));
+    }
+
+    // To prevent split-view attacks documented in docs/ecdsa/robust_ecdsa/signing.md
+    if participants.len() != robust_ecdsa_threshold {
+        return Err(InitializationError::BadParameters(
+            "the number of participants during presigning must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
+        ));
+    }
+
+    let ctx = Comms::new();
+    let fut = do_presign(ctx.shared_channel(), participants, me, args, rng);
+    Ok(make_protocol(ctx, fut))
+}
+
+/// /!\ Warning: the threshold in this scheme is the exactly the
+///              same as the max number of malicious parties.
+#[allow(clippy::too_many_lines)]
+async fn do_presign(
+    mut chan: SharedChannel,
+    participants: ParticipantList,
+    me: Participant,
+    args: PresignArguments,
+    mut rng: impl CryptoRngCore,
+) -> Result<PresignOutput, ProtocolError> {
+    let rng = &mut rng;
+    let threshold = args.max_malicious.value();
+    // Round 1
+    let degree = threshold
+        .checked_mul(2)
+        .ok_or(ProtocolError::IntegerOverflow)?;
+    let polynomials = [
+        // Step 1.1
+        // degree t random secret shares where t is the max number of malicious parties
+        Polynomial::generate_polynomial(None, threshold, rng)?, // fk
+        Polynomial::generate_polynomial(None, threshold, rng)?, // fa
+        // Step 1.2
+        // degree 2t zero secret shares where t is the max number of malicious parties
+        zero_secret_polynomial(degree, rng)?, // fb
+        zero_secret_polynomial(degree, rng)?, // fd
+        zero_secret_polynomial(degree, rng)?, // fe
+    ];
+
+    // send polynomial evaluations to participants
+    let wait_round_1 = chan.next_waitpoint();
+
+    // Step 1.3
+    for p in participants.others(me) {
+        // Securely send to each other participant a secret share
+        let package = polynomials
+            .iter()
+            .map(|poly| poly.eval_at_participant(p))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // send the evaluation privately to participant p
+        chan.send_private(wait_round_1, p, &package)?;
+    }
+
+    // Evaluate my secret shares for my polynomials
+    let mut shares = Shares::new(&polynomials, me)?;
+
+    // Round 2
+    // Step 2.1
+    // Receive evaluations from all participants
+    for (_, package) in recv_from_others(&chan, wait_round_1, &participants, me).await? {
+        // Step 2.2
+        // calculate the respective sum of the different shares received from each participant
+        shares.add_shares(&package);
+    }
+
+    // Step 2.3
+    // Compute R_me = g^{k_me}
+    let big_r_me = CoefficientCommitment::new(Secp256K1Group::generator() * shares.k());
+
+    // Step 2.4
+    // Compute w_me = a_me * k_me + b_me
+    let w_me = shares.a() * shares.k() + shares.b();
+
+    // Step 2.5
+    // Send and receive
+    let wait_round_2 = chan.next_waitpoint();
+    chan.send_many(wait_round_2, &(&big_r_me, &SigningShare::<C>::new(w_me)))?;
+
+    // Store the sent items
+    let mut signingshares_map = ParticipantMap::new(&participants);
+    let mut verifyingshares_map = ParticipantMap::new(&participants);
+    signingshares_map.put(me, SerializableScalar(w_me));
+    verifyingshares_map.put(me, big_r_me);
+
+    // Round 3
+    // Receive and interpolate
+    while !signingshares_map.full() {
+        // Step 3.1
+        let (from, (big_r_p, w_p)): (_, (_, SigningShare<C>)) = chan.recv(wait_round_2).await?;
+        // collect big_r_p and w_p in maps that will be later ordered
+        // if the sender has already sent elements then put will return immediately
+        signingshares_map.put(from, SerializableScalar(w_p.to_scalar()));
+        verifyingshares_map.put(from, big_r_p);
+    }
+
+    let identifiers: Vec<Scalar> = signingshares_map
+        .participants()
+        .iter()
+        .map(Participant::scalar::<C>)
+        .collect();
+
+    let signingshares = signingshares_map
+        .into_vec_or_none()
+        .ok_or(ProtocolError::InvalidInterpolationArguments)?;
+
+    // exponent interpolation of big R
+    let verifying_shares = verifyingshares_map
+        .into_vec_or_none()
+        .ok_or(ProtocolError::InvalidInterpolationArguments)?;
+
+    let (threshold_plus1_identifiers, _) = identifiers
+        .split_at_checked(threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough identifiers".to_string()))?;
+    let (threshold_plus1_verifying_shares, _) = verifying_shares
+        .split_at_checked(threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough verifying shares".to_string()))?;
+
+    // check that the exponent interpolations match what has been received
+    for (identifier, verifying_share) in identifiers
+        .iter()
+        .skip(threshold + 1)
+        .zip(verifying_shares.iter().skip(threshold + 1))
+    {
+        // Step 3.2
+        // exponent interpolation for (R0, .., Rt; i)
+        let big_r_i = PolynomialCommitment::eval_exponent_interpolation(
+            threshold_plus1_identifiers,
+            threshold_plus1_verifying_shares,
+            Some(identifier),
+        )?;
+
+        // check the interpolated R values match the received ones
+        if big_r_i != *verifying_share {
+            return Err(ProtocolError::AssertionFailed(
+                "Exponent interpolation check failed.".to_string(),
+            ));
+        }
+    }
+    // Step 3.3
+    // get only the first t+1 elements to interpolate
+    // we know that identifiers.len()>threshold+1
+    // evaluate the exponent interpolation on zero
+    let big_r = PolynomialCommitment::eval_exponent_interpolation(
+        threshold_plus1_identifiers,
+        threshold_plus1_verifying_shares,
+        None,
+    )?;
+
+    // Step 3.4
+    // check R is not identity
+    if big_r
+        .value()
+        .ct_eq(&<Secp256K1Group as Group>::identity())
+        .into()
+    {
+        return Err(ProtocolError::IdentityElement);
+    }
+
+    // Step 3.5
+    // polynomial interpolation of w
+    let (w_2tp1_identifiers, _) = identifiers
+        .split_at_checked(2 * threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough identifiers".to_string()))?;
+    let (w_2tp1_verifying_shares, _) = signingshares
+        .split_at_checked(2 * threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough verifying shares".to_string()))?;
+    let w = Polynomial::eval_interpolation(w_2tp1_identifiers, w_2tp1_verifying_shares, None)?;
+
+    // Step 3.6
+    // check w is non-zero
+    if w.0.is_zero().into() {
+        return Err(ProtocolError::ZeroScalar);
+    }
+
+    // Step 3.7
+    // Compute W_me = R^{a_me}
+    let big_w_me = CoefficientCommitment::new(big_r.value() * shares.a());
+    // Step 3.8
+    // Send W_me
+    let wait_round_3 = chan.next_waitpoint();
+    chan.send_many(wait_round_3, &big_w_me)?;
+
+    // Step 3.9
+    // Receive W_i
+    let mut wshares_map = ParticipantMap::new(&participants);
+    wshares_map.put(me, big_w_me);
+    while !wshares_map.full() {
+        let (from, big_w_p) = chan.recv(wait_round_3).await?;
+        wshares_map.put(from, big_w_p);
+    }
+    // Compute exponent interpolation checks
+    let wshares = wshares_map
+        .into_vec_or_none()
+        .ok_or(ProtocolError::InvalidInterpolationArguments)?;
+    let (threshold_plus1_wshares, _) = wshares
+        .split_at_checked(threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough wshares".to_string()))?;
+
+    for (identifier, wshare) in identifiers
+        .iter()
+        .skip(threshold + 1)
+        .zip(wshares.iter().skip(threshold + 1))
+    {
+        // exponent interpolation for (W0, .., Wt; i)
+        let big_w_i = PolynomialCommitment::eval_exponent_interpolation(
+            threshold_plus1_identifiers,
+            threshold_plus1_wshares,
+            Some(identifier),
+        )?;
+        // check the interpolated W values match the received ones
+        if big_w_i != *wshare {
+            return Err(ProtocolError::AssertionFailed(
+                "Exponent interpolation check failed.".to_string(),
+            ));
+        }
+    }
+
+    // Step 3.10
+    // compute W as exponent interpolation for (W0, .., Wt; 0)
+    let big_w = PolynomialCommitment::eval_exponent_interpolation(
+        threshold_plus1_identifiers,
+        threshold_plus1_wshares,
+        None,
+    )?;
+
+    // Step 3.12
+    // check W == g^w
+    if big_w
+        .value()
+        .ct_ne(&(<Secp256K1Group as Group>::generator() * w.0))
+        .into()
+    {
+        return Err(ProtocolError::AssertionFailed(
+            "Exponent interpolation check failed.".to_string(),
+        ));
+    }
+
+    // Step 3.13
+    // w is non-zero due to previous check and so I can unwrap safely
+    let c_me = w.0.invert().unwrap() * shares.a();
+
+    // Step 3.14
+    // Some extra computation is pushed in this offline phase
+    let alpha_me = c_me + shares.d();
+
+    // Step 3.15
+    let x_me = args.keygen_out.private_share.to_scalar();
+    let beta_me = c_me * x_me;
+
+    Ok(PresignOutput {
+        big_r: big_r.value().to_affine(),
+        alpha: alpha_me,
+        beta: beta_me,
+        c: c_me,
+        e: shares.e(),
+    })
+}
+
+/// Generates a secret polynomial where the constant term is zero
+fn zero_secret_polynomial(
+    degree: usize,
+    rng: &mut impl CryptoRngCore,
+) -> Result<Polynomial, ProtocolError> {
+    let secret = Secp256K1ScalarField::zero();
+    Polynomial::generate_polynomial(Some(secret), degree, rng)
+}
+
+/// Contains five shares used during presigniture
+/// (k, a, b, d, e)
+#[derive(serde::Deserialize, serde::Serialize)]
+struct Shares([SerializableScalar<C>; 5]);
+
+impl Shares {
+    /// Constructs a new Shares out of five polynomials
+    pub(crate) fn new(
+        polynomials: &[Polynomial; 5],
+        p: Participant,
+    ) -> Result<Self, ProtocolError> {
+        // iterate over the polynomials and map them
+        let shares = polynomials
+            .iter()
+            .map(|poly| poly.eval_at_participant(p))
+            .collect::<Result<Vec<_>, _>>()?
+            .try_into()
+            .map_err(|_| ProtocolError::Other("Unable to build Shares".to_string()))?;
+        Ok(Self(shares))
+    }
+
+    /// Returns k element
+    pub(crate) fn k(&self) -> Scalar {
+        self.0[0].0
+    }
+
+    /// Returns a element
+    pub(crate) fn a(&self) -> Scalar {
+        self.0[1].0
+    }
+
+    /// Returns b element
+    pub(crate) fn b(&self) -> Scalar {
+        self.0[2].0
+    }
+
+    /// Returns d element
+    pub(crate) fn d(&self) -> Scalar {
+        self.0[3].0
+    }
+
+    /// Returns e element
+    pub(crate) fn e(&self) -> Scalar {
+        self.0[4].0
+    }
+
+    /// Adds two sets of shares together respectively and puts the result back into self
+    pub(crate) fn add_shares(&mut self, shares: &Self) {
+        for (share, other_share) in self.0.iter_mut().zip(shares.0.iter()) {
+            share.0 += other_share.0;
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use frost_secp256k1::VerifyingKey;
+    use k256::ProjectivePoint;
+    use rand::{RngCore, SeedableRng};
+
+    use crate::ecdsa::KeygenOutput;
+    use crate::test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng};
+
+    #[test]
+    fn test_presign() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
+        let participants = generate_participants(5);
+
+        let max_malicious = 2;
+
+        let f = Polynomial::generate_polynomial(None, max_malicious, &mut rng).unwrap();
+        let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
+
+        let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
+
+        for p in &participants {
+            // simulating the key packages for each participant
+            let private_share = f.eval_at_participant(*p).unwrap();
+            let verifying_key = VerifyingKey::new(big_x);
+            let keygen_out = KeygenOutput {
+                private_share: SigningShare::new(private_share.0),
+                public_key: verifying_key,
+            };
+
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+
+            let protocol = presign(
+                &participants[..],
+                *p,
+                PresignArguments {
+                    keygen_out,
+                    max_malicious: max_malicious.into(),
+                },
+                rng_p,
+            )
+            .unwrap();
+            protocols.push((*p, Box::new(protocol)));
+        }
+
+        let result = run_protocol(protocols).unwrap();
+
+        assert!(result.len() == 5);
+        // testing that big_r is the same accross participants
+        assert!(result.windows(2).all(|w| w[0].1.big_r == w[1].1.big_r));
+
+        insta::assert_json_snapshot!(result);
+    }
+}

@@ -1,0 +1,118 @@
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci-tests:
+    name: "Run tests"
+    runs-on: warp-ubuntu-2404-x64-8x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-provider: "warpbuild"
+
+      - name: Run clippy fmt
+        run: |
+          CARGO_TARGET_DIR="target/clippy" \
+          RUSTFLAGS="-D warnings" \
+          cargo clippy --all-features --all-targets --locked
+
+      - name: Run Cargo fmt
+        run: |
+          cargo fmt -- --check
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
+        with:
+          tool: cargo-deny@0.18.9
+
+      - name: Run cargo deny
+        run: cargo deny --all-features check
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: nextest@0.9.106
+
+      - name: Run cargo-nextest
+        run: cargo nextest run --locked --all-features --cargo-profile test-release
+
+  ci-coverage:
+    name: Coverage
+    runs-on: warp-ubuntu-2404-x64-8x
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-provider: "warpbuild"
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: cargo-llvm-cov@0.6.21
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: nextest@0.9.106
+      - name: Generate code coverage
+        run: cargo llvm-cov nextest --cargo-profile test-release --all-features --workspace --codecov --output-path codecov.json
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: codecov.json
+          fail_ci_if_error: false
+  
+  zizmor-check:
+    name: "zizmor github actions check"
+    runs-on: warp-ubuntu-2404-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: zizmor@1.16.2
+
+
+      - name: Check github actions with zizmor
+        run: |
+          zizmor .github/
