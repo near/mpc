@@ -6,9 +6,9 @@ This document outlines the design of the Archive Signer — a TEE application fo
 
 ### Problem
 
-HOT Labs operates a threshold MPC network for ECDSA (secp256k1) and EdDSA (ed25519) signing on behalf of HOT Wallet users. HOT Labs wants to retire this network. NEAR does not want to import HOT's keyshares into its own MPC network due to liability concerns: if a key was compromised before import, NEAR would still be held responsible for any resulting exploit — regardless of the security guarantees NEAR's MPC network provides.
+HOT Labs operates a threshold MPC network for ECDSA (secp256k1) and EdDSA (ed25519) signing on behalf of HOT Wallet users. HOT Labs wants to retire this network.
 
-The compromise: build a standalone application running inside a Trusted Execution Environment (TEE) that holds the reconstructed full private keys and handles signing requests. HOT will operate this application.
+To support this, we'll provide a standalone application running inside a Trusted Execution Environment (TEE) that holds the reconstructed full private keys and handles signing requests. HOT will then be able to operate an instance of this application for their keyshares.
 
 c.f. [#2062](https://github.com/near/mpc/issues/2062), [#2018](https://github.com/near/mpc/issues/2018), [#2021](https://github.com/near/mpc/pull/2021)
 
