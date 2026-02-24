@@ -52,7 +52,9 @@ pub struct Proof<C: Ciphersuite> {
     s: SerializableScalar<C>,
 }
 
-// Same as the function `prove`, but given nonce
+/// Produce a proof for the given statement and witness, using a caller-provided nonce.
+/// The nonce `(k, k * G)` must be sampled from a cryptographically secure RNG by the caller.
+/// The challenge is derived via the Fiat-Shamir transform over the transcript.
 pub fn prove_with_nonce<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
