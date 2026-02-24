@@ -54,7 +54,7 @@ Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`) con
 
 ## 4) Regenerate/refresh test assets (follow the README)
 
-1. manually or use the script in localnet/tee/scripts/single_node.sh (follow the  instructions in single_node_readme.md) to generate a new attestation with the updated launcher, then extract the measurements and update the test fixtures accordingly.
+1. manually or use the script in localnet/tee/scripts/single-node.sh (follow the  instructions in single-node-readme.md) to generate a new attestation with the updated launcher, then extract the measurements and update the test fixtures accordingly.
 
 2. Follow the instructions in  `crates/test-utils/assets/README.md` on how to update the test assets
 

@@ -47,7 +47,7 @@ export CONTRACT_ACCOUNT=mpc-contract.test.near
 ## Run
 From the MPC repo root:
 ```bash
-bash ./localnet/tee/scripts/single_node.sh
+bash ./localnet/tee/scripts/single-node.sh
 ```
 
 ## Output
@@ -58,6 +58,6 @@ bash ./localnet/tee/scripts/single_node.sh
 ## Cleanup
 To remove the CVM after you're done:
 ```bash
-BASE_PATH=/path/to/dstack bash ./localnet/tee/scripts/single_node.sh --cleanup <WORKDIR>
+BASE_PATH=/path/to/dstack bash ./localnet/tee/scripts/single-node.sh --cleanup <WORKDIR>
 ```
 The exact command is printed at the end of a successful run.
