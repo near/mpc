@@ -1,0 +1,34 @@
+---
+source: src/confidential_key_derivation/test.rs
+expression: result
+---
+[
+  [
+    0,
+    {
+      "private_share": "aa4d3f7ff43da60bce9803cf12619a231f96fbf6e7e4b688bdd69aa8a35dd82e",
+      "public_key": "acede0416bc326a4a52a52f74391b1bbd131a45950bfe4ee7be1cfb18bb0cb8e2abba6fad27658c2c4186244a379e16108f1db1e9168d8763e16774a427e706fa5a51703eb84ff27776758270fcb0dae883c6e5bacbe9a639064c2fd466d8357"
+    }
+  ],
+  [
+    1,
+    {
+      "private_share": "d1b89d344c863e9f436042b2270e3b8253abb918c9bcc32192f8e45409b5f50e",
+      "public_key": "acede0416bc326a4a52a52f74391b1bbd131a45950bfe4ee7be1cfb18bb0cb8e2abba6fad27658c2c4186244a379e16108f1db1e9168d8763e16774a427e706fa5a51703eb84ff27776758270fcb0dae883c6e5bacbe9a639064c2fd466d8357"
+    }
+  ],
+  [
+    2,
+    {
+      "private_share": "70e882ad5dc9d993c1e3c95dd4f5b9fd240368071aa88ff4dae4876c9efb7308",
+      "public_key": "acede0416bc326a4a52a52f74391b1bbd131a45950bfe4ee7be1cfb18bb0cb8e2abba6fad27658c2c4186244a379e16108f1db1e9168d8763e16774a427e706fa5a51703eb84ff27776758270fcb0dae883c6e5bacbe9a639064c2fd466d8357"
+    }
+  ],
+  [
+    31,
+    {
+      "private_share": "fe24799d5c6c8021a0df5320362fd39ce8ac9dcd52dc53595e29a663df9e224e",
+      "public_key": "acede0416bc326a4a52a52f74391b1bbd131a45950bfe4ee7be1cfb18bb0cb8e2abba6fad27658c2c4186244a379e16108f1db1e9168d8763e16774a427e706fa5a51703eb84ff27776758270fcb0dae883c6e5bacbe9a639064c2fd466d8357"
+    }
+  ]
+]

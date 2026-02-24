@@ -9,6 +9,7 @@ use crate::sandbox::{
             GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
         },
         contract_build::{current_contract, migration_contract},
+        interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
@@ -523,7 +524,6 @@ async fn update_from_current_contract_to_migration_contract() {
         .await
         .expect("Contract must be in running state.");
 
-    use crate::sandbox::utils::interface::IntoContractType;
     execute_key_generation_and_add_random_state(
         &mpc_signer_accounts,
         participants.into_contract_type(),
