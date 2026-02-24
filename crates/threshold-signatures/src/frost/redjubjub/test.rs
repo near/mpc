@@ -1,9 +1,6 @@
 use crate::{
     crypto::hash::{hash, HashOutput},
-    frost::redjubjub::{
-        presign::presign, sign::sign, KeygenOutput, PresignArguments, PresignOutput,
-        SignatureOption,
-    },
+    frost::redjubjub::{sign::sign, KeygenOutput, PresignOutput, SignatureOption},
     Participant, ReconstructionLowerBound,
 };
 
@@ -71,28 +68,9 @@ pub fn run_presign(
     participants: &[(Participant, KeygenOutput)],
     threshold: impl Into<ReconstructionLowerBound> + Copy,
     actual_signers: usize,
+    rng: impl CryptoRngCore + Send + Clone + 'static,
 ) -> Result<Vec<(Participant, PresignOutput)>, Box<dyn Error>> {
-    let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
-
-    let participants_list = participants
-        .iter()
-        .take(actual_signers)
-        .map(|(id, _)| *id)
-        .collect::<Vec<_>>();
-
-    for (participant, keygen_out) in participants.iter().take(actual_signers) {
-        let rng = MockCryptoRng::seed_from_u64(42);
-        let args = PresignArguments {
-            keygen_out: keygen_out.clone(),
-            threshold: threshold.into(),
-        };
-        // run the signing scheme
-        let protocol = presign(&participants_list, *participant, &args, rng)?;
-
-        protocols.push((*participant, Box::new(protocol)));
-    }
-
-    Ok(run_protocol(protocols)?)
+    crate::test_utils::frost_run_presignature(participants, threshold, actual_signers, rng)
 }
 
 #[allow(clippy::panic_in_result_fn)]
@@ -110,7 +88,7 @@ pub fn run_sign_with_presign(
     let randomizer = Randomizer::from_scalar(randomizer_scalar);
 
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
-    let presig = run_presign(participants, threshold, actual_signers)?;
+    let presig = run_presign(participants, threshold, actual_signers, rng)?;
 
     let participants_list = participants
         .iter()
@@ -363,7 +341,8 @@ fn check_presignatures_terms() {
 
     let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
     // add the presignatures here
-    let presignatures = run_presign(&key_packages, threshold as usize, actual_signers).unwrap();
+    let presignatures =
+        run_presign(&key_packages, threshold as usize, actual_signers, rng).unwrap();
 
     for (i, (p1, presig1)) in presignatures.iter().enumerate() {
         for (p2, presig2) in presignatures.iter().skip(i + 1) {
@@ -384,7 +363,8 @@ fn check_presignatures_terms_with_less_active_participants() {
 
     let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
     // add the presignatures here
-    let presignatures = run_presign(&key_packages, threshold as usize, actual_signers).unwrap();
+    let presignatures =
+        run_presign(&key_packages, threshold as usize, actual_signers, rng).unwrap();
     for i in 0..presignatures.len() {
         for j in (i + 1)..presignatures.len() {
             let (p1, presig1) = &presignatures[i];

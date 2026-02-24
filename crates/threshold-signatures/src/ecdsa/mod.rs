@@ -84,10 +84,10 @@ pub type SignatureOption = Option<Signature>;
 
 /// The arguments used to derive randomness used for presignature rerandomization.
 /// Presignature rerandomization has been thoroughly described in
-/// [GS21] <https://eprint.iacr.org/2021/1330.pdf>
+/// \[GS21\] <https://eprint.iacr.org/2021/1330.pdf>
 ///
 /// *** Warning ***
-/// Following [GS21] <https://eprint.iacr.org/2021/1330.pdf>, the entropy should
+/// Following \[GS21\] <https://eprint.iacr.org/2021/1330.pdf>, the entropy should
 /// be public, freshly generated, and unpredictable.
 // Cannot derive Debug here because an external type inside Tweak does not implement it
 #[derive(Clone)]

@@ -14,7 +14,7 @@ use zeroize::ZeroizeOnDrop;
 /// The necessary inputs for the creation of a presignature.
 pub struct PresignArguments {
     /// The output of key generation, i.e. our share of the secret key, and the public key package.
-    /// This is of type `KeygenOutput`<Secp256K1Sha256> from Frost implementation
+    /// This is of type `KeygenOutput<Secp256K1Sha256>` from Frost implementation
     pub keygen_out: KeygenOutput,
     /// The desired threshold for the presignature, which must match the original threshold
     pub max_malicious: MaxMalicious,

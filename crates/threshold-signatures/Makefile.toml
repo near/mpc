@@ -1,6 +1,16 @@
 [tasks.check-all]
 description = "Run all checks"
-dependencies = ["fmt", "check", "clippy", "test", "deny"]
+dependencies = [
+  "fmt",
+  "kebab-file-names",
+  "todo-format",
+  "check-markdown-links",
+  "check",
+  "check-docs",
+  "deny",
+  "clippy",
+  "nextest",
+]
 
 [tasks.deny]
 description = "Run cargo deny"
@@ -27,12 +37,12 @@ args = [
 command = "cargo"
 args = ["fmt", "--", "--check"]
 
-[tasks.test]
+[tasks.nextest]
 command = "cargo"
 args = [
-  "test",
-  "--profile",
-  "test-release",
+  "nextest",
+  "run",
+  "--cargo-profile=test-release",
   "--all-features",
   "--all-targets",
   "--locked",
@@ -41,3 +51,24 @@ args = [
 [tasks.fmt-fix]
 command = "cargo"
 args = ["fmt"]
+
+[tasks.kebab-file-names]
+command = "bash"
+args = ["scripts/check-kebab-case-files.sh"]
+
+[tasks.todo-format]
+command = "bash"
+args = ["scripts/check-todo-format.sh"]
+
+
+[tasks.check-docs]
+description = "Check rustdoc for broken intra-doc links"
+command = "cargo"
+args = ["doc", "--workspace", "--no-deps"]
+
+[tasks.check-docs.env]
+RUSTDOCFLAGS = "-D warnings"
+
+[tasks.check-markdown-links]
+command = "lychee"
+args = ["--no-progress", "."]
