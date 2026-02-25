@@ -17,13 +17,17 @@ is the bottleneck: it involves heavy OT-based cryptographic computation.
 Presignature generation is significantly faster, and signature generation
 is a single round.
 
-Triples are not domain-specific — a single shared triple store feeds
+Triples are not domain-specific; a single shared triple store feeds
 presignature generation for all ECDSA domains. Presignatures are
 per-domain because they incorporate the domain's key share.
 
+**Capacity rule of thumb:** With `desired_triples_to_buffer = N`, the
+node can produce at most `N / 2` presignatures before new triples must
+be generated (since each presignature consumes a pair of triples).
+
 ## Owned vs unowned assets
 
-Every asset has exactly one **owner** — the participant who initiated its
+Every asset has exactly one **owner**, the participant who initiated its
 generation. Only the owner may pick which asset to consume next for a new
 computation. All other participants in the same asset's group hold an
 **unowned** copy.
@@ -35,6 +39,14 @@ computation. All other participants in the same asset's group hold an
 
 When the leader starts a presignature or signature computation it
 broadcasts the asset ID. Followers look the asset up by that ID.
+
+**Follower-side generation:** Followers do not run their own generation
+loops for assets they don't own. Instead, the generic protocol runner
+(`crates/node/src/protocol.rs`) handles incoming generation requests
+from leaders over the P2P network. When a leader spawns a triple or
+presignature protocol, it opens a network channel with the chosen
+participant set. Each follower receives the protocol message, runs its
+side of the MPC computation, and stores the result as an unowned asset.
 
 ## Background generation loops
 
@@ -80,6 +92,8 @@ Key details:
   `config.concurrency`.
 - A stagger delay (`parallel_triple_generation_stagger_time_sec`) between
   successive spawns avoids thundering-herd effects.
+- The `sleep 100ms` at the bottom of the loop is a non-blocking
+  `tokio::time::sleep` — it yields to the async runtime, not the OS thread.
 
 ### Presignature generation loop
 
@@ -205,7 +219,10 @@ set have an active P2P TLS connection. Otherwise it is **offline**.
 
 - Online assets can be used immediately.
 - Offline assets are kept (they may become usable again when participants
-  reconnect) but are not selected by `take_owned()`.
+  reconnect) but are not selected by `take_owned()`. If *all* owned
+  assets are offline, `take_owned()` blocks — it will not return an
+  offline asset. It re-checks the alive set every second and unblocks as
+  soon as any asset's full participant set comes back online.
 - If the store is full of offline assets, `maybe_discard_owned()` slowly
   evicts them to make room for fresh generation.
 
@@ -258,11 +275,14 @@ live-online participants.)
 | `mpc_owned_num_presignatures_online` | Owned presignatures with all participants alive. |
 | `mpc_owned_num_presignatures_with_offline_participant` | Owned presignatures with some offline participant. |
 
-**Important note on `_available` vs `_online`**: The `_available` count
-includes assets in the hot queue (not yet classified) and the "unknown"
-region of the cold queue. Therefore `_available >= _online + _offline`.
-The gap is assets that have not been checked yet against the current
-alive set.
+**Important note on `_available` vs `_online`**: `_available` counts
+the hot queue plus the first `cold_available` entries in the cold queue
+(i.e. ready + unknown assets). `_offline` counts the remainder of the
+cold queue (`len - cold_available`). Therefore,
+`_available = _online + unknown`, and the identity
+`_available + _offline = total` holds, but
+`_available >= _online + _offline` because the unknown assets in
+`_available` have not yet been checked against the current alive set.
 
 ## Configuration knobs
 
@@ -291,7 +311,7 @@ Defined in `crates/node/src/config.rs` and set in `config.yaml`.
 |-------|------|-------------|
 | `timeout_sec` | `u64` | Timeout for a single signature computation. |
 
-### Example config.yaml snippet
+### Example config.yaml snippet (illustrative — see your deployment's config.yaml for actual values)
 
 ```yaml
 triple:
@@ -309,7 +329,7 @@ signature:
 
 ## Troubleshooting: observed production anomaly
 
-The following was observed simultaneously in production:
+The following was observed simultaneously in production (#2123):
 
 1. The presignature generation task is not reported as running.
 2. The node is computing signatures as leader.
