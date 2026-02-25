@@ -18,20 +18,23 @@ is the bottleneck: it involves heavy OT-based cryptographic computation.
 Presignature generation is significantly faster, and signature generation
 is a single round.
 
-Triples are not domain-specific; a single shared triple store feeds
-presignature generation for all ECDSA domains. Presignatures are
-per-domain because they incorporate the domain's key share.
+Our system supports several domains, where each domain has its own secret key
+and purpose (to be used for signatures, ckd, foreign transactions, etc). Triples
+are not domain-specific; a single shared triple store feeds presignature
+generation for all ECDSA domains. Presignatures are per-domain because they
+incorporate the domain's key share.
 
-**Capacity rule of thumb:** With `desired_triples_to_buffer = N`, the
-node can produce at most `N / 2` presignatures before new triples must
-be generated (since each presignature consumes a pair of triples).
-
-## Owned vs unowned assets
+## Asset Storage
 
 Every asset has exactly one **owner**, the participant who initiated its
-generation. Only the owner may pick which asset to consume next for a new
-computation. All other participants in the same asset's group hold an
-**unowned** copy.
+generation, which we call the leader. After generation, the leader stored the
+**owned** part of the asset, and all other participants (followers) store the
+**unowned** parts. All the parts of an asset are different, but can be
+identified by a unique ID which is known to all participants that participated
+in that asset generation. Only the owner may pick which asset will be used for a
+given computation. For example, when computing signatures, a presignature is
+needed. Which presignature to use is the choice of the leader of that
+computation.
 
 | Role | Storage | Retrieval |
 |------|---------|-----------|
@@ -41,13 +44,13 @@ computation. All other participants in the same asset's group hold an
 When the leader starts a presignature or signature computation it
 broadcasts the asset ID. Followers look the asset up by that ID.
 
-**Follower-side generation:** Followers do not run their own generation
-loops for assets they don't own. Instead, the generic protocol runner
-(`crates/node/src/protocol.rs`) handles incoming generation requests
-from leaders over the P2P network. When a leader spawns a triple or
-presignature protocol, it opens a network channel with the chosen
-participant set. Each follower receives the protocol message, runs its
-side of the MPC computation, and stores the result as an unowned asset.
+**Follower-side generation:** Followers do not run their own generation loops
+(explained in the next section) for assets they don't own. Instead, the generic
+protocol runner (`crates/node/src/protocol.rs`) handles incoming generation
+requests from leaders over the P2P network. When a leader spawns a triple or
+presignature protocol, it uses a network channel with the chosen participant
+set. Each follower receives the protocol message, runs its side of the MPC
+computation, and stores the result as an unowned asset.
 
 ## Background generation loops
 
@@ -171,7 +174,7 @@ time an asset is needed.
 A `VecDeque` divided into three logical regions by two barriers:
 
 ```
-0                          cold_ready           cold_available           len
+0                          cold_ready        cold_available                len
  ──────────────────────────── ──────────────────── ─────────────────────────
 │ Condition-satisfying       │   Unknown          │ Non-satisfying          │
  ───────────────────────────────────────────────────────────────────────────
