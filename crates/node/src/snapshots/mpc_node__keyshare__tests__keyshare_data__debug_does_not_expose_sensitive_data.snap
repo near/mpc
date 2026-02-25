@@ -1,0 +1,6 @@
+---
+source: crates/node/src/keyshare.rs
+assertion_line: 1220
+expression: debug_str
+---
+Secp256k1(<redacted>)
