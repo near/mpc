@@ -18,7 +18,7 @@ pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
-pub mod v3_4_1_state;
+pub mod v3_5_1_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -1596,11 +1596,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_4_1_state::MpcContract>() {
+        match try_state_read::<v3_5_1_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.4.1 state: {:?}", err);
+                log!("failed to deserialize state into v3.5.1 state: {:?}", err);
             }
         };
 
