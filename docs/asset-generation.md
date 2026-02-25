@@ -154,10 +154,10 @@ When a signature request arrives:
 Owned assets live in a `DoubleQueue` which has two layers:
 
 ```
-  ┌─────────────┐       ┌────────────────────────────────────────────────┐
+  ┌──────────────┐       ┌────────────────────────────────────────────────┐
   │  Hot queue   │──────►│                Cold queue                      │
-  │ (flume chan) │       │  [ready | unknown | offline]                   │
-  └─────────────┘       └────────────────────────────────────────────────┘
+  │ (flume chan) │       │          [ready | unknown | offline]           │
+  └──────────────┘       └────────────────────────────────────────────────┘
 ```
 
 ### Hot queue
@@ -172,9 +172,9 @@ A `VecDeque` divided into three logical regions by two barriers:
 
 ```
 0                          cold_ready           cold_available           len
- ─────────────────────────── ──────────────────── ─────────────────────────
+ ──────────────────────────── ──────────────────── ─────────────────────────
 │ Condition-satisfying       │   Unknown          │ Non-satisfying          │
- ─────────────────────────────────────────────────────────────────────────
+ ───────────────────────────────────────────────────────────────────────────
 ```
 
 - **`cold_ready`** (index 0..cold_ready): assets known to have all
