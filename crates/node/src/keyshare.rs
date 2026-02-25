@@ -36,19 +36,10 @@ impl std::fmt::Debug for KeyshareData {
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Keyshare {
     pub key_id: KeyEventId,
     pub data: KeyshareData,
-}
-
-impl std::fmt::Debug for Keyshare {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Keyshare")
-            .field("key_id", &self.key_id)
-            .field("data", &self.data)
-            .finish()
-    }
 }
 
 impl Keyshare {
