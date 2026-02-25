@@ -26,8 +26,20 @@ pub enum StarknetExecutionStatus {
 pub struct GetTransactionReceiptResponse {
     #[serde(deserialize_with = "deserialize_starknet_felt")]
     pub block_hash: H256,
+    pub block_number: u64,
+    pub events: Vec<StarknetEvent>,
     pub finality_status: StarknetFinalityStatus,
     pub execution_status: StarknetExecutionStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct StarknetEvent {
+      #[serde(deserialize_with = "deserialize_starknet_felt_vec")]
+      data: Vec<H256>, 
+      #[serde(deserialize_with = "deserialize_starknet_felt")]
+      from_address: H256,
+      #[serde(deserialize_with = "deserialize_starknet_felt_vec")]
+      keys: Vec<H256>
 }
 
 /// Request args for `starknet_getTransactionReceipt`.
@@ -53,21 +65,34 @@ impl ToRpcParams for &GetTransactionReceiptArgs {
 /// Starknet felt values use `0x`-prefixed hex like Ethereum, but may omit leading
 /// zeros (e.g. `"0x5"` instead of `"0x0000…0005"`). This function zero-pads
 /// short representations so they can be parsed as an [`H256`].
+fn parse_felt(s: &str) -> Result<H256, String> {
+    let stripped = s.strip_prefix("0x").unwrap_or(s);
+
+    if stripped.len() > 64 {
+        return Err(format!("felt hex string too long: {s}"));
+    }
+
+    let padded = format!("0x{stripped:0>64}");
+    padded.parse().map_err(|e| format!("{e}"))
+}
+
 fn deserialize_starknet_felt<'de, D>(deserializer: D) -> Result<H256, D::Error>
 where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    let stripped = s.strip_prefix("0x").unwrap_or(&s);
+    parse_felt(&s).map_err(serde::de::Error::custom)
+}
 
-    if stripped.len() > 64 {
-        return Err(serde::de::Error::custom(format!(
-            "felt hex string too long: {s}"
-        )));
-    }
-
-    let padded = format!("0x{stripped:0>64}");
-    padded.parse().map_err(serde::de::Error::custom)
+fn deserialize_starknet_felt_vec<'de, D>(deserializer: D) -> Result<Vec<H256>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let strings: Vec<String> = Vec::deserialize(deserializer)?;
+    strings
+        .iter()
+        .map(|s| parse_felt(s).map_err(serde::de::Error::custom))
+        .collect()
 }
 
 #[cfg(test)]
