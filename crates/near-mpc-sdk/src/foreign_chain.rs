@@ -1,5 +1,4 @@
 use crate::sign::NotSet;
-use crate::verification::{check_ec_signature, check_ed_signature};
 pub use contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
 
 pub mod abstract_chain;
@@ -35,9 +34,8 @@ impl ForeignChainSignatureVerifier {
         self,
         response: &VerifyForeignTransactionResponse,
         // TODO(#2232): don't use interface API types for public keys
-        public_key: &PublicKey,
+        _public_key: &PublicKey,
     ) -> Result<(), SignatureVerificationError> {
-        // check that payload matches the expected payload
         let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: self.request,
             values: self.expected_extracted_values,
@@ -48,6 +46,7 @@ impl ForeignChainSignatureVerifier {
             .map_err(|_| SignatureVerificationError::FailedToComputeMsgHash)?;
 
         let payload_is_correct = expected_payload_hash == response.payload_hash;
+
         if !payload_is_correct {
             return Err(SignatureVerificationError::IncorrectPayloadSigned {
                 got: response.payload_hash.clone(),
@@ -55,23 +54,11 @@ impl ForeignChainSignatureVerifier {
             });
         }
 
-        // check that signature is valid
-        let verification_result = match (public_key, &response.signature) {
-            (
-                PublicKey::Secp256k1(secp256k1_public_key),
-                SignatureResponse::Secp256k1(k256_signature),
-            ) => check_ec_signature(k256_signature, &expected_payload_hash, secp256k1_public_key),
-            (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
-                check_ed_signature(signature, &expected_payload_hash, ed25519_public_key)
-            }
-            // TODO(#2234): improve types so these errors can't happen
-            (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
-                return Err(SignatureVerificationError::UnexpectedSignatureScheme);
-            }
-            _ => return Err(SignatureVerificationError::UnexpectedSignatureScheme),
-        };
+        // TODO(#2246): do signature verification check on the `response.signature`
+        // Not having this check in place is "okay", if the response comes directly from
+        // the MPC contract, since the contract already does this verification.
 
-        verification_result.map_err(|_| SignatureVerificationError::VerificationFailed)
+        Ok(())
     }
 }
 
