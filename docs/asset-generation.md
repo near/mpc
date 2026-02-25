@@ -1,8 +1,9 @@
 # Triple and Presignature Asset Generation
 
-This document describes how the MPC node generates and manages its
-cryptographic assets — **triples**, **presignatures**, and their consumption
-during **signature generation**. It applies only to **ECDSA** at this point.
+This document describes how the MPC node generates and manages its cryptographic
+assets — **triples**, **presignatures**, and their consumption during
+**signature generation**. It applies only to **OT based ECDSA**/**Cait Sith** at
+this point.
 
 ## Pipeline overview
 
