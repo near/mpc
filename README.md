@@ -1,6 +1,6 @@
 # MPC
 
-This repository contains the code for the NEAR MPC node.
+This repository contains the code for the NEAR MPC node that powers [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures).
 
 ## How it works
 
