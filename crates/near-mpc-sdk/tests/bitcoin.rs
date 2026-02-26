@@ -13,6 +13,7 @@ fn no_extractor_added() {
 
     // when
     let (_verifier, built_sign_request_args) = ForeignChainRequestBuilder::new()
+        .bitcoin()
         .with_tx_id(tx_id)
         .with_block_confirmations(10)
         .with_derivation_path(path)
