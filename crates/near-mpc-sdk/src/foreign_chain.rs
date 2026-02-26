@@ -22,11 +22,9 @@ pub struct ForeignChainSignatureVerifier {
     request: ForeignChainRpcRequest,
 }
 
-pub enum SignatureVerificationError {
+pub enum VerifyForeignChainResponse {
     FailedToComputeMsgHash,
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
-    UnexpectedSignatureScheme,
-    VerificationFailed,
 }
 
 impl ForeignChainSignatureVerifier {
@@ -35,7 +33,7 @@ impl ForeignChainSignatureVerifier {
         response: &VerifyForeignTransactionResponse,
         // TODO(#2232): don't use interface API types for public keys
         _public_key: &PublicKey,
-    ) -> Result<(), SignatureVerificationError> {
+    ) -> Result<(), VerifyForeignChainResponse> {
         let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: self.request,
             values: self.expected_extracted_values,
@@ -43,12 +41,12 @@ impl ForeignChainSignatureVerifier {
 
         let expected_payload_hash = expected_payload
             .compute_msg_hash()
-            .map_err(|_| SignatureVerificationError::FailedToComputeMsgHash)?;
+            .map_err(|_| VerifyForeignChainResponse::FailedToComputeMsgHash)?;
 
         let payload_is_correct = expected_payload_hash == response.payload_hash;
 
         if !payload_is_correct {
-            return Err(SignatureVerificationError::IncorrectPayloadSigned {
+            return Err(VerifyForeignChainResponse::IncorrectPayloadSigned {
                 got: response.payload_hash.clone(),
                 expected: expected_payload_hash,
             });
@@ -57,7 +55,6 @@ impl ForeignChainSignatureVerifier {
         // TODO(#2246): do signature verification check on the `response.signature`
         // Not having this check in place is "okay", if the response comes directly from
         // the MPC contract, since the contract already does this verification.
-
         Ok(())
     }
 }
