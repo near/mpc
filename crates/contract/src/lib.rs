@@ -2296,9 +2296,8 @@ mod tests {
             .unwrap();
 
         let (r, s) = signature.split_bytes();
-        let r_bytes: &[u8] = &r;
-
-        let r_bytes: [u8; 33] = r_bytes.try_into().unwrap();
+        let big_r = AffinePoint::decompact(&r).unwrap();
+        let r_bytes: [u8; 33] = big_r.to_encoded_point(true).as_bytes().try_into().unwrap();
         let s_bytes: [u8; 32] = s.into();
 
         let mut bytes = [0u8; 32];
