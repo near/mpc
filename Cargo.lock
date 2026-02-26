@@ -5420,6 +5420,7 @@ dependencies = [
  "sha2",
  "sha3",
  "signature",
+ "signature-verifier",
  "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",

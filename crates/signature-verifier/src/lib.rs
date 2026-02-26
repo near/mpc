@@ -1,5 +1,5 @@
 use contract_interface::types::{
-    Ed25519PublicKey, Ed25519Signature, Hash256, K256Signature, Secp256k1PublicKey,
+    Ed25519PublicKey, Ed25519Signature, K256Signature, Secp256k1PublicKey,
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -11,7 +11,7 @@ pub enum VerificationError {
 
 pub fn check_ec_signature(
     signature: &K256Signature,
-    message: &Hash256,
+    message: &[u8; 32],
     public_key: &Secp256k1PublicKey,
 ) -> Result<(), VerificationError> {
     // Build the 64-byte (r || s) signature expected by ecrecover.
@@ -22,7 +22,7 @@ pub fn check_ec_signature(
 
     // ecrecover with malleability_flag=true validates r < n and s < n/2,
     // then recovers the public key from the signature.
-    let recovered = near_sdk::env::ecrecover(&message.0, &sig_bytes, signature.recovery_id, true)
+    let recovered = near_sdk::env::ecrecover(message, &sig_bytes, signature.recovery_id, true)
         .ok_or(VerificationError::FailedToRecoverSignature)?;
 
     if recovered != public_key.0 {
@@ -33,10 +33,10 @@ pub fn check_ec_signature(
 
 pub fn check_ed_signature(
     signature: &Ed25519Signature,
-    message: &Hash256,
+    message: &[u8],
     public_key: &Ed25519PublicKey,
 ) -> Result<(), VerificationError> {
-    let is_valid_signature = near_sdk::env::ed25519_verify(signature, message.as_ref(), public_key);
+    let is_valid_signature = near_sdk::env::ed25519_verify(signature, message, public_key);
     if is_valid_signature {
         Ok(())
     } else {

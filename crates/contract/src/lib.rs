@@ -51,7 +51,7 @@ use contract_interface::types::{
 };
 use crypto_shared::{
     derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak,
-    kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
+    kdf::derive_public_key_edwards_point_ed25519,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
 use errors::{
@@ -61,7 +61,7 @@ use k256::elliptic_curve::PrimeField;
 
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
-    env::{self, ed25519_verify},
+    env::{self},
     log, near, near_bindgen,
     state::ContractState,
     store::{IterableMap, LookupMap},
@@ -372,7 +372,7 @@ impl MpcContract {
                 let derived_public_key =
                     derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak)
                         .map_err(PublicKeyError::from)?;
-                derived_public_key.into_dto_type().into()
+                derived_public_key.into()
             }
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
@@ -663,12 +663,10 @@ impl MpcContract {
                 let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
 
                 // Check the signature is correct
-                check_ec_signature(
-                    &expected_public_key,
-                    &signature_response.big_r.affine_point,
-                    &signature_response.s.scalar,
+                signature_verifier::check_ec_signature(
+                    signature_response,
                     payload_hash,
-                    signature_response.recovery_id,
+                    &expected_public_key,
                 )
                 .is_ok()
             }
@@ -684,11 +682,16 @@ impl MpcContract {
                     &request.tweak,
                 );
                 let derived_public_key_32_bytes =
-                    *derived_public_key_edwards_point.compress().as_bytes();
+                    derived_public_key_edwards_point.compress().into_dto_type();
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
-                ed25519_verify(&signature, message, &derived_public_key_32_bytes)
+                signature_verifier::check_ed_signature(
+                    signature,
+                    message,
+                    &derived_public_key_32_bytes,
+                )
+                .is_ok()
             }
             (signature_response, public_key_requested) => {
                 return Err(RespondError::SignatureSchemeMismatch.message(format!(
@@ -779,12 +782,10 @@ impl MpcContract {
                 let payload_hash: [u8; 32] = response.payload_hash.0;
 
                 // Check the signature is correct
-                check_ec_signature(
-                    &expected_public_key,
-                    &signature_response.big_r.clone().try_into_contract_type()?,
-                    &signature_response.s.clone().try_into_contract_type()?,
+                signature_verifier::check_ec_signature(
+                    signature_response,
                     &payload_hash,
-                    signature_response.recovery_id,
+                    &expected_public_key,
                 )
                 .is_ok()
             }

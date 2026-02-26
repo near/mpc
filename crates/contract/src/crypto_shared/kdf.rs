@@ -1,4 +1,4 @@
-use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak};
+use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak, IntoInterfaceType};
 use anyhow::Context;
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 #[cfg(target_arch = "wasm32")]
@@ -66,14 +66,15 @@ pub struct TweakNotOnCurve;
 pub fn derive_key_secp256k1(
     public_key: &k256_types::PublicKey,
     tweak: &Tweak,
-) -> Result<k256_types::PublicKey, TweakNotOnCurve> {
+) -> Result<dtos::Secp256k1PublicKey, TweakNotOnCurve> {
     let tweak = k256::Scalar::from_repr(tweak.as_bytes().into())
         .into_option()
         .ok_or(TweakNotOnCurve)?;
 
     Ok(
         (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key)
-            .to_affine(),
+            .to_affine()
+            .into_dto_type(),
     )
 }
 
