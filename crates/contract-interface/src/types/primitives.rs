@@ -103,7 +103,17 @@ pub enum SignatureResponse {
 
 #[serde_as]
 #[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, derive_more::From,
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
+    derive_more::Deref,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
