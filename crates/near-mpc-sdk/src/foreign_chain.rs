@@ -5,6 +5,7 @@ pub mod abstract_chain;
 pub mod bitcoin;
 pub mod starknet;
 
+use contract_interface::types::PublicKey;
 // response types
 pub use contract_interface::types::{Hash256, SignatureResponse, VerifyForeignTransactionResponse};
 
@@ -15,11 +16,47 @@ pub use contract_interface::types::{
     VerifyForeignTransactionRequestArgs,
 };
 
-#[allow(dead_code, reason = "TODO(#2130): Implement verification")]
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ForeignChainSignatureVerifier {
     expected_extracted_values: Vec<ExtractedValue>,
     request: ForeignChainRpcRequest,
+}
+
+pub enum VerifyForeignChainResponse {
+    FailedToComputeMsgHash,
+    IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
+}
+
+impl ForeignChainSignatureVerifier {
+    pub fn verify_signature(
+        self,
+        response: &VerifyForeignTransactionResponse,
+        // TODO(#2232): don't use interface API types for public keys
+        _public_key: &PublicKey,
+    ) -> Result<(), VerifyForeignChainResponse> {
+        let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: self.request,
+            values: self.expected_extracted_values,
+        });
+
+        let expected_payload_hash = expected_payload
+            .compute_msg_hash()
+            .map_err(|_| VerifyForeignChainResponse::FailedToComputeMsgHash)?;
+
+        let payload_is_correct = expected_payload_hash == response.payload_hash;
+
+        if !payload_is_correct {
+            return Err(VerifyForeignChainResponse::IncorrectPayloadSigned {
+                got: response.payload_hash.clone(),
+                expected: expected_payload_hash,
+            });
+        }
+
+        // TODO(#2246): do signature verification check on the `response.signature`
+        // Not having this check in place is "okay", if the response comes directly from
+        // the MPC contract, since the contract already does this verification.
+        Ok(())
+    }
 }
 
 pub const DEFAULT_PAYLOAD_VERSION: u8 = 1;
