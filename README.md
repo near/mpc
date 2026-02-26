@@ -56,11 +56,15 @@ For setup details (direnv integration, VS Code config, verification), see [docs/
 
 ## Building
 
-```bash
-# Build the MPC node
-cargo build -p mpc-node --release
+Build the MPC node:
 
-# Build the smart contract
+```bash
+cargo build -p mpc-node --release
+```
+
+Build the smart contract:
+
+```bash
 cargo near build non-reproducible-wasm --features abi --profile=release-contract \
   --manifest-path crates/contract/Cargo.toml --locked
 ```
