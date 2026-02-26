@@ -629,7 +629,7 @@ impl MpcContract {
     pub fn respond(
         &mut self,
         request: SignatureRequest,
-        response: SignatureResponse,
+        response: dtos::SignatureResponse,
     ) -> Result<(), Error> {
         let signer = Self::assert_caller_is_signer();
 
@@ -650,7 +650,7 @@ impl MpcContract {
 
         let signature_is_valid = match (&response, public_key) {
             (
-                SignatureResponse::Secp256k1(signature_response),
+                dtos::SignatureResponse::Secp256k1(signature_response),
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
                 // generate the expected public key
@@ -673,7 +673,7 @@ impl MpcContract {
                 .is_ok()
             }
             (
-                SignatureResponse::Ed25519 { signature },
+                dtos::SignatureResponse::Ed25519 { signature },
                 PublicKeyExtended::Ed25519 {
                     edwards_point: public_key_edwards_point,
                     ..
@@ -688,7 +688,7 @@ impl MpcContract {
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
-                ed25519_verify(signature.as_bytes(), message, &derived_public_key_32_bytes)
+                ed25519_verify(&signature, message, &derived_public_key_32_bytes)
             }
             (signature_response, public_key_requested) => {
                 return Err(RespondError::SignatureSchemeMismatch.message(format!(

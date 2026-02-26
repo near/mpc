@@ -10097,6 +10097,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "signature-verifier"
+version = "3.5.1"
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

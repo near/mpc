@@ -17,7 +17,7 @@ members = [
     "crates/near-mpc-sdk",
     "crates/node",
     "crates/node-types",
-    "crates/primitives",
+    "crates/primitives", "crates/signature-verifier",
     "crates/tee-authority",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
