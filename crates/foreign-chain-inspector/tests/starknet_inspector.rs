@@ -13,6 +13,7 @@ use foreign_chain_inspector::{
 };
 
 use assert_matches::assert_matches;
+use contract_interface::types::{StarknetFelt, StarknetLog};
 use foreign_chain_rpc_interfaces::starknet::{
     GetTransactionReceiptResponse, H256, StarknetEvent, StarknetExecutionStatus,
     StarknetFinalityStatus,
@@ -268,12 +269,24 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
         .extract(
             tx_id,
             StarknetFinality::AcceptedOnL1,
-            vec![StarknetExtractor::BlockHash],
+            vec![
+                StarknetExtractor::BlockHash,
+                StarknetExtractor::Log { log_index: 0 },
+            ],
         )
         .await
         .expect("extract should succeed");
 
     // then
-    let expected_extractions = vec![StarknetExtractedValue::BlockHash(expected_block_hash)];
+    let expected_extractions = vec![
+        StarknetExtractedValue::BlockHash(expected_block_hash),
+        StarknetExtractedValue::Log(StarknetLog {
+            block_hash: StarknetFelt(expected_bytes),
+            block_number: 1_023_456,
+            data: vec![StarknetFelt([0x01; 32]), StarknetFelt([0x02; 32])],
+            from_address: StarknetFelt([0xff; 32]),
+            keys: vec![StarknetFelt([0xaa; 32])],
+        }),
+    ];
     assert_eq!(expected_extractions, extracted_values);
 }
