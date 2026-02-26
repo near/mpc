@@ -398,11 +398,11 @@ pub enum StarknetExtractor {
     derive(schemars::JsonSchema)
 )]
 pub struct StarknetLog {
-   pub block_hash: StarknetFelt,
-   pub block_number: u64,
-   pub data: Vec<StarknetFelt>,
-   pub from_address: StarknetFelt,
-   pub keys: Vec<StarknetFelt>,
+    pub block_hash: StarknetFelt,
+    pub block_number: u64,
+    pub data: Vec<StarknetFelt>,
+    pub from_address: StarknetFelt,
+    pub keys: Vec<StarknetFelt>,
 }
 
 #[derive(

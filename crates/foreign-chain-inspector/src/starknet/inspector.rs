@@ -1,5 +1,5 @@
 use jsonrpsee::core::client::ClientT;
-
+use contract_interface::types::{StarknetFelt, StarknetLog};
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::starknet::{
@@ -93,6 +93,7 @@ fn parse_finality_status(
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StarknetExtractor {
     BlockHash,
+    Log { log_index: u64 },
 }
 
 impl StarknetExtractor {
@@ -104,6 +105,35 @@ impl StarknetExtractor {
             StarknetExtractor::BlockHash => Ok(StarknetExtractedValue::BlockHash(
                 (*rpc_response.block_hash.as_fixed_bytes()).into(),
             )),
+            StarknetExtractor::Log { log_index } => {
+                let event =
+                    rpc_response
+                        .events
+                        .get(*log_index as usize)
+                        .ok_or_else(|| {
+                            ForeignChainInspectionError::ClientError(
+                                jsonrpsee::core::client::error::Error::Custom(format!(
+                                    "log index {log_index} out of bounds, receipt has {} events",
+                                    rpc_response.events.len()
+                                )),
+                            )
+                        })?;
+                Ok(StarknetExtractedValue::Log(StarknetLog {
+                    block_hash: StarknetFelt(*rpc_response.block_hash.as_fixed_bytes()),
+                    block_number: rpc_response.block_number,
+                    data: event
+                        .data
+                        .iter()
+                        .map(|h| StarknetFelt(*h.as_fixed_bytes()))
+                        .collect(),
+                    from_address: StarknetFelt(*event.from_address.as_fixed_bytes()),
+                    keys: event
+                        .keys
+                        .iter()
+                        .map(|h| StarknetFelt(*h.as_fixed_bytes()))
+                        .collect(),
+                }))
+            }
         }
     }
 }

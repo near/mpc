@@ -34,12 +34,12 @@ pub struct GetTransactionReceiptResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct StarknetEvent {
-      #[serde(deserialize_with = "deserialize_starknet_felt_vec")]
-      data: Vec<H256>, 
-      #[serde(deserialize_with = "deserialize_starknet_felt")]
-      from_address: H256,
-      #[serde(deserialize_with = "deserialize_starknet_felt_vec")]
-      keys: Vec<H256>
+    #[serde(deserialize_with = "deserialize_starknet_felt_vec")]
+    pub data: Vec<H256>,
+    #[serde(deserialize_with = "deserialize_starknet_felt")]
+    pub from_address: H256,
+    #[serde(deserialize_with = "deserialize_starknet_felt_vec")]
+    pub keys: Vec<H256>,
 }
 
 /// Request args for `starknet_getTransactionReceipt`.
@@ -99,7 +99,8 @@ where
 #[allow(non_snake_case)]
 mod tests {
     use super::{
-        GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
+        parse_felt, GetTransactionReceiptResponse, StarknetExecutionStatus,
+        StarknetFinalityStatus, H256,
     };
 
     #[test]
@@ -107,6 +108,19 @@ mod tests {
         let json = r#"
         {
             "block_hash": "0x5",
+            "block_number": 6195041,
+            "events": [
+              {
+                "data": [
+                  "0x2b"
+                ],
+                "from_address": "0x387b62e702a722396a056e60b6affecebaddc258170446b07d57e47c541a0dd",
+                "keys": [
+                  "0x2b0cdef3c28f9d954382f060df168ae56204d5937d2f0cd1fd9ce759afaf095",
+                  "0x4322cec55a56b85793864e0cfd27a563849ac9209d4307621d65bcd616c1dd8"
+                ]
+              }
+            ],
             "finality_status": "ACCEPTED_ON_L1",
             "execution_status": "SUCCEEDED"
         }
@@ -121,10 +135,30 @@ mod tests {
         };
         let expected_hash = H256::from(expected_bytes);
         assert_eq!(receipt.block_hash, expected_hash);
+        assert_eq!(receipt.block_number, 6195041);
         assert_eq!(
             receipt.finality_status,
             StarknetFinalityStatus::AcceptedOnL1
         );
         assert_eq!(receipt.execution_status, StarknetExecutionStatus::Succeeded);
+
+        assert_eq!(receipt.events.len(), 1);
+        let event = &receipt.events[0];
+
+        assert_eq!(event.data, vec![parse_felt("0x2b").unwrap()]);
+        assert_eq!(
+            event.from_address,
+            parse_felt("0x387b62e702a722396a056e60b6affecebaddc258170446b07d57e47c541a0dd")
+                .unwrap()
+        );
+        assert_eq!(
+            event.keys,
+            vec![
+                parse_felt("0x2b0cdef3c28f9d954382f060df168ae56204d5937d2f0cd1fd9ce759afaf095")
+                    .unwrap(),
+                parse_felt("0x4322cec55a56b85793864e0cfd27a563849ac9209d4307621d65bcd616c1dd8")
+                    .unwrap(),
+            ]
+        );
     }
 }

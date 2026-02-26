@@ -14,7 +14,8 @@ use foreign_chain_inspector::{
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::starknet::{
-    GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
+    GetTransactionReceiptResponse, H256, StarknetEvent, StarknetExecutionStatus,
+    StarknetFinalityStatus,
 };
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
@@ -27,6 +28,12 @@ fn mock_receipt(
 ) -> GetTransactionReceiptResponse {
     GetTransactionReceiptResponse {
         block_hash: H256::from([4; 32]),
+        block_number: 842_750,
+        events: vec![StarknetEvent {
+            data: vec![H256::from([0xab; 32])],
+            from_address: H256::from([0x11; 32]),
+            keys: vec![H256::from([0xcc; 32]), H256::from([0xdd; 32])],
+        }],
         finality_status,
         execution_status,
     }
@@ -215,6 +222,12 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
 
     let receipt = GetTransactionReceiptResponse {
         block_hash: H256::from(expected_bytes),
+        block_number: 1_023_456,
+        events: vec![StarknetEvent {
+            data: vec![H256::from([0x01; 32]), H256::from([0x02; 32])],
+            from_address: H256::from([0xff; 32]),
+            keys: vec![H256::from([0xaa; 32])],
+        }],
         finality_status: StarknetFinalityStatus::AcceptedOnL1,
         execution_status: StarknetExecutionStatus::Succeeded,
     };
