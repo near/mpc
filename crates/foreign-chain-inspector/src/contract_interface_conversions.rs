@@ -230,9 +230,7 @@ impl From<StarknetExtractor> for dtos::StarknetExtractor {
     fn from(value: StarknetExtractor) -> Self {
         match value {
             StarknetExtractor::BlockHash => dtos::StarknetExtractor::BlockHash,
-            StarknetExtractor::Log { log_index } => {
-                dtos::StarknetExtractor::Log { log_index }
-            }
+            StarknetExtractor::Log { log_index } => dtos::StarknetExtractor::Log { log_index },
         }
     }
 }
@@ -242,9 +240,7 @@ impl TryFrom<dtos::StarknetExtractor> for StarknetExtractor {
     fn try_from(value: dtos::StarknetExtractor) -> Result<Self, Self::Error> {
         match value {
             dtos::StarknetExtractor::BlockHash => Ok(StarknetExtractor::BlockHash),
-            dtos::StarknetExtractor::Log { log_index } => {
-                Ok(StarknetExtractor::Log { log_index })
-            }
+            dtos::StarknetExtractor::Log { log_index } => Ok(StarknetExtractor::Log { log_index }),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "StarknetExtractor",
             }),

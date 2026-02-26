@@ -15,5 +15,5 @@ pub type StarknetTransactionHash = Hash32<StarknetTransaction>;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StarknetExtractedValue {
     BlockHash(StarknetBlockHash),
-    Log(StarknetLog)
+    Log(StarknetLog),
 }

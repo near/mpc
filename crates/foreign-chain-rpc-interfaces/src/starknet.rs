@@ -99,8 +99,8 @@ where
 #[allow(non_snake_case)]
 mod tests {
     use super::{
-        parse_felt, GetTransactionReceiptResponse, StarknetExecutionStatus,
-        StarknetFinalityStatus, H256,
+        GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
+        parse_felt,
     };
 
     #[test]
