@@ -2,4 +2,4 @@
 source: crates/contract/src/crypto_shared/kdf.rs
 expression: derived_public_key
 ---
-"03C802275EB64D8C38F7E915A55B8E77A0916AFD06DC45B15649DEA8A56BC81DB3"
+"secp256k1:4zvzanBjPrvRWAr3mjdPX9sSkS8GZTZ11L6V2pcAbmHRd3HHbTyboHdWauExDmHrEoWnbhDkUwnzVEa8hg52C55p"
