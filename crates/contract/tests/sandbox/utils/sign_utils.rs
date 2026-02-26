@@ -10,17 +10,13 @@ use contract_interface::method_names::{
 };
 use contract_interface::types::{self as dtos};
 use digest::{Digest, FixedOutput};
-use ecdsa::signature::Verifier as _;
 use k256::elliptic_curve::sec1::ToEncodedPoint as _;
 use k256::{
     elliptic_curve::{point::DecompressPoint as _, Field as _, Group as _},
     AffinePoint, FieldBytes, Secp256k1,
 };
 use mpc_contract::{
-    crypto_shared::{
-        derive_key_secp256k1, derive_tweak, kdf::check_ec_signature, kdf::derive_app_id,
-        CKDResponse,
-    },
+    crypto_shared::{derive_key_secp256k1, derive_tweak, kdf::derive_app_id, CKDResponse},
     errors,
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
@@ -468,12 +464,9 @@ fn create_response_secp256k1(
     let derived_pk = derive_key_secp256k1(&pk.to_element().to_affine(), &tweak).unwrap();
     let signing_key =
         k256::ecdsa::SigningKey::from_bytes(&derived_sk.private_share.to_scalar().into()).unwrap();
-    let verifying_key =
-        k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
 
     let (signature, _): (ecdsa::Signature<Secp256k1>, _) =
         signing_key.try_sign_digest(digest).unwrap();
-    verifying_key.verify(msg.as_bytes(), &signature).unwrap();
 
     let s = signature.s();
     let (r_bytes, _s_bytes) = signature.split_bytes();
@@ -481,19 +474,9 @@ fn create_response_secp256k1(
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
 
-    let recovery_id = if check_ec_signature(&derived_pk, &big_r, &s, payload.as_ecdsa().unwrap(), 0)
-        .is_ok()
-    {
-        0
-    } else if check_ec_signature(&derived_pk, &big_r, &s, payload.as_ecdsa().unwrap(), 1).is_ok() {
-        1
-    } else {
-        panic!("unable to use recovery id of 0 or 1");
-    };
-
     let encoded_point = big_r.to_encoded_point(true);
 
-    let respond_resp = SignatureRequestResponse::Secp256k1(K256Signature {
+    let make_respond_resp = |recovery_id| K256Signature {
         big_r: K256AffinePoint {
             affine_point: encoded_point.as_bytes().try_into().unwrap(),
         },
@@ -501,9 +484,33 @@ fn create_response_secp256k1(
             scalar: s.to_bytes().into(),
         },
         recovery_id,
-    });
+    };
 
-    (payload, respond_req, respond_resp)
+    let recovery_id = if signature_verifier::check_ec_signature(
+        &make_respond_resp(0),
+        payload.as_ecdsa().unwrap(),
+        &derived_pk,
+    )
+    .is_ok()
+    {
+        0
+    } else if signature_verifier::check_ec_signature(
+        &make_respond_resp(1),
+        payload.as_ecdsa().unwrap(),
+        &derived_pk,
+    )
+    .is_ok()
+    {
+        1
+    } else {
+        panic!("unable to use recovery id of 0 or 1");
+    };
+
+    (
+        payload,
+        respond_req,
+        SignatureRequestResponse::Secp256k1(make_respond_resp(recovery_id)),
+    )
 }
 
 fn create_response_ed25519(

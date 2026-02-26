@@ -52,7 +52,7 @@ use contract_interface::types::{
 use crypto_shared::{
     derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak,
     kdf::derive_public_key_edwards_point_ed25519,
-    types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
+    types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
@@ -1680,8 +1680,8 @@ impl MpcContract {
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
         request: SignatureRequest, // this change here should actually be ok.
-        #[callback_result] signature: Result<SignatureResponse, PromiseError>,
-    ) -> PromiseOrValue<SignatureResponse> {
+        #[callback_result] signature: Result<dtos::SignatureResponse, PromiseError>,
+    ) -> PromiseOrValue<dtos::SignatureResponse> {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
@@ -2039,7 +2039,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::crypto_shared::k256_types;
     use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
@@ -2295,22 +2294,28 @@ mod tests {
         let (signature, recovery_id) = secret_key
             .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
             .unwrap();
+
         let (r, s) = signature.split_bytes();
+        let r_bytes: &[u8] = &r;
+
+        let r_bytes: [u8; 33] = r_bytes.try_into().unwrap();
+        let s_bytes: [u8; 32] = s.into();
+
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(s.as_ref());
         let signature_response = if success {
-            SignatureResponse::Secp256k1(k256_types::Signature::new(
-                AffinePoint::decompact(&r).unwrap(),
-                k256::Scalar::from_repr(bytes.into()).unwrap(),
-                recovery_id.to_byte(),
-            ))
+            dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+                big_r: dtos::K256AffinePoint::from(r_bytes),
+                s: dtos::K256Scalar::from(s_bytes),
+                recovery_id: recovery_id.to_byte(),
+            })
         } else {
             // submit an incorrect signature to make the respond call fail
-            SignatureResponse::Secp256k1(k256_types::Signature::new(
-                AffinePoint::decompact(&r).unwrap(),
-                k256::Scalar::from_repr([0u8; 32].into()).unwrap(),
-                recovery_id.to_byte(),
-            ))
+            dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+                big_r: dtos::K256AffinePoint::from(r_bytes),
+                s: dtos::K256Scalar::from([2; 32]),
+                recovery_id: recovery_id.to_byte(),
+            })
         };
 
         with_active_participant_and_attested_context(&contract);
