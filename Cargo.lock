@@ -10099,6 +10099,13 @@ dependencies = [
 [[package]]
 name = "signature-verifier"
 version = "3.5.1"
+dependencies = [
+ "assert_matches",
+ "contract-interface",
+ "ed25519-dalek",
+ "k256",
+ "near-sdk",
+]
 
 [[package]]
 name = "simd-adler32"
