@@ -628,6 +628,7 @@ pub struct BlockConfirmations(pub u64);
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
+    derive_more::Deref,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

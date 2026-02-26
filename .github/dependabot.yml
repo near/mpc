@@ -12,9 +12,12 @@ updates:
       default-days: 7
 
     groups:
-      rust-dependencies:
+      rust-minor-and-patch:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
       # TODO(#1299): updating this brings considerable breaking changes
       - dependency-name: "hyper"

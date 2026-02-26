@@ -12,8 +12,8 @@ fn no_extractor_added() {
     let tx_id = StarknetTxId::from(StarknetFelt([123; 32]));
 
     // when
-    let (_verifier, built_sign_request_args) = ForeignChainRequestBuilder::new()
-        .with_starknet_tx_id(tx_id)
+    let (_verifier, built_sign_request_args) = ForeignChainRequestBuilder::new_starknet()
+        .with_tx_id(tx_id)
         .with_finality(StarknetFinality::AcceptedOnL1)
         .with_derivation_path(path)
         .with_domain_id(domain_id)
