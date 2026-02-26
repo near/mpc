@@ -395,4 +395,3 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
         extracted_values,
     );
 }
-
