@@ -1,6 +1,6 @@
 # MPC
 
-This repository contains the code for the NEAR MPC node. It is a rewrite of [NEAR MPC](https://github.com/near/mpc_old).
+This repository contains the code for the NEAR MPC node.
 
 ## How it works
 
@@ -8,7 +8,7 @@ There are two main parts of the binary: NEAR indexer and MPC signing.
 
 ### NEAR Indexer
 
-The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
+The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [indexer design doc](docs/indexer-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
 
 ### MPC Signing
 
@@ -54,9 +54,18 @@ A Nix flake provides a reproducible development environment with the Rust toolch
 
 For setup details (direnv integration, VS Code config, verification), see [docs/nix-dev-environment.md](docs/nix-dev-environment.md).
 
-## Compilation
+## Building
 
-The Rust toolchain version is pinned in [`rust-toolchain.toml`](rust-toolchain.toml) at the project root. Rustup will install and use the correct version automatically. The `wasm32-unknown-unknown` target is included for building the smart contract.
+```bash
+# Build the MPC node
+cargo build -p mpc-node --release
+
+# Build the smart contract
+cargo near build non-reproducible-wasm --features abi --profile=release-contract \
+  --manifest-path crates/contract/Cargo.toml --locked
+```
+
+The Rust toolchain version is pinned in [`rust-toolchain.toml`](rust-toolchain.toml); rustup handles installation automatically.
 
 ## Testing
 
@@ -96,7 +105,7 @@ We welcome contributions in the form of issues, feature requests, and pull reque
 
 ### Development workflow
 
-We run several checks in CI that require tools beyond the default Rust toolchain:
+We run several checks in CI that require tools beyond the default Rust toolchain. The [nix environment](docs/nix-dev-environment.md) installs all of them automatically.
 
 - [`cargo-make`](https://github.com/sagiegurari/cargo-make)
 - [`cargo-nextest`](https://github.com/nextest-rs/nextest)
