@@ -12,7 +12,7 @@ fn no_extractor_added() {
     let tx_id = BitcoinTxId::from([123; 32]);
 
     // when
-    let (_verifier, built_sign_request_args) = ForeignChainRequestBuilder::new()
+    let (_verifier, built_sign_request_args) = ForeignChainRequestBuilder::new_bitcoin()
         .with_tx_id(tx_id)
         .with_block_confirmations(10)
         .with_derivation_path(path)

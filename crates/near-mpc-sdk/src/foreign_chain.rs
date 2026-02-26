@@ -66,24 +66,6 @@ pub struct ForeignChainRequestBuilder<Request, DerivationPath, DomainId> {
     request: Request,
     derivation_path: DerivationPath,
     domain_id: DomainId,
-    payload_version: u8,
-}
-
-impl Default for ForeignChainRequestBuilder<NotSet, NotSet, NotSet> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ForeignChainRequestBuilder<NotSet, NotSet, NotSet> {
-    pub fn new() -> Self {
-        Self {
-            request: NotSet,
-            derivation_path: NotSet,
-            domain_id: NotSet,
-            payload_version: DEFAULT_PAYLOAD_VERSION,
-        }
-    }
 }
 
 impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
@@ -97,7 +79,6 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
             request: self.request,
             derivation_path,
             domain_id: self.domain_id,
-            payload_version: self.payload_version,
         }
     }
 }
@@ -113,7 +94,6 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
             request: self.request,
             derivation_path: self.derivation_path,
             domain_id: domain_id.into(),
-            payload_version: self.payload_version,
         }
     }
 }
@@ -141,7 +121,7 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
             request,
             derivation_path: self.derivation_path,
             domain_id: self.domain_id,
-            payload_version: self.payload_version,
+            payload_version: DEFAULT_PAYLOAD_VERSION,
         };
 
         (verifier, request_args)
