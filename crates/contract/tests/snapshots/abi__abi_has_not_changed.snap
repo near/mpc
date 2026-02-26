@@ -3412,9 +3412,35 @@ expression: abi
           }
         },
         "StarknetExtractor": {
-          "type": "string",
-          "enum": [
-            "BlockHash"
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "BlockHash"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Log"
+              ],
+              "properties": {
+                "Log": {
+                  "type": "object",
+                  "required": [
+                    "log_index"
+                  ],
+                  "properties": {
+                    "log_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
           ]
         },
         "StarknetFelt": {
