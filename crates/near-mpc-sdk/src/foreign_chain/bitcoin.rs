@@ -50,19 +50,16 @@ impl From<BuildableBitcoinRequest> for ForeignChainRpcRequestWithExpectations {
     }
 }
 
-impl ForeignChainRequestBuilder<NotSet, NotSet, NotSet> {
-    pub fn bitcoin(
-        self,
-    ) -> ForeignChainRequestBuilder<BitcoinRequest<NotSet, NotSet>, NotSet, NotSet> {
-        ForeignChainRequestBuilder {
+impl ForeignChainRequestBuilder<BitcoinRequest<NotSet, NotSet>, NotSet, NotSet> {
+    pub fn new_bitcoin() -> Self {
+        Self {
             request: BitcoinRequest {
                 tx_id: NotSet,
                 confirmations: NotSet,
                 expected_block_hash: None,
             },
-            derivation_path: self.derivation_path,
-            domain_id: self.domain_id,
-            payload_version: self.payload_version,
+            derivation_path: NotSet,
+            domain_id: NotSet,
         }
     }
 }
@@ -80,7 +77,6 @@ impl ForeignChainRequestBuilder<BitcoinRequest<NotSet, NotSet>, NotSet, NotSet> 
             },
             derivation_path: self.derivation_path,
             domain_id: self.domain_id,
-            payload_version: self.payload_version,
         }
     }
 }
@@ -98,7 +94,6 @@ impl ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet, Not
             },
             derivation_path: self.derivation_path,
             domain_id: self.domain_id,
-            payload_version: self.payload_version,
         }
     }
 }
@@ -113,7 +108,6 @@ impl ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet, NotSet> {
             },
             derivation_path: self.derivation_path,
             domain_id: self.domain_id,
-            payload_version: self.payload_version,
         }
     }
 }
@@ -132,9 +126,7 @@ mod test {
         let tx_id = BitcoinTxId::from([123; 32]);
 
         // when
-        let builder = ForeignChainRequestBuilder::new()
-            .bitcoin()
-            .with_tx_id(tx_id.clone());
+        let builder = ForeignChainRequestBuilder::new_bitcoin().with_tx_id(tx_id.clone());
 
         // then
         assert_eq!(builder.request.tx_id, tx_id);
@@ -146,8 +138,7 @@ mod test {
         let tx_id = BitcoinTxId::from([123; 32]);
 
         // when
-        let builder = ForeignChainRequestBuilder::new()
-            .bitcoin()
+        let builder = ForeignChainRequestBuilder::new_bitcoin()
             .with_tx_id(tx_id)
             .with_block_confirmations(10);
 
@@ -162,8 +153,7 @@ mod test {
         let expected_hash = [9; 32];
 
         // when
-        let builder = ForeignChainRequestBuilder::new()
-            .bitcoin()
+        let builder = ForeignChainRequestBuilder::new_bitcoin()
             .with_tx_id(tx_id)
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash);
@@ -184,8 +174,7 @@ mod test {
         let expected_hash = [9; 32];
 
         // when
-        let (_verifier, request_args) = ForeignChainRequestBuilder::new()
-            .bitcoin()
+        let (_verifier, request_args) = ForeignChainRequestBuilder::new_bitcoin()
             .with_tx_id(tx_id.clone())
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
@@ -215,8 +204,7 @@ mod test {
         let expected_hash = [9; 32];
 
         // when
-        let (verifier, _request_args) = ForeignChainRequestBuilder::new()
-            .bitcoin()
+        let (verifier, _request_args) = ForeignChainRequestBuilder::new_bitcoin()
             .with_tx_id(tx_id.clone())
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
@@ -242,8 +230,7 @@ mod test {
     #[test]
     fn verifier_request_matches_request_args() {
         // given
-        let (verifier, request_args) = ForeignChainRequestBuilder::new()
-            .bitcoin()
+        let (verifier, request_args) = ForeignChainRequestBuilder::new_bitcoin()
             .with_tx_id(BitcoinTxId::from([123; 32]))
             .with_block_confirmations(10)
             .with_derivation_path("path".to_string())

@@ -66,20 +66,17 @@ impl From<BuildableAbstractRequest> for ForeignChainRpcRequestWithExpectations {
     }
 }
 
-impl ForeignChainRequestBuilder<NotSet, NotSet, NotSet> {
-    pub fn abstract_chain(
-        self,
-    ) -> ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet, NotSet> {
-        ForeignChainRequestBuilder {
+impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet, NotSet> {
+    pub fn new_abstract() -> Self {
+        Self {
             request: AbstractRequest {
                 tx_id: NotSet,
                 finality: NotSet,
                 expected_block_hash: None,
                 expected_logs: vec![],
             },
-            derivation_path: self.derivation_path,
-            domain_id: self.domain_id,
-            payload_version: self.payload_version,
+            derivation_path: NotSet,
+            domain_id: NotSet,
         }
     }
 }
@@ -98,7 +95,6 @@ impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet, NotSet>
             },
             derivation_path: self.derivation_path,
             domain_id: self.domain_id,
-            payload_version: self.payload_version,
         }
     }
 }
@@ -117,7 +113,6 @@ impl ForeignChainRequestBuilder<AbstractRequest<EvmTxId, NotSet>, NotSet, NotSet
             },
             derivation_path: self.derivation_path,
             domain_id: self.domain_id,
-            payload_version: self.payload_version,
         }
     }
 }
@@ -133,7 +128,6 @@ impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet, NotSet> {
             },
             derivation_path: self.derivation_path,
             domain_id: self.domain_id,
-            payload_version: self.payload_version,
         }
     }
 
@@ -160,9 +154,7 @@ mod test {
         let tx_id = EvmTxId::from([123; 32]);
 
         // when
-        let builder = ForeignChainRequestBuilder::new()
-            .abstract_chain()
-            .with_tx_id(tx_id.clone());
+        let builder = ForeignChainRequestBuilder::new_abstract().with_tx_id(tx_id.clone());
 
         // then
         assert_eq!(builder.request.tx_id, tx_id);
@@ -174,8 +166,7 @@ mod test {
         let tx_id = EvmTxId::from([123; 32]);
 
         // when
-        let builder = ForeignChainRequestBuilder::new()
-            .abstract_chain()
+        let builder = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized);
 
@@ -190,8 +181,7 @@ mod test {
         let expected_hash = [9; 32];
 
         // when
-        let builder = ForeignChainRequestBuilder::new()
-            .abstract_chain()
+        let builder = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash);
@@ -210,8 +200,7 @@ mod test {
         let log = test_evm_log(3);
 
         // when
-        let builder = ForeignChainRequestBuilder::new()
-            .abstract_chain()
+        let builder = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized)
             .with_expected_log(3, log.clone());
@@ -230,8 +219,7 @@ mod test {
         let log_b = test_evm_log(2);
 
         // when
-        let (verifier, request_args) = ForeignChainRequestBuilder::new()
-            .abstract_chain()
+        let (verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
             .with_expected_log(1, log_a.clone())
@@ -270,8 +258,7 @@ mod test {
         let log = test_evm_log(5);
 
         // when
-        let (_verifier, request_args) = ForeignChainRequestBuilder::new()
-            .abstract_chain()
+        let (_verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash)
@@ -303,8 +290,7 @@ mod test {
         let log = test_evm_log(5);
 
         // when
-        let (verifier, _request_args) = ForeignChainRequestBuilder::new()
-            .abstract_chain()
+        let (verifier, _request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash)
@@ -334,8 +320,7 @@ mod test {
     #[test]
     fn verifier_request_matches_request_args() {
         // given
-        let (verifier, request_args) = ForeignChainRequestBuilder::new()
-            .abstract_chain()
+        let (verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(EvmTxId::from([123; 32]))
             .with_finality(EvmFinality::Safe)
             .with_derivation_path("path".to_string())
@@ -350,8 +335,7 @@ mod test {
     #[test]
     fn build_without_extractors_produces_empty_extractors() {
         // given / when
-        let (_verifier, request_args) = ForeignChainRequestBuilder::new()
-            .abstract_chain()
+        let (_verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(EvmTxId::from([42; 32]))
             .with_finality(EvmFinality::Latest)
             .with_derivation_path("path".to_string())
