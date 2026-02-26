@@ -109,14 +109,7 @@ impl StarknetExtractor {
                 let event = rpc_response
                     .events
                     .get(*log_index as usize)
-                    .ok_or_else(|| {
-                        ForeignChainInspectionError::ClientError(
-                            jsonrpsee::core::client::error::Error::Custom(format!(
-                                "log index {log_index} out of bounds, receipt has {} events",
-                                rpc_response.events.len()
-                            )),
-                        )
-                    })?;
+                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
                 Ok(StarknetExtractedValue::Log(StarknetLog {
                     block_hash: StarknetFelt(*rpc_response.block_hash.as_fixed_bytes()),
                     block_number: rpc_response.block_number,
