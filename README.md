@@ -92,8 +92,6 @@ For detailed information about our release process, compatibility guarantees, an
 
 ## Contributions
 
-The NEAR MPC Node is actively maintained by **[NEAR One](https://github.com/Near-One)** and **[HOT Labs](https://github.com/hot-dao)** <img src="https://storage.herewallet.app/ft/1:hot.png" alt="HOT Labs" height="20" style="position: relative; top: 10px;"/>, with valuable contributions from the broader open-source community.
-
 We welcome contributions in the form of issues, feature requests, and pull requests. Please ensure any changes are well-documented and tested. For major changes, open an issue to discuss the proposed modifications first.
 
 ### Development workflow
