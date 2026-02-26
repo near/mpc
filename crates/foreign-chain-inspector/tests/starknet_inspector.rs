@@ -208,21 +208,11 @@ async fn extract__should_propagate_rpc_client_errors() {
     assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
 }
 
-#[tokio::test]
-async fn extract__should_return_block_hash_via_http_rpc_client() {
-    // given
-    let server = MockServer::start();
-
-    let tx_id = StarknetTransactionHash::from([9; 32]);
-
-    let expected_bytes: [u8; 32] = {
-        let mut b = [0u8; 32];
-        b[31] = 5;
-        b
-    };
-
-    let receipt = GetTransactionReceiptResponse {
-        block_hash: H256::from(expected_bytes),
+fn test_receipt() -> GetTransactionReceiptResponse {
+    let mut block_hash_bytes = [0u8; 32];
+    block_hash_bytes[31] = 5;
+    GetTransactionReceiptResponse {
+        block_hash: H256::from(block_hash_bytes),
         block_number: 1_023_456,
         events: vec![StarknetEvent {
             data: vec![H256::from([0x01; 32]), H256::from([0x02; 32])],
@@ -231,10 +221,11 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
         }],
         finality_status: StarknetFinalityStatus::AcceptedOnL1,
         execution_status: StarknetExecutionStatus::Succeeded,
-    };
+    }
+}
 
-    let expected_block_hash = StarknetBlockHash::from(expected_bytes);
-
+fn setup_starknet_rpc_mock(server: &MockServer) {
+    let receipt = test_receipt();
     server.mock(|when, then| {
         when.method(POST).path("/");
         then.respond_with(move |req: &HttpMockRequest| {
@@ -260,7 +251,15 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
                 .build()
         });
     });
+}
 
+#[tokio::test]
+async fn extract__should_return_block_hash_via_http_rpc_client() {
+    // given
+    let server = MockServer::start();
+    setup_starknet_rpc_mock(&server);
+
+    let tx_id = StarknetTransactionHash::from([9; 32]);
     let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
     let inspector = StarknetInspector::new(client);
 
@@ -269,24 +268,54 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
         .extract(
             tx_id,
             StarknetFinality::AcceptedOnL1,
-            vec![
-                StarknetExtractor::BlockHash,
-                StarknetExtractor::Log { log_index: 0 },
-            ],
+            vec![StarknetExtractor::BlockHash],
         )
         .await
         .expect("extract should succeed");
 
     // then
-    let expected_extractions = vec![
-        StarknetExtractedValue::BlockHash(expected_block_hash),
-        StarknetExtractedValue::Log(StarknetLog {
-            block_hash: StarknetFelt(expected_bytes),
+    let mut expected_bytes = [0u8; 32];
+    expected_bytes[31] = 5;
+    assert_eq!(
+        vec![StarknetExtractedValue::BlockHash(StarknetBlockHash::from(
+            expected_bytes
+        ))],
+        extracted_values,
+    );
+}
+
+#[tokio::test]
+async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client() {
+    // given
+    let server = MockServer::start();
+    setup_starknet_rpc_mock(&server);
+
+    let tx_id = StarknetTransactionHash::from([9; 32]);
+    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let inspector = StarknetInspector::new(client);
+
+    // when
+    let extracted_values = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL1,
+            vec![StarknetExtractor::Log { log_index: 0 }],
+        )
+        .await
+        .expect("extract should succeed");
+
+    // then
+    let mut expected_block_hash = [0u8; 32];
+    expected_block_hash[31] = 5;
+    assert_eq!(
+        vec![StarknetExtractedValue::Log(StarknetLog {
+            block_hash: StarknetFelt(expected_block_hash),
             block_number: 1_023_456,
             data: vec![StarknetFelt([0x01; 32]), StarknetFelt([0x02; 32])],
             from_address: StarknetFelt([0xff; 32]),
             keys: vec![StarknetFelt([0xaa; 32])],
-        }),
-    ];
-    assert_eq!(expected_extractions, extracted_values);
+        })],
+        extracted_values,
+    );
 }
+
