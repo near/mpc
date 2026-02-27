@@ -54,26 +54,27 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
+# --- Helper functions ---
+
+die() {
+    printf 'Error: %s\n' "$1" >&2
+    exit 1
+}
+
+require_cmds() {
+    local missing=0
+    for cmd in "$@"; do
+        command -v "$cmd" >/dev/null 2>&1 || {
+            printf 'Missing dependency: %s\n' "$cmd" >&2
+            missing=1
+        }
+    done
+    [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above (hint: run from within 'nix develop')."
+}
+
 # --- Dependency checks ---
 
-# Verify that git-cliff is available (provided by nix develop shell).
-if ! command -v git-cliff &>/dev/null; then
-    echo "Error: 'git-cliff' not found on PATH."
-    echo "       Run this script from within 'nix develop' or install git-cliff manually."
-    exit 1
-fi
-
-if ! cargo about --version &>/dev/null; then
-    echo "Error: 'cargo-about' not found."
-    echo "       Run this script from within 'nix develop' or install cargo-about manually."
-    exit 1
-fi
-
-if ! cargo insta --version &>/dev/null; then
-    echo "Error: 'cargo-insta' not found."
-    echo "       Run this script from within 'nix develop' or install cargo-insta manually."
-    exit 1
-fi
+require_cmds git-cliff cargo-about cargo-insta
 
 # git-cliff needs an authenticated GitHub token to resolve PR links without
 # hitting the API rate limit (60 req/hour unauthenticated vs 5,000 authenticated).
