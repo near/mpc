@@ -3,6 +3,7 @@ use std::process::Command;
 use std::sync::LazyLock;
 
 use clap::Parser;
+use launcher_interface::types::ApprovedHashesFile;
 use regex::Regex;
 use std::os::unix::fs::FileTypeExt as _;
 
@@ -230,6 +231,8 @@ fn parse_env_lines(lines: &[&str]) -> BTreeMap<String, String> {
     env
 }
 
+// TODO: this should be a struct with hard expectations, that we deserialize into, instead of
+// a btreemap
 fn parse_env_file(path: &str) -> Result<BTreeMap<String, String>> {
     let content = std::fs::read_to_string(path).map_err(|source| LauncherError::FileRead {
         path: path.to_string(),
@@ -319,6 +322,7 @@ fn get_bare_digest(full_digest: &str) -> Result<String> {
 
 fn load_and_select_hash(
     args: &CliArgs,
+    // TODO: why is this btreemap not a struct with hard fields?
     dstack_config: &BTreeMap<String, String>,
 ) -> Result<String> {
     let approved_hashes = if std::path::Path::new(IMAGE_DIGEST_FILE).is_file() {
@@ -340,45 +344,45 @@ fn load_and_select_hash(
         }
         data.approved_hashes
     } else {
-        let fallback = args
+        let fallback_image = (&args)
             .default_image_digest
-            .as_deref()
+            .clone()
             .ok_or_else(|| LauncherError::MissingEnvVar("DEFAULT_IMAGE_DIGEST".to_string()))?;
-        let fallback = fallback.trim();
-        let fallback = if fallback.starts_with(SHA256_PREFIX) {
-            fallback.to_string()
-        } else {
-            format!("{SHA256_PREFIX}{fallback}")
-        };
-        if !is_valid_sha256_digest(&fallback) {
-            return Err(LauncherError::InvalidDefaultDigest(fallback));
-        }
-        tracing::info!("{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}");
-        vec![fallback]
+
+        tracing::info!(
+            ?IMAGE_DIGEST_FILE,
+            ?fallback_image,
+            "image digest file missing, will use fall back image"
+        );
+
+        vec![fallback_image]
     };
 
     tracing::info!("Approved MPC image hashes (newest → oldest):");
     for h in &approved_hashes {
-        tracing::info!("  - {h}");
+        // TODO: Fix this output...
+        // tracing::info!("  - {h}");
     }
 
     // Optional override
-    if let Some(override_hash) = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE) {
-        if !is_valid_sha256_digest(override_hash) {
-            return Err(LauncherError::InvalidHashOverride(override_hash.clone()));
-        }
-        if !approved_hashes.contains(override_hash) {
-            tracing::error!("MPC_HASH_OVERRIDE={override_hash} does NOT match any approved hash!");
-            return Err(LauncherError::InvalidHashOverride(override_hash.clone()));
-        }
-        tracing::info!("MPC_HASH_OVERRIDE provided → selecting: {override_hash}");
-        return Ok(override_hash.clone());
-    }
+    // if let Some(override_hash) = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE) {
+    //     if !is_valid_sha256_digest(override_hash) {
+    //         return Err(LauncherError::InvalidHashOverride(override_hash.clone()));
+    //     }
+    //     if !approved_hashes.contains(override_hash) {
+    //         tracing::error!("MPC_HASH_OVERRIDE={override_hash} does NOT match any approved hash!");
+    //         return Err(LauncherError::InvalidHashOverride(override_hash.clone()));
+    //     }
+    //     tracing::info!("MPC_HASH_OVERRIDE provided → selecting: {override_hash}");
+    //     return Ok(override_hash.clone());
+    // }
 
-    // No override → select newest (first in list)
-    let selected = approved_hashes[0].clone();
-    tracing::info!("Selected MPC hash (newest allowed): {selected}");
-    Ok(selected)
+    // // No override → select newest (first in list)
+    // let selected = approved_hashes[0].clone();
+    // tracing::info!("Selected MPC hash (newest allowed): {selected}");
+    // Ok(selected)
+
+    todo!()
 }
 
 // ---------------------------------------------------------------------------
@@ -789,6 +793,7 @@ async fn extend_rtmr3(platform: Platform, valid_hash: &str) -> Result<()> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use launcher_interface::types::ApprovedHashesFile;
 
     // -- Config parsing tests -----------------------------------------------
 

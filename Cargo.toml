@@ -13,6 +13,7 @@ members = [
     "crates/foreign-chain-inspector",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
+    "crates/launcher-interface",
     "crates/mpc-attestation",
     "crates/near-mpc-sdk",
     "crates/node",
@@ -45,6 +46,7 @@ include-measurements = { path = "crates/include-measurements" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
+launcher-interface = { path = "crates/launcher-interface" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
 near-mpc-sdk = { path = "crates/near-mpc-sdk" }

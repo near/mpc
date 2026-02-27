@@ -1,5 +1,6 @@
 use derive_more::From;
 use itertools::Itertools;
+use launcher_interface::types::ApprovedHashesFile;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
@@ -29,10 +30,6 @@ pub struct AllowedImageHashesFile {
     file_path: PathBuf,
 }
 
-// important: must stay aligned with the launcher implementation in:
-// mpc/tee_launcher/launcher.py
-const JSON_KEY_APPROVED_HASHES: &str = "approved_hashes";
-
 impl AllowedImageHashesStorage for AllowedImageHashesFile {
     async fn set(&mut self, approved_hashes: &[MpcDockerImageHash]) -> Result<(), io::Error> {
         tracing::info!(
@@ -41,21 +38,14 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             "Writing approved MPC image hashes to disk (JSON format)."
         );
 
-        let hash_strings: Vec<String> = approved_hashes
-            .iter()
-            .map(|h| format!("sha256:{}", h.as_hex()))
-            .collect();
+        let approved_hashes = ApprovedHashesFile {
+            approved_hashes: approved_hashes.to_vec(),
+        };
 
-        let json = serde_json::json!({
-            JSON_KEY_APPROVED_HASHES: hash_strings
-        });
+        let json = serde_json::to_string_pretty(&approved_hashes)
+            .expect("previous json! macro would also panic. TODO figure out what to return");
 
-        tracing::debug!(
-            %JSON_KEY_APPROVED_HASHES,
-            approved = ?hash_strings,
-            json = %json.to_string(),
-            "approved image hashes JSON that will be written to disk"
-        );
+        tracing::debug!(?approved_hashes, "writing approved hashes to disk");
 
         let tmp_path = self.file_path.with_extension("tmp");
         // Write to a temporary file first.

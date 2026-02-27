@@ -1,0 +1,13 @@
+[package]
+name = "launcher-interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mpc-primitives = { workspace = true }
+serde = { workspace = true }
+
+
+[lints]
+workspace = true
