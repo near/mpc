@@ -19,6 +19,7 @@ members = [
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
+    "crates/tee-launcher",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-utils",
