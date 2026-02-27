@@ -9,7 +9,7 @@ pub enum VerificationError {
     RecoveredPkDoesNotMatchExpectedKey,
 }
 
-pub fn check_ec_signature(
+pub fn verify_ecdsa_signature(
     signature: &K256Signature,
     message: &[u8; 32],
     public_key: &Secp256k1PublicKey,
@@ -31,7 +31,7 @@ pub fn check_ec_signature(
     Ok(())
 }
 
-pub fn check_ed_signature(
+pub fn verify_eddsa_signature(
     signature: &Ed25519Signature,
     message: &[u8],
     public_key: &Ed25519PublicKey,
@@ -98,7 +98,7 @@ mod tests {
         let (sig, pk) = make_ec_test_case(1, &msg);
 
         // when
-        let result = check_ec_signature(&sig, &msg, &pk);
+        let result = verify_ecdsa_signature(&sig, &msg, &pk);
 
         // then
         assert_matches!(result, Ok(()));
@@ -112,7 +112,7 @@ mod tests {
         let wrong_msg = [43u8; 32];
 
         // when
-        let result = check_ec_signature(&sig, &wrong_msg, &pk);
+        let result = verify_ecdsa_signature(&sig, &wrong_msg, &pk);
 
         // then
         assert_matches!(
@@ -129,7 +129,7 @@ mod tests {
         let (_, other_pk) = make_ec_test_case(2, &msg);
 
         // when
-        let result = check_ec_signature(&sig, &msg, &other_pk);
+        let result = verify_ecdsa_signature(&sig, &msg, &other_pk);
 
         // then
         assert_matches!(
@@ -145,7 +145,7 @@ mod tests {
         let (sig, pk) = make_ed_test_case(1, &msg);
 
         // when
-        let result = check_ed_signature(&sig, &msg, &pk);
+        let result = verify_eddsa_signature(&sig, &msg, &pk);
 
         // then
         assert_matches!(result, Ok(()));
@@ -159,7 +159,7 @@ mod tests {
         let wrong_msg = [43u8; 32];
 
         // when
-        let result = check_ed_signature(&sig, &wrong_msg, &pk);
+        let result = verify_eddsa_signature(&sig, &wrong_msg, &pk);
 
         // then
         assert_matches!(result, Err(VerificationError::InvalidSignature));
@@ -173,7 +173,7 @@ mod tests {
         let (_, other_pk) = make_ed_test_case(2, &msg);
 
         // when
-        let result = check_ed_signature(&sig, &msg, &other_pk);
+        let result = verify_eddsa_signature(&sig, &msg, &other_pk);
 
         // then
         assert_matches!(result, Err(VerificationError::InvalidSignature));
@@ -187,7 +187,7 @@ mod tests {
         sig.recovery_id ^= 1;
 
         // when
-        let result = check_ec_signature(&sig, &msg, &pk);
+        let result = verify_ecdsa_signature(&sig, &msg, &pk);
 
         // then
         assert_matches!(
@@ -204,7 +204,7 @@ mod tests {
         sig.s.scalar = [u8::MAX; 32]; // 0xFF..FF >= curve order n
 
         // when
-        let result = check_ec_signature(&sig, &msg, &pk);
+        let result = verify_ecdsa_signature(&sig, &msg, &pk);
 
         // then — ecrecover rejects the out-of-range s value
         assert_matches!(result, Err(VerificationError::FailedToRecoverSignature));
@@ -218,7 +218,7 @@ mod tests {
         let tampered_sig = Ed25519Signature::from([0u8; 64]);
 
         // when
-        let result = check_ed_signature(&tampered_sig, &msg, &pk);
+        let result = verify_eddsa_signature(&tampered_sig, &msg, &pk);
 
         // then
         assert_matches!(result, Err(VerificationError::InvalidSignature));

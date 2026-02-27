@@ -486,7 +486,7 @@ fn create_response_secp256k1(
         recovery_id,
     };
 
-    let recovery_id = if signature_verifier::check_ec_signature(
+    let recovery_id = if signature_verifier::verify_ecdsa_signature(
         &make_respond_resp(0),
         payload.as_ecdsa().unwrap(),
         &derived_pk,
@@ -494,7 +494,7 @@ fn create_response_secp256k1(
     .is_ok()
     {
         0
-    } else if signature_verifier::check_ec_signature(
+    } else if signature_verifier::verify_ecdsa_signature(
         &make_respond_resp(1),
         payload.as_ecdsa().unwrap(),
         &derived_pk,
