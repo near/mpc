@@ -33,6 +33,7 @@ impl ForeignChainSignatureVerifier {
     pub fn verify_signature(
         self,
         response: &VerifyForeignTransactionResponse,
+        // TODO(#2232): don't use interface API types for public keys
         public_key: &PublicKey,
     ) -> Result<(), VerifyForeignChainError> {
         let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
