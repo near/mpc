@@ -57,13 +57,13 @@ impl ForeignChainSignatureVerifier {
             (
                 PublicKey::Secp256k1(secp256k1_public_key),
                 SignatureResponse::Secp256k1(k256_signature),
-            ) => signature_verifier::check_ec_signature(
+            ) => signature_verifier::verify_ecdsa_signature(
                 k256_signature,
                 &expected_payload_hash,
                 secp256k1_public_key,
             ),
             (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
-                signature_verifier::check_ed_signature(
+                signature_verifier::verify_eddsa_signature(
                     signature,
                     expected_payload_hash.as_slice(),
                     ed25519_public_key,
