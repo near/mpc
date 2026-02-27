@@ -156,8 +156,8 @@ mod test {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let s = Participant::from(0u32);
         let r = Participant::from(1u32);
-        let ctx_s = Comms::new();
-        let ctx_r = Comms::new();
+        let ctx_s = Comms::with_buffer_capacity(usize::MAX);
+        let ctx_r = Comms::with_buffer_capacity(usize::MAX);
 
         run_two_party_protocol(
             s,

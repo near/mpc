@@ -409,8 +409,8 @@ mod test {
     > {
         let s = Participant::from(0u32);
         let r = Participant::from(1u32);
-        let comms_s = Comms::new();
-        let comms_r = Comms::new();
+        let comms_s = Comms::with_buffer_capacity(usize::MAX);
+        let comms_r = Comms::with_buffer_capacity(usize::MAX);
         let rng_1 = R::seed_from_u64(rng.next_u64());
         let rng_2 = R::seed_from_u64(rng.next_u64());
         run_two_party_protocol(

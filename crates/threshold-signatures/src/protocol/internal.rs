@@ -214,28 +214,35 @@ impl Default for SubMessageQueue {
 /// A message buffer is a concurrent data structure to buffer messages.
 ///
 /// The idea is that we can put messages, and have them organized according to the
-/// header that addentifies where in the protocol those messages will be needed.
+/// header that identifies where in the protocol those messages will be needed.
 /// This data structure also provides async functions which allow efficiently
 /// waiting until a particular message is available, by using events to sleep tasks
 /// until a message for that slot has arrived.
 #[derive(Clone)]
 struct MessageBuffer {
     messages: Arc<std::sync::Mutex<HashMap<MessageHeader, SubMessageQueue>>>,
+    max_entries: usize,
 }
 
 impl MessageBuffer {
-    fn new() -> Self {
+    fn new(max_entries: usize) -> Self {
         Self {
             messages: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            max_entries,
         }
     }
 
     /// Push a message into this buffer.
     ///
     /// We also need the header for the message, and the participant who sent it.
+    /// Messages for unknown headers are dropped when the buffer is at capacity.
     fn push(&self, header: MessageHeader, from: Participant, message: MessageData) {
         let mut messages_lock = self.messages.lock().expect("lock should not fail");
-        messages_lock.entry(header).or_default().send(from, message);
+        if let Some(queue) = messages_lock.get(&header) {
+            queue.send(from, message);
+        } else if messages_lock.len() < self.max_entries {
+            messages_lock.entry(header).or_default().send(from, message);
+        }
     }
 
     /// Pop a message for a particular header.
@@ -271,9 +278,10 @@ pub struct Comms {
 }
 
 impl Comms {
-    pub fn new() -> Self {
+    /// Create a new `Comms` with an explicit message-buffer capacity.
+    pub fn with_buffer_capacity(max_entries: usize) -> Self {
         Self {
-            incoming: MessageBuffer::new(),
+            incoming: MessageBuffer::new(max_entries),
             outgoing: Arc::new(std::sync::Mutex::new(VecDeque::new())),
         }
     }
@@ -346,6 +354,17 @@ impl Comms {
 
     pub fn shared_channel(&self) -> SharedChannel {
         SharedChannel::new(self.clone())
+    }
+
+    /// Returns the number of distinct `(ChannelTag, Waitpoint)` entries
+    /// currently stored in the message buffer.
+    #[cfg(test)]
+    pub fn buffer_len(&self) -> usize {
+        self.incoming
+            .messages
+            .lock()
+            .expect("lock should not fail")
+            .len()
     }
 }
 
@@ -529,27 +548,30 @@ mod tests {
 
     #[test]
     #[allow(clippy::significant_drop_tightening)]
-    fn attacker_can_fill_message_buffer_with_unused_waitpoints() {
-        let comms = Comms::new();
+    fn message_buffer_is_bounded() {
+        // Given
+        let cap = 512;
+        let comms = Comms::with_buffer_capacity(cap);
         let attacker = Participant::from(99_u32);
-        let attack_count = 512_u64;
+        let attack_count = (cap as u64) + 100;
 
+        // When
         for i in 0..attack_count {
             let header =
                 MessageHeader::new(ChannelTag::root_shared()).with_waitpoint(1_000_000 + i);
             let mut message = header.to_bytes().to_vec();
             message.extend_from_slice(&i.to_le_bytes());
 
-            // Attacker injects messages for waitpoints the honest code never polls.
             comms.push_message(attacker, message);
         }
 
+        // Then
         let messages = comms
             .incoming
             .messages
             .lock()
             .expect("lock should not fail");
 
-        assert!(messages.len() == usize::try_from(attack_count).unwrap());
+        assert_eq!(messages.len(), cap);
     }
 }

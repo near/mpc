@@ -57,6 +57,12 @@ async fn do_ckd_coordinator(
     Ok(Some(ckd_output))
 }
 
+/// Maximum incoming buffer entries for the coordinator in the confidential key derivation protocol.
+pub(crate) const CKD_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 1;
+/// Maximum incoming buffer entries for non-coordinator participants in the confidential key derivation protocol.
+#[cfg(test)]
+pub(crate) const CKD_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
+
 /// Runs the confidential key derivation protocol.
 /// This exact same function is called for both
 /// a coordinator and a normal participant.
@@ -100,7 +106,7 @@ pub fn ckd(
         });
     }
 
-    let comms = Comms::new();
+    let comms = Comms::with_buffer_capacity(CKD_MAX_INCOMING_COORDINATOR_ENTRIES);
     let chan = comms.shared_channel();
 
     let fut = run_ckd_protocol(
@@ -184,15 +190,19 @@ fn compute_signature_share(
 #[cfg(test)]
 mod test {
     use super::*;
+    use super::{CKD_MAX_INCOMING_COORDINATOR_ENTRIES, CKD_MAX_INCOMING_PARTICIPANT_ENTRIES};
     use crate::confidential_key_derivation::{
         ciphersuite::{hash_to_curve, G2Projective},
         hash_app_id_with_pk, SigningShare, VerifyingKey,
     };
+    use crate::crypto::polynomials::Polynomial;
+    use crate::protocol::internal::{make_protocol, Comms};
     use crate::test_utils::{
         check_one_coordinator_output, generate_participants, run_protocol, GenProtocol,
         MockCryptoRng,
     };
     use rand::{seq::SliceRandom as _, RngCore, SeedableRng};
+    use rstest::rstest;
 
     #[test]
     fn test_hash2curve() {
@@ -280,5 +290,74 @@ mod test {
             "Keys should be equal"
         );
         insta::assert_json_snapshot!(ckd_output);
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    #[case(10, 4)]
+    fn test_ckd_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        let coordinator_expected = CKD_MAX_INCOMING_COORDINATOR_ENTRIES;
+        let participant_expected = CKD_MAX_INCOMING_PARTICIPANT_ENTRIES;
+
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let app_id = AppId::try_from(b"Near App").unwrap();
+        let app_sk = Scalar::random(&mut rng);
+        let app_pk = ElementG1::generator() * app_sk;
+
+        let participants = generate_participants(num_participants);
+        let coordinator = participants[0];
+
+        let degree = threshold.checked_sub(1).unwrap();
+        let f = Polynomial::<BLS12381SHA256>::generate_polynomial(None, degree, &mut rng).unwrap();
+        let msk = f.eval_at_zero().unwrap().0;
+        let pk = VerifyingKey::new(G2Projective::generator() * msk);
+
+        let mut comms_refs = Vec::new();
+        let mut protocols: GenProtocol<CKDOutputOption> = Vec::new();
+
+        for &p in &participants {
+            let comms = Comms::with_buffer_capacity(usize::MAX);
+            let comms_ref = comms.clone();
+            let private_share = SigningShare::new(f.eval_at_participant(p).unwrap().0);
+            let key_pair = KeygenOutput {
+                public_key: pk,
+                private_share,
+            };
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let p_list = ParticipantList::new(&participants).unwrap();
+            let fut = run_ckd_protocol(
+                comms.shared_channel(),
+                coordinator,
+                p,
+                p_list,
+                key_pair,
+                app_id.clone(),
+                app_pk,
+                rng_p,
+            );
+            let prot = make_protocol(comms, fut);
+            comms_refs.push((p, comms_ref));
+            protocols.push((p, Box::new(prot)));
+        }
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        for (p, comms) in &comms_refs {
+            let expected = if *p == coordinator {
+                coordinator_expected
+            } else {
+                participant_expected
+            };
+            assert_eq!(
+                comms.buffer_len(),
+                expected,
+                "Unexpected buffer entries for participant {p:?} (coordinator={})",
+                *p == coordinator
+            );
+        }
     }
 }

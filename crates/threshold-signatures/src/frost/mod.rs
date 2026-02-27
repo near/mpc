@@ -40,6 +40,9 @@ pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
     pub commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>>,
 }
 
+/// Maximum incoming buffer entries for the FROST presign protocol.
+pub(crate) const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
+
 /// Runs Presigning of either `EdDSA` or `RedDSA`
 pub fn presign<C>(
     participants: &[Participant],
@@ -76,7 +79,7 @@ where
         });
     }
 
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
     let fut = do_presign(
         ctx.shared_channel(),
         participants,
@@ -157,4 +160,63 @@ pub fn assert_sign_inputs(
         });
     }
     Ok(participants)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::protocol::internal::{make_protocol, Comms};
+    use crate::test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng};
+    use frost_ed25519::Ed25519Sha512;
+    use rand::{RngCore, SeedableRng};
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    #[case(10, 4)]
+    fn test_presign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        let expected = FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES;
+
+        // Given
+        let participants = generate_participants(num_participants);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let keygen_result = crate::test_utils::run_keygen::<Ed25519Sha512, MockCryptoRng>(
+            &participants,
+            threshold,
+            &mut rng,
+        );
+
+        let mut comms_refs = Vec::new();
+        let mut protocols: GenProtocol<PresignOutput<Ed25519Sha512>> = Vec::new();
+
+        for (p, keygen_out) in &keygen_result {
+            let comms = Comms::with_buffer_capacity(usize::MAX);
+            let comms_ref = comms.clone();
+            let participant_list = ParticipantList::new(&participants).unwrap();
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let fut = do_presign::<Ed25519Sha512>(
+                comms.shared_channel(),
+                participant_list,
+                *p,
+                keygen_out.private_share,
+                rng_p,
+            );
+            let prot = make_protocol(comms, fut);
+            comms_refs.push((*p, comms_ref));
+            protocols.push((*p, Box::new(prot)));
+        }
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        for (p, comms) in &comms_refs {
+            assert_eq!(
+                comms.buffer_len(),
+                expected,
+                "Unexpected buffer entries for participant {p:?}"
+            );
+        }
+    }
 }
