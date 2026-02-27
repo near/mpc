@@ -2033,6 +2033,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 mod tests {
     use std::{
         collections::{BTreeMap, HashSet},
+        panic,
         str::FromStr,
     };
 
@@ -2809,9 +2810,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn test_submit_participant_info_panics_if_predecessor_differs() {
-        use near_sdk::test_utils::VMContextBuilder;
-        use near_sdk::{testing_env, NearToken};
-
         let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
 
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
@@ -2847,9 +2845,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "Caller must be an attested participant")]
     fn test_attested_but_not_participant_panics() {
-        use near_sdk::test_utils::VMContextBuilder;
-        use near_sdk::{testing_env, NearToken};
-
         let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
 
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
@@ -2878,9 +2873,6 @@ mod tests {
 
     #[test]
     fn test_respond_ckd_fails_for_attested_non_participant() {
-        use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken};
-        use std::panic;
-
         // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
         let (context, mut contract, _secret_key) =
             basic_setup(SignatureScheme::Bls12381, &mut OsRng);
@@ -4269,6 +4261,8 @@ mod tests {
         assert_matches::assert_matches!(result, Ok(()));
     }
 
+    /// Note - this test uses attestation data from a real MPC node. After Any change to the expected contract measurement, /test-utils/assets need to be updated.
+    ///  see crates/test-utils/assets/README.md for details.
     /// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
     /// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
     #[test]

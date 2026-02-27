@@ -15,9 +15,10 @@ pub mod types {
 
     pub use metrics::Metrics;
     pub use primitives::{
-        AccountId, CkdAppId, DomainId, K256AffinePoint, K256Scalar, K256Signature,
-        SignatureResponse, Tweak,
+        AccountId, CkdAppId, DomainId, Ed25519Signature, K256AffinePoint, K256Scalar,
+        K256Signature, SignatureResponse, Tweak,
     };
+    pub use sign::*;
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
         DomainConfig, DomainPurpose, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
@@ -34,6 +35,7 @@ pub mod types {
     mod metrics;
     mod participants;
     mod primitives;
+    mod sign;
     mod state;
     mod updates;
 }

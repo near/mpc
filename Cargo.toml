@@ -14,6 +14,7 @@ members = [
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
     "crates/mpc-attestation",
+    "crates/near-mpc-sdk",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
@@ -21,6 +22,7 @@ members = [
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-utils",
+    "crates/threshold-signatures",
     "crates/tls",
     "crates/utilities",
 ]
@@ -44,15 +46,19 @@ mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
+near-mpc-sdk = { path = "crates/near-mpc-sdk" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
+threshold-signatures = { path = "crates/threshold-signatures" }
 utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
 anyhow = "1.0.101"
 assert_matches = "1.5.0"
 async-trait = "0.1.89"
+auto_ops = "0.3.0"
+average = "0.16"
 axum = "0.8.8"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 base64 = "0.22.1"
@@ -60,9 +66,11 @@ blstrs = "0.7.1"
 borsh = { version = "1.6.0", features = ["derive"] }
 bs58 = { version = "0.5.1" }
 built = { version = "0.8", features = ["git2", "chrono"] }
+byteorder = "1.5.0"
 bytes = { version = "1.11.1" }
 cargo-near-build = "0.11.1"
-clap = { version = "4.5.57", features = ["derive", "env"] }
+clap = { version = "4.5.59", features = ["derive", "env"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 curve25519-dalek = { version = "4.1.3", features = [
     "group",
     "serde",
@@ -95,8 +103,12 @@ either = "1.15.0"
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
+frost-core = { version = "2.2.0", default-features = false, features = ["serde"] }
+frost-ed25519 = { version = "2.2.0", default-features = false }
+frost-secp256k1 = { version = "2.2.0", default-features = false }
 fs2 = "0.4.3"
-futures = "0.3.31"
+futures = "0.3.32"
+futures-lite = "2.6.1"
 gcloud-sdk = { version = "0.28.5", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
@@ -111,6 +123,7 @@ insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.14.0"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
+keccak = "0.1.5"
 lru = "0.16.3"
 mockall = "0.14.0"
 near-abi = "0.4.4"
@@ -133,12 +146,18 @@ proc-macro2 = "1.0"
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
 rcgen = "0.13.2"
+# This project has been forked due to incompatibility problems with cheater detection feature activated on the original Zcash repo
+reddsa = { git = "https://github.com/near/reddsa", rev = "c7cd92a55f7399d8d7f8c0ac386445b5f898f197", default-features = false, features = [
+    "frost",
+] }
 regex = "1.12.3"
 # TODO(#2053): upgrading this leads to errors
 reqwest = { version = "0.12.28", features = ["multipart", "json"] }
+rmp-serde = "1.3.1"
 rstest = { version = "0.26.1" }
 rustls = { version = "0.23.36", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11.19"
 serde_json = "1.0"
 serde_with = { version = "3.16.1", features = ["hex"] }
 serial_test = "3.3.1"
@@ -146,14 +165,13 @@ sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
 socket2 = "0.6.2"
+subtle = "2.6.1"
 syn = "2.0"
 tempfile = "3.25.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
-# Last commit on main branch as of 10-02-2026
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "c2efb61b559f73cbba77b58b5eab491b997b1c76" }
 tokio = { version = "1.41.0", features = ["full"] }
-tokio-metrics = { version = "0.4.7" }
+tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
@@ -168,6 +186,7 @@ tracing-subscriber = { version = "0.3.22", features = [
 tracing-test = "0.2.6"
 url = "2"
 x509-parser = "0.18.1"
+zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:

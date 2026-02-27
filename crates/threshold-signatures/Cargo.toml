@@ -1,0 +1,116 @@
+[package]
+name = "threshold-signatures"
+description = "Threshold Signatures"
+repository = "https://github.com/near/threshold-signatures"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[lib]
+bench = false
+
+[features]
+test-utils = ["rand", "rand_chacha"]
+
+[dependencies]
+auto_ops.workspace = true
+blstrs.workspace = true
+borsh.workspace = true
+byteorder.workspace = true
+derive_more = { workspace = true, features = ["deref_mut"] }
+digest.workspace = true
+ecdsa.workspace = true
+elliptic-curve.workspace = true
+frost-core.workspace = true
+frost-ed25519.workspace = true
+frost-secp256k1.workspace = true
+futures.workspace = true
+futures-lite.workspace = true
+hex.workspace = true
+hkdf.workspace = true
+k256 = { workspace = true, features = [
+  "sha256",
+  "ecdsa",
+  "serde",
+  "hash2curve",
+] }
+keccak.workspace = true
+rand = { workspace = true, optional = true }
+rand_chacha = { workspace = true, optional = true }
+rand_core.workspace = true
+reddsa.workspace = true
+rmp-serde.workspace = true
+serde.workspace = true
+serde_bytes.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sha3.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+average.workspace = true
+criterion.workspace = true
+insta.workspace = true
+rand.workspace = true
+rand_core = { workspace = true, features = ["getrandom"] }
+threshold-signatures = { path = ".", features = ["test-utils"] }
+
+[[bench]]
+name = "lagrange"
+harness = false
+
+[[bench]]
+name = "inversion"
+harness = false
+
+[[bench]]
+name = "naive_robust_ecdsa"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "naive_ot_based_ecdsa"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "advanced_robust_ecdsa"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "advanced_ot_based_ecdsa"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "advanced_eddsa_frost"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "ckd"
+harness = false
+required-features = ["test-utils"]
+
+[lints.clippy]
+# We might revisit these exceptions in the future
+missing-const-for-fn = "allow"
+trait-duplication-in-bounds = "allow"
+missing-errors-doc = "allow"
+similar-names = "allow"
+many-single-char-names = "allow"
+must-use-candidate = "allow"
+return-self-not-must-use = "allow"
+
+# Part of clippy restriction group
+indexing-slicing = "deny"
+panic = "deny"
+panic-in-result-fn = "warn"
+unwrap-used = "warn"
+
+# Lint groups used
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }

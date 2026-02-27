@@ -1,6 +1,6 @@
 # How to run the python test
 
-Simply run `exec_pytest.sh` (optional flag `--verbose` and `--reset-submodules`) or execute the steps below with the current directory at root of the mpc git repo.
+Simply run `exec-pytest.sh` (optional flag `--verbose` and `--reset-submodules`) or execute the steps below with the current directory at root of the mpc git repo.
 
 ## Run tests with pytest
 
