@@ -663,7 +663,7 @@ impl MpcContract {
                 let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
 
                 // Check the signature is correct
-                signature_verifier::check_ec_signature(
+                signature_verifier::verify_ecdsa_signature(
                     signature_response,
                     payload_hash,
                     &expected_public_key,
@@ -686,7 +686,7 @@ impl MpcContract {
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
-                signature_verifier::check_ed_signature(
+                signature_verifier::verify_eddsa_signature(
                     signature,
                     message,
                     &derived_public_key_32_bytes,
@@ -782,7 +782,7 @@ impl MpcContract {
                 let payload_hash: [u8; 32] = response.payload_hash.0;
 
                 // Check the signature is correct
-                signature_verifier::check_ec_signature(
+                signature_verifier::verify_ecdsa_signature(
                     signature_response,
                     &payload_hash,
                     &expected_public_key,
