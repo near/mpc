@@ -52,12 +52,16 @@ mod tests {
         Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature, Secp256k1PublicKey,
     };
     use ed25519_dalek::Signer;
+    use rand::{Rng, SeedableRng};
 
     fn make_ecdsa_test_case(
-        key_seed: u8,
+        key_seed: u64,
         message_digest: &[u8; 32],
     ) -> (K256Signature, Secp256k1PublicKey) {
-        let signing_key = k256::ecdsa::SigningKey::from_bytes(&[key_seed; 32].into()).unwrap();
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(key_seed);
+        let key_bytes: [u8; 32] = rng.r#gen();
+        let signing_key = k256::ecdsa::SigningKey::from_bytes(&key_bytes.into())
+            .expect("random 32 bytes should be a valid secp256k1 scalar");
         let (sig, recovery_id) = signing_key
             .sign_prehash_recoverable(message_digest)
             .unwrap();
@@ -86,8 +90,13 @@ mod tests {
         (signature, Secp256k1PublicKey(pk_bytes))
     }
 
-    fn make_eddsa_test_case(key_seed: u8, message: &[u8; 32]) -> (Ed25519Signature, Ed25519PublicKey) {
-        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[key_seed; 32]);
+    fn make_eddsa_test_case(
+        key_seed: u64,
+        message: &[u8; 32],
+    ) -> (Ed25519Signature, Ed25519PublicKey) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(key_seed);
+        let key_bytes: [u8; 32] = rng.r#gen();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
         let sig: ed25519_dalek::Signature = signing_key.sign(message);
         let pk = signing_key.verifying_key();
         (
@@ -227,5 +236,44 @@ mod tests {
 
         // then
         assert_matches!(result, Err(VerificationError::InvalidSignature));
+    }
+
+    fn make_message(seed: u64) -> [u8; 32] {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        rng.r#gen()
+    }
+
+    #[test]
+    fn ec_stress_many_keys_and_messages() {
+        // Sweep over 16 key seeds × 8 messages = 128 combinations.
+        // Kept smaller than EdDSA because ecrecover is expensive in the NEAR mock VM.
+        for key_seed in 0u64..16 {
+            for msg_seed in 0u64..8 {
+                let msg = make_message(msg_seed);
+                let (sig, pk) = make_ecdsa_test_case(key_seed, &msg);
+
+                let result = verify_ecdsa_signature(&sig, &msg, &pk);
+                assert!(
+                    result.is_ok(),
+                    "ECDSA verification failed for key_seed={key_seed}, msg_seed={msg_seed}: {result:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ed_stress_many_keys_and_messages() {
+        for key_seed in 0u64..64 {
+            for msg_seed in 0u64..16 {
+                let msg = make_message(msg_seed);
+                let (sig, pk) = make_eddsa_test_case(key_seed, &msg);
+
+                let result = verify_eddsa_signature(&sig, &msg, &pk);
+                assert!(
+                    result.is_ok(),
+                    "EdDSA verification failed for key_seed={key_seed}, msg_seed={msg_seed}: {result:?}",
+                );
+            }
+        }
     }
 }
