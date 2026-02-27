@@ -58,7 +58,7 @@ mod tests {
         key_seed: u64,
         message_digest: &[u8; 32],
     ) -> (K256Signature, Secp256k1PublicKey) {
-        let mut rng = rand_chacha::ChaCha8Rng::seeddsa_from_u64(key_seed);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(key_seed);
         let key_bytes: [u8; 32] = rng.r#gen();
         let signing_key = k256::ecdsa::SigningKey::from_bytes(&key_bytes.into())
             .expect("random 32 bytes should be a valid secp256k1 scalar");
@@ -75,7 +75,7 @@ mod tests {
         big_r_bytes[0] = prefix;
         big_r_bytes[1..].copy_from_slice(&sig.r().to_bytes());
 
-        let pk_uncompressed = signing_key.verifying_key().to_encodeddsa_point(false);
+        let pk_uncompressed = signing_key.verifying_key().to_encoded_point(false);
         let pk_bytes: [u8; 64] = pk_uncompressed.as_bytes()[1..].try_into().unwrap();
 
         let signature = K256Signature {
@@ -94,7 +94,7 @@ mod tests {
         key_seed: u64,
         message: &[u8; 32],
     ) -> (Ed25519Signature, Ed25519PublicKey) {
-        let mut rng = rand_chacha::ChaCha8Rng::seeddsa_from_u64(key_seed);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(key_seed);
         let key_bytes: [u8; 32] = rng.r#gen();
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
         let sig: ed25519_dalek::Signature = signing_key.sign(message);
@@ -103,6 +103,11 @@ mod tests {
             Ed25519Signature::from(sig.to_bytes()),
             Ed25519PublicKey(pk.to_bytes()),
         )
+    }
+
+    fn make_message(seed: u64) -> [u8; 32] {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        rng.r#gen()
     }
 
     #[test]
@@ -236,11 +241,6 @@ mod tests {
 
         // then
         assert_matches!(result, Err(VerificationError::InvalidSignature));
-    }
-
-    fn make_message(seed: u64) -> [u8; 32] {
-        let mut rng = rand_chacha::ChaCha8Rng::seeddsa_from_u64(seed);
-        rng.r#gen()
     }
 
     #[test]
