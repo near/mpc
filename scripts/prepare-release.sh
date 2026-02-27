@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# release-automation.sh — Automates local steps of the MPC release process.
+# prepare-release.sh — Automates local steps of the MPC release process.
 #
 # This script prepares a release branch for a given version. It:
 #   1. Validates the version argument is valid semver (MAJOR.MINOR.PATCH).
@@ -12,10 +12,10 @@
 #   6. Bumps the workspace version in the root Cargo.toml.
 #
 # Usage:
-#   ./release-automation.sh <VERSION>
+#   ./prepare-release.sh <VERSION>
 #
 # Example:
-#   ./release-automation.sh 3.6.0
+#   ./prepare-release.sh 3.6.0
 #
 
 # Exit immediately on error (-e), treat unset variables as errors (-u),
