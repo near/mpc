@@ -1,5 +1,4 @@
 pub mod chain_gateway;
-pub mod contract_state_stream;
 pub mod errors;
 mod logger;
 pub mod transaction_sender;

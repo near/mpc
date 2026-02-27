@@ -1,10 +1,6 @@
-use near_account_id::AccountId;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
-use crate::contract_state_stream::{ContractMethodSubscription, ContractStateStream};
 use crate::errors::ChainGatewayError;
 use crate::logger::indexer_logger;
 use crate::near_internals_wrapper::{ClientWrapper, RpcHandlerWrapper, ViewClientWrapper};
@@ -28,19 +24,6 @@ pub struct ChainGateway {
 }
 
 impl ChainGateway {
-    pub async fn subscribe<Arg: Serialize, Res: DeserializeOwned + Send + Clone>(
-        &self,
-        contract_id: AccountId,
-        method_name: &str,
-        args: &Arg,
-    ) -> Result<impl ContractStateStream<Res>, ChainGatewayError> {
-        let state_viewer = StateViewer {
-            client: self.client.clone(),
-            view_client: self.view_client.clone(),
-        };
-        ContractMethodSubscription::new::<Arg>(state_viewer, contract_id, method_name, args).await
-    }
-
     pub fn viewer(&self) -> StateViewer {
         StateViewer {
             client: self.client.clone(),

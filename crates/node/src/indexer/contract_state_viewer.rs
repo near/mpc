@@ -3,20 +3,16 @@ use crate::indexer::{
     types::{ChainCKDRequest, ChainSignatureRequest, ChainVerifyForeignTransactionRequest},
 };
 use anyhow::Context;
-use chain_gateway::{contract_state_stream::ContractStateStream, state_viewer::StateViewer};
+use chain_gateway::state_viewer::{ContractStateStream, StateViewer};
 use mpc_contract::{primitives::signature::YieldIndex, state::ProtocolContractState};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use super::{
-    types::{
-        ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
-        ChainGetPendingVerifyForeignTxRequestArgs, GetAttestationArgs,
-    },
-    IndexerState,
+use super::types::{
+    ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
+    ChainGetPendingVerifyForeignTxRequestArgs, GetAttestationArgs,
 };
 
 /// this is just a wrapper around a shared contract viewer
@@ -26,55 +22,55 @@ pub(crate) struct MpcContractStateViewer {
     mpc_contract_viewer: StateViewer,
 }
 
-pub fn spawn_subscriber<Arg, T>(
-    sender: watch::Sender<T>,
-    // todo: remove Arc
-    indexer: Arc<IndexerState>,
-    method_name: impl Into<String>,
-    args: Arg,
-) -> JoinHandle<anyhow::Result<()>>
-where
-    Arg: Serialize + Send + Sync + 'static,
-    T: DeserializeOwned + Send + Clone + Sync + 'static,
-{
-    let method_name = method_name.into();
+impl MpcContractStateViewer {
+    pub fn spawn_subscriber<Arg, T>(
+        &self,
+        sender: watch::Sender<T>,
+        method_name: impl Into<String>,
+        args: Arg,
+    ) -> JoinHandle<anyhow::Result<()>>
+    where
+        Arg: Serialize + Send + Sync + 'static,
+        T: DeserializeOwned + Send + Clone + Sync + 'static,
+    {
+        let method_name = method_name.into();
 
-    tokio::spawn(async move { monitor_contract_value(sender, indexer, method_name, args).await })
-}
+        let this = self.clone();
+        tokio::spawn(async move { this.monitor_contract_value(sender, method_name, args).await })
+    }
+    async fn monitor_contract_value<Arg, T>(
+        &self,
+        sender: watch::Sender<T>,
+        method_name: String,
+        args: Arg,
+    ) -> anyhow::Result<()>
+    where
+        Arg: Serialize + Send,
+        T: DeserializeOwned + Send + Clone + 'static,
+    {
+        let mut subscription = self
+            .mpc_contract_viewer
+            .subscribe::<Arg, T>(self.mpc_contract_id.clone(), &method_name, &args)
+            .await
+            .context("invalid arguments")?;
 
-async fn monitor_contract_value<Arg, T>(
-    sender: watch::Sender<T>,
-    // todo: remove Arc
-    indexer: Arc<IndexerState>,
-    method_name: String,
-    args: Arg,
-) -> anyhow::Result<()>
-where
-    Arg: Serialize + Send,
-    T: DeserializeOwned + Send + Clone + 'static,
-{
-    let mut subscription = indexer
-        .chain_gateway
-        .subscribe::<Arg, T>(indexer.mpc_contract_id.clone(), &method_name, &args)
-        .await
-        .context("invalid arguments")?;
-
-    loop {
-        match subscription.latest() {
-            Ok((_, value)) => {
-                if sender.send(value).is_err() {
-                    return Ok(()); // no receivers left
+        loop {
+            match subscription.latest() {
+                Ok((_, value)) => {
+                    if sender.send(value).is_err() {
+                        return Ok(()); // no receivers left
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        method_name,
+                        %err,
+                        "error reading contract state, waiting for next update"
+                    );
                 }
             }
-            Err(err) => {
-                tracing::warn!(
-                    method_name,
-                    %err,
-                    "error reading contract state, waiting for next update"
-                );
-            }
+            subscription.changed().await?; // channel closed = fatal
         }
-        subscription.changed().await?; // channel closed = fatal
     }
 }
 
