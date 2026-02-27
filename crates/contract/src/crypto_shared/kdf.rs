@@ -1,11 +1,9 @@
-use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak};
-use anyhow::Context;
+use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak, IntoInterfaceType};
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 #[cfg(target_arch = "wasm32")]
 use k256::EncodedPoint;
 use k256::{
-    ecdsa::{RecoveryId, Signature},
-    elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic, PrimeField},
+    elliptic_curve::{point::AffineCoordinates, CurveArithmetic, PrimeField},
     Secp256k1,
 };
 use near_account_id::AccountId;
@@ -66,14 +64,15 @@ pub struct TweakNotOnCurve;
 pub fn derive_key_secp256k1(
     public_key: &k256_types::PublicKey,
     tweak: &Tweak,
-) -> Result<k256_types::PublicKey, TweakNotOnCurve> {
+) -> Result<dtos::Secp256k1PublicKey, TweakNotOnCurve> {
     let tweak = k256::Scalar::from_repr(tweak.as_bytes().into())
         .into_option()
         .ok_or(TweakNotOnCurve)?;
 
     Ok(
         (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key)
-            .to_affine(),
+            .to_affine()
+            .into_dto_type(),
     )
 }
 
@@ -92,56 +91,6 @@ pub fn x_coordinate(
     <<Secp256k1 as CurveArithmetic>::Scalar as k256::elliptic_curve::ops::Reduce<
         <k256::Secp256k1 as k256::elliptic_curve::Curve>::Uint,
     >>::reduce_bytes(&point.x())
-}
-
-pub fn check_ec_signature(
-    expected_pk: &k256::AffinePoint,
-    big_r: &k256::AffinePoint,
-    s: &k256::Scalar,
-    msg_hash: &[u8; 32],
-    recovery_id: u8,
-) -> anyhow::Result<()> {
-    let public_key = expected_pk.to_encoded_point(false);
-    let signature = k256::ecdsa::Signature::from_scalars(x_coordinate(big_r), s)
-        .context("cannot create signature from cait_sith signature")?;
-    let found_pk = recover(
-        msg_hash,
-        &signature,
-        RecoveryId::try_from(recovery_id).context("invalid recovery ID")?,
-    )?
-    .to_encoded_point(false);
-    if public_key == found_pk {
-        return Ok(());
-    }
-
-    anyhow::bail!("cannot use either recovery id={recovery_id} to recover pubic key")
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn recover(
-    prehash: &[u8],
-    signature: &Signature,
-    recovery_id: RecoveryId,
-) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
-    k256::ecdsa::VerifyingKey::recover_from_prehash(prehash, signature, recovery_id)
-        .context("Unable to recover public key")
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn recover(
-    prehash: &[u8],
-    signature: &Signature,
-    recovery_id: RecoveryId,
-) -> anyhow::Result<k256::ecdsa::VerifyingKey> {
-    // While this function also works on native code, it's a bit weird and unsafe.
-    // I'm more comfortable using an existing library instead.
-    let recovered_key_bytes =
-        env::ecrecover(prehash, &signature.to_bytes(), recovery_id.to_byte(), true)
-            .context("Unable to recover public key")?;
-    k256::ecdsa::VerifyingKey::from_encoded_point(&EncodedPoint::from_untagged_bytes(
-        &recovered_key_bytes.into(),
-    ))
-    .context("Failed to parse returned key")
 }
 
 #[cfg(test)]

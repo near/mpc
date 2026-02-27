@@ -5420,6 +5420,7 @@ dependencies = [
  "sha2",
  "sha3",
  "signature",
+ "signature-verifier",
  "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",
@@ -10095,6 +10096,19 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest 0.10.7",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "signature-verifier"
+version = "3.5.1"
+dependencies = [
+ "assert_matches",
+ "contract-interface",
+ "ed25519-dalek",
+ "k256",
+ "near-sdk",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
 ]
 
 [[package]]

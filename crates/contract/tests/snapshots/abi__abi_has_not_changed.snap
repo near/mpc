@@ -2672,7 +2672,7 @@ expression: abi
               ],
               "properties": {
                 "big_r": {
-                  "$ref": "#/definitions/SerializableAffinePoint"
+                  "$ref": "#/definitions/K256AffinePoint"
                 },
                 "recovery_id": {
                   "type": "integer",
@@ -2680,7 +2680,7 @@ expression: abi
                   "minimum": 0.0
                 },
                 "s": {
-                  "$ref": "#/definitions/SerializableScalar"
+                  "$ref": "#/definitions/K256Scalar"
                 },
                 "scheme": {
                   "type": "string",
@@ -2704,7 +2704,7 @@ expression: abi
                   ]
                 },
                 "signature": {
-                  "$ref": "#/definitions/Signature"
+                  "$ref": "#/definitions/Ed25519Signature"
                 }
               }
             }
@@ -2721,7 +2721,7 @@ expression: abi
               "$ref": "#/definitions/Hash256"
             },
             "signature": {
-              "$ref": "#/definitions/SignatureResponse2"
+              "$ref": "#/definitions/SignatureResponse"
             }
           }
         },
@@ -3079,22 +3079,6 @@ expression: abi
         "Secp256k1PublicKey": {
           "type": "string"
         },
-        "SerializableAffinePoint": {
-          "type": "object",
-          "required": [
-            "affine_point"
-          ],
-          "properties": {
-            "affine_point": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              }
-            }
-          }
-        },
         "SerializableEdwardsPoint": {
           "type": "array",
           "items": {
@@ -3104,17 +3088,6 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
-        },
-        "SerializableScalar": {
-          "type": "object",
-          "required": [
-            "scalar"
-          ],
-          "properties": {
-            "scalar": {
-              "type": "string"
-            }
-          }
         },
         "SignRequestArgs": {
           "type": "object",
@@ -3168,14 +3141,6 @@ expression: abi
             }
           }
         },
-        "Signature": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          }
-        },
         "SignatureRequest": {
           "type": "object",
           "required": [
@@ -3196,56 +3161,6 @@ expression: abi
           }
         },
         "SignatureResponse": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "big_r",
-                "recovery_id",
-                "s",
-                "scheme"
-              ],
-              "properties": {
-                "big_r": {
-                  "$ref": "#/definitions/SerializableAffinePoint"
-                },
-                "recovery_id": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "s": {
-                  "$ref": "#/definitions/SerializableScalar"
-                },
-                "scheme": {
-                  "type": "string",
-                  "enum": [
-                    "Secp256k1"
-                  ]
-                }
-              }
-            },
-            {
-              "type": "object",
-              "required": [
-                "scheme",
-                "signature"
-              ],
-              "properties": {
-                "scheme": {
-                  "type": "string",
-                  "enum": [
-                    "Ed25519"
-                  ]
-                },
-                "signature": {
-                  "$ref": "#/definitions/Signature"
-                }
-              }
-            }
-          ]
-        },
-        "SignatureResponse2": {
           "oneOf": [
             {
               "type": "object",
@@ -3782,7 +3697,7 @@ expression: abi
               "$ref": "#/definitions/Hash256"
             },
             "signature": {
-              "$ref": "#/definitions/SignatureResponse2"
+              "$ref": "#/definitions/SignatureResponse"
             }
           }
         },

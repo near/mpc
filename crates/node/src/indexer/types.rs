@@ -89,13 +89,11 @@ impl ChainCKDRequest {
 pub type ChainVerifyForeignTransactionRequest =
     contract_interface::types::VerifyForeignTransactionRequest;
 
-pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
+pub type ChainSignatureResponse = contract_interface::types::SignatureResponse;
 pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
 pub type ChainVerifyForeignTransactionResponse =
     contract_interface::types::VerifyForeignTransactionResponse;
 
-pub use mpc_contract::crypto_shared::k256_types;
-use mpc_contract::crypto_shared::{ed25519_types, SignatureResponse};
 use mpc_contract::primitives::signature::Payload;
 
 const MAX_RECOVERY_ID: u8 = 3;
@@ -108,9 +106,19 @@ fn k256_signature_response(
     if recovery_id > MAX_RECOVERY_ID {
         anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
+    let big_r_bytes: [u8; 33] = big_r
+        .to_encoded_point(true)
+        .as_bytes()
+        .try_into()
+        .context("infallible, compressed encoded point is 33 bytes")?;
 
-    let k256_signature = k256_types::Signature::new(big_r, s, recovery_id);
-    Ok(ChainSignatureResponse::Secp256k1(k256_signature))
+    let s_bytes: [u8; 32] = s.to_bytes().into();
+
+    Ok(ChainSignatureResponse::Secp256k1(dtos::K256Signature {
+        big_r: big_r_bytes.into(),
+        s: s_bytes.into(),
+        recovery_id,
+    }))
 }
 pub trait ChainRespondArgs {}
 
@@ -302,18 +310,19 @@ impl ChainSignatureRespondArgs {
         request: &SignatureRequest,
         response: &frost_ed25519::Signature,
     ) -> anyhow::Result<Self> {
-        let response = response
+        let response: [u8; 64] = response
             .serialize()?
             .try_into()
             .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
+
         Ok(ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
                 request.domain,
             ),
-            response: SignatureResponse::Ed25519 {
-                signature: ed25519_types::Signature::new(response),
+            response: dtos::SignatureResponse::Ed25519 {
+                signature: dtos::Ed25519Signature::from(response),
             },
         })
     }

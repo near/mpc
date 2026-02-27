@@ -18,6 +18,7 @@ members = [
     "crates/node",
     "crates/node-types",
     "crates/primitives",
+    "crates/signature-verifier",
     "crates/tee-authority",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
@@ -48,6 +49,7 @@ mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
 near-mpc-sdk = { path = "crates/near-mpc-sdk" }
 node-types = { path = "crates/node-types" }
+signature-verifier = { path = "crates/signature-verifier" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
@@ -103,7 +105,9 @@ either = "1.15.0"
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
-frost-core = { version = "2.2.0", default-features = false, features = ["serde"] }
+frost-core = { version = "2.2.0", default-features = false, features = [
+    "serde",
+] }
 frost-ed25519 = { version = "2.2.0", default-features = false }
 frost-secp256k1 = { version = "2.2.0", default-features = false }
 fs2 = "0.4.3"

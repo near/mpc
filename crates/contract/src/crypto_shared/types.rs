@@ -19,17 +19,6 @@ use contract_interface::types as dtos;
     derive(::near_sdk::schemars::JsonSchema)
 )]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(tag = "scheme")]
-pub enum SignatureResponse {
-    Secp256k1(k256_types::Signature),
-    Ed25519 { signature: ed25519_types::Signature },
-}
-
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema)
-)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CKDResponse {
     pub big_y: dtos::Bls12381G1PublicKey,
     pub big_c: dtos::Bls12381G1PublicKey,
@@ -346,7 +335,6 @@ mod tests {
     use super::*;
     use k256::elliptic_curve::PrimeField;
     use rstest::rstest;
-    use serde_json::json;
 
     #[test]
     fn serializeable_scalar_roundtrip() {
@@ -383,51 +371,5 @@ mod tests {
             <PublicKeyExtended as BorshDeserialize>::deserialize(&mut slice_ref).unwrap();
 
         assert_eq!(deserialized, public_key_extended);
-    }
-
-    /// This serves as a regression test to detect breaking changes to
-    /// serialization of [`SignatureResponse::Secp256k1`].
-    #[test]
-    fn test_secp256k1_signature_serialization() {
-        let signature_response = SignatureResponse::Secp256k1(k256_types::Signature::new(
-            AffinePoint::IDENTITY,
-            k256::Scalar::ONE,
-            1,
-        ));
-
-        let serialization = serde_json::to_value(&signature_response).unwrap();
-
-        // DO NOT UPDATE THIS EXPECTATION IF IT IS A BREAKING CHANGE
-        let exptected_serialization = json!({
-            "scheme": "Secp256k1",
-            "big_r": {
-                "affine_point": "00"
-            },
-            "s": {
-                "scalar": "0000000000000000000000000000000000000000000000000000000000000001"
-            },
-            "recovery_id": 1
-        });
-
-        assert_eq!(serialization, exptected_serialization);
-    }
-
-    /// This serves as a regression test to detect breaking changes to
-    /// serialization of [`SignatureResponse::Ed25519`].
-    #[test]
-    fn test_ed2519_signature_serialization() {
-        let signature_bytes = [1; 64];
-        let signature_response = SignatureResponse::Ed25519 {
-            signature: ed25519_types::Signature::new(signature_bytes),
-        };
-        let serialization = serde_json::to_value(&signature_response).unwrap();
-
-        // DO NOT UPDATE THIS EXPECTATION IF IT IS A BREAKING CHANGE
-        let exptected_serialization = json!({
-            "scheme": "Ed25519",
-            "signature": signature_bytes.to_vec(),
-        });
-
-        assert_eq!(serialization, exptected_serialization);
     }
 }
