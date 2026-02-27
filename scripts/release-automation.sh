@@ -22,8 +22,8 @@
 # and fail a pipeline if any command in it fails (-o pipefail).
 set -euo pipefail
 
-# Resolve the repo root directory (one level up from scripts/).
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve the repo root directory.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # Remote to push to (override with REMOTE=<name> if not "origin").
 REMOTE="${REMOTE:-origin}"
