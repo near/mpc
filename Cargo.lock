@@ -6369,6 +6369,7 @@ name = "near-mpc-sdk"
 version = "3.5.1"
 dependencies = [
  "assert_matches",
+ "borsh",
  "bounded-collections",
  "contract-interface",
  "derive_more 2.1.1",
@@ -10741,6 +10742,7 @@ dependencies = [
  "rand_core 0.6.4",
  "reddsa",
  "rmp-serde",
+ "rstest",
  "serde",
  "serde_bytes",
  "serde_json",

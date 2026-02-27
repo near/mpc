@@ -55,6 +55,7 @@ criterion.workspace = true
 insta.workspace = true
 rand.workspace = true
 rand_core = { workspace = true, features = ["getrandom"] }
+rstest.workspace = true
 threshold-signatures = { path = ".", features = ["test-utils"] }
 
 [[bench]]
