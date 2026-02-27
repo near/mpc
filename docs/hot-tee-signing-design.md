@@ -78,7 +78,7 @@ subgraph CVM["CVM"]
             VALIDATION["Validation SDK<br/>(hot-validation-core)"]
             SIGNER["Signing Engine<br/>(k256 + ed25519-dalek)"]
             KEYSTORE["In-Memory Key Store"]
-            HOT_CTX["HOT Context<br/>(attestation lifecycle)"]
+            TEE_CTX["TEE Context<br/>(attestation lifecycle)"]
             INDEXER["Chain Indexer (neard)"]
         end
     end
@@ -96,7 +96,7 @@ VALIDATION --> SIGNER
 SIGNER --> KEYSTORE
 KEYSTORE ---|"persist / load on boot"| DISK
 
-HOT_CTX --> INDEXER
+TEE_CTX --> INDEXER
 INDEXER -->|"view: allowed hashes<br/>call: submit_participant_info"| HOT_CONTRACT
 
 classDef cvm stroke:#1b5e20,stroke-width:4px;
@@ -112,7 +112,7 @@ class RPC ext;
 
 ### Relationship to MPC Network Architecture
 
-The Archive Signer reuses the chain indexer ([Contract State Subscriber, Transaction Sender][indexer-design] — proposed but not yet extracted as standalone crates), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the Context pattern (adapted as HOT Context for attestation lifecycle only). Everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
+The Archive Signer reuses the chain indexer ([Contract State Subscriber, Transaction Sender][indexer-design] — proposed but not yet extracted as standalone crates), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the shared TEE Context crate for the attestation lifecycle (configured to talk to the HOT governance contract). In the MPC node, the [MPC Context][indexer-design] depends on the TEE Context for attestation and adds MPC-specific orchestration (signing jobs, resharing, peer management) on top; the Archive Signer uses the TEE Context directly. Everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
 
 [indexer-design]: indexer-design.md
 [tee-authority]: https://github.com/near/mpc/tree/main/crates/tee-authority
@@ -141,6 +141,7 @@ subgraph CHAIN["Chain Indexer"]
 end
 
 subgraph SHARED["Shared Crates"]
+    TEE_CTX["TEE Context"]
     TEE_AUTH["tee-authority"]
     ATTEST["mpc-attestation"]
 end
@@ -148,18 +149,18 @@ end
 MPC_NODE --> CSUB
 MPC_NODE --> TSEND
 MPC_NODE --> BEVENTS
+MPC_NODE --> TEE_CTX
 
 BACKUP --> CSUB
 BACKUP --> TSEND
+BACKUP --> TEE_CTX
 
 HOT_APP --> CSUB
 HOT_APP --> TSEND
+HOT_APP --> TEE_CTX
 
-HOT_APP --> TEE_AUTH
-HOT_APP --> ATTEST
-
-MPC_NODE --> TEE_AUTH
-MPC_NODE --> ATTEST
+TEE_CTX --> TEE_AUTH
+TEE_CTX --> ATTEST
 
 classDef new stroke:#d97706,stroke-width:3px;
 class HOT_APP new;
@@ -171,7 +172,7 @@ The Archive Signer embeds a full `near-indexer` (which includes a `neard` node),
 
 The signing flow itself is entirely off-chain — HTTP requests in, signatures out. Request authorization uses `hot-validation-core`'s own RPC clients (not the embedded neard) to query wallet contracts on NEAR and other chains.
 
-The Chain Indexer's `ContractStateSubscriber` and `TransactionSender` traits (proposed in the [indexer design][indexer-design], not yet extracted) provide the interface. The HOT Context sits on top of the chain indexer, the same way the MPC Context does in the MPC node.
+The Chain Indexer's `ContractStateSubscriber` and `TransactionSender` traits (proposed in the [indexer design][indexer-design]) provide the interface. The TEE Context sits on top of the Chain Indexer, and in the MPC node the MPC Context sits on top of the TEE Context.
 
 ## Key Import Process
 
@@ -231,21 +232,21 @@ If verification succeeds, the keys are written to the CVM's encrypted disk for s
 
 If verification fails, the application logs the error and exits without starting the HTTP server.
 
-## HOT Context
+## TEE Context
 
-The HOT Context is a lightweight analogue of the MPC Context. Where the MPC Context manages keygen, resharing, signing jobs, and network state, the HOT Context manages only the TEE attestation lifecycle.
+The TEE Context is a shared crate managing the TEE attestation lifecycle. The MPC node already implements these tasks in [`remote_attestation.rs`][remote-attestation]; they will be extracted into a standalone crate reusable by the MPC node, backup service, and Archive Signer. In the MPC node, the [MPC Context][indexer-design] depends on the TEE Context for attestation and adds MPC-specific orchestration (signing jobs, resharing, peer management) on top. The Archive Signer uses the TEE Context directly, configured to talk to the HOT governance contract.
 
 ### Responsibilities
 
-The HOT Context runs a small set of long-lived async tasks:
+The TEE Context runs a small set of long-lived async tasks:
 
 ```mermaid
 ---
-title: HOT Context Tasks
+title: TEE Context Tasks
 ---
 flowchart LR
 
-subgraph HOT_CTX["HOT Context"]
+subgraph TEE_CTX["TEE Context"]
     POLL_HASHES["Poll Allowed Hashes<br/>(ContractStateSubscriber)"]
     ATTEST["Periodic Attestation<br/>(every 7 days)"]
     MONITOR["Monitor Attestation<br/>Removal"]
@@ -262,16 +263,17 @@ MONITOR --> CSUB
 MONITOR --> TSEND
 
 classDef ctx stroke:#2563eb,stroke-width:2px;
-class HOT_CTX ctx;
+class TEE_CTX ctx;
 ```
 
-1. **Poll allowed hashes** — Periodically queries the HOT governance contract for `allowed_docker_image_hashes()` and `allowed_launcher_compose_hashes()` via the Contract State Subscriber.
+1. **Poll allowed hashes** — Periodically queries the governance contract for `allowed_docker_image_hashes()` and `allowed_launcher_compose_hashes()` via the Contract State Subscriber.
 
-2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the HOT governance contract via `submit_participant_info()`. Follows the same pattern as [`periodic_attestation_submission`][remote-attestation], including exponential backoff retries.
+2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the governance contract via `submit_participant_info()`. Follows the same pattern as [`periodic_attestation_submission`][remote-attestation], including exponential backoff retries.
 
 3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. Follows the pattern from [`monitor_attestation_removal`][remote-attestation].
 
 [remote-attestation]: https://github.com/near/mpc/blob/main/crates/node/src/tee/remote_attestation.rs
+[indexer-design]: indexer-design.md
 
 ## HTTP Signing API
 
