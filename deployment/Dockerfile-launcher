@@ -8,11 +8,10 @@ RUN \
     --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
     repro-sources-list.sh && \
     apt-get update && \
-    apt-get install -y --no-install-recommends docker.io docker-compose curl jq python3 && \
+    apt-get install -y --no-install-recommends docker.io && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
-COPY --chmod=0755 tee_launcher/launcher.py /scripts/
-ENV PATH="/scripts:${PATH}"
+COPY --chmod=0755 target/release/tee-launcher /usr/local/bin/tee-launcher
 RUN mkdir -p /app-data && mkdir -p /mnt/shared
-CMD ["python3", "/scripts/launcher.py"]
+CMD ["tee-launcher"]

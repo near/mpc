@@ -135,8 +135,6 @@ const MAX_ENV_VALUE_LEN: usize = 1024;
 const MAX_TOTAL_ENV_BYTES: usize = 32 * 1024;
 
 // Regex patterns (compiled once)
-static SHA256_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^sha256:[0-9a-f]{64}$").unwrap());
 static MPC_ENV_KEY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^MPC_[A-Z0-9_]{1,64}$").unwrap());
 static HOST_ENTRY_RE: LazyLock<Regex> =
@@ -399,19 +397,29 @@ fn get_image_spec(dstack_config: &BTreeMap<String, String>) -> ImageSpec {
 // Hash selection
 // ---------------------------------------------------------------------------
 
-fn is_valid_sha256_digest(digest: &str) -> bool {
-    SHA256_REGEX.is_match(digest)
-}
-
-fn get_bare_digest(full_digest: &str) -> Result<String> {
-    full_digest
+/// Parse a full `sha256:<hex64>` digest into a validated [`MpcDockerImageHash`].
+///
+/// Uses the workspace type's `FromStr` impl which does `hex::decode` + 32-byte
+/// length check — no regex needed.
+fn parse_image_digest(full_digest: &str) -> Result<MpcDockerImageHash> {
+    let bare_hex = full_digest
         .strip_prefix(SHA256_PREFIX)
-        .map(|s| s.to_string())
         .ok_or_else(|| {
             LauncherError::InvalidDefaultDigest(format!(
                 "Invalid digest (missing sha256: prefix): {full_digest}"
             ))
-        })
+        })?;
+    bare_hex
+        .parse::<MpcDockerImageHash>()
+        .map_err(|e| LauncherError::InvalidDefaultDigest(format!("{full_digest}: {e}")))
+}
+
+fn is_valid_sha256_digest(digest: &str) -> bool {
+    parse_image_digest(digest).is_ok()
+}
+
+fn get_bare_digest(full_digest: &str) -> Result<String> {
+    Ok(parse_image_digest(full_digest)?.as_hex())
 }
 
 fn load_and_select_hash(dstack_config: &BTreeMap<String, String>) -> Result<String> {
@@ -956,7 +964,7 @@ async fn main() {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use rstest::rstest;
+
 
     // -- Config parsing tests -----------------------------------------------
 
@@ -1391,10 +1399,6 @@ mod tests {
         let data: ApprovedHashesFile = serde_json::from_str(&json).unwrap();
         assert!(data.approved_hashes.contains(&override_value));
 
-        let config = BTreeMap::from([(
-            ENV_VAR_MPC_HASH_OVERRIDE.to_string(),
-            override_value.clone(),
-        )]);
         // The override is in the approved list, so it should be valid
         assert!(is_valid_sha256_digest(&override_value));
         assert!(data.approved_hashes.contains(&override_value));
@@ -1431,7 +1435,7 @@ mod tests {
             get_bare_digest(&format!("sha256:{}", "a".repeat(64))).unwrap(),
             "a".repeat(64)
         );
-        assert!(get_bare_digest("invalid").is_err());
+        get_bare_digest("invalid").unwrap_err();
     }
 
     #[test]
@@ -1439,8 +1443,15 @@ mod tests {
         assert!(is_valid_sha256_digest(&format!("sha256:{}", "a".repeat(64))));
         assert!(!is_valid_sha256_digest("sha256:tooshort"));
         assert!(!is_valid_sha256_digest("not-a-digest"));
-        // Uppercase hex should be rejected
-        assert!(!is_valid_sha256_digest(&format!("sha256:{}", "A".repeat(64))));
+        // hex::decode accepts uppercase; as_hex() normalizes to lowercase
+        assert!(is_valid_sha256_digest(&format!("sha256:{}", "A".repeat(64))));
+    }
+
+    #[test]
+    fn test_parse_image_digest_normalizes_case() {
+        let upper = format!("sha256:{}", "AB".repeat(32));
+        let hash = parse_image_digest(&upper).unwrap();
+        assert_eq!(hash.as_hex(), "ab".repeat(32));
     }
 
     // -- Platform parsing tests ---------------------------------------------
@@ -1496,8 +1507,8 @@ mod tests {
     fn test_extend_rtmr3_nontee_is_noop() {
         // NonTee should return immediately without touching dstack
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(extend_rtmr3(Platform::NonTee, &make_digest()));
-        assert!(result.is_ok());
+        rt.block_on(extend_rtmr3(Platform::NonTee, &make_digest()))
+            .unwrap();
     }
 
     #[test]
