@@ -7318,6 +7318,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "node-launcher"
+version = "3.5.1"
+dependencies = [
+ "anyhow",
+ "dstack-sdk",
+ "hex",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "node-runtime"
 version = "2.10.6"
 source = "git+https://github.com/near/nearcore?tag=2.10.6#3def2f7ebb7455199e7b3f7b371e3735c23e2930"

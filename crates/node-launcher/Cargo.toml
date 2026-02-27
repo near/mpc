@@ -1,0 +1,24 @@
+[package]
+name = "node-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+dstack-sdk = { workspace = true }
+hex = { workspace = true }
+regex = { workspace = true }
+reqwest = { version = "0.12.28", features = ["json", "blocking"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

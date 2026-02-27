@@ -15,7 +15,7 @@ members = [
     "crates/include-measurements",
     "crates/mpc-attestation",
     "crates/near-mpc-sdk",
-    "crates/node",
+    "crates/node", "crates/node-launcher",
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
