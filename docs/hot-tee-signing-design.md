@@ -564,12 +564,21 @@ After successful key reconstruction and verification on first boot, the private 
 
 On subsequent boots, the app first attempts to load keys from the encrypted disk. If found and valid, it skips the import flow entirely (the `/import/*` endpoints are never exposed).
 
-### Hot Standby
+### Recovery via Confidential Key Derivation (CKD)
 
-TODO: For high availability, consider running a second CVM instance.
+Encrypted disk persistence protects against restarts, but not against total loss of the CVM instance — for example, if the TEE image is updated (changing RTMR measurements and invalidating the disk encryption key) or all CVM instances are destroyed. Without an additional recovery mechanism, this would be unrecoverable after the HOT MPC network is retired, since keyshares can no longer be re-imported.
 
-- Both instances hold the same reconstructed keys (imported separately or copied via encrypted disk backup).
-- Both submit attestations to the HOT governance contract.
+To address this, we use [Confidential Key Derivation][ckd] (CKD) via the NEAR MPC network to create a hardware-independent encrypted backup:
+
+1. **Derive a wrapping key.** After key reconstruction, the Archive Signer calls the NEAR MPC network's CKD endpoint with its `app_id`. CKD returns a deterministic, confidential key that only this application can obtain.
+2. **Encrypt and store a backup.** The reconstructed HOT private keys are encrypted with the CKD-derived wrapping key. The resulting ciphertext is stored in external storage.
+3. **Recover from any new instance.** A new instance re-derives the same CKD key — since CKD is deterministic on `app_id`, not on hardware measurements — and decrypts the backup.
+
+This decouples recovery from any specific CVM instance or disk encryption key, requiring only that the NEAR MPC network remains operational.
+
+For additional high availability, a hot standby instance (a second CVM holding the same keys) can be added in the future if needed.
+
+[ckd]: ../crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md
 
 ## Open Questions
 
