@@ -170,7 +170,7 @@ echo "==> Cargo.toml version updated."
 # snapshot. We run the ABI comparison test and expect it to fail — if it passes,
 # something is wrong (the ABI was not affected by the version change).
 echo "==> Verifying contract ABI has changed after version bump..."
-if cargo nextest run -p mpc-contract abi_has_not_changed 2>/dev/null; then
+if cargo nextest run --cargo-profile=test-release -p mpc-contract abi_has_not_changed 2>/dev/null; then
     echo "Error: abi_has_not_changed test passed, but it should have failed after a version bump."
     exit 1
 fi
