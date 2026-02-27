@@ -377,6 +377,32 @@ pub enum BitcoinExtractor {
 #[borsh(use_discriminant = true)]
 pub enum StarknetExtractor {
     BlockHash = 0,
+    Log { log_index: u64 } = 1,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StarknetLog {
+    pub block_hash: StarknetFelt,
+    pub block_number: u64,
+    pub data: Vec<StarknetFelt>,
+    pub from_address: StarknetFelt,
+    pub keys: Vec<StarknetFelt>,
 }
 
 #[derive(
@@ -467,6 +493,7 @@ pub enum BitcoinExtractedValue {
 #[non_exhaustive]
 pub enum StarknetExtractedValue {
     BlockHash(StarknetFelt),
+    Log(StarknetLog),
 }
 
 #[derive(
