@@ -7,7 +7,7 @@
 #   2. Ensures the git working tree is clean (no uncommitted changes).
 #   3. Creates a release branch "release/v<VERSION>" or switches to it if
 #      it already exists.
-#   4. Pushes the branch to origin with upstream tracking.
+#   4. Pushes the branch to the remote with upstream tracking.
 #   5. Generates the changelog using git-cliff.
 #   6. Bumps the workspace version in the root Cargo.toml.
 #
@@ -24,6 +24,9 @@ set -euo pipefail
 
 # Resolve the repo root directory (one level up from scripts/).
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Remote to push to (override with REMOTE=<name> if not "origin").
+REMOTE="${REMOTE:-origin}"
 
 # --- Argument parsing ---
 
@@ -122,9 +125,9 @@ if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
     die "Branch '${BRANCH}' already exists locally. Aborting to avoid overwriting an existing release."
 fi
 
-git fetch origin --quiet
-if git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
-    die "Branch '${BRANCH}' already exists on origin. Aborting to avoid overwriting an existing release."
+git fetch "$REMOTE" --quiet
+if git show-ref --verify --quiet "refs/remotes/${REMOTE}/${BRANCH}"; then
+    die "Branch '${BRANCH}' already exists on ${REMOTE}. Aborting to avoid overwriting an existing release."
 fi
 
 echo "==> Creating new branch '${BRANCH}' from current HEAD ($(git rev-parse --short HEAD))."
@@ -132,20 +135,20 @@ git checkout -b "$BRANCH"
 
 echo "==> Now on branch '${BRANCH}'."
 
-# --- Push to origin ---
+# --- Push to remote ---
 
 # Push with -u to set upstream tracking, so future git pull/push on this
 # branch work without specifying the remote.
-echo "==> Pushing '${BRANCH}' to origin..."
-git push -u origin "$BRANCH"
+echo "==> Pushing '${BRANCH}' to ${REMOTE}..."
+git push -u "$REMOTE" "$BRANCH"
 
-echo "==> Done. Branch '${BRANCH}' is pushed and tracking origin/${BRANCH}."
+echo "==> Done. Branch '${BRANCH}' is pushed and tracking ${REMOTE}/${BRANCH}."
 
 # --- Generate changelog ---
 
 # git-cliff generates a changelog from conventional commits up to the given tag.
 # The tag doesn't need to exist yet — git-cliff uses it as a label for unreleased commits.
-# Note: the branch must be pushed to origin first, otherwise git-cliff cannot
+# Note: the branch must be pushed to the remote first, otherwise git-cliff cannot
 # resolve PR links in the generated notes.
 echo "==> Generating changelog for version ${VERSION}..."
 git-cliff -t "$VERSION" > CHANGELOG.md
