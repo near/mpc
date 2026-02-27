@@ -287,7 +287,7 @@ impl StartCmd {
         let root_task_handle = Arc::new(OnceLock::new());
 
         let (protocol_state_sender, protocol_state_receiver) =
-            watch::channel(ProtocolContractState::NotInitialized);
+            watch::channel(Ok((0u64.into(), ProtocolContractState::NotInitialized)));
 
         let (migration_state_sender, migration_state_receiver) =
             watch::channel((0, BTreeMap::new()));

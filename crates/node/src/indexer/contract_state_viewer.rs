@@ -18,8 +18,8 @@ use super::types::{
 /// this is just a wrapper around a shared contract viewer
 #[derive(Clone)]
 pub(crate) struct MpcContractStateViewer {
-    mpc_contract_id: near_account_id::AccountId,
-    mpc_contract_viewer: StateViewer,
+    pub(crate) mpc_contract_id: near_account_id::AccountId,
+    pub(crate) mpc_contract_viewer: StateViewer,
 }
 
 impl MpcContractStateViewer {
@@ -218,49 +218,6 @@ impl MpcContractStateViewer {
 
         Ok((height.into(), call_result))
     }
-
-    // pub(crate) async fn get_mpc_allowed_image_hashes(
-    //     &self,
-    // ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
-    //     let (height, call_result) = self
-    //         .mpc_contract_viewer
-    //         .view(
-    //             self.mpc_contract_id.clone(),
-    //             contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
-    //             &NoArgs {},
-    //         )
-    //         .await?;
-
-    //     Ok((height.into(), call_result))
-    // }
-
-    // pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
-    //     &self,
-    // ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-    //     let (height, call_result) = self
-    //         .mpc_contract_viewer
-    //         .view(
-    //             self.mpc_contract_id.clone(),
-    //             contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    //             &NoArgs {},
-    //         )
-    //         .await?;
-
-    //     Ok((height.into(), call_result))
-    // }
-
-    // pub(crate) async fn get_mpc_tee_accounts(&self) -> anyhow::Result<(u64, Vec<NodeId>)> {
-    //     let (height, call_result) = self
-    //         .mpc_contract_viewer
-    //         .view(
-    //             self.mpc_contract_id.clone(),
-    //             contract_interface::method_names::GET_TEE_ACCOUNTS,
-    //             &NoArgs {},
-    //         )
-    //         .await?;
-
-    //     Ok((height.into(), call_result))
-    // }
 
     pub(crate) async fn get_mpc_migration_info(
         &self,

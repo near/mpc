@@ -8,6 +8,8 @@ use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use chain_gateway::chain_gateway::{start_with_streamer, NoArgs};
+use chain_gateway::errors::ChainGatewayError;
+use chain_gateway::state_viewer::BlockHeight;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
@@ -50,7 +52,9 @@ pub fn spawn_real_indexer(
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
+    protocol_state_sender: watch::Sender<
+        Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+    >,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
@@ -152,13 +156,14 @@ pub fn spawn_real_indexer(
 
             //  let contract_state_receiver = mpc_contract_state_viewer.monitor_contract_state(protocol_state_sender).await;
             // Returns once the contract state is available.
-            // todo
+            // todo remove unwrap
             let contract_state_receiver = monitor_contract_state(
                 mpc_contract_state_viewer.clone(),
                 mpc_indexer_config.port_override,
                 protocol_state_sender,
             )
-            .await;
+            .await
+            .unwrap();
 
             if contract_state_sender_oneshot
                 .send(contract_state_receiver)

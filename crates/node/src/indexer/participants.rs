@@ -3,6 +3,9 @@ use crate::indexer::MpcContractStateViewer;
 use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
+use chain_gateway::chain_gateway::NoArgs;
+use chain_gateway::errors::ChainGatewayError;
+use chain_gateway::state_viewer::{BlockHeight, ContractStateStream};
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::{
     domain::DomainConfig,
@@ -258,66 +261,100 @@ impl ContractState {
 pub async fn monitor_contract_state(
     mpc_contract: MpcContractStateViewer,
     port_override: Option<u16>,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
-) -> watch::Receiver<ContractState> {
-    const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
-    let mut refresh_interval_tick = tokio::time::interval(CONTRACT_STATE_REFRESH_INTERVAL);
-    // todo: use subscription logic
-    let mut fetch_contract_state = async move || {
-        loop {
-            // first tick returns immediately
-            refresh_interval_tick.tick().await;
-
-            //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-            //// We currently assume the participant set is static and do not detect or support any updates.
-            tracing::debug!(target: "indexer", "querying contract state");
-            let (height, protocol_state): (u64, ProtocolContractState) =
-                match mpc_contract.get_mpc_contract_state().await {
-                    Ok(contract_state) => contract_state,
+    protocol_state_sender: watch::Sender<
+        Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+    >,
+) -> anyhow::Result<watch::Receiver<ContractState>> {
+    // Forward raw result to web sender, try to parse into ContractState
+    fn process_latest(
+        latest: Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+        protocol_state_sender: &watch::Sender<
+            Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+        >,
+        port_override: Option<u16>,
+    ) -> Option<ContractState> {
+        let _ = protocol_state_sender.send(latest.clone());
+        match latest {
+            Ok((height, protocol_state)) => {
+                match ContractState::from_contract_state(
+                    &protocol_state,
+                    height.into(),
+                    port_override,
+                ) {
+                    Ok(state) => Some(state),
                     Err(e) => {
-                        tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
-                        tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
-                        continue;
+                        tracing::error!(target: "mpc", "error parsing contract state: {:?}", e);
+                        None
                     }
-                };
+                }
+            }
+            Err(err) => {
+                tracing::warn!(%err, "error reading contract state");
+                None
+            }
+        }
+    }
 
-            let result = ContractState::from_contract_state(&protocol_state, height, port_override);
+    let (init_tx, init_rx) = tokio::sync::oneshot::channel();
 
-            protocol_state_sender.send(protocol_state).unwrap();
+    tokio::spawn(async move {
+        let args = NoArgs {};
+        let mut subscription = match mpc_contract
+            .mpc_contract_viewer
+            .subscribe::<NoArgs, ProtocolContractState>(
+                mpc_contract.mpc_contract_id.clone(),
+                contract_interface::method_names::STATE,
+                &args,
+            )
+            .await
+        {
+            Ok(sub) => sub,
+            Err(e) => {
+                let _ = init_tx.send(Err(anyhow::anyhow!(e)));
+                return;
+            }
+        };
 
-            let state = match result {
-                Ok(state) => state,
-                Err(e) => {
-                    tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
-                    continue;
+        // subscribe().await already did the first fetch — latest() returns immediately
+        let initial_state =
+            match process_latest(subscription.latest(), &protocol_state_sender, port_override) {
+                Some(state) => state,
+                None => {
+                    tracing::warn!("initial contract state unavailable, starting with Invalid");
+                    ContractState::Invalid
                 }
             };
 
-            break state;
+        let (contract_state_sender, contract_state_receiver) = watch::channel(initial_state);
+        if init_tx.send(Ok(contract_state_receiver)).is_err() {
+            return;
         }
-    };
 
-    let initial_contract_state = fetch_contract_state().await;
-    let (contract_state_sender, contract_state_receiver) = watch::channel(initial_contract_state);
-
-    tokio::spawn(async move {
+        // Monitor loop (same scope as subscription — no lifetime issue)
         loop {
-            let contract_state = fetch_contract_state().await;
-            tracing::debug!(target: "indexer", "got mpc contract state {:?}", contract_state);
-
-            contract_state_sender.send_if_modified(|watched_state| {
-                if *watched_state != contract_state {
-                    tracing::info!("Contract state changed: {:?}", contract_state);
-                    *watched_state = contract_state;
-                    true
-                } else {
-                    false
-                }
-            });
+            if subscription.changed().await.is_err() {
+                tracing::error!("contract state subscription closed");
+                break;
+            }
+            if let Some(state) =
+                process_latest(subscription.latest(), &protocol_state_sender, port_override)
+            {
+                contract_state_sender.send_if_modified(|watched| {
+                    if *watched != state {
+                        tracing::info!("Contract state changed: {:?}", state);
+                        *watched = state;
+                        true
+                    } else {
+                        false
+                    }
+                });
+            }
         }
     });
 
-    contract_state_receiver
+    init_rx
+        .await
+        .context("contract state subscription task panicked")?
 }
 
 pub fn convert_participant_infos(

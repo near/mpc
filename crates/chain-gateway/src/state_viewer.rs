@@ -1,6 +1,7 @@
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
+pub use crate::near_internals_wrapper::BlockHeight;
 use crate::near_internals_wrapper::{
-    BlockHeight, ClientWrapper, ViewClientWrapper, ViewFunctionCall, ViewOutput,
+    ClientWrapper, ViewClientWrapper, ViewFunctionCall, ViewOutput,
 };
 use async_trait::async_trait;
 use near_account_id::AccountId;
@@ -20,6 +21,7 @@ pub struct StateViewer {
 }
 
 impl StateViewer {
+    // todo{ make a subscriber without args, so there is no error path here.
     pub async fn subscribe<Arg: Serialize, Res: DeserializeOwned + Send + Clone>(
         &self,
         contract_id: AccountId,
@@ -147,6 +149,7 @@ impl<Res> ContractMethodSubscription<Res>
 where
     Res: DeserializeOwned,
 {
+    // todo: make a subscriber without Args, so we don't have an error path here!
     pub(crate) async fn new<Arg: Serialize>(
         state_viewer: StateViewer,
         contract_id: AccountId,
