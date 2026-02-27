@@ -13,8 +13,10 @@ use foreign_chain_inspector::{
 };
 
 use assert_matches::assert_matches;
+use contract_interface::types::{StarknetFelt, StarknetLog};
 use foreign_chain_rpc_interfaces::starknet::{
-    GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
+    GetTransactionReceiptResponse, H256, StarknetEvent, StarknetExecutionStatus,
+    StarknetFinalityStatus,
 };
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
@@ -27,6 +29,12 @@ fn mock_receipt(
 ) -> GetTransactionReceiptResponse {
     GetTransactionReceiptResponse {
         block_hash: H256::from([4; 32]),
+        block_number: 842_750,
+        events: vec![StarknetEvent {
+            data: vec![H256::from([0xab; 32])],
+            from_address: H256::from([0x11; 32]),
+            keys: vec![H256::from([0xcc; 32]), H256::from([0xdd; 32])],
+        }],
         finality_status,
         execution_status,
     }
@@ -201,26 +209,100 @@ async fn extract__should_propagate_rpc_client_errors() {
 }
 
 #[tokio::test]
-async fn extract__should_return_block_hash_via_http_rpc_client() {
+async fn extract__should_return_error_when_log_index_out_of_bounds() {
     // given
-    let server = MockServer::start();
+    let tx_id = StarknetTransactionHash::from([1; 32]);
 
-    let tx_id = StarknetTransactionHash::from([9; 32]);
+    let receipt = mock_receipt(
+        StarknetFinalityStatus::AcceptedOnL1,
+        StarknetExecutionStatus::Succeeded,
+    );
+    let mock_client = mock_client_from_fixed_response(receipt);
+    let inspector = StarknetInspector::new(mock_client);
 
-    let expected_bytes: [u8; 32] = {
-        let mut b = [0u8; 32];
-        b[31] = 5;
-        b
+    // when
+    let response = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL1,
+            vec![StarknetExtractor::Log { log_index: 5 }],
+        )
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::LogIndexOutOfBounds)
+    );
+}
+
+#[tokio::test]
+async fn extract__should_return_correct_log_for_specific_index() {
+    // given
+    let tx_id = StarknetTransactionHash::from([3; 32]);
+
+    let event_0 = StarknetEvent {
+        data: vec![H256::from([0xab; 32])],
+        from_address: H256::from([0x11; 32]),
+        keys: vec![H256::from([0xcc; 32])],
+    };
+    let event_1 = StarknetEvent {
+        data: vec![H256::from([0x01; 32]), H256::from([0x02; 32])],
+        from_address: H256::from([0xff; 32]),
+        keys: vec![H256::from([0xaa; 32]), H256::from([0xbb; 32])],
     };
 
     let receipt = GetTransactionReceiptResponse {
-        block_hash: H256::from(expected_bytes),
+        block_hash: H256::from([4; 32]),
+        block_number: 842_750,
+        events: vec![event_0, event_1],
         finality_status: StarknetFinalityStatus::AcceptedOnL1,
         execution_status: StarknetExecutionStatus::Succeeded,
     };
+    let mock_client = mock_client_from_fixed_response(receipt);
+    let inspector = StarknetInspector::new(mock_client);
 
-    let expected_block_hash = StarknetBlockHash::from(expected_bytes);
+    // when
+    let extracted_values = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL1,
+            vec![StarknetExtractor::Log { log_index: 1 }],
+        )
+        .await
+        .expect("extract should succeed");
 
+    // then
+    assert_eq!(
+        vec![StarknetExtractedValue::Log(StarknetLog {
+            block_hash: StarknetFelt([4; 32]),
+            block_number: 842_750,
+            data: vec![StarknetFelt([0x01; 32]), StarknetFelt([0x02; 32])],
+            from_address: StarknetFelt([0xff; 32]),
+            keys: vec![StarknetFelt([0xaa; 32]), StarknetFelt([0xbb; 32])],
+        })],
+        extracted_values,
+    );
+}
+
+fn test_receipt() -> GetTransactionReceiptResponse {
+    let mut block_hash_bytes = [0u8; 32];
+    block_hash_bytes[31] = 5;
+    GetTransactionReceiptResponse {
+        block_hash: H256::from(block_hash_bytes),
+        block_number: 1_023_456,
+        events: vec![StarknetEvent {
+            data: vec![H256::from([0x01; 32]), H256::from([0x02; 32])],
+            from_address: H256::from([0xff; 32]),
+            keys: vec![H256::from([0xaa; 32])],
+        }],
+        finality_status: StarknetFinalityStatus::AcceptedOnL1,
+        execution_status: StarknetExecutionStatus::Succeeded,
+    }
+}
+
+fn setup_starknet_rpc_mock(server: &MockServer) {
+    let receipt = test_receipt();
     server.mock(|when, then| {
         when.method(POST).path("/");
         then.respond_with(move |req: &HttpMockRequest| {
@@ -246,7 +328,15 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
                 .build()
         });
     });
+}
 
+#[tokio::test]
+async fn extract__should_return_block_hash_via_http_rpc_client() {
+    // given
+    let server = MockServer::start();
+    setup_starknet_rpc_mock(&server);
+
+    let tx_id = StarknetTransactionHash::from([9; 32]);
     let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
     let inspector = StarknetInspector::new(client);
 
@@ -261,6 +351,47 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
         .expect("extract should succeed");
 
     // then
-    let expected_extractions = vec![StarknetExtractedValue::BlockHash(expected_block_hash)];
-    assert_eq!(expected_extractions, extracted_values);
+    let mut expected_bytes = [0u8; 32];
+    expected_bytes[31] = 5;
+    assert_eq!(
+        vec![StarknetExtractedValue::BlockHash(StarknetBlockHash::from(
+            expected_bytes
+        ))],
+        extracted_values,
+    );
+}
+
+#[tokio::test]
+async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client() {
+    // given
+    let server = MockServer::start();
+    setup_starknet_rpc_mock(&server);
+
+    let tx_id = StarknetTransactionHash::from([9; 32]);
+    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let inspector = StarknetInspector::new(client);
+
+    // when
+    let extracted_values = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL1,
+            vec![StarknetExtractor::Log { log_index: 0 }],
+        )
+        .await
+        .expect("extract should succeed");
+
+    // then
+    let mut expected_block_hash = [0u8; 32];
+    expected_block_hash[31] = 5;
+    assert_eq!(
+        vec![StarknetExtractedValue::Log(StarknetLog {
+            block_hash: StarknetFelt(expected_block_hash),
+            block_number: 1_023_456,
+            data: vec![StarknetFelt([0x01; 32]), StarknetFelt([0x02; 32])],
+            from_address: StarknetFelt([0xff; 32]),
+            keys: vec![StarknetFelt([0xaa; 32])],
+        })],
+        extracted_values,
+    );
 }

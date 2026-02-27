@@ -5420,6 +5420,7 @@ dependencies = [
  "sha2",
  "sha3",
  "signature",
+ "signature-verifier",
  "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",
@@ -6368,6 +6369,7 @@ name = "near-mpc-sdk"
 version = "3.5.1"
 dependencies = [
  "assert_matches",
+ "borsh",
  "bounded-collections",
  "contract-interface",
  "derive_more 2.1.1",
@@ -10097,6 +10099,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "signature-verifier"
+version = "3.5.1"
+dependencies = [
+ "assert_matches",
+ "contract-interface",
+ "ed25519-dalek",
+ "k256",
+ "near-sdk",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10726,6 +10741,7 @@ dependencies = [
  "rand_core 0.6.4",
  "reddsa",
  "rmp-serde",
+ "rstest",
  "serde",
  "serde_bytes",
  "serde_json",

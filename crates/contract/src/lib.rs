@@ -51,8 +51,8 @@ use contract_interface::types::{
 };
 use crypto_shared::{
     derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak,
-    kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
-    types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
+    kdf::derive_public_key_edwards_point_ed25519,
+    types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
@@ -61,7 +61,7 @@ use k256::elliptic_curve::PrimeField;
 
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
-    env::{self, ed25519_verify},
+    env::{self},
     log, near, near_bindgen,
     state::ContractState,
     store::{IterableMap, LookupMap},
@@ -372,7 +372,7 @@ impl MpcContract {
                 let derived_public_key =
                     derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak)
                         .map_err(PublicKeyError::from)?;
-                derived_public_key.into_dto_type().into()
+                derived_public_key.into()
             }
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
@@ -629,7 +629,7 @@ impl MpcContract {
     pub fn respond(
         &mut self,
         request: SignatureRequest,
-        response: SignatureResponse,
+        response: dtos::SignatureResponse,
     ) -> Result<(), Error> {
         let signer = Self::assert_caller_is_signer();
 
@@ -650,7 +650,7 @@ impl MpcContract {
 
         let signature_is_valid = match (&response, public_key) {
             (
-                SignatureResponse::Secp256k1(signature_response),
+                dtos::SignatureResponse::Secp256k1(signature_response),
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
                 // generate the expected public key
@@ -663,17 +663,15 @@ impl MpcContract {
                 let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
 
                 // Check the signature is correct
-                check_ec_signature(
-                    &expected_public_key,
-                    &signature_response.big_r.affine_point,
-                    &signature_response.s.scalar,
+                signature_verifier::verify_ecdsa_signature(
+                    signature_response,
                     payload_hash,
-                    signature_response.recovery_id,
+                    &expected_public_key,
                 )
                 .is_ok()
             }
             (
-                SignatureResponse::Ed25519 { signature },
+                dtos::SignatureResponse::Ed25519 { signature },
                 PublicKeyExtended::Ed25519 {
                     edwards_point: public_key_edwards_point,
                     ..
@@ -684,11 +682,16 @@ impl MpcContract {
                     &request.tweak,
                 );
                 let derived_public_key_32_bytes =
-                    *derived_public_key_edwards_point.compress().as_bytes();
+                    derived_public_key_edwards_point.compress().into_dto_type();
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
-                ed25519_verify(signature.as_bytes(), message, &derived_public_key_32_bytes)
+                signature_verifier::verify_eddsa_signature(
+                    signature,
+                    message,
+                    &derived_public_key_32_bytes,
+                )
+                .is_ok()
             }
             (signature_response, public_key_requested) => {
                 return Err(RespondError::SignatureSchemeMismatch.message(format!(
@@ -779,12 +782,10 @@ impl MpcContract {
                 let payload_hash: [u8; 32] = response.payload_hash.0;
 
                 // Check the signature is correct
-                check_ec_signature(
-                    &expected_public_key,
-                    &signature_response.big_r.clone().try_into_contract_type()?,
-                    &signature_response.s.clone().try_into_contract_type()?,
+                signature_verifier::verify_ecdsa_signature(
+                    signature_response,
                     &payload_hash,
-                    signature_response.recovery_id,
+                    &expected_public_key,
                 )
                 .is_ok()
             }
@@ -1679,8 +1680,8 @@ impl MpcContract {
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
         request: SignatureRequest, // this change here should actually be ok.
-        #[callback_result] signature: Result<SignatureResponse, PromiseError>,
-    ) -> PromiseOrValue<SignatureResponse> {
+        #[callback_result] signature: Result<dtos::SignatureResponse, PromiseError>,
+    ) -> PromiseOrValue<dtos::SignatureResponse> {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
@@ -2038,7 +2039,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::crypto_shared::k256_types;
     use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
@@ -2294,22 +2294,27 @@ mod tests {
         let (signature, recovery_id) = secret_key
             .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
             .unwrap();
+
         let (r, s) = signature.split_bytes();
+        let big_r = AffinePoint::decompact(&r).unwrap();
+        let r_bytes: [u8; 33] = big_r.to_encoded_point(true).as_bytes().try_into().unwrap();
+        let s_bytes: [u8; 32] = s.into();
+
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(s.as_ref());
         let signature_response = if success {
-            SignatureResponse::Secp256k1(k256_types::Signature::new(
-                AffinePoint::decompact(&r).unwrap(),
-                k256::Scalar::from_repr(bytes.into()).unwrap(),
-                recovery_id.to_byte(),
-            ))
+            dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+                big_r: dtos::K256AffinePoint::from(r_bytes),
+                s: dtos::K256Scalar::from(s_bytes),
+                recovery_id: recovery_id.to_byte(),
+            })
         } else {
             // submit an incorrect signature to make the respond call fail
-            SignatureResponse::Secp256k1(k256_types::Signature::new(
-                AffinePoint::decompact(&r).unwrap(),
-                k256::Scalar::from_repr([0u8; 32].into()).unwrap(),
-                recovery_id.to_byte(),
-            ))
+            dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+                big_r: dtos::K256AffinePoint::from(r_bytes),
+                s: dtos::K256Scalar::from([2; 32]),
+                recovery_id: recovery_id.to_byte(),
+            })
         };
 
         with_active_participant_and_attested_context(&contract);
