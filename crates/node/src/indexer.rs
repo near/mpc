@@ -19,7 +19,6 @@ pub mod handler;
 pub mod migrations;
 pub mod participants;
 pub mod real;
-pub mod tee;
 pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
