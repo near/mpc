@@ -6373,6 +6373,7 @@ dependencies = [
  "bounded-collections",
  "contract-interface",
  "derive_more 2.1.1",
+ "signature-verifier",
 ]
 
 [[package]]
