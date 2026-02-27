@@ -22,18 +22,19 @@ pub struct ForeignChainSignatureVerifier {
     request: ForeignChainRpcRequest,
 }
 
-pub enum VerifyForeignChainResponse {
+pub enum VerifyForeignChainError {
     FailedToComputeMsgHash,
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
+    UnexpectedSignatureScheme,
+    SignatureVerificationFailed,
 }
 
 impl ForeignChainSignatureVerifier {
     pub fn verify_signature(
         self,
         response: &VerifyForeignTransactionResponse,
-        // TODO(#2232): don't use interface API types for public keys
-        _public_key: &PublicKey,
-    ) -> Result<(), VerifyForeignChainResponse> {
+        public_key: &PublicKey,
+    ) -> Result<(), VerifyForeignChainError> {
         let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: self.request,
             values: self.expected_extracted_values,
@@ -41,21 +42,40 @@ impl ForeignChainSignatureVerifier {
 
         let expected_payload_hash = expected_payload
             .compute_msg_hash()
-            .map_err(|_| VerifyForeignChainResponse::FailedToComputeMsgHash)?;
+            .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
 
         let payload_is_correct = expected_payload_hash == response.payload_hash;
 
         if !payload_is_correct {
-            return Err(VerifyForeignChainResponse::IncorrectPayloadSigned {
+            return Err(VerifyForeignChainError::IncorrectPayloadSigned {
                 got: response.payload_hash.clone(),
                 expected: expected_payload_hash,
             });
         }
+        let verification_result = match (public_key, &response.signature) {
+            (
+                PublicKey::Secp256k1(secp256k1_public_key),
+                SignatureResponse::Secp256k1(k256_signature),
+            ) => signature_verifier::check_ec_signature(
+                k256_signature,
+                &expected_payload_hash,
+                secp256k1_public_key,
+            ),
+            (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
+                signature_verifier::check_ed_signature(
+                    signature,
+                    expected_payload_hash.as_slice(),
+                    ed25519_public_key,
+                )
+            }
+            // TODO(#2234): improve types so these errors can't happen
+            (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
+                return Err(VerifyForeignChainError::UnexpectedSignatureScheme);
+            }
+            _ => return Err(VerifyForeignChainError::UnexpectedSignatureScheme),
+        };
 
-        // TODO(#2246): do signature verification check on the `response.signature`
-        // Not having this check in place is "okay", if the response comes directly from
-        // the MPC contract, since the contract already does this verification.
-        Ok(())
+        verification_result.map_err(|_| VerifyForeignChainError::SignatureVerificationFailed)
     }
 }
 

@@ -8,6 +8,7 @@ license.workspace = true
 bounded-collections = { workspace = true }
 contract-interface = { workspace = true }
 derive_more = { workspace = true }
+signature-verifier = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
