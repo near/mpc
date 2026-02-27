@@ -97,7 +97,7 @@ SIGNER --> KEYSTORE
 KEYSTORE ---|"persist / load on boot"| DISK
 
 TEE_CTX --> INDEXER
-INDEXER -->|"view: allowed hashes<br/>call: submit_participant_info"| HOT_CONTRACT
+INDEXER -->|"view: allowed hashes, chain config<br/>call: submit_participant_info"| HOT_CONTRACT
 
 classDef cvm stroke:#1b5e20,stroke-width:4px;
 classDef app stroke:#2563eb,stroke-width:4px;
@@ -168,7 +168,7 @@ class HOT_APP new;
 
 ### Embedded Indexer Node
 
-The Archive Signer embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used exclusively for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes and launcher compose hashes, and submitting TEE attestation transactions. Running `neard` inside the CVM eliminates external RPC trust assumptions — the app verifies chain state directly, with no external trust assumptions beyond the NEAR network itself.
+The Archive Signer embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used exclusively for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes, launcher compose hashes, and chain validation config, and submitting TEE attestation transactions. Running `neard` inside the CVM eliminates external RPC trust assumptions — the app verifies chain state directly, with no external trust assumptions beyond the NEAR network itself.
 
 The signing flow itself is entirely off-chain — HTTP requests in, signatures out. Request authorization uses `hot-validation-core`'s own RPC clients (not the embedded neard) to query wallet contracts on NEAR and other chains.
 
@@ -234,7 +234,7 @@ If verification fails, the application logs the error and exits without starting
 
 ## TEE Context
 
-The TEE Context is a shared crate managing the TEE attestation lifecycle. The MPC node already implements these tasks in [`remote_attestation.rs`][remote-attestation]; they will be extracted into a standalone crate reusable by the MPC node, backup service, and Archive Signer. In the MPC node, the [MPC Context][indexer-design] depends on the TEE Context for attestation and adds MPC-specific orchestration (signing jobs, resharing, peer management) on top. The Archive Signer uses the TEE Context directly, configured to talk to the HOT governance contract.
+The TEE Context is a shared crate managing the TEE attestation lifecycle and governance-controlled configuration. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation]; they will be extracted into a standalone crate reusable by the MPC node, backup service, and Archive Signer. In the MPC node, the [MPC Context][indexer-design] depends on the TEE Context for attestation and adds MPC-specific orchestration (signing jobs, resharing, peer management) on top. The Archive Signer uses the TEE Context directly, configured to talk to the HOT governance contract.
 
 ### Responsibilities
 
@@ -248,6 +248,7 @@ flowchart LR
 
 subgraph TEE_CTX["TEE Context"]
     POLL_HASHES["Poll Allowed Hashes<br/>(ContractStateSubscriber)"]
+    POLL_CHAIN_CFG["Poll Chain Validation Config<br/>(ContractStateSubscriber)"]
     ATTEST["Periodic Attestation<br/>(every 7 days)"]
     MONITOR["Monitor Attestation<br/>Removal"]
 end
@@ -258,6 +259,7 @@ subgraph CHAIN["Chain Indexer"]
 end
 
 POLL_HASHES --> CSUB
+POLL_CHAIN_CFG --> CSUB
 ATTEST --> TSEND
 MONITOR --> CSUB
 MONITOR --> TSEND
@@ -266,14 +268,17 @@ classDef ctx stroke:#2563eb,stroke-width:2px;
 class TEE_CTX ctx;
 ```
 
-1. **Poll allowed hashes** — Periodically queries the governance contract for `allowed_docker_image_hashes()` and `allowed_launcher_compose_hashes()` via the Contract State Subscriber.
+1. **Poll allowed hashes** — Periodically queries the governance contract for `allowed_docker_image_hashes()` and `allowed_launcher_compose_hashes()` via the [Contract State Subscriber][contract-state-subscriber].
 
 2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the governance contract via `submit_participant_info()`. Follows the same pattern as [`periodic_attestation_submission`][remote-attestation], including exponential backoff retries.
 
 3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. Follows the pattern from [`monitor_attestation_removal`][remote-attestation].
 
+4. **Poll chain validation config** — Subscribes to the governance contract's `get_chain_validation_config()` view method via the Contract State Subscriber. Provides the active `ChainValidationConfig` to the validation SDK so it knows which RPC providers to trust for each chain.
+
 [remote-attestation]: https://github.com/near/mpc/blob/main/crates/node/src/tee/remote_attestation.rs
 [indexer-design]: indexer-design.md
+[contract-state-subscriber]: indexer-design.md#contract-state-subscriber
 
 ## HTTP Signing API
 
@@ -353,11 +358,9 @@ pub struct ProofModel {
 }
 ```
 
-**Cross-chain RPC configuration:** The `Validation` struct requires RPC endpoints for every chain HOT wallets may reference in auth calls — NEAR included. Each chain is configured with a `ChainValidationConfig { threshold, servers }` (multiple RPC providers with threshold consensus). The validation SDK uses its own HTTP RPC clients for all chain calls (NEAR and foreign chains alike); the embedded neard is **not** used for validation — it is strictly for TEE governance. For improved security, NEAR smart contract verification can be routed through a [`chain-gateway`][chain-gateway] that runs its own neard node, avoiding reliance on external RPC providers for NEAR calls.
+**Cross-chain RPC configuration:** The `Validation` struct requires RPC endpoints for every chain HOT wallets may reference in auth calls. Which providers are trusted for each chain is governed on-chain via the HOT governance contract — analogous to NEAR MPC's [foreign chain policy][foreign-chain-policy]. Governors vote on a `ChainValidationConfig` (chains → RPC providers with threshold consensus); the Archive Signer reads the active config from the contract via the Contract State Subscriber. The validation SDK makes HTTP RPC calls to the governor-approved providers for all chain calls; the embedded neard is **not** used for validation — it is strictly for TEE governance. The `hot-validation-sdk` currently accepts RPC configuration only at initialization (in the existing HOT MPC network, providers are set per-deployment via local config); it will need to be extended to support dynamic provider updates from the governance contract.
 
-[chain-gateway]: indexer-design.md#design-proposal
-
-**Note:** This authorization flow is unrelated to NEAR MPC's [foreign transaction verification](foreign_chain_transactions.md) feature. Foreign TX verification is an on-chain feature for verifying events on other chains (bridges/intents). HOT's `hot_verify()` is an off-chain authorization mechanism for wallet signing.
+[foreign-chain-policy]: foreign-chain-transactions.md#contract-state-foreign-chain-policy
 
 ### Signing Endpoint
 
@@ -409,6 +412,10 @@ pub struct HotTeeContract {
     /// TEE state: allowed image hashes, attestations.
     /// Reuses the existing TeeState structure from mpc-contract.
     tee_state: TeeState,
+    /// Trusted RPC providers per chain for cross-chain authorization.
+    /// Analogous to NEAR MPC's foreign chain policy.
+    chain_validation_config: ChainValidationConfig,
+    chain_validation_config_votes: ChainValidationConfigVotes,
 }
 ```
 
@@ -427,7 +434,7 @@ pub struct TeeState {
 
 ### Governance
 
-Although the Archive Signer is a single node (not a multi-node network), the voting mechanism is still relevant because it governs **which code is allowed to touch the private keys**, not node coordination. The governance body consists of multiple actors with equal voting weight, ensuring no single party can unilaterally push a new image that handles the reconstructed keys. This follows the same multi-entity voting pattern as the MPC contract.
+Although the Archive Signer is a single node (not a multi-node network), the voting mechanism is still relevant because it governs trust-critical parameters, not node coordination. The governance body consists of multiple actors with equal voting weight, ensuring no single party can unilaterally change the system. Governors vote on: (1) **allowed code** — which Docker images may touch the private keys, (2) **trusted RPC providers** — which external data sources the TEE relies on for cross-chain authorization decisions (analogous to NEAR MPC's [foreign chain policy][foreign-chain-policy]), and (3) **the governor set itself**. This follows the same multi-entity voting pattern as the MPC contract.
 
 Note: the MPC contract's [`vote_new_parameters`][vote-new-params] method does not have a direct equivalent here. In the MPC contract, `vote_new_parameters` changes the **participant set and threshold for the threshold signing protocol** (via [`ThresholdParameters`][threshold-params]), triggering a resharing. The Archive Signer is a single node doing direct signing — there is no threshold protocol, no resharing, and no signing participant set to manage. Instead, the HOT governance contract needs methods for managing its own **governor set** (see below).
 
@@ -445,11 +452,13 @@ The initial governor set and vote threshold are configured at contract deploymen
 | `vote_code_hash(code_hash)` | Call | Governor | Vote for a new Docker image hash |
 | `vote_remove_code_hash(code_hash)` | Call | Governor | Vote to remove a Docker image hash before natural expiry |
 | `vote_update_governors(governors, threshold)` | Call | Governor | Vote to change the governor set and/or vote threshold |
+| `vote_chain_validation_config(config)` | Call | Governor | Vote on trusted RPC providers per chain |
 | `submit_participant_info(attestation, tls_public_key)` | Call | Archive Signer | Submit TEE attestation |
 | `verify_tee()` | Call | Anyone | Re-validate all stored attestations |
 | `allowed_docker_image_hashes()` | View | Archive Signer | Query approved image hashes |
 | `allowed_launcher_compose_hashes()` | View | Archive Signer | Query approved launcher hashes |
 | `get_tee_accounts()` | View | Anyone | Query nodes with valid attestations |
+| `get_chain_validation_config()` | View | Archive Signer | Query active cross-chain RPC configuration |
 
 ### Launcher Compose Hash Derivation
 
