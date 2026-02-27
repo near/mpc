@@ -58,7 +58,7 @@ mod tests {
         key_seed: u64,
         message_digest: &[u8; 32],
     ) -> (K256Signature, Secp256k1PublicKey) {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(key_seed);
+        let mut rng = rand_chacha::ChaCha8Rng::seeddsa_from_u64(key_seed);
         let key_bytes: [u8; 32] = rng.r#gen();
         let signing_key = k256::ecdsa::SigningKey::from_bytes(&key_bytes.into())
             .expect("random 32 bytes should be a valid secp256k1 scalar");
@@ -75,7 +75,7 @@ mod tests {
         big_r_bytes[0] = prefix;
         big_r_bytes[1..].copy_from_slice(&sig.r().to_bytes());
 
-        let pk_uncompressed = signing_key.verifying_key().to_encoded_point(false);
+        let pk_uncompressed = signing_key.verifying_key().to_encodeddsa_point(false);
         let pk_bytes: [u8; 64] = pk_uncompressed.as_bytes()[1..].try_into().unwrap();
 
         let signature = K256Signature {
@@ -94,7 +94,7 @@ mod tests {
         key_seed: u64,
         message: &[u8; 32],
     ) -> (Ed25519Signature, Ed25519PublicKey) {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(key_seed);
+        let mut rng = rand_chacha::ChaCha8Rng::seeddsa_from_u64(key_seed);
         let key_bytes: [u8; 32] = rng.r#gen();
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
         let sig: ed25519_dalek::Signature = signing_key.sign(message);
@@ -106,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn ec_valid_signature() {
+    fn ecdsa_valid_signature() {
         // given
         let msg = [42u8; 32];
         let (sig, pk) = make_ecdsa_test_case(1, &msg);
@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn ec_wrong_message() {
+    fn ecdsa_wrong_message() {
         // given
         let msg = [42u8; 32];
         let (sig, pk) = make_ecdsa_test_case(1, &msg);
@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn ec_wrong_public_key() {
+    fn ecdsa_wrong_public_key() {
         // given
         let msg = [42u8; 32];
         let (sig, _) = make_ecdsa_test_case(1, &msg);
@@ -153,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn ed_valid_signature() {
+    fn eddsa_valid_signature() {
         // given
         let msg = [42u8; 32];
         let (sig, pk) = make_eddsa_test_case(1, &msg);
@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn ed_wrong_message() {
+    fn eddsa_wrong_message() {
         // given
         let msg = [42u8; 32];
         let (sig, pk) = make_eddsa_test_case(1, &msg);
@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn ed_wrong_public_key() {
+    fn eddsa_wrong_public_key() {
         // given
         let msg = [42u8; 32];
         let (sig, _) = make_eddsa_test_case(1, &msg);
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn ec_wrong_recovery_id() {
+    fn ecdsa_wrong_recovery_id() {
         // given
         let msg = [42u8; 32];
         let (mut sig, pk) = make_ecdsa_test_case(1, &msg);
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn ec_tampered_s_scalar() {
+    fn ecdsa_tampereddsa_s_scalar() {
         // given
         let msg = [42u8; 32];
         let (mut sig, pk) = make_ecdsa_test_case(1, &msg);
@@ -225,26 +225,26 @@ mod tests {
     }
 
     #[test]
-    fn ed_tampered_signature() {
+    fn eddsa_tampereddsa_signature() {
         // given
         let msg = [42u8; 32];
         let (_, pk) = make_eddsa_test_case(1, &msg);
-        let tampered_sig = Ed25519Signature::from([0u8; 64]);
+        let tampereddsa_sig = Ed25519Signature::from([0u8; 64]);
 
         // when
-        let result = verify_eddsa_signature(&tampered_sig, &msg, &pk);
+        let result = verify_eddsa_signature(&tampereddsa_sig, &msg, &pk);
 
         // then
         assert_matches!(result, Err(VerificationError::InvalidSignature));
     }
 
     fn make_message(seed: u64) -> [u8; 32] {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        let mut rng = rand_chacha::ChaCha8Rng::seeddsa_from_u64(seed);
         rng.r#gen()
     }
 
     #[test]
-    fn ec_stress_many_keys_and_messages() {
+    fn ecdsa_stress_many_keys_and_messages() {
         // Sweep over 16 key seeds × 8 messages = 128 combinations.
         // Kept smaller than EdDSA because ecrecover is expensive in the NEAR mock VM.
         for key_seed in 0u64..16 {
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn ed_stress_many_keys_and_messages() {
+    fn eddsa_stress_many_keys_and_messages() {
         for key_seed in 0u64..64 {
             for msg_seed in 0u64..16 {
                 let msg = make_message(msg_seed);
