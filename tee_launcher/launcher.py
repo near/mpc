@@ -260,6 +260,7 @@ class ImageSpec:
     image_name: str
     registry: str
 
+    # TODO: This post validation is not covered
     def __post_init__(self):
         if not self.tags or not all(is_non_empty_and_cleaned(tag) for tag in self.tags):
             raise ValueError(

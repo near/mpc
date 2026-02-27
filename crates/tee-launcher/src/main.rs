@@ -2,12 +2,79 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::process::Command;
 use std::sync::LazyLock;
 
+use contants::*;
 use regex::Regex;
 use serde::Deserialize;
 use thiserror::Error;
 
 // Reuse the workspace hash type for type-safe image hash handling.
 use mpc_primitives::hash::MpcDockerImageHash;
+
+mod contants;
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .init();
+
+    if let Err(e) = run().await {
+        tracing::error!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<()> {
+    tracing::info!("start");
+
+    let platform = parse_platform()?;
+    tracing::info!(
+        "Launcher platform: {}",
+        match platform {
+            Platform::Tee => "TEE",
+            Platform::NonTee => "NONTEE",
+        }
+    );
+
+    if platform == Platform::Tee && !is_unix_socket(DSTACK_UNIX_SOCKET) {
+        return Err(LauncherError::DstackSocketMissing(
+            DSTACK_UNIX_SOCKET.to_string(),
+        ));
+    }
+
+    // DOCKER_CONTENT_TRUST must be enabled
+    let dct = std::env::var(ENV_VAR_DOCKER_CONTENT_TRUST).unwrap_or_default();
+    if dct != "1" {
+        return Err(LauncherError::DockerContentTrustNotEnabled);
+    }
+
+    // Load dstack user config
+    let dstack_config: BTreeMap<String, String> =
+        if std::path::Path::new(DSTACK_USER_CONFIG_FILE).is_file() {
+            parse_env_file(DSTACK_USER_CONFIG_FILE)?
+        } else {
+            BTreeMap::new()
+        };
+
+    let rpc_cfg = load_rpc_timing_config(&dstack_config);
+
+    let selected_hash = load_and_select_hash(&dstack_config)?;
+
+    if !validate_image_hash(&selected_hash, &dstack_config, &rpc_cfg).await? {
+        return Err(LauncherError::ImageValidationFailed(selected_hash));
+    }
+
+    tracing::info!("MPC image hash validated successfully: {selected_hash}");
+
+    extend_rtmr3(platform, &selected_hash).await?;
+
+    launch_mpc_container(platform, &selected_hash, &dstack_config)?;
+
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Error
@@ -100,40 +167,6 @@ type Result<T> = std::result::Result<T, LauncherError>;
 // Constants — matching Python launcher exactly
 // ---------------------------------------------------------------------------
 
-const MPC_CONTAINER_NAME: &str = "mpc-node";
-const IMAGE_DIGEST_FILE: &str = "/mnt/shared/image-digest.bin";
-const DSTACK_UNIX_SOCKET: &str = "/var/run/dstack.sock";
-const DSTACK_USER_CONFIG_FILE: &str = "/tapp/user_config";
-
-const SHA256_PREFIX: &str = "sha256:";
-
-// Docker Hub defaults
-const DEFAULT_RPC_REQUEST_TIMEOUT_SECS: f64 = 10.0;
-const DEFAULT_RPC_REQUEST_INTERVAL_SECS: f64 = 1.0;
-const DEFAULT_RPC_MAX_ATTEMPTS: u32 = 20;
-
-const DEFAULT_MPC_IMAGE_NAME: &str = "nearone/mpc-node";
-const DEFAULT_MPC_REGISTRY: &str = "registry.hub.docker.com";
-const DEFAULT_MPC_IMAGE_TAG: &str = "latest";
-
-// Env var names
-const ENV_VAR_PLATFORM: &str = "PLATFORM";
-const ENV_VAR_DEFAULT_IMAGE_DIGEST: &str = "DEFAULT_IMAGE_DIGEST";
-const ENV_VAR_DOCKER_CONTENT_TRUST: &str = "DOCKER_CONTENT_TRUST";
-const ENV_VAR_MPC_HASH_OVERRIDE: &str = "MPC_HASH_OVERRIDE";
-const ENV_VAR_RPC_REQUEST_TIMEOUT_SECS: &str = "RPC_REQUEST_TIMEOUT_SECS";
-const ENV_VAR_RPC_REQUEST_INTERVAL_SECS: &str = "RPC_REQUEST_INTERVAL_SECS";
-const ENV_VAR_RPC_MAX_ATTEMPTS: &str = "RPC_MAX_ATTEMPTS";
-
-const DSTACK_USER_CONFIG_MPC_IMAGE_TAGS: &str = "MPC_IMAGE_TAGS";
-const DSTACK_USER_CONFIG_MPC_IMAGE_NAME: &str = "MPC_IMAGE_NAME";
-const DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY: &str = "MPC_REGISTRY";
-
-// Security limits
-const MAX_PASSTHROUGH_ENV_VARS: usize = 64;
-const MAX_ENV_VALUE_LEN: usize = 1024;
-const MAX_TOTAL_ENV_BYTES: usize = 32 * 1024;
-
 // Regex patterns (compiled once)
 static MPC_ENV_KEY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^MPC_[A-Z0-9_]{1,64}$").unwrap());
@@ -145,8 +178,7 @@ static INVALID_HOST_ENTRY_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[;&|`$\\<>\-]|^--").unwrap());
 
 // Denied env keys — never pass these to the container
-static DENIED_CONTAINER_ENV_KEYS: LazyLock<HashSet<&str>> =
-    LazyLock::new(|| HashSet::from(["MPC_P2P_PRIVATE_KEY", "MPC_ACCOUNT_SK"]));
+const DENIED_CONTAINER_ENV_KEYS: &[&str] = &["MPC_P2P_PRIVATE_KEY", "MPC_ACCOUNT_SK"];
 
 // Allowed non-MPC env vars (backward compatibility)
 static ALLOWED_MPC_ENV_VARS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
@@ -220,11 +252,13 @@ struct ApprovedHashesFile {
 // ---------------------------------------------------------------------------
 
 fn has_control_chars(s: &str) -> bool {
-    for ch in s.chars() {
-        if ch == '\n' || ch == '\r' || ch == '\0' {
+    let control_chars = ['\n', '\r', '\0'];
+
+    for character in s.chars() {
+        if control_chars.contains(&character) {
             return true;
         }
-        if (ch as u32) < 0x20 && ch != '\t' {
+        if (character as u32) < 0x20 && character != '\t' {
             return true;
         }
     }
@@ -284,12 +318,14 @@ fn is_safe_port_mapping(mapping: &str) -> bool {
 }
 
 fn is_allowed_container_env_key(key: &str) -> bool {
-    if DENIED_CONTAINER_ENV_KEYS.contains(key) {
+    if DENIED_CONTAINER_ENV_KEYS.contains(&key) {
         return false;
     }
+    // Allow MPC_* keys with strict regex
     if MPC_ENV_KEY_RE.is_match(key) {
         return true;
     }
+    // Keep allowlist
     if ALLOWED_MPC_ENV_VARS.contains(key) {
         return true;
     }
@@ -402,13 +438,11 @@ fn get_image_spec(dstack_config: &BTreeMap<String, String>) -> ImageSpec {
 /// Uses the workspace type's `FromStr` impl which does `hex::decode` + 32-byte
 /// length check — no regex needed.
 fn parse_image_digest(full_digest: &str) -> Result<MpcDockerImageHash> {
-    let bare_hex = full_digest
-        .strip_prefix(SHA256_PREFIX)
-        .ok_or_else(|| {
-            LauncherError::InvalidDefaultDigest(format!(
-                "Invalid digest (missing sha256: prefix): {full_digest}"
-            ))
-        })?;
+    let bare_hex = full_digest.strip_prefix(SHA256_PREFIX).ok_or_else(|| {
+        LauncherError::InvalidDefaultDigest(format!(
+            "Invalid digest (missing sha256: prefix): {full_digest}"
+        ))
+    })?;
     bare_hex
         .parse::<MpcDockerImageHash>()
         .map_err(|e| LauncherError::InvalidDefaultDigest(format!("{full_digest}: {e}")))
@@ -424,11 +458,12 @@ fn get_bare_digest(full_digest: &str) -> Result<String> {
 
 fn load_and_select_hash(dstack_config: &BTreeMap<String, String>) -> Result<String> {
     let approved_hashes = if std::path::Path::new(IMAGE_DIGEST_FILE).is_file() {
-        let content =
-            std::fs::read_to_string(IMAGE_DIGEST_FILE).map_err(|source| LauncherError::FileRead {
+        let content = std::fs::read_to_string(IMAGE_DIGEST_FILE).map_err(|source| {
+            LauncherError::FileRead {
                 path: IMAGE_DIGEST_FILE.to_string(),
                 source,
-            })?;
+            }
+        })?;
         let data: ApprovedHashesFile =
             serde_json::from_str(&content).map_err(|source| LauncherError::JsonParse {
                 path: IMAGE_DIGEST_FILE.to_string(),
@@ -452,9 +487,7 @@ fn load_and_select_hash(dstack_config: &BTreeMap<String, String>) -> Result<Stri
         if !is_valid_sha256_digest(&fallback) {
             return Err(LauncherError::InvalidDefaultDigest(fallback));
         }
-        tracing::info!(
-            "{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}"
-        );
+        tracing::info!("{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}");
         vec![fallback]
     };
 
@@ -469,9 +502,7 @@ fn load_and_select_hash(dstack_config: &BTreeMap<String, String>) -> Result<Stri
             return Err(LauncherError::InvalidHashOverride(override_hash.clone()));
         }
         if !approved_hashes.contains(override_hash) {
-            tracing::error!(
-                "MPC_HASH_OVERRIDE={override_hash} does NOT match any approved hash!"
-            );
+            tracing::error!("MPC_HASH_OVERRIDE={override_hash} does NOT match any approved hash!");
             return Err(LauncherError::InvalidHashOverride(override_hash.clone()));
         }
         tracing::info!("MPC_HASH_OVERRIDE provided → selecting: {override_hash}");
@@ -507,7 +538,9 @@ async fn request_until_success(
         }
 
         match req
-            .timeout(std::time::Duration::from_secs_f64(timing.request_timeout_secs))
+            .timeout(std::time::Duration::from_secs_f64(
+                timing.request_timeout_secs,
+            ))
             .send()
             .await
         {
@@ -536,10 +569,7 @@ async fn request_until_success(
     })
 }
 
-async fn get_manifest_digest(
-    image: &ResolvedImage,
-    timing: &RpcTimingConfig,
-) -> Result<String> {
+async fn get_manifest_digest(image: &ResolvedImage, timing: &RpcTimingConfig) -> Result<String> {
     if image.spec.tags.is_empty() {
         return Err(LauncherError::ImageHashNotFoundAmongTags);
     }
@@ -593,10 +623,10 @@ async fn get_manifest_digest(
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_string());
 
-                let manifest: serde_json::Value =
-                    resp.json().await.map_err(|e| {
-                        LauncherError::RegistryResponseParse(e.to_string())
-                    })?;
+                let manifest: serde_json::Value = resp
+                    .json()
+                    .await
+                    .map_err(|e| LauncherError::RegistryResponseParse(e.to_string()))?;
 
                 let media_type = manifest["mediaType"].as_str().unwrap_or("");
                 match media_type {
@@ -616,8 +646,7 @@ async fn get_manifest_digest(
                     }
                     "application/vnd.docker.distribution.manifest.v2+json"
                     | "application/vnd.oci.image.manifest.v1+json" => {
-                        let config_digest =
-                            manifest["config"]["digest"].as_str().unwrap_or("");
+                        let config_digest = manifest["config"]["digest"].as_str().unwrap_or("");
                         if config_digest == image.digest {
                             if let Some(digest) = content_digest {
                                 return Ok(digest);
@@ -667,7 +696,13 @@ async fn validate_image_hash(
 
     // Verify digest
     let inspect = Command::new("docker")
-        .args(["image", "inspect", "--format", "{{index .ID}}", &name_and_digest])
+        .args([
+            "image",
+            "inspect",
+            "--format",
+            "{{index .ID}}",
+            &name_and_digest,
+        ])
         .output()
         .map_err(|e| LauncherError::DockerInspectFailed(e.to_string()))?;
     if !inspect.status.success() {
@@ -695,8 +730,9 @@ fn remove_existing_container() {
         .output();
 
     match output {
-        Ok(out) => {
-            let names = String::from_utf8_lossy(&out.stdout);
+        Ok(output) => {
+            let names = String::from_utf8_lossy(&output.stdout);
+
             if names.lines().any(|n| n == MPC_CONTAINER_NAME) {
                 tracing::info!("Removing existing container: {MPC_CONTAINER_NAME}");
                 let _ = Command::new("docker")
@@ -704,8 +740,8 @@ fn remove_existing_container() {
                     .output();
             }
         }
-        Err(e) => {
-            tracing::warn!("Failed to check/remove container {MPC_CONTAINER_NAME}: {e}");
+        Err(error) => {
+            tracing::warn!("Failed to check/remove container {MPC_CONTAINER_NAME}: {error}");
         }
     }
 }
@@ -873,8 +909,7 @@ async fn extend_rtmr3(platform: Platform, valid_hash: &str) -> Result<()> {
     let bare = get_bare_digest(valid_hash)?;
     tracing::info!("Extending RTMR3 with validated hash: {bare}");
 
-    let client =
-        dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
+    let client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
     // GetQuote first
     client
@@ -892,71 +927,6 @@ async fn extend_rtmr3(platform: Platform, valid_hash: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Main orchestration
-// ---------------------------------------------------------------------------
-
-async fn run() -> Result<()> {
-    tracing::info!("start");
-
-    let platform = parse_platform()?;
-    tracing::info!("Launcher platform: {}", match platform {
-        Platform::Tee => "TEE",
-        Platform::NonTee => "NONTEE",
-    });
-
-    if platform == Platform::Tee && !is_unix_socket(DSTACK_UNIX_SOCKET) {
-        return Err(LauncherError::DstackSocketMissing(
-            DSTACK_UNIX_SOCKET.to_string(),
-        ));
-    }
-
-    // DOCKER_CONTENT_TRUST must be enabled
-    let dct = std::env::var(ENV_VAR_DOCKER_CONTENT_TRUST).unwrap_or_default();
-    if dct != "1" {
-        return Err(LauncherError::DockerContentTrustNotEnabled);
-    }
-
-    // Load dstack user config
-    let dstack_config: BTreeMap<String, String> =
-        if std::path::Path::new(DSTACK_USER_CONFIG_FILE).is_file() {
-            parse_env_file(DSTACK_USER_CONFIG_FILE)?
-        } else {
-            BTreeMap::new()
-        };
-
-    let rpc_cfg = load_rpc_timing_config(&dstack_config);
-
-    let selected_hash = load_and_select_hash(&dstack_config)?;
-
-    if !validate_image_hash(&selected_hash, &dstack_config, &rpc_cfg).await? {
-        return Err(LauncherError::ImageValidationFailed(selected_hash));
-    }
-
-    tracing::info!("MPC image hash validated successfully: {selected_hash}");
-
-    extend_rtmr3(platform, &selected_hash).await?;
-
-    launch_mpc_container(platform, &selected_hash, &dstack_config)?;
-
-    Ok(())
-}
-
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
-        )
-        .init();
-
-    if let Err(e) = run().await {
-        tracing::error!("Error: {e}");
-        std::process::exit(1);
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -964,7 +934,6 @@ async fn main() {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-
 
     // -- Config parsing tests -----------------------------------------------
 
@@ -987,7 +956,12 @@ mod tests {
 
     #[test]
     fn test_config_ignores_blank_lines_and_comments() {
-        let lines = vec!["", "  # This is a comment", "  MPC_SECRET_STORE_KEY=topsecret", ""];
+        let lines = vec![
+            "",
+            "  # This is a comment",
+            "  MPC_SECRET_STORE_KEY=topsecret",
+            "",
+        ];
         let env = parse_env_lines(&lines);
         assert_eq!(env.get("MPC_SECRET_STORE_KEY").unwrap(), "topsecret");
         assert_eq!(env.len(), 1);
@@ -1171,14 +1145,12 @@ mod tests {
 
     #[test]
     fn test_mpc_backup_encryption_key_is_allowed() {
-        let env = BTreeMap::from([(
-            "MPC_BACKUP_ENCRYPTION_KEY_HEX".into(),
-            "0".repeat(64),
-        )]);
+        let env = BTreeMap::from([("MPC_BACKUP_ENCRYPTION_KEY_HEX".into(), "0".repeat(64))]);
         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-        assert!(cmd
-            .join(" ")
-            .contains(&format!("MPC_BACKUP_ENCRYPTION_KEY_HEX={}", "0".repeat(64))));
+        assert!(
+            cmd.join(" ")
+                .contains(&format!("MPC_BACKUP_ENCRYPTION_KEY_HEX={}", "0".repeat(64)))
+        );
     }
 
     #[test]
@@ -1209,9 +1181,7 @@ mod tests {
         let cmd = build_docker_cmd(Platform::NonTee, &env, &make_digest()).unwrap();
         let s = cmd.join(" ");
         assert!(!s.contains("DSTACK_ENDPOINT="));
-        assert!(!s.contains(&format!(
-            "{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}"
-        )));
+        assert!(!s.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
     }
 
     #[test]
@@ -1220,9 +1190,7 @@ mod tests {
         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
         let s = cmd.join(" ");
         assert!(s.contains(&format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}")));
-        assert!(s.contains(&format!(
-            "{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}"
-        )));
+        assert!(s.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
     }
 
     #[test]
@@ -1282,10 +1250,7 @@ mod tests {
     fn test_ld_preload_injection_blocked_via_env_key() {
         let env = BTreeMap::from([
             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-            (
-                "--env LD_PRELOAD".into(),
-                "/path/to/my/malloc.so".into(),
-            ),
+            ("--env LD_PRELOAD".into(), "/path/to/my/malloc.so".into()),
         ]);
         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
@@ -1297,8 +1262,7 @@ mod tests {
             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
             (
                 "EXTRA_HOSTS".into(),
-                "host1:192.168.0.1,host2:192.168.0.2,--env LD_PRELOAD=/path/to/my/malloc.so"
-                    .into(),
+                "host1:192.168.0.1,host2:192.168.0.2,--env LD_PRELOAD=/path/to/my/malloc.so".into(),
             ),
         ]);
         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
@@ -1440,11 +1404,17 @@ mod tests {
 
     #[test]
     fn test_is_valid_sha256_digest() {
-        assert!(is_valid_sha256_digest(&format!("sha256:{}", "a".repeat(64))));
+        assert!(is_valid_sha256_digest(&format!(
+            "sha256:{}",
+            "a".repeat(64)
+        )));
         assert!(!is_valid_sha256_digest("sha256:tooshort"));
         assert!(!is_valid_sha256_digest("not-a-digest"));
         // hex::decode accepts uppercase; as_hex() normalizes to lowercase
-        assert!(is_valid_sha256_digest(&format!("sha256:{}", "A".repeat(64))));
+        assert!(is_valid_sha256_digest(&format!(
+            "sha256:{}",
+            "A".repeat(64)
+        )));
     }
 
     #[test]
