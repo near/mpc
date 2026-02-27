@@ -119,14 +119,16 @@ echo "==> Working tree is clean."
 # --- Branch creation or checkout ---
 
 if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
-    # Branch already exists locally — just switch to it.
-    echo "==> Branch '${BRANCH}' already exists locally, switching to it."
-    git checkout "$BRANCH"
-else
-    # Branch does not exist — create it from current HEAD.
-    echo "==> Creating new branch '${BRANCH}' from current HEAD ($(git rev-parse --short HEAD))."
-    git checkout -b "$BRANCH"
+    die "Branch '${BRANCH}' already exists locally. Aborting to avoid overwriting an existing release."
 fi
+
+git fetch origin --quiet
+if git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
+    die "Branch '${BRANCH}' already exists on origin. Aborting to avoid overwriting an existing release."
+fi
+
+echo "==> Creating new branch '${BRANCH}' from current HEAD ($(git rev-parse --short HEAD))."
+git checkout -b "$BRANCH"
 
 echo "==> Now on branch '${BRANCH}'."
 
