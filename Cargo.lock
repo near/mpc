@@ -10726,6 +10726,7 @@ dependencies = [
  "rand_core 0.6.4",
  "reddsa",
  "rmp-serde",
+ "rstest",
  "serde",
  "serde_bytes",
  "serde_json",

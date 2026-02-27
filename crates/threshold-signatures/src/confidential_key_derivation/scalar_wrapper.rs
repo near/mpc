@@ -67,6 +67,7 @@ mod tests {
     };
     use rand::Rng as _;
     use rand_core::{RngCore, SeedableRng};
+    use rstest::rstest;
 
     #[test]
     // This test only makes sense if `overflow-checks` are enabled
@@ -83,25 +84,18 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_from_be_bytes_mod_order_non_aligned() {
-        // 7 bytes: 0x01020304050607
-        let bytes = [1, 2, 3, 4, 5, 6, 7];
-        let result = ScalarWrapper::from_be_bytes_mod_order(&bytes);
-        let expected = blstrs::Scalar::from(0x0001_0203_0405_0607_u64);
-        assert_eq!(result.0, expected);
-
-        // 3 bytes: 0x010203
-        let bytes = [1, 2, 3];
-        let result = ScalarWrapper::from_be_bytes_mod_order(&bytes);
-        let expected = blstrs::Scalar::from(0x0001_0203_u64);
-        assert_eq!(result.0, expected);
-
-        // 9 bytes: one full 8-byte chunk + 1 remainder byte
-        let bytes = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-        let result = ScalarWrapper::from_be_bytes_mod_order(&bytes);
-        let expected =
-            blstrs::Scalar::from(0x0102_0304_0506_0708_u64).shl(8) + blstrs::Scalar::from(9u64);
+    #[rstest]
+    #[case::seven_bytes(&[1, 2, 3, 4, 5, 6, 7], blstrs::Scalar::from(0x0001_0203_0405_0607_u64))]
+    #[case::three_bytes(&[1, 2, 3], blstrs::Scalar::from(0x0001_0203_u64))]
+    #[case::nine_bytes(
+        &[1, 2, 3, 4, 5, 6, 7, 8, 9],
+        blstrs::Scalar::from(0x0102_0304_0506_0708_u64).shl(8) + blstrs::Scalar::from(9u64),
+    )]
+    fn test_from_be_bytes_mod_order_non_aligned(
+        #[case] bytes: &[u8],
+        #[case] expected: blstrs::Scalar,
+    ) {
+        let result = ScalarWrapper::from_be_bytes_mod_order(bytes);
         assert_eq!(result.0, expected);
     }
 
