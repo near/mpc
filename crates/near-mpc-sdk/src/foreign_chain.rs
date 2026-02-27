@@ -1,4 +1,5 @@
 use crate::sign::NotSet;
+use borsh::{BorshDeserialize, BorshSerialize};
 pub use contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
 
 pub mod abstract_chain;
@@ -16,7 +17,7 @@ pub use contract_interface::types::{
     VerifyForeignTransactionRequestArgs,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
 pub struct ForeignChainSignatureVerifier {
     expected_extracted_values: Vec<ExtractedValue>,
     request: ForeignChainRpcRequest,
