@@ -81,12 +81,18 @@ subgraph CVM["CVM"]
     subgraph DSTACK["Dstack Runtime"]
         LAUNCHER["Launcher<br/>(verifies image hash)"]
         subgraph HOT_APP["Archive Signer Container"]
-            HTTP["HTTP Server<br/>(axum)"]
-            VALIDATION["Validation SDK<br/>(hot-validation-core)"]
-            SIGNER["Signing Engine<br/>(k256 + ed25519-dalek)"]
-            KEYSTORE["In-Memory Key Store"]
-            TEE_CTX["TEE Context<br/>(attestation lifecycle)"]
-            INDEXER["Chain Indexer (neard)"]
+            SIGNING[
+            <b>Signing</b><br/>
+            <b>HTTP Server</b>
+            <b>Validation SDK</b>
+            <b>Signing Engine</b>
+            <b>In-Memory Key Store</b>
+            ]
+            TEE_GOV[
+            <b>TEE Governance</b><br/>
+            <b>TEE Context</b>
+            <b>Chain Indexer</b>
+            ]
         end
     end
     DISK[("Encrypted Disk<br/>(Gramine Key Provider)")]
@@ -96,15 +102,10 @@ CLIENT["Authenticated Accounts"]
 HOT_CONTRACT["HOT TEE Governance<br/>Contract (NEAR)"]
 RPC["Foreign Chain RPCs"]
 
-CLIENT -->|"POST /sign"| HTTP
-HTTP --> VALIDATION
-VALIDATION -->|"verify proof"| RPC
-VALIDATION --> SIGNER
-SIGNER --> KEYSTORE
-KEYSTORE ---|"persist / load on boot"| DISK
-
-TEE_CTX --> INDEXER
-INDEXER -->|"view: allowed hashes, foreign chain policy<br/>call: submit_participant_info"| HOT_CONTRACT
+CLIENT -->|"POST /sign"| SIGNING
+SIGNING -->|"cross-chain auth"| RPC
+SIGNING ---|"persist / load on boot"| DISK
+TEE_GOV -->|"view: allowed hashes, foreign chain policy<br/>call: submit_participant_info"| HOT_CONTRACT
 
 classDef cvm stroke:#1b5e20,stroke-width:4px;
 classDef app stroke:#2563eb,stroke-width:4px;

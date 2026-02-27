@@ -164,7 +164,7 @@ class TEE_CTX ctx;
 
 4. **Poll foreign chain policy** — Subscribes to the governance contract's `get_foreign_chain_policy()` view method via the Contract State Subscriber. Provides the active [`ForeignChainPolicy`][foreign-chain-policy-type] to consumers — for the MPC node this feeds [foreign transaction verification][foreign-tx-verification], for the Archive Signer it configures the validation SDK's RPC providers. (Reference: the MPC node currently fetches this [on-demand in the coordinator][coordinator-fcp]; the TEE Context will move it to continuous polling.)
 
-[foreign-tx-verification]: foreign_chain_transactions.md
+[foreign-tx-verification]: foreign-chain-transactions.md
 
 [foreign-chain-policy-type]: https://github.com/near/mpc/blob/main/crates/contract-interface/src/types/foreign_chain.rs
 [coordinator-fcp]: https://github.com/near/mpc/blob/main/crates/node/src/coordinator.rs
