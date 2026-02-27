@@ -53,9 +53,14 @@ mod tests {
     };
     use ed25519_dalek::Signer;
 
-    fn make_ec_test_case(key_seed: u8, msg: &[u8; 32]) -> (K256Signature, Secp256k1PublicKey) {
+    fn make_ecdsa_test_case(
+        key_seed: u8,
+        message_digest: &[u8; 32],
+    ) -> (K256Signature, Secp256k1PublicKey) {
         let signing_key = k256::ecdsa::SigningKey::from_bytes(&[key_seed; 32].into()).unwrap();
-        let (sig, recovery_id) = signing_key.sign_prehash_recoverable(msg).unwrap();
+        let (sig, recovery_id) = signing_key
+            .sign_prehash_recoverable(message_digest)
+            .unwrap();
 
         let prefix = if recovery_id.is_y_odd() {
             0x03u8
@@ -81,9 +86,9 @@ mod tests {
         (signature, Secp256k1PublicKey(pk_bytes))
     }
 
-    fn make_ed_test_case(key_seed: u8, msg: &[u8; 32]) -> (Ed25519Signature, Ed25519PublicKey) {
+    fn make_eddsa_test_case(key_seed: u8, message: &[u8; 32]) -> (Ed25519Signature, Ed25519PublicKey) {
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&[key_seed; 32]);
-        let sig: ed25519_dalek::Signature = signing_key.sign(msg);
+        let sig: ed25519_dalek::Signature = signing_key.sign(message);
         let pk = signing_key.verifying_key();
         (
             Ed25519Signature::from(sig.to_bytes()),
@@ -95,7 +100,7 @@ mod tests {
     fn ec_valid_signature() {
         // given
         let msg = [42u8; 32];
-        let (sig, pk) = make_ec_test_case(1, &msg);
+        let (sig, pk) = make_ecdsa_test_case(1, &msg);
 
         // when
         let result = verify_ecdsa_signature(&sig, &msg, &pk);
@@ -108,7 +113,7 @@ mod tests {
     fn ec_wrong_message() {
         // given
         let msg = [42u8; 32];
-        let (sig, pk) = make_ec_test_case(1, &msg);
+        let (sig, pk) = make_ecdsa_test_case(1, &msg);
         let wrong_msg = [43u8; 32];
 
         // when
@@ -125,8 +130,8 @@ mod tests {
     fn ec_wrong_public_key() {
         // given
         let msg = [42u8; 32];
-        let (sig, _) = make_ec_test_case(1, &msg);
-        let (_, other_pk) = make_ec_test_case(2, &msg);
+        let (sig, _) = make_ecdsa_test_case(1, &msg);
+        let (_, other_pk) = make_ecdsa_test_case(2, &msg);
 
         // when
         let result = verify_ecdsa_signature(&sig, &msg, &other_pk);
@@ -142,7 +147,7 @@ mod tests {
     fn ed_valid_signature() {
         // given
         let msg = [42u8; 32];
-        let (sig, pk) = make_ed_test_case(1, &msg);
+        let (sig, pk) = make_eddsa_test_case(1, &msg);
 
         // when
         let result = verify_eddsa_signature(&sig, &msg, &pk);
@@ -155,7 +160,7 @@ mod tests {
     fn ed_wrong_message() {
         // given
         let msg = [42u8; 32];
-        let (sig, pk) = make_ed_test_case(1, &msg);
+        let (sig, pk) = make_eddsa_test_case(1, &msg);
         let wrong_msg = [43u8; 32];
 
         // when
@@ -169,8 +174,8 @@ mod tests {
     fn ed_wrong_public_key() {
         // given
         let msg = [42u8; 32];
-        let (sig, _) = make_ed_test_case(1, &msg);
-        let (_, other_pk) = make_ed_test_case(2, &msg);
+        let (sig, _) = make_eddsa_test_case(1, &msg);
+        let (_, other_pk) = make_eddsa_test_case(2, &msg);
 
         // when
         let result = verify_eddsa_signature(&sig, &msg, &other_pk);
@@ -183,7 +188,7 @@ mod tests {
     fn ec_wrong_recovery_id() {
         // given
         let msg = [42u8; 32];
-        let (mut sig, pk) = make_ec_test_case(1, &msg);
+        let (mut sig, pk) = make_ecdsa_test_case(1, &msg);
         sig.recovery_id ^= 1;
 
         // when
@@ -200,7 +205,7 @@ mod tests {
     fn ec_tampered_s_scalar() {
         // given
         let msg = [42u8; 32];
-        let (mut sig, pk) = make_ec_test_case(1, &msg);
+        let (mut sig, pk) = make_ecdsa_test_case(1, &msg);
         sig.s.scalar = [u8::MAX; 32]; // 0xFF..FF >= curve order n
 
         // when
@@ -214,7 +219,7 @@ mod tests {
     fn ed_tampered_signature() {
         // given
         let msg = [42u8; 32];
-        let (_, pk) = make_ed_test_case(1, &msg);
+        let (_, pk) = make_eddsa_test_case(1, &msg);
         let tampered_sig = Ed25519Signature::from([0u8; 64]);
 
         // when
