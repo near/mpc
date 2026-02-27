@@ -4,10 +4,7 @@ use crate::indexer::{
 };
 use anyhow::Context;
 use chain_gateway::{contract_state_stream::ContractStateStream, state_viewer::StateViewer};
-use mpc_contract::{
-    primitives::signature::YieldIndex,
-    state::ProtocolContractState,
-};
+use mpc_contract::{primitives::signature::YieldIndex, state::ProtocolContractState};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
@@ -62,24 +59,22 @@ where
         .await
         .context("invalid arguments")?;
 
-    // Send the initial value immediately
-    {
-        let (_, value) = subscription.latest()?;
-        if sender.send(value).is_err() {
-            // No receivers; nothing to do.
-            return Ok(());
-        }
-    }
-
     loop {
-        subscription.changed().await?;
-
-        let (_, value) = subscription.latest()?;
-
-        // Stop gracefully when no receivers remain.
-        if sender.send(value).is_err() {
-            return Ok(());
+        match subscription.latest() {
+            Ok((_, value)) => {
+                if sender.send(value).is_err() {
+                    return Ok(()); // no receivers left
+                }
+            }
+            Err(err) => {
+                tracing::warn!(
+                    method_name,
+                    %err,
+                    "error reading contract state, waiting for next update"
+                );
+            }
         }
+        subscription.changed().await?; // channel closed = fatal
     }
 }
 

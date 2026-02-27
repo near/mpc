@@ -188,7 +188,7 @@ async fn monitor(
                         method_name = ?method_name,
                         "updated value"
                     );
-                    break;
+                    //break;
                 }
             }
         }
