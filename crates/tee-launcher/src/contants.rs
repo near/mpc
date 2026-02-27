@@ -15,9 +15,6 @@ pub(crate) const DEFAULT_MPC_REGISTRY: &str = "registry.hub.docker.com";
 pub(crate) const DEFAULT_MPC_IMAGE_TAG: &str = "latest";
 
 // Env var names
-pub(crate) const ENV_VAR_PLATFORM: &str = "PLATFORM";
-pub(crate) const ENV_VAR_DEFAULT_IMAGE_DIGEST: &str = "DEFAULT_IMAGE_DIGEST";
-pub(crate) const ENV_VAR_DOCKER_CONTENT_TRUST: &str = "DOCKER_CONTENT_TRUST";
 pub(crate) const ENV_VAR_MPC_HASH_OVERRIDE: &str = "MPC_HASH_OVERRIDE";
 pub(crate) const ENV_VAR_RPC_REQUEST_TIMEOUT_SECS: &str = "RPC_REQUEST_TIMEOUT_SECS";
 pub(crate) const ENV_VAR_RPC_REQUEST_INTERVAL_SECS: &str = "RPC_REQUEST_INTERVAL_SECS";

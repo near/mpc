@@ -2,15 +2,20 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::process::Command;
 use std::sync::LazyLock;
 
-use contants::*;
+use clap::Parser;
 use regex::Regex;
-use serde::Deserialize;
-use thiserror::Error;
+use std::os::unix::fs::FileTypeExt as _;
 
 // Reuse the workspace hash type for type-safe image hash handling.
 use mpc_primitives::hash::MpcDockerImageHash;
 
+use contants::*;
+use error::*;
+use types::*;
+
 mod contants;
+mod error;
+mod types;
 
 #[tokio::main]
 async fn main() {
@@ -30,24 +35,20 @@ async fn main() {
 async fn run() -> Result<()> {
     tracing::info!("start");
 
-    let platform = parse_platform()?;
-    tracing::info!(
-        "Launcher platform: {}",
-        match platform {
-            Platform::Tee => "TEE",
-            Platform::NonTee => "NONTEE",
-        }
-    );
+    let args = CliArgs::parse();
 
-    if platform == Platform::Tee && !is_unix_socket(DSTACK_UNIX_SOCKET) {
+    tracing::info!(platform = ?args.platform, "starting launcher");
+
+    // TODO is_unix_socket can be a compile time check
+    if args.platform == Platform::Tee && !is_unix_socket(DSTACK_UNIX_SOCKET) {
         return Err(LauncherError::DstackSocketMissing(
             DSTACK_UNIX_SOCKET.to_string(),
         ));
     }
 
+    // TODO: `docker_content_trust` parse it to a type that only accepts deserialization into number 1
     // DOCKER_CONTENT_TRUST must be enabled
-    let dct = std::env::var(ENV_VAR_DOCKER_CONTENT_TRUST).unwrap_or_default();
-    if dct != "1" {
+    if args.docker_content_trust != "1" {
         return Err(LauncherError::DockerContentTrustNotEnabled);
     }
 
@@ -61,7 +62,7 @@ async fn run() -> Result<()> {
 
     let rpc_cfg = load_rpc_timing_config(&dstack_config);
 
-    let selected_hash = load_and_select_hash(&dstack_config)?;
+    let selected_hash = load_and_select_hash(&args, &dstack_config)?;
 
     if !validate_image_hash(&selected_hash, &dstack_config, &rpc_cfg).await? {
         return Err(LauncherError::ImageValidationFailed(selected_hash));
@@ -69,99 +70,12 @@ async fn run() -> Result<()> {
 
     tracing::info!("MPC image hash validated successfully: {selected_hash}");
 
-    extend_rtmr3(platform, &selected_hash).await?;
+    extend_rtmr3(args.platform, &selected_hash).await?;
 
-    launch_mpc_container(platform, &selected_hash, &dstack_config)?;
+    launch_mpc_container(args.platform, &selected_hash, &dstack_config)?;
 
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Error
-// ---------------------------------------------------------------------------
-
-#[derive(Error, Debug)]
-pub enum LauncherError {
-    #[error("PLATFORM must be set to one of [TEE, NONTEE], got: {0}")]
-    InvalidPlatform(String),
-
-    #[error("DOCKER_CONTENT_TRUST must be set to 1")]
-    DockerContentTrustNotEnabled,
-
-    #[error("PLATFORM=TEE requires dstack unix socket at {0}")]
-    DstackSocketMissing(String),
-
-    #[error("GetQuote failed before extending RTMR3: {0}")]
-    DstackGetQuoteFailed(String),
-
-    #[error("EmitEvent failed while extending RTMR3: {0}")]
-    DstackEmitEventFailed(String),
-
-    #[error("DEFAULT_IMAGE_DIGEST invalid: {0}")]
-    InvalidDefaultDigest(String),
-
-    #[error("Invalid JSON in {path}: approved_hashes missing or empty")]
-    InvalidApprovedHashes { path: String },
-
-    #[error("MPC_HASH_OVERRIDE invalid: {0}")]
-    InvalidHashOverride(String),
-
-    #[error("Image hash not found among tags")]
-    ImageHashNotFoundAmongTags,
-
-    #[error("Failed to get auth token from registry: {0}")]
-    RegistryAuthFailed(String),
-
-    #[error("Failed to get successful response from {url} after {attempts} attempts")]
-    RegistryRequestFailed { url: String, attempts: u32 },
-
-    #[error("docker pull failed for {0}")]
-    DockerPullFailed(String),
-
-    #[error("docker inspect failed for {0}")]
-    DockerInspectFailed(String),
-
-    #[error("Digest mismatch: pulled {pulled} != expected {expected}")]
-    DigestMismatch { pulled: String, expected: String },
-
-    #[error("MPC image hash validation failed: {0}")]
-    ImageValidationFailed(String),
-
-    #[error("docker run failed for validated hash={0}")]
-    DockerRunFailed(String),
-
-    #[error("Too many env vars to pass through (>{0})")]
-    TooManyEnvVars(usize),
-
-    #[error("Total env payload too large (>{0} bytes)")]
-    EnvPayloadTooLarge(usize),
-
-    #[error("Unsafe docker command: LD_PRELOAD detected")]
-    LdPreloadDetected,
-
-    #[error("Failed to read {path}: {source}")]
-    FileRead {
-        path: String,
-        source: std::io::Error,
-    },
-
-    #[error("Failed to parse {path}: {source}")]
-    JsonParse {
-        path: String,
-        source: serde_json::Error,
-    },
-
-    #[error("Required environment variable not set: {0}")]
-    MissingEnvVar(String),
-
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-
-    #[error("Registry response parse error: {0}")]
-    RegistryResponseParse(String),
-}
-
-type Result<T> = std::result::Result<T, LauncherError>;
 
 // ---------------------------------------------------------------------------
 // Constants — matching Python launcher exactly
@@ -181,21 +95,19 @@ static INVALID_HOST_ENTRY_PATTERN: LazyLock<Regex> =
 const DENIED_CONTAINER_ENV_KEYS: &[&str] = &["MPC_P2P_PRIVATE_KEY", "MPC_ACCOUNT_SK"];
 
 // Allowed non-MPC env vars (backward compatibility)
-static ALLOWED_MPC_ENV_VARS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
-    HashSet::from([
-        "MPC_ACCOUNT_ID",
-        "MPC_LOCAL_ADDRESS",
-        "MPC_SECRET_STORE_KEY",
-        "MPC_CONTRACT_ID",
-        "MPC_ENV",
-        "MPC_HOME_DIR",
-        "NEAR_BOOT_NODES",
-        "RUST_BACKTRACE",
-        "RUST_LOG",
-        "MPC_RESPONDER_ID",
-        "MPC_BACKUP_ENCRYPTION_KEY_HEX",
-    ])
-});
+const ALLOWED_MPC_ENV_VARS: &[&str] = &[
+    "MPC_ACCOUNT_ID",
+    "MPC_LOCAL_ADDRESS",
+    "MPC_SECRET_STORE_KEY",
+    "MPC_CONTRACT_ID",
+    "MPC_ENV",
+    "MPC_HOME_DIR",
+    "NEAR_BOOT_NODES",
+    "RUST_BACKTRACE",
+    "RUST_LOG",
+    "MPC_RESPONDER_ID",
+    "MPC_BACKUP_ENCRYPTION_KEY_HEX",
+];
 
 // Launcher-only env vars — read from user config but never forwarded to container
 static ALLOWED_LAUNCHER_ENV_VARS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
@@ -209,43 +121,6 @@ static ALLOWED_LAUNCHER_ENV_VARS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
         ENV_VAR_RPC_MAX_ATTEMPTS,
     ])
 });
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Platform {
-    Tee,
-    NonTee,
-}
-
-#[derive(Debug, Clone)]
-pub struct RpcTimingConfig {
-    pub request_timeout_secs: f64,
-    pub request_interval_secs: f64,
-    pub max_attempts: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ImageSpec {
-    pub tags: Vec<String>,
-    pub image_name: String,
-    pub registry: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct ResolvedImage {
-    pub spec: ImageSpec,
-    pub digest: String,
-}
-
-/// JSON structure for the approved hashes file written by the MPC node.
-/// Must stay aligned with `crates/node/src/tee/allowed_image_hashes_watcher.rs`.
-#[derive(Debug, Deserialize)]
-struct ApprovedHashesFile {
-    approved_hashes: Vec<String>,
-}
 
 // ---------------------------------------------------------------------------
 // Validation functions — security policy for env passthrough
@@ -326,7 +201,7 @@ fn is_allowed_container_env_key(key: &str) -> bool {
         return true;
     }
     // Keep allowlist
-    if ALLOWED_MPC_ENV_VARS.contains(key) {
+    if ALLOWED_MPC_ENV_VARS.contains(&key) {
         return true;
     }
     false
@@ -362,20 +237,6 @@ fn parse_env_file(path: &str) -> Result<BTreeMap<String, String>> {
     })?;
     let lines: Vec<&str> = content.lines().collect();
     Ok(parse_env_lines(&lines))
-}
-
-fn parse_platform() -> Result<Platform> {
-    let raw = std::env::var(ENV_VAR_PLATFORM).map_err(|_| {
-        LauncherError::InvalidPlatform(format!(
-            "{ENV_VAR_PLATFORM} must be set to one of [TEE, NONTEE]"
-        ))
-    })?;
-    let val = raw.trim();
-    match val {
-        "TEE" => Ok(Platform::Tee),
-        "NONTEE" => Ok(Platform::NonTee),
-        other => Err(LauncherError::InvalidPlatform(other.to_string())),
-    }
 }
 
 fn load_rpc_timing_config(dstack_config: &BTreeMap<String, String>) -> RpcTimingConfig {
@@ -456,7 +317,10 @@ fn get_bare_digest(full_digest: &str) -> Result<String> {
     Ok(parse_image_digest(full_digest)?.as_hex())
 }
 
-fn load_and_select_hash(dstack_config: &BTreeMap<String, String>) -> Result<String> {
+fn load_and_select_hash(
+    args: &CliArgs,
+    dstack_config: &BTreeMap<String, String>,
+) -> Result<String> {
     let approved_hashes = if std::path::Path::new(IMAGE_DIGEST_FILE).is_file() {
         let content = std::fs::read_to_string(IMAGE_DIGEST_FILE).map_err(|source| {
             LauncherError::FileRead {
@@ -476,11 +340,13 @@ fn load_and_select_hash(dstack_config: &BTreeMap<String, String>) -> Result<Stri
         }
         data.approved_hashes
     } else {
-        let fallback = std::env::var(ENV_VAR_DEFAULT_IMAGE_DIGEST)
-            .map_err(|_| LauncherError::MissingEnvVar(ENV_VAR_DEFAULT_IMAGE_DIGEST.to_string()))?;
-        let fallback = fallback.trim().to_string();
+        let fallback = args
+            .default_image_digest
+            .as_deref()
+            .ok_or_else(|| LauncherError::MissingEnvVar("DEFAULT_IMAGE_DIGEST".to_string()))?;
+        let fallback = fallback.trim();
         let fallback = if fallback.starts_with(SHA256_PREFIX) {
-            fallback
+            fallback.to_string()
         } else {
             format!("{SHA256_PREFIX}{fallback}")
         };
@@ -882,16 +748,9 @@ fn launch_mpc_container(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Dstack TEE communication (via dstack-sdk, no curl)
-// ---------------------------------------------------------------------------
-
+// TODO: We should kill this check. It's called with the constant `DSTACK_UNIX_SOCKET`
 fn is_unix_socket(path: &str) -> bool {
-    use std::os::unix::fs::FileTypeExt;
-    match std::fs::metadata(path) {
-        Ok(meta) => meta.file_type().is_socket(),
-        Err(_) => false,
-    }
+    std::fs::metadata(path).is_ok_and(|meta| meta.file_type().is_socket())
 }
 
 async fn extend_rtmr3(platform: Platform, valid_hash: &str) -> Result<()> {
@@ -925,10 +784,6 @@ async fn extend_rtmr3(platform: Platform, valid_hash: &str) -> Result<()> {
 
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -1422,16 +1277,6 @@ mod tests {
         let upper = format!("sha256:{}", "AB".repeat(32));
         let hash = parse_image_digest(&upper).unwrap();
         assert_eq!(hash.as_hex(), "ab".repeat(32));
-    }
-
-    // -- Platform parsing tests ---------------------------------------------
-
-    #[test]
-    fn test_parse_platform_missing() {
-        // Can't easily test env var absence in unit tests without side effects.
-        // This is tested via the error type:
-        let err = LauncherError::InvalidPlatform("not set".into());
-        assert!(format!("{err}").contains("PLATFORM"));
     }
 
     // -- Full flow docker cmd test ------------------------------------------
