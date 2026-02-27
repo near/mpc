@@ -24,6 +24,18 @@ use zeroize::Zeroizing;
 // for backwards compatibility
 pub use sign_v1 as sign;
 
+/// Maximum incoming buffer entries for the coordinator in the `EdDSA` sign v1 protocol.
+pub(crate) const EDDSA_SIGN_V1_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 2;
+/// Maximum incoming buffer entries for non-coordinator participants in the `EdDSA` sign v1 protocol.
+#[cfg(test)]
+pub(crate) const EDDSA_SIGN_V1_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
+
+/// Maximum incoming buffer entries for the coordinator in the `EdDSA` sign v2 protocol.
+pub(crate) const EDDSA_SIGN_V2_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 1;
+/// Maximum incoming buffer entries for non-coordinator participants in the `EdDSA` sign v2 protocol.
+#[cfg(test)]
+pub(crate) const EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
+
 /// Depending on whether the current participant is a coordinator or not,
 /// runs the signature protocol as either a participant or a coordinator.
 ///
@@ -46,7 +58,7 @@ pub fn sign_v1(
     let threshold = threshold.into();
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
-    let comms = Comms::new();
+    let comms = Comms::with_buffer_capacity(EDDSA_SIGN_V1_MAX_INCOMING_COORDINATOR_ENTRIES);
     let chan = comms.shared_channel();
     let fut = fut_wrapper_v1(
         chan,
@@ -72,7 +84,7 @@ pub fn sign_v2(
 ) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
-    let comms = Comms::new();
+    let comms = Comms::with_buffer_capacity(EDDSA_SIGN_V2_MAX_INCOMING_COORDINATOR_ENTRIES);
     let chan = comms.shared_channel();
     let fut = fut_wrapper_v2(
         chan,
@@ -441,6 +453,14 @@ async fn fut_wrapper_v2(
 
 #[cfg(test)]
 mod test {
+    use super::{
+        EDDSA_SIGN_V1_MAX_INCOMING_COORDINATOR_ENTRIES,
+        EDDSA_SIGN_V1_MAX_INCOMING_PARTICIPANT_ENTRIES,
+        EDDSA_SIGN_V2_MAX_INCOMING_COORDINATOR_ENTRIES,
+        EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES,
+    };
+    use crate::protocol::internal::{make_protocol, Comms};
+    use crate::test_utils::run_protocol;
     use crate::test_utils::{
         assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
         one_coordinator_output, run_keygen, run_refresh, run_reshare, MockCryptoRng,
@@ -459,6 +479,7 @@ mod test {
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, VerifyingKey};
     use rand::seq::SliceRandom as _;
     use rand::{RngCore, SeedableRng};
+    use rstest::rstest;
 
     #[test]
     fn stress_v1() {
@@ -867,6 +888,137 @@ mod test {
 
             // Test public key
             test_public_key(&participants, pub_key, &shares);
+        }
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    #[case(10, 4)]
+    fn test_sign_v1_buffer_entries(#[case] num_participants: u16, #[case] threshold: u16) {
+        let coordinator_expected = EDDSA_SIGN_V1_MAX_INCOMING_COORDINATOR_ENTRIES;
+        let participant_expected = EDDSA_SIGN_V1_MAX_INCOMING_PARTICIPANT_ENTRIES;
+
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let keys = build_key_packages_with_dealer(num_participants, threshold, &mut rng);
+        let coordinator = keys[0].0;
+        let message = b"test message for buffer entries".to_vec();
+
+        let mut comms_refs = Vec::new();
+        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOption>>)> =
+            Vec::new();
+
+        for (p, keygen_output) in &keys {
+            let comms = Comms::with_buffer_capacity(usize::MAX);
+            let comms_ref = comms.clone();
+            let participants_list =
+                ParticipantList::new(&keys.iter().map(|(p, _)| *p).collect::<Vec<_>>()).unwrap();
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let fut = super::fut_wrapper_v1(
+                comms.shared_channel(),
+                participants_list,
+                (threshold as usize).into(),
+                *p,
+                coordinator,
+                keygen_output.clone(),
+                message.clone(),
+                rng_p,
+            );
+            let prot = make_protocol(comms, fut);
+            comms_refs.push((*p, comms_ref));
+            protocols.push((*p, Box::new(prot)));
+        }
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        for (p, comms) in &comms_refs {
+            let expected = if *p == coordinator {
+                coordinator_expected
+            } else {
+                participant_expected
+            };
+            assert_eq!(
+                comms.buffer_len(),
+                expected,
+                "Unexpected buffer entries for participant {p:?} (coordinator={}))",
+                *p == coordinator
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    #[case(10, 4)]
+    fn test_sign_v2_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        let coordinator_expected = EDDSA_SIGN_V2_MAX_INCOMING_COORDINATOR_ENTRIES;
+        let participant_expected = EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES;
+
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let keys = build_key_packages_with_dealer(
+            num_participants.try_into().unwrap(),
+            threshold.try_into().unwrap(),
+            &mut rng,
+        );
+        let coordinator = keys[0].0;
+        let message = b"test message for buffer entries".to_vec();
+        let presig = run_presign(
+            &keys,
+            threshold,
+            num_participants,
+            MockCryptoRng::seed_from_u64(rng.next_u64()),
+        )
+        .unwrap();
+
+        let mut comms_refs = Vec::new();
+        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOption>>)> =
+            Vec::new();
+
+        for (p, keygen_output) in &keys {
+            let comms = Comms::with_buffer_capacity(usize::MAX);
+            let comms_ref = comms.clone();
+            let participants_list =
+                ParticipantList::new(&keys.iter().map(|(p, _)| *p).collect::<Vec<_>>()).unwrap();
+            let presign_output = presig
+                .iter()
+                .find(|(pp, _)| pp == p)
+                .map(|(_, output)| output.clone())
+                .unwrap();
+            let fut = super::fut_wrapper_v2(
+                comms.shared_channel(),
+                participants_list,
+                threshold.into(),
+                *p,
+                coordinator,
+                keygen_output.clone(),
+                presign_output,
+                message.clone(),
+            );
+            let prot = make_protocol(comms, fut);
+            comms_refs.push((*p, comms_ref));
+            protocols.push((*p, Box::new(prot)));
+        }
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        for (p, comms) in &comms_refs {
+            let expected = if *p == coordinator {
+                coordinator_expected
+            } else {
+                participant_expected
+            };
+            assert_eq!(
+                comms.buffer_len(),
+                expected,
+                "Unexpected buffer entries for participant {p:?} (coordinator={})",
+                *p == coordinator
+            );
         }
     }
 

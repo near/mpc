@@ -707,6 +707,43 @@ fn validate_triple_inputs(
     Ok((participants, threshold))
 }
 
+/// Maximum incoming buffer entries for OT-based triple generation.
+///
+/// Returns `131 * N * (P - 1) + 7` where P = `num_participants` and
+/// N = `num_triples`. This is a worst-case upper bound; actual usage is
+/// typically ~50% of this value.
+///
+/// The formula comes from two components:
+/// - The main protocol contributes 7 waitpoints, constant regardless of N
+///   (all N triples are batched within the same messages).
+/// - The multiplication sub-protocol runs once per (peer, triple) pair. Each
+///   pair's sender/receiver role is determined by a hash comparison
+///   (`hash(&(i, me))` vs `hash(&(i, p))`). The sender side creates 5 buffer
+///   entries; the receiver side creates 131 (128 from batch random OT + 3 from
+///   OT extension and MTA). The bound assumes the worst case: all-receiver.
+///
+/// For N=1 the bound is exact (the max-buffered participant happens to be
+/// receiver for all peers). For N>1 it is conservative because hash-based role
+/// assignment makes it statistically unlikely for one participant to be receiver
+/// for all N*(P-1) pairs.
+///
+/// Threshold does not affect the count.
+///
+/// Returns an error if `num_participants` is 0 or if the result overflows.
+pub fn triple_generation_max_incoming_buffer_entries(
+    num_participants: usize,
+    num_triples: usize,
+) -> Result<usize, InitializationError> {
+    let peers = num_participants
+        .checked_sub(1)
+        .ok_or_else(|| InitializationError::BadParameters("num_participants must be > 0".into()))?;
+    131usize
+        .checked_mul(num_triples)
+        .and_then(|v| v.checked_mul(peers))
+        .and_then(|v| v.checked_add(7))
+        .ok_or_else(|| InitializationError::BadParameters("buffer size overflow".into()))
+}
+
 /// Generate a triple through a multi-party protocol.
 ///
 /// This requires a setup phase to have been conducted with these parties
@@ -721,7 +758,10 @@ pub fn generate_triple(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(triple_generation_max_incoming_buffer_entries(
+        participants.len(),
+        1,
+    )?);
     let fut = do_generation(ctx.clone(), participants, me, threshold, rng);
     Ok(make_protocol(ctx, fut))
 }
@@ -734,14 +774,19 @@ pub fn generate_triple_many<const N: usize>(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(triple_generation_max_incoming_buffer_entries(
+        participants.len(),
+        N,
+    )?);
     let fut = do_generation_many::<N>(ctx.clone(), participants, me, threshold, rng);
     Ok(make_protocol(ctx, fut))
 }
 
 #[cfg(test)]
 mod test {
+    use crate::protocol::internal::Comms;
     use rand::{RngCore, SeedableRng};
+    use rstest::rstest;
 
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
@@ -750,7 +795,10 @@ mod test {
         test_utils::{generate_participants, run_protocol, MockCryptoRng},
     };
 
-    use super::{generate_triple_many, TripleGenerationOutput, TripleGenerationOutputMany, C};
+    use super::{
+        generate_triple_many, triple_generation_max_incoming_buffer_entries,
+        TripleGenerationOutput, TripleGenerationOutputMany, C,
+    };
 
     #[test]
     fn test_triple_generation() {
@@ -858,5 +906,91 @@ mod test {
         assert_eq!(a * b, c);
 
         insta::assert_json_snapshot!(result);
+    }
+
+    // The formula `131*N*(P-1) + 7` is exact for N=1 (the max-buffered
+    // participant is receiver for all peers). For N>1 it is a conservative
+    // upper bound because hash-based role assignment makes it unlikely for one
+    // participant to be receiver for all N*(P-1) pairs.
+    fn run_and_check_buffer<const N: usize>(num_participants: usize, threshold: usize) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(num_participants);
+
+        let mut comms_refs = Vec::new();
+        let mut protocols: Vec<(
+            Participant,
+            Box<dyn Protocol<Output = TripleGenerationOutputMany>>,
+        )> = Vec::new();
+
+        for &p in &participants {
+            let comms = Comms::with_buffer_capacity(usize::MAX);
+            let comms_ref = comms.clone();
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let participant_list = ParticipantList::new(&participants).unwrap();
+            let fut = super::do_generation_many::<N>(
+                comms.clone(),
+                participant_list,
+                p,
+                threshold.into(),
+                rng_p,
+            );
+            let prot = crate::protocol::internal::make_protocol(comms, fut);
+            comms_refs.push((p, comms_ref));
+            protocols.push((p, Box::new(prot)));
+        }
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        let capacity = triple_generation_max_incoming_buffer_entries(num_participants, N).unwrap();
+        let max_entries = comms_refs
+            .iter()
+            .map(|(_, comms)| comms.buffer_len())
+            .max()
+            .unwrap();
+        assert!(
+            max_entries <= capacity,
+            "Buffer entries ({max_entries}) exceed capacity ({capacity}) \
+             for P={num_participants} N={N}"
+        );
+    }
+
+    /// Dispatches a runtime `num_triples` to a const-generic `run_and_check_buffer::<N>`.
+    macro_rules! dispatch_n {
+        ($n:expr, $p:expr, $t:expr, [$($val:literal),+]) => {
+            match $n {
+                $($val => run_and_check_buffer::<$val>($p, $t),)+
+                _ => panic!("unsupported N={}", $n),
+            }
+        };
+    }
+
+    #[rstest]
+    // N=1: formula is exact
+    #[case(2, 2, 1)]
+    #[case(3, 2, 1)]
+    #[case(4, 3, 1)]
+    #[case(5, 3, 1)]
+    #[case(7, 4, 1)]
+    // N>1: formula is a conservative upper bound
+    #[case(2, 2, 2)]
+    #[case(4, 3, 4)]
+    #[case(5, 3, 8)]
+    #[case(6, 4, 16)]
+    // Current node parameters: participants=9, threshold=6, batch triples=64
+    #[case(9, 6, 64)]
+    fn test_triple_generation_max_incoming_buffer_entries(
+        #[case] num_participants: usize,
+        #[case] threshold: usize,
+        #[case] num_triples: usize,
+    ) {
+        dispatch_n!(
+            num_triples,
+            num_participants,
+            threshold,
+            [1, 2, 4, 8, 16, 64]
+        );
     }
 }

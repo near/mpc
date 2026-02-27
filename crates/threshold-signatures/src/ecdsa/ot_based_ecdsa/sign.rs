@@ -14,6 +14,12 @@ use crate::{
     },
 };
 
+/// Maximum incoming buffer entries for the coordinator in the OT-based ECDSA sign protocol.
+pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 1;
+/// Maximum incoming buffer entries for non-coordinator participants in the OT-based ECDSA sign protocol.
+#[cfg(test)]
+pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
+
 /// The signature protocol, allowing us to use a presignature to sign a message.
 ///
 /// **WARNING** You must absolutely hash an actual message before passing it to
@@ -62,7 +68,7 @@ pub fn sign(
         });
     }
 
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
     let fut = fut_wrapper(
         ctx.shared_channel(),
         participants,
@@ -184,7 +190,12 @@ async fn fut_wrapper(
 
 #[cfg(test)]
 mod test {
-    use super::x_coordinate;
+    use super::{
+        x_coordinate, OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+        OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+    };
+    use crate::protocol::internal::{make_protocol, Comms};
+    use crate::test_utils::{run_protocol, GenProtocol};
     use crate::{
         ecdsa::{
             ot_based_ecdsa::{
@@ -197,6 +208,7 @@ mod test {
     };
     use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, ProjectivePoint, PublicKey};
     use rand::SeedableRng;
+    use rstest::rstest;
 
     #[test]
     fn test_sign_without_rerandomization() {
@@ -291,5 +303,78 @@ mod test {
             .unwrap();
 
         insta::assert_json_snapshot!(signature);
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    #[case(10, 4)]
+    fn test_sign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        let coordinator_expected = OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES;
+        let participant_expected = OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES;
+
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let degree = threshold.checked_sub(1).unwrap();
+        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
+        let public_key = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
+        let g = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
+        let k = g.eval_at_zero().unwrap().0;
+        let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
+        let sigma = k * f.eval_at_zero().unwrap().0;
+        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut rng).unwrap();
+
+        let participants = crate::test_utils::generate_participants(num_participants);
+        let coordinator = participants[0];
+        let msg_scalar = crate::crypto::hash::test::scalar_hash_secp256k1(b"test msg");
+
+        let mut comms_refs = Vec::new();
+        let mut protocols: GenProtocol<crate::ecdsa::SignatureOption> = Vec::new();
+
+        for &p in &participants {
+            let presignature = crate::ecdsa::ot_based_ecdsa::PresignOutput {
+                big_r,
+                k: g.eval_at_participant(p).unwrap().0,
+                sigma: h.eval_at_participant(p).unwrap().0,
+            };
+            let rerandomized =
+                crate::ecdsa::ot_based_ecdsa::RerandomizedPresignOutput::new_without_rerandomization(
+                    &presignature,
+                );
+            let comms = Comms::with_buffer_capacity(usize::MAX);
+            let comms_ref = comms.clone();
+            let participant_list =
+                crate::participants::ParticipantList::new(&participants).unwrap();
+            let fut = super::fut_wrapper(
+                comms.shared_channel(),
+                participant_list,
+                coordinator,
+                p,
+                public_key.to_affine(),
+                rerandomized,
+                msg_scalar,
+            );
+            let prot = make_protocol(comms, fut);
+            comms_refs.push((p, comms_ref));
+            protocols.push((p, Box::new(prot)));
+        }
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        for (p, comms) in &comms_refs {
+            let expected = if *p == coordinator {
+                coordinator_expected
+            } else {
+                participant_expected
+            };
+            assert_eq!(
+                comms.buffer_len(),
+                expected,
+                "Unexpected buffer entries for participant {p:?} (coordinator={})",
+                *p == coordinator
+            );
+        }
     }
 }

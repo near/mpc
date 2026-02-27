@@ -20,6 +20,9 @@ use subtle::ConstantTimeEq;
 
 type C = Secp256K1Sha256;
 
+/// Maximum incoming buffer entries for the robust ECDSA presign protocol.
+pub(crate) const ROBUST_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 3;
+
 /// The presignature protocol.
 ///
 /// This is the first phase of performing a signature, in which we perform
@@ -78,7 +81,7 @@ pub fn presign(
         ));
     }
 
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(ROBUST_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
     let fut = do_presign(ctx.shared_channel(), participants, me, args, rng);
     Ok(make_protocol(ctx, fut))
 }
@@ -403,6 +406,7 @@ mod test {
 
     use crate::ecdsa::KeygenOutput;
     use crate::test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng};
+    use rstest::rstest;
 
     #[test]
     fn test_presign() {
@@ -448,5 +452,63 @@ mod test {
         assert!(result.windows(2).all(|w| w[0].1.big_r == w[1].1.big_r));
 
         insta::assert_json_snapshot!(result);
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    fn test_presign_buffer_entries(#[case] max_malicious: usize) {
+        let expected = ROBUST_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES;
+
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let num_participants = 2 * max_malicious + 1;
+        let participants = generate_participants(num_participants);
+        let f = Polynomial::generate_polynomial(None, max_malicious, &mut rng).unwrap();
+        let big_x = k256::ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
+
+        let mut comms_refs = Vec::new();
+        let mut protocols: GenProtocol<PresignOutput> = Vec::new();
+
+        for p in &participants {
+            let private_share = f.eval_at_participant(*p).unwrap();
+            let verifying_key = frost_secp256k1::VerifyingKey::new(big_x);
+            let keygen_out = crate::ecdsa::KeygenOutput {
+                private_share: SigningShare::new(private_share.0),
+                public_key: verifying_key,
+            };
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+
+            let comms = Comms::with_buffer_capacity(usize::MAX);
+            let comms_ref = comms.clone();
+            let participant_list =
+                crate::participants::ParticipantList::new(&participants).unwrap();
+            let fut = do_presign(
+                comms.shared_channel(),
+                participant_list,
+                *p,
+                PresignArguments {
+                    keygen_out,
+                    max_malicious: max_malicious.into(),
+                },
+                rng_p,
+            );
+            let prot = make_protocol(comms, fut);
+            comms_refs.push((*p, comms_ref));
+            protocols.push((*p, Box::new(prot)));
+        }
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        for (p, comms) in &comms_refs {
+            assert_eq!(
+                comms.buffer_len(),
+                expected,
+                "Unexpected buffer entries for participant {p:?}"
+            );
+        }
     }
 }

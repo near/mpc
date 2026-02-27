@@ -10,6 +10,9 @@ use crate::protocol::{
 
 type Secp256 = Secp256K1Sha256;
 
+/// Maximum incoming buffer entries for the OT-based ECDSA presign protocol.
+pub(crate) const OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 2;
+
 /// The presignature protocol.
 ///
 /// This is the first phase of performing a signature, in which we perform
@@ -56,7 +59,7 @@ pub fn presign(
         });
     }
 
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
     let fut = do_presign(ctx.shared_channel(), participants, me, args);
     Ok(make_protocol(ctx, fut))
 }
@@ -197,6 +200,7 @@ mod test {
         VerifyingKey,
     };
     use rand_core::SeedableRng;
+    use rstest::rstest;
     use std::collections::BTreeMap;
 
     #[test]
@@ -266,5 +270,79 @@ mod test {
         assert_eq!(sigma, k * f.eval_at_zero().unwrap().0);
 
         insta::assert_json_snapshot!(result);
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(4, 3)]
+    #[case(5, 3)]
+    fn test_presign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        let expected = OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES;
+
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(num_participants);
+        let degree = threshold.checked_sub(1).unwrap();
+        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
+        let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
+
+        let (triple0_pub, triple0_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
+            &mut rng,
+            &participants,
+            threshold.into(),
+        )
+        .unwrap();
+        let (triple1_pub, triple1_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
+            &mut rng,
+            &participants,
+            threshold.into(),
+        )
+        .unwrap();
+
+        let mut comms_refs = Vec::new();
+        let mut protocols: GenProtocol<PresignOutput> = Vec::new();
+
+        for ((p, triple0), triple1) in participants
+            .iter()
+            .zip(triple0_shares.into_iter())
+            .zip(triple1_shares.into_iter())
+        {
+            let private_share = f.eval_at_participant(*p).unwrap().0;
+            let verifying_key = frost_secp256k1::VerifyingKey::new(big_x);
+            let keygen_out = crate::ecdsa::KeygenOutput {
+                private_share: frost_secp256k1::keys::SigningShare::new(private_share),
+                public_key: verifying_key,
+            };
+
+            let comms = Comms::with_buffer_capacity(usize::MAX);
+            let comms_ref = comms.clone();
+            let participant_list = ParticipantList::new(&participants).unwrap();
+            let fut = do_presign(
+                comms.shared_channel(),
+                participant_list,
+                *p,
+                PresignArguments {
+                    triple0: (triple0, triple0_pub.clone()),
+                    triple1: (triple1, triple1_pub.clone()),
+                    keygen_out,
+                    threshold: threshold.into(),
+                },
+            );
+            let prot = make_protocol(comms, fut);
+            comms_refs.push((*p, comms_ref));
+            protocols.push((*p, Box::new(prot)));
+        }
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        for (p, comms) in &comms_refs {
+            assert_eq!(
+                comms.buffer_len(),
+                expected,
+                "Unexpected buffer entries for participant {p:?}"
+            );
+        }
     }
 }
