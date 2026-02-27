@@ -189,14 +189,4 @@ echo "==> Third-party licenses updated."
 
 # --- Commit and push release changes ---
 
-echo "==> Committing release changes..."
-git add -A
-git commit -m "Release v${VERSION}"
-git push
-
-echo "==> Release v${VERSION} committed and pushed."
-
-# --- Switch back to main ---
-
-git checkout main
-echo "==> Back on main."
+echo "==> Please commit manually the release changes after verifying correctness."
