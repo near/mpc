@@ -93,7 +93,7 @@ fn parse_finality_status(
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StarknetExtractor {
     BlockHash,
-    Log { log_index: u64 },
+    Log { log_index: usize },
 }
 
 impl StarknetExtractor {
@@ -108,7 +108,7 @@ impl StarknetExtractor {
             StarknetExtractor::Log { log_index } => {
                 let event = rpc_response
                     .events
-                    .get(*log_index as usize)
+                    .get(*log_index)
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
                 Ok(StarknetExtractedValue::Log(StarknetLog {
                     block_hash: StarknetFelt(*rpc_response.block_hash.as_fixed_bytes()),

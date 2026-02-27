@@ -139,7 +139,11 @@ impl TryFrom<AbstractExtractor> for dtos::EvmExtractor {
         match value {
             AbstractExtractor::BlockHash => Ok(dtos::EvmExtractor::BlockHash),
             AbstractExtractor::Log { log_index } => Ok(dtos::EvmExtractor::Log {
-                log_index: log_index as u64,
+                log_index: u64::try_from(log_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "EvmExtractor::Log log_index exceeds u64",
+                    }
+                })?,
             }),
         }
     }
@@ -226,11 +230,18 @@ impl TryFrom<dtos::StarknetFinality> for StarknetFinality {
     }
 }
 
-impl From<StarknetExtractor> for dtos::StarknetExtractor {
-    fn from(value: StarknetExtractor) -> Self {
+impl TryFrom<StarknetExtractor> for dtos::StarknetExtractor {
+    type Error = ConversionError;
+    fn try_from(value: StarknetExtractor) -> Result<Self, Self::Error> {
         match value {
-            StarknetExtractor::BlockHash => dtos::StarknetExtractor::BlockHash,
-            StarknetExtractor::Log { log_index } => dtos::StarknetExtractor::Log { log_index },
+            StarknetExtractor::BlockHash => Ok(dtos::StarknetExtractor::BlockHash),
+            StarknetExtractor::Log { log_index } => Ok(dtos::StarknetExtractor::Log {
+                log_index: u64::try_from(log_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "StarknetExtractor::Log log_index exceeds u64",
+                    }
+                })?,
+            }),
         }
     }
 }
@@ -240,7 +251,13 @@ impl TryFrom<dtos::StarknetExtractor> for StarknetExtractor {
     fn try_from(value: dtos::StarknetExtractor) -> Result<Self, Self::Error> {
         match value {
             dtos::StarknetExtractor::BlockHash => Ok(StarknetExtractor::BlockHash),
-            dtos::StarknetExtractor::Log { log_index } => Ok(StarknetExtractor::Log { log_index }),
+            dtos::StarknetExtractor::Log { log_index } => Ok(StarknetExtractor::Log {
+                log_index: usize::try_from(log_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "StarknetExtractor::Log log_index exceeds platform usize",
+                    }
+                })?,
+            }),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "StarknetExtractor",
             }),
@@ -434,7 +451,7 @@ mod tests {
     #[test]
     fn starknet_extractor_roundtrip() {
         let inspector = StarknetExtractor::BlockHash;
-        let contract = dtos::StarknetExtractor::from(inspector.clone());
+        let contract = dtos::StarknetExtractor::try_from(inspector.clone()).unwrap();
         let back = StarknetExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
