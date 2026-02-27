@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+borsh = { workspace = true }
 bounded-collections = { workspace = true }
 contract-interface = { workspace = true }
 derive_more = { workspace = true }
