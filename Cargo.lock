@@ -987,6 +987,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "attestation-cli"
+version = "3.5.1"
+dependencies = [
+ "anyhow",
+ "attestation",
+ "bs58 0.5.1",
+ "clap",
+ "ed25519-dalek",
+ "hex",
+ "include-measurements",
+ "mpc-attestation",
+ "mpc-primitives",
+ "node-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "test-utils",
+ "tokio",
+]
+
+[[package]]
 name = "attohttpc"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
