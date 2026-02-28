@@ -1782,6 +1782,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ckd-example-contract"
+version = "3.2.0"
+dependencies = [
+ "attestation",
+ "contract-interface",
+ "include-measurements",
+ "near-sdk",
+ "serde_json",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
