@@ -5488,6 +5488,7 @@ dependencies = [
  "http 1.4.0",
  "humantime",
  "hyper 0.14.32",
+ "insta",
  "itertools 0.14.0",
  "k256",
  "lru 0.16.3",

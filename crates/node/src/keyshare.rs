@@ -16,12 +16,23 @@ use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
 use contract_interface::types as dtos;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {
     Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
     Ed25519(threshold_signatures::frost::eddsa::KeygenOutput),
     Bls12381(threshold_signatures::confidential_key_derivation::KeygenOutput),
     V2Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
+}
+
+impl std::fmt::Debug for KeyshareData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyshareData::Secp256k1(_) => write!(f, "Secp256k1(<redacted>)"),
+            KeyshareData::Ed25519(_) => write!(f, "Ed25519(<redacted>)"),
+            KeyshareData::Bls12381(_) => write!(f, "Bls12381(<redacted>)"),
+            KeyshareData::V2Secp256k1(_) => write!(f, "V2Secp256k1(<redacted>)"),
+        }
+    }
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
@@ -1185,5 +1196,31 @@ pub mod tests {
             final_key_share_in_temporary_storage,
             key_share_in_temporary_storage
         );
+    }
+
+    #[test]
+    fn keyshare_data__debug_does_not_expose_sensitive_data() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let keyshare = generate_dummy_keyshare(1, 2, 3, &mut rng);
+
+        // When
+        let debug_str = format!("{:?}", keyshare.data);
+
+        // Then
+        insta::assert_snapshot!(debug_str);
+    }
+
+    #[test]
+    fn keyshare__debug_does_not_expose_sensitive_data() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let keyshare = generate_dummy_keyshare(1, 2, 3, &mut rng);
+
+        // When
+        let debug_str = format!("{:?}", keyshare);
+
+        // Then
+        insta::assert_snapshot!(debug_str);
     }
 }
