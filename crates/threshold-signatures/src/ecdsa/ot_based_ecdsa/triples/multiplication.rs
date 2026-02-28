@@ -299,7 +299,7 @@ mod test {
             .unwrap();
         for (p, a_iv, b_iv) in prep {
             let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let ctx = Comms::new();
+            let ctx = Comms::with_buffer_capacity(usize::MAX);
 
             let prot = make_protocol(
                 ctx.clone(),

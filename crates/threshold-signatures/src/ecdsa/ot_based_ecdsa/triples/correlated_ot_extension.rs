@@ -78,8 +78,8 @@ mod test {
     ) -> Result<(BitMatrix, BitMatrix), ProtocolError> {
         let s = Participant::from(0u32);
         let r = Participant::from(1u32);
-        let comms_s = Comms::new();
-        let comms_r = Comms::new();
+        let comms_s = Comms::with_buffer_capacity(usize::MAX);
+        let comms_r = Comms::with_buffer_capacity(usize::MAX);
 
         let sid_s = sid.clone();
         let sid_r = sid;
