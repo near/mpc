@@ -591,6 +591,162 @@ _Note_ - Each MPC node will periodically call the `verify_tee`every 7 days.
 If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.  
 Note - In case the number of remaining participants is less that the threshold. The node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
 
+# CVM Upgrades
+
+In the previous sections, we described how MPC node upgrades are
+performed.\
+The current design allows upgrading the MPC Docker image through
+on-chain voting, while keeping the same sealing key across upgrades.
+
+This works because:
+
+-   The MPC Docker image hash is measured into **RTMR3**.
+-   The sealing key is derived from:
+    -   The Launcher's docker-compose measurements.
+    -   The OS measurements.
+-   The MPC node hash itself is **not** part of the sealing key
+    derivation material.
+
+As a result, MPC node upgrades do **not** change the sealing key, and
+existing encrypted key shares remain accessible after upgrade.
+
+However, there may be a need to upgrade:
+
+-   The **Launcher image**.
+-   The **Operating System (CVM base image)**.
+-   The **Dstack runtime version**.
+
+Unlike MPC node upgrades, these components are part of the measurement
+chain used to derive the sealing key.\
+Changing them will result in a **different sealing key**, meaning
+previously sealed key shares cannot be decrypted.
+
+Therefore, CVM upgrades require a controlled migration process.
+
+## Upgrade Impact Summary
+
+
+| Component        | Expected Frequency | Affects Sealing Key |
+|------------------|-------------------|---------------------|
+| MPC Node Image  | High              | No                  |
+| Launcher Image  | Low               | Yes                 |
+| OS Measurements | Very Low          | Yes                 |
+
+## Governance Changes
+
+To support CVM upgrades, the contract must support governance over:
+
+-   Approved **Launcher image hashes**.
+-   Approved **OS measurement identities** (MRTD, RTMR0--2).
+
+### Launcher Upgrade APIs
+
+Add the following contract methods:
+
+``` rust
+pub fn vote_add_new_launcher_image(
+    &mut self,
+    launcher_hash: Sha256Hash
+) -> Result<(), Error>
+
+pub fn vote_remove_launcher_image(
+    &mut self,
+    launcher_hash: Sha256Hash
+) -> Result<(), Error>
+```
+
+Once the voting threshold is reached:
+
+-   The new Launcher hash is added to the list of approved Launcher
+    images.
+-   The contract accepts attestation quotes containing either the old or
+    new Launcher measurement.
+-   Multiple Launcher versions may temporarily coexist during migration.
+
+### OS Measurement Upgrade
+
+Two approaches are possible:
+
+1.  Add explicit voting APIs to add/remove approved OS measurements
+    (similar to Launcher upgrades).
+2.  Introduce new OS measurements as part of a contract upgrade.
+
+Using explicit voting APIs is recommended, as it keeps OS upgrades
+decoupled from contract deployment.
+
+## CVM Upgrade Flow
+
+Upgrading the Launcher or OS requires deploying a new CVM instance and
+migrating the key shares, since the sealing key will change.
+
+```mermaid
+sequenceDiagram
+    title CVM Upgrade Flow
+
+    participant Participants
+    participant Contract
+    participant Operator
+    participant OldNode
+    participant NewNode
+    participant Migration
+
+    Participants ->> Contract: Vote to approve new Launcher hash and/or OS measurements
+    alt Not enough votes
+        Contract ->> Contract: Increment vote counter
+    else Threshold reached
+        Contract ->> Contract: Add new Launcher/OS measurements to approved list
+        Note over Contract: Both old and new measurements are temporarily accepted
+    end
+
+    Operator ->> NewNode: Deploy new CVM with new Launcher/OS
+    NewNode ->> Contract: Submit remote attestation
+    Contract ->> Contract: Verify attestation matches approved measurements
+    Contract -->> NewNode: Mark node as valid
+
+    Note over Operator: Follow migration flow (see node-migration-guide.md)
+    Operator ->> Migration: Initiate migration from OldNode to NewNode
+    OldNode ->> Migration: Provide encrypted keyshares
+    Migration ->> NewNode: Restore keyshares
+    NewNode -->> Operator: Migration complete
+
+    Note over OldNode: Old node is deactivated
+
+    Participants ->> Contract: Vote to remove old measurements
+    alt Not enough votes
+        Contract ->> Contract: Increment vote counter
+    else Threshold reached
+        Contract ->> Contract: Remove old measurements
+        Note over Contract: Only new measurements accepted
+    end
+```
+
+1.  **Governance Approval**\
+    Participants vote to approve the new Launcher image hash and/or new
+    OS measurements.\
+    After the voting threshold is reached, the contract temporarily
+    supports both the old and new measurements.
+
+2.  **Deploy New CVM**\
+    The operator deploys a new node using the approved Launcher/OS
+    version and submits remote attestation.\
+    The contract validates the new measurement set.
+
+3.  **Key Share Migration**\
+    The operator follows the migration flow to migrate the key share
+    from the old node to the new node via the migration service.
+
+    For full details see:
+
+    -   Node migration guide: `./docs/node-migration-guide.md`
+    -   Migration service design: `./docs/migration-service.md`
+
+4.  **Remove Old Measurements**\
+    After all nodes have been migrated, participants vote to remove the
+    old Launcher and/or OS measurements from the approved list.
+
+This completes the CVM upgrade cycle.
+
+
 # Threat Model
 
 This section outlines the threat model and key security considerations behind the solution design.
