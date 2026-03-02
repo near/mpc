@@ -24,8 +24,8 @@ All TEE services run inside a [Dstack][dstack] CVM on Intel TDX hardware. They s
 
 [dstack]: https://github.com/Dstack-TEE/dstack
 [chain-indexer]: indexer-design.md
-[tee-authority]: https://github.com/near/mpc/tree/main/crates/tee-authority
-[mpc-attestation]: https://github.com/near/mpc/blob/main/crates/mpc-attestation/src/attestation.rs
+[tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
+[mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
 [contract-state-subscriber]: indexer-design.md#contract-state-subscriber
 [transaction-sender]: indexer-design.md#transaction-sender
 
@@ -38,40 +38,39 @@ title: TEE Service Dependencies
 flowchart TB
 
 subgraph SERVICES["Services"]
-    direction TB
-    MPC_NODE["MPC Node<br/>(existing)"]
-    BACKUP["Backup Service<br/>(planned)"]
-    HOT_APP["Archive Signer<br/>(new)"]
+    direction LR
+    MPC_NODE["MPC Node"]
+    BACKUP["Backup Service"]
+    HOT_APP["Archive Signer"]
 end
+
+MPC_CTX[
+<b>MPC Context</b><br/><br/>
+<b>Signature Requests</b>
+<b>Key Events</b>
+<b>Block Event Subscriber</b>
+]
+
+TEE_CTX[
+<b>TEE Context</b><br/><br/>
+<b>tee-authority</b>
+<b>mpc-attestation</b>
+]
 
 subgraph CHAIN["Chain Indexer"]
-    direction TB
+    direction LR
     CSUB["Contract State Subscriber"]
     TSEND["Transaction Sender"]
-    BEVENTS["Block Event Subscriber"]
 end
 
-subgraph SHARED["Shared Crates"]
-    TEE_CTX["TEE Context"]
-    TEE_AUTH["tee-authority"]
-    ATTEST["mpc-attestation"]
-end
-
-MPC_NODE --> CSUB
-MPC_NODE --> TSEND
-MPC_NODE --> BEVENTS
-MPC_NODE --> TEE_CTX
-
-BACKUP --> CSUB
-BACKUP --> TSEND
+MPC_NODE --> MPC_CTX
 BACKUP --> TEE_CTX
-
-HOT_APP --> CSUB
-HOT_APP --> TSEND
 HOT_APP --> TEE_CTX
 
-TEE_CTX --> TEE_AUTH
-TEE_CTX --> ATTEST
+MPC_CTX --> TEE_CTX
+MPC_CTX --> CHAIN
+
+TEE_CTX --> CHAIN
 ```
 
 ## CVM Boot Sequence (Launcher Pattern)
@@ -117,12 +116,14 @@ Individual services may add steps between "Start application container" and the 
 
 ## TEE Context
 
-The TEE Context is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, backup service) use the TEE Context directly.
+The TEE Context is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate, depending on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation], reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, backup service) use the TEE Context directly.
 
 [mpc-context]: indexer-design.md
 
-[remote-attestation]: https://github.com/near/mpc/blob/main/crates/node/src/tee/remote_attestation.rs
-[allowed-hashes-watcher]: https://github.com/near/mpc/blob/main/crates/node/src/tee/allowed_image_hashes_watcher.rs
+[remote-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs
+[allowed-hashes-watcher]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/allowed_image_hashes_watcher.rs#L103
+[periodic-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs#L140
+[monitor-attestation-removal]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs#L187
 
 ### Tasks
 
@@ -137,8 +138,8 @@ flowchart LR
 subgraph TEE_CTX["TEE Context"]
     POLL_HASHES["Poll Allowed Hashes<br/>(ContractStateSubscriber)"]
     POLL_FCP["Poll Foreign Chain Policy<br/>(ContractStateSubscriber)"]
-    ATTEST["Periodic Attestation<br/>(every 7 days)"]
     MONITOR["Monitor Attestation<br/>Removal"]
+    ATTEST["Periodic Attestation<br/>(every 7 days)"]
 end
 
 subgraph CHAIN["Chain Indexer"]
@@ -156,18 +157,22 @@ classDef ctx stroke:#2563eb,stroke-width:2px;
 class TEE_CTX ctx;
 ```
 
-1. **Poll allowed hashes** — Periodically queries the governance contract for `allowed_docker_image_hashes()` and `allowed_launcher_compose_hashes()` via the [Contract State Subscriber][contract-state-subscriber]. Writes updates to disk for the Launcher to use on next boot. (Reference: [`monitor_allowed_image_hashes`][allowed-hashes-watcher])
+1. **Poll allowed hashes** — Periodically queries the governance contract for [`allowed_docker_image_hashes()`][allowed-docker-image-hashes] and [`allowed_launcher_compose_hashes()`][allowed-launcher-compose-hashes] via the [Contract State Subscriber][contract-state-subscriber]. Writes updates to disk for the Launcher to use on next boot. (Reference: [`monitor_allowed_image_hashes`][allowed-hashes-watcher])
 
-2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the governance contract via `submit_participant_info()`. Includes exponential backoff retries. (Reference: [`periodic_attestation_submission`][remote-attestation])
+2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the governance contract via [`submit_participant_info()`][submit-participant-info]. Includes exponential backoff retries. (Reference: [`periodic_attestation_submission`][periodic-attestation])
 
-3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. (Reference: [`monitor_attestation_removal`][remote-attestation])
+3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. (Reference: [`monitor_attestation_removal`][monitor-attestation-removal])
 
-4. **Poll foreign chain policy** — Subscribes to the governance contract's `get_foreign_chain_policy()` view method via the Contract State Subscriber. Provides the active [`ForeignChainPolicy`][foreign-chain-policy-type] to consumers — for the MPC node this feeds [foreign transaction verification][foreign-tx-verification], for the Archive Signer it configures the validation SDK's RPC providers. (Reference: the MPC node currently fetches this [on-demand in the coordinator][coordinator-fcp]; the TEE Context will move it to continuous polling.)
+4. **Poll foreign chain policy** — Subscribes to the governance contract's [`get_foreign_chain_policy()`][get-foreign-chain-policy] view method via the Contract State Subscriber. Provides the active [`ForeignChainPolicy`][foreign-chain-policy-type] to consumers — for the MPC node this feeds [foreign transaction verification][foreign-tx-verification], for the Archive Signer it configures the validation SDK's RPC providers. (Reference: the MPC node currently fetches this [on-demand in the coordinator][coordinator-fcp]; the TEE Context will move it to continuous polling.)
 
 [foreign-tx-verification]: foreign-chain-transactions.md
 
-[foreign-chain-policy-type]: https://github.com/near/mpc/blob/main/crates/contract-interface/src/types/foreign_chain.rs
-[coordinator-fcp]: https://github.com/near/mpc/blob/main/crates/node/src/coordinator.rs
+[foreign-chain-policy-type]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L570
+[coordinator-fcp]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/coordinator.rs#L378
+[allowed-docker-image-hashes]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L1624
+[allowed-launcher-compose-hashes]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L1638
+[submit-participant-info]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L820
+[get-foreign-chain-policy]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L1663
 
 ## Attestation
 
@@ -180,9 +185,9 @@ The [`TeeAuthority`][tee-authority] crate generates attestation quotes. The flow
 3. Upload quote to Phala's collateral endpoint for verification collateral.
 4. Package into an [`Attestation`][attestation-type] with a [`DstackAttestation`][dstack-attestation] `{ quote, collateral, tcb_info }`.
 
-[tcb-info]: https://github.com/near/mpc/blob/main/crates/attestation/src/tcb_info.rs
-[attestation-type]: https://github.com/near/mpc/blob/main/crates/mpc-attestation/src/attestation.rs
-[dstack-attestation]: https://github.com/near/mpc/blob/main/crates/contract-interface/src/types/attestation.rs
+[tcb-info]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/attestation/src/tcb_info.rs#L18
+[attestation-type]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
+[dstack-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/attestation.rs#L102
 
 ### On-Chain Verification
 
@@ -211,12 +216,12 @@ During attestation verification, the contract replays the TDX event log to recon
 
 Each service has its own launcher compose template — the application Docker Compose configuration differs between the MPC node, backup service, and Archive Signer.
 
-[launcher-compose-hash]: https://github.com/near/mpc/blob/main/crates/primitives/src/hash.rs#L121
-[launcher-template]: https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template
+[launcher-compose-hash]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/primitives/src/hash.rs#L121
+[launcher-template]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/assets/launcher_docker_compose.yaml.template
 
 Reference implementation: [`AllowedDockerImageHashes::get_docker_compose_hash`][tee-proposal].
 
-[tee-proposal]: https://github.com/near/mpc/blob/main/crates/contract/src/tee/proposal.rs
+[tee-proposal]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/proposal.rs#L152
 
 ## Application Upgrade
 
@@ -255,9 +260,9 @@ pub struct ForeignChainPolicy {
 }
 ```
 
-[tee-state]: https://github.com/near/mpc/blob/main/crates/contract/src/tee/tee_state.rs
-[foreign-chain]: https://github.com/near/mpc/blob/main/crates/contract-interface/src/types/foreign_chain.rs#L490
-[rpc-provider]: https://github.com/near/mpc/blob/main/crates/contract-interface/src/types/foreign_chain.rs#L540
+[tee-state]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/tee_state.rs#L92
+[foreign-chain]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L541
+[rpc-provider]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L591
 
 ### Common Methods
 

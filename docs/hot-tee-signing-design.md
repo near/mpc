@@ -120,11 +120,13 @@ class RPC ext;
 
 ### Relationship to MPC Network Architecture
 
-The Archive Signer reuses the chain indexer ([Contract State Subscriber, Transaction Sender][indexer-design] — proposed but not yet extracted as standalone crates), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the shared TEE Context crate for the attestation lifecycle (configured to talk to the HOT governance contract). In the MPC node, the [MPC Context][indexer-design] depends on the TEE Context for attestation and adds MPC-specific orchestration (signing jobs, resharing, peer management) on top; the Archive Signer uses the TEE Context directly. Everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
+The Archive Signer reuses the [Chain Indexer][indexer-design] (Contract State Subscriber, Transaction Sender), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the shared TEE Context crate for the attestation lifecycle — configured to talk to the HOT governance contract instead of the MPC signer contract.
+
+In the MPC node, the [MPC Context][indexer-design] sits on top of the TEE Context and adds MPC-specific orchestration (signing jobs, resharing, peer management). The Archive Signer uses the TEE Context directly — everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
 
 [indexer-design]: indexer-design.md
-[tee-authority]: https://github.com/near/mpc/tree/main/crates/tee-authority
-[mpc-attestation]: https://github.com/near/mpc/blob/main/crates/mpc-attestation/src/attestation.rs
+[tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
+[mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
 
 ### Crate Dependencies
 
@@ -135,40 +137,39 @@ title: Archive Signer Dependencies
 flowchart TB
 
 subgraph SERVICES["Services"]
-    direction TB
-    MPC_NODE["MPC Node<br/>(existing)"]
-    BACKUP["Backup Service<br/>(planned)"]
-    HOT_APP["Archive Signer<br/>(new)"]
+    direction LR
+    MPC_NODE["MPC Node"]
+    BACKUP["Backup Service"]
+    HOT_APP["Archive Signer"]
 end
+
+MPC_CTX[
+<b>MPC Context</b><br/><br/>
+<b>Signature Requests</b>
+<b>Key Events</b>
+<b>Block Event Subscriber</b>
+]
+
+TEE_CTX[
+<b>TEE Context</b><br/><br/>
+<b>tee-authority</b>
+<b>mpc-attestation</b>
+]
 
 subgraph CHAIN["Chain Indexer"]
-    direction TB
+    direction LR
     CSUB["Contract State Subscriber"]
     TSEND["Transaction Sender"]
-    BEVENTS["Block Event Subscriber"]
 end
 
-subgraph SHARED["Shared Crates"]
-    TEE_CTX["TEE Context"]
-    TEE_AUTH["tee-authority"]
-    ATTEST["mpc-attestation"]
-end
-
-MPC_NODE --> CSUB
-MPC_NODE --> TSEND
-MPC_NODE --> BEVENTS
-MPC_NODE --> TEE_CTX
-
-BACKUP --> CSUB
-BACKUP --> TSEND
+MPC_NODE --> MPC_CTX
 BACKUP --> TEE_CTX
-
-HOT_APP --> CSUB
-HOT_APP --> TSEND
 HOT_APP --> TEE_CTX
 
-TEE_CTX --> TEE_AUTH
-TEE_CTX --> ATTEST
+MPC_CTX --> TEE_CTX
+MPC_CTX --> CHAIN
+
+TEE_CTX --> CHAIN
 
 classDef new stroke:#d97706,stroke-width:3px;
 class HOT_APP new;
@@ -178,11 +179,12 @@ class HOT_APP new;
 
 The Archive Signer embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used exclusively for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes, launcher compose hashes, and foreign chain policy, and submitting TEE attestation transactions. Running `neard` inside the CVM eliminates external RPC trust assumptions — the app verifies chain state directly, with no external trust assumptions beyond the NEAR network itself.
 
-The signing flow itself is entirely off-chain — HTTP requests in, signatures out. Request authorization uses `hot-validation-core`'s own RPC clients (not the embedded neard) to query wallet contracts on NEAR and other chains.
+The signing flow itself is entirely off-chain — HTTP requests in, signatures out. Request authorization uses [`hot-validation-core`][hot-validation-core]'s own RPC clients (not the embedded neard) to query wallet contracts on NEAR and other chains.
 
 The Chain Indexer's `ContractStateSubscriber` and [`TransactionSender`][tx-sender] traits (proposed in the [indexer design][indexer-design]) provide the interface. The TEE Context sits on top of the Chain Indexer, and in the MPC node the MPC Context sits on top of the TEE Context.
 
-[tx-sender]: https://github.com/near/mpc/blob/main/crates/node/src/indexer/tx_sender.rs
+[tx-sender]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/indexer/tx_sender.rs#L22
+[hot-validation-core]: https://github.com/hot-dao/hot-validation-sdk/tree/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core
 
 ## Key Import Process
 
@@ -239,7 +241,7 @@ An attacker who controls the host could substitute a fake CVM with their own enc
 
 ### Phase 3: Reconstruction (Inside TEE)
 
-The TEE application decrypts the keyshares using its ephemeral private key and reconstructs the full private keys (TODO: how? apparently via Lagrange interpolation).
+The TEE application decrypts the keyshares using its ephemeral private key and reconstructs the full private keys.
 
 ### Phase 4: Verification
 
@@ -259,7 +261,7 @@ The TEE Context is described in the [TEE Lifecycle][tee-context] doc. It is a sh
 
 ## HTTP Signing API
 
-The HTTP API is designed to be compatible with HOT's existing interface so their backend can switch to the TEE app without client-side changes.
+The HTTP API is designed to be compatible with HOT's existing interface so their backend can switch to the Archive Signer without client-side changes.
 
 ### Request and Response Types
 
@@ -303,7 +305,7 @@ pub enum SignResponse {
 }
 ```
 
-**Note on response format compatibility:** The current HOT MPC network returns `OffchainSignatureResponse` (defined in [`hot-mpc/node/src/hot_protocol/types.rs:121-133`][offchain-sig-response]). For **ECDSA**, HOT already uses `k256` types (`k256::AffinePoint`, `k256::Scalar`) — identical to our `SignResponse`, so JSON serialization is compatible out of the box. For **EdDSA**, HOT uses cait_sith's `frost_ed25519::Signature` and `frost_ed25519::VerifyingKey`, while the TEE app uses `ed25519_dalek::Signature` and `ed25519_dalek::VerifyingKey`. These must serialize identically in JSON. If they do not, we may need to use cait_sith's types in the EdDSA response or write custom serialization. This must be validated during implementation.
+**Note on response format compatibility:** The current HOT MPC network returns `OffchainSignatureResponse` (defined in [`hot-mpc/node/src/hot_protocol/types.rs:121-133`][offchain-sig-response]). For **ECDSA**, HOT already uses `k256` types (`k256::AffinePoint`, `k256::Scalar`) — identical to our `SignResponse`, so JSON serialization is compatible out of the box. For **EdDSA**, HOT uses cait_sith's `frost_ed25519::Signature` and `frost_ed25519::VerifyingKey`, while the Archive Signer uses `ed25519_dalek::Signature` and `ed25519_dalek::VerifyingKey`. These must serialize identically in JSON. If they do not, we may need to use cait_sith's types in the EdDSA response or write custom serialization. This must be validated during implementation.
 
 [offchain-sig-response]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/node/src/hot_protocol/types.rs
 
@@ -317,16 +319,16 @@ pub enum SignResponse {
 
 ### Request Authorization
 
-The TEE app reuses HOT's existing authorization model via [`hot-validation-sdk`][hot-validation-sdk] (`hot-validation-core` and `hot-validation-primitives` crates). Every sign request includes a caller-constructed `ProofModel`, and the TEE app verifies it before signing. The entire signing flow (request → validation → signature → response) is **off-chain** — no on-chain transactions are involved.
+The Archive Signer reuses HOT's existing authorization model via [`hot-validation-sdk`][hot-validation-sdk] (`hot-validation-core` and `hot-validation-primitives` crates). Every sign request includes a caller-constructed `ProofModel`, and the Archive Signer verifies it before signing. The entire signing flow (request → validation → signature → response) is **off-chain** — no on-chain transactions are involved.
 
 1. **Caller** (HOT's backend) sends a `SignRequest` containing `uid`, `message`, `key_type`, and `proof: ProofModel`.
-2. **TEE app** derives `wallet_id = SHA256(uid)` and calls [`Validation::verify(wallet_id, message, proof)`][validation-verify].
+2. **Archive Signer** derives `wallet_id = SHA256(uid)` and calls [`Validation::verify(wallet_id, message, proof)`][validation-verify].
 3. **Validation SDK** makes RPC calls to look up the user's wallet contract on NEAR (`mpc.hot.tg`) and calls `hot_verify()` on it, passing the proof.
 4. The wallet contract either returns a **bool** directly, or returns a `HotVerifyAuthCall` — parameters for a **cross-chain auth call** (target chain, contract address, method, input data).
-5. If a cross-chain auth call is needed, the SDK makes an RPC call to the target chain (EVM, Cosmos, Stellar, TON, Solana) using chain-specific verifiers with threshold voting (multiple RPCs must agree). All cross-chain orchestration is internal to `hot-validation-core`.
-6. If verification passes, the TEE app proceeds to sign. If not, it returns `401 UNAUTHORIZED`.
+5. If a cross-chain auth call is needed, the SDK makes an RPC call to the target chain (EVM, Cosmos, Stellar, TON, Solana) using chain-specific verifiers with threshold voting (multiple RPCs must agree). All cross-chain orchestration is internal to [`hot-validation-core`][hot-validation-core].
+6. If verification passes, the Archive Signer proceeds to sign. If not, it returns `401 UNAUTHORIZED`.
 
-This is the same authorization flow the HOT MPC network uses today. The key difference: in the MPC network, **every node** independently validates each request. In the TEE app, there is only one node, so validation happens once.
+This is the same authorization flow the HOT MPC network uses today. The key difference: in the MPC network, **every node** independently validates each request. In the Archive Signer, there is only one node, so validation happens once.
 
 `ProofModel` is constructed off-chain by the caller:
 
@@ -340,7 +342,7 @@ pub struct ProofModel {
 **Cross-chain RPC configuration:** The `Validation` struct requires RPC endpoints for every chain HOT wallets may reference in auth calls. Which providers are trusted for each chain is governed on-chain via the HOT governance contract using the same [`ForeignChainPolicy`][foreign-chain-policy] mechanism as the MPC signer contract. Governors vote on a `ForeignChainPolicy` (chains → RPC providers); the Archive Signer reads the active policy from the contract via the TEE Context's [foreign chain policy polling task][tee-context]. The validation SDK makes HTTP RPC calls to the governor-approved providers for all chain calls; the embedded neard is **not** used for validation — it is strictly for TEE governance. The `hot-validation-sdk` currently accepts RPC configuration only at initialization (in the existing HOT MPC network, providers are set per-deployment via local config); it will need to be extended to support dynamic provider updates from the governance contract.
 
 [hot-validation-sdk]: https://github.com/hot-dao/hot-validation-sdk
-[foreign-chain-policy]: https://github.com/near/mpc/blob/main/crates/contract-interface/src/types/foreign_chain.rs
+[foreign-chain-policy]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L570
 
 ### Signing Endpoint
 
@@ -376,9 +378,9 @@ async fn handle_sign(
 
 ### Overview
 
-A dedicated NEAR smart contract manages TEE governance for the HOT signing application. This is **separate** from the MPC signer contract (`v1.signer`). The contract is structurally similar to the TEE-related subset of the MPC contract (see [`crates/contract/src/tee/`][tee-dir]).
+A dedicated NEAR smart contract manages TEE governance for the Archive Signer. This is **separate** from the MPC signer contract (`v1.signer`). The contract is structurally similar to the TEE-related subset of the MPC contract (see [`crates/contract/src/tee/`][tee-dir]).
 
-[tee-dir]: https://github.com/near/mpc/tree/main/crates/contract/src/tee
+[tee-dir]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee
 
 ### State
 
@@ -401,7 +403,7 @@ pub struct HotTeeContract {
 
 The [`TeeState`][tee-state] struct is reused from the MPC contract:
 
-[tee-state]: https://github.com/near/mpc/blob/main/crates/contract/src/tee/tee_state.rs
+[tee-state]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/tee_state.rs#L92
 
 ```rust
 pub struct TeeState {
@@ -418,8 +420,8 @@ Although the Archive Signer is a single node (not a multi-node network), the vot
 
 Note: the MPC contract's [`vote_new_parameters`][vote-new-params] method does not have a direct equivalent here. In the MPC contract, `vote_new_parameters` changes the **participant set and threshold for the threshold signing protocol** (via [`ThresholdParameters`][threshold-params]), triggering a resharing. The Archive Signer is a single node doing direct signing — there is no threshold protocol, no resharing, and no signing participant set to manage. Instead, the HOT governance contract needs methods for managing its own **governor set** (see below).
 
-[vote-new-params]: https://github.com/near/mpc/blob/main/crates/contract/src/lib.rs#L921
-[threshold-params]: https://github.com/near/mpc/blob/main/crates/contract/src/primitives/thresholds.rs#L33
+[vote-new-params]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L922
+[threshold-params]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/primitives/thresholds.rs#L33
 
 ### Governor Management
 
@@ -524,9 +526,11 @@ Since the Archive Signer is a single node holding the full private key, redundan
 
 Keys are held in memory for signing and persisted on the CVM's encrypted disk for restart resilience. The CVM's encrypted disk (key derived from RTMR measurements) provides safe at-rest storage.
 
-After successful key reconstruction and verification on first boot, the private keys are stored on the CVM's encrypted filesystem. Dstack's Gramine Key Provider derives the encryption key from TDX measurements, so only the same TEE image can decrypt this data.
+After successful key reconstruction and verification on first boot, the private keys are stored on the CVM's encrypted filesystem. [Gramine Key Provider][gramine-key-provider] derives the encryption key from TDX measurements, so only the same TEE image can decrypt this data.
 
 On subsequent boots, the app first attempts to load keys from the encrypted disk. If found and valid, it skips the import flow entirely (the `/import/*` endpoints are never exposed).
+
+[gramine-key-provider]: https://github.com/MoeMahhouk/gramine-sealing-key-provider
 
 ### Recovery via Confidential Key Derivation (CKD)
 
@@ -549,6 +553,8 @@ For additional high availability, a hot standby instance (a second CVM holding t
 1. **EdDSA keyshare export:** The HOT `ExportKeyshareCmd` currently only exports ECDSA shares. It must be extended to also export EdDSA shares. This work is on the HOT codebase side.
 
 2. **Response format byte-level compatibility:** Do `k256::AffinePoint` and `k256::Scalar` serialize to the same JSON as `cait_sith::frost_secp256k1::VerifyingKey` and `cait_sith::ecdsa::sign::FullSignature`? This must be validated. If not, we may need to depend on `cait_sith` types in the response or write adapter serialization.
+
+3. **Dynamic RPC provider updates in validation SDK:** `hot-validation-sdk` currently accepts RPC configuration only at initialization. It needs to be extended to support dynamic updates from the governance contract's `ForeignChainPolicy`, so that governor votes to change trusted RPC providers take effect without restarting the Archive Signer.
 
 ## Related Issues
 
