@@ -61,7 +61,7 @@ Other approaches were considered and rejected:
 
 [threshold-sigs]: https://github.com/near/threshold-signatures
 
-A custom binary was chosen because it is light-weight and easy to reason about, reuses modular TEE attestation and chain indexer components already being developed ([indexer design][indexer-design]), is future-proof (can be reused as a "graveyard" for NEAR's own deprecated domains), and aligns with other ongoing priorities (backup service, [#1891][issue-1891]).
+A custom binary was chosen because it is lightweight and easy to reason about, reuses modular TEE attestation and chain indexer components already being developed ([indexer design][indexer-design]), is future-proof (can be reused as a "graveyard" for NEAR's own deprecated domains), and aligns with other ongoing priorities (backup service, [#1891][issue-1891]).
 
 See also: [#2062][issue-2062], [#2018][issue-2018], [#2021][pr-2021].
 
@@ -243,7 +243,7 @@ The TEE application decrypts the keyshares using its ephemeral private key and r
 
 ### Phase 4: Verification
 
-After reconstruction, the application derives the ECDSA public key from the reconstructed ECDSA private key and the EdDSA public key from the reconstructed EdDSA private key, then compares each against the known HOT wallet root public key for that domain. This detects corrupted keyshares, tampered ciphertext, or shares from different key generation epochs (TODO: Not sure if this makes sense from a cryptography perspective — perhaps this check is redundant?)
+After reconstruction, the application derives the ECDSA public key from the reconstructed ECDSA private key and the EdDSA public key from the reconstructed EdDSA private key, then compares each against the known HOT wallet root public key for that domain. This detects corrupted keyshares, tampered ciphertext, or shares from different key generation epochs.
 
 If verification succeeds, the keys are written to the CVM's encrypted disk for subsequent boots (see [Redundancy & Recovery][redundancy-recovery]).
 
