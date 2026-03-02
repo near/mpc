@@ -5,7 +5,7 @@ use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    analyze_received_sizes, ed25519_prepare_sign, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
+    analyze_received_sizes, ed25519_prepare_sign_v1, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
 };
 use threshold_signatures::{
     frost::eddsa::{sign::sign_v1, SignatureOption},
