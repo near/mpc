@@ -27,18 +27,6 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 [uid]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/uid.rs#L11
 
 
-### Why a Custom Binary
-
-Other approaches were considered and rejected:
-- **Running the existing MPC stack with a single node** — [`threshold-signatures`][threshold-sigs] does not support fewer than 2 shares, and carries unnecessary complexity (P2P networking, resharing, triple/presignature generation, block event indexing).
-- **Running two MPC nodes inside one CVM** — higher maintenance burden and susceptible to the same bugs seen in mainnet/testnet deployments.
-
-[threshold-sigs]: https://github.com/near/threshold-signatures
-
-A custom binary was chosen because it is lightweight and easy to reason about, reuses modular TEE attestation and chain indexer components already being developed ([indexer design][indexer-design]), is future-proof (can be reused as a "graveyard" for NEAR's own deprecated domains), and aligns with other ongoing priorities (backup service, [#1891][issue-1891]).
-
-[issue-1891]: https://github.com/near/mpc/issues/1891
-
 ## Architecture Overview
 
 ### Component Diagram
@@ -538,5 +526,6 @@ For additional high availability, a hot standby instance (a second CVM holding t
 
 [issue-2062]: https://github.com/near/mpc/issues/2062
 [issue-2018]: https://github.com/near/mpc/issues/2018
+[issue-1891]: https://github.com/near/mpc/issues/1891
 [pr-2021]: https://github.com/near/mpc/pull/2021
 [pr-2103]: https://github.com/near/mpc/pull/2103
