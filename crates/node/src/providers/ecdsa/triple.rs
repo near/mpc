@@ -192,7 +192,9 @@ impl EcdsaSignatureProvider {
             ));
         }
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize),
+            threshold: ReconstructionLowerBound::from(
+                self.mpc_config.participants.threshold as usize,
+            ),
             out_triple_id_start: start,
             out_triple_store: self.triple_store.clone(),
         }

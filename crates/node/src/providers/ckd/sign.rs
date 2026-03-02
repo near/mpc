@@ -26,7 +26,8 @@ impl CKDProvider {
     ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
-        let threshold = ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize);
+        let threshold =
+            ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -37,7 +38,10 @@ impl CKDProvider {
 
         let participants = self
             .client
-            .select_random_active_participants_including_me(threshold.value(), &running_participants)
+            .select_random_active_participants_including_me(
+                threshold.value(),
+                &running_participants,
+            )
             .context("Could not choose active participants for a ckd")?;
 
         let channel = self

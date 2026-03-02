@@ -111,9 +111,11 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
-        let key = KeyGenerationComputation { threshold: ReconstructionLowerBound::from(3) }
-            .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
-            .await?;
+        let key = KeyGenerationComputation {
+            threshold: ReconstructionLowerBound::from(3),
+        }
+        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+        .await?;
 
         Ok(key)
     }

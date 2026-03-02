@@ -16,12 +16,12 @@ use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::types::SignatureId;
-use threshold_signatures::ReconstructionLowerBound;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 pub use robust_ecdsa::RobustEcdsaSignatureProvider;
 use std::sync::Arc;
+use threshold_signatures::ReconstructionLowerBound;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 pub trait SignatureProvider {

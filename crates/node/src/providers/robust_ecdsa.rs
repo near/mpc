@@ -147,7 +147,8 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         let number_of_participants = channel.participants().len();
-        let robust_ecdsa_threshold = translate_threshold(threshold.value(), number_of_participants)?;
+        let robust_ecdsa_threshold =
+            translate_threshold(threshold.value(), number_of_participants)?;
         EcdsaSignatureProvider::run_key_generation_client_internal(
             ReconstructionLowerBound::from(robust_ecdsa_threshold.value()),
             channel,
@@ -286,7 +287,9 @@ mod tests {
         for threshold in 5..max_size {
             for number_of_participants in threshold..max_size {
                 let number_of_signers = get_number_of_signers(threshold, number_of_participants);
-                let new_threshold = translate_threshold(threshold, number_of_participants).unwrap().value();
+                let new_threshold = translate_threshold(threshold, number_of_participants)
+                    .unwrap()
+                    .value();
                 assert!(2 * new_threshold < number_of_signers, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
                 assert!(new_threshold >= (threshold - 1) / 2, "The new threshold should not decrease security more than necessary: new_threshold={new_threshold}, threshold={threshold}");
             }

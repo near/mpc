@@ -24,7 +24,8 @@ impl EddsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
 
-        let threshold = ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize);
+        let threshold =
+            ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -35,7 +36,10 @@ impl EddsaSignatureProvider {
 
         let participants = self
             .client
-            .select_random_active_participants_including_me(threshold.value(), &running_participants)
+            .select_random_active_participants_including_me(
+                threshold.value(),
+                &running_participants,
+            )
             .context("Can't choose active participants for a eddsa signature")?;
 
         let channel = self
@@ -91,7 +95,8 @@ impl EddsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let threshold = ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize);
+        let threshold =
+            ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize);
 
         let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
             anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);

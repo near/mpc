@@ -695,7 +695,9 @@ where
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: ReconstructionLowerBound::from(mpc_config.participants.threshold as usize),
+            new_threshold: ReconstructionLowerBound::from(
+                mpc_config.participants.threshold as usize,
+            ),
             old_participants: current_running_state.participants,
         });
 

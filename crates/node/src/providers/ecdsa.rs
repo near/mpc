@@ -249,7 +249,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     &format!("generate presignatures for domain {}", domain_id.0),
                     Self::run_background_presignature_generation(
                         self.client.clone(),
-                        ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize),
+                        ReconstructionLowerBound::from(
+                            self.mpc_config.participants.threshold as usize,
+                        ),
                         self.config.presignature.clone().into(),
                         self.triple_store.clone(),
                         *domain_id,
