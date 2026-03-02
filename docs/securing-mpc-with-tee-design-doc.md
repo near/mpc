@@ -596,7 +596,7 @@ Note - In case the number of remaining participants is less that the threshold. 
 In the previous sections, we described how MPC node upgrades are
 performed.\
 The current design allows upgrading the MPC Docker image through
-on-chain voting, while keeping the same sealing key across upgrades.
+on-chain voting, while keeping the same sealing key derived by the [Gramine Key Provider](#gramine-key-provider) across upgrades.
 
 This works because:
 
