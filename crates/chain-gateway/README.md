@@ -1,3 +1,4 @@
+// todo: fix this readme
 # Chain Gateway
 
 This crate can be used to spawn and intract with a neard node.

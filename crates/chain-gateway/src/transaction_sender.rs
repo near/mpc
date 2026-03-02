@@ -157,3 +157,5 @@ impl TransactionSigner {
         self.signing_key.verifying_key()
     }
 }
+
+// todo: write tests

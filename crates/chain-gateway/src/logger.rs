@@ -2,7 +2,8 @@ use crate::{near_internals_wrapper::ViewClientWrapper, stats::IndexerStats};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-// todo: rename this method?
+// todo: rename this method
+// also, make it private and move into the IndexerStats module
 pub(crate) async fn indexer_logger(
     stats: Arc<Mutex<IndexerStats>>,
     view_client: Arc<ViewClientWrapper>,

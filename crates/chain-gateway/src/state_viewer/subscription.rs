@@ -2,8 +2,8 @@ use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::near_internals_wrapper::{BlockHeight, ViewOutput};
 use async_trait::async_trait;
 use near_account_id::AccountId;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -82,9 +82,7 @@ where
         method_name: &str,
         args: Vec<u8>,
     ) -> Self {
-        let val = viewer
-            .view_raw(&contract_id, method_name, &args)
-            .await;
+        let val = viewer.view_raw(&contract_id, method_name, &args).await;
         let observed_state: Result<ObservedState, ChainGatewayError> = val.map(|val| val.into());
         let (sender, last_observed) = tokio::sync::watch::channel(observed_state.clone());
         let cached: Result<(BlockHeight, Res), ChainGatewayError> =
@@ -240,14 +238,18 @@ mod tests {
 
     fn make_fake_viewer(
         response: Result<ViewOutput, ChainGatewayError>,
-    ) -> (FakeViewer, Arc<RwLock<Result<ViewOutput, ChainGatewayError>>>) {
+    ) -> (
+        FakeViewer,
+        Arc<RwLock<Result<ViewOutput, ChainGatewayError>>>,
+    ) {
         let response = Arc::new(RwLock::new(response));
         let viewer = FakeViewer {
             response: response.clone(),
         };
         (viewer, response)
     }
-
+    // todo: test names should be improved
+    // also use "given when then" or whatever they really want
     #[tokio::test]
     async fn initial_latest_returns_correct_value() {
         let (viewer, _) = make_fake_viewer(Ok(make_view_output("hello", 1)));
@@ -438,6 +440,6 @@ mod tests {
             Err(ChainGatewayError::MonitoringClosed);
         let new = Ok(make_view_output("recovered", 3));
         assert!(modify(&mut existing, new));
-        existing.unwrap();
+        assert!(existing.is_ok());
     }
 }
