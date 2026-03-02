@@ -78,9 +78,13 @@ class CLIENT ext;
 class RPC ext;
 ```
 
-### Relationship to MPC Network Architecture
+### Shared Components
 
-The Archive Signer reuses the [Chain Gateway][indexer-design] (Contract State Subscriber, Transaction Sender), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the shared TEE Context crate for the attestation lifecycle. It uses the TEE Context directly, bypassing the MPC Context layer.
+The Archive Signer is built on three reusable layers from this repository (bottom-up):
+
+- **[Embedded Indexer Node](#embedded-indexer-node)** — runs a full `near-indexer` (including `neard`) inside the CVM for trustless chain access.
+- **[Chain Gateway][indexer-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
+- **TEE Context** — sits on top of the Chain Gateway; manages the attestation lifecycle: polls allowed image hashes, periodically submits attestation quotes, and monitors for attestation removal. Depends on [`tee-authority`][tee-authority] (attestation generation) and [`mpc-attestation`][mpc-attestation] (on-chain verification).
 
 [indexer-design]: indexer-design.md
 [tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
