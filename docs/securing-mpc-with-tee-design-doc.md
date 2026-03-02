@@ -644,11 +644,12 @@ To support CVM upgrades, the contract must support governance over:
 Add the following contract methods:
 
 ``` rust
+// requires a vote by a threshold of participants
 pub fn vote_add_new_launcher_image(
     &mut self,
     launcher_hash: Sha256Hash
 ) -> Result<(), Error>
-
+// requires a vote by ALL of participants
 pub fn vote_remove_launcher_image(
     &mut self,
     launcher_hash: Sha256Hash
@@ -671,8 +672,29 @@ Two approaches are possible:
     (similar to Launcher upgrades).
 2.  Introduce new OS measurements as part of a contract upgrade.
 
-Using explicit voting APIs is recommended, as it keeps OS upgrades
-decoupled from contract deployment.
+decision: Use explicit voting APIs, as it keeps OS upgrades decoupled from contract deployment.
+
+``` rust
+// requires a vote by a threshold of participants
+pub fn vote_add_os_measurement(
+    &mut self,
+    os_measurement: OsMeasurement
+) -> Result<(), Error>
+
+// requires a vote by ALL of participants
+pub fn vote_remove_os_measurement(
+    &mut self,
+    os_measurement: OsMeasurement
+) -> Result<(), Error>
+
+pub struct OsMeasurement {
+    pub mrtd: HexDigest,
+    pub rtmr0: HexDigest,
+    pub rtmr1: HexDigest,
+    pub rtmr2: HexDigest,
+}
+``` rust
+
 
 ## CVM Upgrade Flow
 
@@ -714,7 +736,7 @@ sequenceDiagram
     Participants ->> Contract: Vote to remove old measurements
     alt Not enough votes
         Contract ->> Contract: Increment vote counter
-    else Threshold reached
+    else All participants votes reached
         Contract ->> Contract: Remove old measurements
         Note over Contract: Only new measurements accepted
     end
