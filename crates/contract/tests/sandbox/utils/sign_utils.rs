@@ -10,25 +10,23 @@ use contract_interface::method_names::{
 };
 use contract_interface::types::{self as dtos};
 use digest::{Digest, FixedOutput};
-use ecdsa::signature::Verifier as _;
+use k256::elliptic_curve::sec1::ToEncodedPoint as _;
 use k256::{
     elliptic_curve::{point::DecompressPoint as _, Field as _, Group as _},
     AffinePoint, FieldBytes, Secp256k1,
 };
 use mpc_contract::{
-    crypto_shared::{
-        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types,
-        k256_types::SerializableAffinePoint, kdf::check_ec_signature, kdf::derive_app_id,
-        CKDResponse, SerializableScalar, SignatureResponse,
-    },
+    crypto_shared::{derive_key_secp256k1, derive_tweak, kdf::derive_app_id, CKDResponse},
     errors,
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
         domain::DomainId,
-        signature::{Bytes, Payload, SignRequestArgs, SignatureRequest, YieldIndex},
+        signature::{Bytes, Payload, SignatureRequest, YieldIndex},
     },
 };
 use near_account_id::AccountId;
+use near_mpc_sdk::sign::{Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature};
+use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, types::NearToken, Account, Contract, Worker,
 };
@@ -156,7 +154,7 @@ impl SignRequestTest {
         let execution = status.await?;
         dbg!(&execution);
         let execution = execution.into_result()?;
-        let returned_resp: SignatureResponse = execution.json()?;
+        let returned_resp: SignatureRequestResponse = execution.json()?;
         assert_eq!(
             returned_resp, self.response.response,
             "Returned signature request does not match"
@@ -176,7 +174,7 @@ impl SignRequestTest {
 #[derive(Debug, Serialize)]
 pub struct SignResponseArgs {
     pub request: SignatureRequest,
-    pub response: SignatureResponse,
+    pub response: SignatureRequestResponse,
 }
 
 impl SignResponseArgs {
@@ -458,7 +456,7 @@ fn create_response_secp256k1(
     msg: &str,
     path: &str,
     signing_key: &ts_ecdsa::KeygenOutput,
-) -> (Payload, SignatureRequest, SignatureResponse) {
+) -> (Payload, SignatureRequest, SignatureRequestResponse) {
     let (digest, payload) = process_message(msg);
     let pk = signing_key.public_key;
     let tweak = derive_tweak(predecessor_id, path);
@@ -466,39 +464,53 @@ fn create_response_secp256k1(
     let derived_pk = derive_key_secp256k1(&pk.to_element().to_affine(), &tweak).unwrap();
     let signing_key =
         k256::ecdsa::SigningKey::from_bytes(&derived_sk.private_share.to_scalar().into()).unwrap();
-    let verifying_key =
-        k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
 
     let (signature, _): (ecdsa::Signature<Secp256k1>, _) =
         signing_key.try_sign_digest(digest).unwrap();
-    verifying_key.verify(msg.as_bytes(), &signature).unwrap();
 
     let s = signature.s();
     let (r_bytes, _s_bytes) = signature.split_bytes();
     let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
-    let s: k256::Scalar = *s.as_ref();
 
-    let recovery_id = if check_ec_signature(&derived_pk, &big_r, &s, payload.as_ecdsa().unwrap(), 0)
-        .is_ok()
+    let encoded_point = big_r.to_encoded_point(true);
+
+    let make_respond_resp = |recovery_id| K256Signature {
+        big_r: K256AffinePoint {
+            affine_point: encoded_point.as_bytes().try_into().unwrap(),
+        },
+        s: K256Scalar {
+            scalar: s.to_bytes().into(),
+        },
+        recovery_id,
+    };
+
+    let recovery_id = if signature_verifier::verify_ecdsa_signature(
+        &make_respond_resp(0),
+        payload.as_ecdsa().unwrap(),
+        &derived_pk,
+    )
+    .is_ok()
     {
         0
-    } else if check_ec_signature(&derived_pk, &big_r, &s, payload.as_ecdsa().unwrap(), 1).is_ok() {
+    } else if signature_verifier::verify_ecdsa_signature(
+        &make_respond_resp(1),
+        payload.as_ecdsa().unwrap(),
+        &derived_pk,
+    )
+    .is_ok()
+    {
         1
     } else {
         panic!("unable to use recovery id of 0 or 1");
     };
 
-    let respond_resp = SignatureResponse::Secp256k1(k256_types::Signature {
-        big_r: SerializableAffinePoint {
-            affine_point: big_r,
-        },
-        s: SerializableScalar { scalar: s },
-        recovery_id,
-    });
-
-    (payload, respond_req, respond_resp)
+    (
+        payload,
+        respond_req,
+        SignatureRequestResponse::Secp256k1(make_respond_resp(recovery_id)),
+    )
 }
 
 fn create_response_ed25519(
@@ -507,7 +519,7 @@ fn create_response_ed25519(
     msg: &str,
     path: &str,
     signing_key: &eddsa::KeygenOutput,
-) -> (Payload, SignatureRequest, SignatureResponse) {
+) -> (Payload, SignatureRequest, SignatureRequestResponse) {
     let tweak = derive_tweak(predecessor_id, path);
     let derived_signing_key = derive_secret_key_ed25519(signing_key, &tweak);
 
@@ -521,7 +533,7 @@ fn create_response_ed25519(
         frost_ed25519::SigningKey::from_scalar(derived_signing_key.private_share.to_scalar())
             .unwrap();
 
-    let signature = derived_signing_key
+    let signature: [u8; 64] = derived_signing_key
         .sign(OsRng, &payload)
         .serialize()
         .unwrap()
@@ -533,8 +545,8 @@ fn create_response_ed25519(
 
     let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);
 
-    let signature_response = SignatureResponse::Ed25519 {
-        signature: ed25519_types::Signature::new(signature),
+    let signature_response = SignatureRequestResponse::Ed25519 {
+        signature: Ed25519Signature::from(signature),
     };
 
     (payload, respond_req, signature_response)
@@ -570,12 +582,13 @@ fn gen_ed25519_sign_test(
     let path: String = rng.gen::<usize>().to_string();
     let (payload, request, response) =
         create_response_ed25519(domain_id, predecessor_id, &msg, &path, sk);
-    let args = SignRequestArgs {
-        payload_v2: Some(payload.clone()),
-        path,
-        domain_id: Some(domain_id),
-        ..Default::default()
-    };
+    let args = SignRequestBuilder::new()
+        .with_path(path)
+        .with_payload(near_mpc_sdk::sign::Payload::Eddsa(
+            payload.as_eddsa().unwrap().to_vec().try_into().unwrap(),
+        ))
+        .with_domain_id(domain_id.0)
+        .build();
     SignRequestTest {
         response: SignResponseArgs { request, response },
         args,
@@ -592,12 +605,14 @@ pub fn gen_secp_256k1_sign_test(
     let path: String = rng.gen::<usize>().to_string();
     let (payload, request, response) =
         create_response_secp256k1(domain_id, predecessor_id, &msg, &path, sk);
-    let args = SignRequestArgs {
-        payload_v2: Some(payload.clone()),
-        path,
-        domain_id: Some(domain_id),
-        ..Default::default()
-    };
+
+    let payload_bytes: [u8; 32] = *payload.as_ecdsa().unwrap();
+
+    let args = SignRequestBuilder::new()
+        .with_path(path)
+        .with_payload(near_mpc_sdk::sign::Payload::Ecdsa(payload_bytes.into()))
+        .with_domain_id(domain_id.0)
+        .build();
     SignRequestTest {
         response: SignResponseArgs { request, response },
         args,

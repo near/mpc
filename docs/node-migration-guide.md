@@ -217,7 +217,7 @@ For the new node, add this to the .env file.
 4. **add the node's near_signer_public_key to your account as an restricted access key** 
 
 
-See more details on extracting key from the node and adding the keys to your account, in the [running an MPC node in TDX external guide](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#add-the-node-account-key-to-your-account)
+See more details on extracting key from the node and adding the keys to your account, in the [running an MPC node in TDX external guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#add-the-node-account-key-to-your-account)
 
 
 **Note:** The keys can be retrieved using the node's public data endpoint:

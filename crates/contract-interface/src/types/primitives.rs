@@ -90,7 +90,19 @@ pub struct Tweak(pub [u8; 32]);
 )]
 pub struct DomainId(pub u64);
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -102,7 +114,21 @@ pub enum SignatureResponse {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -117,7 +143,19 @@ pub struct Ed25519Signature(
 );
 
 #[serde_as]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -139,6 +177,8 @@ pub struct K256Signature {
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
@@ -164,6 +204,8 @@ pub struct K256AffinePoint {
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,

@@ -1,0 +1,27 @@
+---
+source: src/ecdsa/mod.rs
+expression: result
+---
+[
+  [
+    0,
+    {
+      "private_share": "9a59c5a88862bfebaab8ecf226f923e4691591d0bd8e660dda685f8f919ae884",
+      "public_key": "03aa034760c5846f61bd047a4edd088a2b32bee7473a1163926fcc4b27ebc916f0"
+    }
+  ],
+  [
+    1,
+    {
+      "private_share": "370d22c2bbd56efff687cd2fb55fb291ff3f31dbab6cc7fad0a5d61c31cf096e",
+      "public_key": "03aa034760c5846f61bd047a4edd088a2b32bee7473a1163926fcc4b27ebc916f0"
+    }
+  ],
+  [
+    2,
+    {
+      "private_share": "d3c07fdcef481e144256ad6d43c6413e5017aecd4893ca2386b5ab35a2396b99",
+      "public_key": "03aa034760c5846f61bd047a4edd088a2b32bee7473a1163926fcc4b27ebc916f0"
+    }
+  ]
+]

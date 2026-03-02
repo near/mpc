@@ -15,7 +15,6 @@ use contract_interface::method_names;
 use contract_interface::types::{self as dtos, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::CKDResponse,
-    crypto_shared::SignatureResponse,
     primitives::{
         domain::{DomainConfig, DomainPurpose, SignatureScheme},
         key_state::{EpochId, Keyset},
@@ -24,6 +23,7 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
+use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
 use rstest::rstest;
@@ -200,8 +200,6 @@ async fn back_compatibility_without_state(
 async fn propose_upgrade_from_production_to_current_binary(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    use rand_core::OsRng;
-
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
@@ -287,7 +285,7 @@ async fn upgrade_preserves_state_and_requests(
             .unwrap();
 
         let execution = pending.transaction.await.unwrap().into_result().unwrap();
-        let returned: SignatureResponse = execution.json().unwrap();
+        let returned: SignatureRequestResponse = execution.json().unwrap();
 
         assert_eq!(
             returned, pending.response.response,
@@ -434,7 +432,7 @@ async fn upgrade_allows_new_request_types(
             .unwrap();
 
         let execution = pending.transaction.await.unwrap().into_result().unwrap();
-        let returned: SignatureResponse = execution.json().unwrap();
+        let returned: SignatureRequestResponse = execution.json().unwrap();
 
         assert_eq!(
             returned, pending.response.response,
