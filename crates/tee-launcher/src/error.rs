@@ -2,9 +2,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum LauncherError {
-    #[error("DOCKER_CONTENT_TRUST must be set to 1")]
-    DockerContentTrustNotEnabled,
-
     #[error("PLATFORM=TEE requires dstack unix socket at {0}")]
     DstackSocketMissing(String),
 

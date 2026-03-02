@@ -47,12 +47,6 @@ async fn run() -> Result<()> {
         ));
     }
 
-    // TODO: `docker_content_trust` parse it to a type that only accepts deserialization into number 1
-    // DOCKER_CONTENT_TRUST must be enabled
-    if args.docker_content_trust != "1" {
-        return Err(LauncherError::DockerContentTrustNotEnabled);
-    }
-
     // Load dstack user config
     let dstack_config: BTreeMap<String, String> =
         if std::path::Path::new(DSTACK_USER_CONFIG_FILE).is_file() {
