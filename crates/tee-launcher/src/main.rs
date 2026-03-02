@@ -167,29 +167,6 @@ fn is_safe_port_mapping(mapping: &str) -> bool {
 // Hash selection
 // ---------------------------------------------------------------------------
 
-/// Parse a full `sha256:<hex64>` digest into a validated [`MpcDockerImageHash`].
-///
-/// Uses the workspace type's `FromStr` impl which does `hex::decode` + 32-byte
-/// length check — no regex needed.
-fn parse_image_digest(full_digest: &str) -> Result<MpcDockerImageHash> {
-    let bare_hex = full_digest.strip_prefix(SHA256_PREFIX).ok_or_else(|| {
-        LauncherError::InvalidDefaultDigest(format!(
-            "Invalid digest (missing sha256: prefix): {full_digest}"
-        ))
-    })?;
-    bare_hex
-        .parse::<MpcDockerImageHash>()
-        .map_err(|e| LauncherError::InvalidDefaultDigest(format!("{full_digest}: {e}")))
-}
-
-fn is_valid_sha256_digest(digest: &str) -> bool {
-    parse_image_digest(digest).is_ok()
-}
-
-fn get_bare_digest(full_digest: &str) -> Result<String> {
-    Ok(parse_image_digest(full_digest)?.as_hex())
-}
-
 fn load_and_select_hash(args: &CliArgs, dstack_config: &Config) -> Result<String> {
     let approved_hashes = if std::path::Path::new(IMAGE_DIGEST_FILE).is_file() {
         let content = std::fs::read_to_string(IMAGE_DIGEST_FILE).map_err(|source| {
@@ -198,7 +175,7 @@ fn load_and_select_hash(args: &CliArgs, dstack_config: &Config) -> Result<String
                 source,
             }
         })?;
-        let data: ApprovedHashesFile =
+        let data: ApprovxedHashesFile =
             serde_json::from_str(&content).map_err(|source| LauncherError::JsonParse {
                 path: IMAGE_DIGEST_FILE.to_string(),
                 source,
@@ -479,14 +456,15 @@ fn remove_existing_container() {
 fn build_docker_cmd(
     platform: Platform,
     mpc_config: &MpcBinaryConfig,
-    image_digest: &str,
+    image_digest: &MpcDockerImageHash,
 ) -> Result<Vec<String>> {
-    let bare_digest = get_bare_digest(image_digest)?;
-
     let mut cmd: Vec<String> = vec!["docker".into(), "run".into()];
 
     // Required environment variables
-    cmd.extend(["--env".into(), format!("MPC_IMAGE_HASH={bare_digest}")]);
+    cmd.extend([
+        "--env".into(),
+        format!("MPC_IMAGE_HASH={}", image_digest.as_hex()),
+    ]);
     cmd.extend([
         "--env".into(),
         format!("MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"),
@@ -547,7 +525,7 @@ fn build_docker_cmd(
         "--name".into(),
         MPC_CONTAINER_NAME.into(),
         "--detach".into(),
-        image_digest.to_string(),
+        image_digest.as_hex(),
     ]);
 
     tracing::info!("docker cmd {}", cmd.join(" "));
@@ -563,10 +541,13 @@ fn build_docker_cmd(
 
 fn launch_mpc_container(
     platform: Platform,
-    valid_hash: &str,
+    valid_hash: &MpcDockerImageHash,
     mpc_config: &MpcBinaryConfig,
 ) -> Result<()> {
-    tracing::info!("Launching MPC node with validated hash: {valid_hash}");
+    tracing::info!(
+        "Launching MPC node with validated hash: {}",
+        valid_hash.as_hex()
+    );
 
     remove_existing_container();
     let docker_cmd = build_docker_cmd(platform, mpc_config, valid_hash)?;
@@ -574,12 +555,10 @@ fn launch_mpc_container(
     let status = Command::new(&docker_cmd[0])
         .args(&docker_cmd[1..])
         .status()
-        .map_err(|e| LauncherError::DockerRunFailed(e.to_string()))?;
+        .map_err(|e| LauncherError::DockerRunFailed(valid_hash.clone()))?;
 
     if !status.success() {
-        return Err(LauncherError::DockerRunFailed(format!(
-            "validated hash={valid_hash}"
-        )));
+        return Err(LauncherError::DockerRunFailed(valid_hash.clone()));
     }
 
     tracing::info!("MPC launched successfully.");
@@ -591,7 +570,7 @@ fn is_unix_socket(path: &str) -> bool {
     std::fs::metadata(path).is_ok_and(|meta| meta.file_type().is_socket())
 }
 
-async fn extend_rtmr3(platform: Platform, valid_hash: &str) -> Result<()> {
+async fn extend_rtmr3(platform: Platform, image_hash: MpcDockerImageHash) -> Result<()> {
     if platform == Platform::NonTee {
         tracing::info!("PLATFORM=NONTEE → skipping RTMR3 extension step.");
         return Ok(());
@@ -603,8 +582,7 @@ async fn extend_rtmr3(platform: Platform, valid_hash: &str) -> Result<()> {
         ));
     }
 
-    let bare = get_bare_digest(valid_hash)?;
-    tracing::info!("Extending RTMR3 with validated hash: {bare}");
+    tracing::info!(?image_hash, "extending RTMR3");
 
     let client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
@@ -616,7 +594,10 @@ async fn extend_rtmr3(platform: Platform, valid_hash: &str) -> Result<()> {
 
     // EmitEvent with the image digest
     client
-        .emit_event("mpc-image-digest".to_string(), bare.into_bytes())
+        .emit_event(
+            "mpc-image-digest".to_string(),
+            image_hash.as_hex().into_bytes(),
+        )
         .await
         .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
 

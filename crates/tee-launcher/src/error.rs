@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use mpc_primitives::hash::MpcDockerImageHash;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -43,8 +44,8 @@ pub enum LauncherError {
     #[error("MPC image hash validation failed: {0}")]
     ImageValidationFailed(String),
 
-    #[error("docker run failed for validated hash={0}")]
-    DockerRunFailed(String),
+    #[error("docker run failed for validated hash")]
+    DockerRunFailed(MpcDockerImageHash),
 
     #[error("Too many env vars to pass through (>{0})")]
     TooManyEnvVars(usize),
