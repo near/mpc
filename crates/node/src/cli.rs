@@ -290,7 +290,7 @@ impl StartCmd {
             watch::channel(Ok((0u64.into(), ProtocolContractState::NotInitialized)));
 
         let (migration_state_sender, migration_state_receiver) =
-            watch::channel((0, BTreeMap::new()));
+            watch::channel(Ok((0, BTreeMap::new())));
         let web_server = root_runtime
             .block_on(start_web_server(
                 root_task_handle.clone(),

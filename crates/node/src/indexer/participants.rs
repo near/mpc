@@ -255,6 +255,36 @@ impl ContractState {
     }
 }
 
+// Forward raw result to web sender, try to parse into ContractState
+fn process_contract_state(
+    latest: Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+    protocol_state_sender: &watch::Sender<
+        Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+    >,
+    port_override: Option<u16>,
+) -> Option<ContractState> {
+    let _ = protocol_state_sender.send(latest.clone());
+    match latest {
+        Ok((height, protocol_state)) => {
+            match ContractState::from_contract_state(
+                &protocol_state,
+                height.into(),
+                port_override,
+            ) {
+                Ok(state) => Some(state),
+                Err(e) => {
+                    tracing::error!(target: "mpc", "error parsing contract state: {:?}", e);
+                    None
+                }
+            }
+        }
+        Err(err) => {
+            tracing::warn!(%err, "error reading contract state");
+            None
+        }
+    }
+}
+
 // todo: cancellation tokens?
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
@@ -265,36 +295,6 @@ pub async fn monitor_contract_state(
         Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
     >,
 ) -> anyhow::Result<watch::Receiver<ContractState>> {
-    // Forward raw result to web sender, try to parse into ContractState
-    fn process_latest(
-        latest: Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
-        protocol_state_sender: &watch::Sender<
-            Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
-        >,
-        port_override: Option<u16>,
-    ) -> Option<ContractState> {
-        let _ = protocol_state_sender.send(latest.clone());
-        match latest {
-            Ok((height, protocol_state)) => {
-                match ContractState::from_contract_state(
-                    &protocol_state,
-                    height.into(),
-                    port_override,
-                ) {
-                    Ok(state) => Some(state),
-                    Err(e) => {
-                        tracing::error!(target: "mpc", "error parsing contract state: {:?}", e);
-                        None
-                    }
-                }
-            }
-            Err(err) => {
-                tracing::warn!(%err, "error reading contract state");
-                None
-            }
-        }
-    }
-
     let (init_tx, init_rx) = tokio::sync::oneshot::channel();
 
     tokio::spawn(async move {
@@ -308,7 +308,7 @@ pub async fn monitor_contract_state(
 
         // subscribe().await already did the first fetch — latest() returns immediately
         let initial_state =
-            match process_latest(subscription.latest(), &protocol_state_sender, port_override) {
+            match process_contract_state(subscription.latest(), &protocol_state_sender, port_override) {
                 Some(state) => state,
                 None => {
                     tracing::warn!("initial contract state unavailable, starting with Invalid");
@@ -327,7 +327,7 @@ pub async fn monitor_contract_state(
                 break;
             }
             if let Some(state) =
-                process_latest(subscription.latest(), &protocol_state_sender, port_override)
+                process_contract_state(subscription.latest(), &protocol_state_sender, port_override)
             {
                 contract_state_sender.send_if_modified(|watched| {
                     if *watched != state {

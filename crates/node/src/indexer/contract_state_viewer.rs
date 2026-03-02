@@ -1,10 +1,9 @@
-use crate::indexer::{
-    migrations::ContractMigrationInfo,
-    types::{ChainCKDRequest, ChainSignatureRequest, ChainVerifyForeignTransactionRequest},
+use crate::indexer::types::{
+    ChainCKDRequest, ChainSignatureRequest, ChainVerifyForeignTransactionRequest,
 };
 use anyhow::Context;
 use chain_gateway::state_viewer::{ContractStateStream, StateViewer};
-use mpc_contract::{primitives::signature::YieldIndex, state::ProtocolContractState};
+use mpc_contract::primitives::signature::YieldIndex;
 use serde::de::DeserializeOwned;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -198,33 +197,4 @@ impl MpcContractStateViewer {
         Ok(call_result)
     }
 
-    pub(crate) async fn get_mpc_contract_state(
-        &self,
-    ) -> anyhow::Result<(u64, ProtocolContractState)> {
-        let (height, call_result) = self
-            .mpc_contract_viewer
-            .view(
-                self.mpc_contract_id.clone(),
-                contract_interface::method_names::STATE,
-                &NoArgs {},
-            )
-            .await?;
-
-        Ok((height.into(), call_result))
-    }
-
-    pub(crate) async fn get_mpc_migration_info(
-        &self,
-    ) -> anyhow::Result<(u64, ContractMigrationInfo)> {
-        let (height, call_result) = self
-            .mpc_contract_viewer
-            .view(
-                self.mpc_contract_id.clone(),
-                contract_interface::method_names::MIGRATION_INFO,
-                &NoArgs {},
-            )
-            .await?;
-
-        Ok((height.into(), call_result))
-    }
 }

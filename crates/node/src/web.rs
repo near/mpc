@@ -59,7 +59,8 @@ struct WebServerState {
     /// Receiver for contract state
     protocol_state_receiver:
         watch::Receiver<Result<(BlockHeight, ProtocolContractState), ChainGatewayError>>,
-    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    migration_state_receiver:
+        watch::Receiver<Result<(u64, ContractMigrationInfo), ChainGatewayError>>,
     static_web_data: StaticWebData,
 }
 
@@ -120,8 +121,11 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
 }
 
-async fn migrations(state: State<WebServerState>) -> Json<(u64, ContractMigrationInfo)> {
-    Json(state.migration_state_receiver.borrow().clone())
+async fn migrations(state: State<WebServerState>) -> String {
+    match state.migration_state_receiver.borrow().clone() {
+        Ok(data) => serde_json::to_string_pretty(&data).unwrap_or_else(|e| e.to_string()),
+        Err(err) => err.to_string(),
+    }
 }
 
 async fn contract_state(state: State<WebServerState>) -> String {
@@ -201,7 +205,9 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<
         Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
     >,
-    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    migration_state_receiver: watch::Receiver<
+        Result<(u64, ContractMigrationInfo), ChainGatewayError>,
+    >,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 

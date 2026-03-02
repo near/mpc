@@ -1,71 +1,92 @@
 use std::collections::BTreeMap;
 
+use chain_gateway::errors::ChainGatewayError;
+use chain_gateway::state_viewer::{BlockHeight, ContractStateStream};
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use near_account_id::AccountId;
 use tokio::sync::watch;
 
-use crate::{
-    indexer::MpcContractStateViewer,
-    migration_service::types::MigrationInfo,
-};
+use crate::{indexer::MpcContractStateViewer, migration_service::types::MigrationInfo};
 
 pub type ContractMigrationInfo =
     BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
 
-const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+// Forward raw result to web sender, try to derive MigrationInfo
+fn process_latest(
+    latest: Result<(BlockHeight, ContractMigrationInfo), ChainGatewayError>,
+    migration_state_sender: &watch::Sender<
+        Result<(u64, ContractMigrationInfo), ChainGatewayError>,
+    >,
+    my_near_account_id: &AccountId,
+    my_p2p_public_key: &VerifyingKey,
+) -> Option<MigrationInfo> {
+    let _ = migration_state_sender.send(latest.clone().map(|(h, s)| (h.into(), s)));
+    match latest {
+        Ok((_, contract_state)) => Some(MigrationInfo::from_contract_state(
+            my_near_account_id,
+            my_p2p_public_key,
+            &contract_state,
+        )),
+        Err(err) => {
+            tracing::warn!(%err, "error reading migration state");
+            None
+        }
+    }
+}
 
-/// Blocks until the indexer has a current view of the blockchain.
-/// Spawns a monitoring task to fetch the migration info from the contract.
+/// Spawns a monitoring task that subscribes to migration info from the contract.
 /// Returns a tokio watch channel on which the latest migration state can be watched.
-///
-/// The interval checking for new values is defined by [`MIGRATION_INFO_REFRESH_INTERVAL`]
 pub async fn monitor_migrations(
     contract_state_viewer: MpcContractStateViewer,
-
-    migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
+    migration_state_sender: watch::Sender<
+        Result<(u64, ContractMigrationInfo), ChainGatewayError>,
+    >,
     my_near_account_id: AccountId,
     my_p2p_public_key: VerifyingKey,
 ) -> watch::Receiver<MigrationInfo> {
-    let init_response = fetch_migrations_once(contract_state_viewer.clone()).await;
-    let init_migration_state = MigrationInfo::from_contract_state(
-        &my_near_account_id,
-        &my_p2p_public_key,
-        &init_response.1,
-    );
-    // todo: can you get rid of clones?
+    let (init_tx, init_rx) = tokio::sync::oneshot::channel();
 
-    let (sender, receiver) = watch::channel(init_migration_state);
+    tokio::spawn(async move {
+        let mut subscription = contract_state_viewer
+            .mpc_contract_viewer
+            .subscribe_no_args::<ContractMigrationInfo>(
+                contract_state_viewer.mpc_contract_id.clone(),
+                contract_interface::method_names::MIGRATION_INFO,
+            )
+            .await;
 
-    tokio::spawn({
-        let mut interval = tokio::time::interval(MIGRATION_INFO_REFRESH_INTERVAL);
-        async move {
-            loop {
-                interval.tick().await;
-                let response = fetch_migrations_once(contract_state_viewer.clone()).await;
-                tracing::debug!(target: "indexer", "fetched mpc migration state at block {}: {:?}", response.0, response.1);
+        let init_migration_info = process_latest(
+            subscription.latest(),
+            &migration_state_sender,
+            &my_near_account_id,
+            &my_p2p_public_key,
+        )
+        .unwrap_or(MigrationInfo {
+            backup_service_info: None,
+            active_migration: false,
+        });
 
-                migration_state_sender.send_if_modified(|watched_state| {
-                    let migration_info_changed = watched_state.1 != response.1;
-                    if *watched_state != response {
-                        if migration_info_changed {
-                            tracing::info!("contract migration state changed: {:?}", response);
-                        }
-                        *watched_state = response.clone();
-                        true
-                    } else {
-                        false
-                    }
-                });
-                let my_migration_state = MigrationInfo::from_contract_state(
-                    &my_near_account_id,
-                    &my_p2p_public_key,
-                    &response.1,
-                );
-                sender.send_if_modified(|watched_state| {
-                    if *watched_state != my_migration_state {
-                        tracing::info!("my migration state changed: {:?}", my_migration_state);
-                        *watched_state = my_migration_state;
+        let (sender, receiver) = watch::channel(init_migration_info);
+        if init_tx.send(receiver).is_err() {
+            return;
+        }
+
+        loop {
+            if subscription.changed().await.is_err() {
+                tracing::error!("migration state subscription closed");
+                break;
+            }
+            if let Some(state) = process_latest(
+                subscription.latest(),
+                &migration_state_sender,
+                &my_near_account_id,
+                &my_p2p_public_key,
+            ) {
+                sender.send_if_modified(|watched| {
+                    if *watched != state {
+                        tracing::info!("my migration state changed: {:?}", state);
+                        *watched = state;
                         true
                     } else {
                         false
@@ -75,21 +96,7 @@ pub async fn monitor_migrations(
         }
     });
 
-    receiver
-}
-
-async fn fetch_migrations_once(contract: MpcContractStateViewer) -> (u64, ContractMigrationInfo) {
-    loop {
-        tracing::debug!(target: "indexer", "querying migration state");
-
-        match contract.get_mpc_migration_info().await {
-            Ok(res) => {
-                return res;
-            }
-            Err(e) => {
-                tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
-                tokio::time::sleep(MIGRATION_INFO_REFRESH_INTERVAL).await;
-            }
-        }
-    }
+    init_rx
+        .await
+        .expect("migration state subscription task panicked")
 }

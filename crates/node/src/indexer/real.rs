@@ -55,7 +55,9 @@ pub fn spawn_real_indexer(
     protocol_state_sender: watch::Sender<
         Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
     >,
-    migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
+    migration_state_sender: watch::Sender<
+        Result<(u64, ContractMigrationInfo), ChainGatewayError>,
+    >,
     tls_public_key: VerifyingKey,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
