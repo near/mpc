@@ -213,14 +213,16 @@ jobs:
           ref: ${{ needs.release-info.outputs.tag }}
           persist-credentials: false
 
-      # Restore cached Rust dependencies to speed up the build.
-      # save-if: false because we only want to read from the cache, not update it
-      # (the main CI workflow handles saving).
+      # Rust cache: lookup-only + save-if:false keeps this step inert so that
+      # no poisoned cache content can influence release artifacts (zizmor cache-poisoning).
+      # The actual build happens inside a Docker container (reproducible-wasm)
+      # so host caching provides limited benefit here anyway.
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           save-if: false
           cache-provider: "warpbuild"
+          lookup-only: true
 
       # Build the contract with reproducible-wasm to ensure deterministic output.
       # This produces mpc_contract.wasm and mpc_contract_abi.json
