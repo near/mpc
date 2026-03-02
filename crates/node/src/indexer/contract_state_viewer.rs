@@ -23,36 +23,31 @@ pub(crate) struct MpcContractStateViewer {
 }
 
 impl MpcContractStateViewer {
-    pub fn spawn_subscriber<Arg, T>(
+    pub fn spawn_subscriber<T>(
         &self,
         sender: watch::Sender<T>,
         method_name: impl Into<String>,
-        args: Arg,
     ) -> JoinHandle<anyhow::Result<()>>
     where
-        Arg: Serialize + Send + Sync + 'static,
         T: DeserializeOwned + Send + Clone + Sync + 'static,
     {
         let method_name = method_name.into();
 
         let this = self.clone();
-        tokio::spawn(async move { this.monitor_contract_value(sender, method_name, args).await })
+        tokio::spawn(async move { this.monitor_contract_value(sender, method_name).await })
     }
-    async fn monitor_contract_value<Arg, T>(
+    async fn monitor_contract_value<T>(
         &self,
         sender: watch::Sender<T>,
         method_name: String,
-        args: Arg,
     ) -> anyhow::Result<()>
     where
-        Arg: Serialize + Send,
         T: DeserializeOwned + Send + Clone + 'static,
     {
         let mut subscription = self
             .mpc_contract_viewer
-            .subscribe::<Arg, T>(self.mpc_contract_id.clone(), &method_name, &args)
-            .await
-            .context("invalid arguments")?;
+            .subscribe_no_args::<T>(self.mpc_contract_id.clone(), &method_name)
+            .await;
 
         loop {
             match subscription.latest() {
@@ -64,7 +59,7 @@ impl MpcContractStateViewer {
                 Err(err) => {
                     tracing::warn!(
                         method_name,
-                        %err,
+                        err=?err,
                         "error reading contract state, waiting for next update"
                     );
                 }

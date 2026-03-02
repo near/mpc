@@ -256,6 +256,7 @@ impl ContractState {
     }
 }
 
+// todo: cancellation tokens?
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
 pub async fn monitor_contract_state(
@@ -298,22 +299,13 @@ pub async fn monitor_contract_state(
     let (init_tx, init_rx) = tokio::sync::oneshot::channel();
 
     tokio::spawn(async move {
-        let args = NoArgs {};
-        let mut subscription = match mpc_contract
+        let mut subscription = mpc_contract
             .mpc_contract_viewer
-            .subscribe::<NoArgs, ProtocolContractState>(
+            .subscribe_no_args::<ProtocolContractState>(
                 mpc_contract.mpc_contract_id.clone(),
                 contract_interface::method_names::STATE,
-                &args,
             )
-            .await
-        {
-            Ok(sub) => sub,
-            Err(e) => {
-                let _ = init_tx.send(Err(anyhow::anyhow!(e)));
-                return;
-            }
-        };
+            .await;
 
         // subscribe().await already did the first fetch — latest() returns immediately
         let initial_state =
@@ -330,7 +322,6 @@ pub async fn monitor_contract_state(
             return;
         }
 
-        // Monitor loop (same scope as subscription — no lifetime issue)
         loop {
             if subscription.changed().await.is_err() {
                 tracing::error!("contract state subscription closed");

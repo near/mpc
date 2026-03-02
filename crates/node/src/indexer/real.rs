@@ -139,19 +139,16 @@ pub fn spawn_real_indexer(
             mpc_contract_state_viewer.spawn_subscriber(
                 allowed_docker_images_sender,
                 contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
-                NoArgs {},
             );
 
             mpc_contract_state_viewer.spawn_subscriber(
                 allowed_launcher_compose_sender,
                 contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
-                NoArgs {},
             );
 
             mpc_contract_state_viewer.spawn_subscriber(
                 tee_accounts_sender,
                 contract_interface::method_names::GET_TEE_ACCOUNTS,
-                NoArgs {},
             );
 
             //  let contract_state_receiver = mpc_contract_state_viewer.monitor_contract_state(protocol_state_sender).await;
