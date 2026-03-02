@@ -285,6 +285,61 @@ fn process_contract_state(
     }
 }
 
+async fn monitor_contract_state_task(
+    mpc_contract: MpcContractStateViewer,
+    port_override: Option<u16>,
+    protocol_state_sender: watch::Sender<
+        Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+    >,
+    init_tx: tokio::sync::oneshot::Sender<anyhow::Result<watch::Receiver<ContractState>>>,
+) {
+    let mut subscription = mpc_contract
+        .mpc_contract_viewer
+        .subscribe_no_args::<ProtocolContractState>(
+            mpc_contract.mpc_contract_id.clone(),
+            contract_interface::method_names::STATE,
+        )
+        .await;
+
+    // subscribe().await already did the first fetch — latest() returns immediately
+    let initial_state = match process_contract_state(
+        subscription.latest(),
+        &protocol_state_sender,
+        port_override,
+    ) {
+        Some(state) => state,
+        None => {
+            tracing::warn!("initial contract state unavailable, starting with Invalid");
+            ContractState::Invalid
+        }
+    };
+
+    let (contract_state_sender, contract_state_receiver) = watch::channel(initial_state);
+    if init_tx.send(Ok(contract_state_receiver)).is_err() {
+        return;
+    }
+
+    loop {
+        if subscription.changed().await.is_err() {
+            tracing::error!("contract state subscription closed");
+            break;
+        }
+        if let Some(state) =
+            process_contract_state(subscription.latest(), &protocol_state_sender, port_override)
+        {
+            contract_state_sender.send_if_modified(|watched| {
+                if *watched != state {
+                    tracing::info!("Contract state changed: {:?}", state);
+                    *watched = state;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+    }
+}
+
 // todo: cancellation tokens?
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
@@ -297,50 +352,12 @@ pub async fn monitor_contract_state(
 ) -> anyhow::Result<watch::Receiver<ContractState>> {
     let (init_tx, init_rx) = tokio::sync::oneshot::channel();
 
-    tokio::spawn(async move {
-        let mut subscription = mpc_contract
-            .mpc_contract_viewer
-            .subscribe_no_args::<ProtocolContractState>(
-                mpc_contract.mpc_contract_id.clone(),
-                contract_interface::method_names::STATE,
-            )
-            .await;
-
-        // subscribe().await already did the first fetch — latest() returns immediately
-        let initial_state =
-            match process_contract_state(subscription.latest(), &protocol_state_sender, port_override) {
-                Some(state) => state,
-                None => {
-                    tracing::warn!("initial contract state unavailable, starting with Invalid");
-                    ContractState::Invalid
-                }
-            };
-
-        let (contract_state_sender, contract_state_receiver) = watch::channel(initial_state);
-        if init_tx.send(Ok(contract_state_receiver)).is_err() {
-            return;
-        }
-
-        loop {
-            if subscription.changed().await.is_err() {
-                tracing::error!("contract state subscription closed");
-                break;
-            }
-            if let Some(state) =
-                process_contract_state(subscription.latest(), &protocol_state_sender, port_override)
-            {
-                contract_state_sender.send_if_modified(|watched| {
-                    if *watched != state {
-                        tracing::info!("Contract state changed: {:?}", state);
-                        *watched = state;
-                        true
-                    } else {
-                        false
-                    }
-                });
-            }
-        }
-    });
+    tokio::spawn(monitor_contract_state_task(
+        mpc_contract,
+        port_override,
+        protocol_state_sender,
+        init_tx,
+    ));
 
     init_rx
         .await
