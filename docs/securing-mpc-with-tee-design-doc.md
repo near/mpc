@@ -727,9 +727,9 @@ sequenceDiagram
 
     Note over Operator: Follow migration flow (see node-migration-guide.md)
     Operator ->> Migration: Initiate migration from OldNode to NewNode
-    OldNode ->> Migration: Provide encrypted keyshares
+    OldNode <<- Migration: Pull encrypted keyshares
     Migration ->> NewNode: Restore keyshares
-    NewNode -->> Operator: Migration complete
+    NewNode -->> Contract: Migration complete
 
     Note over OldNode: Old node is deactivated
 
