@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use mpc_primitives::hash::MpcDockerImageHash;
+use serde::{Deserialize, Serialize};
 
 /// CLI arguments parsed from environment variables via clap.
 #[derive(Parser, Debug)]
@@ -32,22 +33,49 @@ pub enum Platform {
     NonTee,
 }
 
-#[derive(Debug, Clone)]
-pub struct RpcTimingConfig {
-    pub request_timeout_secs: f64,
-    pub request_interval_secs: f64,
-    pub max_attempts: u32,
+/// Typed representation of the dstack user config file (`/tapp/user_config`).
+///
+/// Launcher-only keys are extracted into typed fields; all remaining keys are
+/// kept in `passthrough_env` for forwarding to the MPC container.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    pub launcher_config: LauncherConfig,
+    /// Remaining env vars forwarded to the MPC container.
+    pub mpc_passthrough_env: MpcBinaryConfig,
 }
 
-#[derive(Debug, Clone)]
-pub struct ImageSpec {
-    pub tags: Vec<String>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LauncherConfig {
+    /// Docker image tags to search (from `MPC_IMAGE_TAGS`, comma-separated).
+    pub image_tags: Vec<String>,
+    /// Docker image name (from `MPC_IMAGE_NAME`).
     pub image_name: String,
+    /// Docker registry (from `MPC_REGISTRY`).
     pub registry: String,
+    /// Per-request timeout for registry RPC calls (from `RPC_REQUEST_TIMEOUT_SECS`).
+    pub rpc_request_timeout_secs: f64,
+    /// Delay between registry RPC retries (from `RPC_REQUEST_INTERVAL_SECS`).
+    pub rpc_request_interval_secs: f64,
+    /// Maximum registry RPC attempts (from `RPC_MAX_ATTEMPTS`).
+    pub rpc_max_attempts: u32,
+    /// Optional hash override that bypasses registry lookup (from `MPC_HASH_OVERRIDE`).
+    pub mpc_hash_override: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ResolvedImage {
-    pub spec: ImageSpec,
-    pub digest: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MpcBinaryConfig {
+    // mpc
+    mpc_account_id: String,
+    mpc_local_address: String,
+    mpc_secret_key_store: String,
+    mpc_contract_isd: String,
+    mpc_env: String,
+    mpc_home_dir: String,
+    mpc_responder_id: String,
+    mpc_backup_encryption_key_hex: String,
+    // near
+    near_boot_nodes: String,
+    // rust
+    rust_backtrace: String,
+    rust_log: String,
 }

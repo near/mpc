@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::process::Command;
 use std::sync::LazyLock;
 
@@ -48,12 +48,12 @@ async fn run() -> Result<()> {
     }
 
     // Load dstack user config
-    let dstack_config: BTreeMap<String, String> =
-        if std::path::Path::new(DSTACK_USER_CONFIG_FILE).is_file() {
-            parse_env_file(DSTACK_USER_CONFIG_FILE)?
-        } else {
-            BTreeMap::new()
-        };
+    let config_file = std::fs::OpenOptions::new()
+        .read(true)
+        .open(DSTACK_USER_CONFIG_FILE)
+        .expect("dstack user config file exists");
+
+    let dstack_config: Config = serde_json::from_reader(config_file).expect("config file is valid");
 
     let rpc_cfg = load_rpc_timing_config(&dstack_config);
 
@@ -67,7 +67,11 @@ async fn run() -> Result<()> {
 
     extend_rtmr3(args.platform, &selected_hash).await?;
 
-    launch_mpc_container(args.platform, &selected_hash, &dstack_config)?;
+    launch_mpc_container(
+        args.platform,
+        &selected_hash,
+        &dstack_config.passthrough_env,
+    )?;
 
     Ok(())
 }
@@ -103,19 +107,6 @@ const ALLOWED_MPC_ENV_VARS: &[&str] = &[
     "MPC_RESPONDER_ID",
     "MPC_BACKUP_ENCRYPTION_KEY_HEX",
 ];
-
-// Launcher-only env vars — read from user config but never forwarded to container
-static ALLOWED_LAUNCHER_ENV_VARS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
-    HashSet::from([
-        DSTACK_USER_CONFIG_MPC_IMAGE_TAGS,
-        DSTACK_USER_CONFIG_MPC_IMAGE_NAME,
-        DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY,
-        ENV_VAR_MPC_HASH_OVERRIDE,
-        ENV_VAR_RPC_REQUEST_TIMEOUT_SECS,
-        ENV_VAR_RPC_REQUEST_INTERVAL_SECS,
-        ENV_VAR_RPC_MAX_ATTEMPTS,
-    ])
-});
 
 // ---------------------------------------------------------------------------
 // Validation functions — security policy for env passthrough
@@ -202,88 +193,17 @@ fn is_allowed_container_env_key(key: &str) -> bool {
     false
 }
 
-// ---------------------------------------------------------------------------
-// Config parsing
-// ---------------------------------------------------------------------------
-
-fn parse_env_lines(lines: &[&str]) -> BTreeMap<String, String> {
-    let mut env = BTreeMap::new();
-    for line in lines {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || !line.contains('=') {
-            continue;
-        }
-        if let Some((key, value)) = line.split_once('=') {
-            let key = key.trim();
-            let value = value.trim();
-            if key.is_empty() {
-                continue;
-            }
-            env.insert(key.to_string(), value.to_string());
-        }
-    }
-    env
-}
-
-// TODO: this should be a struct with hard expectations, that we deserialize into, instead of
-// a btreemap
-fn parse_env_file(path: &str) -> Result<BTreeMap<String, String>> {
-    let content = std::fs::read_to_string(path).map_err(|source| LauncherError::FileRead {
-        path: path.to_string(),
-        source,
-    })?;
-    let lines: Vec<&str> = content.lines().collect();
-    Ok(parse_env_lines(&lines))
-}
-
-fn load_rpc_timing_config(dstack_config: &BTreeMap<String, String>) -> RpcTimingConfig {
-    let timeout_secs = dstack_config
-        .get(ENV_VAR_RPC_REQUEST_TIMEOUT_SECS)
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_RPC_REQUEST_TIMEOUT_SECS);
-    let interval_secs = dstack_config
-        .get(ENV_VAR_RPC_REQUEST_INTERVAL_SECS)
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_RPC_REQUEST_INTERVAL_SECS);
-    let max_attempts = dstack_config
-        .get(ENV_VAR_RPC_MAX_ATTEMPTS)
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_RPC_MAX_ATTEMPTS);
-    RpcTimingConfig {
-        request_timeout_secs: timeout_secs,
-        request_interval_secs: interval_secs,
-        max_attempts,
-    }
-}
-
-fn get_image_spec(dstack_config: &BTreeMap<String, String>) -> ImageSpec {
-    let tags_raw = dstack_config
-        .get(DSTACK_USER_CONFIG_MPC_IMAGE_TAGS)
-        .cloned()
-        .unwrap_or_else(|| DEFAULT_MPC_IMAGE_TAG.to_string());
-    let tags: Vec<String> = tags_raw
-        .split(',')
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty())
-        .collect();
-    tracing::info!("Using tags {tags:?} to find matching MPC node docker image.");
-
-    let image_name = dstack_config
-        .get(DSTACK_USER_CONFIG_MPC_IMAGE_NAME)
-        .cloned()
-        .unwrap_or_else(|| DEFAULT_MPC_IMAGE_NAME.to_string());
-    tracing::info!("Using image name {image_name}.");
-
-    let registry = dstack_config
-        .get(DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY)
-        .cloned()
-        .unwrap_or_else(|| DEFAULT_MPC_REGISTRY.to_string());
-    tracing::info!("Using registry {registry}.");
-
+fn get_image_spec(config: &Config) -> ImageSpec {
+    tracing::info!(
+        "Using tags {:?} to find matching MPC node docker image.",
+        config.image_tags
+    );
+    tracing::info!("Using image name {}.", config.image_name);
+    tracing::info!("Using registry {}.", config.registry);
     ImageSpec {
-        tags,
-        image_name,
-        registry,
+        tags: config.image_tags.clone(),
+        image_name: config.image_name.clone(),
+        registry: config.registry.clone(),
     }
 }
 
@@ -314,11 +234,7 @@ fn get_bare_digest(full_digest: &str) -> Result<String> {
     Ok(parse_image_digest(full_digest)?.as_hex())
 }
 
-fn load_and_select_hash(
-    args: &CliArgs,
-    // TODO: why is this btreemap not a struct with hard fields?
-    dstack_config: &BTreeMap<String, String>,
-) -> Result<String> {
+fn load_and_select_hash(args: &CliArgs, dstack_config: &Config) -> Result<String> {
     let approved_hashes = if std::path::Path::new(IMAGE_DIGEST_FILE).is_file() {
         let content = std::fs::read_to_string(IMAGE_DIGEST_FILE).map_err(|source| {
             LauncherError::FileRead {
@@ -534,7 +450,7 @@ async fn get_manifest_digest(image: &ResolvedImage, timing: &RpcTimingConfig) ->
 
 async fn validate_image_hash(
     image_digest: &str,
-    dstack_config: &BTreeMap<String, String>,
+    dstack_config: &Config,
     timing: &RpcTimingConfig,
 ) -> Result<bool> {
     tracing::info!("Validating MPC hash: {image_digest}");
@@ -643,10 +559,6 @@ fn build_docker_cmd(
 
     // BTreeMap iteration is already sorted by key (deterministic)
     for (key, value) in user_env {
-        if ALLOWED_LAUNCHER_ENV_VARS.contains(key.as_str()) {
-            continue;
-        }
-
         if key == "EXTRA_HOSTS" {
             for host_entry in value.split(',') {
                 let clean = host_entry.trim();
@@ -789,58 +701,110 @@ mod tests {
     use assert_matches::assert_matches;
     use launcher_interface::types::ApprovedHashesFile;
 
-    // -- Config parsing tests -----------------------------------------------
+    // -- DstackUserConfig parsing tests -------------------------------------
 
     #[test]
-    fn test_parse_env_lines_basic() {
-        let lines = vec![
-            "# a comment",
-            "KEY1=value1",
-            "  KEY2 = value2 ",
-            "",
-            "INVALIDLINE",
-            "EMPTY_KEY=",
-        ];
-        let env = parse_env_lines(&lines);
-        assert_eq!(env.get("KEY1").unwrap(), "value1");
-        assert_eq!(env.get("KEY2").unwrap(), "value2");
-        assert_eq!(env.get("EMPTY_KEY").unwrap(), "");
-        assert!(!env.contains_key("INVALIDLINE"));
+    fn test_user_config_defaults_when_map_is_empty() {
+        let config = user_config_from_map(BTreeMap::new()).unwrap();
+        assert_eq!(config.image_tags, vec![DEFAULT_MPC_IMAGE_TAG]);
+        assert_eq!(config.image_name, DEFAULT_MPC_IMAGE_NAME);
+        assert_eq!(config.registry, DEFAULT_MPC_REGISTRY);
+        assert_eq!(
+            config.rpc_request_timeout_secs,
+            DEFAULT_RPC_REQUEST_TIMEOUT_SECS
+        );
+        assert_eq!(
+            config.rpc_request_interval_secs,
+            DEFAULT_RPC_REQUEST_INTERVAL_SECS
+        );
+        assert_eq!(config.rpc_max_attempts, DEFAULT_RPC_MAX_ATTEMPTS);
+        assert!(config.mpc_hash_override.is_none());
+        assert!(config.passthrough_env.is_empty());
     }
 
     #[test]
-    fn test_config_ignores_blank_lines_and_comments() {
-        let lines = vec![
-            "",
-            "  # This is a comment",
-            "  MPC_SECRET_STORE_KEY=topsecret",
-            "",
-        ];
-        let env = parse_env_lines(&lines);
-        assert_eq!(env.get("MPC_SECRET_STORE_KEY").unwrap(), "topsecret");
-        assert_eq!(env.len(), 1);
+    fn test_user_config_typed_fields_extracted_from_map() {
+        let map = BTreeMap::from([
+            (
+                DSTACK_USER_CONFIG_MPC_IMAGE_TAGS.into(),
+                "v1.0, v1.1".into(),
+            ),
+            (DSTACK_USER_CONFIG_MPC_IMAGE_NAME.into(), "my/image".into()),
+            (
+                DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY.into(),
+                "my.registry.io".into(),
+            ),
+            (ENV_VAR_RPC_REQUEST_TIMEOUT_SECS.into(), "30.0".into()),
+            (ENV_VAR_RPC_MAX_ATTEMPTS.into(), "5".into()),
+            ("MPC_ACCOUNT_ID".into(), "account.near".into()),
+        ]);
+        let config = user_config_from_map(map).unwrap();
+        assert_eq!(config.image_tags, vec!["v1.0", "v1.1"]);
+        assert_eq!(config.image_name, "my/image");
+        assert_eq!(config.registry, "my.registry.io");
+        assert_eq!(config.rpc_request_timeout_secs, 30.0);
+        assert_eq!(config.rpc_max_attempts, 5);
+        // Launcher-only keys are NOT in passthrough_env
+        assert!(
+            !config
+                .passthrough_env
+                .contains_key(DSTACK_USER_CONFIG_MPC_IMAGE_TAGS)
+        );
+        assert!(
+            !config
+                .passthrough_env
+                .contains_key(ENV_VAR_RPC_MAX_ATTEMPTS)
+        );
+        // Container passthrough keys ARE in passthrough_env
+        assert_eq!(
+            config.passthrough_env.get("MPC_ACCOUNT_ID").unwrap(),
+            "account.near"
+        );
     }
 
     #[test]
-    fn test_config_skips_malformed_lines() {
-        let lines = vec![
-            "GOOD_KEY=value",
-            "bad_line_without_equal",
-            "ANOTHER_GOOD=ok",
-            "=",
-        ];
-        let env = parse_env_lines(&lines);
-        assert!(env.contains_key("GOOD_KEY"));
-        assert!(env.contains_key("ANOTHER_GOOD"));
-        assert!(!env.contains_key("bad_line_without_equal"));
-        assert!(!env.contains_key(""));
+    fn test_user_config_malformed_rpc_fields_error() {
+        let map = BTreeMap::from([(ENV_VAR_RPC_MAX_ATTEMPTS.into(), "not_a_number".into())]);
+        let err = user_config_from_map(map).unwrap_err();
+        assert_matches!(err, LauncherError::InvalidEnvVar { key, .. } if key == ENV_VAR_RPC_MAX_ATTEMPTS);
+
+        let map = BTreeMap::from([(ENV_VAR_RPC_REQUEST_TIMEOUT_SECS.into(), "bad".into())]);
+        let err = user_config_from_map(map).unwrap_err();
+        assert_matches!(err, LauncherError::InvalidEnvVar { key, .. } if key == ENV_VAR_RPC_REQUEST_TIMEOUT_SECS);
+
+        let map = BTreeMap::from([(ENV_VAR_RPC_REQUEST_INTERVAL_SECS.into(), "bad".into())]);
+        let err = user_config_from_map(map).unwrap_err();
+        assert_matches!(err, LauncherError::InvalidEnvVar { key, .. } if key == ENV_VAR_RPC_REQUEST_INTERVAL_SECS);
     }
 
     #[test]
-    fn test_config_overrides_duplicate_keys() {
-        let lines = vec!["MPC_ACCOUNT_ID=first", "MPC_ACCOUNT_ID=second"];
-        let env = parse_env_lines(&lines);
-        assert_eq!(env.get("MPC_ACCOUNT_ID").unwrap(), "second");
+    fn test_user_config_hash_override_extracted() {
+        let map = BTreeMap::from([(ENV_VAR_MPC_HASH_OVERRIDE.into(), "sha256:abc".into())]);
+        let config = user_config_from_map(map).unwrap();
+        assert_eq!(config.mpc_hash_override.unwrap(), "sha256:abc");
+        assert!(
+            !config
+                .passthrough_env
+                .contains_key(ENV_VAR_MPC_HASH_OVERRIDE)
+        );
+    }
+
+    #[test]
+    fn test_parse_user_config_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("user_config");
+        std::fs::write(
+            &file,
+            "# comment\nMPC_ACCOUNT_ID=test\nMPC_IMAGE_NAME=my/image\n",
+        )
+        .unwrap();
+        let config = parse_user_config(file.to_str().unwrap()).unwrap();
+        assert_eq!(config.image_name, "my/image");
+        assert_eq!(
+            config.passthrough_env.get("MPC_ACCOUNT_ID").unwrap(),
+            "test"
+        );
+        assert!(!config.passthrough_env.contains_key("MPC_IMAGE_NAME"));
     }
 
     // -- Host/port validation tests -----------------------------------------
@@ -1031,7 +995,6 @@ mod tests {
     fn test_build_docker_cmd_nontee_no_dstack_mount() {
         let mut env = BTreeMap::new();
         env.insert("MPC_ACCOUNT_ID".into(), "x".into());
-        env.insert(ENV_VAR_RPC_MAX_ATTEMPTS.into(), "5".into());
         let cmd = build_docker_cmd(Platform::NonTee, &env, &make_digest()).unwrap();
         let s = cmd.join(" ");
         assert!(!s.contains("DSTACK_ENDPOINT="));
@@ -1282,10 +1245,15 @@ mod tests {
 
     #[test]
     fn test_parse_and_build_docker_cmd_full_flow() {
-        let config_str = "MPC_ACCOUNT_ID=test-user\nPORTS=11780:11780, --env BAD=oops\nEXTRA_HOSTS=host1:192.168.1.1, --volume /:/mnt\nIMAGE_HASH=sha256:abc123";
-        let lines: Vec<&str> = config_str.lines().collect();
-        let env = parse_env_lines(&lines);
-        let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("user_config");
+        std::fs::write(
+            &file,
+            "MPC_ACCOUNT_ID=test-user\nPORTS=11780:11780, --env BAD=oops\nEXTRA_HOSTS=host1:192.168.1.1, --volume /:/mnt\n",
+        )
+        .unwrap();
+        let config = parse_user_config(file.to_str().unwrap()).unwrap();
+        let cmd = build_docker_cmd(Platform::Tee, &config.passthrough_env, &make_digest()).unwrap();
         let cmd_str = cmd.join(" ");
 
         assert!(cmd_str.contains("MPC_ACCOUNT_ID=test-user"));
@@ -1351,15 +1319,16 @@ mod tests {
         const TEST_DIGEST: &str =
             "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372";
 
-        fn test_dstack_config() -> BTreeMap<String, String> {
-            BTreeMap::from([
+        fn test_dstack_config() -> Config {
+            user_config_from_map(BTreeMap::from([
                 (
                     "MPC_IMAGE_TAGS".into(),
                     "83b52da4e2270c688cdd30da04f6b9d3565f25bb".into(),
                 ),
                 ("MPC_IMAGE_NAME".into(), "nearone/testing".into()),
                 ("MPC_REGISTRY".into(), "registry.hub.docker.com".into()),
-            ])
+            ]))
+            .unwrap()
         }
 
         #[tokio::test]

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -59,6 +61,13 @@ pub enum LauncherError {
         source: std::io::Error,
     },
 
+    #[error("Failed to parse env file {path}: {source}")]
+    EnvFileParse {
+        path: PathBuf,
+        #[source]
+        source: dotenvy::Error,
+    },
+
     #[error("Failed to parse {path}: {source}")]
     JsonParse {
         path: String,
@@ -67,6 +76,9 @@ pub enum LauncherError {
 
     #[error("Required environment variable not set: {0}")]
     MissingEnvVar(String),
+
+    #[error("Invalid value for {key}: {value}")]
+    InvalidEnvVar { key: String, value: String },
 
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
