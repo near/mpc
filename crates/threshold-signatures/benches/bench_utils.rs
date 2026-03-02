@@ -312,7 +312,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
 }
 
 /// Used to prepare robust ecdsa signatures for benchmarking
-pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng>(
+pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
     result: &[(Participant, robust_ecdsa::PresignOutput)],
     max_malicious: MaxMalicious,
     pk: VerifyingKey,
@@ -413,7 +413,7 @@ pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
 }
 
 /// Used to prepare ed25519 signatures for benchmarking
-pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
     threshold: ReconstructionLowerBound,
     rng: &mut R,
 ) -> FrostEd25519SigV1 {
