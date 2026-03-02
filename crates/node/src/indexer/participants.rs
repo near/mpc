@@ -3,7 +3,6 @@ use crate::indexer::MpcContractStateViewer;
 use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
-use chain_gateway::chain_gateway::NoArgs;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::state_viewer::{BlockHeight, ContractStateStream};
 use ed25519_dalek::VerifyingKey;

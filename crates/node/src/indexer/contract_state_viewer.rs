@@ -6,7 +6,6 @@ use anyhow::Context;
 use chain_gateway::state_viewer::{ContractStateStream, StateViewer};
 use mpc_contract::{primitives::signature::YieldIndex, state::ProtocolContractState};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 

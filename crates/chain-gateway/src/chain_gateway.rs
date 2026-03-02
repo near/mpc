@@ -5,6 +5,7 @@ use crate::errors::ChainGatewayError;
 use crate::logger::indexer_logger;
 use crate::near_internals_wrapper::{ClientWrapper, RpcHandlerWrapper, ViewClientWrapper};
 use crate::state_viewer::StateViewer;
+use crate::state_viewer::viewer_trait::NearContractViewer;
 use crate::stats::IndexerStats;
 use crate::transaction_sender::TransactionSender;
 
@@ -25,10 +26,10 @@ pub struct ChainGateway {
 
 impl ChainGateway {
     pub fn viewer(&self) -> StateViewer {
-        StateViewer {
-            client: self.client.clone(),
-            view_client: self.view_client.clone(),
-        }
+        StateViewer::new(NearContractViewer::new(
+            self.client.clone(),
+            self.view_client.clone(),
+        ))
     }
 
     pub fn transaction_sender(&self) -> TransactionSender {

@@ -7,7 +7,7 @@ use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use chain_gateway::chain_gateway::{start_with_streamer, NoArgs};
+use chain_gateway::chain_gateway::start_with_streamer;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::state_viewer::BlockHeight;
 use ed25519_dalek::{SigningKey, VerifyingKey};

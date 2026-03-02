@@ -14,6 +14,7 @@ pub(crate) struct ViewClientWrapper {
 #[derive(Into, From, Copy, Clone)]
 pub struct BlockHeight(u64);
 
+#[derive(Clone)]
 pub struct ViewOutput {
     pub block_height: BlockHeight,
     pub value: Vec<u8>,
