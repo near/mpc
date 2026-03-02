@@ -693,7 +693,7 @@ pub struct OsMeasurement {
     pub rtmr1: HexDigest,
     pub rtmr2: HexDigest,
 }
-``` rust
+```
 
 
 ## CVM Upgrade Flow
@@ -727,9 +727,9 @@ sequenceDiagram
 
     Note over Operator: Follow migration flow (see node-migration-guide.md)
     Operator ->> Migration: Initiate migration from OldNode to NewNode
-    OldNode <<- Migration: Pull encrypted keyshares
+    Migration ->> OldNode: Pull encrypted keyshares
     Migration ->> NewNode: Restore keyshares
-    NewNode -->> Contract: Migration complete
+    NewNode ->> Contract: Migration complete
 
     Note over OldNode: Old node is deactivated
 
