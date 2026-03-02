@@ -34,24 +34,6 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 [proof-model]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/validation.rs#L7-L12
 [uid]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/uid.rs#L11
 
-The HOT MPC network characteristics the Archive Signer replaces:
-
-| Aspect | HOT MPC |
-|---|---|
-| **Crypto library** | `cait-sith` fork (ECDSA, Beaver triple-based) + FROST (EdDSA) |
-| **Signature schemes** | ECDSA (secp256k1) — [`k256`][k256], [`DomainId(0)`][domain-0]; EdDSA (ed25519) — [`ed25519-dalek`][ed25519-dalek], [`DomainId(1)`][domain-1] |
-| **Sign request source** | Off-chain only (HTTP API via [`hot_protocol::MpcClient`][mpc-client]) |
-| **Sign authorization** | [`Validation::verify()`][validation-verify] with [`ProofModel`][proof-model] via user's [`Uid`][uid] |
-| **Keygen / resharing** | CLI-driven ([`HotProtocolKeygen`][hot-keygen], [`HotProtocolReshare`][hot-reshare] commands) |
-| **TEE support** | None |
-| **Contract** | Basic code hash voting only, no attestation infrastructure |
-
-[hot-keygen]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/keygen_cli.rs
-[hot-reshare]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/resharing_cli.rs
-[k256]: https://crates.io/crates/k256
-[ed25519-dalek]: https://crates.io/crates/ed25519-dalek
-[domain-0]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/libs/chain-signatures/contract/src/primitives/domain.rs#L21-L24
-[domain-1]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/node/src/tests/multidomain.rs#L36-L37
 
 ### Why a Custom Binary
 
