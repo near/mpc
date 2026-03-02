@@ -8,12 +8,6 @@ HOT Labs operates a threshold MPC network for ECDSA (secp256k1) and EdDSA (ed255
 
 To support this, we'll provide a standalone application running inside a Trusted Execution Environment (TEE) that holds the reconstructed full private keys and handles signing requests. HOT will then be able to operate an instance of this application.
 
-c.f. [#2062][issue-2062], [#2018][issue-2018], [#2021][pr-2021]
-
-[issue-2062]: https://github.com/near/mpc/issues/2062
-[issue-2018]: https://github.com/near/mpc/issues/2018
-[pr-2021]: https://github.com/near/mpc/pull/2021
-
 ### Scope
 
 The Archive Signer is a custom lightweight binary that replaces HOT's MPC network ([`near/hot-mpc`][hot-mpc]). It must:
@@ -42,8 +36,6 @@ Other approaches were considered and rejected:
 [threshold-sigs]: https://github.com/near/threshold-signatures
 
 A custom binary was chosen because it is lightweight and easy to reason about, reuses modular TEE attestation and chain indexer components already being developed ([indexer design][indexer-design]), is future-proof (can be reused as a "graveyard" for NEAR's own deprecated domains), and aligns with other ongoing priorities (backup service, [#1891][issue-1891]).
-
-See also: [#2062][issue-2062], [#2018][issue-2018], [#2021][pr-2021].
 
 [issue-1891]: https://github.com/near/mpc/issues/1891
 
@@ -544,4 +536,7 @@ For additional high availability, a hot standby instance (a second CVM holding t
 - [#1891][issue-1891] -- TEE backup service
 - [#2103][pr-2103] -- Indexer design proposal
 
+[issue-2062]: https://github.com/near/mpc/issues/2062
+[issue-2018]: https://github.com/near/mpc/issues/2018
+[pr-2021]: https://github.com/near/mpc/pull/2021
 [pr-2103]: https://github.com/near/mpc/pull/2103
