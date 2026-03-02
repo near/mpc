@@ -6,7 +6,7 @@ This document outlines the design of the Archive Signer — a TEE application fo
 
 HOT Labs operates a threshold MPC network for ECDSA (secp256k1) and EdDSA (ed25519) signing on behalf of HOT Wallet users. HOT Labs wants to retire this network.
 
-To support this, we'll provide a standalone application running inside a Trusted Execution Environment (TEE) that holds the reconstructed full private keys and handles signing requests. HOT will then be able to operate an instance of this application for their keyshares.
+To support this, we'll provide a standalone application running inside a Trusted Execution Environment (TEE) that holds the reconstructed full private keys and handles signing requests. HOT will then be able to operate an instance of this application.
 
 c.f. [#2062][issue-2062], [#2018][issue-2018], [#2021][pr-2021]
 
