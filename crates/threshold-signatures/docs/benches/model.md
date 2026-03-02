@@ -154,7 +154,7 @@ In the case where the protocol allows distinguishing between normal participants
 | **OT based ECDSA** | 16 | 2088966 Bytes  | 3485 Bytes | 1360 Bytes |
 | **Robust ECDSA**   | 31 | N/A       | 15986 Bytes | 2752 Bytes |
 | **Ed25519 Frost**   | 16 | N/A       | N/A | 3818 Bytes |
-| **Ed25519 Frost with Presign**   | 7 | N/A       | 2274 Bytes |  TODO:tofill |
+| **Ed25519 Frost with Presign**   | 16 | N/A       | 2274 Bytes |  1513 Bytes |
 | **Confidential key derivation**   | 16 | N/A       | N/A | 2894 Bytes |
 
 | **Maximum number of malicious parties: 15** |
