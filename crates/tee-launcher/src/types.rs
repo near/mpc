@@ -1,3 +1,4 @@
+use bounded_collections::NonEmptyVec;
 use clap::{Parser, ValueEnum};
 use mpc_primitives::hash::MpcDockerImageHash;
 use serde::{Deserialize, Serialize};
@@ -47,15 +48,15 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
     /// Docker image tags to search (from `MPC_IMAGE_TAGS`, comma-separated).
-    pub image_tags: Vec<String>,
+    pub image_tags: NonEmptyVec<String>,
     /// Docker image name (from `MPC_IMAGE_NAME`).
     pub image_name: String,
     /// Docker registry (from `MPC_REGISTRY`).
     pub registry: String,
     /// Per-request timeout for registry RPC calls (from `RPC_REQUEST_TIMEOUT_SECS`).
-    pub rpc_request_timeout_secs: f64,
+    pub rpc_request_timeout_secs: u64,
     /// Delay between registry RPC retries (from `RPC_REQUEST_INTERVAL_SECS`).
-    pub rpc_request_interval_secs: f64,
+    pub rpc_request_interval_secs: u64,
     /// Maximum registry RPC attempts (from `RPC_MAX_ATTEMPTS`).
     pub rpc_max_attempts: u32,
     /// Optional hash override that bypasses registry lookup (from `MPC_HASH_OVERRIDE`).

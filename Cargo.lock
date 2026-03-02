@@ -10552,6 +10552,7 @@ name = "tee-launcher"
 version = "3.5.1"
 dependencies = [
  "assert_matches",
+ "bounded-collections",
  "clap",
  "dstack-sdk",
  "hex",

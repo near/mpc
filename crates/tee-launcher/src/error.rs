@@ -61,13 +61,6 @@ pub enum LauncherError {
         source: std::io::Error,
     },
 
-    #[error("Failed to parse env file {path}: {source}")]
-    EnvFileParse {
-        path: PathBuf,
-        #[source]
-        source: dotenvy::Error,
-    },
-
     #[error("Failed to parse {path}: {source}")]
     JsonParse {
         path: String,
