@@ -1,0 +1,294 @@
+use elliptic_curve::bigint::U512;
+use rand_core::{CryptoRngCore, RngCore};
+use sha2::{Digest, Sha256};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+
+use crate::{
+    crypto::proofs::strobe_transcript::TranscriptRng, ecdsa::Scalar, errors::ProtocolError,
+    protocol::internal::PrivateChannel,
+};
+
+use crate::crypto::constants::SECURITY_PARAMETER;
+use crate::ecdsa::ot_based_ecdsa::triples::{
+    bits::{BitMatrix, BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
+    correlated_ot_extension::{correlated_ot_receiver, correlated_ot_sender, CorrelatedOtParams},
+};
+
+use elliptic_curve::ops::Reduce;
+
+use crate::crypto::constants::NEAR_RANDOM_OT_EXTENSION_HASH_CTX;
+
+fn hash_to_scalar(i: usize, v: &BitVector) -> Scalar {
+    let mut hasher = Sha256::new();
+    let i64 = u64::try_from(i).expect("failed to convert usize to u64");
+
+    hasher.update(NEAR_RANDOM_OT_EXTENSION_HASH_CTX);
+    hasher.update(i64.to_le_bytes());
+    hasher.update(v.bytes());
+    let seed = hasher.finalize().into();
+
+    let mut data = [0u8; 64];
+    TranscriptRng::new(&seed).fill_bytes(&mut data);
+    <Scalar as Reduce<U512>>::reduce_bytes(&data.into())
+}
+
+fn adjust_size(size: usize) -> usize {
+    let r = size % SECURITY_PARAMETER;
+    let padded = if r == 0 {
+        size
+    } else {
+        size + (SECURITY_PARAMETER - r)
+    };
+    padded + 2 * SECURITY_PARAMETER
+}
+
+/// Parameters we need for random OT extension
+#[derive(Debug, Clone, Copy)]
+pub struct RandomOtExtensionParams<'sid> {
+    pub sid: &'sid [u8],
+    pub batch_size: usize,
+}
+
+/// The result that the sender gets.
+pub type RandomOTExtensionSenderOut = Vec<(Scalar, Scalar)>;
+
+/// The result that the receiver gets.
+pub type RandomOTExtensionReceiverOut = Vec<(Choice, Scalar)>;
+
+/// Generates the random values needed in `random_ot_extension_sender`
+pub(super) fn random_ot_extension_sender_helper(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+    let mut transcript_seed = [0u8; 32];
+    rng.fill_bytes(&mut transcript_seed);
+    transcript_seed
+}
+
+pub async fn random_ot_extension_sender(
+    mut chan: PrivateChannel,
+    params: RandomOtExtensionParams<'_>,
+    delta: BitVector,
+    k: &SquareBitMatrix,
+    transcript_seed: [u8; 32],
+) -> Result<RandomOTExtensionSenderOut, ProtocolError> {
+    let adjusted_size = adjust_size(params.batch_size);
+
+    // Step 2
+    let q = correlated_ot_sender(
+        chan.child(0),
+        CorrelatedOtParams {
+            sid: params.sid,
+            batch_size: adjusted_size,
+        },
+        delta,
+        k,
+    )
+    .await?;
+
+    // Step 5
+    let wait0 = chan.next_waitpoint();
+    chan.send(wait0, &transcript_seed)?;
+
+    let mu = adjusted_size / SECURITY_PARAMETER;
+
+    // Step 7
+    let mut prng = TranscriptRng::new(&transcript_seed);
+    let chi: Vec<BitVector> = (0..mu).map(|_| BitVector::random(&mut prng)).collect();
+
+    // Step 11
+    let wait1 = chan.next_waitpoint();
+    let (small_x, small_t): (DoubleBitVector, Vec<DoubleBitVector>) = chan.recv(wait1).await?;
+
+    // Step 10
+    if small_t.len() != SECURITY_PARAMETER {
+        return Err(ProtocolError::AssertionFailed(
+            "small t of incorrect length".to_owned(),
+        ));
+    }
+
+    for (j, small_t_j) in small_t.iter().enumerate() {
+        let delta_j = Choice::from(delta.bit(j));
+
+        let mut small_q_j = DoubleBitVector::zero();
+        for (q_i, chi_i) in q.column_chunks(j).zip(chi.iter()) {
+            small_q_j ^= q_i.gf_mul(chi_i);
+        }
+
+        let delta_j_x =
+            DoubleBitVector::conditional_select(&DoubleBitVector::zero(), &small_x, delta_j);
+        if !bool::from(small_q_j.ct_eq(&(small_t_j ^ delta_j_x))) {
+            return Err(ProtocolError::AssertionFailed("q check failed".to_owned()));
+        }
+    }
+
+    // Step 14
+    let mut out = Vec::with_capacity(params.batch_size);
+
+    for (i, q_i) in q.rows().take(params.batch_size).enumerate() {
+        let v0_i = hash_to_scalar(i, q_i);
+        let v1_i = hash_to_scalar(i, &(q_i ^ delta));
+        out.push((v0_i, v1_i));
+    }
+
+    Ok(out)
+}
+
+/// Generates the random values needed in `random_ot_extension_receiver`
+pub(super) fn random_ot_extension_receiver_helper(
+    batch_size: usize,
+    rng: &mut impl CryptoRngCore,
+) -> ChoiceVector {
+    // This must coincide with the `adjusted_size` value computed in `random_ot_extension_receiver`
+    let adjusted_size = adjust_size(batch_size);
+    ChoiceVector::random(rng, adjusted_size)
+}
+
+pub async fn random_ot_extension_receiver(
+    mut chan: PrivateChannel,
+    params: RandomOtExtensionParams<'_>,
+    k0: &SquareBitMatrix,
+    k1: &SquareBitMatrix,
+    b: ChoiceVector,
+) -> Result<RandomOTExtensionReceiverOut, ProtocolError> {
+    let adjusted_size = adjust_size(params.batch_size);
+
+    // Step 1
+    let x: BitMatrix = b
+        .bits()
+        .map(|b_i| BitVector::conditional_select(&BitVector::zero(), &!BitVector::zero(), b_i))
+        .collect();
+
+    // Step 2
+    let t = correlated_ot_receiver(
+        chan.child(0),
+        CorrelatedOtParams {
+            sid: params.sid,
+            batch_size: adjusted_size,
+        },
+        k0,
+        k1,
+        &x,
+    )?;
+
+    let wait0 = chan.next_waitpoint();
+
+    // Step 5
+    let seed: [u8; 32] = chan.recv(wait0).await?;
+
+    let mu = adjusted_size / SECURITY_PARAMETER;
+
+    // Step 7
+    let mut prng = TranscriptRng::new(&seed);
+    let chi: Vec<BitVector> = (0..mu).map(|_| BitVector::random(&mut prng)).collect();
+
+    // Step 8
+    let mut small_x = DoubleBitVector::zero();
+    for (b_i, chi_i) in b.chunks().zip(chi.iter()) {
+        small_x.xor_mut(&b_i.gf_mul(chi_i));
+    }
+    let small_t: Vec<_> = (0..SECURITY_PARAMETER)
+        .map(|j| {
+            let mut small_t_j = DoubleBitVector::zero();
+            for (t_i, chi_i) in t.column_chunks(j).zip(chi.iter()) {
+                small_t_j ^= t_i.gf_mul(chi_i);
+            }
+            small_t_j
+        })
+        .collect();
+
+    // Step 11
+    let wait1 = chan.next_waitpoint();
+    chan.send(wait1, &(small_x, small_t))?;
+
+    // Step 15
+    let out: Vec<_> = b
+        .bits()
+        .zip(t.rows())
+        .take(params.batch_size)
+        .enumerate()
+        .map(|(i, (b_i, t_i))| (b_i, hash_to_scalar(i, t_i)))
+        .collect();
+
+    Ok(out)
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot,
+        errors::ProtocolError,
+        participants::Participant,
+        protocol::internal::{make_protocol, Comms},
+        test_utils::{run_two_party_protocol, MockCryptoRng},
+    };
+
+    use super::*;
+
+    use k256::Scalar;
+    use rand::SeedableRng;
+
+    /// Run the random OT protocol between two parties
+    fn run_random_ot<R: CryptoRngCore + SeedableRng + Send + 'static>(
+        (delta, k): (BitVector, SquareBitMatrix),
+        (k0, k1): (SquareBitMatrix, SquareBitMatrix),
+        sid: Vec<u8>,
+        batch_size: usize,
+        rng: &mut R,
+    ) -> Result<(RandomOTExtensionSenderOut, RandomOTExtensionReceiverOut), ProtocolError> {
+        let s = Participant::from(0u32);
+        let r = Participant::from(1u32);
+        let comms_s = Comms::new();
+        let comms_r = Comms::new();
+
+        let sid_s = sid.clone();
+        let sid_r = sid;
+
+        let seed_s = random_ot_extension_sender_helper(rng);
+        let seed_r = random_ot_extension_receiver_helper(batch_size, rng);
+
+        run_two_party_protocol(
+            s,
+            r,
+            &mut make_protocol(comms_s.clone(), async move {
+                let params = RandomOtExtensionParams {
+                    sid: &sid_s,
+                    batch_size,
+                };
+                random_ot_extension_sender(comms_s.private_channel(s, r), params, delta, &k, seed_s)
+                    .await
+            }),
+            &mut make_protocol(comms_r.clone(), async move {
+                let params = RandomOtExtensionParams {
+                    sid: &sid_r,
+                    batch_size,
+                };
+                random_ot_extension_receiver(
+                    comms_r.private_channel(r, s),
+                    params,
+                    &k0,
+                    &k1,
+                    seed_r,
+                )
+                .await
+            }),
+        )
+    }
+
+    #[test]
+    fn test_random_ot() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
+        let batch_size = 16;
+        let (sender_out, receiver_out) = run_random_ot(
+            (delta, k),
+            (k0, k1),
+            b"test sid".to_vec(),
+            batch_size,
+            &mut rng,
+        )
+        .unwrap();
+        assert_eq!(sender_out.len(), batch_size);
+        assert_eq!(receiver_out.len(), batch_size);
+        for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {
+            assert_eq!(*vb_i, Scalar::conditional_select(v0_i, v1_i, *b_i));
+        }
+    }
+}

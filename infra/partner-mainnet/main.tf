@@ -92,7 +92,7 @@ module "ig_template" {
   source_image_project = "cos-cloud"
   machine_type         = "n2d-standard-16"
 
-  startup_script = file("${path.module}/../scripts/mpc_init.sh")
+  startup_script = file("${path.module}/../scripts/mpc-init.sh")
 
   additional_disks = [{
     description  = "MPC partner mainnet data disk"

@@ -1,0 +1,19 @@
+[package]
+name = "signature-verifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+contract-interface = { workspace = true }
+near-sdk = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+ed25519-dalek = { workspace = true }
+k256 = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+
+[lints]
+workspace = true

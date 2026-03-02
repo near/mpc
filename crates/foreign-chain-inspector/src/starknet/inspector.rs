@@ -1,11 +1,11 @@
-use jsonrpsee::core::client::ClientT;
-
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
+use contract_interface::types::{StarknetFelt, StarknetLog};
 use foreign_chain_rpc_interfaces::starknet::{
     GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
     StarknetFinalityStatus,
 };
+use jsonrpsee::core::client::ClientT;
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 
@@ -93,6 +93,7 @@ fn parse_finality_status(
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StarknetExtractor {
     BlockHash,
+    Log { log_index: usize },
 }
 
 impl StarknetExtractor {
@@ -104,6 +105,27 @@ impl StarknetExtractor {
             StarknetExtractor::BlockHash => Ok(StarknetExtractedValue::BlockHash(
                 (*rpc_response.block_hash.as_fixed_bytes()).into(),
             )),
+            StarknetExtractor::Log { log_index } => {
+                let event = rpc_response
+                    .events
+                    .get(*log_index)
+                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+                Ok(StarknetExtractedValue::Log(StarknetLog {
+                    block_hash: StarknetFelt(*rpc_response.block_hash.as_fixed_bytes()),
+                    block_number: rpc_response.block_number,
+                    data: event
+                        .data
+                        .iter()
+                        .map(|h| StarknetFelt(*h.as_fixed_bytes()))
+                        .collect(),
+                    from_address: StarknetFelt(*event.from_address.as_fixed_bytes()),
+                    keys: event
+                        .keys
+                        .iter()
+                        .map(|h| StarknetFelt(*h.as_fixed_bytes()))
+                        .collect(),
+                }))
+            }
         }
     }
 }

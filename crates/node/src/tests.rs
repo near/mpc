@@ -1,7 +1,8 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
 use contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest,
-    VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
 };
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
@@ -277,7 +278,9 @@ pub async fn request_signature_and_await_response(
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
         }
         SignatureScheme::Ed25519 => {
-            let len = rand::thread_rng().gen_range(32..1232);
+            let len = rand::thread_rng().gen_range(
+                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+            );
             let mut payload = vec![0; len];
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
