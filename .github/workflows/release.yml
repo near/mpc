@@ -6,10 +6,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Trigger this workflow when a pull request targeting main is closed.
-# Note: "closed" fires for both merged and unmerged PRs — the job-level
-# `if` condition below filters to only merged release PRs.
+# Trigger this workflow when:
+#   1. A pull request targeting main is closed (filters to merged release PRs via job `if`).
+#   2. A version tag (v*) is pushed directly (e.g. `git push origin v3.6.0`).
 on:
+  push:
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -17,14 +20,15 @@ on:
       - closed
 
 jobs:
-  create-tag:
-    name: "Create release tag"
-    # Only run when:
-    #   1. The PR was actually merged (not just closed/dismissed).
-    #   2. The source branch follows the release naming convention (release/v*).
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v')
+  release-info:
+    name: "Extract release info"
+    # Run when a version tag is pushed OR a merged release/v* PR is closed.
+    if: >-
+      github.event_name == 'push'
+      || (github.event.pull_request.merged == true
+          && startsWith(github.event.pull_request.head.ref, 'release/v'))
     runs-on: warp-ubuntu-2404-x64-2x
-    # Write permission on contents is required to push a new tag.
+    # Write permission on contents is required to push a new tag (PR path).
     permissions:
       contents: write
 
@@ -35,16 +39,26 @@ jobs:
       short-sha: ${{ steps.version.outputs.short-sha }}
 
     steps:
-      # Extract the semver version from the branch name.
-      # e.g. "release/v3.6.0" -> version="3.6.0", tag="v3.6.0"
+      # Extract the semver version from the tag ref or branch name.
+      # Tag push: refs/tags/v3.6.0 -> version="3.6.0", tag="v3.6.0"
+      # PR merge: release/v3.6.0   -> version="3.6.0", tag="v3.6.0"
       # Also compute the 7-char commit hash used as the Docker source tag.
-      - name: Extract version from branch name
+      - name: Extract version
         id: version
         env:
+          EVENT: ${{ github.event_name }}
+          TAG_REF: ${{ github.ref }}
+          TAG_SHA: ${{ github.sha }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
-          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          VERSION="${BRANCH#release/v}"
+          if [[ "$EVENT" == "push" ]]; then
+            VERSION="${TAG_REF#refs/tags/v}"
+            SHA="$TAG_SHA"
+          else
+            VERSION="${BRANCH#release/v}"
+            SHA="$PR_SHA"
+          fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
             echo "::error::Invalid semver: $VERSION"
             exit 1
@@ -55,7 +69,9 @@ jobs:
 
       # Create the tag via the GitHub API so we don't need git credentials.
       # Points the tag at the PR's merge commit SHA.
+      # Skipped on tag push since the tag already exists.
       - name: Create tag
+        if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -70,7 +86,7 @@ jobs:
   # These are the same workflows you'd normally trigger manually from the Actions UI.
   retag-docker-images:
     name: "Retag Docker images"
-    needs: create-tag
+    needs: release-info
     runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       actions: write
@@ -93,8 +109,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          SHORT_SHA: ${{ needs.create-tag.outputs.short-sha }}
-          VERSION: ${{ needs.create-tag.outputs.version }}
+          SHORT_SHA: ${{ needs.release-info.outputs.short-sha }}
+          VERSION: ${{ needs.release-info.outputs.version }}
         run: |
           gh workflow run docker_launcher_release.yml \
             --repo "$REPO" \
@@ -109,8 +125,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          SHORT_SHA: ${{ needs.create-tag.outputs.short-sha }}
-          VERSION: ${{ needs.create-tag.outputs.version }}
+          SHORT_SHA: ${{ needs.release-info.outputs.short-sha }}
+          VERSION: ${{ needs.release-info.outputs.version }}
         run: |
           gh workflow run docker_node_release.yml \
             --repo "$REPO" \
@@ -126,8 +142,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          SHORT_SHA: ${{ needs.create-tag.outputs.short-sha }}
-          VERSION: ${{ needs.create-tag.outputs.version }}
+          SHORT_SHA: ${{ needs.release-info.outputs.short-sha }}
+          VERSION: ${{ needs.release-info.outputs.version }}
         run: |
           gh workflow run docker_node_release.yml \
             --repo "$REPO" \
@@ -161,7 +177,7 @@ jobs:
       - name: Get image digests
         id: digests
         env:
-          RELEASE_TAG: ${{ needs.create-tag.outputs.version }}
+          RELEASE_TAG: ${{ needs.release-info.outputs.version }}
         run: |
           for REPO in mpc-launcher mpc-node-gcp mpc-node; do
             SAFE_NAME="${REPO//-/_}"
@@ -176,10 +192,10 @@ jobs:
   # Build the smart contract using reproducible builds, rename the artifacts
   # with the release version, and package them into a .tar.gz archive.
   # This job runs in parallel with retag-docker-images since both only
-  # depend on create-tag.
+  # depend on release-info.
   build-contract:
     name: "Build contract"
-    needs: create-tag
+    needs: release-info
     # Uses a 16x runner because the reproducible contract build is resource-intensive.
     runs-on: warp-ubuntu-2404-x64-16x
     permissions:
@@ -190,11 +206,11 @@ jobs:
       contract-hash: ${{ steps.contract-hash.outputs.sha256 }}
 
     steps:
-      # Checkout main so we build the code that includes the version bump.
+      # Checkout the release tag so we build the correct code in both trigger paths.
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          ref: main
+          ref: ${{ needs.release-info.outputs.tag }}
           persist-credentials: false
 
       # Restore cached Rust dependencies to speed up the build.
@@ -225,7 +241,7 @@ jobs:
       # e.g. mpc-contract-v3.6.0.wasm, mpc-contract-v3.6.0-abi.json
       - name: Package contract artifacts
         env:
-          VERSION: ${{ needs.create-tag.outputs.version }}
+          VERSION: ${{ needs.release-info.outputs.version }}
         run: |
           cd target/near/mpc_contract/
           mv mpc_contract.wasm "mpc-contract-v${VERSION}.wasm"
@@ -238,24 +254,24 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6db9a6b7e75b195db6a7b2bcf4bac # v4.6.2
         with:
           name: mpc-contract
-          path: target/near/mpc_contract/mpc-contract-v${{ needs.create-tag.outputs.version }}.tar.gz
+          path: target/near/mpc_contract/mpc-contract-v${{ needs.release-info.outputs.version }}.tar.gz
 
   # Create a draft GitHub release with the changelog, Docker image info,
   # and the contract artifact attached.
   # Runs after both retag-docker-images and build-contract complete.
   create-release:
     name: "Create draft GitHub release"
-    needs: [create-tag, retag-docker-images, build-contract]
+    needs: [release-info, retag-docker-images, build-contract]
     runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       contents: write
 
     steps:
-      # Checkout is needed to read CHANGELOG.md.
+      # Checkout the release tag to read the correct CHANGELOG.md.
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          ref: main
+          ref: ${{ needs.release-info.outputs.tag }}
           persist-credentials: false
 
       # Extract the changelog section for this version from CHANGELOG.md.
@@ -263,7 +279,7 @@ jobs:
       # everything between the current version's header and the next one.
       - name: Extract changelog
         env:
-          VERSION: ${{ needs.create-tag.outputs.version }}
+          VERSION: ${{ needs.release-info.outputs.version }}
         run: |
           awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > release-notes-raw.md
           if [ ! -s release-notes-raw.md ]; then
@@ -280,7 +296,7 @@ jobs:
       # Compose the full release body: changelog + Docker images + contract hash.
       - name: Compose release body
         env:
-          VERSION: ${{ needs.create-tag.outputs.version }}
+          VERSION: ${{ needs.release-info.outputs.version }}
           NODE_MANIFEST: ${{ needs.retag-docker-images.outputs.mpc_node_manifest_digest }}
           NODE_IMAGE_ID: ${{ needs.retag-docker-images.outputs.mpc_node_image_id }}
           NODE_GCP_MANIFEST: ${{ needs.retag-docker-images.outputs.mpc_node_gcp_manifest_digest }}
@@ -318,8 +334,8 @@ jobs:
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.create-tag.outputs.tag }}
-          VERSION: ${{ needs.create-tag.outputs.version }}
+          TAG: ${{ needs.release-info.outputs.tag }}
+          VERSION: ${{ needs.release-info.outputs.version }}
         run: |
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
