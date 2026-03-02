@@ -80,9 +80,7 @@ class RPC ext;
 
 ### Relationship to MPC Network Architecture
 
-The Archive Signer reuses the [Chain Gateway][indexer-design] (Contract State Subscriber, Transaction Sender), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the shared TEE Context crate for the attestation lifecycle.
-
-In the MPC node, the [MPC Context][indexer-design] sits on top of the TEE Context and adds MPC-specific orchestration (signing jobs, resharing, peer management). The Archive Signer uses the TEE Context directly — everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
+The Archive Signer reuses the [Chain Gateway][indexer-design] (Contract State Subscriber, Transaction Sender), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the shared TEE Context crate for the attestation lifecycle. It uses the TEE Context directly, bypassing the MPC Context layer.
 
 [indexer-design]: indexer-design.md
 [tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
