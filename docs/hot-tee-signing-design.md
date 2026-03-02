@@ -51,7 +51,7 @@ subgraph CVM["CVM"]
             TEE_GOV[
             <b>TEE Governance</b><br/>
             <b>TEE Context</b>
-            <b>Chain Indexer</b>
+            <b>Chain Gateway</b>
             ]
         end
     end
@@ -80,7 +80,7 @@ class RPC ext;
 
 ### Relationship to MPC Network Architecture
 
-The Archive Signer reuses the [Chain Indexer][indexer-design] (Contract State Subscriber, Transaction Sender), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the shared TEE Context crate for the attestation lifecycle — configured to talk to the HOT governance contract instead of the MPC signer contract.
+The Archive Signer reuses the [Chain Gateway][indexer-design] (Contract State Subscriber, Transaction Sender), TEE attestation crates ([`tee-authority`][tee-authority], [`mpc-attestation`][mpc-attestation]), and the shared TEE Context crate for the attestation lifecycle.
 
 In the MPC node, the [MPC Context][indexer-design] sits on top of the TEE Context and adds MPC-specific orchestration (signing jobs, resharing, peer management). The Archive Signer uses the TEE Context directly — everything else from the MPC node is omitted: P2P networking, threshold signing protocols, triple/presignature generation, key generation/resharing, block event indexing, and RocksDB storage. Signing is done directly with `k256`/`ed25519-dalek` using the reconstructed full private keys.
 
@@ -116,7 +116,7 @@ TEE_CTX[
 <b>mpc-attestation</b>
 ]
 
-subgraph CHAIN["Chain Indexer"]
+subgraph CHAIN["Chain Gateway"]
     direction LR
     CSUB["Contract State Subscriber"]
     TSEND["Transaction Sender"]
@@ -141,7 +141,7 @@ The Archive Signer embeds a full `near-indexer` (which includes a `neard` node),
 
 The signing flow itself is entirely off-chain — HTTP requests in, signatures out. Request authorization uses [`hot-validation-core`][hot-validation-core]'s own RPC clients (not the embedded neard) to query wallet contracts on NEAR and other chains.
 
-The Chain Indexer's `ContractStateSubscriber` and [`TransactionSender`][tx-sender] traits (proposed in the [indexer design][indexer-design]) provide the interface. The TEE Context sits on top of the Chain Indexer, and in the MPC node the MPC Context sits on top of the TEE Context.
+The Chain Gateway's `ContractStateSubscriber` and [`TransactionSender`][tx-sender] traits (proposed in the [indexer design][indexer-design]) provide the interface. The TEE Context sits on top of the Chain Gateway, and in the MPC node the MPC Context sits on top of the TEE Context.
 
 [tx-sender]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/indexer/tx_sender.rs#L22
 [hot-validation-core]: https://github.com/hot-dao/hot-validation-sdk/tree/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core

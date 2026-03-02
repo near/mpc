@@ -12,7 +12,7 @@ For MPC-network-specific TEE integration (threat model, participant management, 
 
 ## Overview
 
-All TEE services run inside a [Dstack][dstack] CVM on Intel TDX hardware. They share a common attestation lifecycle managed by reusable crates and the [Chain Indexer][chain-indexer]:
+All TEE services run inside a [Dstack][dstack] CVM on Intel TDX hardware. They share a common attestation lifecycle managed by reusable crates and the [Chain Gateway][chain-indexer]:
 
 | Component | Purpose |
 |-----------|---------|
@@ -57,7 +57,7 @@ TEE_CTX[
 <b>mpc-attestation</b>
 ]
 
-subgraph CHAIN["Chain Indexer"]
+subgraph CHAIN["Chain Gateway"]
     direction LR
     CSUB["Contract State Subscriber"]
     TSEND["Transaction Sender"]
@@ -142,7 +142,7 @@ subgraph TEE_CTX["TEE Context"]
     ATTEST["Periodic Attestation<br/>(every 7 days)"]
 end
 
-subgraph CHAIN["Chain Indexer"]
+subgraph CHAIN["Chain Gateway"]
     CSUB["Contract State Subscriber"]
     TSEND["Transaction Sender"]
 end
