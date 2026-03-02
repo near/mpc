@@ -497,7 +497,7 @@ pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
         .expect("Signing should succeed");
         protocols.push((*p, protocol));
     }
-    
+
     FrostEd25519SigV2 {
         protocols,
         index: coordinator_index,
