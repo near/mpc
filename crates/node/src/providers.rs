@@ -16,6 +16,7 @@ use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::types::SignatureId;
+use threshold_signatures::ReconstructionLowerBound;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
@@ -50,7 +51,7 @@ pub trait SignatureProvider {
     ///
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_generation_client(
-        threshold: usize,
+        threshold: ReconstructionLowerBound,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;
 
@@ -58,7 +59,7 @@ pub trait SignatureProvider {
     /// Both leaders and followers call this function.
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
-        new_threshold: usize,
+        new_threshold: ReconstructionLowerBound,
         key_share: Option<Self::SecretShare>,
         public_key: Self::PublicKey,
         old_participants: &ParticipantsConfig,
