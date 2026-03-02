@@ -199,6 +199,8 @@ The key import is a two-phase process:
 2. Each operator encrypts their exported keyshare to the CVM's ephemeral public key.
 3. The encrypted keyshares are delivered to the app via `POST /import/keyshares`.
 
+A CLI tool will be provided for these steps (fetch, verify, encrypt, deliver).
+
 An attacker who controls the host could substitute a fake CVM with their own encryption key. The TDX attestation quote binding the ephemeral public key defends against this — operators must verify the attestation before encrypting. An attacker would need to compromise **both** the host and forge a valid TDX attestation.
 
 ### Phase 3: Reconstruction (Inside TEE)
