@@ -1,23 +1,19 @@
-// todo: fix this readme
 # Chain Gateway
 
-This crate can be used to spawn and intract with a neard node.
-It is currently work in progress, but aims to offer the API outlined in [indexer-breakout](../../docs/indexer-breakout.md).
+This crate spawns and interacts with an in-process neard node. It provides three subsystems for blockchain interaction:
 
-current API (will gradually transition):
+- **State Viewer:** query and subscribe to arbitrary view methods on NEAR smart contracts.
+- **Block Events:** filter finalized blocks for matching transactions/receipts and receive them as a stream. *(planned — not yet implemented)*
+- **Transaction Sender:** submit signed transactions to the NEAR blockchain.
 
 ```rust
-use chain_gateway::neard::start_with_streamer;
+use chain_gateway::chain_gateway::start_with_streamer;
 
-let (chain_gateway, stream) = start_with_streamer(near_indexer_config).await;
+let (chain_gateway, stream) = start_with_streamer(near_indexer_config).await?;
+
+let viewer = chain_gateway.viewer();           // StateViewer
+let tx_sender = chain_gateway.transaction_sender(); // TransactionSender
 ```
-
-
-The chain indexer consists of three functionalities, each one with their own API:
-
-- **Contract State subscriber:** subscribe to arbitrary view methods on arbitrary contracts on the NEAR blockchain.
-- **Block Events:** Filter the mempool for transactions matching a specific pattern (receipient or executor id and method names). Receive a stream of all matching transactions.
-- **Transaction Sender:** send transactions to the NEAR blockchain.
 
 ```mermaid
 ---
@@ -25,14 +21,14 @@ title: MPC Orchestration
 ---
 flowchart TB
 
-subgraph CHAIN[Chain Indexer]
+subgraph CHAIN[Chain Gateway]
     direction TB
     TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
         **Filters** non-finalized NEAR blocks for specific transactions
-        **Returns** matching args in a stream 
+        **Returns** matching args in a stream
     ]
 
-    CONTRACT_STATE_VIEWER[**Contract State Subscriber**<br/><br/>
+    CONTRACT_STATE_VIEWER[**State Viewer**<br/><br/>
         **Queries** view functions of smart contracts
         **Returns** the result to the MPC Context
     ]
@@ -55,7 +51,7 @@ end
 
 subgraph NEAR[NEAR Blockchain]
     direction TB
-    
+
     subgraph MEMPOOL[NEAR Mempool]
     end
 
@@ -75,7 +71,7 @@ subgraph NEAR[NEAR Blockchain]
 end
 
 
-%% Chain Indexer --> Neard Node
+%% Chain Gateway --> Neard Node
 TX_SUBSCRIBER --> BLOCK_STREAMER
 CONTRACT_STATE_VIEWER --> VIEW_CLIENT
 TX_SENDER --> RPC_HANDLER
@@ -105,50 +101,82 @@ class CHAIN chain;
 
 ## API
 
+### State Viewer
 
-### Contract State Subscriber
+`StateViewer` provides one-shot view calls and polling-based subscriptions to contract state.
+It is generic over `ContractViewer`, which is the testing seam — production code uses `NearContractViewer`
+(backed by the real nearcore actor system), while unit tests can substitute a `FakeViewer`.
 
 ```rust
-trait ContractStateSnapshot<T> {
-    /// is synchronous, contains the last seen value
-    fn latest(&self) -> Result<(BlockHeight, &T), Error>;
-}
-
-trait ContractStateStream<T> {
-    /// is synchronous, contains the last seen value
-    fn latest(&self) -> Result<(BlockHeight, &T), Error>;
-    /// returns if the value of type `T` has changed
-    async fn changed(&mut self) -> Result<(), Error>;
-}
-
-
-impl ContractStateSubscriber {
-    async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
+/// Testing seam: abstracts the raw contract view call.
+#[async_trait]
+pub trait ContractViewer: Send + Sync + Clone + 'static {
+    async fn view_raw(
         &self,
-        contract: AccountId,
-        view_method: &str,
-    ) -> Result<impl ContractStateStream<T> + Send, Error>;
-
-    async fn view<T: DeserializeOwned + PartialEq + Send + 'static>(
-        &self,
-        contract: AccountId,
-        view_method: &str,
-    ) -> Result<impl ContractStateSnapshot<T> + Send, Error>;
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<ViewOutput, ChainGatewayError>;
 }
 
-pub struct ContractStateSubscriber {
-    /// nearcore view client
-    view_client: IndexerViewClient
+/// External API for querying contract state.
+/// Defaults to NearContractViewer (the real NEAR viewer).
+pub struct StateViewer<V = NearContractViewer> { /* ... */ }
+
+impl<V: ContractViewer> StateViewer<V> {
+    /// One-shot view call. Serializes `args` as JSON, deserializes the response as `Res`.
+    pub async fn view<Arg: Serialize, Res: DeserializeOwned>(
+        &self,
+        contract_id: AccountId,
+        method_name: &str,
+        args: &Arg,
+    ) -> Result<(BlockHeight, Res), ChainGatewayError>;
+
+    /// Subscribe to a view method (with arguments). Polls every 200ms.
+    pub async fn subscribe<Arg: Serialize, Res: DeserializeOwned + Send + Clone>(
+        &self,
+        contract_id: AccountId,
+        method_name: &str,
+        args: &Arg,
+    ) -> Result<impl ContractStateStream<Res>, ChainGatewayError>;
+
+    /// Subscribe to a view method with no arguments (`{}`). Polls every 200ms.
+    pub async fn subscribe_no_args<Res: DeserializeOwned + Send + Clone>(
+        &self,
+        contract_id: AccountId,
+        method_name: &str,
+    ) -> impl ContractStateStream<Res>;
+}
+```
+
+The `ContractStateStream` trait provides a watch-like interface for observing contract state changes:
+
+```rust
+#[async_trait]
+pub trait ContractStateStream<Res> {
+    /// Returns the last value observed on chain and the block height at which it last changed.
+    fn latest(&mut self) -> Result<(BlockHeight, Res), ChainGatewayError>;
+
+    /// Waits until the observed value changes.
+    async fn changed(&mut self) -> Result<(), ChainGatewayError>;
+
+    /// Waits for the next state change and returns the new value.
+    async fn next(&mut self) -> Result<(BlockHeight, Res), ChainGatewayError>;
 }
 ```
 
 
 ### Block Event Subscriber
 
+> **Status: not yet implemented.** Block event handling currently lives in
+> `node::indexer::handler::listen_blocks()`, which consumes the raw `StreamerMessage` channel
+> returned by `start_with_streamer()`. The API below is the planned design for when this
+> functionality is moved into chain-gateway.
+
 ```rust
 impl BlockEventSubscriber {
     pub fn new(subscription_replay: SubscriptionReplay) -> Self;
-    
+
     /// Configure queue size between producer and consumer.
     /// we can define overflow behavior later, by default we could just stop producing (neard indexer will consume unlimited amount of memory).
     pub fn buffer_size(&mut self, n: usize) -> Self;
@@ -339,3 +367,10 @@ impl TransactionSigner {
     }
 }
 ```
+
+## Testing
+
+- **Unit tests** use a `FakeViewer` implementing the `ContractViewer` trait to test subscription
+  logic without a real NEAR node (see `src/state_viewer/subscription.rs`).
+- **Integration tests** start a full in-process NEAR node with a WAT contract embedded in genesis,
+  exercising the complete path through the actor system (see `tests/state_viewer_integration.rs`).
