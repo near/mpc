@@ -36,7 +36,7 @@ use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
-use near_sdk::{borsh, CurveType};
+use near_sdk::borsh;
 use node_types::http_server::StaticWebData;
 use reqwest::Client;
 use serde::Serialize;
@@ -375,15 +375,10 @@ struct InitV2Args {
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
-    let p2p_public_key_bytes: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] =
-        *mpc_setup.p2p_public_key.as_bytes();
-
-    let near_sdk_public_key =
-        near_sdk::PublicKey::from_parts(CurveType::ED25519, p2p_public_key_bytes.to_vec())
-            .expect("P2P key is valid.");
-
     ParticipantInfo {
-        sign_pk: near_sdk_public_key,
+        sign_pk: near_sdk::PublicKey::from(contract_interface::types::Ed25519PublicKey::from(
+            mpc_setup.p2p_public_key,
+        )),
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
     }
 }

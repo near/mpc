@@ -1978,12 +1978,17 @@ dependencies = [
 name = "contract-interface"
 version = "3.5.1"
 dependencies = [
+ "blstrs",
  "borsh",
  "bounded-collections",
  "bs58 0.5.1",
+ "curve25519-dalek",
  "derive_more 2.1.1",
+ "ed25519-dalek",
+ "group",
  "hex",
  "insta",
+ "k256",
  "near-sdk",
  "rstest",
  "schemars 0.8.22",

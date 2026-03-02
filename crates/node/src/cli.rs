@@ -43,7 +43,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch, RwLock};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
+use contract_interface::types::Ed25519PublicKey;
 use {
     crate::tee::{
         monitor_allowed_image_hashes,
@@ -275,8 +275,8 @@ impl StartCmd {
         let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
 
         let report_data = ReportDataV1::new(
-            *tls_public_key.into_contract_interface_type().as_bytes(),
-            *account_public_key.into_contract_interface_type().as_bytes(),
+            *Ed25519PublicKey::from(tls_public_key).as_bytes(),
+            *Ed25519PublicKey::from(account_public_key).as_bytes(),
         )
         .into();
 
@@ -406,16 +406,10 @@ impl StartCmd {
             .set(root_task_handle.clone())
             .map_err(|_| anyhow!("Root task handle was already set"))?;
 
-        let tls_public_key = secrets
-            .persistent_secrets
-            .p2p_private_key
-            .verifying_key()
-            .into_contract_interface_type();
-        let account_public_key = secrets
-            .persistent_secrets
-            .near_signer_key
-            .verifying_key()
-            .into_contract_interface_type();
+        let tls_public_key =
+            Ed25519PublicKey::from(secrets.persistent_secrets.p2p_private_key.verifying_key());
+        let account_public_key =
+            Ed25519PublicKey::from(secrets.persistent_secrets.near_signer_key.verifying_key());
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 

@@ -27,11 +27,8 @@ mod dto_mapping;
 use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
-    crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
-    dto_mapping::{
-        args_into_verify_foreign_tx_request, IntoContractType, IntoInterfaceType,
-        TryIntoContractType, TryIntoInterfaceType,
-    },
+    crypto_shared::types::CKDResponse,
+    dto_mapping::{args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType},
     errors::{Error, RequestError},
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
@@ -369,18 +366,19 @@ impl MpcContract {
 
         let derived_public_key: dtos::PublicKey = match public_key {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
+                let secp_pk = dtos::Secp256k1PublicKey::try_from(near_public_key)
+                    .expect("Secp256k1 variant always has a secp256k1 key");
+                let affine = *k256::PublicKey::try_from(secp_pk)
+                    .expect("stored key is always valid")
+                    .as_affine();
                 let derived_public_key =
-                    derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak)
-                        .map_err(PublicKeyError::from)?;
+                    derive_key_secp256k1(&affine, &tweak).map_err(PublicKeyError::from)?;
                 derived_public_key.into()
             }
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
                     derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
-                derived_public_key_edwards_point
-                    .compress()
-                    .into_dto_type()
-                    .into()
+                dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress()).into()
             }
             PublicKeyExtended::Bls12381 { public_key } => public_key,
         };
@@ -654,11 +652,13 @@ impl MpcContract {
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
                 // generate the expected public key
-                let expected_public_key = derive_key_secp256k1(
-                    &near_public_key_to_affine_point(near_public_key),
-                    &request.tweak,
-                )
-                .map_err(RespondError::from)?;
+                let secp_pk = dtos::Secp256k1PublicKey::try_from(near_public_key)
+                    .expect("Secp256k1 variant always has a secp256k1 key");
+                let affine = *k256::PublicKey::try_from(secp_pk)
+                    .expect("stored key is always valid")
+                    .as_affine();
+                let expected_public_key =
+                    derive_key_secp256k1(&affine, &request.tweak).map_err(RespondError::from)?;
 
                 let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
 
@@ -682,7 +682,7 @@ impl MpcContract {
                     &request.tweak,
                 );
                 let derived_public_key_32_bytes =
-                    derived_public_key_edwards_point.compress().into_dto_type();
+                    dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress());
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
@@ -773,8 +773,13 @@ impl MpcContract {
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
                 // generate the expected public key
+                let secp_pk = dtos::Secp256k1PublicKey::try_from(near_public_key)
+                    .expect("Secp256k1 variant always has a secp256k1 key");
+                let affine = *k256::PublicKey::try_from(secp_pk)
+                    .expect("stored key is always valid")
+                    .as_affine();
                 let expected_public_key = derive_key_secp256k1(
-                    &near_public_key_to_affine_point(near_public_key),
+                    &affine,
                     &crate::primitives::signature::Tweak::new(request.tweak.0),
                 )
                 .map_err(RespondError::from)?;
@@ -848,7 +853,7 @@ impl MpcContract {
             .add_participant(
                 NodeId {
                     account_id: account_id.clone(),
-                    tls_public_key: tls_public_key.into_contract_type(),
+                    tls_public_key: tls_public_key.into(),
                     account_public_key: Some(account_key),
                 },
                 proposed_participant_attestation,
@@ -897,7 +902,7 @@ impl MpcContract {
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
     ) -> Result<Option<dtos::VerifiedAttestation>, Error> {
-        let tls_public_key = tls_public_key.into_contract_type();
+        let tls_public_key: near_sdk::PublicKey = tls_public_key.into();
 
         Ok(self
             .tee_state
@@ -2153,8 +2158,7 @@ mod tests {
         let scalar = ckd::Scalar::random(rng);
         let public_key_element = ckd::ElementG2::generator() * scalar;
 
-        let compressed_key = public_key_element.to_compressed();
-        let pk = dtos::Bls12381G2PublicKey::from(compressed_key);
+        let pk = dtos::Bls12381G2PublicKey::from(public_key_element);
 
         (pk, scalar)
     }
@@ -2668,11 +2672,7 @@ mod tests {
             MockAttestation::Invalid
         };
 
-        let dto_public_key = participant_info
-            .sign_pk
-            .clone()
-            .try_into_dto_type()
-            .unwrap();
+        let dto_public_key = participant_info.sign_pk.clone().try_into().unwrap();
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -2838,11 +2838,7 @@ mod tests {
         contract
             .submit_participant_info(
                 valid_attestation,
-                participant_info
-                    .sign_pk
-                    .clone()
-                    .try_into_dto_type()
-                    .unwrap(),
+                participant_info.sign_pk.clone().try_into().unwrap(),
             )
             .expect("Expected panic if predecessor != signer");
     }
@@ -2857,7 +2853,7 @@ mod tests {
         let outsider_id: AccountId = "outsider.near".parse().unwrap();
 
         let fake_tls_pk = bogus_ed25519_near_public_key(); // unique TLS key for outsider
-        let dto_public_key = fake_tls_pk.clone().try_into_dto_type().unwrap();
+        let dto_public_key = fake_tls_pk.clone().try_into().unwrap();
 
         let valid_attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -2920,7 +2916,7 @@ mod tests {
         // --- Step 3: Attested outsider (not a participant) joins ---
         let outsider_id: AccountId = "outsider.near".parse().unwrap();
         let tls_key = bogus_ed25519_near_public_key();
-        let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
+        let dto_public_key = tls_key.clone().try_into().unwrap();
 
         testing_env!(VMContextBuilder::new()
             .signer_account_id(outsider_id.clone())
@@ -3213,7 +3209,7 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .try_into_dto_type()
+                    .try_into()
                     .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
@@ -3273,7 +3269,7 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .try_into_dto_type()
+                    .try_into()
                     .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk.clone(),
@@ -3307,7 +3303,7 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .try_into_dto_type()
+                    .try_into()
                     .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
@@ -3337,7 +3333,7 @@ mod tests {
                 .destination_node_info
                 .sign_pk
                 .clone()
-                .try_into_dto_type()
+                .try_into()
                 .unwrap(),
             signer_account_id: non_participant_account_id.clone(),
             signer_account_pk: destination_node_info.signer_account_pk,
@@ -3362,7 +3358,7 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .try_into_dto_type()
+                    .try_into()
                     .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
@@ -3440,7 +3436,7 @@ mod tests {
             let insertion_result = contract.tee_state.add_participant(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
-                    tls_public_key: self.attestation_tls_key.clone().into_contract_type(),
+                    tls_public_key: self.attestation_tls_key.clone().into(),
                     account_public_key: Some(self.signer_account_pk.clone()),
                 },
                 valid_participant_attestation,

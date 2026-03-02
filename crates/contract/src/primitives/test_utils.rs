@@ -7,7 +7,6 @@ use crate::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
     },
-    IntoInterfaceType,
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
@@ -71,7 +70,7 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
 
 pub fn bogus_ed25519_public_key() -> contract_interface::types::Ed25519PublicKey {
     let (_, compressed_edwards_point) = gen_random_edwards_point();
-    compressed_edwards_point.into_dto_type()
+    contract_interface::types::Ed25519PublicKey::from(compressed_edwards_point)
 }
 
 pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {

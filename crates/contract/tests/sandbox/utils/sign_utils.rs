@@ -1,5 +1,4 @@
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
-use super::interface::{IntoContractType, IntoInterfaceType};
 use super::shared_key_utils::{
     derive_secret_key_ed25519, derive_secret_key_secp256k1, generate_random_app_public_key,
     DomainKey, SharedSecretKey,
@@ -394,7 +393,9 @@ fn create_response_ckd(
     );
 
     let app_id = derive_app_id(account_id, derivation_path);
-    let app_pk: ckd::ElementG1 = app_public_key.into_contract_type();
+    let app_pk: ckd::ElementG1 = app_public_key
+        .try_into()
+        .expect("invalid BLS12-381 G1 point");
     let msk = key_package.private_share.to_scalar();
 
     let big_s = hash_app_id_with_pk(&key_package.public_key, app_id.as_ref()) * msk;
@@ -403,8 +404,8 @@ fn create_response_ckd(
     let big_c = big_s + app_pk * y;
 
     let response = CKDResponse {
-        big_y: big_y.into_interface_type(),
-        big_c: big_c.into_interface_type(),
+        big_y: big_y.into(),
+        big_c: big_c.into(),
     };
     (request, response)
 }

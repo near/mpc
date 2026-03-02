@@ -30,7 +30,6 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
 use near_primitives::types::{BlockReference, FunctionArgs};
 use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
-use near_sdk::CurveType;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -516,10 +515,8 @@ impl OperatingAccounts {
         let secret_key = SigningKey::generate(&mut OsRng);
 
         let verifying_key = secret_key.verifying_key();
-        let verifying_key_bytes = verifying_key.as_bytes().clone().to_vec();
-        #[allow(clippy::disallowed_methods)]
-        let near_sdk_public_key =
-            near_sdk::PublicKey::from_parts(CurveType::ED25519, verifying_key_bytes).unwrap();
+        let ed25519_pk = contract_interface::types::Ed25519PublicKey::from(verifying_key);
+        let near_sdk_public_key = near_sdk::PublicKey::from(ed25519_pk);
 
         let mut data = std::collections::HashMap::new();
         data.insert("newAccountId", new_account_id.to_string());

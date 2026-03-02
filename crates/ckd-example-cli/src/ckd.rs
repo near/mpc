@@ -73,7 +73,7 @@ fn read_response() -> Result<CKDResponse> {
 fn generate_ephemeral_key(rng: &mut impl CryptoRngCore) -> (Scalar, Bls12381G1PublicKey) {
     let x = blstrs::Scalar::random(rng);
     let big_x = blstrs::G1Projective::generator() * x;
-    (x, Bls12381G1PublicKey::from(big_x.to_compressed()))
+    (x, Bls12381G1PublicKey::from(big_x))
 }
 
 pub fn verify(public_key: &G2Projective, app_id: &[u8], signature: &G1Projective) -> bool {
@@ -100,9 +100,11 @@ fn decrypt_secret_and_verify(
     app_id: CkdAppId,
     mpc_public_key: Bls12381G2PublicKey,
 ) -> Result<[u8; BLS12381G1_PUBLIC_KEY_SIZE]> {
-    let big_y = convert_to_blstrs_type_g1(big_y)?;
-    let big_c = convert_to_blstrs_type_g1(big_c)?;
-    let mpc_public_key = convert_to_blstrs_type_g2(mpc_public_key)?;
+    let big_y: G1Projective = big_y.try_into().map_err(|_| anyhow!("invalid G1 point"))?;
+    let big_c: G1Projective = big_c.try_into().map_err(|_| anyhow!("invalid G1 point"))?;
+    let mpc_public_key: G2Projective = mpc_public_key
+        .try_into()
+        .map_err(|_| anyhow!("invalid G2 point"))?;
 
     // decrypt the secret
     let secret = big_c - big_y * private_key;
@@ -114,18 +116,6 @@ fn decrypt_secret_and_verify(
 
     // return the secret as bytes
     Ok(secret.to_compressed())
-}
-
-fn convert_to_blstrs_type_g1(a: Bls12381G1PublicKey) -> Result<G1Projective> {
-    G1Projective::from_compressed(a.as_bytes())
-        .into_option()
-        .ok_or(anyhow!("failed to convert"))
-}
-
-fn convert_to_blstrs_type_g2(a: Bls12381G2PublicKey) -> Result<G2Projective> {
-    G2Projective::from_compressed(a.as_bytes())
-        .into_option()
-        .ok_or(anyhow!("failed to convert"))
 }
 
 fn derive_strong_key(

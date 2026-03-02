@@ -7,6 +7,7 @@ pub mod types {
         VerifiedAttestation, VerifiedDstackAttestation,
     };
     pub use config::{Config, InitConfig};
+    pub use conversions::CryptoConversionError;
     pub use crypto::{
         Bls12381G1PublicKey, Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
     };
@@ -30,6 +31,7 @@ pub mod types {
 
     mod attestation;
     mod config;
+    mod conversions;
     mod crypto;
     mod foreign_chain;
     mod metrics;
