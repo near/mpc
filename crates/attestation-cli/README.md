@@ -12,6 +12,12 @@ cargo build -p attestation-cli --release
 
 The binary is at `target/release/attestation-cli`.
 
+To install it on your PATH:
+
+```bash
+cargo install --path crates/attestation-cli
+```
+
 ## Prerequisites
 
 Before running verification you need:

@@ -13,7 +13,34 @@ pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
 pub fn print_failure(static_data: &StaticWebData, err: &VerificationError) {
     print_header(static_data);
     println!();
-    println!("Error:   {err}");
+    println!("--- Failure Details ---");
+    match err {
+        VerificationError::TcbStatusNotUpToDate(status) => {
+            println!("Reason:          TCB status is not up to date");
+            println!("TCB Status:      {status}");
+            println!("Expected Status: UpToDate");
+        }
+        VerificationError::NonEmptyAdvisoryIds(ids) => {
+            println!("Reason:          Outstanding security advisories");
+            println!("Advisory IDs:    {ids}");
+        }
+        VerificationError::WrongHash {
+            name,
+            found,
+            expected,
+        } => {
+            println!("Reason:          Hash mismatch ({name})");
+            println!("Found:           {found}");
+            println!("Expected:        {expected}");
+        }
+        VerificationError::DcapVerification(msg) => {
+            println!("Reason:          DCAP quote verification failed");
+            println!("Details:         {msg}");
+        }
+        _ => {
+            println!("Error:           {err}");
+        }
+    }
     println!();
     println!("Verdict: FAIL");
 }
@@ -54,7 +81,8 @@ fn print_verification_details(result: &VerificationResult) {
 }
 
 fn format_timestamp(unix_secs: u64) -> String {
-    // Simple UTC formatting without pulling in chrono
+    // Simple UTC formatting without pulling in chrono/time.
+    // Overflow is impossible: valid Unix timestamps (up to year 9999) are well within u64 range.
     let secs_per_day: u64 = 86400;
     let days_since_epoch = unix_secs / secs_per_day;
     let time_of_day = unix_secs % secs_per_day;
