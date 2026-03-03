@@ -186,29 +186,34 @@
 
         in
         {
-          default = pkgs.mkShell {
-            strictDeps = true;
+          default =
+            pkgs.mkShell.override
+              {
+                stdenv = pkgs.overrideCC pkgs.stdenv llvmPkgs.clang;
+              }
+              {
+                strictDeps = true;
 
-            packages =
-              dockerTools ++
-              llvmTools ++
-              rustTools ++
-              cargoTools ++
-              pythonTools ++
-              nearTools ++
-              miscTools ++
-              buildLibs;
+                packages =
+                  dockerTools
+                  ++ llvmTools
+                  ++ rustTools
+                  ++ cargoTools
+                  ++ pythonTools
+                  ++ nearTools
+                  ++ miscTools
+                  ++ buildLibs;
 
-            env = envCommon // envDarwin;
+                env = envCommon // envDarwin;
 
-            # Remove the hardening added by nix to fix jmalloc compilation error.
-            # More info: https://github.com/tikv/jemallocator/issues/108
-            hardeningDisable = hardening;
+                # Remove the hardening added by nix to fix jmalloc compilation error.
+                # More info: https://github.com/tikv/jemallocator/issues/108
+                hardeningDisable = hardening;
 
-            shellHook = ''
-              printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
-            '';
-          };
+                shellHook = ''
+                  printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
+                '';
+              };
         }
       );
     };
