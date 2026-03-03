@@ -107,7 +107,7 @@ fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
         .expect("participant list is not empty")
         .clone();
 
-    // recreate rng using by real_participant to generate triples
+    // recreate rng using by real_participant to generate presignatures
     let mut rng_copy = MockCryptoRng::seed_from_u64(42);
     for p in &preps.participants {
         if *p == real_participant {
