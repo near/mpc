@@ -75,13 +75,24 @@ async fn run() -> Result<(), LauncherError> {
 
     let () = check_image_digest_exists_on_docker_hub(image_hash)?;
 
-    if args.platform == Platform::Tee {
-        extend_rtmr3(&image_hash).await?;
+    let should_extend_rtmr_3 = args.platform == Platform::Tee;
+
+    if should_extend_rtmr_3 {
+        let dstack_cient = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
+
+        // EmitEvent with the image digest
+        dstack_cient
+            .emit_event(
+                "mpc-image-digest".to_string(),
+                image_hash.as_hex().into_bytes(),
+            )
+            .await
+            .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
     }
 
     launch_mpc_container(
         args.platform,
-        &selected_hash,
+        &image_hash,
         &dstack_config.mpc_passthrough_env,
     )?;
 
@@ -410,7 +421,7 @@ fn build_docker_cmd(
     platform: Platform,
     mpc_config: &MpcBinaryConfig,
     image_digest: &MpcDockerImageHash,
-) -> Result<Vec<String>> {
+) -> Result<Vec<String>, LauncherError> {
     let mut cmd: Vec<String> = vec!["docker".into(), "run".into()];
 
     // Required environment variables
@@ -496,7 +507,7 @@ fn launch_mpc_container(
     platform: Platform,
     valid_hash: &MpcDockerImageHash,
     mpc_config: &MpcBinaryConfig,
-) -> Result<()> {
+) -> Result<(), LauncherError> {
     tracing::info!(
         "Launching MPC node with validated hash: {}",
         valid_hash.as_hex()
@@ -515,29 +526,6 @@ fn launch_mpc_container(
     }
 
     tracing::info!("MPC launched successfully.");
-    Ok(())
-}
-
-async fn extend_rtmr3(image_hash: &MpcDockerImageHash) -> Result<(), LauncherError> {
-    tracing::info!(?image_hash, "extending RTMR3");
-
-    let dstack_cient = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
-
-    // GetQuote first
-    dstack_cient
-        .get_quote(vec![])
-        .await
-        .map_err(|e| LauncherError::DstackGetQuoteFailed(e.to_string()))?;
-
-    // EmitEvent with the image digest
-    dstack_cient
-        .emit_event(
-            "mpc-image-digest".to_string(),
-            image_hash.as_hex().into_bytes(),
-        )
-        .await
-        .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
-
     Ok(())
 }
 
