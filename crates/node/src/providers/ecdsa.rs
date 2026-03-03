@@ -28,6 +28,7 @@ use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::ReconstructionLowerBound;
 
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
@@ -157,14 +158,14 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: usize,
+        threshold: ReconstructionLowerBound,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: usize,
+        new_threshold: ReconstructionLowerBound,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -248,7 +249,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     &format!("generate presignatures for domain {}", domain_id.0),
                     Self::run_background_presignature_generation(
                         self.client.clone(),
-                        self.mpc_config.participants.threshold as usize,
+                        ReconstructionLowerBound::from(
+                            self.mpc_config.participants.threshold as usize,
+                        ),
                         self.config.presignature.clone().into(),
                         self.triple_store.clone(),
                         *domain_id,

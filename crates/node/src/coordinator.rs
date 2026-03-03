@@ -39,6 +39,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -298,7 +299,7 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                mpc_config.participants.threshold as usize,
+                ReconstructionLowerBound::from(mpc_config.participants.threshold as usize),
             )
             .await?;
         } else {
@@ -307,7 +308,7 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                mpc_config.participants.threshold as usize,
+                ReconstructionLowerBound::from(mpc_config.participants.threshold as usize),
             )
             .await?;
         }
@@ -694,7 +695,9 @@ where
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: mpc_config.participants.threshold as usize,
+            new_threshold: ReconstructionLowerBound::from(
+                mpc_config.participants.threshold as usize,
+            ),
             old_participants: current_running_state.participants,
         });
 
