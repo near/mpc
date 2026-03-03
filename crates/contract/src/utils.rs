@@ -5,7 +5,6 @@ use threshold_signatures::confidential_key_derivation as ckd;
 
 use contract_interface::types as dtos;
 
-use crate::dto_mapping::IntoInterfaceType;
 use crate::{primitives::thresholds::ThresholdParameters, state::ProtocolContractState};
 
 fn params_to_string(output: &mut String, parameters: &ThresholdParameters) {
@@ -143,5 +142,5 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
 pub fn random_app_public_key() -> dtos::Bls12381G1PublicKey {
     let x = ckd::Scalar::random(OsRng);
     let big_x = ckd::ElementG1::generator() * x;
-    big_x.into_dto_type()
+    (&big_x).into()
 }

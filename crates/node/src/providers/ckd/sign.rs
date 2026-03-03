@@ -11,7 +11,7 @@ use threshold_signatures::{
     ReconstructionLowerBound,
 };
 
-use crate::{metrics, trait_extensions::convert_to_contract_dto::TryIntoNodeType};
+use crate::metrics;
 use crate::{
     network::{computation::MpcLeaderCentricComputation, NetworkTaskChannel},
     protocol::run_protocol,
@@ -146,7 +146,7 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
             channel.my_participant_id().into(),
             self.keygen_output,
             AppId::try_new(self.app_id.as_ref())?,
-            self.app_public_key.try_into_node_type()?,
+            ElementG1::try_from(&self.app_public_key)?,
             OsRng,
         )?;
 

@@ -18,8 +18,6 @@ use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
 use rstest::rstest;
 use std::{str::FromStr, time::Duration};
 
-use crate::sandbox::utils::interface::IntoInterfaceType;
-
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
@@ -209,7 +207,8 @@ impl TestSetup {
         testing_env!(context);
         self.contract.submit_participant_info(
             attestation,
-            node_id.tls_public_key.clone().into_interface_type(),
+            contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
+                .expect("expected ED25519 key"),
         )
     }
 

@@ -7,9 +7,6 @@ use crate::network::MeshNetworkClient;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::EcdsaTaskId;
 use crate::tracking::AutoAbortTaskCollection;
-use crate::trait_extensions::convert_to_contract_dto::{
-    IntoContractInterfaceType, TryIntoNodeType,
-};
 use crate::{
     config::ParticipantsConfig,
     indexer::{
@@ -27,8 +24,9 @@ use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::frost_ed25519;
-use threshold_signatures::ReconstructionLowerBound;
+use threshold_signatures::{
+    confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1, ReconstructionLowerBound,
+};
 use tokio::sync::{mpsc, watch, RwLock};
 use tokio::time::timeout;
 use tracing::{error, info};
@@ -63,24 +61,32 @@ pub async fn keygen_computation_inner(
         SignatureScheme::Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_contract_interface_type();
+            let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
+                keyshare.public_key.to_element().to_affine(),
+            )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         SignatureScheme::V2Secp256k1 => {
             let keyshare =
                 RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_contract_interface_type();
+            let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
+                keyshare.public_key.to_element().to_affine(),
+            )?);
             (KeyshareData::V2Secp256k1(keyshare), public_key)
         }
         SignatureScheme::Ed25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_contract_interface_type();
+            let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
+                keyshare.public_key.to_element().compress(),
+            ));
             (KeyshareData::Ed25519(keyshare), public_key)
         }
         SignatureScheme::Bls12381 => {
             let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_contract_interface_type();
+            let public_key = dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey::from(
+                &keyshare.public_key.to_element(),
+            ));
             (KeyshareData::Bls12381(keyshare), public_key)
         }
     };
@@ -208,7 +214,8 @@ async fn resharing_computation_inner(
             contract_interface::types::PublicKey::Secp256k1(inner_public_key),
             SignatureScheme::Secp256k1,
         ) => {
-            let public_key = inner_public_key.try_into_node_type()?;
+            let pk = k256::PublicKey::try_from(&inner_public_key)?;
+            let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Secp256k1(data) => Ok(data.private_share),
@@ -229,7 +236,8 @@ async fn resharing_computation_inner(
             contract_interface::types::PublicKey::Secp256k1(inner_public_key),
             SignatureScheme::V2Secp256k1,
         ) => {
-            let public_key = inner_public_key.try_into_node_type()?;
+            let pk = k256::PublicKey::try_from(&inner_public_key)?;
+            let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::V2Secp256k1(data) => Ok(data.private_share),
@@ -250,9 +258,7 @@ async fn resharing_computation_inner(
             contract_interface::types::PublicKey::Ed25519(inner_public_key),
             SignatureScheme::Ed25519,
         ) => {
-            let public_key: Result<frost_ed25519::VerifyingKey, _> =
-                inner_public_key.try_into_node_type();
-            let public_key = public_key?;
+            let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Ed25519(data) => Ok(data.private_share),
@@ -270,7 +276,7 @@ async fn resharing_computation_inner(
             KeyshareData::Ed25519(res)
         }
         (dtos::PublicKey::Bls12381(inner_public_key), SignatureScheme::Bls12381) => {
-            let public_key = inner_public_key.try_into_node_type()?;
+            let public_key = ckd::VerifyingKey::new(ckd::ElementG2::try_from(&inner_public_key)?);
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Bls12381(data) => Ok(data.private_share),

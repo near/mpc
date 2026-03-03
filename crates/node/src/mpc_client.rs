@@ -22,7 +22,6 @@ use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
-use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
@@ -502,40 +501,39 @@ where
                                     ])
                                     .inc();
 
-                                let response = match this
-                                    .domain_to_scheme
-                                    .get(&ckd_attempt.request.domain_id)
-                                {
-                                    Some(SignatureScheme::Bls12381) => {
-                                        let response = timeout(
-                                            Duration::from_secs(this.config.ckd.timeout_sec),
-                                            this.ckd_provider
-                                                .clone()
-                                                .make_signature(ckd_attempt.request.id),
-                                        )
-                                        .await??;
+                                let response =
+                                    match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
+                                    {
+                                        Some(SignatureScheme::Bls12381) => {
+                                            let response = timeout(
+                                                Duration::from_secs(this.config.ckd.timeout_sec),
+                                                this.ckd_provider
+                                                    .clone()
+                                                    .make_signature(ckd_attempt.request.id),
+                                            )
+                                            .await??;
 
-                                        let response = ChainCKDRespondArgs::new_ckd(
-                                            &ckd_attempt.request,
-                                            &CKDResponse {
-                                                big_y: response.0 .0.into_contract_interface_type(),
-                                                big_c: response.0 .1.into_contract_interface_type(),
-                                            },
-                                        )?;
+                                            let response = ChainCKDRespondArgs::new_ckd(
+                                                &ckd_attempt.request,
+                                                &CKDResponse {
+                                                    big_y: (&response.0 .0).into(),
+                                                    big_c: (&response.0 .1).into(),
+                                                },
+                                            )?;
 
-                                        Ok(response)
-                                    }
-                                    Some(SignatureScheme::Secp256k1)
-                                    | Some(SignatureScheme::V2Secp256k1)
-                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                }?;
+                                            Ok(response)
+                                        }
+                                        Some(SignatureScheme::Secp256k1)
+                                        | Some(SignatureScheme::V2Secp256k1)
+                                        | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                        None => Err(anyhow::anyhow!(
+                                            "Signature scheme is not found for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                    }?;
 
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
                                     .with_label_values(&[

@@ -14,7 +14,7 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
+use contract_interface::types::Ed25519PublicKey;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
@@ -160,9 +160,7 @@ async fn test_onboarding() {
         let mut contract = setup.indexer.contract_mut().await;
         assert!(matches!(&contract.state, ProtocolContractState::Running(_)));
         let backup_service_info = BackupServiceInfo {
-            public_key: backup_service_key
-                .verifying_key()
-                .into_contract_interface_type(),
+            public_key: Ed25519PublicKey::from(&backup_service_key.verifying_key()),
         };
         contract.migration_service.set_backup_service_info(
             onboarding_node.participant_info.near_account_id.clone(),
