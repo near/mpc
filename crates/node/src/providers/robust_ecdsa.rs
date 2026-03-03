@@ -332,5 +332,4 @@ mod tests {
             assert_eq!(result.unwrap(), MaxMalicious::from(expected_threshold));
         }
     }
-
 }
