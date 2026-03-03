@@ -73,7 +73,7 @@ mod tests {
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
         let sig: ed25519_dalek::Signature = signing_key.sign(message);
         let pk = signing_key.verifying_key();
-        (Ed25519Signature::from(&sig), Ed25519PublicKey::from(&pk))
+        (Ed25519Signature::from(sig), Ed25519PublicKey::from(&pk))
     }
 
     fn make_message(seed: u64) -> [u8; 32] {

@@ -378,7 +378,7 @@ impl MpcContract {
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
                     derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
-                dtos::Ed25519PublicKey::from(&derived_public_key_edwards_point.compress()).into()
+                dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress()).into()
             }
             PublicKeyExtended::Bls12381 { public_key } => public_key,
         };
@@ -682,7 +682,7 @@ impl MpcContract {
                     &request.tweak,
                 );
                 let derived_public_key_32_bytes =
-                    dtos::Ed25519PublicKey::from(&derived_public_key_edwards_point.compress());
+                    dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress());
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
@@ -2136,7 +2136,7 @@ mod tests {
         let scalar = curve25519_dalek::Scalar::random(rng);
         let public_key_element = Ed25519Group::generator() * scalar;
 
-        let pk = dtos::Ed25519PublicKey::from(&public_key_element.compress());
+        let pk = dtos::Ed25519PublicKey::from(public_key_element.compress());
 
         (pk, scalar)
     }

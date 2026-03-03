@@ -8,8 +8,8 @@ use super::CryptoConversionError;
 use crate::types::crypto::Secp256k1PublicKey;
 use crate::types::primitives::{K256AffinePoint, K256Scalar, K256Signature};
 
-impl From<&k256::AffinePoint> for K256AffinePoint {
-    fn from(point: &k256::AffinePoint) -> Self {
+impl From<k256::AffinePoint> for K256AffinePoint {
+    fn from(point: k256::AffinePoint) -> Self {
         let bytes: [u8; 33] = point
             .to_encoded_point(true)
             .as_bytes()
@@ -30,8 +30,8 @@ impl TryFrom<&K256AffinePoint> for k256::AffinePoint {
     }
 }
 
-impl From<&k256::Scalar> for K256Scalar {
-    fn from(scalar: &k256::Scalar) -> Self {
+impl From<k256::Scalar> for K256Scalar {
+    fn from(scalar: k256::Scalar) -> Self {
         K256Scalar {
             scalar: scalar.to_bytes().into(),
         }
@@ -128,7 +128,7 @@ mod tests {
         let point = *k256::SecretKey::random(&mut rng).public_key().as_affine();
 
         // when
-        let dto = K256AffinePoint::from(&point);
+        let dto = K256AffinePoint::from(point);
         let recovered = k256::AffinePoint::try_from(&dto).unwrap();
 
         // then
@@ -156,7 +156,7 @@ mod tests {
         let scalar = k256::Scalar::random(&mut rng);
 
         // when
-        let dto = K256Scalar::from(&scalar);
+        let dto = K256Scalar::from(scalar);
         let recovered = k256::Scalar::try_from(&dto).unwrap();
 
         // then

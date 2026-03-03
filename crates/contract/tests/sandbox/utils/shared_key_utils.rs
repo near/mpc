@@ -86,7 +86,7 @@ pub fn new_ed25519() -> (dtos::PublicKey, eddsa::KeygenOutput) {
     };
 
     let pk = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
-        &public_key.to_element().compress(),
+        public_key.to_element().compress(),
     ));
 
     (pk, keygen_output)

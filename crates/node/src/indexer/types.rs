@@ -106,8 +106,8 @@ fn k256_signature_response(
         anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
     Ok(ChainSignatureResponse::Secp256k1(dtos::K256Signature {
-        big_r: dtos::K256AffinePoint::from(&big_r),
-        s: dtos::K256Scalar::from(&s),
+        big_r: dtos::K256AffinePoint::from(big_r),
+        s: dtos::K256Scalar::from(s),
         recovery_id,
     }))
 }
@@ -368,8 +368,8 @@ impl ChainVerifyForeignTransactionRespondArgs {
         )?;
 
         let dto_signature = dtos::K256Signature {
-            big_r: dtos::K256AffinePoint::from(&signature.big_r),
-            s: dtos::K256Scalar::from(&signature.s),
+            big_r: dtos::K256AffinePoint::from(signature.big_r),
+            s: dtos::K256Scalar::from(signature.s),
             recovery_id,
         };
         Ok(ChainVerifyForeignTransactionRespondArgs {

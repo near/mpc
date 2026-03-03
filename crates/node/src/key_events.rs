@@ -78,7 +78,7 @@ pub async fn keygen_computation_inner(
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
-                &keyshare.public_key.to_element().compress(),
+                keyshare.public_key.to_element().compress(),
             ));
             (KeyshareData::Ed25519(keyshare), public_key)
         }

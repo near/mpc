@@ -3,8 +3,8 @@ use crate::types::crypto::Ed25519PublicKey;
 use crate::types::primitives::Ed25519Signature;
 use curve25519_dalek::edwards::CompressedEdwardsY;
 
-impl From<&CompressedEdwardsY> for Ed25519PublicKey {
-    fn from(point: &CompressedEdwardsY) -> Self {
+impl From<CompressedEdwardsY> for Ed25519PublicKey {
+    fn from(point: CompressedEdwardsY) -> Self {
         Ed25519PublicKey::from(point.to_bytes())
     }
 }
@@ -23,8 +23,8 @@ impl TryFrom<&Ed25519PublicKey> for ed25519_dalek::VerifyingKey {
     }
 }
 
-impl From<&ed25519_dalek::Signature> for Ed25519Signature {
-    fn from(sig: &ed25519_dalek::Signature) -> Self {
+impl From<ed25519_dalek::Signature> for Ed25519Signature {
+    fn from(sig: ed25519_dalek::Signature) -> Self {
         Ed25519Signature::from(sig.to_bytes())
     }
 }
@@ -75,7 +75,7 @@ mod tests {
         let compressed = curve25519_dalek::edwards::CompressedEdwardsY(vk.to_bytes());
 
         // when
-        let dto = Ed25519PublicKey::from(&compressed);
+        let dto = Ed25519PublicKey::from(compressed);
 
         // then
         assert_eq!(dto.as_bytes(), &vk.to_bytes());
@@ -88,7 +88,7 @@ mod tests {
         let sig = sk.sign(b"test message");
 
         // when
-        let dto = Ed25519Signature::from(&sig);
+        let dto = Ed25519Signature::from(sig);
         let recovered = ed25519_dalek::Signature::from(&dto);
 
         // then
