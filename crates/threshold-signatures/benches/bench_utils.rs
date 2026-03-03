@@ -46,6 +46,9 @@ pub static SAMPLE_SIZE: LazyLock<usize> = std::sync::LazyLock::new(|| {
         .unwrap_or(15)
 });
 
+pub static RECONSTRUCTION_LOWER_BOUND: LazyLock<ReconstructionLowerBound> =
+    LazyLock::new(|| ReconstructionLowerBound::from(*MAX_MALICIOUS + 1));
+
 /// This helps defining a generic type for the benchmarks prepared outputs
 pub struct PreparedOutputs<T> {
     pub participant: Participant,

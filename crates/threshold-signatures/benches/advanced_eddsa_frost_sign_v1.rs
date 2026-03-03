@@ -5,7 +5,8 @@ use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    analyze_received_sizes, ed25519_prepare_sign_v1, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
+    analyze_received_sizes, ed25519_prepare_sign_v1, PreparedOutputs, MAX_MALICIOUS,
+    RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
 };
 use threshold_signatures::{
     frost::eddsa::{sign::sign_v1, SignatureOption},
@@ -19,13 +20,9 @@ use threshold_signatures::{
 
 type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
 
-fn threshold() -> ReconstructionLowerBound {
-    ReconstructionLowerBound::from(*MAX_MALICIOUS + 1)
-}
-
 /// Benches the signing protocol
 fn bench_sign(c: &mut Criterion) {
-    let num = threshold().value();
+    let num = RECONSTRUCTION_LOWER_BOUND.value();
     let max_malicious = *MAX_MALICIOUS;
     let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
 
@@ -36,7 +33,7 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || {
-                    let preps = prepare_simulated_sign(threshold());
+                    let preps = prepare_simulated_sign(*RECONSTRUCTION_LOWER_BOUND);
                     // collecting data sizes
                     sizes.push(preps.simulator.get_view_size());
                     preps
