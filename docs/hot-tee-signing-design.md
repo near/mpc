@@ -82,7 +82,7 @@ class RPC ext;
 
 The Archive Signer is built on three reusable layers from this repository (bottom-up):
 
-- **[Embedded Indexer Node](#embedded-indexer-node)** — runs a full `near-indexer` (including `neard`) inside the CVM for trustless chain access.
+- **[Embedded Indexer Node](#embedded-indexer-node)** — runs a full `near-indexer` (including `neard`) inside the CVM for trustless NEAR chain access.
 - **[Chain Gateway][indexer-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
 - **TEE Context** — sits on top of the Chain Gateway; manages the attestation lifecycle: polls allowed image hashes, periodically submits attestation quotes, and monitors for attestation removal. Depends on [`tee-authority`][tee-authority] (attestation generation) and [`mpc-attestation`][mpc-attestation] (on-chain verification).
 
