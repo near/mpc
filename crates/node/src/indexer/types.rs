@@ -8,7 +8,6 @@ use contract_interface::method_names::{
 use contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
-use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -106,17 +105,9 @@ fn k256_signature_response(
     if recovery_id > MAX_RECOVERY_ID {
         anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
-    let big_r_bytes: [u8; 33] = big_r
-        .to_encoded_point(true)
-        .as_bytes()
-        .try_into()
-        .context("infallible, compressed encoded point is 33 bytes")?;
-
-    let s_bytes: [u8; 32] = s.to_bytes().into();
-
     Ok(ChainSignatureResponse::Secp256k1(dtos::K256Signature {
-        big_r: big_r_bytes.into(),
-        s: s_bytes.into(),
+        big_r: dtos::K256AffinePoint::from(big_r),
+        s: dtos::K256Scalar::from(s),
         recovery_id,
     }))
 }
@@ -376,15 +367,9 @@ impl ChainVerifyForeignTransactionRespondArgs {
             payload_hash.as_ref(),
         )?;
 
-        // TODO: this code should be elsewhere
-        let mut r_bytes = [0u8; 33];
-        r_bytes.copy_from_slice(signature.big_r.to_encoded_point(true).as_bytes());
-        let mut s_bytes = [0u8; 32];
-        s_bytes.copy_from_slice(signature.s.to_bytes().as_ref());
-
         let dto_signature = dtos::K256Signature {
-            big_r: r_bytes.into(),
-            s: s_bytes.into(),
+            big_r: dtos::K256AffinePoint::from(signature.big_r),
+            s: dtos::K256Scalar::from(signature.s),
             recovery_id,
         };
         Ok(ChainVerifyForeignTransactionRespondArgs {

@@ -215,12 +215,10 @@ async fn handle_request(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        migration_service::{
-            types::MigrationInfo, web::server::spawn_expected_peer_info_monitoring,
-        },
-        trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
+    use crate::migration_service::{
+        types::MigrationInfo, web::server::spawn_expected_peer_info_monitoring,
     };
+    use contract_interface::types::Ed25519PublicKey;
 
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
@@ -229,7 +227,7 @@ mod tests {
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {
         MigrationInfo {
             backup_service_info: Some(BackupServiceInfo {
-                public_key: key.verifying_key().into_contract_interface_type(),
+                public_key: Ed25519PublicKey::from(&key.verifying_key()),
             }),
             active_migration: true,
         }
