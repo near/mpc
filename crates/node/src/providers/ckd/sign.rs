@@ -26,8 +26,8 @@ impl CKDProvider {
     ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
-        let threshold =
-            ReconstructionLowerBound::from(self.mpc_config.participants.threshold as usize);
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants

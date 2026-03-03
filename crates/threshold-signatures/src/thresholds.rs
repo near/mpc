@@ -25,8 +25,10 @@ impl ReconstructionLowerBound {
 }
 
 /// Lower bound to reconstruct the secret is `MaxMalicious` + 1.
-impl From<MaxMalicious> for ReconstructionLowerBound {
-    fn from(m: MaxMalicious) -> Self {
-        Self(m.0.saturating_add(1))
+impl TryFrom<MaxMalicious> for ReconstructionLowerBound {
+    type Error = &'static str;
+
+    fn try_from(m: MaxMalicious) -> Result<Self, Self::Error> {
+        m.0.checked_add(1).map(Self).ok_or("MaxMalicious overflow")
     }
 }
