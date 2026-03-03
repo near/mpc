@@ -142,7 +142,7 @@ class HOT_APP new;
 The Archive Signer embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes, launcher compose hashes, and foreign chain policy, and submitting TEE attestation transactions.
 
 
-The Chain Gateway's `ContractStateSubscriber` and [`TransactionSender`][tx-sender] traits (proposed in the [indexer design][indexer-design]) provide the interface. The TEE Context sits on top of the Chain Gateway, and in the MPC node the MPC Context sits on top of the TEE Context.
+The Archive Signer depends on the TEE Context interface. The Chain Gateway (`ContractStateSubscriber`, [`TransactionSender`][tx-sender]) is an internal dependency of the TEE Context — the Archive Signer does not use it directly.
 
 [tx-sender]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/indexer/tx_sender.rs#L22
 [hot-validation-core]: https://github.com/hot-dao/hot-validation-sdk/tree/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core
