@@ -315,7 +315,6 @@ mod test {
             };
 
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let participant_list = ParticipantList::new(&participants).unwrap();
             let fut = do_presign(
                 comms.shared_channel(),
@@ -328,8 +327,8 @@ mod test {
                     threshold: threshold.into(),
                 },
             );
+            comms_refs.push((*p, comms.clone()));
             let prot = make_protocol(comms, fut);
-            comms_refs.push((*p, comms_ref));
             protocols.push((*p, Box::new(prot)));
         }
 

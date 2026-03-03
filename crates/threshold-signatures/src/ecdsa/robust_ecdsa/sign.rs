@@ -497,7 +497,6 @@ mod test {
                     &presignature,
                 );
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let participant_list =
                 crate::participants::ParticipantList::new(&participants).unwrap();
             let fut = super::fut_wrapper(
@@ -509,8 +508,8 @@ mod test {
                 rerandomized,
                 msg_scalar,
             );
+            comms_refs.push((p, comms.clone()));
             let prot = make_protocol(comms, fut);
-            comms_refs.push((p, comms_ref));
             protocols.push((p, Box::new(prot)));
         }
 

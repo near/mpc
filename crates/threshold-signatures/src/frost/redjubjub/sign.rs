@@ -422,7 +422,6 @@ mod test {
 
         for (p, keygen_output) in &keys {
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let p_list = crate::participants::ParticipantList::new(&participants_list).unwrap();
             let presign_output = super::super::PresignOutput {
                 nonces: nonces_map[p].clone(),
@@ -444,8 +443,8 @@ mod test {
                 message.clone(),
                 randomize,
             );
+            comms_refs.push((*p, comms.clone()));
             let prot = make_protocol(comms, fut);
-            comms_refs.push((*p, comms_ref));
             protocols.push((*p, Box::new(prot)));
         }
 

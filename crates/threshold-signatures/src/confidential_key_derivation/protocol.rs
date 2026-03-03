@@ -319,7 +319,6 @@ mod test {
 
         for &p in &participants {
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let private_share = SigningShare::new(f.eval_at_participant(p).unwrap().0);
             let key_pair = KeygenOutput {
                 public_key: pk,
@@ -337,8 +336,8 @@ mod test {
                 app_pk,
                 rng_p,
             );
+            comms_refs.push((p, comms.clone()));
             let prot = make_protocol(comms, fut);
-            comms_refs.push((p, comms_ref));
             protocols.push((p, Box::new(prot)));
         }
 

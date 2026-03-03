@@ -911,7 +911,6 @@ mod test {
 
         for (p, keygen_output) in &keys {
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let participants_list =
                 ParticipantList::new(&keys.iter().map(|(p, _)| *p).collect::<Vec<_>>()).unwrap();
             let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
@@ -925,8 +924,8 @@ mod test {
                 message.clone(),
                 rng_p,
             );
+            comms_refs.push((*p, comms.clone()));
             let prot = make_protocol(comms, fut);
-            comms_refs.push((*p, comms_ref));
             protocols.push((*p, Box::new(prot)));
         }
 
@@ -980,7 +979,6 @@ mod test {
 
         for (p, keygen_output) in &keys {
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let participants_list =
                 ParticipantList::new(&keys.iter().map(|(p, _)| *p).collect::<Vec<_>>()).unwrap();
             let presign_output = presig
@@ -998,8 +996,8 @@ mod test {
                 presign_output,
                 message.clone(),
             );
+            comms_refs.push((*p, comms.clone()));
             let prot = make_protocol(comms, fut);
-            comms_refs.push((*p, comms_ref));
             protocols.push((*p, Box::new(prot)));
         }
 

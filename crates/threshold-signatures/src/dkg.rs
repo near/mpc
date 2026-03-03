@@ -877,7 +877,6 @@ pub mod test {
 
         for &p in &participants {
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let participant_list =
                 super::assert_key_invariants(&participants, p, threshold).unwrap();
             let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
@@ -888,8 +887,8 @@ pub mod test {
                 threshold,
                 rng_p,
             );
+            comms_refs.push((p, comms.clone()));
             let prot = make_protocol(comms, fut);
-            comms_refs.push((p, comms_ref));
             protocols.push((p, Box::new(prot)));
         }
 
@@ -931,7 +930,6 @@ pub mod test {
 
         for &p in &new_participants {
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let old_signing_key = keygen_result
                 .iter()
                 .find(|(kp, _)| *kp == p)
@@ -957,8 +955,8 @@ pub mod test {
                 old_participant_list,
                 rng_p,
             );
+            comms_refs.push((p, comms.clone()));
             let prot = make_protocol(comms, fut);
-            comms_refs.push((p, comms_ref));
             protocols.push((p, Box::new(prot)));
         }
 

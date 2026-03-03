@@ -925,7 +925,6 @@ mod test {
 
         for &p in &participants {
             let comms = Comms::with_buffer_capacity(usize::MAX);
-            let comms_ref = comms.clone();
             let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
             let participant_list = ParticipantList::new(&participants).unwrap();
             let fut = super::do_generation_many::<N>(
@@ -935,8 +934,8 @@ mod test {
                 threshold.into(),
                 rng_p,
             );
+            comms_refs.push((p, comms.clone()));
             let prot = crate::protocol::internal::make_protocol(comms, fut);
-            comms_refs.push((p, comms_ref));
             protocols.push((p, Box::new(prot)));
         }
 
