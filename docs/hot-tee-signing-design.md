@@ -139,7 +139,7 @@ class HOT_APP new;
 
 ### Embedded Indexer Node
 
-The Archive Signer embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used exclusively for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes, launcher compose hashes, and foreign chain policy, and submitting TEE attestation transactions. Running `neard` inside the CVM eliminates external RPC trust assumptions — the app verifies chain state directly, with no external trust assumptions beyond the NEAR network itself.
+The Archive Signer embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes, launcher compose hashes, and foreign chain policy, and submitting TEE attestation transactions.
 
 The signing flow itself is entirely off-chain — HTTP requests in, signatures out. Request authorization uses [`hot-validation-core`][hot-validation-core]'s own RPC clients (not the embedded neard) to query wallet contracts on NEAR and other chains.
 
