@@ -14,7 +14,7 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 
 - **Sign ECDSA (secp256k1) and EdDSA (ed25519)** using the [reconstructed][key-import] full private keys directly with `k256` and `ed25519-dalek` (_not_ threshold signatures).
 - **Receive signature requests via an off-chain HTTP API** compatible with [`hot_protocol::MpcClient`][mpc-client]. HOT's existing backend already sends sign requests via HTTP. Current volume is \~25k requests/day (bearish market baseline) with spikes to 25+ TPS during campaigns (airdrops, mints, claims). On-chain requests would add per-request gas costs (\~$0.001/tx → \~$750/month at current low volume, scaling with activity), latency, and require the [_Block Event Subscriber_][block-event-subscriber].
-- **Authorize requests** using HOT's existing [`Validation::verify()`][validation-verify] with [`ProofModel`][proof-model] — looks up wallet contract via user's [`Uid`][uid], may delegate to cross-chain auth calls.
+- **Authorize requests** using HOT's existing [`Validation::verify()`][validation-verify] with [`ProofModel`][proof-model] — looks up wallet contract via user's [`Uid`][uid], may delegate to cross-chain auth calls. We refer to [http-signing-api](#http-signing-api) for a detailed overview of the authentication and response mechanism.
 - **Submit TEE attestation** on-chain to a dedicated HOT governance contract.
 - **Monitor the HOT governance contract** for allowed Docker image hashes and launcher compose hashes.
 
