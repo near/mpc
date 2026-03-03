@@ -463,7 +463,7 @@ pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
 
 pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
     result: &[(Participant, eddsa::PresignOutput)],
-    key_packages:  Vec<(Participant, eddsa::KeygenOutput)>,
+    key_packages: Vec<(Participant, eddsa::KeygenOutput)>,
     threshold: ReconstructionLowerBound,
     rng: &mut R,
 ) -> FrostEd25519SigV2 {
