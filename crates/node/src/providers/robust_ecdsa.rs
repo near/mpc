@@ -295,7 +295,8 @@ mod tests {
         let max_size = 30;
         for threshold in 5..max_size {
             for number_of_participants in threshold..max_size {
-                let number_of_signers = get_number_of_signers(threshold, number_of_participants).unwrap();
+                let number_of_signers =
+                    get_number_of_signers(threshold, number_of_participants).unwrap();
                 let new_threshold = translate_threshold(threshold, number_of_participants)
                     .unwrap()
                     .value();
@@ -312,7 +313,8 @@ mod tests {
         let max_size = 30;
         for threshold in 5..max_size {
             for number_of_participants in threshold..max_size {
-                let number_of_signers = get_number_of_signers(threshold, number_of_participants).unwrap();
+                let number_of_signers =
+                    get_number_of_signers(threshold, number_of_participants).unwrap();
                 assert!(threshold <= number_of_signers && number_of_signers <= number_of_participants, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
             }
         }
