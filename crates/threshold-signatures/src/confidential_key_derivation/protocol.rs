@@ -309,7 +309,7 @@ mod test {
         let participants = generate_participants(num_participants);
         let coordinator = participants[0];
 
-        let degree = threshold.checked_sub(1).unwrap();
+        let degree = threshold - 1;
         let f = Polynomial::<BLS12381SHA256>::generate_polynomial(None, degree, &mut rng).unwrap();
         let msk = f.eval_at_zero().unwrap().0;
         let pk = VerifyingKey::new(G2Projective::generator() * msk);

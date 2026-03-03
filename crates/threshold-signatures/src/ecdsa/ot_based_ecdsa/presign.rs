@@ -282,7 +282,7 @@ mod test {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(num_participants);
-        let degree = threshold.checked_sub(1).unwrap();
+        let degree = threshold - 1;
         let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
         let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
 

@@ -216,7 +216,7 @@ mod test {
         let threshold: usize = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
-        let degree = threshold.checked_sub(1).unwrap();
+        let degree = threshold - 1;
         let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
         let x = f.eval_at_zero().unwrap().0;
         let public_key = ProjectivePoint::GENERATOR * x;
@@ -261,7 +261,7 @@ mod test {
         let threshold: usize = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
-        let degree = threshold.checked_sub(1).unwrap();
+        let degree = threshold - 1;
         let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
         let x = f.eval_at_zero().unwrap().0;
         let public_key = frost_core::VerifyingKey::new(ProjectivePoint::GENERATOR * x);
@@ -315,7 +315,7 @@ mod test {
 
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let degree = threshold.checked_sub(1).unwrap();
+        let degree = threshold - 1;
         let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
         let public_key = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
         let g = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
