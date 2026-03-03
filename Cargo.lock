@@ -4929,6 +4929,7 @@ dependencies = [
 name = "launcher-interface"
 version = "3.5.1"
 dependencies = [
+ "bounded-collections",
  "mpc-primitives",
  "serde",
 ]

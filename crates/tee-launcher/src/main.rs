@@ -33,19 +33,12 @@ async fn main() {
     }
 }
 
-async fn run() -> Result<()> {
+async fn run() -> Result<(), LauncherError> {
     tracing::info!("start");
 
     let args = CliArgs::parse();
 
     tracing::info!(platform = ?args.platform, "starting launcher");
-
-    // TODO is_unix_socket can be a compile time check
-    if args.platform == Platform::Tee && !is_unix_socket(DSTACK_UNIX_SOCKET) {
-        return Err(LauncherError::DstackSocketMissing(
-            DSTACK_UNIX_SOCKET.to_string(),
-        ));
-    }
 
     // Load dstack user config
     let config_file = std::fs::OpenOptions::new()
@@ -55,15 +48,36 @@ async fn run() -> Result<()> {
 
     let dstack_config: Config = serde_json::from_reader(config_file).expect("config file is valid");
 
-    let selected_hash = load_and_select_hash(&args, &dstack_config)?;
+    let image_hash: MpcDockerImageHash = {
+        match dstack_config.launcher_config.mpc_hash_override.clone() {
+            Some(override_hash) => override_hash,
+            None => {
+                let approved_hashes_file = std::fs::OpenOptions::new()
+                    .read(true)
+                    .open(IMAGE_DIGEST_FILE)
+                    .map_err(|source| LauncherError::FileRead {
+                        path: IMAGE_DIGEST_FILE.to_string(),
+                        source,
+                    })?;
 
-    if !validate_image_hash(&selected_hash, &dstack_config, &dstack_config).await? {
-        return Err(LauncherError::ImageValidationFailed(selected_hash));
+                let approved_hashes_on_disk: ApprovedHashesFile =
+                    serde_json::from_reader(approved_hashes_file).map_err(|source| {
+                        LauncherError::JsonParse {
+                            path: IMAGE_DIGEST_FILE.to_string(),
+                            source,
+                        }
+                    })?;
+
+                approved_hashes_on_disk.newest_approved_hash().clone()
+            }
+        }
+    };
+
+    let () = check_image_digest_exists_on_docker_hub(image_hash)?;
+
+    if args.platform == Platform::Tee {
+        extend_rtmr3(&image_hash).await?;
     }
-
-    tracing::info!("MPC image hash validated successfully: {selected_hash}");
-
-    extend_rtmr3(args.platform, &selected_hash).await?;
 
     launch_mpc_container(
         args.platform,
@@ -161,71 +175,6 @@ fn is_safe_host_entry(entry: &str) -> bool {
 
 fn is_safe_port_mapping(mapping: &str) -> bool {
     !INVALID_HOST_ENTRY_PATTERN.is_match(mapping)
-}
-
-// ---------------------------------------------------------------------------
-// Hash selection
-// ---------------------------------------------------------------------------
-
-fn load_and_select_hash(args: &CliArgs, dstack_config: &Config) -> Result<String> {
-    let approved_hashes = if std::path::Path::new(IMAGE_DIGEST_FILE).is_file() {
-        let content = std::fs::read_to_string(IMAGE_DIGEST_FILE).map_err(|source| {
-            LauncherError::FileRead {
-                path: IMAGE_DIGEST_FILE.to_string(),
-                source,
-            }
-        })?;
-        let data: ApprovxedHashesFile =
-            serde_json::from_str(&content).map_err(|source| LauncherError::JsonParse {
-                path: IMAGE_DIGEST_FILE.to_string(),
-                source,
-            })?;
-        if data.approved_hashes.is_empty() {
-            return Err(LauncherError::InvalidApprovedHashes {
-                path: IMAGE_DIGEST_FILE.to_string(),
-            });
-        }
-        data.approved_hashes
-    } else {
-        let fallback_image = (&args)
-            .default_image_digest
-            .clone()
-            .ok_or_else(|| LauncherError::MissingEnvVar("DEFAULT_IMAGE_DIGEST".to_string()))?;
-
-        tracing::info!(
-            ?IMAGE_DIGEST_FILE,
-            ?fallback_image,
-            "image digest file missing, will use fall back image"
-        );
-
-        vec![fallback_image]
-    };
-
-    tracing::info!("Approved MPC image hashes (newest → oldest):");
-    for h in &approved_hashes {
-        // TODO: Fix this output...
-        // tracing::info!("  - {h}");
-    }
-
-    // Optional override
-    // if let Some(override_hash) = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE) {
-    //     if !is_valid_sha256_digest(override_hash) {
-    //         return Err(LauncherError::InvalidHashOverride(override_hash.clone()));
-    //     }
-    //     if !approved_hashes.contains(override_hash) {
-    //         tracing::error!("MPC_HASH_OVERRIDE={override_hash} does NOT match any approved hash!");
-    //         return Err(LauncherError::InvalidHashOverride(override_hash.clone()));
-    //     }
-    //     tracing::info!("MPC_HASH_OVERRIDE provided → selecting: {override_hash}");
-    //     return Ok(override_hash.clone());
-    // }
-
-    // // No override → select newest (first in list)
-    // let selected = approved_hashes[0].clone();
-    // tracing::info!("Selected MPC hash (newest allowed): {selected}");
-    // Ok(selected)
-
-    todo!()
 }
 
 // ---------------------------------------------------------------------------
@@ -381,24 +330,22 @@ async fn get_manifest_digest(config: &LauncherConfig) -> Result<String> {
     Err(LauncherError::ImageHashNotFoundAmongTags)
 }
 
-async fn validate_image_hash(
-    image_digest: &str,
-    dstack_config: &Config,
-    config: &Config,
-) -> Result<bool> {
-    tracing::info!("Validating MPC hash: {image_digest}");
-
-    let manifest_digest = get_manifest_digest(&config.launcher_config).await?;
-    let name_and_digest = format!("{}@{manifest_digest}", config.launcher_config.image_name);
+fn check_image_digest_exists_on_docker_hub(
+    image_hash: MpcDockerImageHash,
+) -> Result<(), ImageDigestValidationFailed> {
+    let image_hash_name = format!("sha256:{}", image_hash.as_hex());
 
     // Pull
     let pull = Command::new("docker")
-        .args(["pull", &name_and_digest])
+        .args(["pull", &image_hash_name])
         .output()
-        .map_err(|e| LauncherError::DockerPullFailed(e.to_string()))?;
-    if !pull.status.success() {
-        tracing::error!("docker pull failed for {image_digest}");
-        return Ok(false);
+        .map_err(|e| ImageDigestValidationFailed::DockerPullFailed(e.to_string()))?;
+
+    let pull_failed = !pull.status.success();
+    if pull_failed {
+        return Err(ImageDigestValidationFailed::DockerPullFailed(
+            "docker pull terminated with unsuccessful status".to_string(),
+        ));
     }
 
     // Verify digest
@@ -408,23 +355,29 @@ async fn validate_image_hash(
             "inspect",
             "--format",
             "{{index .ID}}",
-            &name_and_digest,
+            &image_hash_name,
         ])
         .output()
-        .map_err(|e| LauncherError::DockerInspectFailed(e.to_string()))?;
-    if !inspect.status.success() {
-        tracing::error!("docker inspect failed for {image_digest}");
-        return Ok(false);
+        .map_err(|e| ImageDigestValidationFailed::DockerInspectFailed(e.to_string()))?;
+
+    let docker_inspect_failed = !inspect.status.success();
+    if docker_inspect_failed {
+        return Err(ImageDigestValidationFailed::DockerPullFailed(
+            "docker inspect terminated with unsuccessful status".to_string(),
+        ));
     }
 
     let pulled_digest = String::from_utf8_lossy(&inspect.stdout).trim().to_string();
-    if pulled_digest != image_digest {
-        tracing::error!("digest mismatch: {pulled_digest} != {image_digest}");
-        return Ok(false);
+    if pulled_digest != image_hash_name {
+        return Err(
+            ImageDigestValidationFailed::PulledImageHasMismatchedDigest {
+                pulled_digest,
+                expected_digest: image_hash_name,
+            },
+        );
     }
 
-    tracing::info!("MPC hash {image_digest} validated successfully.");
-    Ok(true)
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -565,35 +518,19 @@ fn launch_mpc_container(
     Ok(())
 }
 
-// TODO: We should kill this check. It's called with the constant `DSTACK_UNIX_SOCKET`
-fn is_unix_socket(path: &str) -> bool {
-    std::fs::metadata(path).is_ok_and(|meta| meta.file_type().is_socket())
-}
-
-async fn extend_rtmr3(platform: Platform, image_hash: MpcDockerImageHash) -> Result<()> {
-    if platform == Platform::NonTee {
-        tracing::info!("PLATFORM=NONTEE → skipping RTMR3 extension step.");
-        return Ok(());
-    }
-
-    if !is_unix_socket(DSTACK_UNIX_SOCKET) {
-        return Err(LauncherError::DstackSocketMissing(
-            DSTACK_UNIX_SOCKET.to_string(),
-        ));
-    }
-
+async fn extend_rtmr3(image_hash: &MpcDockerImageHash) -> Result<(), LauncherError> {
     tracing::info!(?image_hash, "extending RTMR3");
 
-    let client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
+    let dstack_cient = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
     // GetQuote first
-    client
+    dstack_cient
         .get_quote(vec![])
         .await
         .map_err(|e| LauncherError::DstackGetQuoteFailed(e.to_string()))?;
 
     // EmitEvent with the image digest
-    client
+    dstack_cient
         .emit_event(
             "mpc-image-digest".to_string(),
             image_hash.as_hex().into_bytes(),

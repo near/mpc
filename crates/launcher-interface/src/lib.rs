@@ -5,8 +5,16 @@ pub mod types {
     /// JSON structure for the approved hashes file written by the MPC node.
     #[derive(Debug, Serialize, Deserialize)]
     pub struct ApprovedHashesFile {
-        pub approved_hashes: Vec<MpcDockerImageHash>,
+        pub approved_hashes: bounded_collections::NonEmptyVec<MpcDockerImageHash>,
+    }
+
+    impl ApprovedHashesFile {
+        pub fn newest_approved_hash(&self) -> &MpcDockerImageHash {
+            self.approved_hashes.first()
+        }
     }
 }
+
+// TODO: add insta snapshot test for this type
 
 mod paths {}

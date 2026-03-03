@@ -32,12 +32,6 @@ pub enum LauncherError {
     #[error("Failed to get successful response from {url} after {attempts} attempts")]
     RegistryRequestFailed { url: String, attempts: u32 },
 
-    #[error("docker pull failed for {0}")]
-    DockerPullFailed(String),
-
-    #[error("docker inspect failed for {0}")]
-    DockerInspectFailed(String),
-
     #[error("Digest mismatch: pulled {pulled} != expected {expected}")]
     DigestMismatch { pulled: String, expected: String },
 
@@ -79,6 +73,22 @@ pub enum LauncherError {
 
     #[error("Registry response parse error: {0}")]
     RegistryResponseParse(String),
+
+    #[error("The selected image failed digest validation: {0}")]
+    ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),
 }
 
-pub type Result<T> = std::result::Result<T, LauncherError>;
+#[derive(Error, Debug)]
+pub enum ImageDigestValidationFailed {
+    #[error("docker pull failed for {0}")]
+    DockerPullFailed(String),
+    #[error("docker inspect failed for {0}")]
+    DockerInspectFailed(String),
+    #[error(
+        "pulled image has mismatching digest. pulled: {pulled_digest}, expected: {expected_digest}"
+    )]
+    PulledImageHasMismatchedDigest {
+        expected_digest: String,
+        pulled_digest: String,
+    },
+}

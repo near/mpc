@@ -60,7 +60,7 @@ pub struct LauncherConfig {
     /// Maximum registry RPC attempts (from `RPC_MAX_ATTEMPTS`).
     pub rpc_max_attempts: u32,
     /// Optional hash override that bypasses registry lookup (from `MPC_HASH_OVERRIDE`).
-    pub mpc_hash_override: Option<String>,
+    pub mpc_hash_override: Option<MpcDockerImageHash>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
