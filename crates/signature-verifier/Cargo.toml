@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+abi = ["contract-interface/abi"]
+
 [dependencies]
 contract-interface = { workspace = true }
 near-sdk = { workspace = true }
