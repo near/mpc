@@ -463,6 +463,7 @@ pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
 
 pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
     result: &[(Participant, eddsa::PresignOutput)],
+    key_packages:  Vec<(Participant, eddsa::KeygenOutput)>,
     threshold: ReconstructionLowerBound,
     rng: &mut R,
 ) -> FrostEd25519SigV2 {
@@ -470,7 +471,6 @@ pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
     // collect all participants
     let participants: Vec<Participant> =
         result.iter().map(|(participant, _)| *participant).collect();
-    let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
 
     // choose a coordinator at random
     let coordinator_index = rng.gen_range(0..num_participants);

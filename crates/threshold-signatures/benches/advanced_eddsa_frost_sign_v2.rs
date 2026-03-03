@@ -131,7 +131,7 @@ fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimula
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = ed25519_prepare_presign(threshold.value(), &mut rng);
     let result = run_protocol(preps.protocols).expect("Prepare sign should not fail");
-    let preps = ed25519_prepare_sign_v2(&result, threshold, &mut rng);
+    let preps = ed25519_prepare_sign_v2(&result, preps.key_packages, threshold, &mut rng);
     let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
