@@ -22,7 +22,7 @@ use crate::types::primitives::{AccountId, DomainId, SignatureResponse, Tweak};
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
@@ -46,7 +46,7 @@ pub struct VerifyForeignTransactionRequestArgs {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
@@ -70,7 +70,7 @@ pub struct VerifyForeignTransactionRequest {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct VerifyForeignTransactionResponse {
     pub payload_hash: Hash256,
@@ -92,7 +92,7 @@ pub struct VerifyForeignTransactionResponse {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum ForeignChainRpcRequest {
@@ -130,7 +130,7 @@ impl ForeignChainRpcRequest {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct EvmRpcRequest {
     pub tx_id: EvmTxId,
@@ -153,7 +153,7 @@ pub struct EvmRpcRequest {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct SolanaRpcRequest {
     pub tx_id: SolanaTxId,
@@ -176,7 +176,7 @@ pub struct SolanaRpcRequest {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId,
@@ -199,7 +199,7 @@ pub struct BitcoinRpcRequest {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct StarknetRpcRequest {
     pub tx_id: StarknetTxId,
@@ -222,7 +222,7 @@ pub struct StarknetRpcRequest {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum EvmFinality {
@@ -246,7 +246,7 @@ pub enum EvmFinality {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum SolanaFinality {
@@ -270,7 +270,7 @@ pub enum SolanaFinality {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum StarknetFinality {
@@ -293,7 +293,7 @@ pub enum StarknetFinality {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 #[repr(u8)]
@@ -318,7 +318,7 @@ pub enum EvmExtractor {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct EvmLog {
     pub removed: bool,
@@ -347,7 +347,7 @@ pub struct EvmLog {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum SolanaExtractor {
@@ -370,7 +370,7 @@ pub enum SolanaExtractor {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 #[repr(u8)]
@@ -394,7 +394,7 @@ pub enum BitcoinExtractor {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 #[repr(u8)]
@@ -419,7 +419,7 @@ pub enum StarknetExtractor {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct StarknetLog {
     pub block_hash: StarknetFelt,
@@ -444,7 +444,7 @@ pub struct StarknetLog {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum ExtractedValue {
@@ -468,7 +468,7 @@ pub enum ExtractedValue {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum EvmExtractedValue {
@@ -490,7 +490,7 @@ pub enum EvmExtractedValue {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum BitcoinExtractedValue {
@@ -512,7 +512,7 @@ pub enum BitcoinExtractedValue {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum StarknetExtractedValue {
@@ -535,7 +535,7 @@ pub enum StarknetExtractedValue {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
 pub enum ForeignChain {
@@ -632,7 +632,7 @@ pub struct ForeignChainPolicyVotes {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct BlockConfirmations(pub u64);
 
@@ -656,7 +656,7 @@ pub struct BlockConfirmations(pub u64);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
 
@@ -680,7 +680,7 @@ pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Hash160(#[serde_as(as = "Hex")] pub [u8; 20]);
 
@@ -703,7 +703,7 @@ pub struct Hash160(#[serde_as(as = "Hex")] pub [u8; 20]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
@@ -726,7 +726,7 @@ pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct SolanaTxId(
     #[cfg_attr(
@@ -756,7 +756,7 @@ pub struct SolanaTxId(
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct BitcoinTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
@@ -779,7 +779,7 @@ pub struct BitcoinTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct StarknetFelt(#[serde_as(as = "Hex")] pub [u8; 32]);
 
@@ -801,7 +801,7 @@ pub struct StarknetFelt(#[serde_as(as = "Hex")] pub [u8; 32]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct StarknetTxId(pub StarknetFelt);
 
@@ -828,7 +828,7 @@ pub struct StarknetTxId(pub StarknetFelt);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub enum ForeignTxSignPayload {
     V1(ForeignTxSignPayloadV1),
@@ -849,7 +849,7 @@ pub enum ForeignTxSignPayload {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ForeignTxSignPayloadV1 {
     pub request: ForeignChainRpcRequest,
