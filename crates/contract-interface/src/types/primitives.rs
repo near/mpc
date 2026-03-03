@@ -18,7 +18,7 @@ use serde_with::{hex::Hex, serde_as};
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct AccountId(pub String);
 
@@ -105,7 +105,7 @@ pub struct DomainId(pub u64);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[serde(tag = "scheme")]
 pub enum SignatureResponse {
@@ -131,7 +131,7 @@ pub enum SignatureResponse {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Ed25519Signature(
     #[cfg_attr(
@@ -158,7 +158,7 @@ pub struct Ed25519Signature(
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct K256Signature {
     pub big_r: K256AffinePoint,
@@ -185,7 +185,7 @@ pub struct K256Signature {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 /// AffinePoint on the Secp256k1 curve
 pub struct K256AffinePoint {
@@ -212,7 +212,7 @@ pub struct K256AffinePoint {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct K256Scalar {
     #[serde_as(as = "Hex")]
