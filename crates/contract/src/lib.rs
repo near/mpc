@@ -2072,7 +2072,6 @@ mod tests {
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
-    use k256::elliptic_curve::sec1::ToEncodedPoint as _;
     use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
@@ -2125,10 +2124,8 @@ mod tests {
         let scalar = k256::Scalar::random(rng);
         let public_key_element = Secp256K1Group::generator() * scalar;
 
-        let compressed_key = public_key_element.to_encoded_point(false);
-        let mut bytes = [0u8; 64];
-        bytes.copy_from_slice(&compressed_key.as_bytes()[1..]);
-        let pk = dtos::Secp256k1PublicKey::from(bytes);
+        let pk = dtos::Secp256k1PublicKey::try_from(public_key_element.to_affine())
+            .expect("non-identity group element is a valid public key");
 
         (pk, scalar)
     }
@@ -2139,10 +2136,7 @@ mod tests {
         let scalar = curve25519_dalek::Scalar::random(rng);
         let public_key_element = Ed25519Group::generator() * scalar;
 
-        let compressed_key = public_key_element.compress().as_bytes().to_vec();
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(&compressed_key);
-        let pk = dtos::Ed25519PublicKey::from(bytes);
+        let pk = dtos::Ed25519PublicKey::from(&public_key_element.compress());
 
         (pk, scalar)
     }
