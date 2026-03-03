@@ -257,8 +257,15 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 /// higher security guarantees for robust-ecdsa. In that case,
 /// this function enforces that the number of signers and the threshold
 /// computed below in `translate_threshold` stay consistent
-pub(super) fn get_number_of_signers(threshold: usize, _number_of_participants: usize) -> usize {
-    threshold
+pub(super) fn get_number_of_signers(
+    threshold: usize,
+    number_of_participants: usize,
+) -> anyhow::Result<usize> {
+    anyhow::ensure!(
+        threshold <= number_of_participants,
+        "threshold ({threshold}) exceeds number of participants ({number_of_participants})"
+    );
+    Ok(threshold)
 }
 
 /// This function translates the current threshold from the contract
@@ -271,7 +278,7 @@ pub(super) fn translate_threshold(
     threshold: usize,
     number_of_participants: usize,
 ) -> anyhow::Result<MaxMalicious> {
-    let number_of_signers = get_number_of_signers(threshold, number_of_participants);
+    let number_of_signers = get_number_of_signers(threshold, number_of_participants)?;
     anyhow::ensure!(number_of_signers >= 5, "Robust ECDSA requires the threshold to be at least 2, which implies that the number of signers needs to be at least 5");
     Ok(MaxMalicious::from((number_of_signers - 1) / 2))
 }
@@ -288,7 +295,7 @@ mod tests {
         let max_size = 30;
         for threshold in 5..max_size {
             for number_of_participants in threshold..max_size {
-                let number_of_signers = get_number_of_signers(threshold, number_of_participants);
+                let number_of_signers = get_number_of_signers(threshold, number_of_participants).unwrap();
                 let new_threshold = translate_threshold(threshold, number_of_participants)
                     .unwrap()
                     .value();
@@ -305,7 +312,7 @@ mod tests {
         let max_size = 30;
         for threshold in 5..max_size {
             for number_of_participants in threshold..max_size {
-                let number_of_signers = get_number_of_signers(threshold, number_of_participants);
+                let number_of_signers = get_number_of_signers(threshold, number_of_participants).unwrap();
                 assert!(threshold <= number_of_signers && number_of_signers <= number_of_participants, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
             }
         }

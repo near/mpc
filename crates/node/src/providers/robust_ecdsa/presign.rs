@@ -87,7 +87,7 @@ pub(super) async fn run_background_presignature_generation(
         .collect();
 
     let threshold = mpc_config.participants.threshold as usize;
-    let num_signers = get_number_of_signers(threshold, running_participants.len());
+    let num_signers = get_number_of_signers(threshold, running_participants.len())?;
     let robust_ecdsa_threshold = translate_threshold(threshold, running_participants.len())?;
     anyhow::ensure!(robust_ecdsa_threshold
         .value()

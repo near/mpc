@@ -2,12 +2,6 @@ use derive_more::{From, Into};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum ThresholdError {
-    #[error("integer overflow")]
-    IntegerOverflow,
-}
-
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, Into,
 )]
@@ -40,4 +34,10 @@ impl TryFrom<MaxMalicious> for ReconstructionLowerBound {
             .map(Self)
             .ok_or(ThresholdError::IntegerOverflow)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ThresholdError {
+    #[error("integer overflow")]
+    IntegerOverflow,
 }
