@@ -12,6 +12,7 @@ use std::sync::Arc;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::ReconstructionLowerBound;
 
 pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
@@ -74,7 +75,7 @@ where
     }
 
     async fn run_key_generation_client(
-        _threshold: usize,
+        _threshold: ReconstructionLowerBound,
         _channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         anyhow::bail!(
@@ -83,7 +84,7 @@ where
     }
 
     async fn run_key_resharing_client(
-        _new_threshold: usize,
+        _new_threshold: ReconstructionLowerBound,
         _key_share: Option<SigningShare>,
         _public_key: VerifyingKey,
         _old_participants: &ParticipantsConfig,

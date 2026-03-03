@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::participants::Participant;
+use threshold_signatures::ReconstructionLowerBound;
 
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 
@@ -72,7 +73,7 @@ impl EcdsaSignatureProvider {
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
 
-        let threshold = mpc_config.participants.threshold as usize;
+        let threshold = ReconstructionLowerBound::from(mpc_config.participants.threshold as usize);
         let running_participants: Vec<_> = mpc_config
             .participants
             .participants
@@ -96,7 +97,7 @@ impl EcdsaSignatureProvider {
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
             {
                 let participants = match client.select_random_active_participants_including_me(
-                    threshold,
+                    threshold.value(),
                     &running_participants,
                 ) {
                     Ok(participants) => participants,
@@ -191,7 +192,9 @@ impl EcdsaSignatureProvider {
             ));
         }
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: self.mpc_config.participants.threshold as usize,
+            threshold: ReconstructionLowerBound::from(
+                self.mpc_config.participants.threshold as usize,
+            ),
             out_triple_id_start: start,
             out_triple_store: self.triple_store.clone(),
         }
@@ -219,7 +222,7 @@ impl HasParticipants for PairedTriple {
 /// Generates many cait-sith triples at once. This can significantly save the
 /// *number* of network messages.
 pub struct ManyTripleGenerationComputation<const N: usize> {
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
 }
 
 #[async_trait::async_trait]
@@ -265,7 +268,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
 /// The follower version of the triple generation. The difference is that the follower will only
 /// complete the computation after successfully persisting the triples to storage.
 pub struct FollowerManyTripleGenerationComputation<const N: usize> {
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
     pub out_triple_store: Arc<TripleStorage>,
     pub out_triple_id_start: UniqueId,
 }
@@ -324,6 +327,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
     const NUM_PARTICIPANTS: usize = 4;
@@ -380,7 +384,7 @@ mod tests {
                             panic!("Unexpected task id");
                         };
                         let triples = ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
-                            threshold: THRESHOLD,
+                            threshold: ReconstructionLowerBound::from(THRESHOLD),
                         }
                         .perform_leader_centric_computation(
                             channel,
@@ -428,7 +432,7 @@ mod tests {
                     let result = tracking::spawn(
                         &format!("task {:?}", task_id),
                         ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
-                            threshold: THRESHOLD,
+                            threshold: ReconstructionLowerBound::from(THRESHOLD),
                         }
                         .perform_leader_centric_computation(
                             channel,

@@ -28,6 +28,7 @@ use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::frost_ed25519;
+use threshold_signatures::ReconstructionLowerBound;
 use tokio::sync::{mpsc, watch, RwLock};
 use tokio::time::timeout;
 use tracing::{error, info};
@@ -45,7 +46,7 @@ pub async fn keygen_computation_inner(
     generated_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
     domain: DomainConfig,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
     let keyshare_handle = keyshare_storage
@@ -114,7 +115,7 @@ async fn keygen_computation(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     chain_txn_sender: impl TransactionSender,
     key_id: KeyEventId,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> anyhow::Result<()> {
     let key_event = wait_for_contract_catchup(&mut contract_key_event_id, key_id).await;
     let inner = keygen_computation_inner(
@@ -150,7 +151,7 @@ async fn keygen_computation(
 pub struct ResharingArgs {
     pub previous_keyset: Keyset,
     pub existing_keyshares: Option<Vec<Keyshare>>,
-    pub new_threshold: usize,
+    pub new_threshold: ReconstructionLowerBound,
     pub old_participants: ParticipantsConfig,
 }
 
@@ -406,7 +407,7 @@ pub async fn keygen_leader(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> anyhow::Result<()> {
     loop {
         // Wait for all participants to be connected. Otherwise, computations are most likely going
@@ -489,7 +490,7 @@ pub async fn keygen_follower(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender + 'static,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> anyhow::Result<()> {
     let mut tasks = AutoAbortTaskCollection::new();
     loop {
