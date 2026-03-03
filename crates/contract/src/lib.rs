@@ -366,9 +366,9 @@ impl MpcContract {
 
         let derived_public_key: dtos::PublicKey = match public_key {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(near_public_key)
+                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
                     .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(secp_pk)
+                let affine = *k256::PublicKey::try_from(&secp_pk)
                     .expect("stored key is always valid")
                     .as_affine();
                 let derived_public_key =
@@ -378,7 +378,7 @@ impl MpcContract {
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
                     derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
-                dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress()).into()
+                dtos::Ed25519PublicKey::from(&derived_public_key_edwards_point.compress()).into()
             }
             PublicKeyExtended::Bls12381 { public_key } => public_key,
         };
@@ -652,9 +652,9 @@ impl MpcContract {
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
                 // generate the expected public key
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(near_public_key)
+                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
                     .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(secp_pk)
+                let affine = *k256::PublicKey::try_from(&secp_pk)
                     .expect("stored key is always valid")
                     .as_affine();
                 let expected_public_key =
@@ -682,7 +682,7 @@ impl MpcContract {
                     &request.tweak,
                 );
                 let derived_public_key_32_bytes =
-                    dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress());
+                    dtos::Ed25519PublicKey::from(&derived_public_key_edwards_point.compress());
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
@@ -773,9 +773,9 @@ impl MpcContract {
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
                 // generate the expected public key
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(near_public_key)
+                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
                     .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(secp_pk)
+                let affine = *k256::PublicKey::try_from(&secp_pk)
                     .expect("stored key is always valid")
                     .as_affine();
                 let expected_public_key = derive_key_secp256k1(
@@ -2073,12 +2073,7 @@ mod tests {
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::elliptic_curve::sec1::ToEncodedPoint as _;
-    use k256::{
-        self,
-        ecdsa::SigningKey,
-        elliptic_curve::point::DecompactPoint,
-        {elliptic_curve, AffinePoint, Secp256k1},
-    };
+    use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
@@ -2158,7 +2153,7 @@ mod tests {
         let scalar = ckd::Scalar::random(rng);
         let public_key_element = ckd::ElementG2::generator() * scalar;
 
-        let pk = dtos::Bls12381G2PublicKey::from(public_key_element);
+        let pk = dtos::Bls12381G2PublicKey::from(&public_key_element);
 
         (pk, scalar)
     }
@@ -2299,26 +2294,16 @@ mod tests {
             .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
             .unwrap();
 
-        let (r, s) = signature.split_bytes();
-        let big_r = AffinePoint::decompact(&r).unwrap();
-        let r_bytes: [u8; 33] = big_r.to_encoded_point(true).as_bytes().try_into().unwrap();
-        let s_bytes: [u8; 32] = s.into();
-
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(s.as_ref());
         let signature_response = if success {
-            dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
-                big_r: dtos::K256AffinePoint::from(r_bytes),
-                s: dtos::K256Scalar::from(s_bytes),
-                recovery_id: recovery_id.to_byte(),
-            })
+            dtos::SignatureResponse::Secp256k1(dtos::K256Signature::from_ecdsa_recoverable(
+                &signature,
+                recovery_id,
+            ))
         } else {
             // submit an incorrect signature to make the respond call fail
-            dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
-                big_r: dtos::K256AffinePoint::from(r_bytes),
-                s: dtos::K256Scalar::from([2; 32]),
-                recovery_id: recovery_id.to_byte(),
-            })
+            let mut bad_sig = dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id);
+            bad_sig.s = dtos::K256Scalar::from([2; 32]);
+            dtos::SignatureResponse::Secp256k1(bad_sig)
         };
 
         with_active_participant_and_attested_context(&contract);
@@ -2496,20 +2481,9 @@ mod tests {
         let derived_secret_key = derive_secret_key(&secret_key_ec, &Tweak::new(tweak.0));
         let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
         let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload_hash).unwrap();
-        let (r, s) = signature.split_bytes();
-        let r = AffinePoint::decompact(&r).unwrap();
-        let mut r_bytes = [0u8; 33];
-        r_bytes.copy_from_slice(r.to_encoded_point(true).as_bytes());
-        let mut s_bytes = [0u8; 32];
-        s_bytes.copy_from_slice(s.as_ref());
-
-        let signature = dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
-            big_r: dtos::K256AffinePoint {
-                affine_point: r_bytes,
-            },
-            s: dtos::K256Scalar { scalar: s_bytes },
-            recovery_id: recovery_id.to_byte(),
-        });
+        let signature = dtos::SignatureResponse::Secp256k1(
+            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
+        );
 
         let payload_hash = payload.compute_msg_hash().unwrap();
         let response = VerifyForeignTransactionResponse {
@@ -2672,7 +2646,7 @@ mod tests {
             MockAttestation::Invalid
         };
 
-        let dto_public_key = participant_info.sign_pk.clone().try_into().unwrap();
+        let dto_public_key = dtos::Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap();
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -2838,7 +2812,7 @@ mod tests {
         contract
             .submit_participant_info(
                 valid_attestation,
-                participant_info.sign_pk.clone().try_into().unwrap(),
+                dtos::Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
             )
             .expect("Expected panic if predecessor != signer");
     }
@@ -2853,7 +2827,7 @@ mod tests {
         let outsider_id: AccountId = "outsider.near".parse().unwrap();
 
         let fake_tls_pk = bogus_ed25519_near_public_key(); // unique TLS key for outsider
-        let dto_public_key = fake_tls_pk.clone().try_into().unwrap();
+        let dto_public_key = dtos::Ed25519PublicKey::try_from(&fake_tls_pk).unwrap();
 
         let valid_attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -2916,7 +2890,7 @@ mod tests {
         // --- Step 3: Attested outsider (not a participant) joins ---
         let outsider_id: AccountId = "outsider.near".parse().unwrap();
         let tls_key = bogus_ed25519_near_public_key();
-        let dto_public_key = tls_key.clone().try_into().unwrap();
+        let dto_public_key = dtos::Ed25519PublicKey::try_from(&tls_key).unwrap();
 
         testing_env!(VMContextBuilder::new()
             .signer_account_id(outsider_id.clone())
@@ -3205,12 +3179,10 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info
-                    .destination_node_info
-                    .sign_pk
-                    .clone()
-                    .try_into()
-                    .unwrap(),
+                attestation_tls_key: dtos::Ed25519PublicKey::try_from(
+                    &destination_node_info.destination_node_info.sign_pk,
+                )
+                .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: None,
@@ -3265,12 +3237,10 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: None,
-                attestation_tls_key: destination_node_info
-                    .destination_node_info
-                    .sign_pk
-                    .clone()
-                    .try_into()
-                    .unwrap(),
+                attestation_tls_key: dtos::Ed25519PublicKey::try_from(
+                    &destination_node_info.destination_node_info.sign_pk,
+                )
+                .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk.clone(),
                 expected_error_kind: Some(ErrorKind::NodeMigrationError(
@@ -3299,12 +3269,10 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info
-                    .destination_node_info
-                    .sign_pk
-                    .clone()
-                    .try_into()
-                    .unwrap(),
+                attestation_tls_key: dtos::Ed25519PublicKey::try_from(
+                    &destination_node_info.destination_node_info.sign_pk,
+                )
+                .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: Some(ErrorKind::NodeMigrationError(
@@ -3329,12 +3297,10 @@ mod tests {
         let destination_node_info = gen_random_destination_info();
         let setup = ConcludeNodeMigrationTestSetup {
             destination_node_info: Some(destination_node_info.clone()),
-            attestation_tls_key: destination_node_info
-                .destination_node_info
-                .sign_pk
-                .clone()
-                .try_into()
-                .unwrap(),
+            attestation_tls_key: dtos::Ed25519PublicKey::try_from(
+                &destination_node_info.destination_node_info.sign_pk,
+            )
+            .unwrap(),
             signer_account_id: non_participant_account_id.clone(),
             signer_account_pk: destination_node_info.signer_account_pk,
             expected_error_kind: Some(ErrorKind::InvalidState(InvalidState::NotParticipant)),
@@ -3354,12 +3320,10 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info
-                    .destination_node_info
-                    .sign_pk
-                    .clone()
-                    .try_into()
-                    .unwrap(),
+                attestation_tls_key: dtos::Ed25519PublicKey::try_from(
+                    &destination_node_info.destination_node_info.sign_pk,
+                )
+                .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: Some(ErrorKind::InvalidState(

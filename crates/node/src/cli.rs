@@ -407,9 +407,9 @@ impl StartCmd {
             .map_err(|_| anyhow!("Root task handle was already set"))?;
 
         let tls_public_key =
-            Ed25519PublicKey::from(secrets.persistent_secrets.p2p_private_key.verifying_key());
+            Ed25519PublicKey::from(&secrets.persistent_secrets.p2p_private_key.verifying_key());
         let account_public_key =
-            Ed25519PublicKey::from(secrets.persistent_secrets.near_signer_key.verifying_key());
+            Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 

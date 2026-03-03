@@ -227,7 +227,7 @@ mod tests {
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {
         MigrationInfo {
             backup_service_info: Some(BackupServiceInfo {
-                public_key: Ed25519PublicKey::from(key.verifying_key()),
+                public_key: Ed25519PublicKey::from(&key.verifying_key()),
             }),
             active_migration: true,
         }

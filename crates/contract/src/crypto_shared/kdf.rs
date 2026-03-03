@@ -72,7 +72,7 @@ pub fn derive_key_secp256k1(
     let derived = (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key)
         .to_affine();
     let pk = k256::PublicKey::try_from(derived).map_err(|_| TweakNotOnCurve)?;
-    Ok(dtos::Secp256k1PublicKey::from(pk))
+    Ok(dtos::Secp256k1PublicKey::from(&pk))
 }
 
 pub fn derive_public_key_edwards_point_ed25519(

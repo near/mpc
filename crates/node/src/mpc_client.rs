@@ -516,8 +516,8 @@ where
                                             let response = ChainCKDRespondArgs::new_ckd(
                                                 &ckd_attempt.request,
                                                 &CKDResponse {
-                                                    big_y: response.0 .0.into(),
-                                                    big_c: response.0 .1.into(),
+                                                    big_y: (&response.0 .0).into(),
+                                                    big_c: (&response.0 .1).into(),
                                                 },
                                             )?;
 

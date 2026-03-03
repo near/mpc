@@ -377,7 +377,7 @@ fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> 
     let mpc_setup = account.get_mpc_participant().unwrap();
     ParticipantInfo {
         sign_pk: near_sdk::PublicKey::from(contract_interface::types::Ed25519PublicKey::from(
-            mpc_setup.p2p_public_key,
+            &mpc_setup.p2p_public_key,
         )),
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
     }

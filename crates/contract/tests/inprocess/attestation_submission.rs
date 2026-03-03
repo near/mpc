@@ -207,7 +207,7 @@ impl TestSetup {
         testing_env!(context);
         self.contract.submit_participant_info(
             attestation,
-            contract_interface::types::Ed25519PublicKey::try_from(node_id.tls_public_key.clone())
+            contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
                 .expect("expected ED25519 key"),
         )
     }

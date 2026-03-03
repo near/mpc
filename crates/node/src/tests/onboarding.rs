@@ -160,7 +160,7 @@ async fn test_onboarding() {
         let mut contract = setup.indexer.contract_mut().await;
         assert!(matches!(&contract.state, ProtocolContractState::Running(_)));
         let backup_service_info = BackupServiceInfo {
-            public_key: Ed25519PublicKey::from(backup_service_key.verifying_key()),
+            public_key: Ed25519PublicKey::from(&backup_service_key.verifying_key()),
         };
         contract.migration_service.set_backup_service_info(
             onboarding_node.participant_info.near_account_id.clone(),

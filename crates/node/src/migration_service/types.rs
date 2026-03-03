@@ -19,7 +19,7 @@ pub struct NodeBackupServiceInfo {
 
 impl NodeBackupServiceInfo {
     pub fn from_contract(info: BackupServiceInfo) -> anyhow::Result<Self> {
-        let p2p_key = match ed25519_dalek::VerifyingKey::try_from(info.public_key) {
+        let p2p_key = match ed25519_dalek::VerifyingKey::try_from(&info.public_key) {
             Ok(res) => res,
             Err(err) => {
                 anyhow::bail!("can't convert key: {}", err);
@@ -175,7 +175,7 @@ pub mod tests {
         assert!(empty.get_pk_backup_service().is_none());
 
         let public_key = bogus_ed25519_public_key();
-        let pk_converted: ed25519_dalek::VerifyingKey = public_key.clone().try_into().unwrap();
+        let pk_converted: ed25519_dalek::VerifyingKey = (&public_key).try_into().unwrap();
         let backup_service_info = Some(BackupServiceInfo { public_key });
         let populated = MigrationInfo {
             backup_service_info,

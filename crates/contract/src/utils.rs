@@ -142,5 +142,5 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
 pub fn random_app_public_key() -> dtos::Bls12381G1PublicKey {
     let x = ckd::Scalar::random(OsRng);
     let big_x = ckd::ElementG1::generator() * x;
-    big_x.into()
+    (&big_x).into()
 }

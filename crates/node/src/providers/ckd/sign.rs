@@ -146,7 +146,7 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
             channel.my_participant_id().into(),
             self.keygen_output,
             AppId::try_new(self.app_id.as_ref())?,
-            ElementG1::try_from(self.app_public_key)?,
+            ElementG1::try_from(&self.app_public_key)?,
             OsRng,
         )?;
 

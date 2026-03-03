@@ -85,7 +85,7 @@ pub async fn keygen_computation_inner(
         SignatureScheme::Bls12381 => {
             let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey::from(
-                keyshare.public_key.to_element(),
+                &keyshare.public_key.to_element(),
             ));
             (KeyshareData::Bls12381(keyshare), public_key)
         }
@@ -214,7 +214,7 @@ async fn resharing_computation_inner(
             contract_interface::types::PublicKey::Secp256k1(inner_public_key),
             SignatureScheme::Secp256k1,
         ) => {
-            let pk: k256::PublicKey = inner_public_key.try_into()?;
+            let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
@@ -236,7 +236,7 @@ async fn resharing_computation_inner(
             contract_interface::types::PublicKey::Secp256k1(inner_public_key),
             SignatureScheme::V2Secp256k1,
         ) => {
-            let pk: k256::PublicKey = inner_public_key.try_into()?;
+            let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
@@ -276,7 +276,7 @@ async fn resharing_computation_inner(
             KeyshareData::Ed25519(res)
         }
         (dtos::PublicKey::Bls12381(inner_public_key), SignatureScheme::Bls12381) => {
-            let public_key = ckd::VerifyingKey::new(ckd::ElementG2::try_from(inner_public_key)?);
+            let public_key = ckd::VerifyingKey::new(ckd::ElementG2::try_from(&inner_public_key)?);
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Bls12381(data) => Ok(data.private_share),

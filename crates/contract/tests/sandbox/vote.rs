@@ -105,7 +105,6 @@ async fn test_keygen() -> anyhow::Result<()> {
         .find(|k| k.domain_id.0 == domain_id)
         .map(|k| &k.key)
         .unwrap()
-        .clone()
         .try_into()
         .unwrap();
     assert_eq!(

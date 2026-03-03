@@ -221,7 +221,7 @@ impl CKDRequestTest {
         let app_public_key = generate_random_app_public_key(rng);
         let (request, response) = create_response_ckd(
             predecessor_id,
-            app_public_key.clone(),
+            &app_public_key,
             &domain_id,
             sk,
             &derivation_path,
@@ -380,7 +380,7 @@ async fn await_request_in_contract_queue<T: ContractQueueRequest>(
 /// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
 fn create_response_ckd(
     account_id: &AccountId,
-    app_public_key: dtos::Bls12381G1PublicKey,
+    app_public_key: &dtos::Bls12381G1PublicKey,
     domain_id: &DomainId,
     key_package: &KeygenOutput<BLS12381SHA256>,
     derivation_path: &str,
@@ -404,8 +404,8 @@ fn create_response_ckd(
     let big_c = big_s + app_pk * y;
 
     let response = CKDResponse {
-        big_y: big_y.into(),
-        big_c: big_c.into(),
+        big_y: (&big_y).into(),
+        big_c: (&big_c).into(),
     };
     (request, response)
 }

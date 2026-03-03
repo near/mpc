@@ -104,7 +104,7 @@ pub fn new_bls12381() -> (dtos::PublicKey, ckd::KeygenOutput) {
         public_key,
     };
 
-    let pk = dtos::PublicKey::from(dtos::Bls12381G2PublicKey::from(public_key.to_element()));
+    let pk = dtos::PublicKey::from(dtos::Bls12381G2PublicKey::from(&public_key.to_element()));
 
     (pk, keygen_output)
 }
@@ -143,5 +143,5 @@ pub fn derive_secret_key_ed25519(
 pub fn generate_random_app_public_key(rng: &mut impl CryptoRngCore) -> Bls12381G1PublicKey {
     let x = blstrs::Scalar::random(rng);
     let big_x = blstrs::G1Projective::generator() * x;
-    Bls12381G1PublicKey::from(big_x)
+    Bls12381G1PublicKey::from(&big_x)
 }

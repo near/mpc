@@ -40,10 +40,10 @@ impl Keyshare {
                 Secp256k1PublicKey::try_from(data.public_key.to_element().to_affine())?,
             )),
             KeyshareData::Ed25519(data) => Ok(PublicKey::Ed25519(Ed25519PublicKey::from(
-                data.public_key.to_element().compress(),
+                &data.public_key.to_element().compress(),
             ))),
             KeyshareData::Bls12381(data) => Ok(PublicKey::Bls12381(Bls12381G2PublicKey::from(
-                data.public_key.to_element(),
+                &data.public_key.to_element(),
             ))),
             KeyshareData::V2Secp256k1(data) => Ok(PublicKey::Secp256k1(
                 Secp256k1PublicKey::try_from(data.public_key.to_element().to_affine())?,

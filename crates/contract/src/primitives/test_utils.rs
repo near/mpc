@@ -70,7 +70,7 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
 
 pub fn bogus_ed25519_public_key() -> contract_interface::types::Ed25519PublicKey {
     let (_, compressed_edwards_point) = gen_random_edwards_point();
-    contract_interface::types::Ed25519PublicKey::from(compressed_edwards_point)
+    contract_interface::types::Ed25519PublicKey::from(&compressed_edwards_point)
 }
 
 pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {

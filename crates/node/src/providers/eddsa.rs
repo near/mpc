@@ -143,7 +143,7 @@ impl PublicKeyConversion for VerifyingKey {
     }
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
-        let ed25519_pk = Ed25519PublicKey::try_from(public_key.clone())
+        let ed25519_pk = Ed25519PublicKey::try_from(public_key)
             .map_err(|_| anyhow::anyhow!("Not an ed25519 public key"))?;
         VerifyingKey::deserialize(ed25519_pk.as_ref())
             .context("Failed to convert SDK public key to frost_ed25519::VerifyingKey")
@@ -157,9 +157,9 @@ impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
     }
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
-        let ed25519_pk = Ed25519PublicKey::try_from(public_key.clone())
+        let ed25519_pk = Ed25519PublicKey::try_from(public_key)
             .map_err(|_| anyhow::anyhow!("Not an ed25519 public key"))?;
-        ed25519_dalek::VerifyingKey::try_from(ed25519_pk)
+        ed25519_dalek::VerifyingKey::try_from(&ed25519_pk)
             .map_err(|_| anyhow::anyhow!("Failed to convert to ed25519_dalek::VerifyingKey"))
     }
 }

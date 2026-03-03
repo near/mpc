@@ -368,8 +368,8 @@ mod tests {
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_key = SigningKey::generate(&mut rng).verifying_key().into();
-        let account_key: Ed25519PublicKey = SigningKey::generate(&mut rng).verifying_key().into();
+        let tls_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let account_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
         let (_, allowed_image_hashes_receiver) = watch::channel(vec![]);
         let (_, allowed_launcher_compose_hashes_receiver) = watch::channel(vec![]);
         let handle = tokio::spawn(periodic_attestation_submission(
@@ -392,9 +392,9 @@ mod tests {
         let node_account_id: AccountId = "test_node.near".parse().unwrap();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let tls_public_key: Ed25519PublicKey =
-            SigningKey::generate(&mut rng).verifying_key().into();
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let account_public_key: Ed25519PublicKey =
-            SigningKey::generate(&mut rng).verifying_key().into();
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
 
         let node_id = NodeId {
@@ -491,9 +491,9 @@ mod tests {
     async fn test_validate_remote_attestation_valid() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let tls_public_key: Ed25519PublicKey =
-            SigningKey::generate(&mut rng).verifying_key().into();
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let account_public_key: Ed25519PublicKey =
-            SigningKey::generate(&mut rng).verifying_key().into();
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
         let report_data: ReportData =
             ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
@@ -517,9 +517,9 @@ mod tests {
     async fn test_validate_remote_attestation_invalid() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let tls_public_key: Ed25519PublicKey =
-            SigningKey::generate(&mut rng).verifying_key().into();
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let account_public_key: Ed25519PublicKey =
-            SigningKey::generate(&mut rng).verifying_key().into();
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::new(false));
         let report_data: ReportData =
             ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();

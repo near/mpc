@@ -50,7 +50,7 @@ struct CKDArgs {
 pub fn generate_app_public_key(seed: u64) -> Bls12381G1PublicKey {
     let x = blstrs::Scalar::from(seed);
     let big_x = blstrs::G1Projective::generator() * x;
-    Bls12381G1PublicKey::from(big_x)
+    Bls12381G1PublicKey::from(&big_x)
 }
 
 #[near_bindgen]

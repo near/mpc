@@ -44,9 +44,7 @@ pub fn verify_eddsa_signature(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use contract_interface::types::{
-        Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature, Secp256k1PublicKey,
-    };
+    use contract_interface::types::{Ed25519Signature, K256Signature, Secp256k1PublicKey};
     use ed25519_dalek::Signer;
     use rand::{Rng, SeedableRng};
 
@@ -61,27 +59,9 @@ mod tests {
         let (sig, recovery_id) = signing_key
             .sign_prehash_recoverable(message_digest)
             .unwrap();
-
-        let prefix = if recovery_id.is_y_odd() {
-            0x03u8
-        } else {
-            0x02u8
-        };
-        let mut big_r_bytes = [0u8; 33];
-        big_r_bytes[0] = prefix;
-        big_r_bytes[1..].copy_from_slice(&sig.r().to_bytes());
-
-        let signature = K256Signature {
-            big_r: K256AffinePoint {
-                affine_point: big_r_bytes,
-            },
-            s: K256Scalar {
-                scalar: sig.s().to_bytes().into(),
-            },
-            recovery_id: recovery_id.to_byte(),
-        };
+        let signature = K256Signature::from_ecdsa_recoverable(&sig, recovery_id);
         let pk = k256::PublicKey::from(signing_key.verifying_key());
-        (signature, Secp256k1PublicKey::from(pk))
+        (signature, Secp256k1PublicKey::from(&pk))
     }
 
     fn make_eddsa_test_case(
@@ -93,7 +73,7 @@ mod tests {
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
         let sig: ed25519_dalek::Signature = signing_key.sign(message);
         let pk = signing_key.verifying_key();
-        (Ed25519Signature::from(sig), Ed25519PublicKey::from(pk))
+        (Ed25519Signature::from(&sig), Ed25519PublicKey::from(&pk))
     }
 
     fn make_message(seed: u64) -> [u8; 32] {
