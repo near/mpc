@@ -19,10 +19,11 @@ impl EddsaSignatureProvider {
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
+        let old_threshold: usize = old_participants.threshold.try_into()?;
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
-            old_threshold: ReconstructionLowerBound::from(old_participants.threshold as usize),
+            old_threshold: ReconstructionLowerBound::from(old_threshold),
             my_share,
             public_key,
         }

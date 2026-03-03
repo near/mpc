@@ -150,7 +150,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         let robust_ecdsa_threshold =
             translate_threshold(threshold.value(), number_of_participants)?;
         EcdsaSignatureProvider::run_key_generation_client_internal(
-            ReconstructionLowerBound::from(robust_ecdsa_threshold.value()),
+            ReconstructionLowerBound::from(robust_ecdsa_threshold),
             channel,
         )
         .await
@@ -175,10 +175,12 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             old_participants.threshold.try_into()?,
             old_participants.participants.len(),
         )?;
-        old_participants_patched.threshold = old_translated.value().try_into()?;
+        old_participants_patched.threshold = ReconstructionLowerBound::from(old_translated)
+            .value()
+            .try_into()?;
 
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            ReconstructionLowerBound::from(new_robust_ecdsa_threshold.value()),
+            ReconstructionLowerBound::from(new_robust_ecdsa_threshold),
             my_share,
             public_key,
             &old_participants_patched,
@@ -330,4 +332,5 @@ mod tests {
             assert_eq!(result.unwrap(), MaxMalicious::from(expected_threshold));
         }
     }
+
 }

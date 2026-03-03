@@ -23,3 +23,10 @@ impl ReconstructionLowerBound {
         self.0
     }
 }
+
+/// Lower bound to reconstruct the secret is MaxMalicious + 1.
+impl From<MaxMalicious> for ReconstructionLowerBound {
+    fn from(m: MaxMalicious) -> Self {
+        Self(m.0 + 1)
+    }
+}
