@@ -1978,6 +1978,7 @@ dependencies = [
 name = "contract-interface"
 version = "3.5.1"
 dependencies = [
+ "assert_matches",
  "blstrs",
  "borsh",
  "bounded-collections",
@@ -1990,6 +1991,7 @@ dependencies = [
  "insta",
  "k256",
  "near-sdk",
+ "rand 0.8.5",
  "rstest",
  "schemars 0.8.22",
  "serde",

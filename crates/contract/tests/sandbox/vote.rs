@@ -105,11 +105,12 @@ async fn test_keygen() -> anyhow::Result<()> {
         .find(|k| k.domain_id.0 == domain_id)
         .map(|k| &k.key)
         .unwrap()
+        .clone()
         .try_into()
         .unwrap();
     assert_eq!(
         found_key,
-        near_sdk::PublicKey::try_from(&public_key).unwrap()
+        near_sdk::PublicKey::try_from(public_key.clone()).unwrap()
     );
     assert_eq!(
         running.domains.domains.len(),

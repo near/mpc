@@ -71,7 +71,8 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         &mpc_signer_accounts[0],
         &contract,
         &attestation,
-        &dtos::Ed25519PublicKey::try_from(&new_uid.tls_public_key).expect("expected ED25519 key"),
+        &dtos::Ed25519PublicKey::try_from(new_uid.tls_public_key.clone())
+            .expect("expected ED25519 key"),
     )
     .await?;
     assert!(result.is_success());

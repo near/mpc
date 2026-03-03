@@ -56,13 +56,6 @@ impl TryFrom<k256::AffinePoint> for Secp256k1PublicKey {
     }
 }
 
-impl TryFrom<&k256::AffinePoint> for Secp256k1PublicKey {
-    type Error = CryptoConversionError;
-    fn try_from(point: &k256::AffinePoint) -> Result<Self, Self::Error> {
-        Secp256k1PublicKey::try_from(*point)
-    }
-}
-
 impl From<k256::PublicKey> for Secp256k1PublicKey {
     fn from(pk: k256::PublicKey) -> Self {
         let mut bytes = [0u8; 64];
@@ -86,22 +79,9 @@ impl TryFrom<Secp256k1PublicKey> for k256::PublicKey {
     }
 }
 
-impl From<&k256::PublicKey> for Secp256k1PublicKey {
-    fn from(pk: &k256::PublicKey) -> Self {
-        Secp256k1PublicKey::from(*pk)
-    }
-}
-
-impl TryFrom<&Secp256k1PublicKey> for k256::PublicKey {
+impl TryFrom<K256Signature> for k256::ecdsa::Signature {
     type Error = CryptoConversionError;
-    fn try_from(dto: &Secp256k1PublicKey) -> Result<Self, Self::Error> {
-        k256::PublicKey::try_from(dto.clone())
-    }
-}
-
-impl TryFrom<&K256Signature> for k256::ecdsa::Signature {
-    type Error = CryptoConversionError;
-    fn try_from(dto: &K256Signature) -> Result<Self, Self::Error> {
+    fn try_from(dto: K256Signature) -> Result<Self, Self::Error> {
         // r is the x-coordinate from the compressed R point (bytes [1..33])
         let r = k256::FieldBytes::from_slice(&dto.big_r.affine_point[1..]);
         let s = k256::FieldBytes::from_slice(&dto.s.scalar);
@@ -110,25 +90,20 @@ impl TryFrom<&K256Signature> for k256::ecdsa::Signature {
     }
 }
 
-impl TryFrom<K256Signature> for k256::ecdsa::Signature {
-    type Error = CryptoConversionError;
-    fn try_from(dto: K256Signature) -> Result<Self, Self::Error> {
-        k256::ecdsa::Signature::try_from(&dto)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use k256::ecdsa::SigningKey;
     use k256::ecdsa::signature::hazmat::PrehashSigner;
     use k256::elliptic_curve::Field;
-    use k256::elliptic_curve::rand_core::OsRng;
+    use rand::SeedableRng as _;
 
     #[test]
     fn roundtrip_affine_point() {
         // given
-        let point = *k256::SecretKey::random(&mut OsRng).public_key().as_affine();
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let point = *k256::SecretKey::random(&mut rng).public_key().as_affine();
 
         // when
         let dto = K256AffinePoint::from(point);
@@ -149,13 +124,14 @@ mod tests {
         let result = k256::AffinePoint::try_from(dto);
 
         // then
-        assert!(matches!(result, Err(CryptoConversionError::InvalidPoint)));
+        assert_matches!(result, Err(CryptoConversionError::InvalidPoint));
     }
 
     #[test]
     fn roundtrip_scalar() {
         // given
-        let scalar = k256::Scalar::random(&mut OsRng);
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let scalar = k256::Scalar::random(&mut rng);
 
         // when
         let dto = K256Scalar::from(scalar);
@@ -168,24 +144,12 @@ mod tests {
     #[test]
     fn roundtrip_public_key() {
         // given
-        let pk = k256::SecretKey::random(&mut OsRng).public_key();
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let pk = k256::SecretKey::random(&mut rng).public_key();
 
         // when
         let dto = Secp256k1PublicKey::from(pk);
         let recovered = k256::PublicKey::try_from(dto).unwrap();
-
-        // then
-        assert_eq!(pk, recovered);
-    }
-
-    #[test]
-    fn roundtrip_public_key_via_ref() {
-        // given
-        let pk = k256::SecretKey::random(&mut OsRng).public_key();
-
-        // when
-        let dto = Secp256k1PublicKey::from(&pk);
-        let recovered = k256::PublicKey::try_from(&dto).unwrap();
 
         // then
         assert_eq!(pk, recovered);
@@ -200,16 +164,14 @@ mod tests {
         let result = k256::PublicKey::try_from(dto);
 
         // then
-        assert!(matches!(
-            result,
-            Err(CryptoConversionError::InvalidPublicKey)
-        ));
+        assert_matches!(result, Err(CryptoConversionError::InvalidPublicKey));
     }
 
     #[test]
     fn k256_signature_to_ecdsa_signature() {
         // given
-        let signing_key = SigningKey::random(&mut OsRng);
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let signing_key = SigningKey::random(&mut rng);
         let (sig, _recovery_id): (k256::ecdsa::Signature, k256::ecdsa::RecoveryId) =
             signing_key.sign_prehash(&[42u8; 32]).unwrap();
         let r_bytes = sig.r().to_bytes();
@@ -225,7 +187,7 @@ mod tests {
         };
 
         // when
-        let recovered_sig = k256::ecdsa::Signature::try_from(&dto).unwrap();
+        let recovered_sig = k256::ecdsa::Signature::try_from(dto).unwrap();
 
         // then
         assert_eq!(sig, recovered_sig);

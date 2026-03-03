@@ -37,23 +37,10 @@ impl TryFrom<PublicKey> for near_sdk::PublicKey {
     }
 }
 
-impl TryFrom<&PublicKey> for near_sdk::PublicKey {
-    type Error = CryptoConversionError;
-    fn try_from(pk: &PublicKey) -> Result<Self, Self::Error> {
-        near_sdk::PublicKey::try_from(pk.clone())
-    }
-}
-
 impl From<Ed25519PublicKey> for near_sdk::PublicKey {
     fn from(pk: Ed25519PublicKey) -> Self {
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, pk.0.into())
             .expect("Ed25519PublicKey always has correct size")
-    }
-}
-
-impl From<&Ed25519PublicKey> for near_sdk::PublicKey {
-    fn from(pk: &Ed25519PublicKey) -> Self {
-        near_sdk::PublicKey::from(pk.clone())
     }
 }
 
@@ -71,23 +58,10 @@ impl TryFrom<near_sdk::PublicKey> for Ed25519PublicKey {
     }
 }
 
-impl TryFrom<&near_sdk::PublicKey> for Ed25519PublicKey {
-    type Error = CryptoConversionError;
-    fn try_from(pk: &near_sdk::PublicKey) -> Result<Self, Self::Error> {
-        Ed25519PublicKey::try_from(pk.clone())
-    }
-}
-
 impl From<Secp256k1PublicKey> for near_sdk::PublicKey {
     fn from(pk: Secp256k1PublicKey) -> Self {
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, pk.0.into())
             .expect("Secp256k1PublicKey always has correct size")
-    }
-}
-
-impl From<&Secp256k1PublicKey> for near_sdk::PublicKey {
-    fn from(pk: &Secp256k1PublicKey) -> Self {
-        near_sdk::PublicKey::from(pk.clone())
     }
 }
 
@@ -105,16 +79,9 @@ impl TryFrom<near_sdk::PublicKey> for Secp256k1PublicKey {
     }
 }
 
-impl TryFrom<&near_sdk::PublicKey> for Secp256k1PublicKey {
+impl TryFrom<PublicKeyExtended> for near_sdk::PublicKey {
     type Error = CryptoConversionError;
-    fn try_from(pk: &near_sdk::PublicKey) -> Result<Self, Self::Error> {
-        Secp256k1PublicKey::try_from(pk.clone())
-    }
-}
-
-impl TryFrom<&PublicKeyExtended> for near_sdk::PublicKey {
-    type Error = CryptoConversionError;
-    fn try_from(pk: &PublicKeyExtended) -> Result<Self, Self::Error> {
+    fn try_from(pk: PublicKeyExtended) -> Result<Self, Self::Error> {
         match pk {
             PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key
                 .parse()
@@ -127,13 +94,6 @@ impl TryFrom<&PublicKeyExtended> for near_sdk::PublicKey {
                 .map_err(|_| CryptoConversionError::InvalidPublicKey),
             PublicKeyExtended::Bls12381 { .. } => Err(CryptoConversionError::UnsupportedCurve),
         }
-    }
-}
-
-impl TryFrom<PublicKeyExtended> for near_sdk::PublicKey {
-    type Error = CryptoConversionError;
-    fn try_from(pk: PublicKeyExtended) -> Result<Self, Self::Error> {
-        near_sdk::PublicKey::try_from(&pk)
     }
 }
 
@@ -154,6 +114,7 @@ impl K256Signature {
 mod tests {
     use super::*;
     use crate::types::crypto::Bls12381G2PublicKey;
+    use assert_matches::assert_matches;
 
     #[test]
     fn roundtrip_ed25519_public_key() {
@@ -165,21 +126,6 @@ mod tests {
         // when
         let dto = Ed25519PublicKey::try_from(near_pk.clone()).unwrap();
         let recovered = near_sdk::PublicKey::from(dto);
-
-        // then
-        assert_eq!(near_pk, recovered);
-    }
-
-    #[test]
-    fn roundtrip_ed25519_public_key_via_ref() {
-        // given
-        let near_pk: near_sdk::PublicKey = "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv"
-            .parse()
-            .unwrap();
-
-        // when
-        let dto = Ed25519PublicKey::try_from(&near_pk).unwrap();
-        let recovered = near_sdk::PublicKey::from(&dto);
 
         // then
         assert_eq!(near_pk, recovered);
@@ -239,10 +185,7 @@ mod tests {
         let result = near_sdk::PublicKey::try_from(dto);
 
         // then
-        assert!(matches!(
-            result,
-            Err(CryptoConversionError::UnsupportedCurve)
-        ));
+        assert_matches!(result, Err(CryptoConversionError::UnsupportedCurve));
     }
 
     #[test]
@@ -256,10 +199,7 @@ mod tests {
         let result = Ed25519PublicKey::try_from(near_pk);
 
         // then
-        assert!(matches!(
-            result,
-            Err(CryptoConversionError::UnsupportedCurve)
-        ));
+        assert_matches!(result, Err(CryptoConversionError::UnsupportedCurve));
     }
 
     #[test]
@@ -273,9 +213,6 @@ mod tests {
         let result = Secp256k1PublicKey::try_from(near_pk);
 
         // then
-        assert!(matches!(
-            result,
-            Err(CryptoConversionError::UnsupportedCurve)
-        ));
+        assert_matches!(result, Err(CryptoConversionError::UnsupportedCurve));
     }
 }

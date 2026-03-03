@@ -64,6 +64,7 @@ impl TryFrom<&Bls12381G2PublicKey> for blstrs::G2Projective {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use group::Group;
 
     #[test]
@@ -101,7 +102,7 @@ mod tests {
         let result = blstrs::G1Projective::try_from(dto);
 
         // then
-        assert!(matches!(result, Err(CryptoConversionError::InvalidPoint)));
+        assert_matches!(result, Err(CryptoConversionError::InvalidPoint));
     }
 
     #[test]
@@ -139,6 +140,6 @@ mod tests {
         let result = blstrs::G2Projective::try_from(dto);
 
         // then
-        assert!(matches!(result, Err(CryptoConversionError::InvalidPoint)));
+        assert_matches!(result, Err(CryptoConversionError::InvalidPoint));
     }
 }

@@ -385,7 +385,7 @@ pub async fn submit_tee_attestations(
             account,
             contract,
             &attestation,
-            &dtos::Ed25519PublicKey::try_from(&node_id.tls_public_key)
+            &dtos::Ed25519PublicKey::try_from(node_id.tls_public_key.clone())
                 .expect("expected ED25519 key"),
         )
         .await?;
@@ -407,7 +407,9 @@ pub async fn submit_attestations(
         .enumerate()
         .map(|(i, ((_, _, participant), account))| async move {
             let attestation = Attestation::Mock(MockAttestation::Valid);
-            let tls_key: dtos::Ed25519PublicKey = (&participant.sign_pk)
+            let tls_key: dtos::Ed25519PublicKey = participant
+                .sign_pk
+                .clone()
                 .try_into()
                 .expect("expected ED25519 key");
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
@@ -580,7 +582,8 @@ pub async fn generate_participant_and_submit_attestation(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-        &dtos::Ed25519PublicKey::try_from(&new_participant.sign_pk).expect("expected ED25519 key"),
+        &dtos::Ed25519PublicKey::try_from(new_participant.sign_pk.clone())
+            .expect("expected ED25519 key"),
     )
     .await
     .expect("Attestation submission for new account must succeed.");

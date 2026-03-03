@@ -30,11 +30,13 @@ thiserror = { workspace = true }
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
+assert_matches = { workspace = true }
 borsh = { workspace = true }
 group = { workspace = true }
 hex = { workspace = true }
 insta = { workspace = true }
 near-sdk = { workspace = true }
+rand = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 

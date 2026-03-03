@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Context as _, Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _, group::prime::PrimeCurveAffine as _};
 use hkdf::Hkdf;
@@ -100,11 +100,9 @@ fn decrypt_secret_and_verify(
     app_id: CkdAppId,
     mpc_public_key: Bls12381G2PublicKey,
 ) -> Result<[u8; BLS12381G1_PUBLIC_KEY_SIZE]> {
-    let big_y: G1Projective = big_y.try_into().map_err(|_| anyhow!("invalid G1 point"))?;
-    let big_c: G1Projective = big_c.try_into().map_err(|_| anyhow!("invalid G1 point"))?;
-    let mpc_public_key: G2Projective = mpc_public_key
-        .try_into()
-        .map_err(|_| anyhow!("invalid G2 point"))?;
+    let big_y: G1Projective = big_y.try_into().context("invalid G1 point")?;
+    let big_c: G1Projective = big_c.try_into().context("invalid G1 point")?;
+    let mpc_public_key: G2Projective = mpc_public_key.try_into().context("invalid G2 point")?;
 
     // decrypt the secret
     let secret = big_c - big_y * private_key;

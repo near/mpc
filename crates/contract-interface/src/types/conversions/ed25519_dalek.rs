@@ -58,6 +58,7 @@ impl From<Ed25519Signature> for ed25519_dalek::Signature {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use ed25519_dalek::Signer;
 
     #[test]
@@ -97,10 +98,7 @@ mod tests {
         let result = ed25519_dalek::VerifyingKey::try_from(dto);
 
         // then
-        assert!(matches!(
-            result,
-            Err(CryptoConversionError::InvalidPublicKey)
-        ));
+        assert_matches!(result, Err(CryptoConversionError::InvalidPublicKey));
     }
 
     #[test]

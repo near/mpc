@@ -633,7 +633,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         target_account,
         &contract,
         &expiring_attestation,
-        &dtos::Ed25519PublicKey::try_from(&target_node_id.tls_public_key)
+        &dtos::Ed25519PublicKey::try_from(target_node_id.tls_public_key)
             .expect("expected ED25519 key"),
     )
     .await?
