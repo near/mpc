@@ -135,5 +135,5 @@ cargo make check-all-fast
 Running all `cargo-make` supported checks:
 
 ```console
-cargo make check-all
+cargo make check
 ```
