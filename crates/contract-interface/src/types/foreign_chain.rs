@@ -565,7 +565,7 @@ pub enum ForeignChain {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(schemars::JsonSchema)
 )]
 pub struct ForeignChainPolicy {
     pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
@@ -586,7 +586,7 @@ pub struct ForeignChainPolicy {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(schemars::JsonSchema)
 )]
 pub struct RpcProvider {
     pub rpc_url: String,
@@ -608,7 +608,7 @@ pub struct RpcProvider {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(schemars::JsonSchema)
 )]
 pub struct ForeignChainPolicyVotes {
     pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
