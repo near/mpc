@@ -1,6 +1,12 @@
-use crate::errors::ProtocolError;
 use derive_more::{From, Into};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ThresholdError {
+    #[error("integer overflow")]
+    IntegerOverflow,
+}
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, Into,
@@ -27,11 +33,11 @@ impl ReconstructionLowerBound {
 
 /// Lower bound to reconstruct the secret is `MaxMalicious` + 1.
 impl TryFrom<MaxMalicious> for ReconstructionLowerBound {
-    type Error = ProtocolError;
+    type Error = ThresholdError;
 
     fn try_from(m: MaxMalicious) -> Result<Self, Self::Error> {
         m.0.checked_add(1)
             .map(Self)
-            .ok_or(ProtocolError::IntegerOverflow)
+            .ok_or(ThresholdError::IntegerOverflow)
     }
 }
