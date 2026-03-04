@@ -5,38 +5,33 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = ["borsh/unstable__schema", "schemars", "bounded-collections/abi"]
-blstrs = ["dep:blstrs"]
-ed25519-dalek = ["dep:curve25519-dalek", "dep:ed25519-dalek"]
-k256 = ["dep:k256"]
-near = ["dep:near-sdk"]
+abi = [
+    "borsh/unstable__schema",
+    "bounded-collections/abi",
+    "mpc-crypto-types/abi",
+    "schemars",
+]
+blstrs = ["mpc-crypto-types/blstrs"]
+ed25519-dalek = ["mpc-crypto-types/ed25519-dalek"]
+k256 = ["mpc-crypto-types/k256"]
+near = ["mpc-crypto-types/near"]
 
 [dependencies]
-blstrs = { workspace = true, optional = true }
 borsh = { workspace = true }
 bounded-collections = { workspace = true }
-bs58 = { workspace = true }
-curve25519-dalek = { workspace = true, optional = true }
 derive_more = { workspace = true }
-ed25519-dalek = { workspace = true, optional = true }
-k256 = { workspace = true, optional = true }
-near-sdk = { workspace = true, optional = true }
+mpc-crypto-types = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
-thiserror = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 borsh = { workspace = true }
-group = { workspace = true }
 hex = { workspace = true }
 insta = { workspace = true }
-near-sdk = { workspace = true }
-rand = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 

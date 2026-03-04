@@ -1,6 +1,6 @@
 use super::CryptoConversionError;
-use crate::types::crypto::Ed25519PublicKey;
-use crate::types::primitives::Ed25519Signature;
+use crate::crypto::Ed25519PublicKey;
+use crate::primitives::Ed25519Signature;
 use curve25519_dalek::edwards::CompressedEdwardsY;
 
 impl From<CompressedEdwardsY> for Ed25519PublicKey {

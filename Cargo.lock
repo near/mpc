@@ -1978,27 +1978,18 @@ dependencies = [
 name = "contract-interface"
 version = "3.5.1"
 dependencies = [
- "assert_matches",
- "blstrs",
  "borsh",
  "bounded-collections",
- "bs58 0.5.1",
- "curve25519-dalek",
  "derive_more 2.1.1",
- "ed25519-dalek",
- "group",
  "hex",
  "insta",
- "k256",
- "near-sdk",
- "rand 0.8.5",
+ "mpc-crypto-types",
  "rstest",
  "schemars 0.8.22",
  "serde",
  "serde_json",
  "serde_with",
  "sha2",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -5433,6 +5424,28 @@ dependencies = [
  "threshold-signatures",
  "tokio",
  "zstd",
+]
+
+[[package]]
+name = "mpc-crypto-types"
+version = "3.5.1"
+dependencies = [
+ "assert_matches",
+ "blstrs",
+ "borsh",
+ "bs58 0.5.1",
+ "curve25519-dalek",
+ "derive_more 2.1.1",
+ "ed25519-dalek",
+ "group",
+ "k256",
+ "near-sdk",
+ "rand 0.8.5",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

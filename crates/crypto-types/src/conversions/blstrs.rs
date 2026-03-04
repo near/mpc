@@ -1,5 +1,5 @@
 use super::CryptoConversionError;
-use crate::types::crypto::{Bls12381G1PublicKey, Bls12381G2PublicKey};
+use crate::crypto::{Bls12381G1PublicKey, Bls12381G2PublicKey};
 
 impl From<&blstrs::G1Projective> for Bls12381G1PublicKey {
     fn from(point: &blstrs::G1Projective) -> Self {

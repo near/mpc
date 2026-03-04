@@ -5,7 +5,8 @@ use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
 use std::collections::BTreeMap;
 
-use crate::types::primitives::{AccountId, DomainId, SignatureResponse, Tweak};
+use crate::types::SignatureResponse;
+use crate::types::primitives::{AccountId, DomainId, Tweak};
 
 #[derive(
     Debug,
