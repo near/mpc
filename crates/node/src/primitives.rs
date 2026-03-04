@@ -316,7 +316,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn mpc_message_kind_debug__should_show_non_sensitive_variants_normally() {
-        // given / when / then
+        // given
         let start = MpcMessageKind::Start(MpcStartMessage {
             task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
                 start: UniqueId::new(ParticipantId::from_raw(0), 42, 0),
@@ -324,23 +324,26 @@ mod tests {
             }),
             participants: vec![ParticipantId::from_raw(0)],
         });
+        let abort = MpcMessageKind::Abort("some error".into());
+        let success = MpcMessageKind::Success;
+
+        // when
         let start_debug = format!("{:?}", start);
+        let abort_debug = format!("{:?}", abort);
+        let success_debug = format!("{:?}", success);
+
+        // then
         assert!(
             start_debug.contains("Start"),
             "got: {}",
             start_debug
         );
-
-        let abort = MpcMessageKind::Abort("some error".into());
-        let abort_debug = format!("{:?}", abort);
         assert!(
             abort_debug.contains("some error"),
             "Abort debug should show the error string, got: {}",
             abort_debug
         );
-
-        let success = MpcMessageKind::Success;
-        assert_eq!(format!("{:?}", success), "Success");
+        assert_eq!(success_debug, "Success");
     }
 
     #[test]
