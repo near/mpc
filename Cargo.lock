@@ -6373,7 +6373,7 @@ dependencies = [
 
 [[package]]
 name = "near-mpc-sdk"
-version = "0.0.1-rc.0"
+version = "0.0.1"
 dependencies = [
  "assert_matches",
  "borsh",
