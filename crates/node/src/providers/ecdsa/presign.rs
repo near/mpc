@@ -173,10 +173,9 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<()> {
         let domain_data = self.domain_data(domain_id)?;
 
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
         FollowerPresignComputation {
-            threshold: ReconstructionLowerBound::from(
-                self.mpc_config.participants.threshold as usize,
-            ),
+            threshold: ReconstructionLowerBound::from(threshold),
             keygen_out: domain_data.keyshare,
             triple_store: self.triple_store.clone(),
             paired_triple_id,
