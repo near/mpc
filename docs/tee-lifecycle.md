@@ -141,7 +141,7 @@ pub struct AllowedTeeHashes {
 }
 
 /// Identity of this node and which governance contract to monitor.
-pub struct ParticipantInfo {
+pub struct TeeNodeIdentity {
     pub node_account_id: AccountId,
     pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
@@ -161,7 +161,7 @@ impl TeeContext {
     /// After construction, allowed_tee_hashes() is guaranteed to return data.
     pub async fn new(
         chain_gateway: ChainGateway,
-        participant_info: ParticipantInfo,
+        node_identity: TeeNodeIdentity,
         attestation_info: AttestationInfo,
     ) -> Result<Self, Error>;
 
@@ -185,14 +185,14 @@ The accessor pattern follows the [`ContractStateStream<T>`][contract-state-strea
 
 [contract-state-stream]: indexer-design.md#contract-state-subscriber
 
-Each service points the TEE Context at its own governance contract via `ParticipantInfo::governance_contract`. All governance contracts expose the same TEE view/call methods since they share [`TeeState`][tee-state].
+Each service points the TEE Context at its own governance contract via `TeeNodeIdentity::governance_contract`. All governance contracts expose the same TEE view/call methods since they share [`TeeState`][tee-state].
 
 #### Usage: MPC Node
 
 The MPC node wraps the TEE Context inside the [MPC Context][mpc-context]. It spawns a task on `allowed_tee_hashes_changed()` to write hashes to disk for the Launcher:
 
 ```rust
-let tee_ctx = TeeContext::new(chain_gateway, participant_info, attestation_info).await?;
+let tee_ctx = TeeContext::new(chain_gateway, node_identity, attestation_info).await?;
 tokio::spawn(async move {
     loop {
         tee_ctx.allowed_tee_hashes_changed().await?;
@@ -207,7 +207,7 @@ tokio::spawn(async move {
 The [Archive Signer][archive-signer] uses the TEE Context directly. Since `new()` waits for the first poll, the image hash check at boot is straightforward:
 
 ```rust
-let tee_ctx = TeeContext::new(chain_gateway, participant_info, attestation_info).await?;
+let tee_ctx = TeeContext::new(chain_gateway, node_identity, attestation_info).await?;
 let hashes = tee_ctx.allowed_tee_hashes()?;
 if !hashes.allowed_docker_image_hashes.contains(&current_image) {
     bail!("image not approved");
