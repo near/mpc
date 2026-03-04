@@ -68,12 +68,11 @@ impl EcdsaSignatureProvider {
         mpc_config: Arc<MpcConfig>,
         config: Arc<TripleConfig>,
         triple_store: Arc<TripleStorage>,
+        threshold: ReconstructionLowerBound,
     ) {
         let in_flight_generations = InFlightGenerationTracker::new();
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
-
-        let threshold = ReconstructionLowerBound::from(mpc_config.participants.threshold as usize);
         let running_participants: Vec<_> = mpc_config
             .participants
             .participants
@@ -191,10 +190,9 @@ impl EcdsaSignatureProvider {
                 "Unsupported batch size for triple generation"
             ));
         }
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: ReconstructionLowerBound::from(
-                self.mpc_config.participants.threshold as usize,
-            ),
+            threshold: ReconstructionLowerBound::from(threshold),
             out_triple_id_start: start,
             out_triple_store: self.triple_store.clone(),
         }

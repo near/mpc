@@ -231,6 +231,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
+
         let generate_triples = tracking::spawn(
             "generate triples",
             Self::run_background_triple_generation(
@@ -238,6 +241,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 self.mpc_config.clone(),
                 self.config.triple.clone().into(),
                 self.triple_store.clone(),
+                threshold,
             ),
         );
 
@@ -249,9 +253,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     &format!("generate presignatures for domain {}", domain_id.0),
                     Self::run_background_presignature_generation(
                         self.client.clone(),
-                        ReconstructionLowerBound::from(
-                            self.mpc_config.participants.threshold as usize,
-                        ),
+                        threshold,
                         self.config.presignature.clone().into(),
                         self.triple_store.clone(),
                         *domain_id,
