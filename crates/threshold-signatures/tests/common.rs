@@ -58,13 +58,13 @@ pub fn run_protocol<T>(
                                 continue;
                             }
                             let from = ps[i].0;
-                            ps[j].1.message(from, m.clone());
+                            ps[j].1.message(from, m.clone())?;
                         }
                         true
                     }
                     Action::SendPrivate(to, m) => {
                         let from = ps[i].0;
-                        ps[indices[&to]].1.message(from, m);
+                        ps[indices[&to]].1.message(from, m)?;
                         true
                     }
                     Action::Return(r) => {
