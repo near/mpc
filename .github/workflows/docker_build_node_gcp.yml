@@ -1,4 +1,4 @@
-name: Build Docker Node Image
+name: Build Docker Node GCP Image
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
