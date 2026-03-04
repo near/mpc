@@ -522,6 +522,10 @@ impl MpcContract {
             request
         );
 
+        if request.payload_version != 1 {
+            env::panic_str("unsupported payload_version; only version 1 is currently supported");
+        }
+
         let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
             Err(err) => env::panic_str(&err.to_string()),
