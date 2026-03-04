@@ -5,8 +5,8 @@ use k256::elliptic_curve::{
 };
 
 use super::CryptoConversionError;
-use crate::types::crypto::Secp256k1PublicKey;
-use crate::types::primitives::{K256AffinePoint, K256Scalar, K256Signature};
+use crate::crypto::Secp256k1PublicKey;
+use crate::primitives::{K256AffinePoint, K256Scalar, K256Signature};
 
 impl From<k256::AffinePoint> for K256AffinePoint {
     fn from(point: k256::AffinePoint) -> Self {

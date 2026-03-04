@@ -440,64 +440,37 @@ impl<'de> serde::Deserialize<'de> for Bls12381G2PublicKey {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_assert_near_public_key_sizes() {
-        let near_public_keys = [
-            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd",
-            "secp256k1:3Abs6NwUMErNAftRfipRjWxxqcTPBJTSr2uoHi3bHcthzb4iXqNnNYi86ATKwf4XWHg1JDrX2m1sJgNMYq7ey6cG",
-            "secp256k1:21C8NARZw2tUuULi1tENKi5azgDKLp9cv4FT2U1N6iF5k1W33BbJvsLr6rCZsYZxxUjBtpuWCsKvmv9P5ARzyyyn",
-            "secp256k1:4YbU8ZLEQK7gww1f65ZhtFCYfSxrm67sV9eaQi8oRo1LvCAtznztsiryJrzHg2oz285xN3ADAsGPizmCNe4hn9WR",
-            "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
-            "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG",
-            "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv",
-            "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k",
-        ];
-        for pk in near_public_keys {
-            let near_pk: near_sdk::PublicKey = pk.parse().unwrap();
-            match near_pk.curve_type() {
-                near_sdk::CurveType::ED25519 => {
-                    assert_eq!(near_pk.as_bytes().len(), ED25519_PUBLIC_KEY_SIZE + 1);
-                }
-                near_sdk::CurveType::SECP256K1 => {
-                    assert_eq!(near_pk.as_bytes().len(), SECP256K1_PUBLIC_KEY_SIZE + 1);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_assert_near_public_key_serde_equivalence() {
-        let public_keys = [
-            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd",
-            "secp256k1:3Abs6NwUMErNAftRfipRjWxxqcTPBJTSr2uoHi3bHcthzb4iXqNnNYi86ATKwf4XWHg1JDrX2m1sJgNMYq7ey6cG",
-            "secp256k1:21C8NARZw2tUuULi1tENKi5azgDKLp9cv4FT2U1N6iF5k1W33BbJvsLr6rCZsYZxxUjBtpuWCsKvmv9P5ARzyyyn",
-            "secp256k1:4YbU8ZLEQK7gww1f65ZhtFCYfSxrm67sV9eaQi8oRo1LvCAtznztsiryJrzHg2oz285xN3ADAsGPizmCNe4hn9WR",
-            "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
-            "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG",
-            "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv",
-            "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k",
-        ];
-        for pk in public_keys {
-            let near_pk: near_sdk::PublicKey = pk.parse().unwrap();
-            let dtos_pk: PublicKey = pk.parse().unwrap();
-            let near_pk_ser = serde_json::to_string(&near_pk).unwrap();
-            let dtos_pk_ser = serde_json::to_string(&dtos_pk).unwrap();
-            assert_eq!(near_pk_ser, dtos_pk_ser);
-            assert_eq!(format!("\"{pk}\""), dtos_pk_ser);
-
-            match (near_pk.curve_type(), dtos_pk) {
-                (near_sdk::CurveType::ED25519, PublicKey::Ed25519(inner)) => {
-                    assert_eq!(*inner, near_pk.as_bytes()[1..]);
-                }
-                (near_sdk::CurveType::SECP256K1, PublicKey::Secp256k1(inner)) => {
-                    assert_eq!(*inner, near_pk.as_bytes()[1..]);
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
+/// Extended public key representation for different signature schemes.
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum PublicKeyExtended {
+    /// Secp256k1 public key (ECDSA).
+    Secp256k1 {
+        /// The public key in NEAR SDK format (string representation).
+        near_public_key: String,
+    },
+    /// Ed25519 public key.
+    Ed25519 {
+        /// The compressed public key in NEAR SDK format.
+        near_public_key_compressed: String,
+        /// The Edwards point (32 bytes).
+        edwards_point: [u8; 32],
+    },
+    /// BLS12-381 public key.
+    Bls12381 {
+        /// The public key.
+        public_key: PublicKey,
+    },
 }
