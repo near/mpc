@@ -52,7 +52,11 @@ anyhow = { workspace = true }
 assert_matches = { workspace = true }
 borsh = { workspace = true }
 bounded-collections = { workspace = true }
-contract-interface = { workspace = true, features = ["ed25519-dalek", "k256", "near"] }
+contract-interface = { workspace = true, features = [
+    "ed25519-dalek",
+    "k256",
+    "near",
+] }
 curve25519-dalek = { workspace = true }
 derive_more = { workspace = true, features = ["from", "deref"] }
 hex = { workspace = true, features = [] }
@@ -93,8 +97,8 @@ fs2 = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
+mpc-sdk = { workspace = true }
 near-abi = { workspace = true }
-near-mpc-sdk = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }

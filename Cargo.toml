@@ -47,7 +47,7 @@ mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
-mpc-sdk = { path = "crates/near-mpc-sdk" }
+mpc-sdk = { path = "crates/mpc-sdk" }
 node-types = { path = "crates/node-types" }
 signature-verifier = { path = "crates/signature-verifier" }
 tee-authority = { path = "crates/tee-authority" }
