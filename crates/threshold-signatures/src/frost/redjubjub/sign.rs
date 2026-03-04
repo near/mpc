@@ -269,17 +269,14 @@ fn construct_key_package(
 #[cfg(test)]
 mod test {
     use super::{
-        REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+        fut_wrapper, REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
         REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
     };
-    use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::{run_protocol, GenProtocol};
+    use crate::test_utils::{assert_buffer_capacity, build_key_packages_with_dealer};
     use crate::{
         crypto::hash::hash,
         frost::redjubjub::{
-            sign::sign,
-            test::{build_key_packages_with_dealer, run_sign_with_presign},
-            PresignOutput, SignatureOption,
+            sign::sign, test::run_sign_with_presign, PresignOutput, SignatureOption,
         },
         test_utils::{one_coordinator_output, MockCryptoRng},
         Protocol,
@@ -389,9 +386,6 @@ mod test {
     #[case(5, 3)]
     #[case(10, 4)]
     fn test_sign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
-        let coordinator_expected = REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES;
-        let participant_expected = REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES;
-
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let keys = build_key_packages_with_dealer(
@@ -402,7 +396,6 @@ mod test {
         let coordinator = keys[0].0;
         let message = b"test message for buffer entries".to_vec();
 
-        // Create presignatures
         let mut presig_rng = MockCryptoRng::seed_from_u64(100);
         let mut commitments_map = std::collections::BTreeMap::new();
         let mut nonces_map = std::collections::HashMap::new();
@@ -417,53 +410,41 @@ mod test {
         let randomizer = Randomizer::from_scalar(randomizer_scalar);
 
         let participants_list: Vec<_> = keys.iter().map(|(p, _)| *p).collect();
-        let mut comms_refs = Vec::new();
-        let mut protocols: GenProtocol<super::super::SignatureOption> = Vec::new();
 
-        for (p, keygen_output) in &keys {
-            let comms = Comms::with_buffer_capacity(usize::MAX);
-            let p_list = crate::participants::ParticipantList::new(&participants_list).unwrap();
-            let presign_output = super::super::PresignOutput {
-                nonces: nonces_map[p].clone(),
-                commitments_map: commitments_map.clone(),
-            };
-            let randomize = if *p == coordinator {
-                Some(randomizer)
-            } else {
-                None
-            };
-            let fut = super::fut_wrapper(
-                comms.shared_channel(),
-                p_list,
-                threshold.into(),
-                *p,
-                coordinator,
-                keygen_output.clone(),
-                presign_output,
-                message.clone(),
-                randomize,
-            );
-            comms_refs.push((*p, comms.clone()));
-            let prot = make_protocol(comms, fut);
-            protocols.push((*p, Box::new(prot)));
-        }
-
-        // When
-        let _ = run_protocol(protocols).unwrap();
-
-        // Then
-        for (p, comms) in &comms_refs {
-            let expected = if *p == coordinator {
-                coordinator_expected
-            } else {
-                participant_expected
-            };
-            assert_eq!(
-                comms.buffer_len(),
-                expected,
-                "Unexpected buffer entries for participant {p:?} (coordinator={})",
-                *p == coordinator
-            );
-        }
+        // When + Then
+        assert_buffer_capacity(
+            &participants_list,
+            &mut rng,
+            |comms, p_list, p, _rng_p| {
+                let keygen_output = keys.iter().find(|(kp, _)| *kp == p).unwrap().1.clone();
+                let presign_output = PresignOutput {
+                    nonces: nonces_map[&p].clone(),
+                    commitments_map: commitments_map.clone(),
+                };
+                let randomize = if p == coordinator {
+                    Some(randomizer)
+                } else {
+                    None
+                };
+                fut_wrapper(
+                    comms.shared_channel(),
+                    p_list,
+                    threshold.into(),
+                    p,
+                    coordinator,
+                    keygen_output,
+                    presign_output,
+                    message.clone(),
+                    randomize,
+                )
+            },
+            |p| {
+                if p == coordinator {
+                    REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES
+                } else {
+                    REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES
+                }
+            },
+        );
     }
 }

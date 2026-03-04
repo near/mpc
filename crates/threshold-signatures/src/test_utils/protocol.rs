@@ -4,6 +4,12 @@ use crate::protocol::{Action, Protocol};
 use crate::test_utils::{ProtocolSnapshot, Simulator};
 use std::collections::HashMap;
 
+use crate::participants::ParticipantList;
+use crate::protocol::internal::{make_protocol, Comms};
+use crate::test_utils::{GenProtocol, MockCryptoRng};
+use rand::RngCore;
+use rand_core::SeedableRng;
+
 // +++++++++++++++++ Any Protocol +++++++++++++++++ //
 /// Run a protocol to completion, synchronously.
 ///
@@ -181,4 +187,69 @@ fn run_protocol_common<T>(
     }
     out.sort_by_key(|(p, _)| *p);
     Ok((out, protocol_snapshots))
+}
+
+/// Build protocols with unbounded `Comms` for buffer-capacity testing.
+///
+/// For each participant, creates a `Comms::with_buffer_capacity(usize::MAX)`,
+/// a `ParticipantList`, and a per-participant RNG, then calls `make_future`
+/// to obtain the protocol future. Returns the ready-to-run protocols and
+/// a vec of `(Participant, Comms)` references for later assertions.
+pub fn build_buffer_test<T: Send + 'static, Fut, F>(
+    participants: &[Participant],
+    rng: &mut MockCryptoRng,
+    mut make_future: F,
+) -> (GenProtocol<T>, Vec<(Participant, Comms)>)
+where
+    Fut: std::future::Future<Output = Result<T, ProtocolError>> + Send + 'static,
+    F: FnMut(&Comms, ParticipantList, Participant, MockCryptoRng) -> Fut,
+{
+    let mut comms_refs = Vec::new();
+    let mut protocols: GenProtocol<T> = Vec::new();
+
+    for &p in participants {
+        let comms = Comms::with_buffer_capacity(usize::MAX);
+        let participant_list = ParticipantList::new(participants).unwrap();
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let fut = make_future(&comms, participant_list, p, rng_p);
+        comms_refs.push((p, comms.clone()));
+        let prot = make_protocol(comms, fut);
+        protocols.push((p, Box::new(prot)));
+    }
+
+    (protocols, comms_refs)
+}
+
+/// Run protocols to completion and assert that each participant's
+/// `Comms::buffer_len()` equals the value returned by `expected(participant)`.
+pub fn run_and_assert_buffer_entries<T>(
+    protocols: GenProtocol<T>,
+    comms_refs: &[(Participant, Comms)],
+    expected: impl Fn(Participant) -> usize,
+) {
+    let _ = run_protocol(protocols).unwrap();
+
+    for (p, comms) in comms_refs {
+        let exp = expected(*p);
+        assert_eq!(
+            comms.buffer_len(),
+            exp,
+            "Unexpected buffer entries for participant {p:?}"
+        );
+    }
+}
+
+/// One-call convenience: build protocols with unbounded buffers, run them,
+/// and assert exact buffer entry counts.
+pub fn assert_buffer_capacity<T: Send + 'static, Fut, F>(
+    participants: &[Participant],
+    rng: &mut MockCryptoRng,
+    make_future: F,
+    expected: impl Fn(Participant) -> usize,
+) where
+    Fut: std::future::Future<Output = Result<T, ProtocolError>> + Send + 'static,
+    F: FnMut(&Comms, ParticipantList, Participant, MockCryptoRng) -> Fut,
+{
+    let (protocols, comms_refs) = build_buffer_test(participants, rng, make_future);
+    run_and_assert_buffer_entries(protocols, &comms_refs, expected);
 }

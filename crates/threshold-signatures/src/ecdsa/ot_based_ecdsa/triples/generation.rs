@@ -784,7 +784,6 @@ pub fn generate_triple_many<const N: usize>(
 
 #[cfg(test)]
 mod test {
-    use crate::protocol::internal::Comms;
     use rand::{RngCore, SeedableRng};
     use rstest::rstest;
 
@@ -796,7 +795,7 @@ mod test {
     };
 
     use super::{
-        generate_triple_many, triple_generation_max_incoming_buffer_entries,
+        do_generation_many, generate_triple_many, triple_generation_max_incoming_buffer_entries,
         TripleGenerationOutput, TripleGenerationOutputMany, C,
     };
 
@@ -917,27 +916,13 @@ mod test {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(num_participants);
 
-        let mut comms_refs = Vec::new();
-        let mut protocols: Vec<(
-            Participant,
-            Box<dyn Protocol<Output = TripleGenerationOutputMany>>,
-        )> = Vec::new();
-
-        for &p in &participants {
-            let comms = Comms::with_buffer_capacity(usize::MAX);
-            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let participant_list = ParticipantList::new(&participants).unwrap();
-            let fut = super::do_generation_many::<N>(
-                comms.clone(),
-                participant_list,
-                p,
-                threshold.into(),
-                rng_p,
-            );
-            comms_refs.push((p, comms.clone()));
-            let prot = crate::protocol::internal::make_protocol(comms, fut);
-            protocols.push((p, Box::new(prot)));
-        }
+        let (protocols, comms_refs) = crate::test_utils::build_buffer_test(
+            &participants,
+            &mut rng,
+            |comms, p_list, p, rng_p| {
+                do_generation_many::<N>(comms.clone(), p_list, p, threshold.into(), rng_p)
+            },
+        );
 
         // When
         let _ = run_protocol(protocols).unwrap();
