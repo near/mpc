@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use mpc_primitives::hash::MpcDockerImageHash;
 use thiserror::Error;
+use url::Url;
 
 #[derive(Error, Debug)]
 pub enum LauncherError {
@@ -30,7 +31,7 @@ pub enum LauncherError {
     RegistryAuthFailed(String),
 
     #[error("Failed to get successful response from {url} after {attempts} attempts")]
-    RegistryRequestFailed { url: String, attempts: u32 },
+    RegistryRequestFailed { url: Url, attempts: u32 },
 
     #[error("Digest mismatch: pulled {pulled} != expected {expected}")]
     DigestMismatch { pulled: String, expected: String },
@@ -39,7 +40,13 @@ pub enum LauncherError {
     ImageValidationFailed(String),
 
     #[error("docker run failed for validated hash")]
-    DockerRunFailed(MpcDockerImageHash),
+    DockerRunFailed {
+        image_hash: MpcDockerImageHash,
+        inner: std::io::Error,
+    },
+
+    #[error("docker run failed for validated hash")]
+    DockerRunFailedExitStatus { image_hash: MpcDockerImageHash },
 
     #[error("Too many env vars to pass through (>{0})")]
     TooManyEnvVars(usize),

@@ -74,19 +74,24 @@ pub struct LauncherConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MpcBinaryConfig {
     // mpc
+    // TODO: use near type to not accept any string
     pub mpc_account_id: String,
     pub mpc_local_address: IpAddr,
+    // TODO: think this is no longer needed with node generated keys
     pub mpc_secret_key_store: String,
-    pub mpc_contract_isd: String,
+    // TODO: think this is no longer needed with node generated keys
+    pub mpc_backup_encryption_key_hex: String,
     pub mpc_env: MpcEnv,
     pub mpc_home_dir: PathBuf,
+    // TODO: use near type to not accept any string
+    pub mpc_contract_id: String,
+    // TODO: use near type to not accept any string
     pub mpc_responder_id: String,
-    pub mpc_backup_encryption_key_hex: String,
     // near
     pub near_boot_nodes: String,
     // rust
-    pub rust_backtrace: String,
-    pub rust_log: String,
+    pub rust_backtrace: RustBacktrace,
+    pub rust_log: RustLog,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,7 +152,7 @@ impl PortMappings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-enum MpcEnv {
+pub enum MpcEnv {
     Localnet,
     Testnet,
     Mainnet,
@@ -163,13 +168,74 @@ impl fmt::Display for MpcEnv {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RustBacktrace {
+    #[serde(rename = "0")]
+    Disabled,
+    #[serde(rename = "1")]
+    Enabled,
+    #[serde(rename = "short")]
+    Short,
+    #[serde(rename = "full")]
+    Full,
+}
+
+impl fmt::Display for RustBacktrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RustBacktrace::Disabled => write!(f, "0"),
+            RustBacktrace::Enabled => write!(f, "1"),
+            RustBacktrace::Short => write!(f, "short"),
+            RustBacktrace::Full => write!(f, "full"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RustLogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl fmt::Display for RustLogLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RustLogLevel::Error => write!(f, "error"),
+            RustLogLevel::Warn => write!(f, "warn"),
+            RustLogLevel::Info => write!(f, "info"),
+            RustLogLevel::Debug => write!(f, "debug"),
+            RustLogLevel::Trace => write!(f, "trace"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RustLog {
+    Level(RustLogLevel),
+    Filter(String),
+}
+
+impl fmt::Display for RustLog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RustLog::Level(level) => level.fmt(f),
+            RustLog::Filter(filter) => write!(f, "{filter}"),
+        }
+    }
+}
+
 impl MpcBinaryConfig {
     pub fn env_vars(&self) -> Vec<(&'static str, String)> {
         vec![
             ("MPC_ACCOUNT_ID", self.mpc_account_id.clone()),
             ("MPC_LOCAL_ADDRESS", self.mpc_local_address.to_string()),
             ("MPC_SECRET_STORE_KEY", self.mpc_secret_key_store.clone()),
-            ("MPC_CONTRACT_ID", self.mpc_contract_isd.clone()),
+            ("MPC_CONTRACT_ID", self.mpc_contract_id.clone()),
             ("MPC_ENV", self.mpc_env.to_string()),
             ("MPC_HOME_DIR", self.mpc_home_dir.display().to_string()),
             ("MPC_RESPONDER_ID", self.mpc_responder_id.clone()),
@@ -178,8 +244,14 @@ impl MpcBinaryConfig {
                 self.mpc_backup_encryption_key_hex.clone(),
             ),
             ("NEAR_BOOT_NODES", self.near_boot_nodes.clone()),
-            ("RUST_BACKTRACE", self.rust_backtrace.clone()),
-            ("RUST_LOG", self.rust_log.clone()),
+            ("RUST_BACKTRACE", self.rust_backtrace.to_string()),
+            ("RUST_LOG", self.rust_log.to_string()),
         ]
     }
+}
+
+/// Partial response https://auth.docker.io/token
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DockerTokenResponse {
+    pub token: String,
 }

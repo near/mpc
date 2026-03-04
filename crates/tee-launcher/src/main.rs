@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
 use std::process::Command;
+use std::{collections::VecDeque, time::Duration};
 
 use clap::Parser;
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
@@ -10,11 +10,16 @@ use mpc_primitives::hash::MpcDockerImageHash;
 
 use contants::*;
 use error::*;
+use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
 use types::*;
+use url::Url;
 
 mod contants;
 mod error;
 mod types;
+
+const DOCKER_AUTH_ACCEPT_HEADER_VALUE: HeaderValue =
+    HeaderValue::from_static("application/vnd.docker.distribution.manifest.v2+json");
 
 #[tokio::main]
 async fn main() {
@@ -140,85 +145,33 @@ fn has_control_chars(s: &str) -> bool {
 // Docker registry communication
 // ---------------------------------------------------------------------------
 
-// TODO: Use backon
-async fn request_until_success(
-    client: &reqwest::Client,
-    url: &str,
-    headers: &[(String, String)],
-    config: &LauncherConfig,
-) -> Result<reqwest::Response, LauncherError> {
-    let mut interval = config.rpc_request_interval_secs as f64;
-
-    for attempt in 1..=config.rpc_max_attempts {
-        // Sleep before request (matching Python behavior)
-        tokio::time::sleep(std::time::Duration::from_secs_f64(interval)).await;
-        interval = (interval.max(1.0) * 1.5).min(60.0);
-
-        let mut req = client.get(url);
-        for (k, v) in headers {
-            req = req.header(k.as_str(), v.as_str());
-        }
-
-        match req
-            .timeout(std::time::Duration::from_secs(
-                config.rpc_request_timeout_secs,
-            ))
-            .send()
-            .await
-        {
-            Err(e) => {
-                tracing::warn!(
-                    "Attempt {attempt}/{}: Failed to fetch {url}. Status: Timeout/Error: {e}",
-                    config.rpc_max_attempts
-                );
-                continue;
-            }
-            Ok(resp) if resp.status() != reqwest::StatusCode::OK => {
-                tracing::warn!(
-                    "Attempt {attempt}/{}: Failed to fetch {url}. Status: {}",
-                    config.rpc_max_attempts,
-                    resp.status()
-                );
-                continue;
-            }
-            Ok(resp) => return Ok(resp),
-        }
-    }
-
-    Err(LauncherError::RegistryRequestFailed {
-        url: url.to_string(),
-        attempts: config.rpc_max_attempts,
-    })
-}
-
 async fn get_manifest_digest(config: &LauncherConfig) -> Result<String, LauncherError> {
     let tags = config.image_tags.clone();
 
+    // We need an authorization token to fetch manifests.
+    // TODO: this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint
     let token_url = format!(
         "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull",
         config.image_name
     );
 
-    let client = reqwest::Client::new();
-    let token_resp = client
-        .get(&token_url)
+    let reqwest_client = reqwest::Client::new();
+
+    let token_request_response = reqwest_client
+        .get(token_url)
         .send()
         .await
         .map_err(|e| LauncherError::RegistryAuthFailed(e.to_string()))?;
-    if token_resp.status() != reqwest::StatusCode::OK {
-        return Err(LauncherError::RegistryAuthFailed(format!(
-            "status: {}",
-            token_resp.status()
-        )));
+
+    let status = token_request_response.status();
+    if !status.is_success() {
+        todo!("add error case for non success http codes");
     }
-    let token_json: serde_json::Value = token_resp
+
+    let token_response: DockerTokenResponse = token_request_response
         .json()
         .await
         .map_err(|e| LauncherError::RegistryAuthFailed(e.to_string()))?;
-    let token = token_json["token"]
-        .as_str()
-        .ok_or_else(|| LauncherError::RegistryAuthFailed("no token in response".to_string()))?
-        .to_string();
 
     let mut tags: VecDeque<String> = tags.into_iter().collect();
 
@@ -232,10 +185,19 @@ async fn get_manifest_digest(config: &LauncherConfig) -> Result<String, Launcher
                 "Accept".to_string(),
                 "application/vnd.docker.distribution.manifest.v2+json".to_string(),
             ),
-            ("Authorization".to_string(), format!("Bearer {token}")),
+            // (AUTHORIZATION,),
         ];
 
-        match request_until_success(&client, &manifest_url, &headers, config).await {
+        let authorization_value: HeaderValue = format!("Bearer {}", token_response.token)
+            .parse()
+            .expect("bearer token received from docker auth is a valid header value");
+
+        let headers = HeaderMap::from_iter([
+            (ACCEPT, DOCKER_AUTH_ACCEPT_HEADER_VALUE),
+            (AUTHORIZATION, authorization_value),
+        ]);
+
+        match request_until_success(&reqwest_client, &manifest_url, &headers, config).await {
             Ok(resp) => {
                 let content_digest = resp
                     .headers()
@@ -289,6 +251,54 @@ async fn get_manifest_digest(config: &LauncherConfig) -> Result<String, Launcher
     Err(LauncherError::ImageHashNotFoundAmongTags)
 }
 
+// TODO: Use backon
+async fn request_until_success(
+    client: &reqwest::Client,
+    url: Url,
+    headers: HeaderMap,
+    config: &LauncherConfig,
+) -> Result<reqwest::Response, LauncherError> {
+    let mut interval = config.rpc_request_interval_secs as f64;
+
+    for attempt in 1..=config.rpc_max_attempts {
+        // Sleep before request (matching Python behavior)
+        tokio::time::sleep(std::time::Duration::from_secs_f64(interval)).await;
+        interval = (interval.max(1.0) * 1.5).min(60.0);
+
+        let request_timeout_duration = Duration::from_secs(config.rpc_request_timeout_secs);
+        let request = client
+            .get(url.clone())
+            .headers(headers.clone())
+            .timeout(request_timeout_duration)
+            .send()
+            .await;
+
+        match request {
+            Err(e) => {
+                tracing::warn!(
+                    "Attempt {attempt}/{}: Failed to fetch {url}. Status: Timeout/Error: {e}",
+                    config.rpc_max_attempts
+                );
+                continue;
+            }
+            Ok(resp) if resp.status() != reqwest::StatusCode::OK => {
+                tracing::warn!(
+                    "Attempt {attempt}/{}: Failed to fetch {url}. Status: {}",
+                    config.rpc_max_attempts,
+                    resp.status()
+                );
+                continue;
+            }
+            Ok(resp) => return Ok(resp),
+        }
+    }
+
+    Err(LauncherError::RegistryRequestFailed {
+        url,
+        attempts: config.rpc_max_attempts,
+    })
+}
+
 fn check_image_digest_exists_on_docker_hub(
     image_hash: MpcDockerImageHash,
 ) -> Result<(), ImageDigestValidationFailed> {
@@ -337,32 +347,6 @@ fn check_image_digest_exists_on_docker_hub(
     }
 
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Docker command builder
-// ---------------------------------------------------------------------------
-
-fn remove_existing_container() {
-    let output = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}"])
-        .output();
-
-    match output {
-        Ok(output) => {
-            let names = String::from_utf8_lossy(&output.stdout);
-
-            if names.lines().any(|n| n == MPC_CONTAINER_NAME) {
-                tracing::info!("Removing existing container: {MPC_CONTAINER_NAME}");
-                let _ = Command::new("docker")
-                    .args(["rm", "-f", MPC_CONTAINER_NAME])
-                    .output();
-            }
-        }
-        Err(error) => {
-            tracing::warn!("Failed to check/remove container {MPC_CONTAINER_NAME}: {error}");
-        }
-    }
 }
 
 fn build_docker_cmd(
@@ -444,16 +428,25 @@ fn launch_mpc_container(
         valid_hash.as_hex()
     );
 
-    remove_existing_container();
+    // shutdown container if one is already running
+    let _ = Command::new("docker")
+        .args(["rm", "-f", MPC_CONTAINER_NAME])
+        .output();
+
     let docker_cmd = build_docker_cmd(platform, mpc_config, docker_flags, valid_hash)?;
 
-    let status = Command::new(&docker_cmd[0])
+    let run_output = Command::new(&docker_cmd[0])
         .args(&docker_cmd[1..])
-        .status()
-        .map_err(|e| LauncherError::DockerRunFailed(valid_hash.clone()))?;
+        .output()
+        .map_err(|inner| LauncherError::DockerRunFailed {
+            image_hash: valid_hash.clone(),
+            inner,
+        })?;
 
-    if !status.success() {
-        return Err(LauncherError::DockerRunFailed(valid_hash.clone()));
+    if !run_output.status.success() {
+        return Err(LauncherError::DockerRunFailedExitStatus {
+            image_hash: valid_hash.clone(),
+        });
     }
 
     tracing::info!("MPC launched successfully.");

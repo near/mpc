@@ -242,6 +242,7 @@ def is_safe_port_mapping(mapping: str) -> bool:
 
 
 def remove_existing_container():
+    # changed in rust, no point checking current container exists. Just send shutdown signal to MPC_CONTAINER_NAME
     """Stop and remove the MPC container if it exists."""
     try:
         containers = check_output(
