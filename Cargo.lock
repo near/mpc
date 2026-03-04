@@ -10558,6 +10558,7 @@ dependencies = [
  "clap",
  "dstack-sdk",
  "hex",
+ "itertools 0.14.0",
  "launcher-interface",
  "mpc-primitives",
  "regex",
@@ -10569,6 +10570,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

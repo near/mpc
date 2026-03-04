@@ -1,3 +1,10 @@
+use std::fmt;
+use std::net::{IpAddr, Ipv4Addr};
+use std::num::NonZeroU16;
+use std::path::PathBuf;
+
+use url::Host;
+
 use bounded_collections::NonEmptyVec;
 use clap::{Parser, ValueEnum};
 use mpc_primitives::hash::MpcDockerImageHash;
@@ -17,7 +24,7 @@ pub struct CliArgs {
 
     /// Fallback image digest when the approved-hashes file is absent
     #[arg(long, env = "DEFAULT_IMAGE_DIGEST")]
-    pub default_image_digest: Option<MpcDockerImageHash>,
+    pub default_image_digest: MpcDockerImageHash,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -41,6 +48,7 @@ pub enum Platform {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub launcher_config: LauncherConfig,
+    pub docker_command_config: DockerLaunchFlags,
     /// Remaining env vars forwarded to the MPC container.
     pub mpc_passthrough_env: MpcBinaryConfig,
 }
@@ -66,17 +74,112 @@ pub struct LauncherConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MpcBinaryConfig {
     // mpc
-    mpc_account_id: String,
-    mpc_local_address: String,
-    mpc_secret_key_store: String,
-    mpc_contract_isd: String,
-    mpc_env: String,
-    mpc_home_dir: String,
-    mpc_responder_id: String,
-    mpc_backup_encryption_key_hex: String,
+    pub mpc_account_id: String,
+    pub mpc_local_address: IpAddr,
+    pub mpc_secret_key_store: String,
+    pub mpc_contract_isd: String,
+    pub mpc_env: MpcEnv,
+    pub mpc_home_dir: PathBuf,
+    pub mpc_responder_id: String,
+    pub mpc_backup_encryption_key_hex: String,
     // near
-    near_boot_nodes: String,
+    pub near_boot_nodes: String,
     // rust
-    rust_backtrace: String,
-    rust_log: String,
+    pub rust_backtrace: String,
+    pub rust_log: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DockerLaunchFlags {
+    pub extra_hosts: ExtraHosts,
+    pub port_mappings: PortMappings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ExtraHosts {
+    hosts: Vec<HostEntry>,
+}
+
+impl ExtraHosts {
+    pub fn docker_flag_and_value(&self) -> (String, String) {
+        let flag = "--add-host".into();
+        let value = self
+            .hosts
+            .iter()
+            .map(|HostEntry { hostname, ip }| format!("{hostname}:{ip}"))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        (flag, value)
+    }
+}
+
+/// A `--add-host` entry: `hostname:IPv4`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostEntry {
+    pub hostname: Host<String>,
+    pub ip: Ipv4Addr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PortMappings {
+    pub ports: Vec<PortMapping>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PortMapping {
+    src: NonZeroU16,
+    dst: NonZeroU16,
+}
+
+impl PortMappings {
+    pub fn docker_flag_and_value(&self) -> (String, String) {
+        let flag = "-p".into();
+        let value = self
+            .ports
+            .iter()
+            .map(|PortMapping { src, dst }| format!("{src}:{dst}"))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        (flag, value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum MpcEnv {
+    Localnet,
+    Testnet,
+    Mainnet,
+}
+
+impl fmt::Display for MpcEnv {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MpcEnv::Localnet => write!(f, "localnet"),
+            MpcEnv::Testnet => write!(f, "testnet"),
+            MpcEnv::Mainnet => write!(f, "mainnet"),
+        }
+    }
+}
+
+impl MpcBinaryConfig {
+    pub fn env_vars(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("MPC_ACCOUNT_ID", self.mpc_account_id.clone()),
+            ("MPC_LOCAL_ADDRESS", self.mpc_local_address.to_string()),
+            ("MPC_SECRET_STORE_KEY", self.mpc_secret_key_store.clone()),
+            ("MPC_CONTRACT_ID", self.mpc_contract_isd.clone()),
+            ("MPC_ENV", self.mpc_env.to_string()),
+            ("MPC_HOME_DIR", self.mpc_home_dir.display().to_string()),
+            ("MPC_RESPONDER_ID", self.mpc_responder_id.clone()),
+            (
+                "MPC_BACKUP_ENCRYPTION_KEY_HEX",
+                self.mpc_backup_encryption_key_hex.clone(),
+            ),
+            ("NEAR_BOOT_NODES", self.near_boot_nodes.clone()),
+            ("RUST_BACKTRACE", self.rust_backtrace.clone()),
+            ("RUST_LOG", self.rust_log.clone()),
+        ]
+    }
 }

@@ -1,12 +1,9 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::process::Command;
-use std::sync::LazyLock;
 
 use clap::Parser;
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use launcher_interface::types::ApprovedHashesFile;
-use regex::Regex;
-use std::os::unix::fs::FileTypeExt as _;
 
 // Reuse the workspace hash type for type-safe image hash handling.
 use mpc_primitives::hash::MpcDockerImageHash;
@@ -49,18 +46,26 @@ async fn run() -> Result<(), LauncherError> {
 
     let dstack_config: Config = serde_json::from_reader(config_file).expect("config file is valid");
 
-    let image_hash: MpcDockerImageHash = {
-        match dstack_config.launcher_config.mpc_hash_override.clone() {
-            Some(override_hash) => override_hash,
-            None => {
-                let approved_hashes_file = std::fs::OpenOptions::new()
-                    .read(true)
-                    .open(IMAGE_DIGEST_FILE)
-                    .map_err(|source| LauncherError::FileRead {
-                        path: IMAGE_DIGEST_FILE.to_string(),
-                        source,
-                    })?;
+    let approved_hashes_file = std::fs::OpenOptions::new()
+        .read(true)
+        .open(IMAGE_DIGEST_FILE)
+        .map_err(|source| LauncherError::FileRead {
+            path: IMAGE_DIGEST_FILE.to_string(),
+            source,
+        });
 
+    let image_hash: MpcDockerImageHash = {
+        match approved_hashes_file {
+            Err(err) => {
+                let default_image_digest = args.default_image_digest;
+                tracing::warn!(
+                    ?err,
+                    ?default_image_digest,
+                    "approved hashes file does not exist on disk, falling back to default digest"
+                );
+                default_image_digest
+            }
+            Ok(approved_hashes_file) => {
                 let approved_hashes_on_disk: ApprovedHashesFile =
                     serde_json::from_reader(approved_hashes_file).map_err(|source| {
                         LauncherError::JsonParse {
@@ -69,7 +74,21 @@ async fn run() -> Result<(), LauncherError> {
                         }
                     })?;
 
-                approved_hashes_on_disk.newest_approved_hash().clone()
+                if let Some(override_image) = dstack_config.launcher_config.mpc_hash_override {
+                    tracing::info!(?override_image, "override mpc image hash provided");
+
+                    let override_image_is_allowed = approved_hashes_on_disk
+                        .approved_hashes
+                        .contains(&override_image);
+
+                    if !override_image_is_allowed {
+                        panic!("TODO: panic if override image is not allowed?");
+                    }
+
+                    override_image
+                } else {
+                    approved_hashes_on_disk.newest_approved_hash().clone()
+                }
             }
         }
     };
@@ -85,6 +104,7 @@ async fn run() -> Result<(), LauncherError> {
         dstack_client
             .emit_event(
                 MPC_IMAGE_HASH_EVENT.to_string(),
+                // TODO: mpc binary has to go back from back hex as well. Just send the raw bytes as payload.
                 image_hash.as_hex().as_bytes().to_vec(),
             )
             .await
@@ -95,47 +115,13 @@ async fn run() -> Result<(), LauncherError> {
         args.platform,
         &image_hash,
         &dstack_config.mpc_passthrough_env,
+        &dstack_config.docker_command_config,
     )?;
 
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Constants — matching Python launcher exactly
-// ---------------------------------------------------------------------------
-
-// Regex patterns (compiled once)
-static MPC_ENV_KEY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^MPC_[A-Z0-9_]{1,64}$").unwrap());
-static HOST_ENTRY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9\-\.]+:\d{1,3}(\.\d{1,3}){3}$").unwrap());
-static PORT_MAPPING_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(\d{1,5}):(\d{1,5})$").unwrap());
-static INVALID_HOST_ENTRY_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[;&|`$\\<>\-]|^--").unwrap());
-
-// Denied env keys — never pass these to the container
-const DENIED_CONTAINER_ENV_KEYS: &[&str] = &["MPC_P2P_PRIVATE_KEY", "MPC_ACCOUNT_SK"];
-
-// Allowed non-MPC env vars (backward compatibility)
-const ALLOWED_MPC_ENV_VARS: &[&str] = &[
-    "MPC_ACCOUNT_ID",
-    "MPC_LOCAL_ADDRESS",
-    "MPC_SECRET_STORE_KEY",
-    "MPC_CONTRACT_ID",
-    "MPC_ENV",
-    "MPC_HOME_DIR",
-    "NEAR_BOOT_NODES",
-    "RUST_BACKTRACE",
-    "RUST_LOG",
-    "MPC_RESPONDER_ID",
-    "MPC_BACKUP_ENCRYPTION_KEY_HEX",
-];
-
-// ---------------------------------------------------------------------------
-// Validation functions — security policy for env passthrough
-// ---------------------------------------------------------------------------
-
+// TODO: this needs to be checked.
 fn has_control_chars(s: &str) -> bool {
     let control_chars = ['\n', '\r', '\0'];
 
@@ -150,45 +136,6 @@ fn has_control_chars(s: &str) -> bool {
     false
 }
 
-fn is_valid_ip(ip: &str) -> bool {
-    ip.parse::<std::net::Ipv4Addr>().is_ok()
-}
-
-fn is_valid_host_entry(entry: &str) -> bool {
-    if !HOST_ENTRY_RE.is_match(entry) {
-        return false;
-    }
-    if let Some((_host, ip)) = entry.rsplit_once(':') {
-        is_valid_ip(ip)
-    } else {
-        false
-    }
-}
-
-fn is_valid_port_mapping(entry: &str) -> bool {
-    if let Some(caps) = PORT_MAPPING_RE.captures(entry) {
-        let host_port: u32 = caps[1].parse().unwrap_or(0);
-        let container_port: u32 = caps[2].parse().unwrap_or(0);
-        host_port > 0 && host_port <= 65535 && container_port > 0 && container_port <= 65535
-    } else {
-        false
-    }
-}
-
-fn is_safe_host_entry(entry: &str) -> bool {
-    if INVALID_HOST_ENTRY_PATTERN.is_match(entry) {
-        return false;
-    }
-    if entry.contains("LD_PRELOAD") {
-        return false;
-    }
-    true
-}
-
-fn is_safe_port_mapping(mapping: &str) -> bool {
-    !INVALID_HOST_ENTRY_PATTERN.is_match(mapping)
-}
-
 // ---------------------------------------------------------------------------
 // Docker registry communication
 // ---------------------------------------------------------------------------
@@ -199,7 +146,7 @@ async fn request_until_success(
     url: &str,
     headers: &[(String, String)],
     config: &LauncherConfig,
-) -> Result<reqwest::Response> {
+) -> Result<reqwest::Response, LauncherError> {
     let mut interval = config.rpc_request_interval_secs as f64;
 
     for attempt in 1..=config.rpc_max_attempts {
@@ -244,7 +191,7 @@ async fn request_until_success(
     })
 }
 
-async fn get_manifest_digest(config: &LauncherConfig) -> Result<String> {
+async fn get_manifest_digest(config: &LauncherConfig) -> Result<String, LauncherError> {
     let tags = config.image_tags.clone();
 
     let token_url = format!(
@@ -421,6 +368,7 @@ fn remove_existing_container() {
 fn build_docker_cmd(
     platform: Platform,
     mpc_config: &MpcBinaryConfig,
+    docker_flags: &DockerLaunchFlags,
     image_digest: &MpcDockerImageHash,
 ) -> Result<Vec<String>, LauncherError> {
     let mut cmd: Vec<String> = vec!["docker".into(), "run".into()];
@@ -446,36 +394,17 @@ fn build_docker_cmd(
         ]);
     }
 
-    // Track env passthrough size/caps
-    let mut passed_env_count: usize = 0;
-    let mut total_env_bytes: usize = 0;
+    for (key, value) in mpc_config.env_vars() {
+        cmd.extend(["--env".into(), format!("{key}={value}")]);
+    }
 
-    // // BTreeMap iteration is already sorted by key (deterministic)
-    // for (key, value) in mpc_config {
-    //     if key == "EXTRA_HOSTS" {
-    //         for host_entry in value.split(',') {
-    //             let clean = host_entry.trim();
-    //             if is_safe_host_entry(clean) && is_valid_host_entry(clean) {
-    //                 cmd.extend(["--add-host".into(), clean.to_string()]);
-    //             } else {
-    //                 tracing::warn!("Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean}");
-    //             }
-    //         }
-    //         continue;
-    //     }
+    let (host_flag, host_value) = docker_flags.extra_hosts.docker_flag_and_value();
+    cmd.extend([host_flag, host_value]);
 
-    //     passed_env_count += 1;
-    //     if passed_env_count > MAX_PASSTHROUGH_ENV_VARS {
-    //         return Err(LauncherError::TooManyEnvVars(MAX_PASSTHROUGH_ENV_VARS));
-    //     }
+    let (port_forwarding_flag, port_forwarding_value) =
+        docker_flags.port_mappings.docker_flag_and_value();
 
-    //     total_env_bytes += key.len() + 1 + value.len();
-    //     if total_env_bytes > MAX_TOTAL_ENV_BYTES {
-    //         return Err(LauncherError::EnvPayloadTooLarge(MAX_TOTAL_ENV_BYTES));
-    //     }
-
-    //     cmd.extend(["--env".into(), format!("{key}={value}")]);
-    // }
+    cmd.extend([port_forwarding_flag, port_forwarding_value]);
 
     // Container run configuration
     cmd.extend([
@@ -508,6 +437,7 @@ fn launch_mpc_container(
     platform: Platform,
     valid_hash: &MpcDockerImageHash,
     mpc_config: &MpcBinaryConfig,
+    docker_flags: &DockerLaunchFlags,
 ) -> Result<(), LauncherError> {
     tracing::info!(
         "Launching MPC node with validated hash: {}",
@@ -515,7 +445,7 @@ fn launch_mpc_container(
     );
 
     remove_existing_container();
-    let docker_cmd = build_docker_cmd(platform, mpc_config, valid_hash)?;
+    let docker_cmd = build_docker_cmd(platform, mpc_config, docker_flags, valid_hash)?;
 
     let status = Command::new(&docker_cmd[0])
         .args(&docker_cmd[1..])

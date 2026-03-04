@@ -147,7 +147,7 @@ DENIED_CONTAINER_ENV_KEYS = {
 ALLOWED_MPC_ENV_VARS = {
     "MPC_ACCOUNT_ID",  # ID of the MPC account on the network
     "MPC_LOCAL_ADDRESS",  # Local IP address or hostname used by the MPC node
-    "MPC_SECRET_STORE_KEY",  # Key used to encrypt/decrypt secrets
+    "MPC_SECRET_STORE_KEY",  # Key used to encrypt/decrypt secrets // Isn't this deprecated?,
     "MPC_CONTRACT_ID",  # Contract ID associated with the MPC node
     "MPC_ENV",  # Environment (e.g., 'testnet', 'mainnet')
     "MPC_HOME_DIR",  # Home directory for the MPC node
