@@ -333,11 +333,7 @@ mod tests {
         let success_debug = format!("{:?}", success);
 
         // then
-        assert!(
-            start_debug.contains("Start"),
-            "got: {}",
-            start_debug
-        );
+        assert!(start_debug.contains("Start"), "got: {}", start_debug);
         assert!(
             abort_debug.contains("some error"),
             "Abort debug should show the error string, got: {}",
