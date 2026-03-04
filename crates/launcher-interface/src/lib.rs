@@ -1,3 +1,5 @@
+pub const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
+
 pub mod types {
     use mpc_primitives::hash::MpcDockerImageHash;
     use serde::{Deserialize, Serialize};

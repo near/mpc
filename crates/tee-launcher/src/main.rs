@@ -3,6 +3,7 @@ use std::process::Command;
 use std::sync::LazyLock;
 
 use clap::Parser;
+use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use launcher_interface::types::ApprovedHashesFile;
 use regex::Regex;
 use std::os::unix::fs::FileTypeExt as _;
@@ -73,18 +74,18 @@ async fn run() -> Result<(), LauncherError> {
         }
     };
 
-    let () = check_image_digest_exists_on_docker_hub(image_hash)?;
+    let () = check_image_digest_exists_on_docker_hub(image_hash.clone())?;
 
     let should_extend_rtmr_3 = args.platform == Platform::Tee;
 
     if should_extend_rtmr_3 {
-        let dstack_cient = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
+        let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
         // EmitEvent with the image digest
-        dstack_cient
+        dstack_client
             .emit_event(
-                "mpc-image-digest".to_string(),
-                image_hash.as_hex().into_bytes(),
+                MPC_IMAGE_HASH_EVENT.to_string(),
+                image_hash.as_hex().as_bytes().to_vec(),
             )
             .await
             .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
