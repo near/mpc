@@ -1,5 +1,5 @@
 use assert_matches::assert_matches;
-use near_mpc_sdk::foreign_chain::{
+use mpc_sdk::foreign_chain::{
     DomainId, ForeignChainRequestBuilder,
     bitcoin::{BitcoinTxId, ForeignChainRpcRequest},
 };

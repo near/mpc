@@ -22,8 +22,8 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
 };
+use mpc_sdk::sign::SignatureRequestResponse;
 use near_account_id::AccountId;
-use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
 use rstest::rstest;
