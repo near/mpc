@@ -193,7 +193,7 @@ pub enum MpcMessageKind {
     Success,
 }
 
-/// Custom Debug impl that redacts the raw bytes in Computation messages.
+/// Redacts the raw bytes in Computation messages.
 /// These bytes contain serialized protocol round data (commitments, encrypted shares, proofs)
 /// which must not be leaked to logs.
 impl Debug for MpcMessageKind {
