@@ -1160,6 +1160,170 @@ mod tests {
 }
 
 #[cfg(test)]
+mod log_redaction_tests {
+    use super::computation::MpcLeaderCentricComputation;
+    use super::NetworkTaskChannel;
+    use crate::network::testing::run_test_clients;
+    use crate::primitives::UniqueId;
+    use crate::providers::EcdsaTaskId;
+    use crate::tests::into_participant_ids;
+    use borsh::{BorshDeserialize, BorshSerialize};
+    use std::sync::Arc;
+    use threshold_signatures::test_utils::TestGenerators;
+
+    /// Marker bytes that should never appear in logs.
+    const SECRET_MARKER: &[u8] = b"TOP_SECRET_SHARE_BYTES_1234567890";
+
+    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+    struct SecretPayload {
+        data: Vec<u8>,
+    }
+
+    struct SecretLeader;
+
+    #[async_trait::async_trait]
+    impl MpcLeaderCentricComputation<()> for SecretLeader {
+        async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+            let payload = SecretPayload {
+                data: SECRET_MARKER.to_vec(),
+            };
+            for &other in channel.participants() {
+                if other == channel.my_participant_id() {
+                    continue;
+                }
+                channel
+                    .sender()
+                    .send(other, vec![borsh::to_vec(&payload).unwrap()])?;
+            }
+            for _ in 1..channel.participants().len() {
+                let _msg = channel.receive().await?;
+            }
+            Ok(())
+        }
+
+        fn leader_waits_for_success(&self) -> bool {
+            true
+        }
+    }
+
+    struct SecretFollower;
+
+    #[async_trait::async_trait]
+    impl MpcLeaderCentricComputation<()> for SecretFollower {
+        async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+            let msg = channel.receive().await?;
+            channel.sender().send(msg.from, msg.data)?;
+            Ok(())
+        }
+
+        fn leader_waits_for_success(&self) -> bool {
+            true
+        }
+    }
+
+    /// Captures all tracing output (including custom targets like "network") into a shared buffer.
+    fn setup_capturing_subscriber() -> (tracing::subscriber::DefaultGuard, Arc<std::sync::Mutex<Vec<u8>>>) {
+        let buffer = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let buffer_clone = buffer.clone();
+
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(move || {
+                let buf = buffer_clone.clone();
+                // Return a writer that appends to our buffer
+                struct BufWriter(Arc<std::sync::Mutex<Vec<u8>>>);
+                impl std::io::Write for BufWriter {
+                    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+                        self.0.lock().unwrap().extend_from_slice(data);
+                        Ok(data.len())
+                    }
+                    fn flush(&mut self) -> std::io::Result<()> {
+                        Ok(())
+                    }
+                }
+                BufWriter(buf)
+            })
+            .with_ansi(false)
+            .finish();
+
+        let guard = tracing::subscriber::set_default(subscriber);
+        (guard, buffer)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[allow(non_snake_case)]
+    async fn receive_raw__should_not_log_computation_payload() {
+        use crate::tracking::testing::start_root_task_with_periodic_dump;
+
+        // given: a capturing subscriber that records all tracing output
+        let (_guard, log_buffer) = setup_capturing_subscriber();
+
+        start_root_task_with_periodic_dump(async move {
+            // given: a network of 3 participants exchanging messages containing secret bytes
+            let participants = into_participant_ids(&TestGenerators::new(3, 2.into()));
+
+            // when: messages are sent and received (which triggers debug logging in receive_raw)
+            run_test_clients(
+                participants.clone(),
+                |client, mut channel_receiver| async move {
+                    let my_id = client.my_participant_id();
+
+                    let _passive_handle =
+                        crate::tracking::spawn("passive channels", async move {
+                            let mut tasks = crate::tracking::AutoAbortTaskCollection::new();
+                            loop {
+                                let Some(channel) = channel_receiver.recv().await else {
+                                    break;
+                                };
+                                tasks.spawn_checked(
+                                    &format!("follower {:?}", channel.task_id()),
+                                    SecretFollower.perform_leader_centric_computation(
+                                        channel,
+                                        std::time::Duration::from_secs(10),
+                                    ),
+                                );
+                            }
+                        });
+
+                    let channel = client.new_channel_for_task(
+                        EcdsaTaskId::ManyTriples {
+                            start: UniqueId::new(my_id, 0, 0),
+                            count: 1,
+                        },
+                        client.all_participant_ids(),
+                    )?;
+
+                    SecretLeader
+                        .perform_leader_centric_computation(
+                            channel,
+                            std::time::Duration::from_secs(10),
+                        )
+                        .await?;
+
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+        })
+        .await;
+
+        // then
+        let logs = String::from_utf8_lossy(&log_buffer.lock().unwrap()).to_string();
+        let secret_as_string = String::from_utf8_lossy(SECRET_MARKER);
+
+        assert!(
+            !logs.contains(&*secret_as_string),
+            "Logs must not contain raw computation payload bytes"
+        );
+        assert!(
+            logs.contains("Received message"),
+            "Expected debug log for received messages to be present, ensuring this test is not vacuous"
+        );
+    }
+}
+
+#[cfg(test)]
 mod fault_handling_tests {
     use super::computation::MpcLeaderCentricComputation;
     use super::{MeshNetworkClient, NetworkTaskChannel};
