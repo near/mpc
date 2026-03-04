@@ -49,8 +49,8 @@ impl MpcContractStateViewer {
 
         loop {
             match subscription.latest() {
-                Ok((_, value)) => {
-                    if sender.send(value).is_err() {
+                Ok(latest) => {
+                    if sender.send(latest.value).is_err() {
                         return Ok(()); // no receivers left
                     }
                 }

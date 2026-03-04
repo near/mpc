@@ -1,6 +1,7 @@
 use derive_more::{From, Into};
+use serde::{Deserialize, Serialize};
 
-use crate::near_internals_wrapper::view_client::{
+use crate::near_internals_wrapper::near_view_client::{
     errors::{GetBlockError, QueryError, ViewClientError},
     request::ViewFunctionCall,
 };
@@ -11,7 +12,9 @@ pub(crate) struct ViewClientWrapper {
         near_async::multithread::MultithreadRuntimeHandle<near_client::ViewClientActorInner>,
 }
 
-#[derive(Into, From, Copy, Clone)]
+#[derive(
+    Into, From, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug,
+)]
 pub struct BlockHeight(u64);
 
 #[derive(Clone)]

@@ -4,7 +4,7 @@ use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::{BlockHeight, ContractStateStream};
+use chain_gateway::state_viewer::{ContractStateStream, ObservedState};
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::{
     domain::DomainConfig,
@@ -257,17 +257,20 @@ impl ContractState {
 
 // Forward raw result to web sender, try to parse into ContractState
 fn process_contract_state(
-    latest: Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+    latest: Result<ObservedState<ProtocolContractState>, ChainGatewayError>,
     protocol_state_sender: &watch::Sender<
-        Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+        Result<ObservedState<ProtocolContractState>, ChainGatewayError>,
     >,
     port_override: Option<u16>,
 ) -> Option<ContractState> {
     let _ = protocol_state_sender.send(latest.clone());
     match latest {
-        Ok((height, protocol_state)) => {
-            match ContractState::from_contract_state(&protocol_state, height.into(), port_override)
-            {
+        Ok(latest) => {
+            match ContractState::from_contract_state(
+                &latest.value,
+                latest.last_changed.into(),
+                port_override,
+            ) {
                 Ok(state) => Some(state),
                 Err(e) => {
                     tracing::error!(target: "mpc", "error reading config from chain during get_mpc_contract_state: {:?}", e);
@@ -286,7 +289,7 @@ async fn monitor_contract_state_task(
     mpc_contract: MpcContractStateViewer,
     port_override: Option<u16>,
     protocol_state_sender: watch::Sender<
-        Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+        Result<ObservedState<ProtocolContractState>, ChainGatewayError>,
     >,
     init_tx: tokio::sync::oneshot::Sender<anyhow::Result<watch::Receiver<ContractState>>>,
 ) {
@@ -344,7 +347,7 @@ pub async fn monitor_contract_state(
     mpc_contract: MpcContractStateViewer,
     port_override: Option<u16>,
     protocol_state_sender: watch::Sender<
-        Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+        Result<ObservedState<ProtocolContractState>, ChainGatewayError>,
     >,
 ) -> anyhow::Result<watch::Receiver<ContractState>> {
     let (init_tx, init_rx) = tokio::sync::oneshot::channel();

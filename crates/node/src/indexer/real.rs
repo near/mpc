@@ -9,7 +9,7 @@ use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use chain_gateway::chain_gateway::start_with_streamer;
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::BlockHeight;
+use chain_gateway::state_viewer::ObservedState;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
@@ -53,10 +53,10 @@ pub fn spawn_real_indexer(
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<
-        Result<(BlockHeight, ProtocolContractState), ChainGatewayError>,
+        Result<ObservedState<ProtocolContractState>, ChainGatewayError>,
     >,
     migration_state_sender: watch::Sender<
-        Result<(BlockHeight, ContractMigrationInfo), ChainGatewayError>,
+        Result<ObservedState<ContractMigrationInfo>, ChainGatewayError>,
     >,
     tls_public_key: VerifyingKey,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {

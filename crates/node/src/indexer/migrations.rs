@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::{BlockHeight, ContractStateStream};
+use chain_gateway::state_viewer::{ContractStateStream, ObservedState};
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use near_account_id::AccountId;
@@ -14,15 +14,15 @@ pub type ContractMigrationInfo =
 
 // Forward raw result to web sender, try to derive MigrationInfo
 fn process_latest(
-    latest: Result<(BlockHeight, ContractMigrationInfo), ChainGatewayError>,
+    latest: Result<ObservedState<ContractMigrationInfo>, ChainGatewayError>,
     my_near_account_id: &AccountId,
     my_p2p_public_key: &VerifyingKey,
 ) -> Option<MigrationInfo> {
     match latest {
-        Ok((_, contract_state)) => Some(MigrationInfo::from_contract_state(
+        Ok(latest) => Some(MigrationInfo::from_contract_state(
             my_near_account_id,
             my_p2p_public_key,
-            &contract_state,
+            &latest.value,
         )),
         Err(err) => {
             tracing::warn!(%err, "error reading migration state");
@@ -36,7 +36,7 @@ fn process_latest(
 pub async fn monitor_migrations(
     contract_state_viewer: MpcContractStateViewer,
     migration_state_sender: watch::Sender<
-        Result<(BlockHeight, ContractMigrationInfo), ChainGatewayError>,
+        Result<ObservedState<ContractMigrationInfo>, ChainGatewayError>,
     >,
     my_near_account_id: AccountId,
     my_p2p_public_key: VerifyingKey,

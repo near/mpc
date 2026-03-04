@@ -9,6 +9,63 @@ use tokio::sync::mpsc;
 
 const TEST_CONTRACT_ACCOUNT: &str = "test-contract.near";
 
+/// spawns a local neard node, inserts a test contract and checks if viewing a valid contract method succeeds
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_view_contract_state() {
+    let (gw, _stream, _dir) = setup_chain_gateway().await;
+    let viewer = gw.viewer();
+
+    let (height, value): (_, String) = viewer
+        .view(
+            TEST_CONTRACT_ACCOUNT.parse().unwrap(),
+            "get_greeting",
+            &NoArgs {},
+        )
+        .await
+        .expect("view call should succeed");
+
+    assert_eq!(value, "hello from test");
+    assert!(u64::from(height) > 0);
+}
+
+/// spawns a local neard node, inserts a test contract and checks if viewing an invalid contract method fails
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_view_nonexistent_method_returns_error() {
+    let (gw, _stream, _dir) = setup_chain_gateway().await;
+    let viewer = gw.viewer();
+
+    let result = viewer
+        .view::<NoArgs, String>(
+            TEST_CONTRACT_ACCOUNT.parse().unwrap(),
+            "nonexistent",
+            &NoArgs {},
+        )
+        .await;
+
+    let err = result
+        .expect_err("calling a nonexistent method should fail");
+    assert!(
+        matches!(err, ChainGatewayError::ViewClient { .. }),
+        "error should be a ViewClient variant, got: {err:?}"
+    );
+}
+
+/// spawns a local neard node, inserts a test contract and checks if suscribing to the state
+/// succeeds
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_subscription_receives_initial_value() {
+    let (gw, _stream, _dir) = setup_chain_gateway().await;
+    let viewer = gw.viewer();
+
+    let mut sub = viewer
+        .subscribe::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), "get_greeting")
+        .await;
+
+    let res = sub.latest().expect("subscription latest should succeed");
+    assert_eq!(res.value, "hello from test");
+    assert!(u64::from(res.last_changed) > 0);
+}
+
 /// Minimal WASM contract: `get_greeting` returns `"hello from test"`.
 fn test_contract_wasm() -> Vec<u8> {
     wat::parse_str(
@@ -150,58 +207,4 @@ async fn setup_chain_gateway() -> (
         .expect("start_with_streamer should succeed");
 
     (gw, stream, dir)
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_view_contract_state() {
-    let (gw, _stream, _dir) = setup_chain_gateway().await;
-    let viewer = gw.viewer();
-
-    let (height, value): (_, String) = viewer
-        .view(
-            TEST_CONTRACT_ACCOUNT.parse().unwrap(),
-            "get_greeting",
-            &NoArgs {},
-        )
-        .await
-        .expect("view call should succeed");
-
-    assert_eq!(value, "hello from test");
-    assert!(u64::from(height) > 0);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_view_nonexistent_method_returns_error() {
-    let (gw, _stream, _dir) = setup_chain_gateway().await;
-    let viewer = gw.viewer();
-
-    let result = viewer
-        .view::<NoArgs, String>(
-            TEST_CONTRACT_ACCOUNT.parse().unwrap(),
-            "nonexistent",
-            &NoArgs {},
-        )
-        .await;
-
-    let err = result
-        .err()
-        .expect("calling a nonexistent method should fail");
-    assert!(
-        matches!(err, ChainGatewayError::ViewClient { .. }),
-        "error should be a ViewClient variant, got: {err:?}"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_subscription_receives_initial_value() {
-    let (gw, _stream, _dir) = setup_chain_gateway().await;
-    let viewer = gw.viewer();
-
-    let mut sub = viewer
-        .subscribe::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), "get_greeting")
-        .await;
-
-    let (height, value) = sub.latest().expect("subscription latest should succeed");
-    assert_eq!(value, "hello from test");
-    assert!(u64::from(height) > 0);
 }

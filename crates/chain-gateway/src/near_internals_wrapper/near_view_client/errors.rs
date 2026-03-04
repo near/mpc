@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::near_internals_wrapper::view_client::request::ViewFunctionCall;
+use crate::near_internals_wrapper::near_view_client::request::ViewFunctionCall;
 
 pub type BoxedError = Box<dyn std::error::Error + Send + Sync + 'static>;
 

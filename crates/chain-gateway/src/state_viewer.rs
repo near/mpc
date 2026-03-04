@@ -1,15 +1,17 @@
+mod monitoring;
 mod subscription;
+mod subscription_trait;
 pub mod viewer_trait;
 
-pub use crate::near_internals_wrapper::BlockHeight;
-pub use subscription::ContractStateStream;
-
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
+pub use crate::near_internals_wrapper::BlockHeight;
 use near_account_id::AccountId;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use subscription::ContractMethodSubscription;
+pub use subscription_trait::ContractStateStream;
+pub use subscription_trait::ObservedState;
 use viewer_trait::{ContractViewer, NearContractViewer};
 
 /// External API for querying contract state. Generic over the viewer
@@ -17,16 +19,9 @@ use viewer_trait::{ContractViewer, NearContractViewer};
 ///
 /// External consumers should use `StateViewer` (without a type parameter),
 /// which resolves to `StateViewer<NearContractViewer>`.
+#[derive(Clone)]
 pub struct StateViewer<V = NearContractViewer> {
     viewer: V,
-}
-
-impl<V: Clone> Clone for StateViewer<V> {
-    fn clone(&self) -> Self {
-        Self {
-            viewer: self.viewer.clone(),
-        }
-    }
 }
 
 impl<V: ContractViewer> StateViewer<V> {

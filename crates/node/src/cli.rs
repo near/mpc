@@ -7,7 +7,8 @@ use crate::{
     coordinator::Coordinator,
     db::SecretDB,
     indexer::{
-        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI, ReadForeignChainPolicy,
+        migrations::ContractMigrationInfo, real::spawn_real_indexer, tx_sender::TransactionSender,
+        IndexerAPI, ReadForeignChainPolicy,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
@@ -22,6 +23,7 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
+use chain_gateway::state_viewer::ObservedState;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_attestation::report_data::ReportDataV1;
@@ -287,10 +289,16 @@ impl StartCmd {
         let root_task_handle = Arc::new(OnceLock::new());
 
         let (protocol_state_sender, protocol_state_receiver) =
-            watch::channel(Ok((0u64.into(), ProtocolContractState::NotInitialized)));
+            watch::channel(Ok(ObservedState::<ProtocolContractState> {
+                last_changed: 0u64.into(),
+                value: ProtocolContractState::NotInitialized,
+            }));
 
         let (migration_state_sender, migration_state_receiver) =
-            watch::channel(Ok((0u64.into(), BTreeMap::new())));
+            watch::channel(Ok(ObservedState::<ContractMigrationInfo> {
+                last_changed: 0u64.into(),
+                value: BTreeMap::new(),
+            }));
         let web_server = root_runtime
             .block_on(start_web_server(
                 root_task_handle.clone(),
