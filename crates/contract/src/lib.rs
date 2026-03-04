@@ -548,6 +548,20 @@ impl MpcContract {
             );
         }
 
+        let requested_chain = request.request.chain();
+        if !self
+            .foreign_chain_policy
+            .chains
+            .contains_key(&requested_chain)
+        {
+            env::panic_str(
+                &InvalidParameters::ChainNotInPolicy {
+                    requested: requested_chain,
+                }
+                .to_string(),
+            );
+        }
+
         let gas_required =
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
 
@@ -2210,6 +2224,17 @@ mod tests {
         (context, contract, sk)
     }
 
+    fn bitcoin_foreign_chain_policy() -> dtos::ForeignChainPolicy {
+        dtos::ForeignChainPolicy {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://btc.example.com".to_string(),
+                }),
+            )]),
+        }
+    }
+
     /// Temporarily sets the testing environment so that calls appear
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     /// Returns the `AccountId` of the node used.
@@ -2439,6 +2464,7 @@ mod tests {
             DomainPurpose::ForeignTx,
             &mut rng,
         );
+        contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2514,6 +2540,7 @@ mod tests {
             DomainPurpose::ForeignTx,
             &mut rng,
         );
+        contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let request_args = VerifyForeignTransactionRequestArgs {
             derivation_path: "".to_string(),
             domain_id: DomainId::default().0.into(),
@@ -2575,6 +2602,39 @@ mod tests {
             basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
 
         // When
+        contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
+            derivation_path: "test".to_string(),
+            domain_id: DomainId::default().0.into(),
+            payload_version: 1,
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "not present in the active foreign chain policy")]
+    fn verify_foreign_tx__should_reject_chain_not_in_policy() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _sk) = basic_setup_with_purpose(
+            SignatureScheme::Secp256k1,
+            DomainPurpose::ForeignTx,
+            &mut rng,
+        );
+        // Policy has Solana but not Bitcoin
+        contract.foreign_chain_policy = dtos::ForeignChainPolicy {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Solana,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://sol.example.com".to_string(),
+                }),
+            )]),
+        };
+
+        // When - requesting Bitcoin which is not in the policy
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
             derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
