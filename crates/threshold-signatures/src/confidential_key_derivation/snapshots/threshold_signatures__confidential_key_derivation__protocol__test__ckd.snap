@@ -1,5 +1,5 @@
 ---
-source: crates/threshold-signatures/src/confidential_key_derivation/protocol.rs
+source: src/confidential_key_derivation/protocol.rs
 expression: ckd_output
 ---
 {

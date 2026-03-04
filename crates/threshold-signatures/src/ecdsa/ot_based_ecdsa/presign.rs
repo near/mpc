@@ -285,8 +285,10 @@ mod test {
         )
         .unwrap();
 
-        let mut triple0_iter = triple0_shares.into_iter();
-        let mut triple1_iter = triple1_shares.into_iter();
+        let triple0_map: std::collections::HashMap<_, _> =
+            participants.iter().copied().zip(triple0_shares).collect();
+        let triple1_map: std::collections::HashMap<_, _> =
+            participants.iter().copied().zip(triple1_shares).collect();
 
         // When + Then
         crate::test_utils::assert_buffer_capacity(
@@ -299,8 +301,8 @@ mod test {
                     p_list,
                     p,
                     PresignArguments {
-                        triple0: (triple0_iter.next().unwrap(), triple0_pub.clone()),
-                        triple1: (triple1_iter.next().unwrap(), triple1_pub.clone()),
+                        triple0: (triple0_map[&p].clone(), triple0_pub.clone()),
+                        triple1: (triple1_map[&p].clone(), triple1_pub.clone()),
                         keygen_out,
                         threshold: threshold.into(),
                     },
