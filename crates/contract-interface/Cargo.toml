@@ -5,17 +5,26 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = ["borsh/unstable__schema", "schemars", "bounded-collections/abi"]
+abi = [
+    "borsh/unstable__schema",
+    "bounded-collections/abi",
+    "mpc-crypto-types/abi",
+    "schemars",
+]
+blstrs = ["mpc-crypto-types/blstrs"]
+ed25519-dalek = ["mpc-crypto-types/ed25519-dalek"]
+k256 = ["mpc-crypto-types/k256"]
+near = ["mpc-crypto-types/near"]
 
 [dependencies]
 borsh = { workspace = true }
 bounded-collections = { workspace = true }
-bs58 = { workspace = true }
 derive_more = { workspace = true }
+mpc-crypto-types = { workspace = true }
 serde = { workspace = true }
+serde_repr = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
-thiserror = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 schemars = { workspace = true, optional = true }
@@ -24,7 +33,6 @@ schemars = { workspace = true, optional = true }
 borsh = { workspace = true }
 hex = { workspace = true }
 insta = { workspace = true }
-near-sdk = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 

@@ -64,8 +64,8 @@ pub fn run_batch_random_ot(
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let s = Participant::from(0u32);
     let r = Participant::from(1u32);
-    let comms_s = Comms::new();
-    let comms_r = Comms::new();
+    let comms_s = Comms::with_buffer_capacity(usize::MAX);
+    let comms_r = Comms::with_buffer_capacity(usize::MAX);
 
     run_two_party_protocol(
         s,

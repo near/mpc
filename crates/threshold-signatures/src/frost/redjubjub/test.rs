@@ -5,64 +5,21 @@ use crate::{
 };
 
 use crate::test_utils::{
-    assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
-    one_coordinator_output, run_keygen, run_protocol, run_refresh, run_reshare, GenOutput,
-    GenProtocol, MockCryptoRng,
+    assert_public_key_invariant, build_frost_key_packages_with_dealer, generate_participants,
+    generate_participants_with_random_ids, one_coordinator_output, run_keygen, run_protocol,
+    run_refresh, run_reshare, GenProtocol, MockCryptoRng,
 };
 
-use std::collections::BTreeMap;
 use std::error::Error;
 
 use frost_core::{Field, Scalar};
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 use reddsa::frost::redjubjub::{
-    keys::{generate_with_dealer, IdentifierList, SigningShare},
-    JubjubBlake2b512, JubjubScalarField, Randomizer, SigningKey, VerifyingKey,
+    keys::SigningShare, JubjubBlake2b512, JubjubScalarField, Randomizer, SigningKey, VerifyingKey,
 };
 
 type C = JubjubBlake2b512;
-
-/// this is a centralized key generation
-pub fn build_key_packages_with_dealer(
-    max_signers: u16,
-    min_signers: u16,
-    rng: &mut impl CryptoRngCore,
-) -> GenOutput<C> {
-    let mut identifiers = Vec::with_capacity(max_signers.into());
-    for _ in 0..max_signers {
-        // from 1 to avoid assigning 0 to a ParticipantId
-        identifiers.push(Participant::from(rng.next_u32()));
-    }
-
-    let from_frost_identifiers = identifiers
-        .iter()
-        .map(|&x| (x.to_identifier().unwrap(), x))
-        .collect::<BTreeMap<_, _>>();
-
-    let identifiers_list = from_frost_identifiers.keys().copied().collect::<Vec<_>>();
-
-    let (shares, pubkey_package) = generate_with_dealer(
-        max_signers,
-        min_signers,
-        IdentifierList::Custom(identifiers_list.as_slice()),
-        rng,
-    )
-    .unwrap();
-
-    shares
-        .into_iter()
-        .map(|(id, share)| {
-            (
-                from_frost_identifiers[&id],
-                KeygenOutput {
-                    private_share: *share.signing_share(),
-                    public_key: *pubkey_package.verifying_key(),
-                },
-            )
-        })
-        .collect::<Vec<_>>()
-}
 
 pub fn run_presign(
     participants: &[(Participant, KeygenOutput)],
@@ -339,7 +296,7 @@ fn check_presignatures_terms() {
     let threshold = 10;
     let actual_signers = 10;
 
-    let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
+    let key_packages = build_frost_key_packages_with_dealer(max_signers, threshold, &mut rng);
     // add the presignatures here
     let presignatures =
         run_presign(&key_packages, threshold as usize, actual_signers, rng).unwrap();
@@ -361,7 +318,7 @@ fn check_presignatures_terms_with_less_active_participants() {
     let threshold = 7;
     let actual_signers = 8;
 
-    let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
+    let key_packages = build_frost_key_packages_with_dealer(max_signers, threshold, &mut rng);
     // add the presignatures here
     let presignatures =
         run_presign(&key_packages, threshold as usize, actual_signers, rng).unwrap();

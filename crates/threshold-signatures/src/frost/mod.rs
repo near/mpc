@@ -40,6 +40,9 @@ pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
     pub commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>>,
 }
 
+/// Maximum incoming buffer entries for the FROST presign protocol.
+pub(crate) const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
+
 /// Runs Presigning of either `EdDSA` or `RedDSA`
 pub fn presign<C>(
     participants: &[Participant],
@@ -76,7 +79,7 @@ where
         });
     }
 
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
     let fut = do_presign(
         ctx.shared_channel(),
         participants,
@@ -157,4 +160,44 @@ pub fn assert_sign_inputs(
         });
     }
     Ok(participants)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test_utils::{assert_buffer_capacity, generate_participants, MockCryptoRng};
+    use frost_ed25519::Ed25519Sha512;
+    use rand::SeedableRng;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    #[case(10, 4)]
+    fn test_presign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        // Given
+        let participants = generate_participants(num_participants);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let keygen_result = crate::test_utils::run_keygen::<Ed25519Sha512, MockCryptoRng>(
+            &participants,
+            threshold,
+            &mut rng,
+        );
+
+        // When + Then
+        assert_buffer_capacity(
+            &participants,
+            &mut rng,
+            |comms, p_list, p, rng_p| {
+                let private_share = keygen_result
+                    .iter()
+                    .find(|(kp, _)| *kp == p)
+                    .unwrap()
+                    .1
+                    .private_share;
+                do_presign::<Ed25519Sha512>(comms.shared_channel(), p_list, p, private_share, rng_p)
+            },
+            |_| FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES,
+        );
+    }
 }

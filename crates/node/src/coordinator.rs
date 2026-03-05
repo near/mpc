@@ -39,6 +39,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -292,13 +293,15 @@ where
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
+        let threshold: usize = mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                mpc_config.participants.threshold as usize,
+                threshold,
             )
             .await?;
         } else {
@@ -307,7 +310,7 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                mpc_config.participants.threshold as usize,
+                threshold,
             )
             .await?;
         }
@@ -515,7 +518,7 @@ where
 
                 sender
                     .wait_for_ready(
-                        running_mpc_config.participants.threshold as usize,
+                        running_mpc_config.participants.threshold.try_into()?,
                         &running_participant_ids,
                     )
                     .await?;
@@ -691,10 +694,11 @@ where
             None
         };
 
+        let new_threshold: usize = mpc_config.participants.threshold.try_into()?;
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: mpc_config.participants.threshold as usize,
+            new_threshold: ReconstructionLowerBound::from(new_threshold),
             old_participants: current_running_state.participants,
         });
 
