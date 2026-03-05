@@ -249,9 +249,3 @@ impl MpcBinaryConfig {
         ]
     }
 }
-
-/// Partial response https://auth.docker.io/token
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DockerTokenResponse {
-    pub token: String,
-}

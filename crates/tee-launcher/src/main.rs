@@ -10,12 +10,14 @@ use launcher_interface::types::ApprovedHashesFile;
 use mpc_primitives::hash::MpcDockerImageHash;
 
 use contants::*;
+use docker_types::*;
 use error::*;
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
 use types::*;
 use url::Url;
 
 mod contants;
+mod docker_types;
 mod error;
 mod types;
 
@@ -142,12 +144,12 @@ fn has_control_chars(s: &str) -> bool {
     false
 }
 
-// ---------------------------------------------------------------------------
-// Docker registry communication
-// ---------------------------------------------------------------------------
-
-async fn get_manifest_digest(config: &LauncherConfig) -> Result<String, LauncherError> {
+async fn get_manifest_digest(
+    config: &LauncherConfig,
+    expected_image_digest: &MpcDockerImageHash,
+) -> Result<String, LauncherError> {
     let tags = config.image_tags.clone();
+    let expected_digest = format!("sha256:{}", expected_image_digest.as_hex());
 
     // We need an authorization token to fetch manifests.
     // TODO: this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint
@@ -208,38 +210,35 @@ async fn get_manifest_digest(config: &LauncherConfig) -> Result<String, Launcher
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_string());
 
-                let manifest: serde_json::Value = resp
+                let manifest: ManifestResponse = resp
                     .json()
                     .await
                     .map_err(|e| LauncherError::RegistryResponseParse(e.to_string()))?;
 
-                let media_type = manifest["mediaType"].as_str().unwrap_or("");
-                match media_type {
-                    "application/vnd.oci.image.index.v1+json" => {
+                match manifest {
+                    ManifestResponse::ImageIndex { manifests } => {
                         // Multi-platform manifest; scan for amd64/linux
-                        if let Some(manifests) = manifest["manifests"].as_array() {
-                            for m in manifests {
-                                let arch = m["platform"]["architecture"].as_str().unwrap_or("");
-                                let os = m["platform"]["os"].as_str().unwrap_or("");
-                                if arch == "amd64" && os == "linux" {
-                                    if let Some(digest) = m["digest"].as_str() {
-                                        tags.push_back(digest.to_string());
-                                    }
-                                }
-                            }
-                        }
+                        manifests
+                            .into_iter()
+                            .filter(|manifest| {
+                                manifest.platform.architecture == "amd64"
+                                    && manifest.platform.os == "linux"
+                            })
+                            .for_each(|manifest| tags.push_back(manifest.digest));
                     }
-                    // TODO:
-                    // "application/vnd.docker.distribution.manifest.v2+json"
-                    // | "application/vnd.oci.image.manifest.v1+json" => {
-                    //     let config_digest = manifest["config"]["digest"].as_str().unwrap_or("");
-                    //     if config_digest == config. {
-                    //         if let Some(digest) = content_digest {
-                    //             return Ok(digest);
-                    //         }
-                    //     }
-                    // }
-                    _ => {}
+                    ManifestResponse::DockerV2 { config }
+                    | ManifestResponse::OciManifest { config } => {
+                        let incorrect_config_digest = config.digest == expected_digest;
+                        if incorrect_config_digest {
+                            continue;
+                        }
+
+                        let Some(digest) = content_digest else {
+                            continue;
+                        };
+
+                        return Ok(digest);
+                    }
                 }
             }
             Err(e) => {
