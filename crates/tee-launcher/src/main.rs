@@ -24,6 +24,8 @@ mod types;
 const DOCKER_AUTH_ACCEPT_HEADER_VALUE: HeaderValue =
     HeaderValue::from_static("application/vnd.docker.distribution.manifest.v2+json");
 
+const DOCKER_CONTENT_DIGEST_HEADER: &str = "Docker-Content-Digest";
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -82,18 +84,18 @@ async fn run() -> Result<(), LauncherError> {
                         }
                     })?;
 
-                if let Some(override_image) = dstack_config.launcher_config.mpc_hash_override {
+                if let Some(override_image) = &dstack_config.launcher_config.mpc_hash_override {
                     tracing::info!(?override_image, "override mpc image hash provided");
 
                     let override_image_is_allowed = approved_hashes_on_disk
                         .approved_hashes
-                        .contains(&override_image);
+                        .contains(override_image);
 
                     if !override_image_is_allowed {
                         panic!("TODO: panic if override image is not allowed?");
                     }
 
-                    override_image
+                    override_image.clone()
                 } else {
                     approved_hashes_on_disk.newest_approved_hash().clone()
                 }
@@ -101,7 +103,7 @@ async fn run() -> Result<(), LauncherError> {
         }
     };
 
-    let () = check_image_digest_exists_on_docker_hub(image_hash.clone())?;
+    let () = validate_image_hash(&dstack_config.launcher_config, image_hash.clone()).await?;
 
     let should_extend_rtmr_3 = args.platform == Platform::Tee;
 
@@ -148,7 +150,7 @@ async fn get_manifest_digest(
     config: &LauncherConfig,
     expected_image_digest: &MpcDockerImageHash,
 ) -> Result<String, LauncherError> {
-    let tags = config.image_tags.clone();
+    let mut tags: VecDeque<String> = config.image_tags.iter().cloned().collect();
     let expected_digest = format!("sha256:{}", expected_image_digest.as_hex());
 
     // We need an authorization token to fetch manifests.
@@ -176,8 +178,6 @@ async fn get_manifest_digest(
         .await
         .map_err(|e| LauncherError::RegistryAuthFailed(e.to_string()))?;
 
-    let mut tags: VecDeque<String> = tags.into_iter().collect();
-
     while let Some(tag) = tags.pop_front() {
         let manifest_url: Url = format!(
             "https://{}/v2/{}/manifests/{tag}",
@@ -204,12 +204,7 @@ async fn get_manifest_digest(
         .await
         {
             Ok(resp) => {
-                let content_digest = resp
-                    .headers()
-                    .get("Docker-Content-Digest")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string());
-
+                let response_headers = resp.headers().clone();
                 let manifest: ManifestResponse = resp
                     .json()
                     .await
@@ -233,11 +228,15 @@ async fn get_manifest_digest(
                             continue;
                         }
 
-                        let Some(digest) = content_digest else {
+                        let Some(content_digest) = response_headers
+                            .get(DOCKER_CONTENT_DIGEST_HEADER)
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_string())
+                        else {
                             continue;
                         };
 
-                        return Ok(digest);
+                        return Ok(content_digest);
                     }
                 }
             }
@@ -301,14 +300,22 @@ async fn request_until_success(
     })
 }
 
-fn check_image_digest_exists_on_docker_hub(
+/// Returns if the given image digest is valid (pull + manifest + digest match).
+///    Does NOT extend RTMR3 and does NOT run the container.
+async fn validate_image_hash(
+    launcher_config: &LauncherConfig,
     image_hash: MpcDockerImageHash,
 ) -> Result<(), ImageDigestValidationFailed> {
-    let image_hash_name = format!("sha256:{}", image_hash.as_hex());
+    let manifest_digest = get_manifest_digest(launcher_config, &image_hash)
+        .await
+        .expect("TODO: handle error");
+    let image_name = &launcher_config.image_name;
+
+    let name_and_digest = format!("{image_name}@{manifest_digest}");
 
     // Pull
     let pull = Command::new("docker")
-        .args(["pull", &image_hash_name])
+        .args(["pull", &name_and_digest])
         .output()
         .map_err(|e| ImageDigestValidationFailed::DockerPullFailed(e.to_string()))?;
 
@@ -326,7 +333,7 @@ fn check_image_digest_exists_on_docker_hub(
             "inspect",
             "--format",
             "{{index .ID}}",
-            &image_hash_name,
+            &name_and_digest,
         ])
         .output()
         .map_err(|e| ImageDigestValidationFailed::DockerInspectFailed(e.to_string()))?;
@@ -339,11 +346,12 @@ fn check_image_digest_exists_on_docker_hub(
     }
 
     let pulled_digest = String::from_utf8_lossy(&inspect.stdout).trim().to_string();
-    if pulled_digest != image_hash_name {
+    let image_hash_string = image_hash.as_hex();
+    if pulled_digest != image_hash_string {
         return Err(
             ImageDigestValidationFailed::PulledImageHasMismatchedDigest {
                 pulled_digest,
-                expected_digest: image_hash_name,
+                expected_digest: image_hash_string,
             },
         );
     }
