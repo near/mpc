@@ -574,12 +574,20 @@ pub async fn resharing_leader(
 
         match timeout(
             MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
-            key_event_receiver.wait_for(|contract_event| contract_event.id == key_event_id),
+            key_event_receiver.wait_for(|contract_event| contract_event.started),
         )
         .await
         {
             Ok(res) => {
-                res?;
+                let contract_key_event_id = res?.id;
+                if contract_key_event_id != key_event_id {
+                    tracing::warn!(
+                        "Activated key event {:?} does not match expected {:?}; retrying.",
+                        contract_key_event_id,
+                        key_event_id
+                    );
+                    continue;
+                }
             }
             Err(_) => {
                 tracing::warn!(
@@ -723,6 +731,7 @@ mod tests {
     #[rstest::rstest]
     #[tokio::test(start_paused = true)]
     #[timeout(Duration::from_millis(100))]
+    #[allow(non_snake_case)]
     async fn resharing_leader__should_retry_after_timeout_if_computation_is_not_started() {
         // Given
         // Simulate the expired/idle contract state: started=false but ID already
