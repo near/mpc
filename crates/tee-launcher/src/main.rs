@@ -228,7 +228,7 @@ async fn get_manifest_digest(
                     }
                     ManifestResponse::DockerV2 { config }
                     | ManifestResponse::OciManifest { config } => {
-                        let incorrect_config_digest = config.digest == expected_digest;
+                        let incorrect_config_digest = config.digest != expected_digest;
                         if incorrect_config_digest {
                             continue;
                         }
