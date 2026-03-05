@@ -78,7 +78,7 @@ pub struct VerifyForeignTxRequest {
     pub receipt_id: CryptoHash,
     pub request: dtos::ForeignChainRpcRequest,
     pub tweak: dtos::Tweak,
-    pub payload_version: u8,
+    pub payload_version: dtos::ForeignTxPayloadVersion,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
     pub domain_id: DomainId,

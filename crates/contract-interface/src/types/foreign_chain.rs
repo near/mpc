@@ -11,6 +11,50 @@ use crate::types::primitives::{AccountId, DomainId, Tweak};
 #[derive(
     Debug,
     Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
+/// Serialized as a `u8` discriminant via `serde_repr` and `#[borsh(use_discriminant = true)]`.
+/// The `JsonSchema` impl below delegates to `u8` because schemars doesn't understand `serde_repr`.
+/// The schema and serialization need to be kept in sync so that our ABI snapshot test captures
+/// breaking changes.
+#[non_exhaustive]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum ForeignTxPayloadVersion {
+    V1 = 1,
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for ForeignTxPayloadVersion {
+    fn schema_name() -> String {
+        u8::schema_name()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        u8::json_schema(generator)
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
     Eq,
     PartialEq,
     Ord,
@@ -29,7 +73,7 @@ pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub derivation_path: String,
     pub domain_id: DomainId,
-    pub payload_version: u8,
+    pub payload_version: ForeignTxPayloadVersion,
 }
 
 #[derive(
@@ -53,7 +97,7 @@ pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
-    pub payload_version: u8,
+    pub payload_version: ForeignTxPayloadVersion,
 }
 
 #[derive(
@@ -1042,5 +1086,39 @@ mod tests {
 
         // Then
         assert_ne!(hash_a, hash_b);
+    }
+
+    #[rstest]
+    #[case(ForeignTxPayloadVersion::V1, 1)]
+    fn foreign_tx_payload_version__serializes_as_u8(
+        #[case] version: ForeignTxPayloadVersion,
+        #[case] expected: u8,
+    ) {
+        assert_eq!(
+            serde_json::to_value(version).unwrap(),
+            serde_json::json!(expected)
+        );
+        assert_eq!(borsh::to_vec(&version).unwrap(), vec![expected]);
+    }
+
+    #[rstest]
+    #[case(1, ForeignTxPayloadVersion::V1)]
+    fn foreign_tx_payload_version__deserializes_from_u8(
+        #[case] input: u8,
+        #[case] expected: ForeignTxPayloadVersion,
+    ) {
+        let json: ForeignTxPayloadVersion =
+            serde_json::from_value(serde_json::json!(input)).unwrap();
+        let borsh: ForeignTxPayloadVersion = borsh::from_slice(&[input]).unwrap();
+        assert_eq!(json, expected);
+        assert_eq!(borsh, expected);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(2)]
+    fn foreign_tx_payload_version__rejects_unknown_version(#[case] input: u8) {
+        serde_json::from_value::<ForeignTxPayloadVersion>(serde_json::json!(input)).unwrap_err();
+        borsh::from_slice::<ForeignTxPayloadVersion>(&[input]).unwrap_err();
     }
 }
