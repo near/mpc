@@ -176,6 +176,7 @@ impl TeeState {
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.allowed_launcher_compose_hashes,
+            &mpc_attestation::attestation::default_measurements(),
         )?;
 
         let tls_pk = node_id.tls_public_key.clone();

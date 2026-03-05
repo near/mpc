@@ -2,21 +2,19 @@ use std::path::Path;
 
 use anyhow::Context;
 use attestation::{
-    app_compose::AppCompose,
-    attestation::{DstackAttestation, GetSingleEvent as _, VerificationError},
+    attestation::VerificationError,
     measurements::{ExpectedMeasurements, Measurements},
     tcb_info::TcbInfo,
 };
 use include_measurements::include_measurements;
+use mpc_attestation::attestation::{ValidatedDstackAttestation, VerifiedAttestation};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use node_types::http_server::StaticWebData;
 use sha2::{Digest, Sha256};
 
 use crate::cli::VerifyArgs;
 
-const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const KEY_PROVIDER_EVENT: &str = "key-provider";
-const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 
 /// Result of a successful verification.
 #[derive(Debug)]
@@ -30,106 +28,68 @@ pub fn run_verification(
     static_data: &StaticWebData,
     args: &VerifyArgs,
 ) -> Result<VerificationResult, VerificationError> {
+    let current_timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before UNIX epoch")
+        .as_secs();
+
+    verify_at_timestamp(static_data, args, current_timestamp)
+}
+
+pub fn verify_at_timestamp(
+    static_data: &StaticWebData,
+    args: &VerifyArgs,
+    timestamp_seconds: u64,
+) -> Result<VerificationResult, VerificationError> {
     let attestation = static_data.tee_participant_info.as_ref().ok_or_else(|| {
         VerificationError::Custom(
             "tee_participant_info is null in the response — node has no attestation".into(),
         )
     })?;
 
-    match attestation {
-        mpc_attestation::attestation::Attestation::Dstack(dstack_attestation) => {
-            verify_dstack(static_data, dstack_attestation, args)
-        }
-        mpc_attestation::attestation::Attestation::Mock(_) => Err(VerificationError::Custom(
-            "attestation is a Mock — cannot verify mock attestations".into(),
-        )),
-    }
-}
-
-fn verify_dstack(
-    static_data: &StaticWebData,
-    dstack_attestation: &DstackAttestation,
-    args: &VerifyArgs,
-) -> Result<VerificationResult, VerificationError> {
-    let current_timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock before UNIX epoch")
-        .as_secs();
-
-    verify_dstack_at_timestamp(static_data, dstack_attestation, args, current_timestamp)
-}
-
-pub fn verify_dstack_at_timestamp(
-    static_data: &StaticWebData,
-    dstack_attestation: &DstackAttestation,
-    args: &VerifyArgs,
-    timestamp_seconds: u64,
-) -> Result<VerificationResult, VerificationError> {
-    // 1. Extract and verify MPC image hash from event log
-    let mpc_image_hash = extract_mpc_image_hash(&dstack_attestation.tcb_info)?;
-    let allowed_image_hashes = parse_allowed_image_hashes(&args.allowed_image_hashes)?;
-    verify_hash_in_list("MPC image", &mpc_image_hash, &allowed_image_hashes)?;
-
-    // 2. Extract and verify launcher compose hash from app_compose
-    let launcher_compose_hash = extract_launcher_compose_hash(&dstack_attestation.tcb_info)?;
-    let allowed_compose_hashes = compute_allowed_compose_hashes(&args.launcher_compose_file)
-        .map_err(|e| {
-            VerificationError::Custom(format!("failed to read launcher compose file: {e}"))
-        })?;
-    verify_hash_in_list(
-        "launcher compose",
-        &launcher_compose_hash,
-        &allowed_compose_hashes,
-    )?;
-
-    // 3. Build expected report data from the node's public keys
+    // Build expected report data from the node's public keys
     let tls_key_bytes = static_data.near_p2p_public_key.to_bytes();
     let account_key_bytes = static_data.near_signer_public_key.to_bytes();
     let report_data =
         mpc_attestation::report_data::ReportDataV1::new(tls_key_bytes, account_key_bytes);
     let report_data: mpc_attestation::report_data::ReportData = report_data.into();
 
-    // 4. Load measurements (custom file or compiled-in defaults)
+    // Parse CLI arguments into allowed hash lists
+    let allowed_image_hashes = parse_allowed_image_hashes(&args.allowed_image_hashes)?;
+    let allowed_compose_hashes = compute_allowed_compose_hashes(&args.launcher_compose_file)
+        .map_err(|e| {
+            VerificationError::Custom(format!("failed to read launcher compose file: {e}"))
+        })?;
+
+    // Load measurements (custom file or compiled-in defaults)
     let measurements = load_measurements(&args.expected_measurements).map_err(|e| {
         VerificationError::Custom(format!("failed to load expected measurements: {e}"))
     })?;
 
-    // 5. Run core DCAP verification
-    dstack_attestation.verify(report_data.into(), timestamp_seconds, &measurements)?;
+    // Single verify call — same verification logic as the contract and node
+    let verified = attestation.verify(
+        report_data.into(),
+        timestamp_seconds,
+        &allowed_image_hashes,
+        &allowed_compose_hashes,
+        &measurements,
+    )?;
 
-    let expiry_timestamp_seconds = timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
-
-    Ok(VerificationResult {
-        mpc_image_hash,
-        launcher_compose_hash,
-        expiry_timestamp_seconds,
-    })
-}
-
-fn extract_mpc_image_hash(tcb_info: &TcbInfo) -> Result<MpcDockerImageHash, VerificationError> {
-    let event_payload = &tcb_info
-        .get_single_event(MPC_IMAGE_HASH_EVENT)?
-        .event_payload;
-
-    let hash_bytes: Vec<u8> = hex::decode(event_payload).map_err(|err| {
-        VerificationError::Custom(format!("MPC image hash is not valid hex: {err}"))
-    })?;
-
-    let hash_bytes: [u8; 32] = hash_bytes
-        .try_into()
-        .map_err(|_| VerificationError::Custom("MPC image hash is not 32 bytes".into()))?;
-
-    Ok(MpcDockerImageHash::from(hash_bytes))
-}
-
-fn extract_launcher_compose_hash(
-    tcb_info: &TcbInfo,
-) -> Result<LauncherDockerComposeHash, VerificationError> {
-    let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
-        .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
-
-    let hash_bytes: [u8; 32] = Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
-    Ok(LauncherDockerComposeHash::from(hash_bytes))
+    // Extract results from the verified attestation
+    match verified {
+        VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash,
+            launcher_compose_hash,
+            expiry_timestamp_seconds,
+        }) => Ok(VerificationResult {
+            mpc_image_hash,
+            launcher_compose_hash,
+            expiry_timestamp_seconds,
+        }),
+        VerifiedAttestation::Mock(_) => Err(VerificationError::Custom(
+            "attestation is a Mock — cannot produce verification result".into(),
+        )),
+    }
 }
 
 fn parse_allowed_image_hashes(
@@ -153,25 +113,6 @@ fn compute_allowed_compose_hashes(
 
     let hash_bytes: [u8; 32] = Sha256::digest(contents.as_bytes()).into();
     Ok(vec![LauncherDockerComposeHash::from(hash_bytes)])
-}
-
-fn verify_hash_in_list<T: PartialEq + AsRef<[u8; 32]>>(
-    name: &str,
-    hash: &T,
-    allowed: &[T],
-) -> Result<(), VerificationError> {
-    if allowed.is_empty() {
-        return Err(VerificationError::Custom(format!(
-            "the allowed {name} hashes list is empty"
-        )));
-    }
-    if !allowed.contains(hash) {
-        return Err(VerificationError::Custom(format!(
-            "{name} hash {} is not in the allowed list",
-            hex::encode(hash.as_ref())
-        )));
-    }
-    Ok(())
 }
 
 fn load_measurements(
@@ -231,11 +172,7 @@ fn parse_measurements_from_json(json: &str) -> anyhow::Result<ExpectedMeasuremen
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_utils::attestation::{TEST_MPC_IMAGE_DIGEST_HEX, TEST_TCB_INFO_STRING};
-
-    fn test_tcb_info() -> TcbInfo {
-        serde_json::from_str(TEST_TCB_INFO_STRING).unwrap()
-    }
+    use test_utils::attestation::TEST_TCB_INFO_STRING;
 
     #[test]
     fn parse_allowed_image_hashes_valid_hex() {
@@ -266,62 +203,6 @@ mod tests {
     fn parse_allowed_image_hashes_wrong_length() {
         let hashes = vec!["abcd".to_string()];
         parse_allowed_image_hashes(&hashes).unwrap_err();
-    }
-
-    #[test]
-    fn verify_hash_in_list_match() {
-        let hash = MpcDockerImageHash::from([1u8; 32]);
-        let allowed = vec![MpcDockerImageHash::from([1u8; 32])];
-        verify_hash_in_list("test", &hash, &allowed).unwrap();
-    }
-
-    #[test]
-    fn verify_hash_in_list_no_match() {
-        let hash = MpcDockerImageHash::from([1u8; 32]);
-        let allowed = vec![MpcDockerImageHash::from([2u8; 32])];
-        let err = verify_hash_in_list("test", &hash, &allowed).unwrap_err();
-        match err {
-            VerificationError::Custom(msg) => assert!(msg.contains("not in the allowed list")),
-            other => panic!("unexpected error: {other}"),
-        }
-    }
-
-    #[test]
-    fn verify_hash_in_list_empty() {
-        let hash = MpcDockerImageHash::from([1u8; 32]);
-        let allowed: Vec<MpcDockerImageHash> = vec![];
-        let err = verify_hash_in_list("test", &hash, &allowed).unwrap_err();
-        match err {
-            VerificationError::Custom(msg) => assert!(msg.contains("list is empty")),
-            other => panic!("unexpected error: {other}"),
-        }
-    }
-
-    #[test]
-    fn verify_hash_in_list_multiple_with_match() {
-        let hash = MpcDockerImageHash::from([2u8; 32]);
-        let allowed = vec![
-            MpcDockerImageHash::from([1u8; 32]),
-            MpcDockerImageHash::from([2u8; 32]),
-            MpcDockerImageHash::from([3u8; 32]),
-        ];
-        verify_hash_in_list("test", &hash, &allowed).unwrap();
-    }
-
-    #[test]
-    fn extract_mpc_image_hash_from_test_tcb_info() {
-        let tcb_info = test_tcb_info();
-        let hash = extract_mpc_image_hash(&tcb_info).unwrap();
-        let expected: MpcDockerImageHash = TEST_MPC_IMAGE_DIGEST_HEX.parse().unwrap();
-        assert_eq!(hash, expected);
-    }
-
-    #[test]
-    fn extract_launcher_compose_hash_from_test_tcb_info() {
-        let tcb_info = test_tcb_info();
-        let hash = extract_launcher_compose_hash(&tcb_info).unwrap();
-        // The hash should be a valid 32-byte SHA256 digest
-        assert_ne!(*hash.as_ref(), [0u8; 32]);
     }
 
     #[test]

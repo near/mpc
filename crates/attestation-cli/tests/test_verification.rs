@@ -37,14 +37,9 @@ fn make_verify_args(
 }
 
 #[test]
-fn full_verification_succeeds_with_valid_mock_attestation() {
+fn full_verification_succeeds_with_valid_attestation() {
     let attestation = mock_dstack_attestation();
-
-    let Attestation::Dstack(ref dstack) = attestation else {
-        panic!("expected Dstack attestation");
-    };
-
-    let static_data = make_static_web_data(attestation.clone());
+    let static_data = make_static_web_data(attestation);
 
     // Write the launcher compose to a temp file
     let dir = tempfile::tempdir().unwrap();
@@ -53,12 +48,7 @@ fn full_verification_succeeds_with_valid_mock_attestation() {
 
     let args = make_verify_args(&compose_path, TEST_MPC_IMAGE_DIGEST_HEX, None);
 
-    let result = verify::verify_dstack_at_timestamp(
-        &static_data,
-        dstack,
-        &args,
-        VALID_ATTESTATION_TIMESTAMP,
-    );
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
     assert!(
         result.is_ok(),
@@ -76,11 +66,7 @@ fn full_verification_succeeds_with_valid_mock_attestation() {
 #[test]
 fn verification_fails_with_wrong_image_hash() {
     let attestation = mock_dstack_attestation();
-    let Attestation::Dstack(ref dstack) = attestation else {
-        panic!("expected Dstack attestation");
-    };
-
-    let static_data = make_static_web_data(attestation.clone());
+    let static_data = make_static_web_data(attestation);
 
     let dir = tempfile::tempdir().unwrap();
     let compose_path = dir.path().join("launcher-compose.yaml");
@@ -89,17 +75,12 @@ fn verification_fails_with_wrong_image_hash() {
     let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
     let args = make_verify_args(&compose_path, wrong_hash, None);
 
-    let result = verify::verify_dstack_at_timestamp(
-        &static_data,
-        dstack,
-        &args,
-        VALID_ATTESTATION_TIMESTAMP,
-    );
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("not in the allowed list"),
+        err.contains("not in the allowed"),
         "unexpected error: {err}"
     );
 }
@@ -107,11 +88,7 @@ fn verification_fails_with_wrong_image_hash() {
 #[test]
 fn verification_fails_with_wrong_compose_file() {
     let attestation = mock_dstack_attestation();
-    let Attestation::Dstack(ref dstack) = attestation else {
-        panic!("expected Dstack attestation");
-    };
-
-    let static_data = make_static_web_data(attestation.clone());
+    let static_data = make_static_web_data(attestation);
 
     let dir = tempfile::tempdir().unwrap();
     let compose_path = dir.path().join("launcher-compose.yaml");
@@ -119,17 +96,12 @@ fn verification_fails_with_wrong_compose_file() {
 
     let args = make_verify_args(&compose_path, TEST_MPC_IMAGE_DIGEST_HEX, None);
 
-    let result = verify::verify_dstack_at_timestamp(
-        &static_data,
-        dstack,
-        &args,
-        VALID_ATTESTATION_TIMESTAMP,
-    );
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("not in the allowed list"),
+        err.contains("not in the allowed"),
         "unexpected error: {err}"
     );
 }
@@ -192,11 +164,7 @@ fn run_verification_rejects_mock_attestation() {
 #[test]
 fn verification_with_custom_measurements_file() {
     let attestation = mock_dstack_attestation();
-    let Attestation::Dstack(ref dstack) = attestation else {
-        panic!("expected Dstack attestation");
-    };
-
-    let static_data = make_static_web_data(attestation.clone());
+    let static_data = make_static_web_data(attestation);
 
     let dir = tempfile::tempdir().unwrap();
     let compose_path = dir.path().join("launcher-compose.yaml");
@@ -216,12 +184,7 @@ fn verification_with_custom_measurements_file() {
         Some(measurements_path),
     );
 
-    let result = verify::verify_dstack_at_timestamp(
-        &static_data,
-        dstack,
-        &args,
-        VALID_ATTESTATION_TIMESTAMP,
-    );
+    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
     assert!(
         result.is_ok(),
