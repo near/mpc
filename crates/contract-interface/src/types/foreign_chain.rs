@@ -24,13 +24,32 @@ use crate::types::primitives::{AccountId, DomainId, Tweak};
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
+/// Serialized as a `u8` discriminant via `serde_repr` and `#[borsh(use_discriminant = true)]`.
+/// The `JsonSchema` impl below delegates to `u8` because schemars doesn't understand `serde_repr`.
+/// The schema and serialization need to be kept in sync so that our ABI snapshot test captures
+/// breaking changes.
 #[non_exhaustive]
 #[repr(u8)]
 #[borsh(use_discriminant = true)]
 pub enum ForeignTxPayloadVersion {
     V1 = 1,
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for ForeignTxPayloadVersion {
+    fn schema_name() -> String {
+        u8::schema_name()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        u8::json_schema(generator)
+    }
 }
 
 #[derive(
