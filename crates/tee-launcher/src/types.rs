@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr};
 use std::num::NonZeroU16;
@@ -9,6 +10,8 @@ use bounded_collections::NonEmptyVec;
 use clap::{Parser, ValueEnum};
 use mpc_primitives::hash::MpcDockerImageHash;
 use serde::{Deserialize, Serialize};
+
+use crate::env_validation;
 
 /// CLI arguments parsed from environment variables via clap.
 #[derive(Parser, Debug)]
@@ -92,6 +95,11 @@ pub struct MpcBinaryConfig {
     // rust
     pub rust_backtrace: RustBacktrace,
     pub rust_log: RustLog,
+    /// Additional env vars not covered by the typed fields above.
+    /// Allows operators to pass new `MPC_*` vars without a launcher rebuild.
+    /// Keys and values are validated at emission time in `env_vars()`.
+    #[serde(flatten)]
+    pub extra_env: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,22 +232,69 @@ impl fmt::Display for RustLog {
 }
 
 impl MpcBinaryConfig {
-    pub fn env_vars(&self) -> Vec<(&'static str, String)> {
-        vec![
-            ("MPC_ACCOUNT_ID", self.mpc_account_id.clone()),
-            ("MPC_LOCAL_ADDRESS", self.mpc_local_address.to_string()),
-            ("MPC_SECRET_STORE_KEY", self.mpc_secret_key_store.clone()),
-            ("MPC_CONTRACT_ID", self.mpc_contract_id.clone()),
-            ("MPC_ENV", self.mpc_env.to_string()),
-            ("MPC_HOME_DIR", self.mpc_home_dir.display().to_string()),
-            ("MPC_RESPONDER_ID", self.mpc_responder_id.clone()),
+    /// Returns all env vars to pass to the MPC container.
+    ///
+    /// Typed fields are emitted first (deterministic order), followed by
+    /// validated extras from `extra_env`. All keys and values are validated
+    /// uniformly before returning.
+    pub fn env_vars(&self) -> Result<Vec<(String, String)>, crate::error::LauncherError> {
+        let mut vars: Vec<(String, String)> = vec![
+            ("MPC_ACCOUNT_ID".into(), self.mpc_account_id.clone()),
             (
-                "MPC_BACKUP_ENCRYPTION_KEY_HEX",
+                "MPC_LOCAL_ADDRESS".into(),
+                self.mpc_local_address.to_string(),
+            ),
+            (
+                "MPC_SECRET_STORE_KEY".into(),
+                self.mpc_secret_key_store.clone(),
+            ),
+            ("MPC_CONTRACT_ID".into(), self.mpc_contract_id.clone()),
+            ("MPC_ENV".into(), self.mpc_env.to_string()),
+            (
+                "MPC_HOME_DIR".into(),
+                self.mpc_home_dir.display().to_string(),
+            ),
+            ("MPC_RESPONDER_ID".into(), self.mpc_responder_id.clone()),
+            (
+                "MPC_BACKUP_ENCRYPTION_KEY_HEX".into(),
                 self.mpc_backup_encryption_key_hex.clone(),
             ),
-            ("NEAR_BOOT_NODES", self.near_boot_nodes.clone()),
-            ("RUST_BACKTRACE", self.rust_backtrace.to_string()),
-            ("RUST_LOG", self.rust_log.to_string()),
-        ]
+            ("NEAR_BOOT_NODES".into(), self.near_boot_nodes.clone()),
+            ("RUST_BACKTRACE".into(), self.rust_backtrace.to_string()),
+            ("RUST_LOG".into(), self.rust_log.to_string()),
+        ];
+
+        // Keys already emitted via typed fields — skip duplicates from extra_env.
+        let typed_keys: std::collections::HashSet<String> =
+            vars.iter().map(|(k, _)| k.clone()).collect();
+
+        if self.extra_env.len() > env_validation::MAX_PASSTHROUGH_ENV_VARS {
+            return Err(crate::error::LauncherError::TooManyEnvVars(
+                env_validation::MAX_PASSTHROUGH_ENV_VARS,
+            ));
+        }
+
+        // BTreeMap iteration is sorted, giving deterministic output.
+        for (key, value) in &self.extra_env {
+            if typed_keys.contains(key.as_str()) {
+                continue;
+            }
+            env_validation::validate_env_key(key)?;
+            vars.push((key.clone(), value.clone()));
+        }
+
+        // Validate ALL env vars uniformly (typed + extra) and enforce aggregate caps.
+        let mut total_bytes: usize = 0;
+        for (key, value) in &vars {
+            env_validation::validate_env_value(key, value)?;
+            total_bytes += key.len() + 1 + value.len();
+        }
+        if total_bytes > env_validation::MAX_TOTAL_ENV_BYTES {
+            return Err(crate::error::LauncherError::EnvPayloadTooLarge(
+                env_validation::MAX_TOTAL_ENV_BYTES,
+            ));
+        }
+
+        Ok(vars)
     }
 }

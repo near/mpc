@@ -54,6 +54,9 @@ pub enum LauncherError {
     #[error("Total env payload too large (>{0} bytes)")]
     EnvPayloadTooLarge(usize),
 
+    #[error("Env var '{key}' has unsafe value: {reason}")]
+    UnsafeEnvValue { key: String, reason: String },
+
     #[error("Unsafe docker command: LD_PRELOAD detected")]
     LdPreloadDetected,
 

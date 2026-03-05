@@ -18,6 +18,7 @@ use url::Url;
 
 mod contants;
 mod docker_types;
+mod env_validation;
 mod error;
 mod types;
 
@@ -129,21 +130,6 @@ async fn run() -> Result<(), LauncherError> {
     )?;
 
     Ok(())
-}
-
-// TODO: this needs to be checked.
-fn has_control_chars(s: &str) -> bool {
-    let control_chars = ['\n', '\r', '\0'];
-
-    for character in s.chars() {
-        if control_chars.contains(&character) {
-            return true;
-        }
-        if (character as u32) < 0x20 && character != '\t' {
-            return true;
-        }
-    }
-    false
 }
 
 async fn get_manifest_digest(
@@ -388,7 +374,7 @@ fn build_docker_cmd(
         ]);
     }
 
-    for (key, value) in mpc_config.env_vars() {
+    for (key, value) in mpc_config.env_vars()? {
         cmd.extend(["--env".into(), format!("{key}={value}")]);
     }
 
