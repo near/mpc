@@ -122,11 +122,11 @@ EOF
 
   echo "Creating mpc-contract account"
   run_quiet_on_success "near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
-  run_quiet_on_success "near account view-account-summary mpc-contract.test.near network-config mpc-localnet now"
+  run_quiet_on_success_with_retries "near account view-account-summary mpc-contract.test.near network-config mpc-localnet now"
 
   echo "Deploying mpc-contract"
   run_quiet_on_success "near contract deploy mpc-contract.test.near use-file '$MPC_CONTRACT_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract inspect mpc-contract.test.near network-config mpc-localnet now"
+  run_quiet_on_success_with_retries "near contract inspect mpc-contract.test.near network-config mpc-localnet now"
 
   echo "Creating mpc-node accounts"
 
@@ -214,7 +214,7 @@ EOF
 
   echo "Initializing contract"
   run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near init file-args ${init_args} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now"
+  run_quiet_on_success_with_retries "near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now"
 
   echo "Adding domains to contract"
 
@@ -331,6 +331,26 @@ run_quiet_on_success() {
     rm "$tmp_stdout" "$tmp_stderr"
     return 1
   fi
+}
+
+run_quiet_on_success_with_retries() {
+  local cmd="$1"
+  # By default retry 3 times with 3 seconds sleep intervals
+  local max_retries="${2:-3}"
+  local retry_delay="${3:-3}"
+
+  for ((attempt = 1; attempt <= max_retries; attempt++)); do
+    if run_quiet_on_success "$cmd"; then
+      return 0
+    fi
+    if ((attempt < max_retries)); then
+      echo "Attempt $attempt/$max_retries failed. Retrying in ${retry_delay}s..." >&2
+      sleep "$retry_delay"
+    fi
+  done
+
+  echo "All $max_retries attempts failed for: $cmd" >&2
+  return 1
 }
 
 main
