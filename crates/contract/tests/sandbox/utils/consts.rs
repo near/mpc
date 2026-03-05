@@ -6,10 +6,10 @@ use near_sdk::{Gas, NearToken};
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
 pub const ALL_SIGNATURE_SCHEMES: &[SignatureScheme; 4] = &[
-    SignatureScheme::Secp256k1,
-    SignatureScheme::Ed25519,
-    SignatureScheme::Bls12381,
-    SignatureScheme::V2Secp256k1,
+    SignatureScheme::OTBasedECDSA,
+    SignatureScheme::FROST,
+    SignatureScheme::CKD,
+    SignatureScheme::RobustECDSA,
 ];
 
 /* --- Gas constants --- */

@@ -205,9 +205,9 @@ pub async fn init_with_candidates(
             .map(|(i, pk)| {
                 let domain_id = DomainId((i as u64) * 2);
                 let scheme = match pk {
-                    dtos::PublicKey::Ed25519(_) => SignatureScheme::Ed25519,
-                    dtos::PublicKey::Secp256k1(_) => SignatureScheme::Secp256k1,
-                    dtos::PublicKey::Bls12381(_) => SignatureScheme::Bls12381,
+                    dtos::PublicKey::Ed25519(_) => SignatureScheme::FROST,
+                    dtos::PublicKey::Secp256k1(_) => SignatureScheme::OTBasedECDSA,
+                    dtos::PublicKey::Bls12381(_) => SignatureScheme::CKD,
                 };
                 let key: PublicKeyExtended = pk.try_into().unwrap();
                 let purpose = infer_purpose_from_scheme(scheme);
@@ -534,17 +534,17 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            scheme: SignatureScheme::Ed25519,
+            scheme: SignatureScheme::FROST,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
-            scheme: SignatureScheme::Ed25519,
+            scheme: SignatureScheme::FROST,
             purpose: DomainPurpose::Sign,
         },
     ];

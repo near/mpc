@@ -2,22 +2,22 @@
   "domains": [
     {
       "id": 0,
-      "scheme": "Secp256k1",
+      "scheme": "OTBasedECDSA",
       "purpose": "Sign"
     },
     {
       "id": 1,
-      "scheme": "Ed25519",
+      "scheme": "FROST",
       "purpose": "Sign"
     },
     {
       "id": 2,
-      "scheme": "Bls12381",
+      "scheme": "CKD",
       "purpose": "CKD"
     },
     {
       "id": 3,
-      "scheme": "Secp256k1",
+      "scheme": "OTBasedECDSA",
       "purpose": "ForeignTx"
     }
   ]

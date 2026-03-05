@@ -182,15 +182,15 @@ To generate a new threshold signature key, all participants must vote for it to 
   "domains":[
     {
       "id":2,
-      "scheme":"Secp256k1"
+      "scheme":"OTBasedECDSA"
     },
     {
       "id":3,
-      "scheme":"Ed25519"
+      "scheme":"FROST"
     },
     {
       "id":4,
-      "scheme":"Bls12381"
+      "scheme":"CKD"
     }
   ]
 }

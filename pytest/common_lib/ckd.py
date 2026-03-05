@@ -99,7 +99,7 @@ def verify_ckd(
 def generate_ckd_args(
     domain: Domain, app_public_key: Optional[str] = None, path: str = ""
 ) -> dict:
-    assert domain.scheme == "Bls12381"
+    assert domain.scheme == "CKD"
     if app_public_key is None:
         app_public_key, _ = generate_app_public_key()
     return {

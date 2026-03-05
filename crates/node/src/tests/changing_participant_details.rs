@@ -48,7 +48,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        scheme: SignatureScheme::OTBasedECDSA,
         purpose: DomainPurpose::Sign,
     };
 

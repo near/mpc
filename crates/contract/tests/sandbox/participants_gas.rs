@@ -273,7 +273,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let domain_id = DomainId(0);
         let domain = DomainConfig {
             id: domain_id,
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();

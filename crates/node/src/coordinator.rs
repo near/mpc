@@ -544,19 +544,19 @@ where
                     match keyshare.data {
                         KeyshareData::Secp256k1(data) => {
                             ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::OTBasedECDSA);
                         }
                         KeyshareData::Ed25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::FROST);
                         }
                         KeyshareData::Bls12381(data) => {
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Bls12381);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::CKD);
                         }
                         KeyshareData::V2Secp256k1(data) => {
                             robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::V2Secp256k1);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::RobustECDSA);
                         }
                     }
                 }

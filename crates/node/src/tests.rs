@@ -272,12 +272,12 @@ pub async fn request_signature_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     let payload = match domain.scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+        SignatureScheme::OTBasedECDSA | SignatureScheme::RobustECDSA => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
         }
-        SignatureScheme::Ed25519 => {
+        SignatureScheme::FROST => {
             let len = rand::thread_rng().gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
@@ -285,7 +285,7 @@ pub async fn request_signature_and_await_response(
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
         }
-        SignatureScheme::Bls12381 => unreachable!(),
+        SignatureScheme::CKD => unreachable!(),
     };
     let request = SignatureRequestFromChain {
         entropy: rand::random(),
@@ -354,7 +354,7 @@ pub async fn request_ckd_and_await_response(
 ) -> Option<std::time::Duration> {
     assert_matches!(
         domain.scheme,
-        SignatureScheme::Bls12381,
+        SignatureScheme::CKD,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
     let request = CKDRequestFromChain {
@@ -440,7 +440,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
 ) -> Option<std::time::Duration> {
     assert_matches!(
         domain.scheme,
-        SignatureScheme::Secp256k1,
+        SignatureScheme::OTBasedECDSA,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
     let request = VerifyForeignTxRequestFromChain {

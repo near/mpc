@@ -349,9 +349,9 @@ pub mod running_tests {
     }
 
     #[rstest]
-    #[case(SignatureScheme::Bls12381, DomainPurpose::Sign)]
-    #[case(SignatureScheme::Ed25519, DomainPurpose::ForeignTx)]
-    #[case(SignatureScheme::Secp256k1, DomainPurpose::CKD)]
+    #[case(SignatureScheme::OTBasedECDSA, DomainPurpose::CKD)]
+    #[case(SignatureScheme::FROST, DomainPurpose::ForeignTx)]
+    #[case(SignatureScheme::CKD, DomainPurpose::Sign)]
     fn vote_add_domains__should_reject_invalid_scheme_purpose(
         #[case] scheme: SignatureScheme,
         #[case] purpose: DomainPurpose,

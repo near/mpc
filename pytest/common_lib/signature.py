@@ -13,8 +13,9 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 PayloadType = Literal["Ecdsa", "Eddsa"]
 
 signature_scheme_to_payload: Dict[SignatureScheme, PayloadType] = {
-    "Secp256k1": "Ecdsa",
-    "Ed25519": "Eddsa",
+    "OTBasedECDSA": "Ecdsa",
+    "FROST": "Eddsa",
+    "RobustECDSA": "Ecdsa",
 }
 
 

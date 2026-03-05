@@ -26,7 +26,7 @@ The cli takes 4 parameters:
   account and derivation path will always obtain the same secret.
 
 - `domain-id`: the domain id in the MPC contract that supports CKD. The associated scheme of such
-domain is `Bls12381`.
+domain is `CKD`.
 
 - `mpc-ckd-public-key`: the public key associated to the domain id above.
 

@@ -172,7 +172,7 @@ each signature scheme. You can specify duplicate schemes here as well if you wis
 to add multiple keys for each scheme.
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains --schemes Secp256k1,Ed25519,Bls12381
+mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains --schemes OTBasedECDSA,FROST,CKD,RobustECDSA
 ```
 
 This triggers the MPC nodes to start performing key generation, after which the
@@ -208,12 +208,12 @@ MPC contract deployed at: mpc-contract-and-upg-4df70f9abb68.b892843ed20d.testnet
 Contract is in Running state
   Epoch: 9
   Keyset:
-  Domain 0: Secp256k1, key from attempt 0
-  Domain 1: Ed25519, key from attempt 0
-  Domain 2: Secp256k1, key from attempt 0
-  Domain 3: Ed25519, key from attempt 0
-  Domain 4: Secp256k1, key from attempt 0
-  Domain 5: Ed25519, key from attempt 0
+  Domain 0: OTBasedECDSA, key from attempt 0
+  Domain 1: FROST, key from attempt 0
+  Domain 2: OTBasedECDSA, key from attempt 0
+  Domain 3: FROST, key from attempt 0
+  Domain 4: OTBasedECDSA, key from attempt 0
+  Domain 5: FROST, key from attempt 0
   Parameters:
   Participants:
     ID 3: mpc-2-and-upg-c4c3bbdf00c0.andrei-devnet.testnet (http://mpc-node-2.service.mpc.consul:3000)

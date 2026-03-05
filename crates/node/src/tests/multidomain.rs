@@ -35,17 +35,17 @@ async fn test_basic_multidomain() {
     let mut domains = vec![
         DomainConfig {
             id: DomainId(0),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(1),
-            scheme: SignatureScheme::Ed25519,
+            scheme: SignatureScheme::FROST,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(2),
-            scheme: SignatureScheme::Bls12381,
+            scheme: SignatureScheme::CKD,
             purpose: DomainPurpose::CKD,
         },
     ];
@@ -74,9 +74,9 @@ async fn test_basic_multidomain() {
     tracing::info!("requesting signature");
     for domain in &domains {
         match domain.scheme {
-            SignatureScheme::Secp256k1
-            | SignatureScheme::Ed25519
-            | SignatureScheme::V2Secp256k1 => {
+            SignatureScheme::OTBasedECDSA
+            | SignatureScheme::FROST
+            | SignatureScheme::RobustECDSA => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -86,7 +86,7 @@ async fn test_basic_multidomain() {
                 .await
                 .is_some());
             }
-            SignatureScheme::Bls12381 => {
+            SignatureScheme::CKD => {
                 assert!(request_ckd_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -101,17 +101,17 @@ async fn test_basic_multidomain() {
     let new_domains = vec![
         DomainConfig {
             id: DomainId(3),
-            scheme: SignatureScheme::Ed25519,
+            scheme: SignatureScheme::FROST,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(4),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: DomainId(5),
-            scheme: SignatureScheme::Bls12381,
+            scheme: SignatureScheme::CKD,
             purpose: DomainPurpose::CKD,
         },
     ];
@@ -141,9 +141,9 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match domain.scheme {
-            SignatureScheme::Secp256k1
-            | SignatureScheme::Ed25519
-            | SignatureScheme::V2Secp256k1 => {
+            SignatureScheme::OTBasedECDSA
+            | SignatureScheme::FROST
+            | SignatureScheme::RobustECDSA => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -153,7 +153,7 @@ async fn test_basic_multidomain() {
                 .await
                 .is_some());
             }
-            SignatureScheme::Bls12381 => {
+            SignatureScheme::CKD => {
                 assert!(request_ckd_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -190,9 +190,9 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match domain.scheme {
-            SignatureScheme::Secp256k1
-            | SignatureScheme::Ed25519
-            | SignatureScheme::V2Secp256k1 => {
+            SignatureScheme::OTBasedECDSA
+            | SignatureScheme::FROST
+            | SignatureScheme::RobustECDSA => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -202,7 +202,7 @@ async fn test_basic_multidomain() {
                 .await
                 .is_some());
             }
-            SignatureScheme::Bls12381 => {
+            SignatureScheme::CKD => {
                 assert!(request_ckd_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),

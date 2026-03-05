@@ -112,7 +112,7 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
 fn fill_missing_purposes(state: &mut ProtocolContractState) {
     fn infer_purpose(scheme: dtos::SignatureScheme) -> dtos::DomainPurpose {
         match scheme {
-            dtos::SignatureScheme::Bls12381 => dtos::DomainPurpose::CKD,
+            dtos::SignatureScheme::CKD => dtos::DomainPurpose::CKD,
             _ => dtos::DomainPurpose::Sign,
         }
     }
@@ -397,12 +397,12 @@ async fn upgrade_allows_new_request_types(
     let domains_to_add = [
         DomainConfig {
             id: first_available_domain_id.into(),
-            scheme: SignatureScheme::Bls12381,
+            scheme: SignatureScheme::CKD,
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
-            scheme: SignatureScheme::Ed25519,
+            scheme: SignatureScheme::FROST,
             purpose: DomainPurpose::Sign,
         },
     ];

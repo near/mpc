@@ -4,12 +4,12 @@
       "domains": [
         {
           "id": 0,
-          "scheme": "Secp256k1",
+          "scheme": "OTBasedECDSA",
           "purpose": "Sign"
         },
         {
           "id": 1,
-          "scheme": "Ed25519",
+          "scheme": "FROST",
           "purpose": "Sign"
         }
       ],

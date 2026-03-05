@@ -337,7 +337,7 @@ Now the contract should be initialized and both nodes should be running.
 To verify that the network is functional, request a signature from it.  
 Before that, add a domain.
 
-Both Frodo and Sam should vote to add a **Secp256k1** domain:
+Both Frodo and Sam should vote to add domains:
 
 ```bash
 near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
@@ -384,7 +384,7 @@ near contract call-function as-transaction mpc-contract.test.near sign \
   "s": {
     "scalar": "6C38CCEF118EA86F3A5DB5CC8703E9A2B5289FCD564D3224DC61E374B58ABB8C"
   },
-  "scheme": "Secp256k1"
+  "scheme": "OTBasedECDSA"
 }
  INFO
 
