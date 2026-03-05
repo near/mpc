@@ -33,7 +33,7 @@ pub struct ManifestEntry {
     pub platform: ManifestPlatform,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ManifestPlatform {
     pub architecture: String,
     pub os: String,

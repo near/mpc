@@ -27,6 +27,9 @@ const DOCKER_AUTH_ACCEPT_HEADER_VALUE: HeaderValue =
 
 const DOCKER_CONTENT_DIGEST_HEADER: &str = "Docker-Content-Digest";
 
+const AMD64: &str = "amd64";
+const LINUX: &str = "linux";
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -198,97 +201,79 @@ async fn get_manifest_digest(
             (AUTHORIZATION, authorization_value),
         ]);
 
-        match request_until_success(
-            &reqwest_client,
-            manifest_url.clone(),
-            headers.clone(),
-            config,
-        )
-        .await
-        {
-            Ok(resp) => {
-                let response_headers = resp.headers().clone();
-                let manifest: ManifestResponse = resp
-                    .json()
-                    .await
-                    .map_err(|e| LauncherError::RegistryResponseParse(e.to_string()))?;
+        let request_timeout = Duration::from_secs(config.rpc_request_timeout_secs);
+        let backoff = ExponentialBuilder::default()
+            .with_min_delay(Duration::from_secs(config.rpc_request_interval_secs))
+            .with_factor(1.5)
+            .with_max_delay(Duration::from_secs(60))
+            .with_max_times(config.rpc_max_attempts as usize);
 
-                match manifest {
-                    ManifestResponse::ImageIndex { manifests } => {
-                        // Multi-platform manifest; scan for amd64/linux
-                        manifests
-                            .into_iter()
-                            .filter(|manifest| {
-                                manifest.platform.architecture == "amd64"
-                                    && manifest.platform.os == "linux"
-                            })
-                            .for_each(|manifest| tags.push_back(manifest.digest));
-                    }
-                    ManifestResponse::DockerV2 { config }
-                    | ManifestResponse::OciManifest { config } => {
-                        let incorrect_config_digest = config.digest != expected_digest;
-                        if incorrect_config_digest {
-                            continue;
-                        }
+        let request_future = || async {
+            reqwest_client
+                .get(manifest_url.clone())
+                .headers(headers.clone())
+                .timeout(request_timeout)
+                .send()
+                .await?
+                .error_for_status()
+        };
 
-                        let Some(content_digest) = response_headers
-                            .get(DOCKER_CONTENT_DIGEST_HEADER)
-                            .and_then(|v| v.to_str().ok())
-                            .map(|s| s.to_string())
-                        else {
-                            continue;
-                        };
-
-                        return Ok(content_digest);
-                    }
-                }
-            }
-            Err(e) => {
+        let request_with_retry_future = request_future
+            .retry(backoff)
+            .when(|_: &reqwest::Error| true)
+            .notify(|err, dur| {
                 tracing::warn!(
-                    "{e}: Exceeded number of maximum RPC requests for any given attempt. \
-                     Will continue in the hopes of finding the matching image hash among remaining tags"
+                    ?manifest_url,
+                    ?dur,
+                    ?err,
+                    "failed to fetch manifest, retrying"
                 );
+            });
+
+        let Ok(resp) = request_with_retry_future.await else {
+            tracing::warn!(
+                ?manifest_url,
+                "exceeded max RPC attempts. \
+                Will continue in the hopes of finding the matching image hash among remaining tags"
+            );
+            continue;
+        };
+
+        let response_headers = resp.headers().clone();
+        let manifest: ManifestResponse = resp
+            .json()
+            .await
+            .map_err(|e| LauncherError::RegistryResponseParse(e.to_string()))?;
+
+        match manifest {
+            ManifestResponse::ImageIndex { manifests } => {
+                // Multi-platform manifest; scan for amd64/linux
+                manifests
+                    .into_iter()
+                    .filter(|manifest| {
+                        manifest.platform.architecture == AMD64 && manifest.platform.os == LINUX
+                    })
+                    .for_each(|manifest| tags.push_back(manifest.digest));
+            }
+            ManifestResponse::DockerV2 { config } | ManifestResponse::OciManifest { config } => {
+                if config.digest != expected_digest {
+                    continue;
+                }
+
+                let Some(content_digest) = response_headers
+                    .get(DOCKER_CONTENT_DIGEST_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string())
+                else {
+                    continue;
+                };
+
+                return Ok(content_digest);
             }
         }
     }
 
     Err(LauncherError::ImageHashNotFoundAmongTags)
-}
-
-async fn request_until_success(
-    client: &reqwest::Client,
-    url: Url,
-    headers: HeaderMap,
-    config: &LauncherConfig,
-) -> Result<reqwest::Response, LauncherError> {
-    let request_timeout = Duration::from_secs(config.rpc_request_timeout_secs);
-    let backoff = ExponentialBuilder::default()
-        .with_min_delay(Duration::from_secs(config.rpc_request_interval_secs))
-        .with_factor(1.5)
-        .with_max_delay(Duration::from_secs(60))
-        .with_max_times(config.rpc_max_attempts as usize);
-
-    let request_future = || async {
-        client
-            .get(url.clone())
-            .headers(headers.clone())
-            .timeout(request_timeout)
-            .send()
-            .await?
-            .error_for_status()
-    };
-
-    request_future
-        .retry(backoff)
-        .when(|_: &reqwest::Error| true)
-        .notify(|err, retrying_in_duration| {
-            tracing::warn!(?url, ?retrying_in_duration, ?err, "failed to fetch");
-        })
-        .await
-        .map_err(|_| LauncherError::RegistryRequestFailed {
-            url,
-            attempts: config.rpc_max_attempts,
-        })
 }
 
 /// Returns if the given image digest is valid (pull + manifest + digest match).
