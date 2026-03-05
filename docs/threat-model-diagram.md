@@ -65,6 +65,20 @@ graph TB
     end
 
     %% ───────────────────────────────────────────────
+    %% Other MPC Nodes (also nested) — declared first to place left
+    %% ───────────────────────────────────────────────
+    subgraph PEER_HOST["Other Host OS"]
+        subgraph PEER_CVM["CVM / TDX"]
+            PEER_NODES["Other MPC Nodes<br/>(P2P mTLS mesh)"]
+        end
+    end
+
+    %% ───────────────────────────────────────────────
+    %% External Clients
+    %% ───────────────────────────────────────────────
+    CLIENTS["External Clients<br/>(NEAR accounts)"]
+
+    %% ───────────────────────────────────────────────
     %% Migration Server: Host OS > CVM > Migration Svc
     %% ───────────────────────────────────────────────
     subgraph MIG_HOST["Migration Host OS"]
@@ -80,26 +94,12 @@ graph TB
     end
 
     %% ───────────────────────────────────────────────
-    %% External Clients
-    %% ───────────────────────────────────────────────
-    CLIENTS["External Clients<br/>(NEAR accounts)"]
-
-    %% ───────────────────────────────────────────────
-    %% Other MPC Nodes (also nested)
-    %% ───────────────────────────────────────────────
-    subgraph PEER_HOST["Other Host OS"]
-        subgraph PEER_CVM["CVM / TDX"]
-            PEER_NODES["Other MPC Nodes<br/>(P2P mTLS mesh)"]
-        end
-    end
-
-    %% ───────────────────────────────────────────────
     %% DATA FLOWS
     %% ───────────────────────────────────────────────
 
     %% Operator <-> Contract
-    OPERATOR -- "Register TLS & AES_signing pubkeys<br/>Vote on docker hashes & parameters" --> BLOCKCHAIN
-    BLOCKCHAIN -- "Approved hashes, participant set" --> OPERATOR
+    OPERATOR -- "Register TLS & AES_signing pubkeys<br/>Vote on docker hashes & parameters" --> CONTRACT
+    CONTRACT -- "Approved hashes, participant set" --> OPERATOR
 
     %% Operator <-> CVM (local only)
     OPERATOR -- "Provision encrypted+signed<br/>AES transport key (LOCAL ONLY)" --> MPC_BOX
