@@ -13,7 +13,7 @@ pub use contract_interface::types::{Hash256, SignatureResponse, VerifyForeignTra
 // raw request arg type
 pub use contract_interface::types::{
     BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainPolicy,
-    ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
     VerifyForeignTransactionRequestArgs,
 };
 
@@ -81,7 +81,7 @@ impl ForeignChainSignatureVerifier {
     }
 }
 
-pub const DEFAULT_PAYLOAD_VERSION: u8 = 1;
+pub const DEFAULT_PAYLOAD_VERSION: ForeignTxPayloadVersion = ForeignTxPayloadVersion::V1;
 
 #[derive(Debug, Clone)]
 pub struct ForeignChainRequestBuilder<Request, DerivationPath, DomainId> {
