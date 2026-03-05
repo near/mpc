@@ -437,653 +437,167 @@ fn launch_mpc_container(
     Ok(())
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use assert_matches::assert_matches;
-//     use launcher_interface::types::ApprovedHashesFile;
-
-//     // -- DstackUserConfig parsing tests -------------------------------------
-
-//     #[test]
-//     fn test_user_config_defaults_when_map_is_empty() {
-//         let config = user_config_from_map(BTreeMap::new()).unwrap();
-//         assert_eq!(config.image_tags, vec![DEFAULT_MPC_IMAGE_TAG]);
-//         assert_eq!(config.image_name, DEFAULT_MPC_IMAGE_NAME);
-//         assert_eq!(config.registry, DEFAULT_MPC_REGISTRY);
-//         assert_eq!(
-//             config.rpc_request_timeout_secs,
-//             DEFAULT_RPC_REQUEST_TIMEOUT_SECS
-//         );
-//         assert_eq!(
-//             config.rpc_request_interval_secs,
-//             DEFAULT_RPC_REQUEST_INTERVAL_SECS
-//         );
-//         assert_eq!(config.rpc_max_attempts, DEFAULT_RPC_MAX_ATTEMPTS);
-//         assert!(config.mpc_hash_override.is_none());
-//         assert!(config.passthrough_env.is_empty());
-//     }
-
-//     #[test]
-//     fn test_user_config_typed_fields_extracted_from_map() {
-//         let map = BTreeMap::from([
-//             (
-//                 DSTACK_USER_CONFIG_MPC_IMAGE_TAGS.into(),
-//                 "v1.0, v1.1".into(),
-//             ),
-//             (DSTACK_USER_CONFIG_MPC_IMAGE_NAME.into(), "my/image".into()),
-//             (
-//                 DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY.into(),
-//                 "my.registry.io".into(),
-//             ),
-//             (ENV_VAR_RPC_REQUEST_TIMEOUT_SECS.into(), "30.0".into()),
-//             (ENV_VAR_RPC_MAX_ATTEMPTS.into(), "5".into()),
-//             ("MPC_ACCOUNT_ID".into(), "account.near".into()),
-//         ]);
-//         let config = user_config_from_map(map).unwrap();
-//         assert_eq!(config.image_tags, vec!["v1.0", "v1.1"]);
-//         assert_eq!(config.image_name, "my/image");
-//         assert_eq!(config.registry, "my.registry.io");
-//         assert_eq!(config.rpc_request_timeout_secs, 30.0);
-//         assert_eq!(config.rpc_max_attempts, 5);
-//         // Launcher-only keys are NOT in passthrough_env
-//         assert!(
-//             !config
-//                 .passthrough_env
-//                 .contains_key(DSTACK_USER_CONFIG_MPC_IMAGE_TAGS)
-//         );
-//         assert!(
-//             !config
-//                 .passthrough_env
-//                 .contains_key(ENV_VAR_RPC_MAX_ATTEMPTS)
-//         );
-//         // Container passthrough keys ARE in passthrough_env
-//         assert_eq!(
-//             config.passthrough_env.get("MPC_ACCOUNT_ID").unwrap(),
-//             "account.near"
-//         );
-//     }
-
-//     #[test]
-//     fn test_user_config_malformed_rpc_fields_error() {
-//         let map = BTreeMap::from([(ENV_VAR_RPC_MAX_ATTEMPTS.into(), "not_a_number".into())]);
-//         let err = user_config_from_map(map).unwrap_err();
-//         assert_matches!(err, LauncherError::InvalidEnvVar { key, .. } if key == ENV_VAR_RPC_MAX_ATTEMPTS);
-
-//         let map = BTreeMap::from([(ENV_VAR_RPC_REQUEST_TIMEOUT_SECS.into(), "bad".into())]);
-//         let err = user_config_from_map(map).unwrap_err();
-//         assert_matches!(err, LauncherError::InvalidEnvVar { key, .. } if key == ENV_VAR_RPC_REQUEST_TIMEOUT_SECS);
-
-//         let map = BTreeMap::from([(ENV_VAR_RPC_REQUEST_INTERVAL_SECS.into(), "bad".into())]);
-//         let err = user_config_from_map(map).unwrap_err();
-//         assert_matches!(err, LauncherError::InvalidEnvVar { key, .. } if key == ENV_VAR_RPC_REQUEST_INTERVAL_SECS);
-//     }
-
-//     #[test]
-//     fn test_user_config_hash_override_extracted() {
-//         let map = BTreeMap::from([(ENV_VAR_MPC_HASH_OVERRIDE.into(), "sha256:abc".into())]);
-//         let config = user_config_from_map(map).unwrap();
-//         assert_eq!(config.mpc_hash_override.unwrap(), "sha256:abc");
-//         assert!(
-//             !config
-//                 .passthrough_env
-//                 .contains_key(ENV_VAR_MPC_HASH_OVERRIDE)
-//         );
-//     }
-
-//     #[test]
-//     fn test_parse_user_config_from_file() {
-//         let dir = tempfile::tempdir().unwrap();
-//         let file = dir.path().join("user_config");
-//         std::fs::write(
-//             &file,
-//             "# comment\nMPC_ACCOUNT_ID=test\nMPC_IMAGE_NAME=my/image\n",
-//         )
-//         .unwrap();
-//         let config = parse_user_config(file.to_str().unwrap()).unwrap();
-//         assert_eq!(config.image_name, "my/image");
-//         assert_eq!(
-//             config.passthrough_env.get("MPC_ACCOUNT_ID").unwrap(),
-//             "test"
-//         );
-//         assert!(!config.passthrough_env.contains_key("MPC_IMAGE_NAME"));
-//     }
-
-//     // -- Host/port validation tests -----------------------------------------
-
-//     #[test]
-//     fn test_valid_host_entry() {
-//         assert!(is_valid_host_entry("node.local:192.168.1.1"));
-//         assert!(!is_valid_host_entry("node.local:not-an-ip"));
-//         assert!(!is_valid_host_entry("--env LD_PRELOAD=hack.so"));
-//     }
-
-//     #[test]
-//     fn test_valid_port_mapping() {
-//         assert!(is_valid_port_mapping("11780:11780"));
-//         assert!(!is_valid_port_mapping("65536:11780"));
-//         assert!(!is_valid_port_mapping("--volume /:/mnt"));
-//     }
-
-//     // -- Security validation tests ------------------------------------------
-
-//     #[test]
-//     fn test_has_control_chars_rejects_newline_and_cr() {
-//         assert!(has_control_chars("a\nb"));
-//         assert!(has_control_chars("a\rb"));
-//     }
-
-//     #[test]
-//     fn test_has_control_chars_allows_tab() {
-//         assert!(!has_control_chars("a\tb"));
-//     }
-
-//     #[test]
-//     fn test_has_control_chars_rejects_other_control_chars() {
-//         assert!(has_control_chars(&format!("a{}b", '\x1F')));
-//     }
-
-//     #[test]
-//     fn test_is_safe_env_value_rejects_control_chars() {
-//         assert!(!is_safe_env_value("ok\nno"));
-//         assert!(!is_safe_env_value("ok\rno"));
-//         assert!(!is_safe_env_value(&format!("ok{}no", '\x1F')));
-//     }
-
-//     #[test]
-//     fn test_is_safe_env_value_rejects_ld_preload() {
-//         assert!(!is_safe_env_value("LD_PRELOAD=/tmp/x.so"));
-//         assert!(!is_safe_env_value("foo LD_PRELOAD bar"));
-//     }
-
-//     #[test]
-//     fn test_is_safe_env_value_rejects_too_long() {
-//         assert!(!is_safe_env_value(&"a".repeat(MAX_ENV_VALUE_LEN + 1)));
-//         assert!(is_safe_env_value(&"a".repeat(MAX_ENV_VALUE_LEN)));
-//     }
-
-//     #[test]
-//     fn test_is_allowed_container_env_key_allows_mpc_prefix_uppercase() {
-//         assert!(is_allowed_container_env_key("MPC_FOO"));
-//         assert!(is_allowed_container_env_key("MPC_FOO_123"));
-//         assert!(is_allowed_container_env_key("MPC_A_B_C"));
-//     }
-
-//     #[test]
-//     fn test_is_allowed_container_env_key_rejects_lowercase_or_invalid() {
-//         assert!(!is_allowed_container_env_key("MPC_foo"));
-//         assert!(!is_allowed_container_env_key("MPC-FOO"));
-//         assert!(!is_allowed_container_env_key("MPC.FOO"));
-//         assert!(!is_allowed_container_env_key("MPC_"));
-//     }
-
-//     #[test]
-//     fn test_is_allowed_container_env_key_allows_compat_non_mpc_keys() {
-//         assert!(is_allowed_container_env_key("RUST_LOG"));
-//         assert!(is_allowed_container_env_key("RUST_BACKTRACE"));
-//         assert!(is_allowed_container_env_key("NEAR_BOOT_NODES"));
-//     }
-
-//     #[test]
-//     fn test_is_allowed_container_env_key_denies_sensitive_keys() {
-//         assert!(!is_allowed_container_env_key("MPC_P2P_PRIVATE_KEY"));
-//         assert!(!is_allowed_container_env_key("MPC_ACCOUNT_SK"));
-//     }
-
-//     // -- Docker cmd builder tests -------------------------------------------
-
-//     fn make_digest() -> String {
-//         format!("sha256:{}", "a".repeat(64))
-//     }
-
-//     fn base_env() -> BTreeMap<String, String> {
-//         BTreeMap::from([
-//             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-//             ("MPC_CONTRACT_ID".into(), "contract.near".into()),
-//             ("MPC_ENV".into(), "testnet".into()),
-//             ("MPC_HOME_DIR".into(), "/data".into()),
-//             ("NEAR_BOOT_NODES".into(), "boot1,boot2".into()),
-//             ("RUST_LOG".into(), "info".into()),
-//         ])
-//     }
-
-//     #[test]
-//     fn test_build_docker_cmd_sanitizes_ports_and_hosts() {
-//         let env = BTreeMap::from([
-//             ("PORTS".into(), "11780:11780,--env BAD=1".into()),
-//             (
-//                 "EXTRA_HOSTS".into(),
-//                 "node:192.168.1.1,--volume /:/mnt".into(),
-//             ),
-//             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-
-//         assert!(cmd.contains(&"MPC_ACCOUNT_ID=mpc-user-123".to_string()));
-//         assert!(cmd.contains(&"11780:11780".to_string()));
-//         assert!(cmd.contains(&"node:192.168.1.1".to_string()));
-//         // Injection strings filtered
-//         assert!(!cmd.iter().any(|arg| arg.contains("BAD=1")));
-//         assert!(!cmd.iter().any(|arg| arg.contains("/:/mnt")));
-//     }
-
-//     #[test]
-//     fn test_extra_hosts_does_not_allow_ld_preload() {
-//         let env = BTreeMap::from([
-//             (
-//                 "EXTRA_HOSTS".into(),
-//                 "host:1.2.3.4,--env LD_PRELOAD=/evil.so".into(),
-//             ),
-//             ("MPC_ACCOUNT_ID".into(), "safe".into()),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(cmd.contains(&"host:1.2.3.4".to_string()));
-//         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
-//     }
-
-//     #[test]
-//     fn test_ports_does_not_allow_volume_injection() {
-//         let env = BTreeMap::from([
-//             ("PORTS".into(), "2200:2200,--volume /:/mnt".into()),
-//             ("MPC_ACCOUNT_ID".into(), "safe".into()),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(cmd.contains(&"2200:2200".to_string()));
-//         assert!(!cmd.iter().any(|arg| arg.contains("/:/mnt")));
-//     }
-
-//     #[test]
-//     fn test_invalid_env_key_is_ignored() {
-//         let env = BTreeMap::from([
-//             ("BAD_KEY".into(), "should_not_be_used".into()),
-//             ("MPC_ACCOUNT_ID".into(), "safe".into()),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(!cmd.join(" ").contains("should_not_be_used"));
-//         assert!(cmd.contains(&"MPC_ACCOUNT_ID=safe".to_string()));
-//     }
-
-//     #[test]
-//     fn test_mpc_backup_encryption_key_is_allowed() {
-//         let env = BTreeMap::from([("MPC_BACKUP_ENCRYPTION_KEY_HEX".into(), "0".repeat(64))]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(
-//             cmd.join(" ")
-//                 .contains(&format!("MPC_BACKUP_ENCRYPTION_KEY_HEX={}", "0".repeat(64)))
-//         );
-//     }
-
-//     #[test]
-//     fn test_malformed_extra_host_is_ignored() {
-//         let env = BTreeMap::from([
-//             (
-//                 "EXTRA_HOSTS".into(),
-//                 "badhostentry,no-colon,also--bad".into(),
-//             ),
-//             ("MPC_ACCOUNT_ID".into(), "safe".into()),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(!cmd.contains(&"--add-host".to_string()));
-//     }
-
-//     #[test]
-//     fn test_env_value_with_shell_injection_is_handled_safely() {
-//         let env = BTreeMap::from([("MPC_ACCOUNT_ID".into(), "safe; rm -rf /".into())]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(cmd.contains(&"MPC_ACCOUNT_ID=safe; rm -rf /".to_string()));
-//     }
-
-//     #[test]
-//     fn test_build_docker_cmd_nontee_no_dstack_mount() {
-//         let mut env = BTreeMap::new();
-//         env.insert("MPC_ACCOUNT_ID".into(), "x".into());
-//         let cmd = build_docker_cmd(Platform::NonTee, &env, &make_digest()).unwrap();
-//         let s = cmd.join(" ");
-//         assert!(!s.contains("DSTACK_ENDPOINT="));
-//         assert!(!s.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
-//     }
-
-//     #[test]
-//     fn test_build_docker_cmd_tee_has_dstack_mount() {
-//         let env = BTreeMap::from([("MPC_ACCOUNT_ID".into(), "x".into())]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         let s = cmd.join(" ");
-//         assert!(s.contains(&format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}")));
-//         assert!(s.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
-//     }
-
-//     #[test]
-//     fn test_build_docker_cmd_allows_arbitrary_mpc_prefix_env_vars() {
-//         let mut env = base_env();
-//         env.insert("MPC_NEW_FEATURE_FLAG".into(), "1".into());
-//         env.insert("MPC_SOME_CONFIG".into(), "value".into());
-//         let cmd = build_docker_cmd(Platform::NonTee, &env, &make_digest()).unwrap();
-//         let cmd_str = cmd.join(" ");
-//         assert!(cmd_str.contains("MPC_NEW_FEATURE_FLAG=1"));
-//         assert!(cmd_str.contains("MPC_SOME_CONFIG=value"));
-//     }
-
-//     #[test]
-//     fn test_build_docker_cmd_blocks_sensitive_mpc_private_keys() {
-//         let mut env = base_env();
-//         env.insert("MPC_P2P_PRIVATE_KEY".into(), "supersecret".into());
-//         env.insert("MPC_ACCOUNT_SK".into(), "supersecret2".into());
-//         let cmd = build_docker_cmd(Platform::NonTee, &env, &make_digest()).unwrap();
-//         let cmd_str = cmd.join(" ");
-//         assert!(!cmd_str.contains("MPC_P2P_PRIVATE_KEY"));
-//         assert!(!cmd_str.contains("MPC_ACCOUNT_SK"));
-//     }
-
-//     #[test]
-//     fn test_build_docker_cmd_rejects_env_value_with_newline() {
-//         let mut env = base_env();
-//         env.insert("MPC_NEW_FEATURE_FLAG".into(), "ok\nbad".into());
-//         let cmd = build_docker_cmd(Platform::NonTee, &env, &make_digest()).unwrap();
-//         let cmd_str = cmd.join(" ");
-//         assert!(!cmd_str.contains("MPC_NEW_FEATURE_FLAG"));
-//     }
-
-//     #[test]
-//     fn test_build_docker_cmd_enforces_max_env_count_cap() {
-//         let mut env = base_env();
-//         for i in 0..=MAX_PASSTHROUGH_ENV_VARS {
-//             env.insert(format!("MPC_X_{i}"), "1".into());
-//         }
-//         let result = build_docker_cmd(Platform::NonTee, &env, &make_digest());
-//         assert_matches!(result, Err(LauncherError::TooManyEnvVars(_)));
-//     }
-
-//     #[test]
-//     fn test_build_docker_cmd_enforces_total_env_bytes_cap() {
-//         let mut env = base_env();
-//         for i in 0..40 {
-//             env.insert(format!("MPC_BIG_{i}"), "a".repeat(MAX_ENV_VALUE_LEN));
-//         }
-//         let result = build_docker_cmd(Platform::NonTee, &env, &make_digest());
-//         assert_matches!(result, Err(LauncherError::EnvPayloadTooLarge(_)));
-//     }
-
-//     // -- LD_PRELOAD injection tests -----------------------------------------
-
-//     #[test]
-//     fn test_ld_preload_injection_blocked_via_env_key() {
-//         let env = BTreeMap::from([
-//             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-//             ("--env LD_PRELOAD".into(), "/path/to/my/malloc.so".into()),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
-//     }
-
-//     #[test]
-//     fn test_ld_preload_injection_blocked_via_extra_hosts() {
-//         let env = BTreeMap::from([
-//             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-//             (
-//                 "EXTRA_HOSTS".into(),
-//                 "host1:192.168.0.1,host2:192.168.0.2,--env LD_PRELOAD=/path/to/my/malloc.so".into(),
-//             ),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(cmd.contains(&"--add-host".to_string()));
-//         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
-//     }
-
-//     #[test]
-//     fn test_ld_preload_injection_blocked_via_ports() {
-//         let env = BTreeMap::from([
-//             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-//             (
-//                 "PORTS".into(),
-//                 "11780:11780,--env LD_PRELOAD=/path/to/my/malloc.so".into(),
-//             ),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(cmd.contains(&"-p".to_string()));
-//         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
-//     }
-
-//     #[test]
-//     fn test_ld_preload_injection_blocked_via_mpc_account_id() {
-//         let env = BTreeMap::from([
-//             (
-//                 "MPC_ACCOUNT_ID".into(),
-//                 "mpc-user-123, --env LD_PRELOAD=/path/to/my/malloc.so".into(),
-//             ),
-//             (
-//                 "EXTRA_HOSTS".into(),
-//                 "host1:192.168.0.1,host2:192.168.0.2".into(),
-//             ),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
-//     }
-
-//     #[test]
-//     fn test_ld_preload_injection_blocked_via_dash_e() {
-//         let env = BTreeMap::from([
-//             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-//             ("-e LD_PRELOAD".into(), "/path/to/my/malloc.so".into()),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
-//     }
-
-//     #[test]
-//     fn test_ld_preload_injection_blocked_via_extra_hosts_dash_e() {
-//         let env = BTreeMap::from([
-//             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-//             (
-//                 "EXTRA_HOSTS".into(),
-//                 "host1:192.168.0.1,host2:192.168.0.2,-e LD_PRELOAD=/path/to/my/malloc.so".into(),
-//             ),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(cmd.contains(&"--add-host".to_string()));
-//         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
-//     }
-
-//     #[test]
-//     fn test_ld_preload_injection_blocked_via_ports_dash_e() {
-//         let env = BTreeMap::from([
-//             ("MPC_ACCOUNT_ID".into(), "mpc-user-123".into()),
-//             (
-//                 "PORTS".into(),
-//                 "11780:11780,-e LD_PRELOAD=/path/to/my/malloc.so".into(),
-//             ),
-//         ]);
-//         let cmd = build_docker_cmd(Platform::Tee, &env, &make_digest()).unwrap();
-//         assert!(cmd.contains(&"-p".to_string()));
-//         assert!(!cmd.iter().any(|arg| arg.contains("LD_PRELOAD")));
-//     }
-
-//     // -- Hash selection tests -----------------------------------------------
-
-//     fn make_digest_json(hashes: &[&str]) -> String {
-//         serde_json::json!({"approved_hashes": hashes}).to_string()
-//     }
-
-//     #[test]
-//     fn test_override_present() {
-//         let dir = tempfile::tempdir().unwrap();
-//         let file = dir.path().join("image-digest.bin");
-//         let override_value = format!("sha256:{}", "a".repeat(64));
-//         let approved = vec![
-//             format!("sha256:{}", "b".repeat(64)),
-//             override_value.clone(),
-//             format!("sha256:{}", "c".repeat(64)),
-//         ];
-//         let json = serde_json::json!({"approved_hashes": approved}).to_string();
-//         std::fs::write(&file, &json).unwrap();
-
-//         // We can't easily override IMAGE_DIGEST_FILE constant, so test load_and_select_hash
-//         // by creating a standalone test that reads from a custom path.
-//         // Instead test the core logic directly:
-//         let data: ApprovedHashesFile = serde_json::from_str(&json).unwrap();
-//         assert!(data.approved_hashes.contains(&override_value));
-
-//         // The override is in the approved list, so it should be valid
-//         assert!(is_valid_sha256_digest(&override_value));
-//         assert!(data.approved_hashes.contains(&override_value));
-//     }
-
-//     #[test]
-//     fn test_override_not_in_list() {
-//         let approved = vec!["sha256:aaa", "sha256:bbb"];
-//         let json = make_digest_json(&approved);
-//         let data: ApprovedHashesFile = serde_json::from_str(&json).unwrap();
-//         let override_hash = "sha256:xyz";
-//         assert!(!data.approved_hashes.contains(&override_hash.to_string()));
-//     }
-
-//     #[test]
-//     fn test_no_override_picks_newest() {
-//         let approved = vec!["sha256:newest", "sha256:older", "sha256:oldest"];
-//         let json = make_digest_json(&approved);
-//         let data: ApprovedHashesFile = serde_json::from_str(&json).unwrap();
-//         assert_eq!(data.approved_hashes[0], "sha256:newest");
-//     }
-
-//     #[test]
-//     fn test_json_key_matches_node() {
-//         // Must stay aligned with crates/node/src/tee/allowed_image_hashes_watcher.rs
-//         let json = r#"{"approved_hashes": ["sha256:abc"]}"#;
-//         let data: ApprovedHashesFile = serde_json::from_str(json).unwrap();
-//         assert_eq!(data.approved_hashes.len(), 1);
-//     }
-
-//     #[test]
-//     fn test_get_bare_digest() {
-//         assert_eq!(
-//             get_bare_digest(&format!("sha256:{}", "a".repeat(64))).unwrap(),
-//             "a".repeat(64)
-//         );
-//         get_bare_digest("invalid").unwrap_err();
-//     }
-
-//     #[test]
-//     fn test_is_valid_sha256_digest() {
-//         assert!(is_valid_sha256_digest(&format!(
-//             "sha256:{}",
-//             "a".repeat(64)
-//         )));
-//         assert!(!is_valid_sha256_digest("sha256:tooshort"));
-//         assert!(!is_valid_sha256_digest("not-a-digest"));
-//         // hex::decode accepts uppercase; as_hex() normalizes to lowercase
-//         assert!(is_valid_sha256_digest(&format!(
-//             "sha256:{}",
-//             "A".repeat(64)
-//         )));
-//     }
-
-//     #[test]
-//     fn test_parse_image_digest_normalizes_case() {
-//         let upper = format!("sha256:{}", "AB".repeat(32));
-//         let hash = parse_image_digest(&upper).unwrap();
-//         assert_eq!(hash.as_hex(), "ab".repeat(32));
-//     }
-
-//     // -- Full flow docker cmd test ------------------------------------------
-
-//     #[test]
-//     fn test_parse_and_build_docker_cmd_full_flow() {
-//         let dir = tempfile::tempdir().unwrap();
-//         let file = dir.path().join("user_config");
-//         std::fs::write(
-//             &file,
-//             "MPC_ACCOUNT_ID=test-user\nPORTS=11780:11780, --env BAD=oops\nEXTRA_HOSTS=host1:192.168.1.1, --volume /:/mnt\n",
-//         )
-//         .unwrap();
-//         let config = parse_user_config(file.to_str().unwrap()).unwrap();
-//         let cmd = build_docker_cmd(Platform::Tee, &config.passthrough_env, &make_digest()).unwrap();
-//         let cmd_str = cmd.join(" ");
-
-//         assert!(cmd_str.contains("MPC_ACCOUNT_ID=test-user"));
-//         assert!(cmd_str.contains("11780:11780"));
-//         assert!(cmd_str.contains("host1:192.168.1.1"));
-//         assert!(!cmd_str.contains("BAD=oops"));
-//         assert!(!cmd_str.contains("/:/mnt"));
-//     }
-
-//     #[test]
-//     fn test_full_docker_cmd_structure() {
-//         let env = BTreeMap::from([("MPC_ACCOUNT_ID".into(), "test-user".into())]);
-//         let digest = make_digest();
-//         let cmd = build_docker_cmd(Platform::NonTee, &env, &digest).unwrap();
-
-//         // Check required subsequence
-//         assert!(cmd.contains(&"docker".to_string()));
-//         assert!(cmd.contains(&"run".to_string()));
-//         assert!(cmd.contains(&"--security-opt".to_string()));
-//         assert!(cmd.contains(&"no-new-privileges:true".to_string()));
-//         assert!(cmd.contains(&"/tapp:/tapp:ro".to_string()));
-//         assert!(cmd.contains(&"shared-volume:/mnt/shared".to_string()));
-//         assert!(cmd.contains(&"mpc-data:/data".to_string()));
-//         assert!(cmd.contains(&MPC_CONTAINER_NAME.to_string()));
-//         assert!(cmd.contains(&"--detach".to_string()));
-//         // Image digest should be the last argument
-//         assert_eq!(cmd.last().unwrap(), &digest);
-//     }
-
-//     // -- Dstack tests -------------------------------------------------------
-
-//     #[test]
-//     fn test_extend_rtmr3_nontee_is_noop() {
-//         // NonTee should return immediately without touching dstack
-//         let rt = tokio::runtime::Runtime::new().unwrap();
-//         rt.block_on(extend_rtmr3(Platform::NonTee, &make_digest()))
-//             .unwrap();
-//     }
-
-//     #[test]
-//     fn test_extend_rtmr3_tee_requires_socket() {
-//         // TEE mode should fail when socket doesn't exist
-//         let rt = tokio::runtime::Runtime::new().unwrap();
-//         let result = rt.block_on(extend_rtmr3(Platform::Tee, &make_digest()));
-//         assert_matches!(result, Err(LauncherError::DstackSocketMissing(_)));
-//     }
-
-//     // -- MpcDockerImageHash integration test --------------------------------
-
-//     #[test]
-//     fn test_mpc_docker_image_hash_from_bare_hex() {
-//         let bare_hex = "a".repeat(64);
-//         let hash: MpcDockerImageHash = bare_hex.parse().unwrap();
-//         assert_eq!(hash.as_hex(), bare_hex);
-//     }
-
-//     // -- Integration test (feature-gated) -----------------------------------
-
-//     #[cfg(feature = "integration-test")]
-//     mod integration {
-//         use super::*;
-
-//         const TEST_DIGEST: &str =
-//             "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372";
-
-//         fn test_dstack_config() -> Config {
-//             user_config_from_map(BTreeMap::from([
-//                 (
-//                     "MPC_IMAGE_TAGS".into(),
-//                     "83b52da4e2270c688cdd30da04f6b9d3565f25bb".into(),
-//                 ),
-//                 ("MPC_IMAGE_NAME".into(), "nearone/testing".into()),
-//                 ("MPC_REGISTRY".into(), "registry.hub.docker.com".into()),
-//             ]))
-//             .unwrap()
-//         }
-
-//         #[tokio::test]
-//         async fn test_validate_image_hash_real_registry() {
-//             let timing = RpcTimingConfig {
-//                 request_timeout_secs: 10.0,
-//                 request_interval_secs: 1.0,
-//                 max_attempts: 20,
-//             };
-//             let result = validate_image_hash(TEST_DIGEST, &test_dstack_config(), &timing)
-//                 .await
-//                 .unwrap();
-//             assert!(result, "validate_image_hash() failed for test image");
-//         }
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use assert_matches::assert_matches;
+    use launcher_interface::types::DockerSha256Digest;
+
+    use crate::constants::*;
+    use crate::docker_run_args;
+    use crate::error::LauncherError;
+    use crate::types::*;
+
+    fn sample_digest() -> DockerSha256Digest {
+        format!("sha256:{}", "a".repeat(64)).parse().unwrap()
+    }
+
+    fn base_mpc_config() -> MpcBinaryConfig {
+        MpcBinaryConfig {
+            mpc_account_id: "test-account".into(),
+            mpc_local_address: "127.0.0.1".parse().unwrap(),
+            mpc_secret_key_store: "secret".into(),
+            mpc_backup_encryption_key_hex: "0".repeat(64),
+            mpc_env: MpcEnv::Testnet,
+            mpc_home_dir: "/data".into(),
+            mpc_contract_id: "contract.near".into(),
+            mpc_responder_id: "responder-1".into(),
+            near_boot_nodes: "boot1,boot2".into(),
+            rust_backtrace: RustBacktrace::Enabled,
+            rust_log: RustLog::Level(RustLogLevel::Info),
+            extra_env: BTreeMap::new(),
+        }
+    }
+
+    fn empty_docker_flags() -> DockerLaunchFlags {
+        serde_json::from_value(serde_json::json!({
+            "extra_hosts": {"hosts": []},
+            "port_mappings": {"ports": []}
+        }))
+        .unwrap()
+    }
+
+    fn docker_flags_with_host_and_port() -> DockerLaunchFlags {
+        serde_json::from_value(serde_json::json!({
+            "extra_hosts": {"hosts": [{"hostname": {"Domain": "node1"}, "ip": "192.168.1.1"}]},
+            "port_mappings": {"ports": [{"src": 11780, "dst": 11780}]}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn tee_mode_includes_dstack_mount() {
+        // given
+        let config = base_mpc_config();
+        let flags = empty_docker_flags();
+        let digest = sample_digest();
+
+        // when
+        let args = docker_run_args(Platform::Tee, &config, &flags, &digest).unwrap();
+
+        // then
+        let joined = args.join(" ");
+        assert!(joined.contains(&format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}")));
+        assert!(joined.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
+    }
+
+    #[test]
+    fn nontee_mode_excludes_dstack_mount() {
+        // given
+        let config = base_mpc_config();
+        let flags = empty_docker_flags();
+        let digest = sample_digest();
+
+        // when
+        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+
+        // then
+        let joined = args.join(" ");
+        assert!(!joined.contains("DSTACK_ENDPOINT="));
+        assert!(!joined.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
+    }
+
+    #[test]
+    fn includes_security_opts_and_required_volumes() {
+        // given
+        let config = base_mpc_config();
+        let flags = empty_docker_flags();
+        let digest = sample_digest();
+
+        // when
+        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+
+        // then
+        let joined = args.join(" ");
+        assert!(joined.contains("--security-opt no-new-privileges:true"));
+        assert!(joined.contains("/tapp:/tapp:ro"));
+        assert!(joined.contains("shared-volume:/mnt/shared"));
+        assert!(joined.contains("mpc-data:/data"));
+        assert!(joined.contains(&format!("--name {MPC_CONTAINER_NAME}")));
+        assert!(joined.contains("--detach"));
+    }
+
+    #[test]
+    fn image_digest_is_last_argument() {
+        // given
+        let config = base_mpc_config();
+        let flags = empty_docker_flags();
+        let digest = sample_digest();
+
+        // when
+        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+
+        // then
+        assert_eq!(args.last().unwrap(), &digest.to_string());
+    }
+
+    #[test]
+    fn includes_ports_and_extra_hosts() {
+        // given
+        let config = base_mpc_config();
+        let flags = docker_flags_with_host_and_port();
+        let digest = sample_digest();
+
+        // when
+        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+
+        // then
+        let joined = args.join(" ");
+        assert!(joined.contains("--add-host node1:192.168.1.1"));
+        assert!(joined.contains("-p 11780:11780"));
+    }
+
+    #[test]
+    fn includes_mpc_env_vars() {
+        // given
+        let config = base_mpc_config();
+        let flags = empty_docker_flags();
+        let digest = sample_digest();
+
+        // when
+        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+
+        // then
+        let joined = args.join(" ");
+        assert!(joined.contains("MPC_ACCOUNT_ID=test-account"));
+        assert!(joined.contains("MPC_IMAGE_HASH="));
+        assert!(joined.contains(&format!("MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}")));
+    }
+
+    #[test]
+    fn ld_preload_in_typed_field_is_rejected_by_env_validation() {
+        // given - typed fields are also validated by env_validation::validate_env_value,
+        // so LD_PRELOAD in any env value is caught before the final safeguard.
+        let mut config = base_mpc_config();
+        config.mpc_account_id = "LD_PRELOAD=/evil.so".into();
+        let flags = empty_docker_flags();
+        let digest = sample_digest();
+
+        // when
+        let result = docker_run_args(Platform::NonTee, &config, &flags, &digest);
+
+        // then
+        assert_matches!(result, Err(LauncherError::UnsafeEnvValue { .. }));
+    }
+}
