@@ -89,74 +89,95 @@ pub(crate) fn validate_env_value(
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
     use super::*;
 
-    // -- Key validation tests --
+    #[rstest]
+    #[case("MPC_FOO")]
+    #[case("MPC_FOO_123")]
+    #[case("MPC_A_B_C")]
+    fn key_allows_mpc_prefix_uppercase(#[case] key: &str) {
+        assert_matches!(validate_env_key(key), Ok(_));
+    }
 
-    #[test]
-    fn key_allows_mpc_prefix_uppercase() {
-        assert!(validate_env_key("MPC_FOO").is_ok());
-        assert!(validate_env_key("MPC_FOO_123").is_ok());
-        assert!(validate_env_key("MPC_A_B_C").is_ok());
+    #[rstest]
+    #[case("MPC_foo")]
+    #[case("MPC-FOO")]
+    #[case("MPC.FOO")]
+    #[case("MPC_")]
+    fn key_rejects_lowercase_or_invalid_format(#[case] key: &str) {
+        assert_matches!(validate_env_key(key), Err(_));
+    }
+
+    #[rstest]
+    #[case("RUST_LOG")]
+    #[case("RUST_BACKTRACE")]
+    #[case("NEAR_BOOT_NODES")]
+    fn key_allows_compat_non_mpc_keys(#[case] key: &str) {
+        assert_matches!(validate_env_key(key), Ok(_));
+    }
+
+    #[rstest]
+    #[case("MPC_P2P_PRIVATE_KEY")]
+    #[case("MPC_ACCOUNT_SK")]
+    fn key_denies_sensitive_keys(#[case] key: &str) {
+        assert_matches!(validate_env_key(key), Err(_));
+    }
+
+    #[rstest]
+    #[case("BAD_KEY")]
+    #[case("HOME")]
+    fn key_rejects_unknown_non_mpc_key(#[case] key: &str) {
+        assert_matches!(validate_env_key(key), Err(_));
+    }
+
+    #[rstest]
+    #[case("ok\nno")]
+    #[case("ok\rno")]
+    fn value_rejects_control_chars(#[case] value: &str) {
+        assert_matches!(validate_env_value("K", value), Err(_));
     }
 
     #[test]
-    fn key_rejects_lowercase_or_invalid_format() {
-        assert!(validate_env_key("MPC_foo").is_err());
-        assert!(validate_env_key("MPC-FOO").is_err());
-        assert!(validate_env_key("MPC.FOO").is_err());
-        assert!(validate_env_key("MPC_").is_err());
-    }
-
-    #[test]
-    fn key_allows_compat_non_mpc_keys() {
-        assert!(validate_env_key("RUST_LOG").is_ok());
-        assert!(validate_env_key("RUST_BACKTRACE").is_ok());
-        assert!(validate_env_key("NEAR_BOOT_NODES").is_ok());
-    }
-
-    #[test]
-    fn key_denies_sensitive_keys() {
-        assert!(validate_env_key("MPC_P2P_PRIVATE_KEY").is_err());
-        assert!(validate_env_key("MPC_ACCOUNT_SK").is_err());
-    }
-
-    #[test]
-    fn key_rejects_unknown_non_mpc_key() {
-        assert!(validate_env_key("BAD_KEY").is_err());
-        assert!(validate_env_key("HOME").is_err());
-    }
-
-    // -- Value validation tests --
-
-    #[test]
-    fn value_rejects_control_chars() {
-        assert!(validate_env_value("K", "ok\nno").is_err());
-        assert!(validate_env_value("K", "ok\rno").is_err());
-        assert!(validate_env_value("K", &format!("a{}b", '\x1F')).is_err());
+    fn value_rejects_control_char_unit_separator() {
+        assert_matches!(validate_env_value("K", &format!("a{}b", '\x1F')), Err(_));
     }
 
     #[test]
     fn value_allows_tab() {
-        assert!(validate_env_value("K", "a\tb").is_ok());
+        assert_matches!(validate_env_value("K", "a\tb"), Ok(_));
     }
 
-    #[test]
-    fn value_rejects_ld_preload() {
-        assert!(validate_env_value("K", "LD_PRELOAD=/tmp/x.so").is_err());
-        assert!(validate_env_value("K", "foo LD_PRELOAD bar").is_err());
+    #[rstest]
+    #[case("LD_PRELOAD=/tmp/x.so")]
+    #[case("foo LD_PRELOAD bar")]
+    fn value_rejects_ld_preload(#[case] value: &str) {
+        assert_matches!(validate_env_value("K", value), Err(_));
     }
 
     #[test]
     fn value_rejects_too_long() {
-        assert!(validate_env_value("K", &"a".repeat(MAX_ENV_VALUE_LEN + 1)).is_err());
-        assert!(validate_env_value("K", &"a".repeat(MAX_ENV_VALUE_LEN)).is_ok());
+        assert_matches!(
+            validate_env_value("K", &"a".repeat(MAX_ENV_VALUE_LEN + 1)),
+            Err(_)
+        );
     }
 
     #[test]
-    fn value_accepts_normal() {
-        assert!(validate_env_value("K", "hello-world").is_ok());
-        assert!(validate_env_value("K", "192.168.1.1").is_ok());
-        assert!(validate_env_value("K", "info,mpc_node=debug").is_ok());
+    fn value_accepts_at_length_limit() {
+        assert_matches!(
+            validate_env_value("K", &"a".repeat(MAX_ENV_VALUE_LEN)),
+            Ok(_)
+        );
+    }
+
+    #[rstest]
+    #[case("hello-world")]
+    #[case("192.168.1.1")]
+    #[case("info,mpc_node=debug")]
+    fn value_accepts_normal(#[case] value: &str) {
+        assert_matches!(validate_env_value("K", value), Ok(_));
     }
 }

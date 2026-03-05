@@ -10567,6 +10567,7 @@ dependencies = [
  "launcher-interface",
  "regex",
  "reqwest 0.12.28",
+ "rstest",
  "serde",
  "serde_json",
  "tempfile",

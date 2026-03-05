@@ -31,6 +31,7 @@ url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+rstest = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]
