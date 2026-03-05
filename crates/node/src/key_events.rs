@@ -720,7 +720,9 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[rstest::rstest]
     #[tokio::test(start_paused = true)]
+    #[timeout(Duration::from_millis(100))]
     async fn resharing_leader__should_retry_after_timeout_if_computation_is_not_started() {
         // Given
         // Simulate the expired/idle contract state: started=false but ID already
