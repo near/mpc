@@ -11,6 +11,31 @@ use crate::types::primitives::{AccountId, DomainId, Tweak};
 #[derive(
     Debug,
     Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum ForeignTxPayloadVersion {
+    V1 = 1,
+}
+
+#[derive(
+    Debug,
+    Clone,
     Eq,
     PartialEq,
     Ord,
@@ -29,7 +54,7 @@ pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub derivation_path: String,
     pub domain_id: DomainId,
-    pub payload_version: u8,
+    pub payload_version: ForeignTxPayloadVersion,
 }
 
 #[derive(
@@ -53,7 +78,7 @@ pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
-    pub payload_version: u8,
+    pub payload_version: ForeignTxPayloadVersion,
 }
 
 #[derive(

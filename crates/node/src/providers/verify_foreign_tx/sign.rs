@@ -134,7 +134,7 @@ where
         request_id: SignatureId,
         request: &dtos::ForeignChainRpcRequest,
         my_participant_index: usize,
-        payload_version: u8,
+        payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
         validate_foreign_chain_policy(
             &self.config.foreign_chains,
@@ -282,11 +282,13 @@ where
             _ => bail!("unsupported foreign chain request"),
         };
         let payload = match payload_version {
-            1 => dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
-                request: request.clone(),
-                values,
-            }),
-            v => bail!("unsupported payload_version: {v}"),
+            dtos::ForeignTxPayloadVersion::V1 => {
+                dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
+                    request: request.clone(),
+                    values,
+                })
+            }
+            _ => bail!("unsupported payload_version"),
         };
         Ok(payload)
     }

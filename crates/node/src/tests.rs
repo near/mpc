@@ -1,6 +1,6 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
 use contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest,
+    BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
 };
@@ -457,7 +457,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
             }),
             domain_id: domain.id.0.into(),
             derivation_path: "m/44'/60'/0'/0/0".to_string(),
-            payload_version: 1,
+            payload_version: ForeignTxPayloadVersion::V1,
         },
     };
     tracing::info!(

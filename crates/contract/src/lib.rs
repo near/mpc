@@ -522,10 +522,6 @@ impl MpcContract {
             request
         );
 
-        if request.payload_version != 1 {
-            env::panic_str("unsupported payload_version; only version 1 is currently supported");
-        }
-
         let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
             Err(err) => env::panic_str(&err.to_string()),
@@ -2085,7 +2081,7 @@ mod tests {
     use bounded_collections::NonEmptyBTreeSet;
     use contract_interface::types::{
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
-        ForeignTxSignPayloadV1,
+        ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
     };
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
@@ -2476,7 +2472,7 @@ mod tests {
         let request_args = VerifyForeignTransactionRequestArgs {
             derivation_path: derivation_path.clone(),
             domain_id: DomainId::default().0.into(),
-            payload_version: 1,
+            payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -2548,7 +2544,7 @@ mod tests {
         let request_args = VerifyForeignTransactionRequestArgs {
             derivation_path: "".to_string(),
             domain_id: DomainId::default().0.into(),
-            payload_version: 1,
+            payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -2609,7 +2605,7 @@ mod tests {
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
             derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
-            payload_version: 1,
+            payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -2642,7 +2638,7 @@ mod tests {
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
             derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
-            payload_version: 1,
+            payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
