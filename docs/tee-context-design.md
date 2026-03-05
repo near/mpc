@@ -1,13 +1,14 @@
 # TEE Context
 
-The TEE Context is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate, depending on [`tee-authority`] and [`mpc-attestation`], reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, backup service) use the TEE Context directly.
+The TEE Context is a shared crate managing the TEE attestation lifecycle. It handles attestation submission, periodic renewal, removal monitoring, and governance contract polling — so that each service gets these capabilities without reimplementing them. The MPC node already implements these tasks today; they will be extracted into a standalone crate reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, Backup Service) use the TEE Context directly.
 
-For the shared boot, attestation, governance, and upgrade patterns that the TEE Context builds on, see [TEE Lifecycle][tee-lifecycle].
+The TEE Context uses [`tee-authority`] to generate TDX attestation quotes and submits them to the governance contract, which verifies them using DCAP logic from [`mpc-attestation`]. For verification details, see [Attestation verification on the contract][attestation-verification]. For the shared boot, attestation, governance, and upgrade patterns that the TEE Context builds on, see [TEE Lifecycle][tee-lifecycle].
 
 [tee-lifecycle]: tee-lifecycle.md
 [mpc-context]: indexer-design.md
 [`tee-authority`]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
 [`mpc-attestation`]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
+[attestation-verification]: securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
 
 [remote-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs
 [allowed-hashes-watcher]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/allowed_image_hashes_watcher.rs#L103
@@ -15,10 +16,6 @@ For the shared boot, attestation, governance, and upgrade patterns that the TEE 
 [monitor-attestation-removal]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs#L187
 [verify-tee-loop]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/mpc_client.rs#L133
 [verify-tee-contract]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L1380
-
-The TEE Context uses [`tee-authority`] to generate TDX attestation quotes and submits them to the governance contract, which verifies them using DCAP logic from [`mpc-attestation`]. For verification details, see [Attestation verification on the contract][attestation-verification].
-
-[attestation-verification]: securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
 
 ## Interface
 
@@ -74,7 +71,9 @@ The accessor pattern follows the [`ContractStateStream<T>`][contract-state-strea
 
 [contract-state-stream]: indexer-design.md#contract-state-subscriber
 
-Each service points the TEE Context at its own governance contract via `TeeNodeIdentity::governance_contract`. All governance contracts expose the same TEE view/call methods since they share [`TeeState`][tee-state].
+Each service points the TEE Context at its own governance contract via `TeeNodeIdentity::governance_contract`. All governance contracts expose the same attestation-related methods (see [Attestation Methods][tee-context-methods]) since they share [`TeeState`][tee-state]. Voting methods vary per contract.
+
+[tee-context-methods]: tee-lifecycle.md#attestation-methods
 
 [tee-state]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/tee_state.rs#L92
 
