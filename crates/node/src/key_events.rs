@@ -767,8 +767,9 @@ mod tests {
         // Advance past two full timeout cycles.
         // Note that tokio will auto-advance the clock here since we're running with paused time.
         // See https://docs.rs/tokio/latest/tokio/time/fn.advance.html#auto-advance.
-        let wait_time = MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE * 2 + 5;
-        tokio::time::sleep(Duration::from_secs(wait_time)).await;
+        let wait_time =
+            MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE * 2 + Duration::from_secs(5);
+        tokio::time::sleep(wait_time).await;
 
         // Then
         let send_count = txn_sender_handle.count();
