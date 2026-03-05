@@ -1,26 +1,10 @@
-use std::path::PathBuf;
-
 use launcher_interface::types::DockerSha256Digest;
-use mpc_primitives::hash::DockerSha256Digest;
 use thiserror::Error;
-use url::Url;
 
 #[derive(Error, Debug)]
 pub enum LauncherError {
-    #[error("PLATFORM=TEE requires dstack unix socket at {0}")]
-    DstackSocketMissing(String),
-
-    #[error("GetQuote failed before extending RTMR3: {0}")]
-    DstackGetQuoteFailed(String),
-
     #[error("EmitEvent failed while extending RTMR3: {0}")]
     DstackEmitEventFailed(String),
-
-    #[error("DEFAULT_IMAGE_DIGEST invalid: {0}")]
-    InvalidDefaultDigest(String),
-
-    #[error("Invalid JSON in {path}: approved_hashes missing or empty")]
-    InvalidApprovedHashes { path: String },
 
     #[error("MPC_HASH_OVERRIDE invalid: {0}")]
     InvalidHashOverride(String),
@@ -30,15 +14,6 @@ pub enum LauncherError {
 
     #[error("Failed to get auth token from registry: {0}")]
     RegistryAuthFailed(String),
-
-    #[error("Failed to get successful response from {url} after {attempts} attempts")]
-    RegistryRequestFailed { url: Url, attempts: u32 },
-
-    #[error("Digest mismatch: pulled {pulled} != expected {expected}")]
-    DigestMismatch { pulled: String, expected: String },
-
-    #[error("MPC image hash validation failed: {0}")]
-    ImageValidationFailed(String),
 
     #[error("docker run failed for validated hash")]
     DockerRunFailed {
@@ -72,12 +47,6 @@ pub enum LauncherError {
         path: String,
         source: serde_json::Error,
     },
-
-    #[error("Required environment variable not set: {0}")]
-    MissingEnvVar(String),
-
-    #[error("Invalid value for {key}: {value}")]
-    InvalidEnvVar { key: String, value: String },
 
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),

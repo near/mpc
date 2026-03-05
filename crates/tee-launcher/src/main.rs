@@ -383,7 +383,7 @@ fn build_docker_cmd(
         "--name".into(),
         MPC_CONTAINER_NAME.into(),
         "--detach".into(),
-        format!("{image_digest}"),
+        image_digest.to_string(),
     ]);
 
     let docker_command_string = cmd.join(" ");

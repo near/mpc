@@ -17,7 +17,6 @@ bounded-collections = { workspace = true }
 clap = { workspace = true }
 dstack-sdk = { workspace = true }
 hex = { workspace = true }
-mpc-primitives = { workspace = true }
 launcher-interface = { workspace = true }
 itertools = { workspace = true }
 regex = { workspace = true }
