@@ -194,8 +194,9 @@ mod test {
     use crate::confidential_key_derivation::ciphersuite::hash_to_curve;
     use crate::confidential_key_derivation::hash_app_id_with_pk;
     use crate::test_utils::{
-        assert_buffer_capacity, check_one_coordinator_output, generate_participants,
-        generate_test_keys, make_keygen_output, run_protocol, GenProtocol, MockCryptoRng,
+        assert_buffer_capacity, check_one_coordinator_output, expected_buffer_by_role,
+        generate_participants, generate_test_keys, make_keygen_output, run_protocol, GenProtocol,
+        MockCryptoRng,
     };
     use rand::{seq::SliceRandom as _, RngCore, SeedableRng};
     use rstest::rstest;
@@ -299,13 +300,11 @@ mod test {
                     rng_p,
                 )
             },
-            |p| {
-                if p == coordinator {
-                    CKD_MAX_INCOMING_COORDINATOR_ENTRIES
-                } else {
-                    CKD_MAX_INCOMING_PARTICIPANT_ENTRIES
-                }
-            },
+            expected_buffer_by_role(
+                coordinator,
+                CKD_MAX_INCOMING_COORDINATOR_ENTRIES,
+                CKD_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
         );
     }
 }

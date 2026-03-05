@@ -35,7 +35,10 @@ pub use dkg::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare}
 pub use participant_simulation::Simulator;
 pub use participants::{generate_participants, generate_participants_with_random_ids};
 pub use presign::{ecdsa_generate_rerandpresig_args, frost_run_presignature};
-pub use protocol::{assert_buffer_capacity, build_buffer_test, run_and_assert_buffer_entries};
+pub use protocol::{
+    assert_buffer_capacity, build_buffer_test, expected_buffer_by_role,
+    run_and_assert_buffer_entries,
+};
 pub use protocol::{
     run_protocol, run_protocol_and_take_snapshots, run_simulated_protocol, run_two_party_protocol,
 };
@@ -82,7 +85,7 @@ pub fn make_keygen_output<C: Ciphersuite>(
 
 /// Centralized key generation for testing: generates random participant IDs
 /// and creates `KeygenOutput` for each using polynomial evaluation.
-pub fn build_key_packages_with_dealer<C: Ciphersuite>(
+pub fn build_frost_key_packages_with_dealer<C: Ciphersuite>(
     max_signers: u16,
     min_signers: u16,
     rng: &mut impl CryptoRngCore,

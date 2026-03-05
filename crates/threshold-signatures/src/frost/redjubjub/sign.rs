@@ -272,7 +272,9 @@ mod test {
         fut_wrapper, REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
         REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
     };
-    use crate::test_utils::{assert_buffer_capacity, build_key_packages_with_dealer};
+    use crate::test_utils::{
+        assert_buffer_capacity, build_frost_key_packages_with_dealer, expected_buffer_by_role,
+    };
     use crate::{
         crypto::hash::hash,
         frost::redjubjub::{
@@ -300,7 +302,8 @@ mod test {
 
         for threshold in 2..max_signers {
             for actual_signers in threshold..=max_signers {
-                let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
+                let key_packages =
+                    build_frost_key_packages_with_dealer(max_signers, threshold, &mut rng);
                 let threshold: usize = threshold.into();
                 let coordinator = key_packages[0].0;
                 let data = run_sign_with_presign(
@@ -320,7 +323,7 @@ mod test {
     fn test_signature_correctness() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let threshold = 6;
-        let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
+        let keys = build_frost_key_packages_with_dealer(11, threshold, &mut rng);
         let public_key = keys[0].1.public_key.to_element();
 
         let msg = b"hello world".to_vec();
@@ -388,7 +391,7 @@ mod test {
     fn test_sign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let keys = build_key_packages_with_dealer(
+        let keys = build_frost_key_packages_with_dealer(
             u16::try_from(num_participants).unwrap(),
             u16::try_from(threshold).unwrap(),
             &mut rng,
@@ -438,13 +441,11 @@ mod test {
                     randomize,
                 )
             },
-            |p| {
-                if p == coordinator {
-                    REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES
-                } else {
-                    REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES
-                }
-            },
+            expected_buffer_by_role(
+                coordinator,
+                REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
         );
     }
 }

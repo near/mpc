@@ -228,7 +228,9 @@ mod test {
         },
         Field, Polynomial, ProjectivePoint, Secp256K1ScalarField,
     };
-    use crate::test_utils::{assert_buffer_capacity, generate_participants, MockCryptoRng};
+    use crate::test_utils::{
+        assert_buffer_capacity, expected_buffer_by_role, generate_participants, MockCryptoRng,
+    };
     use rstest::rstest;
 
     type PresigSimulationOutput = (Scalar, Polynomial, Polynomial, Polynomial, ProjectivePoint);
@@ -474,13 +476,11 @@ mod test {
                     msg_scalar,
                 )
             },
-            |p| {
-                if p == coordinator {
-                    ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES
-                } else {
-                    ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES
-                }
-            },
+            expected_buffer_by_role(
+                coordinator,
+                ROBUST_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
         );
     }
 }

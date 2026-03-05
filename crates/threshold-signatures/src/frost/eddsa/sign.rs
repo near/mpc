@@ -460,9 +460,9 @@ mod test {
         EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES,
     };
     use crate::test_utils::{
-        assert_buffer_capacity, assert_public_key_invariant, build_key_packages_with_dealer,
-        generate_participants, generate_participants_with_random_ids, one_coordinator_output,
-        run_keygen, run_refresh, run_reshare, MockCryptoRng,
+        assert_buffer_capacity, assert_public_key_invariant, build_frost_key_packages_with_dealer,
+        expected_buffer_by_role, generate_participants, generate_participants_with_random_ids,
+        one_coordinator_output, run_keygen, run_refresh, run_reshare, MockCryptoRng,
     };
     use crate::{
         crypto::hash::hash,
@@ -491,7 +491,7 @@ mod test {
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
                 let key_packages =
-                    build_key_packages_with_dealer(max_signers, min_signers, &mut rng);
+                    build_frost_key_packages_with_dealer(max_signers, min_signers, &mut rng);
                 let coordinator = key_packages[0].0;
                 let min_signers: usize = min_signers.into();
                 let data = run_sign_v1(
@@ -519,7 +519,7 @@ mod test {
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
                 let key_packages =
-                    build_key_packages_with_dealer(max_signers, min_signers, &mut rng);
+                    build_frost_key_packages_with_dealer(max_signers, min_signers, &mut rng);
                 let coordinator = key_packages[0].0;
                 let min_signers: usize = min_signers.into();
                 let data = run_sign_v2(
@@ -540,7 +540,7 @@ mod test {
     fn test_sign_v1_correctness() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let threshold = 6;
-        let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
+        let keys = build_frost_key_packages_with_dealer(11, threshold, &mut rng);
         let public_key = keys[0].1.public_key.to_element();
 
         let msg = b"hello world with near".to_vec();
@@ -583,7 +583,7 @@ mod test {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let actual_signers = 11;
         let threshold = 6;
-        let keys = build_key_packages_with_dealer(actual_signers, threshold, &mut rng);
+        let keys = build_frost_key_packages_with_dealer(actual_signers, threshold, &mut rng);
         let public_key = keys[0].1.public_key.to_element();
 
         let threshold: usize = threshold.into();
@@ -897,7 +897,7 @@ mod test {
     fn test_sign_v1_buffer_entries(#[case] num_participants: u16, #[case] threshold: u16) {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let keys = build_key_packages_with_dealer(num_participants, threshold, &mut rng);
+        let keys = build_frost_key_packages_with_dealer(num_participants, threshold, &mut rng);
         let coordinator = keys[0].0;
         let message = b"test message for buffer entries".to_vec();
         let participants: Vec<_> = keys.iter().map(|(p, _)| *p).collect();
@@ -919,13 +919,11 @@ mod test {
                     rng_p,
                 )
             },
-            |p| {
-                if p == coordinator {
-                    EDDSA_SIGN_V1_MAX_INCOMING_COORDINATOR_ENTRIES
-                } else {
-                    EDDSA_SIGN_V1_MAX_INCOMING_PARTICIPANT_ENTRIES
-                }
-            },
+            expected_buffer_by_role(
+                coordinator,
+                EDDSA_SIGN_V1_MAX_INCOMING_COORDINATOR_ENTRIES,
+                EDDSA_SIGN_V1_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
         );
     }
 
@@ -936,7 +934,7 @@ mod test {
     fn test_sign_v2_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let keys = build_key_packages_with_dealer(
+        let keys = build_frost_key_packages_with_dealer(
             num_participants.try_into().unwrap(),
             threshold.try_into().unwrap(),
             &mut rng,
@@ -974,13 +972,11 @@ mod test {
                     message.clone(),
                 )
             },
-            |p| {
-                if p == coordinator {
-                    EDDSA_SIGN_V2_MAX_INCOMING_COORDINATOR_ENTRIES
-                } else {
-                    EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES
-                }
-            },
+            expected_buffer_by_role(
+                coordinator,
+                EDDSA_SIGN_V2_MAX_INCOMING_COORDINATOR_ENTRIES,
+                EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
         );
     }
 

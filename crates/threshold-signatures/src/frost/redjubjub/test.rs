@@ -5,7 +5,7 @@ use crate::{
 };
 
 use crate::test_utils::{
-    assert_public_key_invariant, build_key_packages_with_dealer, generate_participants,
+    assert_public_key_invariant, build_frost_key_packages_with_dealer, generate_participants,
     generate_participants_with_random_ids, one_coordinator_output, run_keygen, run_protocol,
     run_refresh, run_reshare, GenProtocol, MockCryptoRng,
 };
@@ -296,7 +296,7 @@ fn check_presignatures_terms() {
     let threshold = 10;
     let actual_signers = 10;
 
-    let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
+    let key_packages = build_frost_key_packages_with_dealer(max_signers, threshold, &mut rng);
     // add the presignatures here
     let presignatures =
         run_presign(&key_packages, threshold as usize, actual_signers, rng).unwrap();
@@ -318,7 +318,7 @@ fn check_presignatures_terms_with_less_active_participants() {
     let threshold = 7;
     let actual_signers = 8;
 
-    let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
+    let key_packages = build_frost_key_packages_with_dealer(max_signers, threshold, &mut rng);
     // add the presignatures here
     let presignatures =
         run_presign(&key_packages, threshold as usize, actual_signers, rng).unwrap();

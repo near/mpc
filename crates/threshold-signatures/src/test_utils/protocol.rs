@@ -239,6 +239,22 @@ pub fn run_and_assert_buffer_entries<T>(
     }
 }
 
+/// Returns a closure that maps a participant to its expected buffer size
+/// based on whether it is the coordinator or not.
+pub fn expected_buffer_by_role(
+    coordinator: Participant,
+    coordinator_entries: usize,
+    participant_entries: usize,
+) -> impl Fn(Participant) -> usize {
+    move |p| {
+        if p == coordinator {
+            coordinator_entries
+        } else {
+            participant_entries
+        }
+    }
+}
+
 /// One-call convenience: build protocols with unbounded buffers, run them,
 /// and assert exact buffer entry counts.
 pub fn assert_buffer_capacity<T: Send + 'static, Fut, F>(

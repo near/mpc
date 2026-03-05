@@ -203,7 +203,9 @@ mod test {
             Polynomial,
         },
         participants::Participant,
-        test_utils::{assert_buffer_capacity, generate_participants, MockCryptoRng},
+        test_utils::{
+            assert_buffer_capacity, expected_buffer_by_role, generate_participants, MockCryptoRng,
+        },
     };
     use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, ProjectivePoint, PublicKey};
     use rand::SeedableRng;
@@ -324,13 +326,11 @@ mod test {
                     msg_scalar,
                 )
             },
-            |p| {
-                if p == coordinator {
-                    OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES
-                } else {
-                    OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES
-                }
-            },
+            expected_buffer_by_role(
+                coordinator,
+                OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
         );
     }
 }
