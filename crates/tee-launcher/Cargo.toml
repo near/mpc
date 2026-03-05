@@ -12,6 +12,7 @@ path = "src/main.rs"
 integration-test = []
 
 [dependencies]
+backon = { workspace = true }
 bounded-collections = { workspace = true }
 clap = { workspace = true }
 dstack-sdk = { workspace = true }

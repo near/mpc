@@ -1,6 +1,7 @@
 use std::process::Command;
 use std::{collections::VecDeque, time::Duration};
 
+use backon::{ExponentialBuilder, Retryable};
 use clap::Parser;
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use launcher_interface::types::ApprovedHashesFile;
@@ -181,10 +182,12 @@ async fn get_manifest_digest(
             config.registry, config.image_name
         )
         .parse()
-        .map_err(|_| LauncherError::InvalidManifestUrl(format!(
-            "https://{}/v2/{}/manifests/{tag}",
-            config.registry, config.image_name
-        )))?;
+        .map_err(|_| {
+            LauncherError::InvalidManifestUrl(format!(
+                "https://{}/v2/{}/manifests/{tag}",
+                config.registry, config.image_name
+            ))
+        })?;
 
         let authorization_value: HeaderValue = format!("Bearer {}", token_response.token)
             .parse()
@@ -252,52 +255,40 @@ async fn get_manifest_digest(
     Err(LauncherError::ImageHashNotFoundAmongTags)
 }
 
-// TODO: Use backon
 async fn request_until_success(
     client: &reqwest::Client,
     url: Url,
     headers: HeaderMap,
     config: &LauncherConfig,
 ) -> Result<reqwest::Response, LauncherError> {
-    let mut interval = config.rpc_request_interval_secs as f64;
+    let request_timeout = Duration::from_secs(config.rpc_request_timeout_secs);
+    let backoff = ExponentialBuilder::default()
+        .with_min_delay(Duration::from_secs(config.rpc_request_interval_secs))
+        .with_factor(1.5)
+        .with_max_delay(Duration::from_secs(60))
+        .with_max_times(config.rpc_max_attempts as usize);
 
-    for attempt in 1..=config.rpc_max_attempts {
-        // Sleep before request (matching Python behavior)
-        tokio::time::sleep(std::time::Duration::from_secs_f64(interval)).await;
-        interval = (interval.max(1.0) * 1.5).min(60.0);
-
-        let request_timeout_duration = Duration::from_secs(config.rpc_request_timeout_secs);
-        let request = client
+    let request_future = || async {
+        client
             .get(url.clone())
             .headers(headers.clone())
-            .timeout(request_timeout_duration)
+            .timeout(request_timeout)
             .send()
-            .await;
+            .await?
+            .error_for_status()
+    };
 
-        match request {
-            Err(e) => {
-                tracing::warn!(
-                    "Attempt {attempt}/{}: Failed to fetch {url}. Status: Timeout/Error: {e}",
-                    config.rpc_max_attempts
-                );
-                continue;
-            }
-            Ok(resp) if resp.status() != reqwest::StatusCode::OK => {
-                tracing::warn!(
-                    "Attempt {attempt}/{}: Failed to fetch {url}. Status: {}",
-                    config.rpc_max_attempts,
-                    resp.status()
-                );
-                continue;
-            }
-            Ok(resp) => return Ok(resp),
-        }
-    }
-
-    Err(LauncherError::RegistryRequestFailed {
-        url,
-        attempts: config.rpc_max_attempts,
-    })
+    request_future
+        .retry(backoff)
+        .when(|_: &reqwest::Error| true)
+        .notify(|err, retrying_in_duration| {
+            tracing::warn!(?url, ?retrying_in_duration, ?err, "failed to fetch");
+        })
+        .await
+        .map_err(|_| LauncherError::RegistryRequestFailed {
+            url,
+            attempts: config.rpc_max_attempts,
+        })
 }
 
 /// Returns if the given image digest is valid (pull + manifest + digest match).

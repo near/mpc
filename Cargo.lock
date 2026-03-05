@@ -10554,6 +10554,7 @@ name = "tee-launcher"
 version = "3.5.1"
 dependencies = [
  "assert_matches",
+ "backon",
  "bounded-collections",
  "clap",
  "dstack-sdk",
