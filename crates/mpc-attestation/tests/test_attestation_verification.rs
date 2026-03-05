@@ -57,7 +57,7 @@ fn validated_dstack_attestation_can_be_reverified() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &default_measurements(),
+            default_measurements(),
         )
         .expect("Initial verification failed");
 
@@ -89,7 +89,7 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &default_measurements(),
+            default_measurements(),
         )
         .expect("Initial verification failed");
 
@@ -140,7 +140,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &default_measurements(),
+            default_measurements(),
         )
         .expect("Initial verification should succeed");
 

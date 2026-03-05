@@ -1,4 +1,3 @@
-use alloc::vec;
 use alloc::vec::Vec;
 use attestation::{
     app_compose::AppCompose,
@@ -108,12 +107,13 @@ impl VerifiedAttestation {
 ///
 /// These are the same measurements previously hardcoded inside `Attestation::verify()`.
 /// Callers that don't need custom measurements should pass the result of this function.
-pub fn default_measurements() -> Vec<ExpectedMeasurements> {
-    vec![
+pub fn default_measurements() -> &'static [ExpectedMeasurements] {
+    static MEASUREMENTS: [ExpectedMeasurements; 2] = [
         include_measurements!("assets/tcb_info.json"),
         // TODO(#1433): Security - remove dev measurements from production builds after testing is complete
         include_measurements!("assets/tcb_info_dev.json"),
-    ]
+    ];
+    &MEASUREMENTS
 }
 
 impl Attestation {

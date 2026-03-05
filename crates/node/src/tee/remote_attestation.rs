@@ -110,7 +110,7 @@ fn validate_remote_attestation(
             now,
             allowed_docker_image_hashes,
             allowed_launcher_compose_hashes,
-            &mpc_attestation::attestation::default_measurements(),
+            mpc_attestation::attestation::default_measurements(),
         )
         .map(|_| ())
 }
