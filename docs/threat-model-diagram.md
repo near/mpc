@@ -35,16 +35,16 @@ graph TB
     %% ───────────────────────────────────────────────
     %% SERVER: Host OS > CVM > MPC Node (nested)
     %% ───────────────────────────────────────────────
-    subgraph HOST["Server / Host OS (UNTRUSTED)"]
+    subgraph HOST["Host OS"]
         direction TB
         HOST_CAP["Host Capabilities:<br/>- Read/modify env vars<br/>- Observe logs<br/>- Intercept local traffic<br/>- Attempt pubkey substitution<br/>- Replace disk snapshots"]
 
-        subgraph SGX_ENCLAVE["SGX Enclave (Trusted, separate from CVM)"]
+        subgraph SGX_ENCLAVE["SGX Enclave"]
             direction TB
             GRAMINE["Gramine Key Provider<br/>(derives disk encryption key<br/>from CVM measurements)"]
         end
 
-        subgraph CVM["CVM / TDX (Trusted TEE Boundary)"]
+        subgraph CVM["CVM / TDX"]
             direction TB
             DSTACK["Dstack<br/>(CVM orchestrator)"]
             LAUNCHER["Launcher<br/>(verify & measure docker image)"]
@@ -67,9 +67,9 @@ graph TB
     %% ───────────────────────────────────────────────
     %% Migration Server: Host OS > CVM > Migration Svc
     %% ───────────────────────────────────────────────
-    subgraph MIG_HOST["Migration Server / Host OS (UNTRUSTED)"]
+    subgraph MIG_HOST["Migration Host OS"]
         direction TB
-        subgraph MIG_CVM["CVM / TDX (Trusted TEE Boundary)"]
+        subgraph MIG_CVM["CVM / TDX"]
             direction TB
             subgraph MIG_BOX["Migration Service"]
                 direction TB
@@ -87,7 +87,7 @@ graph TB
     %% ───────────────────────────────────────────────
     %% Other MPC Nodes (also nested)
     %% ───────────────────────────────────────────────
-    subgraph PEER_HOST["Other Servers (UNTRUSTED Host)"]
+    subgraph PEER_HOST["Other Host OS"]
         subgraph PEER_CVM["CVM / TDX"]
             PEER_NODES["Other MPC Nodes<br/>(P2P mTLS mesh)"]
         end
