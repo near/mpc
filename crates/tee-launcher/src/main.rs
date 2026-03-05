@@ -392,13 +392,8 @@ fn build_docker_cmd(
         cmd.extend(["--env".into(), format!("{key}={value}")]);
     }
 
-    let (host_flag, host_value) = docker_flags.extra_hosts.docker_flag_and_value();
-    cmd.extend([host_flag, host_value]);
-
-    let (port_forwarding_flag, port_forwarding_value) =
-        docker_flags.port_mappings.docker_flag_and_value();
-
-    cmd.extend([port_forwarding_flag, port_forwarding_value]);
+    cmd.extend(docker_flags.extra_hosts.docker_args());
+    cmd.extend(docker_flags.port_mappings.docker_args());
 
     // Container run configuration
     cmd.extend([

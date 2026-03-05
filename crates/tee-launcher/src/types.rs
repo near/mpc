@@ -106,16 +106,14 @@ pub(crate) struct ExtraHosts {
 }
 
 impl ExtraHosts {
-    pub fn docker_flag_and_value(&self) -> (String, String) {
-        let flag = "--add-host".into();
-        let value = self
-            .hosts
+    /// Returns `["--add-host", "h1:ip1", "--add-host", "h2:ip2", ...]`.
+    pub fn docker_args(&self) -> Vec<String> {
+        self.hosts
             .iter()
-            .map(|HostEntry { hostname, ip }| format!("{hostname}:{ip}"))
-            .collect::<Vec<_>>()
-            .join(",");
-
-        (flag, value)
+            .flat_map(|HostEntry { hostname, ip }| {
+                ["--add-host".into(), format!("{hostname}:{ip}")]
+            })
+            .collect()
     }
 }
 
@@ -138,16 +136,12 @@ pub struct PortMapping {
 }
 
 impl PortMappings {
-    pub fn docker_flag_and_value(&self) -> (String, String) {
-        let flag = "-p".into();
-        let value = self
-            .ports
+    /// Returns `["-p", "src1:dst1", "-p", "src2:dst2", ...]`.
+    pub fn docker_args(&self) -> Vec<String> {
+        self.ports
             .iter()
-            .map(|PortMapping { src, dst }| format!("{src}:{dst}"))
-            .collect::<Vec<_>>()
-            .join(",");
-
-        (flag, value)
+            .flat_map(|PortMapping { src, dst }| ["-p".into(), format!("{src}:{dst}")])
+            .collect()
     }
 }
 
