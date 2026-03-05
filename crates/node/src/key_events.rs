@@ -725,6 +725,8 @@ mod tests {
         // Given
         // Simulate the expired/idle contract state: started=false but ID already
         // matches the next attempt (this is what next_attempt_id() produces).
+        // This matches the state of a production incident - see [#2298](https://github.com/near/mpc/issues/2298)
+        // for more context.
         let key_event_id = make_key_event_id(6, 1, 1);
         let instance = make_key_event_instance(key_event_id, false);
         let (_tx, rx) = watch::channel(instance);
