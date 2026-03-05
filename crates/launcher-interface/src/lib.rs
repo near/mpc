@@ -79,7 +79,9 @@ mod paths {}
 
 #[cfg(test)]
 mod tests {
-    use super::types::{ApprovedHashesFile, DockerSha256Digest};
+    use assert_matches::assert_matches;
+
+    use super::types::{ApprovedHashesFile, DockerSha256Digest, DockerDigestParseError};
     use mpc_primitives::hash::MpcDockerImageHash;
 
     fn sample_digest() -> DockerSha256Digest {
@@ -110,29 +112,22 @@ mod tests {
         let json = serde_json::json!(
             "abababababababababababababababababababababababababababababababababab"
         );
-        let result = serde_json::from_value::<DockerSha256Digest>(json);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("missing sha256: prefix"),
-            "error should mention missing prefix"
+        assert_matches!(
+            serde_json::from_value::<DockerSha256Digest>(json),
+            Err(ref e) if e.to_string().contains("missing sha256: prefix")
         );
     }
 
     #[test]
     fn deserialize_rejects_invalid_hex() {
         let json = serde_json::json!("sha256:not_valid_hex!");
-        let result = serde_json::from_value::<DockerSha256Digest>(json);
-        assert!(result.is_err());
+        assert_matches!(serde_json::from_value::<DockerSha256Digest>(json), Err(_));
     }
 
     #[test]
     fn deserialize_rejects_wrong_length() {
         let json = serde_json::json!("sha256:abab");
-        let result = serde_json::from_value::<DockerSha256Digest>(json);
-        assert!(result.is_err());
+        assert_matches!(serde_json::from_value::<DockerSha256Digest>(json), Err(_));
     }
 
     #[test]
@@ -152,28 +147,19 @@ mod tests {
     fn parse_rejects_missing_prefix() {
         let result = "abababababababababababababababababababababababababababababababababab"
             .parse::<DockerSha256Digest>();
-        assert!(matches!(
-            result,
-            Err(super::types::DockerDigestParseError::MissingPrefix)
-        ));
+        assert_matches!(result, Err(DockerDigestParseError::MissingPrefix));
     }
 
     #[test]
     fn parse_rejects_invalid_hex() {
         let result = "sha256:not_valid_hex!".parse::<DockerSha256Digest>();
-        assert!(matches!(
-            result,
-            Err(super::types::DockerDigestParseError::InvalidHash(_))
-        ));
+        assert_matches!(result, Err(DockerDigestParseError::InvalidHash(_)));
     }
 
     #[test]
     fn parse_rejects_wrong_length() {
         let result = "sha256:abab".parse::<DockerSha256Digest>();
-        assert!(matches!(
-            result,
-            Err(super::types::DockerDigestParseError::InvalidHash(_))
-        ));
+        assert_matches!(result, Err(DockerDigestParseError::InvalidHash(_)));
     }
 
     #[test]
