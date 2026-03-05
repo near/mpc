@@ -722,7 +722,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn resharing_leader__should_retry_after_timeout_if_computation_is_not_started() {
-        // given
+        // Given
         // Simulate the expired/idle contract state: started=false but ID already
         // matches the next attempt (this is what next_attempt_id() produces).
         let key_event_id = make_key_event_id(6, 1, 1);
@@ -742,7 +742,7 @@ mod tests {
         .unwrap();
         let keyshare_storage = Arc::new(RwLock::new(keyshare_storage));
 
-        // when
+        // When
         let leader_handle = tokio::spawn(resharing_leader(
             MockKeyEventLeaderClient,
             keyshare_storage,
@@ -756,7 +756,7 @@ mod tests {
         // See https://docs.rs/tokio/latest/tokio/time/fn.advance.html#auto-advance.
         tokio::time::sleep(Duration::from_secs(45)).await;
 
-        // then
+        // Then
         let send_count = txn_sender_handle.count();
         assert!(
             send_count >= 2,
@@ -769,27 +769,27 @@ mod tests {
     #[test]
     fn compare_to_expected_key_event_id__should_return_remote_behind_when_ids_match_but_not_started(
     ) {
-        // given
+        // Given
         let key_event_id = make_key_event_id(6, 1, 1);
         let instance = make_key_event_instance(key_event_id, false);
 
-        // when
+        // When
         let result = instance.compare_to_expected_key_event_id(&key_event_id);
 
-        // then
+        // Then
         assert!(matches!(result, KeyEventIdComparisonResult::RemoteBehind));
     }
 
     #[test]
     fn compare_to_expected_key_event_id__should_return_remote_matches_when_ids_match_and_started() {
-        // given
+        // Given
         let key_event_id = make_key_event_id(6, 1, 1);
         let instance = make_key_event_instance(key_event_id, true);
 
-        // when
+        // When
         let result = instance.compare_to_expected_key_event_id(&key_event_id);
 
-        // then
+        // Then
         assert!(matches!(result, KeyEventIdComparisonResult::RemoteMatches));
     }
 
