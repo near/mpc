@@ -8,14 +8,14 @@ use clap::Parser;
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use launcher_interface::types::{ApprovedHashesFile, DockerSha256Digest};
 
-use contants::*;
+use constants::*;
 use docker_types::*;
 use error::*;
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
 use types::*;
 use url::Url;
 
-mod contants;
+mod constants;
 mod docker_types;
 mod env_validation;
 mod error;
