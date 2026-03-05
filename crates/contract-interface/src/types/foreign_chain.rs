@@ -1087,4 +1087,38 @@ mod tests {
         // Then
         assert_ne!(hash_a, hash_b);
     }
+
+    #[rstest]
+    #[case(ForeignTxPayloadVersion::V1, 1)]
+    fn foreign_tx_payload_version__serializes_as_u8(
+        #[case] version: ForeignTxPayloadVersion,
+        #[case] expected: u8,
+    ) {
+        assert_eq!(
+            serde_json::to_value(version).unwrap(),
+            serde_json::json!(expected)
+        );
+        assert_eq!(borsh::to_vec(&version).unwrap(), vec![expected]);
+    }
+
+    #[rstest]
+    #[case(1, ForeignTxPayloadVersion::V1)]
+    fn foreign_tx_payload_version__deserializes_from_u8(
+        #[case] input: u8,
+        #[case] expected: ForeignTxPayloadVersion,
+    ) {
+        let json: ForeignTxPayloadVersion =
+            serde_json::from_value(serde_json::json!(input)).unwrap();
+        let borsh: ForeignTxPayloadVersion = borsh::from_slice(&[input]).unwrap();
+        assert_eq!(json, expected);
+        assert_eq!(borsh, expected);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(2)]
+    fn foreign_tx_payload_version__rejects_unknown_version(#[case] input: u8) {
+        serde_json::from_value::<ForeignTxPayloadVersion>(serde_json::json!(input)).unwrap_err();
+        borsh::from_slice::<ForeignTxPayloadVersion>(&[input]).unwrap_err();
+    }
 }
