@@ -22,7 +22,10 @@ pub enum LauncherError {
     },
 
     #[error("docker run failed for validated hash")]
-    DockerRunFailedExitStatus { image_hash: DockerSha256Digest },
+    DockerRunFailedExitStatus {
+        image_hash: DockerSha256Digest,
+        output: String,
+    },
 
     #[error("Too many env vars to pass through (>{0})")]
     TooManyEnvVars(usize),

@@ -1,3 +1,5 @@
+// A rewrite of launcher.py
+
 use std::process::Command;
 use std::{collections::VecDeque, time::Duration};
 
@@ -311,7 +313,7 @@ async fn validate_image_hash(
 
     let docker_inspect_failed = !inspect.status.success();
     if docker_inspect_failed {
-        return Err(ImageDigestValidationFailed::DockerPullFailed(
+        return Err(ImageDigestValidationFailed::DockerInspectFailed(
             "docker inspect terminated with unsuccessful status".to_string(),
         ));
     }
@@ -334,13 +336,13 @@ async fn validate_image_hash(
     Ok(())
 }
 
-fn build_docker_cmd(
+fn docker_run_args(
     platform: Platform,
     mpc_config: &MpcBinaryConfig,
     docker_flags: &DockerLaunchFlags,
     image_digest: &DockerSha256Digest,
 ) -> Result<Vec<String>, LauncherError> {
-    let mut cmd: Vec<String> = vec!["docker".into(), "run".into()];
+    let mut cmd: Vec<String> = vec![];
 
     // Required environment variables
     cmd.extend([
@@ -410,10 +412,11 @@ fn launch_mpc_container(
         .args(["rm", "-f", MPC_CONTAINER_NAME])
         .output();
 
-    let docker_cmd = build_docker_cmd(platform, mpc_config, docker_flags, valid_hash)?;
+    let docker_run_args = docker_run_args(platform, mpc_config, docker_flags, valid_hash)?;
 
-    let run_output = Command::new(&docker_cmd[0])
-        .args(&docker_cmd[1..])
+    let run_output = Command::new("docker")
+        .arg("run")
+        .args(&docker_run_args)
         .output()
         .map_err(|inner| LauncherError::DockerRunFailed {
             image_hash: valid_hash.clone(),
@@ -421,8 +424,12 @@ fn launch_mpc_container(
         })?;
 
     if !run_output.status.success() {
+        let stderr = String::from_utf8_lossy(&run_output.stderr);
+        let stdout = String::from_utf8_lossy(&run_output.stdout);
+        tracing::error!(%stderr, %stdout, "docker run failed");
         return Err(LauncherError::DockerRunFailedExitStatus {
             image_hash: valid_hash.clone(),
+            output: stderr.into_owned(),
         });
     }
 
