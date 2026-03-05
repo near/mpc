@@ -1,0 +1,36 @@
+{
+  "launcher_config": {
+    "image_tags": ["main-260e88b"],
+    "image_name": "nearone/mpc-node",
+    "registry": "registry.hub.docker.com",
+    "rpc_request_timeout_secs": 10,
+    "rpc_request_interval_secs": 1,
+    "rpc_max_attempts": 20,
+    "mpc_hash_override": null
+  },
+  "docker_command_config": {
+    "extra_hosts": {
+      "hosts": []
+    },
+    "port_mappings": {
+      "ports": [
+        { "src": 8080, "dst": 8080 },
+        { "src": 24566, "dst": 24566 },
+        { "src": 13002, "dst": 13002 }
+      ]
+    }
+  },
+  "mpc_passthrough_env": {
+    "mpc_account_id": "sam.test.near",
+    "mpc_local_address": "127.0.0.1",
+    "mpc_secret_key_store": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "mpc_backup_encryption_key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "mpc_env": "Localnet",
+    "mpc_home_dir": "/data",
+    "mpc_contract_id": "mpc-contract.test.near",
+    "mpc_responder_id": "sam.test.near",
+    "near_boot_nodes": "ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566",
+    "rust_backtrace": "full",
+    "rust_log": "info"
+  }
+}
