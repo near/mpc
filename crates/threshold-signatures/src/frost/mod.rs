@@ -165,10 +165,9 @@ pub fn assert_sign_inputs(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng};
+    use crate::test_utils::{assert_buffer_capacity, generate_participants, MockCryptoRng};
     use frost_ed25519::Ed25519Sha512;
-    use rand::{RngCore, SeedableRng};
+    use rand::SeedableRng;
     use rstest::rstest;
 
     #[rstest]
@@ -176,8 +175,6 @@ mod test {
     #[case(5, 3)]
     #[case(10, 4)]
     fn test_presign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
-        let expected = FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES;
-
         // Given
         let participants = generate_participants(num_participants);
         let mut rng = MockCryptoRng::seed_from_u64(42);
@@ -187,35 +184,20 @@ mod test {
             &mut rng,
         );
 
-        let mut comms_refs = Vec::new();
-        let mut protocols: GenProtocol<PresignOutput<Ed25519Sha512>> = Vec::new();
-
-        for (p, keygen_out) in &keygen_result {
-            let comms = Comms::with_buffer_capacity(usize::MAX);
-            let participant_list = ParticipantList::new(&participants).unwrap();
-            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let fut = do_presign::<Ed25519Sha512>(
-                comms.shared_channel(),
-                participant_list,
-                *p,
-                keygen_out.private_share,
-                rng_p,
-            );
-            comms_refs.push((*p, comms.clone()));
-            let prot = make_protocol(comms, fut);
-            protocols.push((*p, Box::new(prot)));
-        }
-
-        // When
-        let _ = run_protocol(protocols).unwrap();
-
-        // Then
-        for (p, comms) in &comms_refs {
-            assert_eq!(
-                comms.buffer_len(),
-                expected,
-                "Unexpected buffer entries for participant {p:?}"
-            );
-        }
+        // When + Then
+        assert_buffer_capacity(
+            &participants,
+            &mut rng,
+            |comms, p_list, p, rng_p| {
+                let private_share = keygen_result
+                    .iter()
+                    .find(|(kp, _)| *kp == p)
+                    .unwrap()
+                    .1
+                    .private_share;
+                do_presign::<Ed25519Sha512>(comms.shared_channel(), p_list, p, private_share, rng_p)
+            },
+            |_| FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES,
+        );
     }
 }
