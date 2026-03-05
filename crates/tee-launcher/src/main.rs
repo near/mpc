@@ -74,46 +74,30 @@ async fn run() -> Result<(), LauncherError> {
             source,
         });
 
-    let image_hash: DockerSha256Digest = {
-        match approved_hashes_file {
-            Err(err) => {
-                let default_image_digest = args.default_image_digest;
-                tracing::warn!(
-                    ?err,
-                    ?default_image_digest,
-                    "approved hashes file does not exist on disk, falling back to default digest"
-                );
-                default_image_digest
-            }
-            Ok(approved_hashes_file) => {
-                let approved_hashes_on_disk: ApprovedHashesFile =
-                    serde_json::from_reader(approved_hashes_file).map_err(|source| {
-                        LauncherError::JsonParse {
-                            path: IMAGE_DIGEST_FILE.to_string(),
-                            source,
-                        }
-                    })?;
-
-                if let Some(override_image) = &dstack_config.launcher_config.mpc_hash_override {
-                    tracing::info!(?override_image, "override mpc image hash provided");
-
-                    let override_image_is_allowed = approved_hashes_on_disk
-                        .approved_hashes
-                        .contains(override_image);
-
-                    if !override_image_is_allowed {
-                        return Err(LauncherError::InvalidHashOverride(format!(
-                            "MPC_HASH_OVERRIDE={override_image} does not match any approved hash",
-                        )));
-                    }
-
-                    override_image.clone()
-                } else {
-                    approved_hashes_on_disk.newest_approved_hash().clone()
-                }
-            }
+    let approved_hashes_on_disk: Option<ApprovedHashesFile> = match approved_hashes_file {
+        Err(err) => {
+            tracing::warn!(
+                ?err,
+                default_image_digest = ?args.default_image_digest,
+                "approved hashes file does not exist on disk, falling back to default digest"
+            );
+            None
+        }
+        Ok(file) => {
+            let parsed: ApprovedHashesFile =
+                serde_json::from_reader(file).map_err(|source| LauncherError::JsonParse {
+                    path: IMAGE_DIGEST_FILE.to_string(),
+                    source,
+                })?;
+            Some(parsed)
         }
     };
+
+    let image_hash = select_image_hash(
+        approved_hashes_on_disk.as_ref(),
+        &args.default_image_digest,
+        dstack_config.launcher_config.mpc_hash_override.as_ref(),
+    )?;
 
     let () = validate_image_hash(&dstack_config.launcher_config, image_hash.clone()).await?;
 
@@ -141,6 +125,39 @@ async fn run() -> Result<(), LauncherError> {
     )?;
 
     Ok(())
+}
+
+/// Select which image hash to use, given the approved hashes file (if present),
+/// a fallback default digest, and an optional user override.
+///
+/// Selection rules:
+///   - If the approved hashes file is absent → use `default_digest`
+///   - If `override_hash` is set and appears in the approved list → use it
+///   - If `override_hash` is set but NOT in the approved list → error
+///   - Otherwise → use the newest approved hash (first in the list)
+fn select_image_hash(
+    approved_hashes: Option<&ApprovedHashesFile>,
+    default_digest: &DockerSha256Digest,
+    override_hash: Option<&DockerSha256Digest>,
+) -> Result<DockerSha256Digest, LauncherError> {
+    let Some(approved) = approved_hashes else {
+        tracing::info!("no approved hashes file, using default digest");
+        return Ok(default_digest.clone());
+    };
+
+    if let Some(override_image) = override_hash {
+        tracing::info!(?override_image, "override mpc image hash provided");
+        if !approved.approved_hashes.contains(override_image) {
+            return Err(LauncherError::InvalidHashOverride(format!(
+                "MPC_HASH_OVERRIDE={override_image} does not match any approved hash",
+            )));
+        }
+        return Ok(override_image.clone());
+    }
+
+    let selected = approved.newest_approved_hash().clone();
+    tracing::info!(?selected, "selected newest approved hash");
+    Ok(selected)
 }
 
 async fn get_manifest_digest(
@@ -442,15 +459,29 @@ mod tests {
     use std::collections::BTreeMap;
 
     use assert_matches::assert_matches;
-    use launcher_interface::types::DockerSha256Digest;
+    use bounded_collections::NonEmptyVec;
+    use launcher_interface::types::{ApprovedHashesFile, DockerSha256Digest};
 
     use crate::constants::*;
     use crate::docker_run_args;
     use crate::error::LauncherError;
+    use crate::select_image_hash;
     use crate::types::*;
 
+    fn digest(hex_char: char) -> DockerSha256Digest {
+        format!("sha256:{}", std::iter::repeat_n(hex_char, 64).collect::<String>())
+            .parse()
+            .unwrap()
+    }
+
     fn sample_digest() -> DockerSha256Digest {
-        format!("sha256:{}", "a".repeat(64)).parse().unwrap()
+        digest('a')
+    }
+
+    fn approved_file(hashes: Vec<DockerSha256Digest>) -> ApprovedHashesFile {
+        ApprovedHashesFile {
+            approved_hashes: NonEmptyVec::from_vec(hashes).unwrap(),
+        }
     }
 
     fn base_mpc_config() -> MpcBinaryConfig {
@@ -599,5 +630,144 @@ mod tests {
 
         // then
         assert_matches!(result, Err(LauncherError::UnsafeEnvValue { .. }));
+    }
+
+    // --- select_image_hash ---
+
+    #[test]
+    fn select_hash_override_present_and_in_approved_list() {
+        // given
+        let override_digest = digest('b');
+        let approved = approved_file(vec![digest('c'), override_digest.clone(), digest('d')]);
+
+        // when
+        let result = select_image_hash(Some(&approved), &digest('f'), Some(&override_digest));
+
+        // then
+        assert_matches!(result, Ok(selected) => {
+            assert_eq!(selected, override_digest);
+        });
+    }
+
+    #[test]
+    fn select_hash_override_not_in_approved_list() {
+        // given
+        let override_digest = digest('b');
+        let approved = approved_file(vec![digest('c'), digest('d')]);
+
+        // when
+        let result = select_image_hash(Some(&approved), &digest('f'), Some(&override_digest));
+
+        // then
+        assert_matches!(result, Err(LauncherError::InvalidHashOverride(_)));
+    }
+
+    #[test]
+    fn select_hash_no_override_picks_newest() {
+        // given - first entry is "newest"
+        let newest = digest('a');
+        let approved = approved_file(vec![newest.clone(), digest('b'), digest('c')]);
+
+        // when
+        let result = select_image_hash(Some(&approved), &digest('f'), None);
+
+        // then
+        assert_matches!(result, Ok(selected) => {
+            assert_eq!(selected, newest);
+        });
+    }
+
+    #[test]
+    fn select_hash_missing_file_falls_back_to_default() {
+        // given
+        let default = digest('d');
+
+        // when
+        let result = select_image_hash(None, &default, None);
+
+        // then
+        assert_matches!(result, Ok(selected) => {
+            assert_eq!(selected, default);
+        });
+    }
+
+    #[test]
+    fn select_hash_missing_file_ignores_override() {
+        // given - override is set but file is missing, so default wins
+        let default = digest('d');
+        let override_digest = digest('b');
+
+        // when
+        let result = select_image_hash(None, &default, Some(&override_digest));
+
+        // then
+        assert_matches!(result, Ok(selected) => {
+            assert_eq!(selected, default);
+        });
+    }
+
+    // --- approved_hashes JSON key alignment ---
+
+    #[test]
+    fn approved_hashes_json_key_is_approved_hashes() {
+        // given - the JSON field name must match between launcher and MPC node
+        let file = approved_file(vec![sample_digest()]);
+
+        // when
+        let json = serde_json::to_value(&file).unwrap();
+
+        // then
+        assert!(json.get("approved_hashes").is_some());
+    }
+}
+
+/// Integration tests requiring network access and Docker Hub.
+/// Run with: cargo test -p tee-launcher --features integration-test
+#[cfg(all(test, feature = "integration-test"))]
+mod integration_tests {
+    use super::*;
+
+    const TEST_DIGEST: &str =
+        "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372";
+    const TEST_TAG: &str = "83b52da4e2270c688cdd30da04f6b9d3565f25bb";
+    const TEST_IMAGE_NAME: &str = "nearone/testing";
+    const TEST_REGISTRY: &str = "registry.hub.docker.com";
+
+    fn test_launcher_config() -> LauncherConfig {
+        LauncherConfig {
+            image_tags: bounded_collections::NonEmptyVec::from_vec(vec![TEST_TAG.into()]).unwrap(),
+            image_name: TEST_IMAGE_NAME.into(),
+            registry: TEST_REGISTRY.into(),
+            rpc_request_timeout_secs: 10,
+            rpc_request_interval_secs: 1,
+            rpc_max_attempts: 20,
+            mpc_hash_override: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn get_manifest_digest_resolves_known_image() {
+        // given
+        let config = test_launcher_config();
+        let expected_digest: DockerSha256Digest = TEST_DIGEST.parse().unwrap();
+
+        // when
+        let result = get_manifest_digest(&config, &expected_digest).await;
+
+        // then
+        assert!(result.is_ok(), "get_manifest_digest failed: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn validate_image_hash_succeeds_for_known_image() {
+        // given
+        let config = test_launcher_config();
+        let expected_digest: DockerSha256Digest = TEST_DIGEST.parse().unwrap();
+
+        // when
+        let result = validate_image_hash(&config, expected_digest).await;
+
+        // then
+        assert!(result.is_ok(), "validate_image_hash failed: {result:?}");
     }
 }
