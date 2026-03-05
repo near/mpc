@@ -164,19 +164,19 @@ This diagram shows the step-by-step provisioning of the AES transport key, with 
 
 ```mermaid
 sequenceDiagram
-    box Yellow Operator Secure Environment
+    box Operator Secure Environment
         participant OP as Operator
     end
-    box Blue NEAR Blockchain
+    box NEAR Blockchain
         participant BC as MPC Signer Contract
     end
-    box rgb(200,50,50) Untrusted Host OS
+    box Untrusted Host OS
         participant HOST as Host OS
     end
-    box Green MPC Node CVM (TDX)
+    box MPC Node CVM (TDX)
         participant NODE as MPC Node CVM
     end
-    box Green Migration Service CVM (TDX)
+    box Migration Service CVM (TDX)
         participant MIG as Migration Service CVM
     end
 
