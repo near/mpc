@@ -174,7 +174,7 @@ On failure the output includes the error details and ends with `Verdict: FAIL`.
 **"tee_participant_info is null in the response"**
 The node's `/public_data` response does not contain attestation data. The node may not be running in a TEE environment.
 
-**"attestation is a Mock — cannot verify mock attestations"**
+**"attestation is a Mock — cannot produce verification result"**
 The node is using a mock attestation (development/test mode). Only genuine Dstack (TDX) attestations can be verified.
 
 **"MPC image hash ... is not in the allowed list"**
