@@ -43,6 +43,7 @@
 //! are deterministic, even in the presence of concurrent tasks.
 
 use super::{Action, MessageData, Participant, Protocol, ProtocolError};
+use crate::errors::MessageError;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use futures::task::noop_waker;
@@ -214,28 +215,59 @@ impl Default for SubMessageQueue {
 /// A message buffer is a concurrent data structure to buffer messages.
 ///
 /// The idea is that we can put messages, and have them organized according to the
-/// header that addentifies where in the protocol those messages will be needed.
+/// header that identifies where in the protocol those messages will be needed.
 /// This data structure also provides async functions which allow efficiently
 /// waiting until a particular message is available, by using events to sleep tasks
 /// until a message for that slot has arrived.
 #[derive(Clone)]
 struct MessageBuffer {
     messages: Arc<std::sync::Mutex<HashMap<MessageHeader, SubMessageQueue>>>,
+    /// `max_entries` represents an upper bound on the number of elements in `messages`
+    /// after a correct execution of a protocol.
+    /// It does not represent an upper bound when some dishonest party sends spurious messages,
+    /// because the `pop` method below might still push messages above that threshold. The actual
+    /// maximum would never go above 2 * `max_entries` because `pop` is only called
+    /// when the participant waits to receive a message. Honest participants should never
+    /// call `pop` more than `max_entries` times, therefore the upper bound above.
+    max_entries: usize,
 }
 
 impl MessageBuffer {
-    fn new() -> Self {
+    fn new(max_entries: usize) -> Self {
         Self {
             messages: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            max_entries,
         }
     }
 
     /// Push a message into this buffer.
     ///
     /// We also need the header for the message, and the participant who sent it.
-    fn push(&self, header: MessageHeader, from: Participant, message: MessageData) {
+    /// Returns an error when the buffer is at capacity and the header is unknown.
+    fn push(
+        &self,
+        header: MessageHeader,
+        from: Participant,
+        message: MessageData,
+    ) -> Result<(), MessageError> {
         let mut messages_lock = self.messages.lock().expect("lock should not fail");
-        messages_lock.entry(header).or_default().send(from, message);
+        let len = messages_lock.len();
+        match messages_lock.entry(header) {
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                entry.get().send(from, message);
+                Ok(())
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                if len < self.max_entries {
+                    entry.insert(SubMessageQueue::default()).send(from, message);
+                    Ok(())
+                } else {
+                    Err(MessageError::BufferFull {
+                        capacity: self.max_entries,
+                    })
+                }
+            }
+        }
     }
 
     /// Pop a message for a particular header.
@@ -271,9 +303,10 @@ pub struct Comms {
 }
 
 impl Comms {
-    pub fn new() -> Self {
+    /// Create a new `Comms` with an explicit message-buffer capacity.
+    pub fn with_buffer_capacity(max_entries: usize) -> Self {
         Self {
-            incoming: MessageBuffer::new(),
+            incoming: MessageBuffer::new(max_entries),
             outgoing: Arc::new(std::sync::Mutex::new(VecDeque::new())),
         }
     }
@@ -283,16 +316,19 @@ impl Comms {
         outgoing_lock.pop_front()
     }
 
-    fn push_message(&self, from: Participant, message: MessageData) {
+    fn push_message(&self, from: Participant, message: MessageData) -> Result<(), MessageError> {
         if message.len() < MessageHeader::LEN {
-            return;
+            return Err(MessageError::TooShort {
+                len: message.len(),
+                min: MessageHeader::LEN,
+            });
         }
 
         let Some(header) = MessageHeader::from_bytes(&message) else {
-            return;
+            return Err(MessageError::InvalidHeader);
         };
 
-        self.incoming.push(header, from, message);
+        self.incoming.push(header, from, message)
     }
 
     fn send_raw(&self, data: Message) {
@@ -346,6 +382,17 @@ impl Comms {
 
     pub fn shared_channel(&self) -> SharedChannel {
         SharedChannel::new(self.clone())
+    }
+
+    /// Returns the number of distinct `(ChannelTag, Waitpoint)` entries
+    /// currently stored in the message buffer.
+    #[cfg(test)]
+    pub fn buffer_len(&self) -> usize {
+        self.incoming
+            .messages
+            .lock()
+            .expect("lock should not fail")
+            .len()
     }
 }
 
@@ -509,8 +556,8 @@ impl<T> Protocol for ProtocolExecutor<T> {
         }
     }
 
-    fn message(&mut self, from: Participant, data: MessageData) {
-        self.comms.push_message(from, data);
+    fn message(&mut self, from: Participant, data: MessageData) -> Result<(), MessageError> {
+        self.comms.push_message(from, data)
     }
 }
 
@@ -529,20 +576,32 @@ mod tests {
 
     #[test]
     #[allow(clippy::significant_drop_tightening)]
-    fn attacker_can_fill_message_buffer_with_unused_waitpoints() {
-        let comms = Comms::new();
+    fn message_buffer_is_bounded() {
+        // Given
+        let cap = 512;
+        let comms = Comms::with_buffer_capacity(cap);
         let attacker = Participant::from(99_u32);
-        let attack_count = 512_u64;
 
-        for i in 0..attack_count {
+        // When – fill the buffer to capacity
+        for i in 0..cap as u64 {
             let header =
                 MessageHeader::new(ChannelTag::root_shared()).with_waitpoint(1_000_000 + i);
             let mut message = header.to_bytes().to_vec();
             message.extend_from_slice(&i.to_le_bytes());
 
-            // Attacker injects messages for waitpoints the honest code never polls.
-            comms.push_message(attacker, message);
+            assert!(comms.push_message(attacker, message).is_ok());
         }
+
+        // Then – the next push with a new header must fail
+        let header =
+            MessageHeader::new(ChannelTag::root_shared()).with_waitpoint(1_000_000 + cap as u64);
+        let mut message = header.to_bytes().to_vec();
+        message.extend_from_slice(&0u64.to_le_bytes());
+
+        assert_eq!(
+            comms.push_message(attacker, message),
+            Err(MessageError::BufferFull { capacity: cap }),
+        );
 
         let messages = comms
             .incoming
@@ -550,6 +609,6 @@ mod tests {
             .lock()
             .expect("lock should not fail");
 
-        assert!(messages.len() == usize::try_from(attack_count).unwrap());
+        assert_eq!(messages.len(), cap);
     }
 }

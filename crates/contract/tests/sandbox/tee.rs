@@ -2,7 +2,7 @@ use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
         consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
-        interface::{IntoContractType, IntoInterfaceType},
+        interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
@@ -633,7 +633,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         target_account,
         &contract,
         &expiring_attestation,
-        &target_node_id.tls_public_key.into_interface_type(),
+        &dtos::Ed25519PublicKey::try_from(&target_node_id.tls_public_key)
+            .expect("expected ED25519 key"),
     )
     .await?
     .is_success();

@@ -9,7 +9,7 @@ anyhow = { workspace = true }
 borsh = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
-contract-interface = { workspace = true }
+contract-interface = { workspace = true, features = ["ed25519-dalek", "near"] }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }

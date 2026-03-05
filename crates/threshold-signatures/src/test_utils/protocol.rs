@@ -41,7 +41,7 @@ pub fn run_simulated_protocol<T>(
 
     // fill the real_participant's buffer with the recorded messages
     for (from, data) in simulator.get_recorded_messages() {
-        real_prot.message(from, data);
+        real_prot.message(from, data)?;
     }
 
     let mut out = None;
@@ -75,9 +75,11 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
             let action = prot0.poke()?;
             match action {
                 Action::Wait => active0 = false,
-                Action::SendMany(m) => prot1.message(p0, m),
+                Action::SendMany(m) => {
+                    prot1.message(p0, m)?;
+                }
                 Action::SendPrivate(to, m) if to == p1 => {
-                    prot1.message(p0, m);
+                    prot1.message(p0, m)?;
                 }
                 Action::Return(out) => out0 = Some(out),
                 // Ignore other actions, which means sending private messages to other people.
@@ -87,9 +89,11 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
             let action = prot1.poke()?;
             match action {
                 Action::Wait => active0 = true,
-                Action::SendMany(m) => prot0.message(p1, m),
+                Action::SendMany(m) => {
+                    prot0.message(p1, m)?;
+                }
                 Action::SendPrivate(to, m) if to == p0 => {
-                    prot0.message(p1, m);
+                    prot0.message(p1, m)?;
                 }
                 Action::Return(out) => out1 = Some(out),
                 // Ignore other actions, which means sending private messages to other people.
@@ -148,7 +152,7 @@ fn run_protocol_common<T>(
                                     })?;
                             }
 
-                            ps[j].1.message(from, m.clone());
+                            ps[j].1.message(from, m.clone())?;
                         }
                         true
                     }
@@ -164,7 +168,7 @@ fn run_protocol_common<T>(
                                     )
                                 })?;
                         }
-                        ps[indices[&to]].1.message(from, m);
+                        ps[indices[&to]].1.message(from, m)?;
                         true
                     }
                     Action::Return(r) => {
