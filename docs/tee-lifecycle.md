@@ -4,7 +4,7 @@ Multiple TEE services in this repository — the [MPC node][mpc-node], the [Back
 
 For MPC-network-specific TEE integration (threat model, participant management, resharing), see [Securing MPC with TEE][securing-mpc-with-tee].
 
-[mpc-node]: https://github.com/near/mpc/trexe/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node
+[mpc-node]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node
 [backup-service]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/backup-cli
 [archive-signer]: hot-tee-signing-design.md
 [securing-mpc-with-tee]: securing-mpc-with-tee-design-doc.md
