@@ -1,18 +1,18 @@
 # TEE Lifecycle
 
-This document describes the generic TEE attestation, governance, and upgrade patterns shared by all TEE services in this repository:
-- The MPC node
-- The backup service
-- The [Archive Signer][archive-signer]
+Multiple TEE services in this repository — the MPC node, the backup service, and the [Archive Signer][archive-signer] — run inside [Dstack][dstack] CVMs on Intel TDX hardware. They share the same boot, attestation, governance, and upgrade patterns. These patterns are currently implemented in the MPC node and will be extracted into reusable crates (the TEE Context). This document is the single source of truth for those shared patterns; service-specific docs reference it instead of re-describing shared behavior.
 
 For MPC-network-specific TEE integration (threat model, participant management, resharing), see [Securing MPC with TEE][securing-mpc-with-tee].
 
 [archive-signer]: hot-tee-signing-design.md
 [securing-mpc-with-tee]: securing-mpc-with-tee-design-doc.md
+[dstack]: https://github.com/Dstack-TEE/dstack
 
-## Overview
+## Architecture
 
-All TEE services run inside a [Dstack][dstack] CVM on Intel TDX hardware. They share a common attestation lifecycle managed by reusable crates and the [Chain Gateway][chain-indexer]:
+### Components
+
+All TEE services share a common attestation lifecycle managed by reusable crates and the [Chain Gateway][chain-indexer]:
 
 | Component | Purpose |
 |-----------|---------|
@@ -22,7 +22,6 @@ All TEE services run inside a [Dstack][dstack] CVM on Intel TDX hardware. They s
 | [Contract State Subscriber][contract-state-subscriber] | Polls governance contract state |
 | [Transaction Sender][transaction-sender] | Submits attestation transactions to the governance contract |
 
-[dstack]: https://github.com/Dstack-TEE/dstack
 [chain-indexer]: indexer-design.md
 [tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
 [mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
@@ -73,7 +72,7 @@ MPC_CTX --> CHAIN
 TEE_CTX --> CHAIN
 ```
 
-## CVM Boot Sequence (Launcher Pattern)
+## Boot
 
 Every TEE service follows the same boot sequence. The [Launcher pattern][launcher-pattern] ensures that only approved images run inside the CVM, with measurements recorded in the TDX attestation.
 
@@ -114,6 +113,94 @@ Individual services may add steps between "Start application container" and the 
 [launcher-pattern]: securing-mpc-with-tee-design-doc.md#launcher-pattern
 [key-import]: hot-tee-signing-design.md#key-import-process
 
+### Launcher Compose Hash Derivation
+
+When a Docker image hash is voted in and reaches the vote threshold, the governance contract automatically derives the corresponding **launcher compose hash**:
+
+1. A YAML template ([example: `launcher_docker_compose.yaml.template`][launcher-template]) contains a `{{DEFAULT_IMAGE_DIGEST_HASH}}` placeholder.
+2. The placeholder is replaced with the approved Docker image hash.
+3. The filled YAML is SHA256-hashed to produce the [`LauncherDockerComposeHash`][launcher-compose-hash].
+
+During attestation verification, the contract replays the TDX event log to reconstruct RTMR3 and checks that both the Docker image hash and launcher compose hash match the allowed lists. This ensures the attesting CVM is running an approved image via an approved launcher configuration.
+
+Each service has its own launcher compose template — the application Docker Compose configuration differs between the MPC node, backup service, and Archive Signer.
+
+[launcher-compose-hash]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/primitives/src/hash.rs#L121
+[launcher-template]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/assets/launcher_docker_compose.yaml.template
+
+Reference implementation: [`AllowedDockerImageHashes::get_docker_compose_hash`][tee-proposal].
+
+[tee-proposal]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/proposal.rs#L152
+
+## Attestation
+
+### Generation
+
+The [`TeeAuthority`][tee-authority] crate generates attestation quotes. The flow is identical across all services:
+
+1. Contact Dstack via Unix socket (`/var/run/dstack.sock`) to get [`TcbInfo`][tcb-info].
+2. Request TDX quote with `report_data = Version || SHA384(tls_public_key)`.
+3. Upload quote to Phala's collateral endpoint for verification collateral.
+4. Package into an [`Attestation`][attestation-type] with a [`DstackAttestation`][dstack-attestation] `{ quote, collateral, tcb_info }`.
+
+[tcb-info]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/attestation/src/tcb_info.rs#L18
+[attestation-type]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
+[dstack-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/attestation.rs#L102
+
+### On-Chain Verification
+
+The governance contract verifies attestations using the DCAP verification logic from the [`mpc-attestation`][mpc-attestation] crate:
+
+1. Verify TDX quote cryptographic integrity.
+2. Verify `report_data` matches `Version || SHA384(tls_public_key)`.
+3. Verify MRTD and RTMRs 0-2 against expected values.
+4. Replay RTMR3 from the event log and verify it matches the quote.
+5. Check Docker image hash against allowed list.
+6. Check launcher compose hash against allowed list.
+
+For the full verification details, see [Attestation verification on the contract][attestation-verification].
+
+[attestation-verification]: securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
+
+## Governance Contract
+
+Every TEE governance contract reuses the [`TeeState`][tee-state] structure from the MPC contract, along with the [`ForeignChainPolicy`][foreign-chain-policy-type] for cross-chain RPC governance. The policy maps [`ForeignChain`][foreign-chain] variants to sets of [`RpcProvider`][rpc-provider]s:
+
+```rust
+pub struct TeeState {
+    pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
+    pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+    pub(crate) votes: CodeHashesVotes,
+    pub(crate) stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
+}
+
+/// Trusted RPC providers per chain. Governors vote on which providers
+/// to trust for cross-chain operations (foreign TX verification,
+/// off-chain authorization, etc.).
+pub struct ForeignChainPolicy {
+    pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
+}
+```
+
+[tee-state]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/tee_state.rs#L92
+[foreign-chain]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L541
+[rpc-provider]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L591
+
+### Common Methods
+
+| Method | Type | Description |
+|--------|------|-------------|
+| `vote_code_hash(code_hash)` | Call | Vote for a new Docker image hash |
+| `vote_foreign_chain_policy(policy)` | Call | Vote on trusted RPC providers per chain |
+| `submit_participant_info(attestation, tls_public_key)` | Call | Submit TEE attestation |
+| `verify_tee()` | Call | Re-validate all stored attestations |
+| `allowed_docker_image_hashes()` | View | Query approved image hashes |
+| `allowed_launcher_compose_hashes()` | View | Query approved launcher hashes |
+| `get_tee_accounts()` | View | Query nodes with valid attestations |
+| `get_foreign_chain_policy()` | View | Query active foreign chain RPC configuration |
+
+Service-specific contracts add their own methods on top: the MPC signer contract adds `vote_new_parameters` for threshold changes; the HOT governance contract adds `vote_update_governors` for governor management.
+
 ## TEE Context
 
 The TEE Context is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate, depending on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation], reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, backup service) use the TEE Context directly.
@@ -128,10 +215,6 @@ The TEE Context is a shared crate managing the TEE attestation lifecycle. The MP
 [verify-tee-contract]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L1380
 
 ### Interface
-
-The TEE Context takes a [Chain Gateway][chain-indexer] and uses it internally to subscribe to the governance contract's view methods and submit transactions. Consumers interact only with the `TeeContext` API — the Chain Gateway is an [internal dependency][archive-signer-shared-components].
-
-[archive-signer-shared-components]: hot-tee-signing-design.md#shared-components
 
 ```rust
 /// Allowed TEE hashes fetched from the governance contract.
@@ -269,56 +352,7 @@ class TEE_CTX ctx;
 [submit-participant-info]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L820
 [get-foreign-chain-policy]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L1663
 
-## Attestation
-
-### Generation
-
-The [`TeeAuthority`][tee-authority] crate generates attestation quotes. The flow is identical across all services:
-
-1. Contact Dstack via Unix socket (`/var/run/dstack.sock`) to get [`TcbInfo`][tcb-info].
-2. Request TDX quote with `report_data = Version || SHA384(tls_public_key)`.
-3. Upload quote to Phala's collateral endpoint for verification collateral.
-4. Package into an [`Attestation`][attestation-type] with a [`DstackAttestation`][dstack-attestation] `{ quote, collateral, tcb_info }`.
-
-[tcb-info]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/attestation/src/tcb_info.rs#L18
-[attestation-type]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
-[dstack-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/attestation.rs#L102
-
-### On-Chain Verification
-
-The governance contract verifies attestations using the DCAP verification logic from the [`mpc-attestation`][mpc-attestation] crate:
-
-1. Verify TDX quote cryptographic integrity.
-2. Verify `report_data` matches `Version || SHA384(tls_public_key)`.
-3. Verify MRTD and RTMRs 0-2 against expected values.
-4. Replay RTMR3 from the event log and verify it matches the quote.
-5. Check Docker image hash against allowed list.
-6. Check launcher compose hash against allowed list.
-
-For the full verification details, see [Attestation verification on the contract][attestation-verification].
-
-[attestation-verification]: securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
-
-## Launcher Compose Hash Derivation
-
-When a Docker image hash is voted in and reaches the vote threshold, the governance contract automatically derives the corresponding **launcher compose hash**:
-
-1. A YAML template ([example: `launcher_docker_compose.yaml.template`][launcher-template]) contains a `{{DEFAULT_IMAGE_DIGEST_HASH}}` placeholder.
-2. The placeholder is replaced with the approved Docker image hash.
-3. The filled YAML is SHA256-hashed to produce the [`LauncherDockerComposeHash`][launcher-compose-hash].
-
-During attestation verification, the contract replays the TDX event log to reconstruct RTMR3 and checks that both the Docker image hash and launcher compose hash match the allowed lists. This ensures the attesting CVM is running an approved image via an approved launcher configuration.
-
-Each service has its own launcher compose template — the application Docker Compose configuration differs between the MPC node, backup service, and Archive Signer.
-
-[launcher-compose-hash]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/primitives/src/hash.rs#L121
-[launcher-template]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/assets/launcher_docker_compose.yaml.template
-
-Reference implementation: [`AllowedDockerImageHashes::get_docker_compose_hash`][tee-proposal].
-
-[tee-proposal]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/proposal.rs#L152
-
-## Application Upgrade
+## Upgrade
 
 Application upgrades follow the Launcher pattern:
 
@@ -334,42 +368,3 @@ Application upgrades follow the Launcher pattern:
 For the MPC-specific details (node kicking and resharing), see [Kicking out nodes with invalid attestation][kicking-nodes].
 
 [kicking-nodes]: securing-mpc-with-tee-design-doc.md#kicking-out-nodes-with-invalid-attestation
-
-## Governance Contract
-
-Every TEE governance contract reuses the [`TeeState`][tee-state] structure from the MPC contract, along with the [`ForeignChainPolicy`][foreign-chain-policy-type] for cross-chain RPC governance. The policy maps [`ForeignChain`][foreign-chain] variants to sets of [`RpcProvider`][rpc-provider]s:
-
-```rust
-pub struct TeeState {
-    pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
-    pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
-    pub(crate) votes: CodeHashesVotes,
-    pub(crate) stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
-}
-
-/// Trusted RPC providers per chain. Governors vote on which providers
-/// to trust for cross-chain operations (foreign TX verification,
-/// off-chain authorization, etc.).
-pub struct ForeignChainPolicy {
-    pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
-}
-```
-
-[tee-state]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/tee_state.rs#L92
-[foreign-chain]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L541
-[rpc-provider]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L591
-
-### Common Methods
-
-| Method | Type | Description |
-|--------|------|-------------|
-| `vote_code_hash(code_hash)` | Call | Vote for a new Docker image hash |
-| `vote_foreign_chain_policy(policy)` | Call | Vote on trusted RPC providers per chain |
-| `submit_participant_info(attestation, tls_public_key)` | Call | Submit TEE attestation |
-| `verify_tee()` | Call | Re-validate all stored attestations |
-| `allowed_docker_image_hashes()` | View | Query approved image hashes |
-| `allowed_launcher_compose_hashes()` | View | Query approved launcher hashes |
-| `get_tee_accounts()` | View | Query nodes with valid attestations |
-| `get_foreign_chain_policy()` | View | Query active foreign chain RPC configuration |
-
-Service-specific contracts add their own methods on top: the MPC signer contract adds `vote_new_parameters` for threshold changes; the HOT governance contract adds `vote_update_governors` for governor management.
