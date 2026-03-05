@@ -81,6 +81,32 @@ impl<T: Ord + BorshDeserialize> BorshDeserialize for NonEmptyBTreeSet<T> {
 }
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl<T: Ord + borsh::BorshSchema> borsh::BorshSchema for NonEmptyBTreeSet<T> {
+    fn declaration() -> borsh::schema::Declaration {
+        format!("NonEmptyBTreeSet<{}>", T::declaration())
+    }
+
+    fn add_definitions_recursively(
+        definitions: &mut borsh::__private::maybestd::collections::BTreeMap<
+            borsh::schema::Declaration,
+            borsh::schema::Definition,
+        >,
+    ) {
+        // NonEmptyBTreeSet serializes identically to BTreeSet
+        <BTreeSet<T> as borsh::BorshSchema>::add_definitions_recursively(definitions);
+        let btree_decl = <BTreeSet<T> as borsh::BorshSchema>::declaration();
+        definitions.insert(
+            Self::declaration(),
+            borsh::schema::Definition::Sequence {
+                length_width: borsh::schema::Definition::ARRAY_LENGTH_WIDTH,
+                length_range: borsh::schema::Definition::DEFAULT_LENGTH_RANGE,
+                elements: btree_decl,
+            },
+        );
+    }
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl<T: Ord + schemars::JsonSchema> schemars::JsonSchema for NonEmptyBTreeSet<T> {
     fn schema_name() -> String {
         format!("NonEmptyBTreeSet_{}", T::schema_name())

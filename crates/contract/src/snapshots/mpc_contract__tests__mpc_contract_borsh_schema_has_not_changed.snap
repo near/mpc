@@ -1,0 +1,1305 @@
+---
+source: crates/contract/src/lib.rs
+expression: schema
+---
+BorshSchemaContainer {
+    declaration: "MpcContract",
+    definitions: {
+        "()": Primitive(
+            0,
+        ),
+        "(AccountId, ParticipantId, ParticipantInfo)": Tuple {
+            elements: [
+                "AccountId",
+                "ParticipantId",
+                "ParticipantInfo",
+            ],
+        },
+        "(AuthenticatedAccountId, ThresholdParameters)": Tuple {
+            elements: [
+                "AuthenticatedAccountId",
+                "ThresholdParameters",
+            ],
+        },
+        "(AuthenticatedParticipantId, Hash32)": Tuple {
+            elements: [
+                "AuthenticatedParticipantId",
+                "Hash32",
+            ],
+        },
+        "(AuthenticatedParticipantId, Vec<DomainConfig>)": Tuple {
+            elements: [
+                "AuthenticatedParticipantId",
+                "Vec<DomainConfig>",
+            ],
+        },
+        "(ForeignChain, NonEmptyBTreeSet<RpcProvider>)": Tuple {
+            elements: [
+                "ForeignChain",
+                "NonEmptyBTreeSet<RpcProvider>",
+            ],
+        },
+        "(PublicKey, NodeAttestation)": Tuple {
+            elements: [
+                "PublicKey",
+                "NodeAttestation",
+            ],
+        },
+        "AccountId": Struct {
+            fields: UnnamedFields(
+                [
+                    "String",
+                ],
+            ),
+        },
+        "AddDomainsVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_by_account",
+                        "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>",
+                    ),
+                ],
+            ),
+        },
+        "AllowedDockerImageHashes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "allowed_tee_proposals",
+                        "Vec<AllowedMpcDockerImage>",
+                    ),
+                ],
+            ),
+        },
+        "AllowedMpcDockerImage": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "image_hash",
+                        "Hash32",
+                    ),
+                    (
+                        "docker_compose_hash",
+                        "Hash32",
+                    ),
+                    (
+                        "added",
+                        "Timestamp",
+                    ),
+                ],
+            ),
+        },
+        "AttemptId": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "AuthenticatedAccountId": Struct {
+            fields: UnnamedFields(
+                [
+                    "AccountId",
+                ],
+            ),
+        },
+        "AuthenticatedParticipantId": Struct {
+            fields: UnnamedFields(
+                [
+                    "ParticipantId",
+                ],
+            ),
+        },
+        "BTreeMap<AuthenticatedAccountId, ThresholdParameters>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(AuthenticatedAccountId, ThresholdParameters)",
+        },
+        "BTreeMap<AuthenticatedParticipantId, Hash32>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(AuthenticatedParticipantId, Hash32)",
+        },
+        "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
+        },
+        "BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(ForeignChain, NonEmptyBTreeSet<RpcProvider>)",
+        },
+        "BTreeMap<PublicKey, NodeAttestation>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(PublicKey, NodeAttestation)",
+        },
+        "BTreeSet<AuthenticatedParticipantId>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "AuthenticatedParticipantId",
+        },
+        "BTreeSet<RpcProvider>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "RpcProvider",
+        },
+        "Bls12381G2PublicKey": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 96]",
+                ],
+            ),
+        },
+        "CodeHashesVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_by_account",
+                        "BTreeMap<AuthenticatedParticipantId, Hash32>",
+                    ),
+                ],
+            ),
+        },
+        "Config": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "key_event_timeout_blocks",
+                        "u64",
+                    ),
+                    (
+                        "tee_upgrade_deadline_duration_seconds",
+                        "u64",
+                    ),
+                    (
+                        "contract_upgrade_deposit_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "sign_call_gas_attachment_requirement_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "ckd_call_gas_attachment_requirement_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "return_signature_and_clean_state_on_success_call_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "return_ck_and_clean_state_on_success_call_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "fail_on_timeout_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "clean_tee_status_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "cleanup_orphaned_node_migrations_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "remove_non_participant_update_votes_tera_gas",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "DomainConfig": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "id",
+                        "DomainId",
+                    ),
+                    (
+                        "scheme",
+                        "SignatureScheme",
+                    ),
+                    (
+                        "purpose",
+                        "DomainPurpose",
+                    ),
+                ],
+            ),
+        },
+        "DomainId": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "DomainPurpose": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Sign",
+                    "DomainPurpose__Sign",
+                ),
+                (
+                    1,
+                    "ForeignTx",
+                    "DomainPurpose__ForeignTx",
+                ),
+                (
+                    2,
+                    "CKD",
+                    "DomainPurpose__CKD",
+                ),
+            ],
+        },
+        "DomainPurpose__CKD": Struct {
+            fields: Empty,
+        },
+        "DomainPurpose__ForeignTx": Struct {
+            fields: Empty,
+        },
+        "DomainPurpose__Sign": Struct {
+            fields: Empty,
+        },
+        "DomainRegistry": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "domains",
+                        "Vec<DomainConfig>",
+                    ),
+                    (
+                        "next_domain_id",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "Ed25519PublicKey": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "EpochId": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "ForeignChain": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Solana",
+                    "ForeignChain__Solana",
+                ),
+                (
+                    1,
+                    "Bitcoin",
+                    "ForeignChain__Bitcoin",
+                ),
+                (
+                    2,
+                    "Ethereum",
+                    "ForeignChain__Ethereum",
+                ),
+                (
+                    3,
+                    "Base",
+                    "ForeignChain__Base",
+                ),
+                (
+                    4,
+                    "Bnb",
+                    "ForeignChain__Bnb",
+                ),
+                (
+                    5,
+                    "Arbitrum",
+                    "ForeignChain__Arbitrum",
+                ),
+                (
+                    6,
+                    "Abstract",
+                    "ForeignChain__Abstract",
+                ),
+                (
+                    7,
+                    "Starknet",
+                    "ForeignChain__Starknet",
+                ),
+            ],
+        },
+        "ForeignChainPolicy": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "chains",
+                        "BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>",
+                    ),
+                ],
+            ),
+        },
+        "ForeignChainPolicyVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_by_account",
+                        "IterableMap",
+                    ),
+                ],
+            ),
+        },
+        "ForeignChain__Abstract": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Arbitrum": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Base": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Bitcoin": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Bnb": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Ethereum": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Solana": Struct {
+            fields: Empty,
+        },
+        "ForeignChain__Starknet": Struct {
+            fields: Empty,
+        },
+        "Hash32": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 32]",
+                    ),
+                    (
+                        "_marker",
+                        "()",
+                    ),
+                ],
+            ),
+        },
+        "HashSet<AuthenticatedAccountId>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "AuthenticatedAccountId",
+        },
+        "IndexMap": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "prefix",
+                        "Vec<u8>",
+                    ),
+                ],
+            ),
+        },
+        "InitializingContractState": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "domains",
+                        "DomainRegistry",
+                    ),
+                    (
+                        "epoch_id",
+                        "EpochId",
+                    ),
+                    (
+                        "generated_keys",
+                        "Vec<KeyForDomain>",
+                    ),
+                    (
+                        "generating_key",
+                        "KeyEvent",
+                    ),
+                    (
+                        "cancel_votes",
+                        "BTreeSet<AuthenticatedParticipantId>",
+                    ),
+                ],
+            ),
+        },
+        "IterableMap": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "keys",
+                        "Vector",
+                    ),
+                    (
+                        "values",
+                        "LookupMap",
+                    ),
+                ],
+            ),
+        },
+        "KeyEvent": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "epoch_id",
+                        "EpochId",
+                    ),
+                    (
+                        "domain",
+                        "DomainConfig",
+                    ),
+                    (
+                        "parameters",
+                        "ThresholdParameters",
+                    ),
+                    (
+                        "instance",
+                        "Option<KeyEventInstance>",
+                    ),
+                    (
+                        "next_attempt_id",
+                        "AttemptId",
+                    ),
+                ],
+            ),
+        },
+        "KeyEventInstance": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "attempt_id",
+                        "AttemptId",
+                    ),
+                    (
+                        "started_in",
+                        "u64",
+                    ),
+                    (
+                        "expires_on",
+                        "u64",
+                    ),
+                    (
+                        "completed",
+                        "BTreeSet<AuthenticatedParticipantId>",
+                    ),
+                    (
+                        "public_key",
+                        "Option<PublicKeyExtended>",
+                    ),
+                ],
+            ),
+        },
+        "KeyForDomain": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "domain_id",
+                        "DomainId",
+                    ),
+                    (
+                        "key",
+                        "PublicKeyExtended",
+                    ),
+                    (
+                        "attempt",
+                        "AttemptId",
+                    ),
+                ],
+            ),
+        },
+        "Keyset": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "epoch_id",
+                        "EpochId",
+                    ),
+                    (
+                        "domains",
+                        "Vec<KeyForDomain>",
+                    ),
+                ],
+            ),
+        },
+        "LookupMap": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "prefix",
+                        "Vec<u8>",
+                    ),
+                ],
+            ),
+        },
+        "Metrics": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "sign_with_v1_payload_count",
+                        "u64",
+                    ),
+                    (
+                        "sign_with_v2_payload_count",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "MockAttestation": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Valid",
+                    "MockAttestation__Valid",
+                ),
+                (
+                    1,
+                    "Invalid",
+                    "MockAttestation__Invalid",
+                ),
+                (
+                    2,
+                    "WithConstraints",
+                    "MockAttestation__WithConstraints",
+                ),
+            ],
+        },
+        "MockAttestation__Invalid": Struct {
+            fields: Empty,
+        },
+        "MockAttestation__Valid": Struct {
+            fields: Empty,
+        },
+        "MockAttestation__WithConstraints": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "mpc_docker_image_hash",
+                        "Option<Hash32>",
+                    ),
+                    (
+                        "launcher_docker_compose_hash",
+                        "Option<Hash32>",
+                    ),
+                    (
+                        "expiry_timestamp_seconds",
+                        "Option<u64>",
+                    ),
+                ],
+            ),
+        },
+        "MpcContract": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "protocol_state",
+                        "ProtocolContractState",
+                    ),
+                    (
+                        "pending_signature_requests",
+                        "LookupMap",
+                    ),
+                    (
+                        "pending_ckd_requests",
+                        "LookupMap",
+                    ),
+                    (
+                        "pending_verify_foreign_tx_requests",
+                        "LookupMap",
+                    ),
+                    (
+                        "proposed_updates",
+                        "ProposedUpdates",
+                    ),
+                    (
+                        "foreign_chain_policy",
+                        "ForeignChainPolicy",
+                    ),
+                    (
+                        "foreign_chain_policy_votes",
+                        "ForeignChainPolicyVotes",
+                    ),
+                    (
+                        "config",
+                        "Config",
+                    ),
+                    (
+                        "tee_state",
+                        "TeeState",
+                    ),
+                    (
+                        "accept_requests",
+                        "bool",
+                    ),
+                    (
+                        "node_migrations",
+                        "NodeMigrations",
+                    ),
+                    (
+                        "stale_data",
+                        "StaleData",
+                    ),
+                    (
+                        "metrics",
+                        "Metrics",
+                    ),
+                ],
+            ),
+        },
+        "MpcPublicKey": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Secp256k1",
+                    "Secp256k1PublicKey",
+                ),
+                (
+                    1,
+                    "Ed25519",
+                    "Ed25519PublicKey",
+                ),
+                (
+                    2,
+                    "Bls12381",
+                    "Bls12381G2PublicKey",
+                ),
+            ],
+        },
+        "NodeAttestation": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "node_id",
+                        "NodeId",
+                    ),
+                    (
+                        "verified_attestation",
+                        "VerifiedAttestation",
+                    ),
+                ],
+            ),
+        },
+        "NodeId": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "account_id",
+                        "AccountId",
+                    ),
+                    (
+                        "tls_public_key",
+                        "PublicKey",
+                    ),
+                    (
+                        "account_public_key",
+                        "Option<PublicKey>",
+                    ),
+                ],
+            ),
+        },
+        "NodeMigrations": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "backup_services_info",
+                        "IterableMap",
+                    ),
+                    (
+                        "ongoing_migrations",
+                        "IterableMap",
+                    ),
+                ],
+            ),
+        },
+        "NonEmptyBTreeSet<RpcProvider>": Sequence {
+            length_width: 0,
+            length_range: 0..=4294967295,
+            elements: "BTreeSet<RpcProvider>",
+        },
+        "Option<EpochId>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "EpochId",
+                ),
+            ],
+        },
+        "Option<Hash32>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "Hash32",
+                ),
+            ],
+        },
+        "Option<KeyEventInstance>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "KeyEventInstance",
+                ),
+            ],
+        },
+        "Option<PublicKey>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "PublicKey",
+                ),
+            ],
+        },
+        "Option<PublicKeyExtended>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "PublicKeyExtended",
+                ),
+            ],
+        },
+        "Option<u64>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "u64",
+                ),
+            ],
+        },
+        "ParticipantId": Struct {
+            fields: UnnamedFields(
+                [
+                    "u32",
+                ],
+            ),
+        },
+        "ParticipantInfo": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "url",
+                        "String",
+                    ),
+                    (
+                        "sign_pk",
+                        "PublicKey",
+                    ),
+                ],
+            ),
+        },
+        "Participants": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "next_id",
+                        "ParticipantId",
+                    ),
+                    (
+                        "participants",
+                        "Vec<(AccountId, ParticipantId, ParticipantInfo)>",
+                    ),
+                ],
+            ),
+        },
+        "ProposedUpdates": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "vote_by_participant",
+                        "IterableMap",
+                    ),
+                    (
+                        "entries",
+                        "IterableMap",
+                    ),
+                    (
+                        "id",
+                        "UpdateId",
+                    ),
+                ],
+            ),
+        },
+        "ProtocolContractState": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "NotInitialized",
+                    "ProtocolContractState__NotInitialized",
+                ),
+                (
+                    1,
+                    "Initializing",
+                    "ProtocolContractState__Initializing",
+                ),
+                (
+                    2,
+                    "Running",
+                    "ProtocolContractState__Running",
+                ),
+                (
+                    3,
+                    "Resharing",
+                    "ProtocolContractState__Resharing",
+                ),
+            ],
+        },
+        "ProtocolContractState__Initializing": Struct {
+            fields: UnnamedFields(
+                [
+                    "InitializingContractState",
+                ],
+            ),
+        },
+        "ProtocolContractState__NotInitialized": Struct {
+            fields: Empty,
+        },
+        "ProtocolContractState__Resharing": Struct {
+            fields: UnnamedFields(
+                [
+                    "ResharingContractState",
+                ],
+            ),
+        },
+        "ProtocolContractState__Running": Struct {
+            fields: UnnamedFields(
+                [
+                    "RunningContractState",
+                ],
+            ),
+        },
+        "PublicKey": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "data",
+                        "Vec<u8>",
+                    ),
+                ],
+            ),
+        },
+        "PublicKeyExtended": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Secp256k1",
+                    "PublicKeyExtended__Secp256k1",
+                ),
+                (
+                    1,
+                    "Ed25519",
+                    "PublicKeyExtended__Ed25519",
+                ),
+                (
+                    2,
+                    "Bls12381",
+                    "PublicKeyExtended__Bls12381",
+                ),
+            ],
+        },
+        "PublicKeyExtended__Bls12381": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "public_key",
+                        "MpcPublicKey",
+                    ),
+                ],
+            ),
+        },
+        "PublicKeyExtended__Ed25519": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "near_public_key_compressed",
+                        "PublicKey",
+                    ),
+                    (
+                        "edwards_point",
+                        "SerializableEdwardsPoint",
+                    ),
+                ],
+            ),
+        },
+        "PublicKeyExtended__Secp256k1": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "near_public_key",
+                        "PublicKey",
+                    ),
+                ],
+            ),
+        },
+        "ResharingContractState": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "previous_running_state",
+                        "RunningContractState",
+                    ),
+                    (
+                        "reshared_keys",
+                        "Vec<KeyForDomain>",
+                    ),
+                    (
+                        "resharing_key",
+                        "KeyEvent",
+                    ),
+                    (
+                        "cancellation_requests",
+                        "HashSet<AuthenticatedAccountId>",
+                    ),
+                ],
+            ),
+        },
+        "RpcProvider": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "rpc_url",
+                        "String",
+                    ),
+                ],
+            ),
+        },
+        "RunningContractState": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "domains",
+                        "DomainRegistry",
+                    ),
+                    (
+                        "keyset",
+                        "Keyset",
+                    ),
+                    (
+                        "parameters",
+                        "ThresholdParameters",
+                    ),
+                    (
+                        "parameters_votes",
+                        "ThresholdParametersVotes",
+                    ),
+                    (
+                        "add_domains_votes",
+                        "AddDomainsVotes",
+                    ),
+                    (
+                        "previously_cancelled_resharing_epoch_id",
+                        "Option<EpochId>",
+                    ),
+                ],
+            ),
+        },
+        "Secp256k1PublicKey": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 64]",
+                ],
+            ),
+        },
+        "SerializableEdwardsPoint": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "SignatureScheme": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Secp256k1",
+                    "SignatureScheme__Secp256k1",
+                ),
+                (
+                    1,
+                    "Ed25519",
+                    "SignatureScheme__Ed25519",
+                ),
+                (
+                    2,
+                    "Bls12381",
+                    "SignatureScheme__Bls12381",
+                ),
+                (
+                    3,
+                    "V2Secp256k1",
+                    "SignatureScheme__V2Secp256k1",
+                ),
+            ],
+        },
+        "SignatureScheme__Bls12381": Struct {
+            fields: Empty,
+        },
+        "SignatureScheme__Ed25519": Struct {
+            fields: Empty,
+        },
+        "SignatureScheme__Secp256k1": Struct {
+            fields: Empty,
+        },
+        "SignatureScheme__V2Secp256k1": Struct {
+            fields: Empty,
+        },
+        "StaleData": Struct {
+            fields: Empty,
+        },
+        "String": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "u8",
+        },
+        "TeeState": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "allowed_docker_image_hashes",
+                        "AllowedDockerImageHashes",
+                    ),
+                    (
+                        "allowed_launcher_compose_hashes",
+                        "Vec<Hash32>",
+                    ),
+                    (
+                        "votes",
+                        "CodeHashesVotes",
+                    ),
+                    (
+                        "stored_attestations",
+                        "BTreeMap<PublicKey, NodeAttestation>",
+                    ),
+                ],
+            ),
+        },
+        "Threshold": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "ThresholdParameters": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "participants",
+                        "Participants",
+                    ),
+                    (
+                        "threshold",
+                        "Threshold",
+                    ),
+                ],
+            ),
+        },
+        "ThresholdParametersVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_by_account",
+                        "BTreeMap<AuthenticatedAccountId, ThresholdParameters>",
+                    ),
+                ],
+            ),
+        },
+        "Timestamp": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 8]",
+                ],
+            ),
+        },
+        "UpdateId": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "ValidatedDstackAttestation": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "mpc_image_hash",
+                        "Hash32",
+                    ),
+                    (
+                        "launcher_compose_hash",
+                        "Hash32",
+                    ),
+                    (
+                        "expiry_timestamp_seconds",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "Vec<(AccountId, ParticipantId, ParticipantInfo)>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(AccountId, ParticipantId, ParticipantInfo)",
+        },
+        "Vec<AllowedMpcDockerImage>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "AllowedMpcDockerImage",
+        },
+        "Vec<DomainConfig>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "DomainConfig",
+        },
+        "Vec<Hash32>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "Hash32",
+        },
+        "Vec<KeyForDomain>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "KeyForDomain",
+        },
+        "Vec<u8>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "u8",
+        },
+        "Vector": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "len",
+                        "u32",
+                    ),
+                    (
+                        "values",
+                        "IndexMap",
+                    ),
+                ],
+            ),
+        },
+        "VerifiedAttestation": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Dstack",
+                    "VerifiedAttestation__Dstack",
+                ),
+                (
+                    1,
+                    "Mock",
+                    "VerifiedAttestation__Mock",
+                ),
+            ],
+        },
+        "VerifiedAttestation__Dstack": Struct {
+            fields: UnnamedFields(
+                [
+                    "ValidatedDstackAttestation",
+                ],
+            ),
+        },
+        "VerifiedAttestation__Mock": Struct {
+            fields: UnnamedFields(
+                [
+                    "MockAttestation",
+                ],
+            ),
+        },
+        "[u8; 32]": Sequence {
+            length_width: 0,
+            length_range: 32..=32,
+            elements: "u8",
+        },
+        "[u8; 64]": Sequence {
+            length_width: 0,
+            length_range: 64..=64,
+            elements: "u8",
+        },
+        "[u8; 8]": Sequence {
+            length_width: 0,
+            length_range: 8..=8,
+            elements: "u8",
+        },
+        "[u8; 96]": Sequence {
+            length_width: 0,
+            length_range: 96..=96,
+            elements: "u8",
+        },
+        "bool": Primitive(
+            1,
+        ),
+        "u32": Primitive(
+            4,
+        ),
+        "u64": Primitive(
+            8,
+        ),
+        "u8": Primitive(
+            1,
+        ),
+    },
+}
