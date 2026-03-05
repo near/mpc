@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "attestation-cli")]
@@ -17,6 +17,7 @@ pub enum Command {
 }
 
 #[derive(Args)]
+#[command(group(ArgGroup::new("source").required(true)))]
 pub struct VerifyArgs {
     /// Fetch attestation data from a node's /public_data HTTP endpoint
     #[arg(long, group = "source")]

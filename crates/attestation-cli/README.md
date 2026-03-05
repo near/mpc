@@ -169,6 +169,12 @@ On failure the output includes the error details and ends with `Verdict: FAIL`.
 | 0 | Verification passed |
 | 1 | Verification failed or input error |
 
+## Collateral handling
+
+Attestation verification requires DCAP collateral (certificates, CRLs, TCB info) to validate the Intel TDX quote. The CLI uses the collateral **embedded in the node's attestation payload** (the same collateral that was fetched when the node generated its attestation). This is the same approach used by the MPC contract and node.
+
+The CLI does not currently support fetching fresh collateral from Intel's Provisioning Certification Service (PCS) or overriding CRLs. If the embedded collateral is stale, the verification may fail with a DCAP-related error.
+
 ## Troubleshooting
 
 **"tee_participant_info is null in the response"**
