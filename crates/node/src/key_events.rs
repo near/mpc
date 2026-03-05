@@ -752,7 +752,8 @@ mod tests {
         ));
 
         // Advance past two full timeout cycles (20s each).
-        // With start_paused=true, sleep auto-advances the clock.
+        // Note that tokio will auto-advance the clock here since we're running with paused time.
+        // See https://docs.rs/tokio/latest/tokio/time/fn.advance.html#auto-advance.
         tokio::time::sleep(Duration::from_secs(45)).await;
 
         // then
@@ -849,17 +850,13 @@ mod tests {
     }
 
     fn make_key_event_id(epoch: u64, domain: u64, attempt: u64) -> KeyEventId {
-        KeyEventId::new(
-            EpochId::new(epoch),
-            DomainId(domain),
-            {
-                let mut id = AttemptId::new();
-                for _ in 0..attempt {
-                    id = id.next();
-                }
-                id
-            },
-        )
+        KeyEventId::new(EpochId::new(epoch), DomainId(domain), {
+            let mut id = AttemptId::new();
+            for _ in 0..attempt {
+                id = id.next();
+            }
+            id
+        })
     }
 
     fn make_key_event_instance(
