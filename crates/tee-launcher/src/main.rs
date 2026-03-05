@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::str::FromStr;
 use std::{collections::VecDeque, time::Duration};
 
 use clap::Parser;
@@ -176,17 +177,12 @@ async fn get_manifest_digest(config: &LauncherConfig) -> Result<String, Launcher
     let mut tags: VecDeque<String> = tags.into_iter().collect();
 
     while let Some(tag) = tags.pop_front() {
-        let manifest_url = format!(
+        let manifest_url: Url = format!(
             "https://{}/v2/{}/manifests/{tag}",
             config.registry, config.image_name
-        );
-        let headers = vec![
-            (
-                "Accept".to_string(),
-                "application/vnd.docker.distribution.manifest.v2+json".to_string(),
-            ),
-            // (AUTHORIZATION,),
-        ];
+        )
+        .parse()
+        .expect("TODO handle error");
 
         let authorization_value: HeaderValue = format!("Bearer {}", token_response.token)
             .parse()
@@ -197,7 +193,14 @@ async fn get_manifest_digest(config: &LauncherConfig) -> Result<String, Launcher
             (AUTHORIZATION, authorization_value),
         ]);
 
-        match request_until_success(&reqwest_client, &manifest_url, &headers, config).await {
+        match request_until_success(
+            &reqwest_client,
+            manifest_url.clone(),
+            headers.clone(),
+            config,
+        )
+        .await
+        {
             Ok(resp) => {
                 let content_digest = resp
                     .headers()
