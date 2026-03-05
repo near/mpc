@@ -92,17 +92,18 @@ impl<T: Ord + borsh::BorshSchema> borsh::BorshSchema for NonEmptyBTreeSet<T> {
             borsh::schema::Definition,
         >,
     ) {
-        // NonEmptyBTreeSet serializes identically to BTreeSet
+        // NonEmptyBTreeSet serializes identically to BTreeSet, but with min length 1
         <BTreeSet<T> as borsh::BorshSchema>::add_definitions_recursively(definitions);
         let btree_decl = <BTreeSet<T> as borsh::BorshSchema>::declaration();
-        definitions.insert(
-            Self::declaration(),
-            borsh::schema::Definition::Sequence {
-                length_width: borsh::schema::Definition::ARRAY_LENGTH_WIDTH,
-                length_range: borsh::schema::Definition::DEFAULT_LENGTH_RANGE,
-                elements: btree_decl,
-            },
-        );
+        let mut def = definitions[&btree_decl].clone();
+        if let borsh::schema::Definition::Sequence {
+            ref mut length_range,
+            ..
+        } = def
+        {
+            *length_range = 1..=*length_range.end();
+        }
+        definitions.insert(Self::declaration(), def);
     }
 }
 

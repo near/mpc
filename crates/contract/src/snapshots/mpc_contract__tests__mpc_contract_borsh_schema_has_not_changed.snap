@@ -730,9 +730,9 @@ BorshSchemaContainer {
             ),
         },
         "NonEmptyBTreeSet<RpcProvider>": Sequence {
-            length_width: 0,
-            length_range: 0..=4294967295,
-            elements: "BTreeSet<RpcProvider>",
+            length_width: 4,
+            length_range: 1..=4294967295,
+            elements: "RpcProvider",
         },
         "Option<EpochId>": Enum {
             tag_width: 1,
