@@ -5,6 +5,115 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.6.0] - 2026-03-05
+
+### 🚀 Features
+
+- [#2199](https://github.com/near/mpc/pull/2199)(@DSharifi): Add new collection type, `BoundedVec`, to the bounded collections crate (#2199)
+
+- [#2132](https://github.com/near/mpc/pull/2132)(@barakeinav1): Allow passing mpc_ env variables (#2132)
+
+- [#2202](https://github.com/near/mpc/pull/2202)(@DSharifi): Create `near-mpc-sdk` crate with types for sign requests (#2202)
+
+- [#2218](https://github.com/near/mpc/pull/2218)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for bitcoin (#2218)
+
+- [#2222](https://github.com/near/mpc/pull/2222)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for abstract (#2222)
+
+- [#2224](https://github.com/near/mpc/pull/2224)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for starknet (#2224)
+
+- [#2233](https://github.com/near/mpc/pull/2233)(@DSharifi): *(sdk)* Add verification support of  foreign transaction signatures (#2233)
+
+- [#2254](https://github.com/near/mpc/pull/2254)(@DSharifi): *(sdk)* Chain-specific builder entry points for foreign chain request builder (#2254)
+
+- [#2258](https://github.com/near/mpc/pull/2258)(@olga24912): Add StarkNet event log extraction support (#2258)
+
+- [#2266](https://github.com/near/mpc/pull/2266)(@DSharifi): *(sdk)* Add borsh serialization derives to all contract interface types and SDK verifier (#2266)
+
+- [#2265](https://github.com/near/mpc/pull/2265)(@DSharifi): *(sdk)* Verify foreign transaction payload signatures (#2265)
+
+- [#2281](https://github.com/near/mpc/pull/2281)(@gilcu3): Added support for abi generation in mpc-sdk and signature-verifier crate (#2281)
+
+
+### 🐛 Bug Fixes
+
+- [#2237](https://github.com/near/mpc/pull/2237)(@gilcu3): Update wasmtime to avoid vulnerability in CVE-2026-27204 (#2237)
+
+- [#2257](https://github.com/near/mpc/pull/2257)(@gilcu3): Bug in from_be_bytes_mod_order when not a multiple of 8 bytes (#2257)
+
+- [#2268](https://github.com/near/mpc/pull/2268)(@gilcu3): Use bounded incoming message buffers for all protocols (#2268)
+
+- [#2308](https://github.com/near/mpc/pull/2308)(@gilcu3): Reject foreign chain transaction if requested chain not in policy (#2308)
+
+- [#2310](https://github.com/near/mpc/pull/2310)(@netrome): Don't log raw mpc protocol messages (#2310)
+
+- [#2309](https://github.com/near/mpc/pull/2309)(@gilcu3): Reject wrong payload versions for foreign chain transaction (#2309)
+
+- [#2317](https://github.com/near/mpc/pull/2317)(@netrome): Ensure resharing leaders wait for start events to prevent them from getting stuck forever (#2317)
+
+
+### 💼 Other
+
+- [#2195](https://github.com/near/mpc/pull/2195)(@gilcu3): Make sure nix includes all needed tools (#2195)
+
+- [#2200](https://github.com/near/mpc/pull/2200)(@SimonRastikian): Automate MPC release process (#2200)
+
+- [#2291](https://github.com/near/mpc/pull/2291)(@anodar): Clang version in Nix flake for Darwin (#2291)
+
+
+### 🚜 Refactor
+
+- [#2279](https://github.com/near/mpc/pull/2279)(@anodar): Use strong threshold types in signature provider layer (#2279)
+
+- [#2277](https://github.com/near/mpc/pull/2277)(@gilcu3): Unify crypto conversions (#2277)
+
+- [#2294](https://github.com/near/mpc/pull/2294)(@gilcu3): Create mpc-crypto-types crate (#2294)
+
+- [#2313](https://github.com/near/mpc/pull/2313)(@anodar): Handle errors on conversions to usize (#2313)
+
+- : Reduce code duplication in buffer limit tests (#2295)
+
+
+### 📚 Documentation
+
+- [#2251](https://github.com/near/mpc/pull/2251)(@gilcu3): Rework the mpc readme (#2251)
+
+- [#2270](https://github.com/near/mpc/pull/2270)(@barakeinav1): CVM upgrade mechanism with launcher and OS measurement voting (#2270)
+
+- [#2204](https://github.com/near/mpc/pull/2204)(@pbeza): Archive Signer design for legacy HOT key support (#2204)
+
+
+### ⚡ Performance
+
+- [#2276](https://github.com/near/mpc/pull/2276)(@SimonRastikian): Split eddsa benchmarks (#2276)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#2212](https://github.com/near/mpc/pull/2212)(@pbeza): Rename docs and scripts to kebab-case, add file naming CI check (#2212)
+
+- [#2169](https://github.com/near/mpc/pull/2169)(@pbeza): Add `check-use-in-fn.py` CI script (#2169)
+
+- [#2227](https://github.com/near/mpc/pull/2227)(@gilcu3): Add ts crate to the workspace (#2227)
+
+- [#2229](https://github.com/near/mpc/pull/2229)(@netrome): Make CLAUDE.md a symlink to AGENTS.md (#2229)
+
+- [#2172](https://github.com/near/mpc/pull/2172)(@barakeinav1): Launcher update process guide and automation script (#2172)
+
+- [#2249](https://github.com/near/mpc/pull/2249)(@gilcu3): Make dependabot separate minor bumps from major bumps (#2249)
+
+- [#2259](https://github.com/near/mpc/pull/2259)(@DSharifi): Create standalone crate to verify signatures that are in dto format (#2259)
+
+- [#2278](https://github.com/near/mpc/pull/2278)(@dependabot[bot]): Bump the rust-minor-and-patch group with 2 updates (#2278)
+
+- [#2304](https://github.com/near/mpc/pull/2304)(@gilcu3): Allow concurrent execution of release image workflow (#2304)
+
+- [#2235](https://github.com/near/mpc/pull/2235)(@gilcu3): Update migration code and contract history after 3.5.1 is deployed (#2235)
+
+- [#2312](https://github.com/near/mpc/pull/2312)(@gilcu3): Build docker workflows cancelling each other (#2312)
+
+- [#2314](https://github.com/near/mpc/pull/2314)(@gilcu3): Update nearcore to 2.10.7 (#2314)
+
+
 ## [3.5.1] - 2026-02-20
 
 ### 🐛 Bug Fixes
@@ -25,7 +134,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2192](https://github.com/near/mpc/pull/2192)(@gilcu3): Resolve rustdoc warnings and enforce warnings check in CI (#2192)
 
-- : Update changelog and bump crate versions for 3.5.1
+- [#2198](https://github.com/near/mpc/pull/2198)(@netrome): Update changelog and bump crate versions for 3.5.1 (#2198)
 
 
 ## [3.5.0] - 2026-02-19
