@@ -720,36 +720,49 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    fn make_key_event_id(epoch: u64, domain: u64, attempt: u64) -> KeyEventId {
-        KeyEventId::new(
-            EpochId::new(epoch),
-            DomainId(domain),
-            // AttemptId starts at 0 via new(), use next() to increment
-            {
-                let mut id = AttemptId::new();
-                for _ in 0..attempt {
-                    id = id.next();
-                }
-                id
-            },
-        )
-    }
+    #[tokio::test(start_paused = true)]
+    async fn resharing_leader__should_retry_after_timeout_if_computation_is_not_started() {
+        // given
+        // Simulate the expired/idle contract state: started=false but ID already
+        // matches the next attempt (this is what next_attempt_id() produces).
+        let key_event_id = make_key_event_id(6, 1, 1);
+        let instance = make_key_event_instance(key_event_id, false);
+        let (_tx, rx) = watch::channel(instance);
 
-    fn make_key_event_instance(
-        key_event_id: KeyEventId,
-        started: bool,
-    ) -> ContractKeyEventInstance {
-        ContractKeyEventInstance {
-            id: key_event_id,
-            domain: DomainConfig {
-                id: key_event_id.domain_id,
-                scheme: SignatureScheme::Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
-            started,
-            completed: BTreeSet::new(),
-            completed_domains: vec![],
+        let txn_sender = CountingTransactionSender::new();
+        let txn_sender_handle = txn_sender.clone();
+
+        let keyshare_storage = KeyStorageConfig {
+            home_dir: tempfile::tempdir().unwrap().keep(),
+            local_encryption_key: [0u8; 16],
+            gcp: None,
         }
+        .create()
+        .await
+        .unwrap();
+        let keyshare_storage = Arc::new(RwLock::new(keyshare_storage));
+
+        // when
+        let leader_handle = tokio::spawn(resharing_leader(
+            MockKeyEventLeaderClient,
+            keyshare_storage,
+            rx,
+            txn_sender,
+            make_test_resharing_args(),
+        ));
+
+        // Advance past two full timeout cycles (20s each).
+        // With start_paused=true, sleep auto-advances the clock.
+        tokio::time::sleep(Duration::from_secs(45)).await;
+
+        // then
+        let send_count = txn_sender_handle.count();
+        assert!(
+            send_count >= 2,
+            "Expected at least 2 StartReshare attempts (retries after timeout), got {send_count}"
+        );
+
+        leader_handle.abort();
     }
 
     #[test]
@@ -779,7 +792,8 @@ mod tests {
         assert!(matches!(result, KeyEventIdComparisonResult::RemoteMatches));
     }
 
-    /// Mock leader client that instantly reports all participants connected.
+    // -- Mocks and helpers --
+
     struct MockKeyEventLeaderClient;
 
     impl KeyEventLeaderClient for MockKeyEventLeaderClient {
@@ -800,7 +814,6 @@ mod tests {
         }
     }
 
-    /// Mock transaction sender that counts how many transactions are sent.
     #[derive(Clone)]
     struct CountingTransactionSender {
         count: Arc<AtomicUsize>,
@@ -835,6 +848,37 @@ mod tests {
         }
     }
 
+    fn make_key_event_id(epoch: u64, domain: u64, attempt: u64) -> KeyEventId {
+        KeyEventId::new(
+            EpochId::new(epoch),
+            DomainId(domain),
+            {
+                let mut id = AttemptId::new();
+                for _ in 0..attempt {
+                    id = id.next();
+                }
+                id
+            },
+        )
+    }
+
+    fn make_key_event_instance(
+        key_event_id: KeyEventId,
+        started: bool,
+    ) -> ContractKeyEventInstance {
+        ContractKeyEventInstance {
+            id: key_event_id,
+            domain: DomainConfig {
+                id: key_event_id.domain_id,
+                scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
+            },
+            started,
+            completed: BTreeSet::new(),
+            completed_domains: vec![],
+        }
+    }
+
     fn make_test_resharing_args() -> Arc<ResharingArgs> {
         Arc::new(ResharingArgs {
             previous_keyset: Keyset::new(EpochId::new(5), vec![]),
@@ -845,50 +889,5 @@ mod tests {
                 participants: vec![],
             },
         })
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn resharing_leader__should_retry_after_timeout_if_computation_is_not_started() {
-        // given
-        // Simulate the expired/idle contract state: started=false but ID already
-        // matches the next attempt (this is what next_attempt_id() produces).
-        let key_event_id = make_key_event_id(6, 1, 1);
-        let instance = make_key_event_instance(key_event_id, false);
-        let (_tx, rx) = watch::channel(instance);
-
-        let txn_sender = CountingTransactionSender::new();
-        let txn_sender_handle = txn_sender.clone();
-
-        let keyshare_storage = KeyStorageConfig {
-            home_dir: tempfile::tempdir().unwrap().keep().unwrap(),
-            local_encryption_key: [0u8; 16],
-            gcp: None,
-        }
-        .create()
-        .await
-        .unwrap();
-        let keyshare_storage = Arc::new(RwLock::new(keyshare_storage));
-
-        // when
-        let leader_handle = tokio::spawn(resharing_leader(
-            MockKeyEventLeaderClient,
-            keyshare_storage,
-            rx,
-            txn_sender,
-            make_test_resharing_args(),
-        ));
-
-        // Advance past two full timeout cycles (20s each).
-        // With start_paused=true, sleep auto-advances the clock.
-        tokio::time::sleep(Duration::from_secs(45)).await;
-
-        // then
-        let send_count = txn_sender_handle.count();
-        assert!(
-            send_count >= 2,
-            "Expected at least 2 StartReshare attempts (retries after timeout), got {send_count}"
-        );
-
-        leader_handle.abort();
     }
 }
