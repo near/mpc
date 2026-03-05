@@ -2,7 +2,10 @@ use crate::indexer::types::{
     ChainCKDRequest, ChainSignatureRequest, ChainVerifyForeignTransactionRequest,
 };
 use anyhow::Context;
-use chain_gateway::state_viewer::{ContractStateStream, StateViewer};
+use chain_gateway::state_viewer::{
+    ContractStateStream, ContractStateSubscriber, MethodViewer, StateViewer,
+};
+use chain_gateway::types::NoArgs;
 use mpc_contract::primitives::signature::YieldIndex;
 use serde::de::DeserializeOwned;
 use tokio::sync::watch;
@@ -79,9 +82,6 @@ impl MpcContractStateViewer {
     }
 }
 
-#[derive(serde::Serialize)]
-struct NoArgs {}
-
 // todo: resovles the below:
 // TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
 // TODO(#1956): There is a lot of duplicate code here that could be simplified
@@ -93,7 +93,7 @@ impl MpcContractStateViewer {
         let args = ChainGetPendingSignatureRequestArgs {
             request: chain_signature_request.clone(),
         };
-        let (_, call_result) = self
+        let call_result = self
             .mpc_contract_viewer
             .view(
                 self.mpc_contract_id.clone(),
@@ -102,7 +102,7 @@ impl MpcContractStateViewer {
             )
             .await
             .context("failed to query for pending request")?;
-        Ok(call_result)
+        Ok(call_result.value)
     }
     pub(crate) async fn get_pending_ckd_request(
         &self,
@@ -112,7 +112,7 @@ impl MpcContractStateViewer {
             request: chain_ckd_request.clone(),
         };
 
-        let (_, call_result) = self
+        let call_result = self
             .mpc_contract_viewer
             .view(
                 self.mpc_contract_id.clone(),
@@ -122,7 +122,7 @@ impl MpcContractStateViewer {
             .await
             .context("failed to query for pending CKD request")?;
 
-        Ok(call_result)
+        Ok(call_result.value)
     }
 
     pub(crate) async fn get_pending_verify_foreign_tx_request(
@@ -133,7 +133,7 @@ impl MpcContractStateViewer {
             request: chain_verify_foreign_tx_request.clone(),
         };
 
-        let (_, call_result) = self
+        let call_result = self
             .mpc_contract_viewer
             .view(
                 self.mpc_contract_id.clone(),
@@ -143,7 +143,7 @@ impl MpcContractStateViewer {
             .await
             .context("failed to query for pending verify foreign tx request")?;
 
-        Ok(call_result)
+        Ok(call_result.value)
     }
 
     pub(crate) async fn get_participant_attestation(
@@ -154,7 +154,7 @@ impl MpcContractStateViewer {
             tls_public_key: participant_tls_public_key,
         };
 
-        let (_, call_result) = self
+        let call_result = self
             .mpc_contract_viewer
             .view(
                 self.mpc_contract_id.clone(),
@@ -164,13 +164,13 @@ impl MpcContractStateViewer {
             .await
             .context("failed to query for participant attestation")?;
 
-        Ok(call_result)
+        Ok(call_result.value)
     }
 
     pub(crate) async fn get_foreign_chain_policy(
         &self,
     ) -> anyhow::Result<contract_interface::types::ForeignChainPolicy> {
-        let (_height, call_result) = self
+        let call_result = self
             .mpc_contract_viewer
             .view(
                 self.mpc_contract_id.clone(),
@@ -179,13 +179,13 @@ impl MpcContractStateViewer {
             )
             .await?;
 
-        Ok(call_result)
+        Ok(call_result.value)
     }
 
     pub(crate) async fn get_foreign_chain_policy_proposals(
         &self,
     ) -> anyhow::Result<contract_interface::types::ForeignChainPolicyVotes> {
-        let (_height, call_result) = self
+        let call_result = self
             .mpc_contract_viewer
             .view(
                 self.mpc_contract_id.clone(),
@@ -194,6 +194,6 @@ impl MpcContractStateViewer {
             )
             .await?;
 
-        Ok(call_result)
+        Ok(call_result.value)
     }
 }

@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::{ContractStateStream, ObservedState};
+use chain_gateway::state_viewer::ContractStateSubscriber;
+use chain_gateway::state_viewer::ContractStateStream;
+use chain_gateway::types::ObservedState;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use near_account_id::AccountId;

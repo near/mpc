@@ -1,5 +1,5 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
-use chain_gateway::state_viewer::ObservedState;
+use chain_gateway::types::ObservedState;
 use contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
@@ -106,12 +106,12 @@ impl OneNodeTestConfig {
 
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(Ok(ObservedState::<ProtocolContractState> {
-                        last_changed: 0.into(),
+                        observed_at: 0.into(),
                         value: ProtocolContractState::NotInitialized,
                     }));
                 let (_, dummy_migration_state_receiver) =
                     watch::channel(Ok(ObservedState::<ContractMigrationInfo> {
-                        last_changed: 0.into(),
+                        observed_at: 0.into(),
                         value: BTreeMap::new(),
                     }));
                 let web_server = start_web_server(

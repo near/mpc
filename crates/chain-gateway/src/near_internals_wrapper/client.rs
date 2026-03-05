@@ -19,7 +19,6 @@ impl ClientWrapper {
             is_health_check: false,
             detailed: false,
         };
-        // todo: log errors
         let status = near_async::messaging::CanSendAsync::send_async(
             &self.client,
             near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),

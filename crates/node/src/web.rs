@@ -7,7 +7,7 @@ use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::ObservedState;
+use chain_gateway::types::ObservedState;
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
@@ -124,7 +124,7 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
 
 async fn migrations(state: State<WebServerState>) -> String {
     match state.migration_state_receiver.borrow().clone() {
-        Ok(data) => serde_json::to_string_pretty(&(data.last_changed, data.value))
+        Ok(data) => serde_json::to_string_pretty(&(data.observed_at, data.value))
             .unwrap_or_else(|e| e.to_string()),
         Err(err) => err.to_string(),
     }

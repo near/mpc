@@ -23,7 +23,7 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use chain_gateway::state_viewer::ObservedState;
+use chain_gateway::types::ObservedState;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_attestation::report_data::ReportDataV1;
@@ -290,13 +290,13 @@ impl StartCmd {
 
         let (protocol_state_sender, protocol_state_receiver) =
             watch::channel(Ok(ObservedState::<ProtocolContractState> {
-                last_changed: 0u64.into(),
+                observed_at: 0u64.into(),
                 value: ProtocolContractState::NotInitialized,
             }));
 
         let (migration_state_sender, migration_state_receiver) =
             watch::channel(Ok(ObservedState::<ContractMigrationInfo> {
-                last_changed: 0u64.into(),
+                observed_at: 0u64.into(),
                 value: BTreeMap::new(),
             }));
         let web_server = root_runtime

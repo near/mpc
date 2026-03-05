@@ -1,11 +1,10 @@
+use super::monitoring::{MonitoringTask, make_monitoring_task};
+use super::traits::{ContractStateStream, ContractViewer};
 use crate::errors::ChainGatewayError;
+use crate::types::ObservedState;
 use async_trait::async_trait;
 use near_account_id::AccountId;
 use serde::de::DeserializeOwned;
-
-use super::monitoring::{MonitoringTask, make_monitoring_task};
-use super::subscription_trait::{ContractStateStream, ObservedState};
-use super::viewer_trait::ContractViewer;
 
 /// Holds  a Monitoring task and the latest cached value.
 /// This is useful such that we don't unnecessarily deserialze the same state multiple times.

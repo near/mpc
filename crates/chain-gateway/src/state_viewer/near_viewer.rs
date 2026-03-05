@@ -1,22 +1,11 @@
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
-use crate::near_internals_wrapper::{
-    ClientWrapper, ViewClientWrapper, ViewFunctionCall, ViewOutput,
-};
+use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
+use crate::types::ObservedState;
 use async_trait::async_trait;
 use near_account_id::AccountId;
 use std::sync::Arc;
 
-/// Trait abstracting the contract view call.
-/// This allows testing the subscription/monitor logic without a real NEAR node.
-#[async_trait]
-pub trait ContractViewer: Send + Sync + Clone + 'static {
-    async fn view_raw(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> Result<ViewOutput, ChainGatewayError>;
-}
+use super::traits::ContractViewer;
 
 #[derive(Clone)]
 pub struct NearContractViewer {
@@ -45,19 +34,15 @@ impl ContractViewer for NearContractViewer {
     /// - `args`: serialized method arguments
     ///
     /// Note: alternatively, we could return a "syncing" error instead of waiting for full sync.
-    async fn view_raw(
+    async fn view(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> Result<ViewOutput, ChainGatewayError> {
+    ) -> Result<ObservedState, ChainGatewayError> {
         self.client.wait_for_full_sync().await;
         self.view_client
-            .view_function_query(&ViewFunctionCall {
-                account_id: contract_id.clone(),
-                method_name: method_name.to_string(),
-                args: args.to_vec(),
-            })
+            .view_function_query(contract_id, method_name, args)
             .await
             .map_err(|err| ChainGatewayError::ViewClient {
                 op: ChainGatewayOp::ViewCall {

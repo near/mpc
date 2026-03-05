@@ -4,7 +4,9 @@ use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::{ContractStateStream, ObservedState};
+use chain_gateway::state_viewer::ContractStateSubscriber;
+use chain_gateway::state_viewer::ContractStateStream;
+use chain_gateway::types::ObservedState;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::{
     domain::DomainConfig,
@@ -268,7 +270,7 @@ fn process_contract_state(
         Ok(latest) => {
             match ContractState::from_contract_state(
                 &latest.value,
-                latest.last_changed.into(),
+                latest.observed_at.into(),
                 port_override,
             ) {
                 Ok(state) => Some(state),

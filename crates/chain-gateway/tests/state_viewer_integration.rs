@@ -1,7 +1,10 @@
+/// TODO: THIS TEST IS FLAKY
 use base64::Engine;
-use chain_gateway::chain_gateway::NoArgs;
+use chain_gateway::types::NoArgs;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::state_viewer::ContractStateStream;
+use chain_gateway::state_viewer::{ContractStateSubscriber, MethodViewer};
+use chain_gateway::types::ObservedState;
 use near_indexer::near_primitives::hash::hash;
 use near_indexer::near_primitives::types::Finality;
 use std::path::Path;
@@ -15,7 +18,7 @@ async fn test_view_contract_state() {
     let (gw, _stream, _dir) = setup_chain_gateway().await;
     let viewer = gw.viewer();
 
-    let (height, value): (_, String) = viewer
+    let value: ObservedState<String> = viewer
         .view(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
             "get_greeting",
@@ -24,8 +27,8 @@ async fn test_view_contract_state() {
         .await
         .expect("view call should succeed");
 
-    assert_eq!(value, "hello from test");
-    assert!(u64::from(height) > 0);
+    assert_eq!(value.value, "hello from test");
+    assert!(u64::from(value.observed_at) > 0);
 }
 
 /// spawns a local neard node, inserts a test contract and checks if viewing an invalid contract method fails
@@ -42,8 +45,7 @@ async fn test_view_nonexistent_method_returns_error() {
         )
         .await;
 
-    let err = result
-        .expect_err("calling a nonexistent method should fail");
+    let err = result.expect_err("calling a nonexistent method should fail");
     assert!(
         matches!(err, ChainGatewayError::ViewClient { .. }),
         "error should be a ViewClient variant, got: {err:?}"
@@ -63,7 +65,7 @@ async fn test_subscription_receives_initial_value() {
 
     let res = sub.latest().expect("subscription latest should succeed");
     assert_eq!(res.value, "hello from test");
-    assert!(u64::from(res.last_changed) > 0);
+    assert!(u64::from(res.observed_at) > 0);
 }
 
 /// Minimal WASM contract: `get_greeting` returns `"hello from test"`.

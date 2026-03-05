@@ -4,13 +4,10 @@ use tokio::sync::{Mutex, mpsc};
 use crate::errors::ChainGatewayError;
 use crate::logger::indexer_logger;
 use crate::near_internals_wrapper::{ClientWrapper, RpcHandlerWrapper, ViewClientWrapper};
+use crate::state_viewer::NearContractViewer;
 use crate::state_viewer::StateViewer;
-use crate::state_viewer::viewer_trait::NearContractViewer;
 use crate::stats::IndexerStats;
 use crate::transaction_sender::TransactionSender;
-
-#[derive(serde::Serialize)]
-pub struct NoArgs {}
 
 #[derive(Clone)]
 pub struct ChainGateway {

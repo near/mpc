@@ -423,18 +423,22 @@ The Chain Gateway consists of three functionalities, each one with their own API
 The Chain Gateway should offer a convenient method for viewing and subscribing to contract state. We assume that contract state is seen through view methods in the contract implementation and propose the following interface:
 
 ```rust
-trait ContractStateSnapshot<T> {
-    /// is synchronous, contains the last seen value
-    fn latest(&self) -> Result<(BlockHeight, &T), Error>;
+trait ContractStateStream<Res> {
+    /// Returns the last value observed on chain and the block height at which it last changed.
+    fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
+    /// Waits until the observed value changes.
+    async fn changed(&mut self) -> Result<(), ChainGatewayError>;
 }
 
-trait ContractStateStream<T> {
-    /// is synchronous, contains the last seen value
-    fn latest(&mut self) -> Result<(BlockHeight, &T), Error>;
-    /// returns if the value of type `T` has changed
-    async fn changed(&mut self) -> Result<(), Error>;
-}
 
+trait ContractViewer: Send + Sync + Clone + 'static {
+    async fn view_raw(
+        &self,
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<ViewOutput, ChainGatewayError>;
+}
 
 impl ContractStateSubscriber {
     async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
@@ -454,6 +458,21 @@ pub struct ContractStateSubscriber {
     /// nearcore view client
     view_client: IndexerViewClient
 }
+
+
+
+pub struct ViewOutput {
+    pub observed_at: BlockHeight,
+    pub value: Vec<u8>,
+}
+
+pub struct ObservedState<T> {
+    pub last_changed: BlockHeight,
+    pub value: T,
+}
+
+pub struct BlockHeight(u64);
+
 ```
 
 

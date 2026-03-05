@@ -1,5 +1,5 @@
 use crate::migration_service::types::MigrationInfo;
-use chain_gateway::chain_gateway::ChainGateway;
+use chain_gateway::ChainGateway;
 use contract_interface::types as dtos;
 use contract_state_viewer::MpcContractStateViewer;
 use handler::ChainBlockUpdate;
