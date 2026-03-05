@@ -346,7 +346,7 @@ async fn validate_image_hash(
     }
 
     let pulled_digest = String::from_utf8_lossy(&inspect.stdout).trim().to_string();
-    let image_hash_string = image_hash.as_hex();
+    let image_hash_string = image_hash.as_hex_sha256();
     if pulled_digest != image_hash_string {
         return Err(
             ImageDigestValidationFailed::PulledImageHasMismatchedDigest {
@@ -413,7 +413,7 @@ fn build_docker_cmd(
         "--name".into(),
         MPC_CONTAINER_NAME.into(),
         "--detach".into(),
-        image_digest.as_hex(),
+        image_digest.as_hex_sha256(),
     ]);
 
     tracing::info!("docker cmd {}", cmd.join(" "));
