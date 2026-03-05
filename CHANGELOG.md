@@ -70,7 +70,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2313](https://github.com/near/mpc/pull/2313)(@anodar): Handle errors on conversions to usize (#2313)
 
-- : Reduce code duplication in buffer limit tests (#2295)
+- [#2295](https://github.com/near/mpc/pull/2295)(@gilcu3): Reduce code duplication in buffer limit tests (#2295)
 
 
 ### 📚 Documentation
