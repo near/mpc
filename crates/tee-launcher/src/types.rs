@@ -4,11 +4,11 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::num::NonZeroU16;
 use std::path::PathBuf;
 
+use launcher_interface::types::DockerSha256Digest;
 use url::Host;
 
 use bounded_collections::NonEmptyVec;
 use clap::{Parser, ValueEnum};
-use mpc_primitives::hash::MpcDockerImageHash;
 use serde::{Deserialize, Serialize};
 
 use crate::env_validation;
@@ -27,7 +27,7 @@ pub struct CliArgs {
 
     /// Fallback image digest when the approved-hashes file is absent
     #[arg(long, env = "DEFAULT_IMAGE_DIGEST")]
-    pub default_image_digest: MpcDockerImageHash,
+    pub default_image_digest: DockerSha256Digest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -71,7 +71,7 @@ pub struct LauncherConfig {
     /// Maximum registry RPC attempts (from `RPC_MAX_ATTEMPTS`).
     pub rpc_max_attempts: u32,
     /// Optional hash override that bypasses registry lookup (from `MPC_HASH_OVERRIDE`).
-    pub mpc_hash_override: Option<MpcDockerImageHash>,
+    pub mpc_hash_override: Option<DockerSha256Digest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

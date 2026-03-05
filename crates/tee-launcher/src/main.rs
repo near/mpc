@@ -4,10 +4,7 @@ use std::{collections::VecDeque, time::Duration};
 use backon::{ExponentialBuilder, Retryable};
 use clap::Parser;
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
-use launcher_interface::types::ApprovedHashesFile;
-
-// Reuse the workspace hash type for type-safe image hash handling.
-use mpc_primitives::hash::MpcDockerImageHash;
+use launcher_interface::types::{ApprovedHashesFile, DockerSha256Digest};
 
 use contants::*;
 use docker_types::*;
@@ -75,7 +72,7 @@ async fn run() -> Result<(), LauncherError> {
             source,
         });
 
-    let image_hash: MpcDockerImageHash = {
+    let image_hash: DockerSha256Digest = {
         match approved_hashes_file {
             Err(err) => {
                 let default_image_digest = args.default_image_digest;
@@ -104,8 +101,7 @@ async fn run() -> Result<(), LauncherError> {
 
                     if !override_image_is_allowed {
                         return Err(LauncherError::InvalidHashOverride(format!(
-                            "MPC_HASH_OVERRIDE={} does not match any approved hash",
-                            override_image.as_hex_sha256()
+                            "MPC_HASH_OVERRIDE={override_image} does not match any approved hash",
                         )));
                     }
 
@@ -129,7 +125,7 @@ async fn run() -> Result<(), LauncherError> {
             .emit_event(
                 MPC_IMAGE_HASH_EVENT.to_string(),
                 // TODO: mpc binary has to go back from back hex as well. Just send the raw bytes as payload.
-                image_hash.as_hex().as_bytes().to_vec(),
+                image_hash.as_raw_hex().as_bytes().to_vec(),
             )
             .await
             .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
@@ -147,10 +143,9 @@ async fn run() -> Result<(), LauncherError> {
 
 async fn get_manifest_digest(
     config: &LauncherConfig,
-    expected_image_digest: &MpcDockerImageHash,
+    expected_image_digest: &DockerSha256Digest,
 ) -> Result<String, LauncherError> {
     let mut tags: VecDeque<String> = config.image_tags.iter().cloned().collect();
-    let expected_digest = format!("sha256:{}", expected_image_digest.as_hex());
 
     // We need an authorization token to fetch manifests.
     // TODO: this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint
@@ -256,7 +251,7 @@ async fn get_manifest_digest(
                     .for_each(|manifest| tags.push_back(manifest.digest));
             }
             ManifestResponse::DockerV2 { config } | ManifestResponse::OciManifest { config } => {
-                if config.digest != expected_digest {
+                if config.digest != *expected_image_digest {
                     continue;
                 }
 
@@ -280,7 +275,7 @@ async fn get_manifest_digest(
 ///    Does NOT extend RTMR3 and does NOT run the container.
 async fn validate_image_hash(
     launcher_config: &LauncherConfig,
-    image_hash: MpcDockerImageHash,
+    image_hash: DockerSha256Digest,
 ) -> Result<(), ImageDigestValidationFailed> {
     let manifest_digest = get_manifest_digest(launcher_config, &image_hash)
         .await
@@ -321,13 +316,17 @@ async fn validate_image_hash(
         ));
     }
 
-    let pulled_digest = String::from_utf8_lossy(&inspect.stdout).trim().to_string();
-    let image_hash_string = image_hash.as_hex_sha256();
-    if pulled_digest != image_hash_string {
+    let pulled_digest = String::from_utf8_lossy(&inspect.stdout)
+        .trim()
+        .to_string()
+        .parse()
+        .expect("is valid digest");
+
+    if pulled_digest != image_hash {
         return Err(
             ImageDigestValidationFailed::PulledImageHasMismatchedDigest {
                 pulled_digest,
-                expected_digest: image_hash_string,
+                expected_digest: image_hash,
             },
         );
     }
@@ -339,14 +338,14 @@ fn build_docker_cmd(
     platform: Platform,
     mpc_config: &MpcBinaryConfig,
     docker_flags: &DockerLaunchFlags,
-    image_digest: &MpcDockerImageHash,
+    image_digest: &DockerSha256Digest,
 ) -> Result<Vec<String>, LauncherError> {
     let mut cmd: Vec<String> = vec!["docker".into(), "run".into()];
 
     // Required environment variables
     cmd.extend([
         "--env".into(),
-        format!("MPC_IMAGE_HASH={}", image_digest.as_hex()),
+        format!("MPC_IMAGE_HASH={}", image_digest.as_raw_hex()),
     ]);
     cmd.extend([
         "--env".into(),
@@ -384,14 +383,14 @@ fn build_docker_cmd(
         "--name".into(),
         MPC_CONTAINER_NAME.into(),
         "--detach".into(),
-        image_digest.as_hex_sha256(),
+        format!("{image_digest}"),
     ]);
 
-    tracing::info!("docker cmd {}", cmd.join(" "));
+    let docker_command_string = cmd.join(" ");
+    tracing::info!(?docker_command_string, "docker cmd");
 
     // Final LD_PRELOAD safeguard
-    let cmd_str = cmd.join(" ");
-    if cmd_str.contains("LD_PRELOAD") {
+    if docker_command_string.contains("LD_PRELOAD") {
         return Err(LauncherError::LdPreloadDetected);
     }
 
@@ -400,14 +399,11 @@ fn build_docker_cmd(
 
 fn launch_mpc_container(
     platform: Platform,
-    valid_hash: &MpcDockerImageHash,
+    valid_hash: &DockerSha256Digest,
     mpc_config: &MpcBinaryConfig,
     docker_flags: &DockerLaunchFlags,
 ) -> Result<(), LauncherError> {
-    tracing::info!(
-        "Launching MPC node with validated hash: {}",
-        valid_hash.as_hex()
-    );
+    tracing::info!("Launching MPC node with validated hash: {valid_hash}",);
 
     // shutdown container if one is already running
     let _ = Command::new("docker")

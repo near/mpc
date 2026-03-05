@@ -9,6 +9,7 @@ derive_more = { workspace = true }
 bounded-collections = { workspace = true }
 mpc-primitives = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 
 
 [dev-dependencies]

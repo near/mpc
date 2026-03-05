@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use mpc_primitives::hash::MpcDockerImageHash;
+use launcher_interface::types::DockerSha256Digest;
+use mpc_primitives::hash::DockerSha256Digest;
 use thiserror::Error;
 use url::Url;
 
@@ -41,12 +42,12 @@ pub enum LauncherError {
 
     #[error("docker run failed for validated hash")]
     DockerRunFailed {
-        image_hash: MpcDockerImageHash,
+        image_hash: DockerSha256Digest,
         inner: std::io::Error,
     },
 
     #[error("docker run failed for validated hash")]
-    DockerRunFailedExitStatus { image_hash: MpcDockerImageHash },
+    DockerRunFailedExitStatus { image_hash: DockerSha256Digest },
 
     #[error("Too many env vars to pass through (>{0})")]
     TooManyEnvVars(usize),
@@ -103,7 +104,7 @@ pub enum ImageDigestValidationFailed {
         "pulled image has mismatching digest. pulled: {pulled_digest}, expected: {expected_digest}"
     )]
     PulledImageHasMismatchedDigest {
-        expected_digest: String,
-        pulled_digest: String,
+        expected_digest: DockerSha256Digest,
+        pulled_digest: DockerSha256Digest,
     },
 }

@@ -1,3 +1,4 @@
+use launcher_interface::types::DockerSha256Digest;
 use serde::{Deserialize, Serialize};
 
 /// Partial response https://auth.docker.io/token
@@ -41,5 +42,5 @@ pub struct ManifestPlatform {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ManifestConfig {
-    pub digest: String,
+    pub digest: DockerSha256Digest,
 }
