@@ -4,6 +4,7 @@ use crate::indexer::types::{
     ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventInstanceArgs,
 };
 use crate::network::MeshNetworkClient;
+use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::EcdsaTaskId;
 use crate::tracking::AutoAbortTaskCollection;
@@ -409,7 +410,7 @@ const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration:
 /// failure (node shutting down). The coordinator is expected to interrupt this when the
 /// contract state transitions out of the key generation state.
 pub async fn keygen_leader(
-    client: Arc<MeshNetworkClient>,
+    client: impl KeyEventLeaderClient,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
@@ -418,7 +419,7 @@ pub async fn keygen_leader(
     loop {
         // Wait for all participants to be connected. Otherwise, computations are most likely going
         // to fail so don't waste the effort.
-        client.leader_wait_for_all_connected().await?;
+        client.wait_for_all_participants_connected().await?;
 
         // Wait for the contract to have no active key event instance.
         let key_event_id = key_event_receiver
@@ -460,11 +461,12 @@ pub async fn keygen_leader(
         }
 
         // Start the keygen computation.
+        let participants = client.all_participant_ids();
         let Ok(channel) = client.new_channel_for_task(
             EcdsaTaskId::KeyGeneration {
                 key_event: key_event_id,
             },
-            client.all_participant_ids(),
+            participants,
         ) else {
             tracing::warn!("Failed to create channel for keygen computation; retrying.");
             continue;
@@ -534,7 +536,7 @@ pub async fn keygen_follower(
 /// The leader logic for an entire key resharing state.
 /// See `keygen_leader` for more details that are in common.
 pub async fn resharing_leader(
-    client: Arc<MeshNetworkClient>,
+    client: impl KeyEventLeaderClient,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
@@ -545,7 +547,7 @@ pub async fn resharing_leader(
         // Wait for all participants to be connected. Otherwise, computations are most likely going
         // to fail so don't waste the effort.
         client
-            .leader_wait_for_all_connected()
+            .wait_for_all_participants_connected()
             .await
             .inspect_err(|e| error!("Could not connect to all participants: {:?}", e))?;
 
@@ -590,11 +592,12 @@ pub async fn resharing_leader(
 
         // Start the resharing computation.
         info!("Starting resharing computation.");
+        let participants = client.all_participant_ids();
         let channel = match client.new_channel_for_task(
             EcdsaTaskId::KeyResharing {
                 key_event: key_event_id,
             },
-            client.all_participant_ids(),
+            participants,
         ) {
             Ok(channel) => channel,
             Err(err) => {
@@ -661,5 +664,44 @@ pub async fn resharing_follower(
                 args.clone(),
             ),
         );
+    }
+}
+
+/// Network interface used by key event leaders (`keygen_leader` and `resharing_leader`).
+///
+/// This trait abstracts the network operations needed by leader functions, making them
+/// testable without a real mesh network.
+pub trait KeyEventLeaderClient: Send + Sync {
+    /// Waits until all participants in the network are connected.
+    fn wait_for_all_participants_connected(
+        &self,
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+
+    /// Creates a new network channel for the given MPC task.
+    fn new_channel_for_task(
+        &self,
+        task_id: impl Into<MpcTaskId>,
+        participants: Vec<ParticipantId>,
+    ) -> anyhow::Result<NetworkTaskChannel>;
+
+    /// Returns the participant IDs of all nodes in the network.
+    fn all_participant_ids(&self) -> Vec<ParticipantId>;
+}
+
+impl KeyEventLeaderClient for Arc<MeshNetworkClient> {
+    async fn wait_for_all_participants_connected(&self) -> anyhow::Result<()> {
+        self.leader_wait_for_all_connected().await
+    }
+
+    fn new_channel_for_task(
+        &self,
+        task_id: impl Into<MpcTaskId>,
+        participants: Vec<ParticipantId>,
+    ) -> anyhow::Result<NetworkTaskChannel> {
+        MeshNetworkClient::new_channel_for_task(self, task_id, participants)
+    }
+
+    fn all_participant_ids(&self) -> Vec<ParticipantId> {
+        MeshNetworkClient::all_participant_ids(self)
     }
 }
