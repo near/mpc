@@ -19,6 +19,9 @@ Services run inside Dstack CVMs, booted through a [Launcher][launcher] that meas
 [`mpc-attestation`]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
 [contract-state-subscriber]: indexer-design.md#contract-state-subscriber
 [transaction-sender]: indexer-design.md#transaction-sender
+[tee-context-design]: tee-context-design.md
+[mpc-context]: indexer-design.md
+[launcher]: securing-mpc-with-tee-design-doc.md#launcher-pattern
 
 ```mermaid
 ---
@@ -111,9 +114,6 @@ sequenceDiagram
     end
 ```
 
-[launcher]: securing-mpc-with-tee-design-doc.md#launcher-pattern
-[key-import]: hot-tee-signing-design.md#key-import-process
-
 ## Attestation
 
 After boot, every service must continuously prove to the governance contract that it is running an approved image inside a genuine TDX enclave. The attestation lifecycle is the same for all three services:
@@ -128,9 +128,6 @@ The [TEE Context][tee-context-design] crate handles all of the above. Each servi
 The governance contract verifies each submitted quote by checking the cryptographic chain of trust, replaying the TDX event log to reconstruct enclave measurements, and confirming that the Docker image and launcher compose hashes match the allowed lists. For the full verification steps, see [Attestation verification on the contract][attestation-verification].
 
 [attestation-verification]: securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
-
-[tee-context-design]: tee-context-design.md
-[mpc-context]: indexer-design.md
 
 ## Governance Contract
 
