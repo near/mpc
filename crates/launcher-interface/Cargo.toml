@@ -5,10 +5,15 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+derive_more = { workspace = true }
 bounded-collections = { workspace = true }
 mpc-primitives = { workspace = true }
 serde = { workspace = true }
 
+
+[dev-dependencies]
+insta = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

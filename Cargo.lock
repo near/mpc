@@ -4930,8 +4930,11 @@ name = "launcher-interface"
 version = "3.5.1"
 dependencies = [
  "bounded-collections",
+ "derive_more 2.1.1",
+ "insta",
  "mpc-primitives",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
