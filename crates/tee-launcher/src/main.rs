@@ -1,5 +1,4 @@
 use std::process::Command;
-use std::str::FromStr;
 use std::{collections::VecDeque, time::Duration};
 
 use clap::Parser;
@@ -53,9 +52,16 @@ async fn run() -> Result<(), LauncherError> {
     let config_file = std::fs::OpenOptions::new()
         .read(true)
         .open(DSTACK_USER_CONFIG_FILE)
-        .expect("dstack user config file exists");
+        .map_err(|source| LauncherError::FileRead {
+            path: DSTACK_USER_CONFIG_FILE.to_string(),
+            source,
+        })?;
 
-    let dstack_config: Config = serde_json::from_reader(config_file).expect("config file is valid");
+    let dstack_config: Config =
+        serde_json::from_reader(config_file).map_err(|source| LauncherError::JsonParse {
+            path: DSTACK_USER_CONFIG_FILE.to_string(),
+            source,
+        })?;
 
     let approved_hashes_file = std::fs::OpenOptions::new()
         .read(true)
@@ -93,7 +99,10 @@ async fn run() -> Result<(), LauncherError> {
                         .contains(override_image);
 
                     if !override_image_is_allowed {
-                        panic!("TODO: panic if override image is not allowed?");
+                        return Err(LauncherError::InvalidHashOverride(format!(
+                            "MPC_HASH_OVERRIDE={} does not match any approved hash",
+                            override_image.as_hex_sha256()
+                        )));
                     }
 
                     override_image.clone()
@@ -156,7 +165,9 @@ async fn get_manifest_digest(
 
     let status = token_request_response.status();
     if !status.is_success() {
-        todo!("add error case for non success http codes");
+        return Err(LauncherError::RegistryAuthFailed(format!(
+            "token request returned non-success status: {status}"
+        )));
     }
 
     let token_response: DockerTokenResponse = token_request_response
@@ -170,7 +181,10 @@ async fn get_manifest_digest(
             config.registry, config.image_name
         )
         .parse()
-        .expect("TODO handle error");
+        .map_err(|_| LauncherError::InvalidManifestUrl(format!(
+            "https://{}/v2/{}/manifests/{tag}",
+            config.registry, config.image_name
+        )))?;
 
         let authorization_value: HeaderValue = format!("Bearer {}", token_response.token)
             .parse()
@@ -294,7 +308,7 @@ async fn validate_image_hash(
 ) -> Result<(), ImageDigestValidationFailed> {
     let manifest_digest = get_manifest_digest(launcher_config, &image_hash)
         .await
-        .expect("TODO: handle error");
+        .map_err(|e| ImageDigestValidationFailed::ManifestDigestLookupFailed(e.to_string()))?;
     let image_name = &launcher_config.image_name;
 
     let name_and_digest = format!("{image_name}@{manifest_digest}");

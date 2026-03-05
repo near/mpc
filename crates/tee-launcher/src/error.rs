@@ -84,12 +84,17 @@ pub enum LauncherError {
     #[error("Registry response parse error: {0}")]
     RegistryResponseParse(String),
 
+    #[error("Invalid manifest URL: {0}")]
+    InvalidManifestUrl(String),
+
     #[error("The selected image failed digest validation: {0}")]
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),
 }
 
 #[derive(Error, Debug)]
 pub enum ImageDigestValidationFailed {
+    #[error("manifest digest lookup failed: {0}")]
+    ManifestDigestLookupFailed(String),
     #[error("docker pull failed for {0}")]
     DockerPullFailed(String),
     #[error("docker inspect failed for {0}")]
