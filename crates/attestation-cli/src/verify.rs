@@ -142,12 +142,7 @@ fn default_measurements() -> Vec<ExpectedMeasurements> {
 fn parse_measurements_from_json(json: &str) -> anyhow::Result<ExpectedMeasurements> {
     let tcb_info: TcbInfo = serde_json::from_str(json).context("invalid TcbInfo JSON")?;
 
-    let rtmrs = Measurements {
-        mrtd: *tcb_info.mrtd,
-        rtmr0: *tcb_info.rtmr0,
-        rtmr1: *tcb_info.rtmr1,
-        rtmr2: *tcb_info.rtmr2,
-    };
+    let rtmrs = Measurements::from(&tcb_info);
 
     let key_provider_events: Vec<_> = tcb_info
         .event_log
