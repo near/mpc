@@ -88,7 +88,9 @@ impl TeeAuthorityStartConfig {
                 dstack_endpoint,
                 quote_upload_url,
             } => {
-                let url: Url = quote_upload_url.parse().context("invalid quote_upload_url")?;
+                let url: Url = quote_upload_url
+                    .parse()
+                    .context("invalid quote_upload_url")?;
                 DstackTeeAuthorityConfig::new(dstack_endpoint, url).into()
             }
         })

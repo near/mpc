@@ -127,33 +127,30 @@ impl StartConfig {
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();
 
-        let image_hash_watcher_handle =
-            if let (Some(image_hash), Some(latest_allowed_hash_file)) =
-                (&self.tee.image_hash, &self.tee.latest_allowed_hash_file)
-            {
-                let current_image_hash_bytes: [u8; 32] = hex::decode(image_hash)
-                    .expect("The currently running image is a hex string.")
-                    .try_into()
-                    .expect("The currently running image hash hex representation is 32 bytes.");
+        let image_hash_watcher_handle = if let (Some(image_hash), Some(latest_allowed_hash_file)) =
+            (&self.tee.image_hash, &self.tee.latest_allowed_hash_file)
+        {
+            let current_image_hash_bytes: [u8; 32] = hex::decode(image_hash)
+                .expect("The currently running image is a hex string.")
+                .try_into()
+                .expect("The currently running image hash hex representation is 32 bytes.");
 
-                let allowed_hashes_in_contract =
-                    indexer_api.allowed_docker_images_receiver.clone();
-                let image_hash_storage =
-                    AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
+            let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+            let image_hash_storage = AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
 
-                Some(root_runtime.spawn(monitor_allowed_image_hashes(
-                    cancellation_token.child_token(),
-                    MpcDockerImageHash::from(current_image_hash_bytes),
-                    allowed_hashes_in_contract,
-                    image_hash_storage,
-                    shutdown_signal_sender.clone(),
-                )))
-            } else {
-                tracing::info!(
+            Some(root_runtime.spawn(monitor_allowed_image_hashes(
+                cancellation_token.child_token(),
+                MpcDockerImageHash::from(current_image_hash_bytes),
+                allowed_hashes_in_contract,
+                image_hash_storage,
+                shutdown_signal_sender.clone(),
+            )))
+        } else {
+            tracing::info!(
                     "image_hash and/or latest_allowed_hash_file not set, skipping TEE image hash monitoring"
                 );
-                None
-            };
+            None
+        };
 
         let root_future = create_root_future(
             self,
