@@ -196,7 +196,7 @@ shared template at `docs/localnet/mpc-config.template.json`. This single file
 contains all settings (secrets, TEE config, and node parameters):
 
 ```shell
-MPC_NODE_ID=mpc-frodo NEAR_ACCOUNT_ID=frodo.test.near WEB_UI_PORT=8081 MIGRATION_WEB_UI_PORT=8079 PPROF_PORT=34001 \
+env MPC_NODE_ID=mpc-frodo NEAR_ACCOUNT_ID=frodo.test.near WEB_UI_PORT=8081 MIGRATION_WEB_UI_PORT=8079 PPROF_PORT=34001 \
   envsubst < docs/localnet/mpc-config.template.json > ~/.near/mpc-frodo/mpc-config.json
 ```
 
@@ -221,7 +221,7 @@ rm ~/.near/mpc-sam/validator_key.json
 ```
 
 ```shell
-MPC_NODE_ID=mpc-sam NEAR_ACCOUNT_ID=sam.test.near WEB_UI_PORT=8082 MIGRATION_WEB_UI_PORT=8078 PPROF_PORT=34002 \
+env MPC_NODE_ID=mpc-sam NEAR_ACCOUNT_ID=sam.test.near WEB_UI_PORT=8082 MIGRATION_WEB_UI_PORT=8078 PPROF_PORT=34002 \
   envsubst < docs/localnet/mpc-config.template.json > ~/.near/mpc-sam/mpc-config.json
 ```
 
