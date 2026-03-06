@@ -42,7 +42,7 @@ from key import Key
 dot_near = pathlib.Path.home() / ".near"
 SECRETS_JSON = "secrets.json"
 NUMBER_OF_VALIDATORS = 1
-CONFIG_YAML = "config.yaml"
+MPC_NODE_CONFIG_JSON = "mpc_node_config.json"
 
 
 def create_function_call_access_key_action(
@@ -308,9 +308,9 @@ def generate_mpc_configs(
         my_port = participant["port"]
         p2p_url = f"http://{my_addr}:{my_port}"
 
-        config_file_path = os.path.join(dot_near, str(idx), CONFIG_YAML)
+        config_file_path = os.path.join(dot_near, str(idx), MPC_NODE_CONFIG_JSON)
         with open(config_file_path, "r") as f:
-            config = yaml.load(f, Loader=SafeLoaderIgnoreUnknown)
+            config = json.load(f)
 
         web_address = config.get("web_ui")
         migration_address = config.get("migration_web_ui")

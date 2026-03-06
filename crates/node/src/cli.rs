@@ -454,8 +454,8 @@ fn run_generate_test_configs(
             desired_presignatures_to_buffer,
         );
         std::fs::write(
-            format!("{}/config.yaml", subdir),
-            serde_yaml::to_string(&file_config)?,
+            format!("{}/mpc_node_config.json", subdir),
+            serde_json::to_string_pretty(&file_config)?,
         )?;
     }
     std::fs::write(
