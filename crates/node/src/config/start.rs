@@ -26,7 +26,7 @@ pub struct StartConfig {
 }
 
 /// Encryption keys needed at startup.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SecretsStartConfig {
     /// Hex-encoded 16 byte AES key for local storage encryption.
     pub secret_store_key_hex: String,
@@ -34,6 +34,15 @@ pub struct SecretsStartConfig {
     /// If not provided, a key is generated and written to disk.
     #[serde(default)]
     pub backup_encryption_key_hex: Option<String>,
+}
+
+impl std::fmt::Debug for SecretsStartConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretsStartConfig")
+            .field("secret_store_key_hex", &"[REDACTED]")
+            .field("backup_encryption_key_hex", &self.backup_encryption_key_hex.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 /// TEE-related configuration.
