@@ -882,7 +882,7 @@ mod tests {
             id: key_event_id,
             domain: DomainConfig {
                 id: key_event_id.domain_id,
-                scheme: SignatureScheme::Secp256k1,
+                scheme: SignatureScheme::OTBasedECDSA,
                 purpose: DomainPurpose::Sign,
             },
             started,
