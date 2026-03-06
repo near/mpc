@@ -5,38 +5,10 @@ use near_account_id::AccountId;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
-use super::near_viewer::NearContractViewer;
 use super::subscription::ContractMethodSubscription;
 use super::traits::{
     ContractStateStream, ContractStateSubscriber, ContractViewer, HasContractViewer, MethodViewer,
 };
-
-/// External API for querying contract state. Generic over the viewer
-/// implementation, defaulting to the real NEAR viewer.
-///
-/// External consumers should use `StateViewer` (without a type parameter),
-/// which resolves to `StateViewer<NearContractViewer>`.
-#[derive(Clone)]
-pub struct StateViewer<V = NearContractViewer> {
-    viewer: V,
-}
-
-impl<V> HasContractViewer for StateViewer<V>
-where
-    V: ContractViewer,
-{
-    type Viewer = V;
-
-    fn get_viewer(&self) -> &Self::Viewer {
-        &self.viewer
-    }
-}
-
-impl<V: ContractViewer> StateViewer<V> {
-    pub(crate) fn new(viewer: V) -> Self {
-        Self { viewer }
-    }
-}
 
 #[async_trait]
 impl<T> ContractStateSubscriber for T
@@ -85,7 +57,10 @@ where
                 source: Arc::new(err),
             })?
             .into_bytes();
-        let res = self.get_viewer().view(&contract_id, method_name, &args).await?;
+        let res = self
+            .get_viewer()
+            .view(&contract_id, method_name, &args)
+            .await?;
         let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
             ChainGatewayError::Deserialization {
                 source: Arc::new(err),

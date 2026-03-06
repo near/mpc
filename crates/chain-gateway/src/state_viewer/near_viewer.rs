@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use near_account_id::AccountId;
 use std::sync::Arc;
 
+use super::HasContractViewer;
 use super::traits::ContractViewer;
 
 #[derive(Clone)]
@@ -22,6 +23,13 @@ impl NearContractViewer {
     }
 }
 
+impl HasContractViewer for NearContractViewer {
+    type Viewer = Self;
+    fn get_viewer(&self) -> &Self::Viewer {
+        self
+    }
+}
+
 #[async_trait]
 impl ContractViewer for NearContractViewer {
     /// Performs a view call against a NEAR contract.
@@ -32,8 +40,6 @@ impl ContractViewer for NearContractViewer {
     /// - `contract_id`: account ID of the contract to query
     /// - `method_name`: name of the view method to call
     /// - `args`: serialized method arguments
-    ///
-    /// Note: alternatively, we could return a "syncing" error instead of waiting for full sync.
     async fn view(
         &self,
         contract_id: &AccountId,

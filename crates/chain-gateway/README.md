@@ -7,11 +7,11 @@ This crate spawns and interacts with an in-process neard node. It provides three
 - **Transaction Sender:** submit signed transactions to the NEAR blockchain.
 
 ```rust
-use chain_gateway::chain_gateway::start_with_streamer;
+use chain_gateway::start_with_streamer;
 
 let (chain_gateway, stream) = start_with_streamer(near_indexer_config).await?;
 
-let viewer = chain_gateway.viewer();           // StateViewer
+let viewer = chain_gateway.viewer();           // NearContractViewer
 let tx_sender = chain_gateway.transaction_sender(); // TransactionSender
 ```
 
@@ -103,50 +103,47 @@ class CHAIN chain;
 
 ### State Viewer
 
-`StateViewer` provides one-shot view calls and polling-based subscriptions to contract state.
-It is generic over `ContractViewer`, which is the testing seam — production code uses `NearContractViewer`
-(backed by the real nearcore actor system), while unit tests can substitute a `FakeViewer`.
+The state viewer uses a trait hierarchy with blanket impls. Implement `ContractViewer` + `HasContractViewer`
+on your type to automatically get `MethodViewer` (one-shot typed view calls) and `ContractStateSubscriber`
+(polling subscriptions). Production code uses `NearContractViewer` (backed by the real nearcore actor
+system); unit tests can substitute a `MockViewer` (available behind the `test-utils` feature).
 
 ```rust
 /// Testing seam: abstracts the raw contract view call.
 #[async_trait]
 pub trait ContractViewer: Send + Sync + Clone + 'static {
-    async fn view_raw(
+    async fn view(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> Result<ViewOutput, ChainGatewayError>;
+    ) -> Result<ObservedState, ChainGatewayError>;
 }
 
-/// External API for querying contract state.
-/// Defaults to NearContractViewer (the real NEAR viewer).
-pub struct StateViewer<V = NearContractViewer> { /* ... */ }
-
-impl<V: ContractViewer> StateViewer<V> {
-    /// One-shot view call. Serializes `args` as JSON, deserializes the response as `Res`.
-    pub async fn view<Arg: Serialize, Res: DeserializeOwned>(
-        &self,
-        contract_id: AccountId,
-        method_name: &str,
-        args: &Arg,
-    ) -> Result<(BlockHeight, Res), ChainGatewayError>;
-
-    /// Subscribe to a view method (with arguments). Polls every 200ms.
-    pub async fn subscribe<Arg: Serialize, Res: DeserializeOwned + Send + Clone>(
-        &self,
-        contract_id: AccountId,
-        method_name: &str,
-        args: &Arg,
-    ) -> Result<impl ContractStateStream<Res>, ChainGatewayError>;
-
-    /// Subscribe to a view method with no arguments (`{}`). Polls every 200ms.
-    pub async fn subscribe_no_args<Res: DeserializeOwned + Send + Clone>(
-        &self,
-        contract_id: AccountId,
-        method_name: &str,
-    ) -> impl ContractStateStream<Res>;
+/// Bridges a type to its ContractViewer; unlocks MethodViewer + ContractStateSubscriber.
+pub trait HasContractViewer {
+    type Viewer: ContractViewer;
+    fn get_viewer(&self) -> &Self::Viewer;
 }
+
+/// Blanket-implemented for all T: HasContractViewer.
+/// One-shot typed view call with JSON ser/de.
+pub trait MethodViewer: HasContractViewer {
+    async fn view<Arg: Serialize + Sync, Res: DeserializeOwned + Send + Clone>(
+        &self, contract_id: AccountId, method_name: &str, args: &Arg,
+    ) -> Result<ObservedState<Res>, ChainGatewayError>;
+}
+
+/// Blanket-implemented for all T: HasContractViewer.
+/// Polls every 200ms; emits change only when returned bytes differ.
+pub trait ContractStateSubscriber: HasContractViewer {
+    async fn subscribe<T: DeserializeOwned + Send + Clone>(
+        &self, contract: AccountId, view_method: &str,
+    ) -> impl ContractStateStream<T> + Send;
+}
+
+/// Production viewer backed by the nearcore actor system.
+pub struct NearContractViewer { /* ... */ }
 ```
 
 The `ContractStateStream` trait provides a watch-like interface for observing contract state changes:
@@ -154,15 +151,25 @@ The `ContractStateStream` trait provides a watch-like interface for observing co
 ```rust
 #[async_trait]
 pub trait ContractStateStream<Res> {
-    /// Returns the last value observed on chain and the block height at which it last changed.
-    fn latest(&mut self) -> Result<(BlockHeight, Res), ChainGatewayError>;
+    /// Returns the last value observed on chain and the block height at which it was observed.
+    fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
 
     /// Waits until the observed value changes.
     async fn changed(&mut self) -> Result<(), ChainGatewayError>;
-
-    /// Waits for the next state change and returns the new value.
-    async fn next(&mut self) -> Result<(BlockHeight, Res), ChainGatewayError>;
 }
+```
+
+Key types in `types.rs`:
+
+```rust
+pub struct ObservedState<T = Vec<u8>> {
+    pub observed_at: BlockHeight,
+    pub value: T,
+}
+pub type RawObservedState = ObservedState<Vec<u8>>;
+
+pub struct NoArgs {}   // empty args for view calls with no parameters
+pub struct BlockHeight(u64);
 ```
 
 
@@ -370,7 +377,9 @@ impl TransactionSigner {
 
 ## Testing
 
-- **Unit tests** use a `FakeViewer` implementing the `ContractViewer` trait to test subscription
-  logic without a real NEAR node (see `src/state_viewer/subscription.rs`).
+- **Unit tests** use a `MockViewer` implementing the `ContractViewer` trait to test monitoring
+  and subscription logic without a real NEAR node (see `src/state_viewer/monitoring.rs`).
+  `MockViewer` is also available to downstream crates behind the `test-utils` feature
+  (see `src/state_viewer/mock_viewer.rs`).
 - **Integration tests** start a full in-process NEAR node with a WAT contract embedded in genesis,
   exercising the complete path through the actor system (see `tests/state_viewer_integration.rs`).

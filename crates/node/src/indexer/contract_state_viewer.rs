@@ -3,7 +3,7 @@ use crate::indexer::types::{
 };
 use anyhow::Context;
 use chain_gateway::state_viewer::{
-    ContractStateStream, ContractStateSubscriber, MethodViewer, StateViewer,
+    ContractStateStream, ContractStateSubscriber, MethodViewer, NearContractViewer,
 };
 use chain_gateway::types::NoArgs;
 use mpc_contract::primitives::signature::YieldIndex;
@@ -20,7 +20,7 @@ use super::types::{
 #[derive(Clone)]
 pub(crate) struct MpcContractStateViewer {
     pub(crate) mpc_contract_id: near_account_id::AccountId,
-    pub(crate) mpc_contract_viewer: StateViewer,
+    pub(crate) mpc_contract_viewer: NearContractViewer,
 }
 
 impl MpcContractStateViewer {
@@ -73,7 +73,7 @@ impl MpcContractStateViewer {
 impl MpcContractStateViewer {
     pub fn new(
         mpc_contract_id: near_account_id::AccountId,
-        mpc_contract_viewer: StateViewer,
+        mpc_contract_viewer: NearContractViewer,
     ) -> Self {
         Self {
             mpc_contract_id,

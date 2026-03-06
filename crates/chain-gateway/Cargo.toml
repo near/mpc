@@ -30,6 +30,9 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 
+[features]
+test-utils = []
+
 [dev-dependencies]
 tempfile = { workspace = true }
 wat = "1"

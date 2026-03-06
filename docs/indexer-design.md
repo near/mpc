@@ -420,59 +420,62 @@ The Chain Gateway consists of three functionalities, each one with their own API
 
 ##### State Viewer
 
-The Chain Gateway should offer a convenient method for viewing and subscribing to contract state. We assume that contract state is seen through view methods in the contract implementation and propose the following interface:
+The Chain Gateway offers a trait-based API for viewing and subscribing to contract state. Contract state is accessed through view methods; the trait hierarchy separates the low-level view call (`ContractViewer`) from higher-level typed operations (`MethodViewer`, `ContractStateSubscriber`) via blanket impls on `HasContractViewer`.
 
 ```rust
-trait ContractStateStream<Res> {
-    /// Returns the last value observed on chain and the block height at which it last changed.
+/// Testing seam: abstracts the raw contract view call.
+/// Production uses NearContractViewer; tests substitute MockViewer.
+pub trait ContractViewer: Send + Sync + Clone + 'static {
+    async fn view(
+        &self,
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<ObservedState, ChainGatewayError>;
+}
+
+/// Bridges a type to its ContractViewer, unlocking blanket impls.
+pub trait HasContractViewer {
+    type Viewer: ContractViewer;
+    fn get_viewer(&self) -> &Self::Viewer;
+}
+
+/// Blanket-implemented for all T: HasContractViewer.
+/// One-shot typed view call with JSON serialization/deserialization.
+pub trait MethodViewer: HasContractViewer {
+    async fn view<Arg: Serialize + Sync, Res: DeserializeOwned + Send + Clone>(
+        &self, contract_id: AccountId, method_name: &str, args: &Arg,
+    ) -> Result<ObservedState<Res>, ChainGatewayError>;
+}
+
+/// Blanket-implemented for all T: HasContractViewer.
+/// Polls every 200ms; emits change only when returned bytes differ.
+pub trait ContractStateSubscriber: HasContractViewer {
+    async fn subscribe<T: DeserializeOwned + Send + Clone>(
+        &self, contract: AccountId, view_method: &str,
+    ) -> impl ContractStateStream<T> + Send;
+}
+
+pub trait ContractStateStream<Res> {
+    /// Returns the last observed value and the block height at which it was observed.
     fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
     /// Waits until the observed value changes.
     async fn changed(&mut self) -> Result<(), ChainGatewayError>;
 }
 
+/// Production viewer backed by the nearcore actor system.
+pub struct NearContractViewer { /* ... */ }
 
-trait ContractViewer: Send + Sync + Clone + 'static {
-    async fn view_raw(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> Result<ViewOutput, ChainGatewayError>;
-}
-
-impl ContractStateSubscriber {
-    async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
-        &self,
-        contract: AccountId,
-        view_method: &str,
-    ) -> Result<impl ContractStateStream<T> + Send, Error>;
-
-    async fn view<T: DeserializeOwned + PartialEq + Send + 'static>(
-        &self,
-        contract: AccountId,
-        view_method: &str,
-    ) -> Result<impl ContractStateSnapshot<T> + Send, Error>;
-}
-
-pub struct ContractStateSubscriber {
-    /// nearcore view client
-    view_client: IndexerViewClient
-}
-
-
-
-pub struct ViewOutput {
+pub struct ObservedState<T = Vec<u8>> {
     pub observed_at: BlockHeight,
-    pub value: Vec<u8>,
-}
-
-pub struct ObservedState<T> {
-    pub last_changed: BlockHeight,
     pub value: T,
 }
+pub type RawObservedState = ObservedState<Vec<u8>>;
+
+/// Empty arguments for view calls that take no parameters.
+pub struct NoArgs {}
 
 pub struct BlockHeight(u64);
-
 ```
 
 

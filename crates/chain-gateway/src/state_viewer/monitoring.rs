@@ -54,7 +54,7 @@ where
 
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-pub(crate) async fn monitor<V: ContractViewer>(
+async fn monitor<V: ContractViewer>(
     viewer: V,
     contract_id: AccountId,
     method_name: String,
@@ -117,16 +117,12 @@ mod tests {
     use crate::{
         errors::ChainGatewayError,
         state_viewer::{
-            ContractViewer,
-            monitoring::{POLL_INTERVAL, modify, monitor},
+            mock_viewer::{Call, MockViewer},
+            monitoring::{modify, monitor},
         },
         types::{ObservedState, RawObservedState},
     };
-    use async_trait::async_trait;
-    use near_account_id::AccountId;
     use rstest::rstest;
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
     use tokio_util::sync::CancellationToken;
 
     use super::{MonitoringTask, make_monitoring_task};
@@ -439,82 +435,5 @@ mod tests {
             observed_at: at.into(),
             value: vec![b],
         })
-    }
-
-    #[derive(Clone)]
-    struct MockViewer {
-        expected_call: Call,
-        inner: Arc<Mutex<MockViewerState>>,
-    }
-
-    struct MockViewerState {
-        num_expected_calls: usize,
-        num_unexpected_calls: usize,
-        current_value: Result<RawObservedState, ChainGatewayError>,
-    }
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    struct Call {
-        contract_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-    }
-
-    #[async_trait]
-    impl ContractViewer for MockViewer {
-        async fn view(
-            &self,
-            contract_id: &AccountId,
-            method_name: &str,
-            args: &[u8],
-        ) -> Result<RawObservedState, ChainGatewayError> {
-            let call = Call {
-                contract_id: contract_id.clone(),
-                method_name: method_name.to_string(),
-                args: args.to_vec(),
-            };
-            let expected = call == self.expected_call;
-
-            let mut inner = self.inner.lock().await;
-            if expected {
-                inner.num_expected_calls += 1;
-            } else {
-                inner.num_unexpected_calls += 1;
-            }
-            inner.current_value.clone()
-        }
-    }
-
-    impl MockViewer {
-        async fn set_val(&self, value: Result<RawObservedState, ChainGatewayError>) {
-            self.inner.lock().await.current_value = value;
-        }
-
-        fn new(expected_call: Call, value: Result<RawObservedState, ChainGatewayError>) -> Self {
-            Self {
-                expected_call,
-                inner: Arc::new(Mutex::new(MockViewerState {
-                    num_unexpected_calls: 0,
-                    num_expected_calls: 0,
-                    current_value: value,
-                })),
-            }
-        }
-        async fn num_expected_calls(&self) -> usize {
-            self.inner.lock().await.num_expected_calls
-        }
-        async fn num_unexpected_calls(&self) -> usize {
-            self.inner.lock().await.num_unexpected_calls
-        }
-        async fn total_number_calls(&self) -> usize {
-            let inner = self.inner.lock().await;
-            inner.num_unexpected_calls + inner.num_expected_calls
-        }
-        async fn await_next_call(&self) {
-            let start = self.total_number_calls().await;
-            while self.total_number_calls().await == start {
-                tokio::time::sleep(POLL_INTERVAL / 2).await
-            }
-        }
     }
 }
