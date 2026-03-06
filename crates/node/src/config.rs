@@ -13,6 +13,11 @@ use std::{
     path::Path,
 };
 
+mod start;
+pub use start::{
+    GcpStartConfig, SecretsStartConfig, StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
+};
+
 mod foreign_chains;
 pub use foreign_chains::{
     AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, AuthConfig, BitcoinApiVariant,

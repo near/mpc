@@ -61,6 +61,7 @@ class MpcNode(NearAccount):
         p2p_public_key: str,
         pytest_signer_keys: list[Key],
         backup_key: bytes,
+        node_config: dict,
     ):
         super().__init__(near_node, signer_key, pytest_signer_keys)
         self.p2p_url: str = p2p_url
@@ -74,6 +75,7 @@ class MpcNode(NearAccount):
         self.is_running = False
         self.metrics = MetricsTracker(near_node)
         self.backup_key = backup_key
+        self.node_config = node_config
 
     def print(self):
         if not self.is_running:
@@ -127,22 +129,38 @@ class MpcNode(NearAccount):
             for file_path in pathlib.Path(self.home_dir).glob(pattern):
                 file_path.unlink()
 
+    def _write_start_config(self) -> str:
+        """Build a StartConfig JSON file and write it to the node's home dir.
+        Returns the path to the written config file."""
+        start_config = {
+            "home_dir": self.home_dir,
+            "secrets": {
+                "secret_store_key_hex": self.secret_store_key,
+                "backup_encryption_key_hex": self.backup_key.hex(),
+            },
+            "tee": {
+                "authority": {"type": "local"},
+                "image_hash": DUMMY_MPC_IMAGE_HASH,
+                "latest_allowed_hash_file": "latest_allowed_hash.txt",
+            },
+            "node": self.node_config,
+        }
+        config_path = str(pathlib.Path(self.home_dir) / "start_config.json")
+        with open(config_path, "w") as f:
+            json.dump(start_config, f, indent=2)
+        return config_path
+
     def run(self):
         assert not self.is_running
         self.is_running = True
+        config_path = self._write_start_config()
         extra_env = {
             "RUST_LOG": "INFO",  # mpc-node produces too much output on DEBUG
-            "MPC_SECRET_STORE_KEY": self.secret_store_key,
-            "MPC_IMAGE_HASH": DUMMY_MPC_IMAGE_HASH,
-            "MPC_LATEST_ALLOWED_HASH_FILE": "latest_allowed_hash.txt",
-            "MPC_BACKUP_ENCRYPTION_KEY_HEX": self.backup_key.hex(),
         }
         cmd = (
             MPC_BINARY_PATH,
-            "start",
-            "--home-dir",
-            self.home_dir,
-            "local",
+            "start-with-config-file",
+            config_path,
         )
         self.near_node.run_cmd(cmd=cmd, extra_env=extra_env)
 
