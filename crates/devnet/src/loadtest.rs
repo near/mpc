@@ -282,16 +282,16 @@ impl RunLoadtestCmd {
                 .get_domain_config(DomainId(domain_id))
                 .expect("require valid domain id");
             match domain_config.scheme {
-                SignatureScheme::Bls12381 => {
-                    ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
+                SignatureScheme::OTBasedECDSA
+                | SignatureScheme::FROST
+                | SignatureScheme::RobustECDSA => {
+                    ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,
                     })
                 }
-                SignatureScheme::Ed25519
-                | SignatureScheme::Secp256k1
-                | SignatureScheme::V2Secp256k1 => {
-                    ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
+                SignatureScheme::CKD => {
+                    ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,
                     })

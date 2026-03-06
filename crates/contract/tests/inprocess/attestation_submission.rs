@@ -101,7 +101,7 @@ impl TestSetupBuilder {
 
         let domains = vec![DomainConfig {
             id: DomainId::default(),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         }];
 
@@ -148,7 +148,7 @@ impl TestSetupBuilder {
                         .contract
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
-                            scheme: SignatureScheme::Ed25519,
+                            scheme: SignatureScheme::FROST,
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();

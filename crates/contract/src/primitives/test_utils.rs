@@ -14,10 +14,10 @@ use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
 const ALL_PROTOCOLS: [SignatureScheme; 4] = [
-    SignatureScheme::Secp256k1,
-    SignatureScheme::Ed25519,
-    SignatureScheme::Bls12381,
-    SignatureScheme::V2Secp256k1,
+    SignatureScheme::OTBasedECDSA,
+    SignatureScheme::FROST,
+    SignatureScheme::CKD,
+    SignatureScheme::RobustECDSA,
 ];
 pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 

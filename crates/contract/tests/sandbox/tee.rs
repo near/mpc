@@ -605,7 +605,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_COUNT).await;
+    } = init_env(&[SignatureScheme::OTBasedECDSA], PARTICIPANT_COUNT).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     assert_eq!(initial_participants.participants.len(), PARTICIPANT_COUNT);

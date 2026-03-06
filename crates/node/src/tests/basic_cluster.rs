@@ -31,19 +31,19 @@ async fn test_basic_cluster() {
 
     let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        scheme: SignatureScheme::OTBasedECDSA,
         purpose: DomainPurpose::Sign,
     };
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
-        scheme: SignatureScheme::Ed25519,
+        scheme: SignatureScheme::FROST,
         purpose: DomainPurpose::Sign,
     };
 
     let ckd_domain = DomainConfig {
         id: DomainId(2),
-        scheme: SignatureScheme::Bls12381,
+        scheme: SignatureScheme::CKD,
         purpose: DomainPurpose::CKD,
     };
 

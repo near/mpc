@@ -332,7 +332,7 @@ def foreign_tx_validation_cluster():
         node.run()
 
     cluster.init_cluster(
-        participants=mpc_nodes, threshold=2, domains=[("Secp256k1", "ForeignTx")]
+        participants=mpc_nodes, threshold=2, domains=[("OTBasedECDSA", "ForeignTx")]
     )
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
@@ -376,10 +376,10 @@ def test_verify_foreign_transaction_bitcoin(
     """
     cluster, _mpc_nodes = foreign_tx_validation_cluster
 
-    # Find the Secp256k1 domain
+    # Find the OTBasedECDSA domain
     contract_state = cluster.contract_state()
     domains = contract_state.get_running_domains()
-    secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
+    secp_domain = next(d for d in domains if d.scheme == "OTBasedECDSA")
 
     # Build the verify_foreign_transaction args
     args = {
@@ -429,10 +429,10 @@ def test_verify_foreign_transaction_bitcoin(
             f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
         )
 
-        # Verify signature is present and is Secp256k1
+        # Verify signature is present and is OTBasedECDSA
         signature = response["signature"]
-        assert signature["scheme"] == "Secp256k1", (
-            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
+        assert signature["scheme"] == "OTBasedECDSA", (
+            f"Expected OTBasedECDSA signature scheme, got: {signature.get('scheme')}"
         )
         assert "big_r" in signature, "Expected big_r in signature"
         assert "s" in signature, "Expected s in signature"
@@ -455,10 +455,10 @@ def test_verify_foreign_transaction_abstract(
     """
     cluster, _mpc_nodes = foreign_tx_validation_cluster
 
-    # Find the Secp256k1 domain
+    # Find the OTBasedECDSA domain
     contract_state = cluster.contract_state()
     domains = contract_state.get_running_domains()
-    secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
+    secp_domain = next(d for d in domains if d.scheme == "OTBasedECDSA")
 
     # Build the verify_foreign_transaction args
     args = {
@@ -508,10 +508,10 @@ def test_verify_foreign_transaction_abstract(
             f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
         )
 
-        # Verify signature is present and is Secp256k1
+        # Verify signature is present and is OTBasedECDSA
         signature = response["signature"]
-        assert signature["scheme"] == "Secp256k1", (
-            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
+        assert signature["scheme"] == "OTBasedECDSA", (
+            f"Expected OTBasedECDSA signature scheme, got: {signature.get('scheme')}"
         )
         assert "big_r" in signature, "Expected big_r in signature"
         assert "s" in signature, "Expected s in signature"
@@ -534,10 +534,10 @@ def test_verify_foreign_transaction_starknet(
     """
     cluster, _mpc_nodes = foreign_tx_validation_cluster
 
-    # Find the Secp256k1 domain
+    # Find the OTBasedECDSA domain
     contract_state = cluster.contract_state()
     domains = contract_state.get_running_domains()
-    secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
+    secp_domain = next(d for d in domains if d.scheme == "OTBasedECDSA")
 
     # Build the verify_foreign_transaction args
     args = {
@@ -587,10 +587,10 @@ def test_verify_foreign_transaction_starknet(
             f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
         )
 
-        # Verify signature is present and is Secp256k1
+        # Verify signature is present and is OTBasedECDSA
         signature = response["signature"]
-        assert signature["scheme"] == "Secp256k1", (
-            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
+        assert signature["scheme"] == "OTBasedECDSA", (
+            f"Expected OTBasedECDSA signature scheme, got: {signature.get('scheme')}"
         )
         assert "big_r" in signature, "Expected big_r in signature"
         assert "s" in signature, "Expected s in signature"

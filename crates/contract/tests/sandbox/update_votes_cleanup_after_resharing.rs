@@ -35,7 +35,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[SignatureScheme::OTBasedECDSA], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -151,7 +151,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[SignatureScheme::OTBasedECDSA], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -165,7 +165,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     };
     let domains_to_add = vec![dtos::DomainConfig {
         id: dtos::DomainId(next_domain_id),
-        scheme: dtos::SignatureScheme::Ed25519,
+        scheme: dtos::SignatureScheme::FROST,
         purpose: Some(dtos::DomainPurpose::Sign),
     }];
     execute_async_transactions(

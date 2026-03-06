@@ -389,7 +389,7 @@ where
                                     .domain_to_scheme
                                     .get(&signature_attempt.request.domain)
                                 {
-                                    Some(SignatureScheme::Secp256k1) => {
+                                    Some(SignatureScheme::OTBasedECDSA) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.ecdsa_signature_provider
@@ -406,7 +406,7 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(SignatureScheme::Ed25519) => {
+                                    Some(SignatureScheme::FROST) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -422,11 +422,11 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(SignatureScheme::Bls12381) => Err(anyhow::anyhow!(
+                                    Some(SignatureScheme::CKD) => Err(anyhow::anyhow!(
                                         "Incorrect protocol for domain: {:?}",
                                         signature_attempt.request.domain.clone()
                                     )),
-                                    Some(SignatureScheme::V2Secp256k1) => {
+                                    Some(SignatureScheme::RobustECDSA) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.robust_ecdsa_signature_provider
@@ -501,39 +501,40 @@ where
                                     ])
                                     .inc();
 
-                                let response =
-                                    match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
-                                    {
-                                        Some(SignatureScheme::Bls12381) => {
-                                            let response = timeout(
-                                                Duration::from_secs(this.config.ckd.timeout_sec),
-                                                this.ckd_provider
-                                                    .clone()
-                                                    .make_signature(ckd_attempt.request.id),
-                                            )
-                                            .await??;
+                                let response = match this
+                                    .domain_to_scheme
+                                    .get(&ckd_attempt.request.domain_id)
+                                {
+                                    Some(SignatureScheme::CKD) => {
+                                        let response = timeout(
+                                            Duration::from_secs(this.config.ckd.timeout_sec),
+                                            this.ckd_provider
+                                                .clone()
+                                                .make_signature(ckd_attempt.request.id),
+                                        )
+                                        .await??;
 
-                                            let response = ChainCKDRespondArgs::new_ckd(
-                                                &ckd_attempt.request,
-                                                &CKDResponse {
-                                                    big_y: (&response.0 .0).into(),
-                                                    big_c: (&response.0 .1).into(),
-                                                },
-                                            )?;
+                                        let response = ChainCKDRespondArgs::new_ckd(
+                                            &ckd_attempt.request,
+                                            &CKDResponse {
+                                                big_y: (&response.0 .0).into(),
+                                                big_c: (&response.0 .1).into(),
+                                            },
+                                        )?;
 
-                                            Ok(response)
-                                        }
-                                        Some(SignatureScheme::Secp256k1)
-                                        | Some(SignatureScheme::V2Secp256k1)
-                                        | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
-                                            "Signature scheme is not allowed for domain: {:?}",
-                                            ckd_attempt.request.domain_id.clone()
-                                        )),
-                                        None => Err(anyhow::anyhow!(
-                                            "Signature scheme is not found for domain: {:?}",
-                                            ckd_attempt.request.domain_id.clone()
-                                        )),
-                                    }?;
+                                        Ok(response)
+                                    }
+                                    Some(SignatureScheme::OTBasedECDSA)
+                                    | Some(SignatureScheme::FROST)
+                                    | Some(SignatureScheme::RobustECDSA) => Err(anyhow::anyhow!(
+                                        "Signature scheme is not allowed for domain: {:?}",
+                                        ckd_attempt.request.domain_id.clone()
+                                    )),
+                                    None => Err(anyhow::anyhow!(
+                                        "Signature scheme is not found for domain: {:?}",
+                                        ckd_attempt.request.domain_id.clone()
+                                    )),
+                                }?;
 
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
                                     .with_label_values(&[
@@ -595,7 +596,7 @@ where
                                     .domain_to_scheme
                                     .get(&verify_foreign_tx_attempt.request.domain_id)
                                 {
-                                    Some(SignatureScheme::Secp256k1) => {
+                                    Some(SignatureScheme::OTBasedECDSA) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.verify_foreign_tx_provider.clone().make_signature(
@@ -615,9 +616,9 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(SignatureScheme::Bls12381)
-                                    | Some(SignatureScheme::V2Secp256k1)
-                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+                                    Some(SignatureScheme::FROST)
+                                    | Some(SignatureScheme::CKD)
+                                    | Some(SignatureScheme::RobustECDSA) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
                                     )),

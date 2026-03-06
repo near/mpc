@@ -103,7 +103,7 @@ async fn test_onboarding() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        scheme: SignatureScheme::OTBasedECDSA,
         purpose: DomainPurpose::Sign,
     };
 

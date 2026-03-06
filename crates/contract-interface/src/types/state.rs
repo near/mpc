@@ -153,11 +153,15 @@ pub struct AuthenticatedAccountId(pub AccountId);
     derive(schemars::JsonSchema)
 )]
 pub enum SignatureScheme {
-    Secp256k1,
-    Ed25519,
-    Bls12381,
+    #[serde(alias = "Secp256k1")]
+    OTBasedECDSA,
+    #[serde(alias = "Ed25519")]
+    FROST,
+    #[serde(alias = "Bls12381")]
+    CKD,
     /// Robust ECDSA variant.
-    V2Secp256k1,
+    #[serde(alias = "V2Secp256k1")]
+    RobustECDSA,
 }
 
 /// The purpose that a domain serves.

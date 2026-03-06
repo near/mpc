@@ -39,15 +39,19 @@ impl Display for DomainId {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignatureScheme {
-    Secp256k1,
-    Ed25519,
-    Bls12381,
-    V2Secp256k1, // Robust ECDSA
+    #[serde(alias = "Secp256k1")]
+    OTBasedECDSA,
+    #[serde(alias = "Ed25519")]
+    FROST,
+    #[serde(alias = "Bls12381")]
+    CKD,
+    #[serde(alias = "V2Secp256k1")]
+    RobustECDSA,
 }
 
 impl Default for SignatureScheme {
     fn default() -> Self {
-        Self::Secp256k1
+        Self::OTBasedECDSA
     }
 }
 
@@ -55,7 +59,7 @@ impl Default for SignatureScheme {
 /// Used during migration from old state that lacks the `purpose` field.
 pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
     match scheme {
-        SignatureScheme::Bls12381 => DomainPurpose::CKD,
+        SignatureScheme::CKD => DomainPurpose::CKD,
         _ => DomainPurpose::Sign,
     }
 }
@@ -64,11 +68,11 @@ pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
 pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureScheme) -> bool {
     matches!(
         (purpose, scheme),
-        (DomainPurpose::Sign, SignatureScheme::Secp256k1)
-            | (DomainPurpose::Sign, SignatureScheme::V2Secp256k1)
-            | (DomainPurpose::Sign, SignatureScheme::Ed25519)
-            | (DomainPurpose::ForeignTx, SignatureScheme::Secp256k1)
-            | (DomainPurpose::CKD, SignatureScheme::Bls12381)
+        (DomainPurpose::Sign, SignatureScheme::OTBasedECDSA)
+            | (DomainPurpose::Sign, SignatureScheme::FROST)
+            | (DomainPurpose::Sign, SignatureScheme::RobustECDSA)
+            | (DomainPurpose::ForeignTx, SignatureScheme::OTBasedECDSA)
+            | (DomainPurpose::CKD, SignatureScheme::CKD)
     )
 }
 
@@ -122,7 +126,7 @@ impl DomainRegistry {
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
     pub fn new_single_ecdsa_key_from_legacy() -> Self {
         let mut registry = Self::default();
-        registry.add_domain(SignatureScheme::Secp256k1, DomainPurpose::Sign);
+        registry.add_domain(SignatureScheme::OTBasedECDSA, DomainPurpose::Sign);
         registry
     }
 
@@ -279,12 +283,12 @@ pub mod tests {
         let domains1 = vec![
             DomainConfig {
                 id: DomainId(0),
-                scheme: SignatureScheme::Secp256k1,
+                scheme: SignatureScheme::OTBasedECDSA,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
-                scheme: SignatureScheme::Ed25519,
+                scheme: SignatureScheme::FROST,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -294,12 +298,12 @@ pub mod tests {
         let domains2 = vec![
             DomainConfig {
                 id: DomainId(2),
-                scheme: SignatureScheme::Bls12381,
+                scheme: SignatureScheme::CKD,
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(3),
-                scheme: SignatureScheme::V2Secp256k1,
+                scheme: SignatureScheme::RobustECDSA,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -310,7 +314,7 @@ pub mod tests {
         // This fails because the domain ID does not start from next_domain_id.
         let domains3 = vec![DomainConfig {
             id: DomainId(5),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         }];
         let _ = new_registry.add_domains(domains3).unwrap_err();
@@ -319,12 +323,12 @@ pub mod tests {
         let domains4 = vec![
             DomainConfig {
                 id: DomainId(5),
-                scheme: SignatureScheme::Secp256k1,
+                scheme: SignatureScheme::OTBasedECDSA,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
-                scheme: SignatureScheme::Secp256k1,
+                scheme: SignatureScheme::OTBasedECDSA,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -336,22 +340,22 @@ pub mod tests {
         let expected = vec![
             DomainConfig {
                 id: DomainId(0),
-                scheme: SignatureScheme::Secp256k1,
+                scheme: SignatureScheme::OTBasedECDSA,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
-                scheme: SignatureScheme::Ed25519,
+                scheme: SignatureScheme::FROST,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
-                scheme: SignatureScheme::Bls12381,
+                scheme: SignatureScheme::CKD,
                 purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(4),
-                scheme: SignatureScheme::V2Secp256k1,
+                scheme: SignatureScheme::RobustECDSA,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -375,17 +379,17 @@ pub mod tests {
             vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
+                    scheme: SignatureScheme::OTBasedECDSA,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
+                    scheme: SignatureScheme::FROST,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
-                    scheme: SignatureScheme::Secp256k1,
+                    scheme: SignatureScheme::OTBasedECDSA,
                     purpose: DomainPurpose::Sign,
                 },
             ],
@@ -393,11 +397,11 @@ pub mod tests {
         )
         .unwrap();
         assert_eq!(
-            registry.most_recent_domain_for_protocol(SignatureScheme::Secp256k1),
+            registry.most_recent_domain_for_protocol(SignatureScheme::OTBasedECDSA),
             Some(DomainId(3))
         );
         assert_eq!(
-            registry.most_recent_domain_for_protocol(SignatureScheme::Ed25519),
+            registry.most_recent_domain_for_protocol(SignatureScheme::FROST),
             Some(DomainId(2))
         );
     }
@@ -406,27 +410,27 @@ pub mod tests {
     fn test_serialization_format() {
         let domain_config = DomainConfig {
             id: DomainId(3),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         };
         let json = serde_json::to_string(&domain_config).unwrap();
-        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#);
+        assert_eq!(json, r#"{"id":3,"scheme":"OTBasedECDSA","purpose":"Sign"}"#);
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
-        assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
+        assert_eq!(domain_config.scheme, SignatureScheme::OTBasedECDSA);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
     }
 
     #[rstest]
     #[case(
         r#"{"id":0,"scheme":"Secp256k1"}"#,
-        SignatureScheme::Secp256k1,
+        SignatureScheme::OTBasedECDSA,
         DomainPurpose::Sign
     )]
     #[case(
         r#"{"id":1,"scheme":"Bls12381"}"#,
-        SignatureScheme::Bls12381,
+        SignatureScheme::CKD,
         DomainPurpose::CKD
     )]
     fn test_deserialization_without_purpose(
@@ -441,10 +445,10 @@ pub mod tests {
     }
 
     #[rstest]
-    #[case(SignatureScheme::Secp256k1, DomainPurpose::Sign)]
-    #[case(SignatureScheme::Ed25519, DomainPurpose::Sign)]
-    #[case(SignatureScheme::V2Secp256k1, DomainPurpose::Sign)]
-    #[case(SignatureScheme::Bls12381, DomainPurpose::CKD)]
+    #[case(SignatureScheme::OTBasedECDSA, DomainPurpose::Sign)]
+    #[case(SignatureScheme::FROST, DomainPurpose::Sign)]
+    #[case(SignatureScheme::RobustECDSA, DomainPurpose::Sign)]
+    #[case(SignatureScheme::CKD, DomainPurpose::CKD)]
     fn test_infer_purpose_from_scheme(
         #[case] scheme: SignatureScheme,
         #[case] expected: DomainPurpose,
@@ -454,17 +458,17 @@ pub mod tests {
 
     #[rstest]
     // Valid combinations
-    #[case(DomainPurpose::Sign, SignatureScheme::Secp256k1, true)]
-    #[case(DomainPurpose::Sign, SignatureScheme::V2Secp256k1, true)]
-    #[case(DomainPurpose::Sign, SignatureScheme::Ed25519, true)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::Secp256k1, true)]
-    #[case(DomainPurpose::CKD, SignatureScheme::Bls12381, true)]
+    #[case(DomainPurpose::Sign, SignatureScheme::OTBasedECDSA, true)]
+    #[case(DomainPurpose::Sign, SignatureScheme::RobustECDSA, true)]
+    #[case(DomainPurpose::Sign, SignatureScheme::FROST, true)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::OTBasedECDSA, true)]
+    #[case(DomainPurpose::CKD, SignatureScheme::CKD, true)]
     // Invalid combinations
-    #[case(DomainPurpose::Sign, SignatureScheme::Bls12381, false)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::Ed25519, false)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::Bls12381, false)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1, false)]
-    #[case(DomainPurpose::CKD, SignatureScheme::Secp256k1, false)]
+    #[case(DomainPurpose::Sign, SignatureScheme::CKD, false)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::FROST, false)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::CKD, false)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::RobustECDSA, false)]
+    #[case(DomainPurpose::CKD, SignatureScheme::OTBasedECDSA, false)]
     fn test_valid_scheme_purpose_combinations(
         #[case] purpose: DomainPurpose,
         #[case] scheme: SignatureScheme,
@@ -494,7 +498,7 @@ pub mod tests {
     fn sample_proposal() -> Vec<DomainConfig> {
         vec![DomainConfig {
             id: DomainId(0),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         }]
     }
@@ -572,12 +576,12 @@ pub mod tests {
         let (participants, auth_ids) = setup_participants(3);
         let proposal_a = vec![DomainConfig {
             id: DomainId(0),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: SignatureScheme::OTBasedECDSA,
             purpose: DomainPurpose::Sign,
         }];
         let proposal_b = vec![DomainConfig {
             id: DomainId(0),
-            scheme: SignatureScheme::Ed25519,
+            scheme: SignatureScheme::FROST,
             purpose: DomainPurpose::Sign,
         }];
         let mut votes = AddDomainsVotes::default();

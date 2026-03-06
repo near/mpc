@@ -36,7 +36,7 @@ async fn test_faulty_cluster() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        scheme: SignatureScheme::OTBasedECDSA,
         purpose: DomainPurpose::Sign,
     };
 
@@ -171,7 +171,7 @@ async fn test_indexer_stuck() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        scheme: SignatureScheme::OTBasedECDSA,
         purpose: DomainPurpose::Sign,
     };
 

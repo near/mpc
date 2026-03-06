@@ -18,10 +18,10 @@ pub(crate) trait IntoContractType<ContractType> {
 impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
     fn into_interface_type(self) -> dtos::SignatureScheme {
         match self {
-            SignatureScheme::Secp256k1 => dtos::SignatureScheme::Secp256k1,
-            SignatureScheme::Ed25519 => dtos::SignatureScheme::Ed25519,
-            SignatureScheme::Bls12381 => dtos::SignatureScheme::Bls12381,
-            SignatureScheme::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
+            SignatureScheme::OTBasedECDSA => dtos::SignatureScheme::OTBasedECDSA,
+            SignatureScheme::FROST => dtos::SignatureScheme::FROST,
+            SignatureScheme::CKD => dtos::SignatureScheme::CKD,
+            SignatureScheme::RobustECDSA => dtos::SignatureScheme::RobustECDSA,
         }
     }
 }

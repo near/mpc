@@ -36,7 +36,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[SignatureScheme::OTBasedECDSA], PARTICIPANT_LEN).await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;

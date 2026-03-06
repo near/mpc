@@ -247,8 +247,8 @@ pub struct DomainConfig {
 ```
 
 Compatibility note: legacy contract state does not include `DomainPurpose`. New nodes reading old state
-must infer the purpose (e.g., treat existing Secp256k1/Ed25519/V2Secp256k1 domains as `Sign` and
-Bls12381 domains as `CKD`) until a migration writes explicit purposes.
+must infer the purpose (e.g., treat existing OTBasedECDSA/FROST/RobustECDSA domains as `Sign` and
+CKD domains as `CKD`) until a migration writes explicit purposes.
 
 ## Tweak Derivation (Sign vs ForeignTx)
 

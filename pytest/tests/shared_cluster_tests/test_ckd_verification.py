@@ -24,7 +24,7 @@ def test_ckd_request_lifecycle(shared_cluster: shared.MpcCluster):
 
     bls_domain = None
     for domain in domains:
-        if domain.scheme == "Bls12381":
+        if domain.scheme == "CKD":
             bls_domain = domain
             break
     assert bls_domain is not None
