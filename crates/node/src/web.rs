@@ -121,7 +121,6 @@ impl From<&ConfigFile> for NodeConfigResponse {
 // API-safe duplicates of foreign-chain config types.
 // These deliberately omit sensitive fields (auth tokens, credentials) so they
 // can never be leaked through the debug endpoint.
-// Ordered so that each parent struct appears before the children it contains.
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -133,7 +132,6 @@ struct ForeignChains {
     #[serde(skip_serializing_if = "Option::is_none")]
     ethereum: Option<EthereumChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "abstract")]
     abstract_chain: Option<AbstractChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
     starknet: Option<StarknetChain>,
