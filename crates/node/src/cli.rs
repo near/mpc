@@ -22,11 +22,6 @@ use std::{
 };
 use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
 use url::Url;
-
-// ---------------------------------------------------------------------------
-// Top-level CLI
-// ---------------------------------------------------------------------------
-
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
 #[command(about = "MPC Node for Near Protocol")]
@@ -86,11 +81,6 @@ pub enum CliCommand {
         migrating_nodes: Vec<usize>,
     },
 }
-
-// ---------------------------------------------------------------------------
-// Start subcommand (CLI flags / env vars)
-// ---------------------------------------------------------------------------
-
 #[derive(Args, Debug)]
 pub struct StartCmd {
     #[arg(long, env("MPC_HOME_DIR"))]
@@ -178,11 +168,6 @@ impl StartCmd {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Init subcommand
-// ---------------------------------------------------------------------------
-
 #[derive(Args, Debug)]
 pub struct InitConfigArgs {
     #[arg(long, env("MPC_HOME_DIR"))]
@@ -209,11 +194,6 @@ pub struct InitConfigArgs {
     #[arg(long)]
     pub boot_nodes: Option<String>,
 }
-
-// ---------------------------------------------------------------------------
-// Import/Export keyshare subcommands
-// ---------------------------------------------------------------------------
-
 #[derive(Args, Debug)]
 pub struct ImportKeyshareCmd {
     /// Path to home directory
@@ -241,11 +221,6 @@ pub struct ExportKeyshareCmd {
     #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
     pub local_encryption_key_hex: String,
 }
-
-// ---------------------------------------------------------------------------
-// Dispatch
-// ---------------------------------------------------------------------------
-
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
@@ -317,11 +292,6 @@ impl Cli {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Import/Export keyshare implementations
-// ---------------------------------------------------------------------------
-
 impl ImportKeyshareCmd {
     pub async fn run(&self) -> anyhow::Result<()> {
         let runtime = tokio::runtime::Runtime::new()?;
@@ -418,11 +388,6 @@ impl ExportKeyshareCmd {
         })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Test config generation
-// ---------------------------------------------------------------------------
-
 fn duplicate_migrating_accounts(
     mut accounts: Vec<AccountId>,
     migrating_nodes: &[usize],
@@ -544,11 +509,6 @@ fn create_file_config(
         cores: Some(4),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
