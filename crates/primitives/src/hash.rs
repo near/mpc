@@ -55,14 +55,6 @@ impl<T> Hash32<T> {
     }
 }
 
-impl MpcDockerImageHash {
-    /// Converts the hash to a hexadecimal string representation with a `sha256:` prefix
-    pub fn as_hex_sha256(&self) -> String {
-        let hex_encoding = self.as_hex();
-        format!("sha256:{hex_encoding}")
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum Hash32ParseError {
     #[error("not a valid hex string")]
