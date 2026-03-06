@@ -80,12 +80,20 @@ DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node"
 DEFAULT_MPC_REGISTRY = "registry.hub.docker.com"
 DEFAULT_MPC_IMAGE_TAG = "latest"
 
+# --- MPC node configuration file ---
+# Key in dstack user config that specifies the path to the MPC node JSON config file.
+# This path must be accessible inside the container (e.g. under /tapp which is mounted read-only).
+DSTACK_USER_CONFIG_MPC_CONFIG_PATH = "MPC_CONFIG_PATH"
+# Default path for the MPC node config file (inside /tapp, provided by the operator).
+DEFAULT_MPC_CONFIG_PATH = "/tapp/mpc_config.json"
+
 # Environment variables that configure the launcher itself.
 # These are read from the user config file but should NEVER be passed to the MPC container.
 ALLOWED_LAUNCHER_ENV_VARS = {
     DSTACK_USER_CONFIG_MPC_IMAGE_TAGS,
     DSTACK_USER_CONFIG_MPC_IMAGE_NAME,
     DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY,
+    DSTACK_USER_CONFIG_MPC_CONFIG_PATH,
     ENV_VAR_MPC_HASH_OVERRIDE,
     ENV_VAR_RPC_REQUEST_TIMEOUT_SECS,
     ENV_VAR_RPC_REQUEST_INTERVAL_SECS,
@@ -105,92 +113,12 @@ SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
 JSON_KEY_APPROVED_HASHES = "approved_hashes"
 
 
-# --------------------------------------------------------------------------------------
-# Security policy for env passthrough
-# --------------------------------------------------------------------------------------
-
-# Allow all MPC_* keys, but keep validation strict.
-MPC_ENV_KEY_RE = re.compile(r"^MPC_[A-Z0-9_]{1,64}$")
-
-
-# Hard caps to prevent DoS via huge env payloads.
-MAX_PASSTHROUGH_ENV_VARS = 64
-MAX_ENV_VALUE_LEN = 1024
-MAX_TOTAL_ENV_BYTES = 32 * 1024  # 32KB total across passed envs
-
-# Never pass raw private keys via launcher (any platform)
-DENIED_CONTAINER_ENV_KEYS = {
-    "MPC_P2P_PRIVATE_KEY",
-    "MPC_ACCOUNT_SK",
-}
-
-# Example of .user-config file format:
-#
-# MPC_ACCOUNT_ID=mpc-user-123
-# MPC_LOCAL_ADDRESS=127.0.0.1
-# MPC_SECRET_STORE_KEY=secret
-# MPC_CONTRACT_ID=mpc-contract
-# MPC_ENV=testnet
-# MPC_HOME_DIR=/data
-# NEAR_BOOT_NODES=boot1,boot2
-# RUST_BACKTRACE=1
-# RUST_LOG=info
-# MPC_RESPONDER_ID=responder-xyz
-# EXTRA_HOSTS=host1:192.168.0.1,host2:192.168.0.2
-# PORTS=11780:11780,2200:2200
-
-# Define an allow-list of permitted environment variables that will be passed to MPC container.
-# Note - extra hosts and port forwarding are explicitly defined in the docker run command generation.
-# NOTE: Kept for backwards compatibility and for documentation purposes; the effective policy is:
-#   - allow MPC_* keys that match MPC_ENV_KEY_RE
-#   - plus existing non-MPC keys below (RUST_LOG / RUST_BACKTRACE / NEAR_BOOT_NODES)
-ALLOWED_MPC_ENV_VARS = {
-    "MPC_ACCOUNT_ID",  # ID of the MPC account on the network
-    "MPC_LOCAL_ADDRESS",  # Local IP address or hostname used by the MPC node
-    "MPC_SECRET_STORE_KEY",  # Key used to encrypt/decrypt secrets
-    "MPC_CONTRACT_ID",  # Contract ID associated with the MPC node
-    "MPC_ENV",  # Environment (e.g., 'testnet', 'mainnet')
-    "MPC_HOME_DIR",  # Home directory for the MPC node
-    "NEAR_BOOT_NODES",  # Comma-separated list of boot nodes
-    "RUST_BACKTRACE",  # Enables backtraces for Rust errors
-    "RUST_LOG",  # Logging level for Rust code
-    "MPC_RESPONDER_ID",  # Unique responder ID for MPC communication
-    "MPC_BACKUP_ENCRYPTION_KEY_HEX",  # encryption key for backups
-}
-
 # Regex: hostnames must be alphanum + dash/dot, IPs must be valid IPv4
 HOST_ENTRY_RE = re.compile(r"^[a-zA-Z0-9\-\.]+:\d{1,3}(\.\d{1,3}){3}$")
 PORT_MAPPING_RE = re.compile(r"^(\d{1,5}):(\d{1,5})$")
 
 # Updated regex to block any entry starting with '-' (including '--') and other unsafe characters
 INVALID_HOST_ENTRY_PATTERN = re.compile(r"^[;&|`$\\<>-]|^--")
-
-
-def _has_control_chars(s: str) -> bool:
-    # Disallow NUL + CR/LF at minimum; also block other ASCII control chars (< 0x20) except tab.
-    for ch in s:
-        oc = ord(ch)
-        if ch in ("\n", "\r", "\x00"):
-            return True
-        if oc < 0x20 and ch != "\t":
-            return True
-    return False
-
-
-def is_safe_env_value(value: str) -> bool:
-    """
-    Validates that an env value contains no unsafe control characters (CR/LF/NUL),
-    does not include LD_PRELOAD, and is within size limits to prevent injection or DoS.
-    """
-    if not isinstance(value, str):
-        return False
-    if len(value) > MAX_ENV_VALUE_LEN:
-        return False
-    if _has_control_chars(value):
-        return False
-    if "LD_PRELOAD" in value:
-        return False
-    return True
 
 
 def is_valid_ip(ip: str) -> bool:
@@ -549,7 +477,19 @@ def extend_rtmr3(platform: Platform, valid_hash: str) -> None:
         raise RuntimeError("EmitEvent failed while extending RTMR3")
 
 
-def launch_mpc_container(platform: Platform, valid_hash: str, user_env: dict) -> None:
+def get_mpc_config_path(dstack_config: dict[str, str]) -> str:
+    """
+    Returns the path to the MPC node JSON config file.
+    The path must be accessible inside the container (e.g. under /tapp).
+    """
+    return dstack_config.get(
+        DSTACK_USER_CONFIG_MPC_CONFIG_PATH, DEFAULT_MPC_CONFIG_PATH
+    )
+
+
+def launch_mpc_container(
+    platform: Platform, valid_hash: str, user_env: dict
+) -> None:
     logging.info(f"Launching MPC node with validated hash: {valid_hash}")
 
     remove_existing_container()
@@ -778,43 +718,23 @@ def get_bare_digest(full_digest: str) -> str:
     return full_digest.split(":", 1)[1]
 
 
-def is_allowed_container_env_key(key: str) -> bool:
-    if key in DENIED_CONTAINER_ENV_KEYS:
-        return False
-    # Allow MPC_* keys with strict regex
-    if MPC_ENV_KEY_RE.match(key):
-        return True
-    # Keep allowlist
-    if key in ALLOWED_MPC_ENV_VARS:
-        return True
-    return False
-
-
 def build_docker_cmd(
-    platform: Platform, user_env: dict[str, str], image_digest: str
+    platform: Platform,
+    user_env: dict[str, str],
+    image_digest: str,
 ) -> list[str]:
-    bare_digest = get_bare_digest(image_digest)
+    mpc_config_path = get_mpc_config_path(user_env)
 
     docker_cmd = ["docker", "run"]
 
-    # Required environment variables
-    docker_cmd += ["--env", f"MPC_IMAGE_HASH={bare_digest}"]
-    docker_cmd += ["--env", f"MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
-
     if platform is Platform.TEE:
-        docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
         docker_cmd += ["-v", f"{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}"]
 
-    # Track env passthrough size/caps
-    passed_env_count = 0
-    total_env_bytes = 0
-
-    # Deterministic iteration for stable logs/behavior
+    # Handle EXTRA_HOSTS and PORTS from user config (docker networking, not MPC binary config)
     for key in sorted(user_env.keys()):
         value = user_env[key]
 
         if key in ALLOWED_LAUNCHER_ENV_VARS:
-            # launcher-only env vars: never pass to container
             continue
 
         if key == "EXTRA_HOSTS":
@@ -841,30 +761,6 @@ def build_docker_cmd(
                     )
             continue
 
-        if not is_allowed_container_env_key(key):
-            logging.warning(f"Ignoring unknown or unapproved env var: {key}")
-            continue
-
-        if not is_safe_env_value(value):
-            logging.warning(f"Ignoring env var with unsafe value: {key}")
-            continue
-
-        # Enforce caps
-        passed_env_count += 1
-        if passed_env_count > MAX_PASSTHROUGH_ENV_VARS:
-            raise RuntimeError(
-                f"Too many env vars to pass through (>{MAX_PASSTHROUGH_ENV_VARS})."
-            )
-
-        # Approximate byte accounting (key=value plus overhead)
-        total_env_bytes += len(key) + 1 + len(value)
-        if total_env_bytes > MAX_TOTAL_ENV_BYTES:
-            raise RuntimeError(
-                f"Total env payload too large (>{MAX_TOTAL_ENV_BYTES} bytes)."
-            )
-
-        docker_cmd += ["--env", f"{key}={value}"]
-
     # Container run configuration
     docker_cmd += [
         "--security-opt",
@@ -879,6 +775,9 @@ def build_docker_cmd(
         MPC_CONTAINER_NAME,
         "--detach",
         image_digest,  # IMPORTANT: Docker must get the FULL digest
+        # Command: use config file instead of env vars
+        "start-with-config-file",
+        mpc_config_path,
     ]
 
     logging.info("docker cmd %s", " ".join(docker_cmd))
