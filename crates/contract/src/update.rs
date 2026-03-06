@@ -67,7 +67,7 @@ impl From<u64> for UpdateId {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub enum Update {
     Contract(Vec<u8>),
@@ -124,7 +124,7 @@ impl TryFrom<ProposeUpdateArgs> for Update {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub(crate) struct UpdateEntry {
     pub(super) update: Update,

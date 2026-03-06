@@ -55,6 +55,10 @@ impl CodeHashesVotes {
 /// An allowed Docker image configuration entry containing both the MPC image hash and its
 /// corresponding launcher compose hash, along with when it was added to the allowlist.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct AllowedMpcDockerImage {
     pub(crate) image_hash: MpcDockerImageHash,
     pub(crate) docker_compose_hash: LauncherDockerComposeHash,
@@ -63,6 +67,10 @@ pub struct AllowedMpcDockerImage {
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
 /// run.
 #[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub(crate) struct AllowedDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and TEE validation.
