@@ -16,9 +16,8 @@ pub struct SolanaChainConfig {
 impl SolanaChainConfig {
     pub(crate) fn redacted(&self) -> Self {
         Self {
-            timeout_sec: self.timeout_sec,
-            max_retries: self.max_retries,
             providers: self.providers.clone().map(|k, v| (k, v.redacted())),
+            ..self.clone()
         }
     }
 
@@ -43,9 +42,8 @@ pub struct SolanaProviderConfig {
 impl SolanaProviderConfig {
     pub(crate) fn redacted(&self) -> Self {
         Self {
-            rpc_url: self.rpc_url.clone(),
-            api_variant: self.api_variant,
             auth: self.auth.redacted(),
+            ..self.clone()
         }
     }
 }

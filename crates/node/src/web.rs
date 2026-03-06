@@ -299,7 +299,7 @@ mod tests {
         BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, EthereumApiVariant,
         EthereumChainConfig, EthereumProviderConfig, SolanaApiVariant, SolanaChainConfig,
         SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
-        TokenConfig,
+        TokenConfig, REDACTED_TOKEN,
     };
     use bounded_collections::NonEmptyBTreeMap;
     use near_indexer_primitives::types::Finality;
@@ -442,7 +442,7 @@ mod tests {
                 name: http::HeaderName::from_static("authorization"),
                 scheme: Some("Bearer".to_string()),
                 token: TokenConfig::Val {
-                    val: "***".to_string()
+                    val: REDACTED_TOKEN.to_string()
                 },
             }
         );
@@ -459,7 +459,7 @@ mod tests {
             AuthConfig::Path {
                 placeholder: "{api_key}".to_string(),
                 token: TokenConfig::Val {
-                    val: "***".to_string()
+                    val: REDACTED_TOKEN.to_string()
                 },
             }
         );
@@ -502,7 +502,7 @@ mod tests {
             AuthConfig::Query {
                 name: "api_key".to_string(),
                 token: TokenConfig::Val {
-                    val: "***".to_string()
+                    val: REDACTED_TOKEN.to_string()
                 },
             }
         );

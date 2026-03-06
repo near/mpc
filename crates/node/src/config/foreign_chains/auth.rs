@@ -6,6 +6,9 @@ use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
+/// Placeholder that replaces secret token values in redacted output.
+pub const REDACTED_TOKEN: &str = "***";
+
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -74,7 +77,7 @@ pub enum TokenConfig {
 }
 
 impl TokenConfig {
-    /// Returns a copy with secret values replaced by `"***"`.
+    /// Returns a copy with secret values replaced by [`REDACTED_TOKEN`].
     ///
     /// `Env` variants keep the environment-variable name (it is not a secret),
     /// while `Val` variants have their plaintext value masked.
@@ -82,7 +85,7 @@ impl TokenConfig {
         match self {
             TokenConfig::Env { env } => TokenConfig::Env { env: env.clone() },
             TokenConfig::Val { .. } => TokenConfig::Val {
-                val: "***".to_string(),
+                val: REDACTED_TOKEN.to_string(),
             },
         }
     }
@@ -232,7 +235,7 @@ mod tests {
         assert_eq!(
             token.redacted(),
             TokenConfig::Val {
-                val: "***".to_string()
+                val: REDACTED_TOKEN.to_string()
             }
         );
     }
@@ -271,7 +274,7 @@ mod tests {
                 name: http::HeaderName::from_static("authorization"),
                 scheme: Some("Bearer".to_string()),
                 token: TokenConfig::Val {
-                    val: "***".to_string()
+                    val: REDACTED_TOKEN.to_string()
                 },
             }
         );
@@ -291,7 +294,7 @@ mod tests {
             AuthConfig::Path {
                 placeholder: "{key}".to_string(),
                 token: TokenConfig::Val {
-                    val: "***".to_string()
+                    val: REDACTED_TOKEN.to_string()
                 },
             }
         );
@@ -311,7 +314,7 @@ mod tests {
             AuthConfig::Query {
                 name: "api_key".to_string(),
                 token: TokenConfig::Val {
-                    val: "***".to_string()
+                    val: REDACTED_TOKEN.to_string()
                 },
             }
         );

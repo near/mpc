@@ -14,7 +14,7 @@ mod solana;
 mod starknet;
 
 pub use abstract_chain::{AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig};
-pub use auth::{AuthConfig, TokenConfig};
+pub use auth::{AuthConfig, TokenConfig, REDACTED_TOKEN};
 pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
 pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
 pub use solana::{SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig};
