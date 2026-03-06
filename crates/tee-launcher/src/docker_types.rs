@@ -1,7 +1,7 @@
 use launcher_interface::types::DockerSha256Digest;
 use serde::{Deserialize, Serialize};
 
-/// Partial response https://auth.docker.io/token
+/// Partial response <https://auth.docker.io/token>
 #[derive(Debug, Deserialize, Serialize)]
 pub struct DockerTokenResponse {
     pub token: String,
