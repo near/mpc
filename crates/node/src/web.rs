@@ -96,22 +96,22 @@ struct NodeConfigResponse {
     cores: Option<usize>,
 }
 
-impl From<&ConfigFile> for NodeConfigResponse {
-    fn from(config: &ConfigFile) -> Self {
+impl From<ConfigFile> for NodeConfigResponse {
+    fn from(config: ConfigFile) -> Self {
         Self {
-            my_near_account_id: config.my_near_account_id.clone(),
-            near_responder_account_id: config.near_responder_account_id.clone(),
+            my_near_account_id: config.my_near_account_id,
+            near_responder_account_id: config.near_responder_account_id,
             number_of_responder_keys: config.number_of_responder_keys,
             web_ui: config.web_ui,
             migration_web_ui: config.migration_web_ui,
             pprof_bind_address: config.pprof_bind_address,
-            indexer: config.indexer.clone(),
-            triple: config.triple.clone(),
-            presignature: config.presignature.clone(),
-            signature: config.signature.clone(),
-            ckd: config.ckd.clone(),
-            keygen: config.keygen.clone(),
-            foreign_chains: ForeignChains::from(&config.foreign_chains),
+            indexer: config.indexer,
+            triple: config.triple,
+            presignature: config.presignature,
+            signature: config.signature,
+            ckd: config.ckd,
+            keygen: config.keygen,
+            foreign_chains: config.foreign_chains.into(),
             cores: config.cores,
         }
     }
@@ -137,14 +137,14 @@ struct ForeignChains {
     starknet: Option<StarknetChain>,
 }
 
-impl From<&ForeignChainsConfig> for ForeignChains {
-    fn from(config: &ForeignChainsConfig) -> Self {
+impl From<ForeignChainsConfig> for ForeignChains {
+    fn from(config: ForeignChainsConfig) -> Self {
         Self {
-            solana: config.solana.as_ref().map(Into::into),
-            bitcoin: config.bitcoin.as_ref().map(Into::into),
-            ethereum: config.ethereum.as_ref().map(Into::into),
-            abstract_chain: config.abstract_chain.as_ref().map(Into::into),
-            starknet: config.starknet.as_ref().map(Into::into),
+            solana: config.solana.map(Into::into),
+            bitcoin: config.bitcoin.map(Into::into),
+            ethereum: config.ethereum.map(Into::into),
+            abstract_chain: config.abstract_chain.map(Into::into),
+            starknet: config.starknet.map(Into::into),
         }
     }
 }
@@ -156,16 +156,13 @@ struct SolanaChain {
     providers: BTreeMap<String, SolanaProvider>,
 }
 
-impl From<&SolanaChainConfig> for SolanaChain {
-    fn from(config: &SolanaChainConfig) -> Self {
+impl From<SolanaChainConfig> for SolanaChain {
+    fn from(config: SolanaChainConfig) -> Self {
+        let providers: BTreeMap<String, SolanaProviderConfig> = config.providers.into();
         Self {
             timeout_sec: config.timeout_sec,
             max_retries: config.max_retries,
-            providers: config
-                .providers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.into()))
-                .collect(),
+            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
         }
     }
 }
@@ -176,10 +173,10 @@ struct SolanaProvider {
     api_variant: SolanaApiVariant,
 }
 
-impl From<&SolanaProviderConfig> for SolanaProvider {
-    fn from(config: &SolanaProviderConfig) -> Self {
+impl From<SolanaProviderConfig> for SolanaProvider {
+    fn from(config: SolanaProviderConfig) -> Self {
         Self {
-            rpc_url: config.rpc_url.clone(),
+            rpc_url: config.rpc_url,
             api_variant: config.api_variant,
         }
     }
@@ -192,16 +189,13 @@ struct BitcoinChain {
     providers: BTreeMap<String, BitcoinProvider>,
 }
 
-impl From<&BitcoinChainConfig> for BitcoinChain {
-    fn from(config: &BitcoinChainConfig) -> Self {
+impl From<BitcoinChainConfig> for BitcoinChain {
+    fn from(config: BitcoinChainConfig) -> Self {
+        let providers: BTreeMap<String, BitcoinProviderConfig> = config.providers.into();
         Self {
             timeout_sec: config.timeout_sec,
             max_retries: config.max_retries,
-            providers: config
-                .providers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.into()))
-                .collect(),
+            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
         }
     }
 }
@@ -212,10 +206,10 @@ struct BitcoinProvider {
     api_variant: BitcoinApiVariant,
 }
 
-impl From<&BitcoinProviderConfig> for BitcoinProvider {
-    fn from(config: &BitcoinProviderConfig) -> Self {
+impl From<BitcoinProviderConfig> for BitcoinProvider {
+    fn from(config: BitcoinProviderConfig) -> Self {
         Self {
-            rpc_url: config.rpc_url.clone(),
+            rpc_url: config.rpc_url,
             api_variant: config.api_variant,
         }
     }
@@ -228,16 +222,13 @@ struct EthereumChain {
     providers: BTreeMap<String, EthereumProvider>,
 }
 
-impl From<&EthereumChainConfig> for EthereumChain {
-    fn from(config: &EthereumChainConfig) -> Self {
+impl From<EthereumChainConfig> for EthereumChain {
+    fn from(config: EthereumChainConfig) -> Self {
+        let providers: BTreeMap<String, EthereumProviderConfig> = config.providers.into();
         Self {
             timeout_sec: config.timeout_sec,
             max_retries: config.max_retries,
-            providers: config
-                .providers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.into()))
-                .collect(),
+            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
         }
     }
 }
@@ -248,10 +239,10 @@ struct EthereumProvider {
     api_variant: EthereumApiVariant,
 }
 
-impl From<&EthereumProviderConfig> for EthereumProvider {
-    fn from(config: &EthereumProviderConfig) -> Self {
+impl From<EthereumProviderConfig> for EthereumProvider {
+    fn from(config: EthereumProviderConfig) -> Self {
         Self {
-            rpc_url: config.rpc_url.clone(),
+            rpc_url: config.rpc_url,
             api_variant: config.api_variant,
         }
     }
@@ -264,16 +255,13 @@ struct AbstractChain {
     providers: BTreeMap<String, AbstractProvider>,
 }
 
-impl From<&AbstractChainConfig> for AbstractChain {
-    fn from(config: &AbstractChainConfig) -> Self {
+impl From<AbstractChainConfig> for AbstractChain {
+    fn from(config: AbstractChainConfig) -> Self {
+        let providers: BTreeMap<String, AbstractProviderConfig> = config.providers.into();
         Self {
             timeout_sec: config.timeout_sec,
             max_retries: config.max_retries,
-            providers: config
-                .providers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.into()))
-                .collect(),
+            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
         }
     }
 }
@@ -284,10 +272,10 @@ struct AbstractProvider {
     api_variant: AbstractApiVariant,
 }
 
-impl From<&AbstractProviderConfig> for AbstractProvider {
-    fn from(config: &AbstractProviderConfig) -> Self {
+impl From<AbstractProviderConfig> for AbstractProvider {
+    fn from(config: AbstractProviderConfig) -> Self {
         Self {
-            rpc_url: config.rpc_url.clone(),
+            rpc_url: config.rpc_url,
             api_variant: config.api_variant,
         }
     }
@@ -300,16 +288,13 @@ struct StarknetChain {
     providers: BTreeMap<String, StarknetProvider>,
 }
 
-impl From<&StarknetChainConfig> for StarknetChain {
-    fn from(config: &StarknetChainConfig) -> Self {
+impl From<StarknetChainConfig> for StarknetChain {
+    fn from(config: StarknetChainConfig) -> Self {
+        let providers: BTreeMap<String, StarknetProviderConfig> = config.providers.into();
         Self {
             timeout_sec: config.timeout_sec,
             max_retries: config.max_retries,
-            providers: config
-                .providers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.into()))
-                .collect(),
+            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
         }
     }
 }
@@ -320,10 +305,10 @@ struct StarknetProvider {
     api_variant: StarknetApiVariant,
 }
 
-impl From<&StarknetProviderConfig> for StarknetProvider {
-    fn from(config: &StarknetProviderConfig) -> Self {
+impl From<StarknetProviderConfig> for StarknetProvider {
+    fn from(config: StarknetProviderConfig) -> Self {
         Self {
-            rpc_url: config.rpc_url.clone(),
+            rpc_url: config.rpc_url,
             api_variant: config.api_variant,
         }
     }
@@ -490,7 +475,7 @@ pub async fn start_web_server(
             protocol_state_receiver,
             migration_state_receiver,
             static_web_data,
-            node_config: NodeConfigResponse::from(config),
+            node_config: NodeConfigResponse::from(config.clone()),
         });
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;
@@ -647,7 +632,7 @@ mod tests {
         let config = test_config();
 
         // When
-        let response = NodeConfigResponse::from(&config);
+        let response = NodeConfigResponse::from(config);
 
         // Then
         let provider = &response.foreign_chains.solana.unwrap().providers["alchemy"];
@@ -666,7 +651,7 @@ mod tests {
         let config = test_config();
 
         // When
-        let response = NodeConfigResponse::from(&config);
+        let response = NodeConfigResponse::from(config);
 
         // Then
         let provider = &response.foreign_chains.bitcoin.unwrap().providers["ankr"];
@@ -685,7 +670,7 @@ mod tests {
         let config = test_config();
 
         // When
-        let response = NodeConfigResponse::from(&config);
+        let response = NodeConfigResponse::from(config);
 
         // Then
         let provider = &response.foreign_chains.ethereum.unwrap().providers["alchemy"];
@@ -704,7 +689,7 @@ mod tests {
         let config = test_config();
 
         // When
-        let response = NodeConfigResponse::from(&config);
+        let response = NodeConfigResponse::from(config);
 
         // Then
         let provider = &response.foreign_chains.abstract_chain.unwrap().providers["public"];
@@ -723,7 +708,7 @@ mod tests {
         let config = test_config();
 
         // When
-        let response = NodeConfigResponse::from(&config);
+        let response = NodeConfigResponse::from(config);
 
         // Then
         let provider = &response.foreign_chains.starknet.unwrap().providers["blast"];
@@ -742,7 +727,7 @@ mod tests {
         let config = test_config();
 
         // When
-        let response = NodeConfigResponse::from(&config);
+        let response = NodeConfigResponse::from(config);
 
         // Then
         let solana = response.foreign_chains.solana.unwrap();
@@ -756,7 +741,7 @@ mod tests {
         let config = test_config();
 
         // When
-        let json = serde_json::to_string(&NodeConfigResponse::from(&config)).unwrap();
+        let json = serde_json::to_string(&NodeConfigResponse::from(config)).unwrap();
 
         // Then
         assert!(
