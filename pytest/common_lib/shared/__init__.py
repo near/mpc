@@ -42,7 +42,7 @@ from key import Key
 dot_near = pathlib.Path.home() / ".near"
 SECRETS_JSON = "secrets.json"
 NUMBER_OF_VALIDATORS = 1
-MPC_NODE_CONFIG_JSON = "mpc_node_config.json"
+CONFIG_YAML = "config.yaml"
 
 
 def create_function_call_access_key_action(
@@ -230,7 +230,6 @@ class ConfigValues:
     migration_address: str
     pprof_address: str
     backup_key: bytes
-    node_config: dict  # JSON-serializable dict matching Rust ConfigFile
 
 
 def generate_mpc_configs(
@@ -308,9 +307,9 @@ def generate_mpc_configs(
         my_port = participant["port"]
         p2p_url = f"http://{my_addr}:{my_port}"
 
-        config_file_path = os.path.join(dot_near, str(idx), MPC_NODE_CONFIG_JSON)
+        config_file_path = os.path.join(dot_near, str(idx), CONFIG_YAML)
         with open(config_file_path, "r") as f:
-            config = json.load(f)
+            config = yaml.load(f, Loader=SafeLoaderIgnoreUnknown)
 
         web_address = config.get("web_ui")
         migration_address = config.get("migration_web_ui")
@@ -332,7 +331,6 @@ def generate_mpc_configs(
         ]
 
         backup_key = os.urandom(32)
-
         configs.append(
             ConfigValues(
                 signer_key,
@@ -343,7 +341,6 @@ def generate_mpc_configs(
                 migration_address,
                 pprof_address,
                 backup_key,
-                node_config=config,
             )
         )
     return configs
@@ -534,7 +531,6 @@ def start_cluster_with_mpc(
             pytest_signer_keys=pytest_signer_keys,
             backup_key=config.backup_key,
             pprof_address=config.pprof_address,
-            node_config=config.node_config,
         )
         mpc_node.init_nonces(validators[0])
         mpc_node.set_block_ingestion(True)
