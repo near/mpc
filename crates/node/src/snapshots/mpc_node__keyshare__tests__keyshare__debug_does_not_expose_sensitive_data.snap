@@ -1,0 +1,6 @@
+---
+source: crates/node/src/keyshare.rs
+assertion_line: 1233
+expression: debug_str
+---
+Keyshare { key_id: KeyEventId { epoch_id: EpochId(1), domain_id: DomainId(2), attempt_id: AttemptId(3) }, data: Secp256k1(<redacted>) }

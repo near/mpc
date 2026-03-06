@@ -88,6 +88,7 @@ built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+insta = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
