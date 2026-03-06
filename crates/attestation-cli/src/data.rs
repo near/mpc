@@ -4,27 +4,25 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use node_types::http_server::StaticWebData;
 
-use crate::cli::VerifyArgs;
+use crate::cli::Source;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn load_static_web_data(args: &VerifyArgs) -> anyhow::Result<StaticWebData> {
-    match (&args.url, &args.file) {
-        (Some(url), None) => fetch_from_url(url).await,
-        (None, Some(path)) => load_from_file(path),
-        (None, None) => bail!("either --url or --file must be provided"),
-        (Some(_), Some(_)) => bail!("--url and --file are mutually exclusive"),
+pub async fn load_static_web_data(source: &Source) -> anyhow::Result<StaticWebData> {
+    match source {
+        Source::Url { url } => fetch_from_url(url).await,
+        Source::File { path } => load_from_file(path),
     }
 }
 
-async fn fetch_from_url(url: &str) -> anyhow::Result<StaticWebData> {
+async fn fetch_from_url(url: &url::Url) -> anyhow::Result<StaticWebData> {
     let client = reqwest::Client::builder()
         .timeout(HTTP_TIMEOUT)
         .build()
         .context("failed to build HTTP client")?;
 
     let response = client
-        .get(url)
+        .get(url.as_str())
         .send()
         .await
         .with_context(|| format!("failed to fetch from {url}"))?;

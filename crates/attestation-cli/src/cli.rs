@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{ArgGroup, Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "attestation-cli")]
@@ -17,15 +17,9 @@ pub enum Command {
 }
 
 #[derive(Args)]
-#[command(group(ArgGroup::new("source").required(true)))]
 pub struct VerifyArgs {
-    /// Fetch attestation data from a node's /public_data HTTP endpoint
-    #[arg(long, group = "source")]
-    pub url: Option<String>,
-
-    /// Read attestation data from a saved JSON file (same format as /public_data response)
-    #[arg(long, group = "source")]
-    pub file: Option<PathBuf>,
+    #[command(subcommand)]
+    pub source: Source,
 
     /// Allowed MPC Docker image hash (hex-encoded SHA256, repeatable)
     #[arg(long = "allowed-image-hash", required = true)]
@@ -39,4 +33,18 @@ pub struct VerifyArgs {
     /// default measurements (same as the MPC contract/node).
     #[arg(long = "expected-measurements")]
     pub expected_measurements: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+pub enum Source {
+    /// Fetch attestation data from a node's /public_data HTTP endpoint
+    Url {
+        /// The URL to fetch attestation data from
+        url: url::Url,
+    },
+    /// Read attestation data from a saved JSON file (same format as /public_data response)
+    File {
+        /// Path to the JSON file
+        path: PathBuf,
+    },
 }

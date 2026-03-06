@@ -37,8 +37,15 @@ Before running verification you need:
 ## Usage
 
 ```
-attestation-cli verify [OPTIONS]
+attestation-cli verify <COMMAND> [OPTIONS]
 ```
+
+### Data source (subcommand, one required)
+
+| Subcommand | Description |
+|------------|-------------|
+| `url <URL>` | Fetch attestation data live from a node's `/public_data` HTTP endpoint |
+| `file <PATH>` | Read attestation data from a saved JSON file |
 
 ### Required flags
 
@@ -46,13 +53,6 @@ attestation-cli verify [OPTIONS]
 |------|-------------|
 | `--allowed-image-hash <HEX>` | Allowed MPC Docker image hash (repeatable for multiple hashes) |
 | `--launcher-compose-file <PATH>` | Path to the launcher docker-compose YAML file |
-
-### Data source (one required)
-
-| Flag | Description |
-|------|-------------|
-| `--url <URL>` | Fetch attestation data live from a node's `/public_data` HTTP endpoint |
-| `--file <PATH>` | Read attestation data from a saved JSON file |
 
 ### Optional flags
 
@@ -66,7 +66,7 @@ attestation-cli verify [OPTIONS]
 
 ```bash
 attestation-cli verify \
-  --url http://<node-host>:3000/public_data \
+  url http://<node-host>:3000/public_data \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml
 ```
@@ -83,7 +83,7 @@ Then verify offline:
 
 ```bash
 attestation-cli verify \
-  --file public_data.json \
+  file public_data.json \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml
 ```
@@ -92,7 +92,7 @@ attestation-cli verify \
 
 ```bash
 attestation-cli verify \
-  --url http://<node-host>:3000/public_data \
+  url http://<node-host>:3000/public_data \
   --allowed-image-hash abc123...def \
   --allowed-image-hash 789012...345 \
   --launcher-compose-file launcher-compose.yaml
@@ -102,7 +102,7 @@ attestation-cli verify \
 
 ```bash
 attestation-cli verify \
-  --file public_data.json \
+  file public_data.json \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml \
   --expected-measurements tcb_info.json

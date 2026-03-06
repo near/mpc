@@ -9,7 +9,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         cli::Command::Verify(args) => {
-            let static_data = data::load_static_web_data(&args)
+            let static_data = data::load_static_web_data(&args.source)
                 .await
                 .context("failed to load attestation data")?;
 
