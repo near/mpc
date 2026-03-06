@@ -386,7 +386,7 @@ impl Comms {
 
     /// Returns the number of distinct `(ChannelTag, Waitpoint)` entries
     /// currently stored in the message buffer.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn buffer_len(&self) -> usize {
         self.incoming
             .messages
