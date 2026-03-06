@@ -1,85 +1,112 @@
-use std::fmt::{self, Display, Formatter};
-
 use attestation::attestation::VerificationError;
 use node_types::http_server::StaticWebData;
 
 use crate::verify::VerificationResult;
 
-pub struct Success<'a> {
-    pub data: &'a StaticWebData,
-    pub result: &'a VerificationResult,
+pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
+    print_header(static_data);
+    print_verification_details(result);
+    println!();
+    println!("Verdict: PASS");
 }
 
-pub struct Failure<'a> {
-    pub data: &'a StaticWebData,
-    pub err: &'a VerificationError,
-}
-
-impl Display for Success<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write_header(f, self.data)?;
-        writeln!(f)?;
-        writeln!(f, "--- Extracted Values ---")?;
-        writeln!(
-            f,
-            "MPC Image Hash:         {}",
-            self.result.mpc_image_hash.as_hex()
-        )?;
-        writeln!(
-            f,
-            "Launcher Compose Hash:  {}",
-            self.result.launcher_compose_hash.as_hex()
-        )?;
-        let ts = self.result.expiry_timestamp_seconds;
-        writeln!(
-            f,
-            "Expiry Timestamp:       {} (unix: {ts})",
-            format_timestamp(ts)
-        )?;
-        writeln!(f)?;
-        write!(f, "Verdict: PASS")
+pub fn print_failure(static_data: &StaticWebData, err: &VerificationError) {
+    print_header(static_data);
+    println!();
+    println!("--- Failure Details ---");
+    match err {
+        VerificationError::TcbStatusNotUpToDate(status) => {
+            println!("Reason:          TCB status is not up to date");
+            println!("TCB Status:      {status}");
+            println!("Expected Status: UpToDate");
+        }
+        VerificationError::NonEmptyAdvisoryIds(ids) => {
+            println!("Reason:          Outstanding security advisories");
+            println!("Advisory IDs:    {ids}");
+        }
+        VerificationError::WrongHash {
+            name,
+            found,
+            expected,
+        } => {
+            println!("Reason:          Hash mismatch ({name})");
+            println!("Found:           {found}");
+            println!("Expected:        {expected}");
+        }
+        VerificationError::DcapVerification(msg) => {
+            println!("Reason:          DCAP quote verification failed");
+            println!("Details:         {msg}");
+        }
+        _ => {
+            println!("Error:           {err}");
+        }
     }
+    println!();
+    println!("Verdict: FAIL");
 }
 
-impl Display for Failure<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write_header(f, self.data)?;
-        writeln!(f)?;
-        writeln!(f, "--- Failure Details ---")?;
-        writeln!(f, "Error: {}", self.err)?;
-        writeln!(f)?;
-        write!(f, "Verdict: FAIL")
-    }
-}
-
-fn write_header(f: &mut Formatter<'_>, data: &StaticWebData) -> fmt::Result {
-    writeln!(f, "=== MPC Node Attestation Verification ===")?;
-    writeln!(f)?;
-    writeln!(
-        f,
+fn print_header(static_data: &StaticWebData) {
+    println!("=== MPC Node Attestation Verification ===");
+    println!();
+    println!(
         "TLS Public Key (P2P):   ed25519:{}",
-        bs58::encode(data.near_p2p_public_key.as_bytes()).into_string()
-    )?;
-    writeln!(
-        f,
+        bs58::encode(static_data.near_p2p_public_key.as_bytes()).into_string()
+    );
+    println!(
         "Account Public Key:     ed25519:{}",
-        bs58::encode(data.near_signer_public_key.as_bytes()).into_string()
-    )?;
-    let attestation_type = match &data.tee_participant_info {
+        bs58::encode(static_data.near_signer_public_key.as_bytes()).into_string()
+    );
+
+    let attestation_type = match &static_data.tee_participant_info {
         Some(mpc_attestation::attestation::Attestation::Dstack(_)) => "Dstack (TDX)",
         Some(mpc_attestation::attestation::Attestation::Mock(_)) => "Mock",
         None => "None",
     };
-    write!(f, "Attestation Type:       {attestation_type}")
+    println!("Attestation Type:       {attestation_type}");
+}
+
+fn print_verification_details(result: &VerificationResult) {
+    println!();
+    println!("--- Extracted Values ---");
+    println!("MPC Image Hash:         {}", result.mpc_image_hash.as_hex());
+    println!(
+        "Launcher Compose Hash:  {}",
+        result.launcher_compose_hash.as_hex()
+    );
+    println!(
+        "Expiry Timestamp:       {} (unix: {})",
+        format_timestamp(result.expiry_timestamp_seconds),
+        result.expiry_timestamp_seconds
+    );
 }
 
 fn format_timestamp(unix_secs: u64) -> String {
-    match time::OffsetDateTime::from_unix_timestamp(unix_secs as i64) {
-        Ok(dt) => {
-            let (y, m, d) = dt.to_calendar_date();
-            let (h, mi, s) = dt.to_hms();
-            format!("{y:04}-{:02}-{d:02} {h:02}:{mi:02}:{s:02} UTC", m as u8)
-        }
-        Err(_) => format!("unix:{unix_secs}"),
-    }
+    // Simple UTC formatting without pulling in chrono/time.
+    // Overflow is impossible: valid Unix timestamps (up to year 9999) are well within u64 range.
+    let secs_per_day: u64 = 86400;
+    let days_since_epoch = unix_secs / secs_per_day;
+    let time_of_day = unix_secs % secs_per_day;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    // Rough date calculation (no leap second precision needed for display)
+    let (year, month, day) = days_to_ymd(days_since_epoch);
+
+    format!("{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02}:{seconds:02} UTC")
+}
+
+fn days_to_ymd(days: u64) -> (u64, u64, u64) {
+    // Civil days-to-date algorithm
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
 }

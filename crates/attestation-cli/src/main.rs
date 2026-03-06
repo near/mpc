@@ -15,23 +15,11 @@ async fn main() -> anyhow::Result<()> {
 
             match verify::run_verification(&static_data, &args) {
                 Ok(result) => {
-                    println!(
-                        "{}",
-                        output::Success {
-                            data: &static_data,
-                            result: &result
-                        }
-                    );
+                    output::print_success(&static_data, &result);
                     Ok(())
                 }
                 Err(err) => {
-                    println!(
-                        "{}",
-                        output::Failure {
-                            data: &static_data,
-                            err: &err
-                        }
-                    );
+                    output::print_failure(&static_data, &err);
                     bail!("attestation verification failed");
                 }
             }
