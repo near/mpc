@@ -21,7 +21,7 @@ launcher-interface = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
-contract-interface = { workspace = true }
+contract-interface = { workspace = true, features = ["k256", "ed25519-dalek", "blstrs", "near"] }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 either = { workspace = true }
@@ -97,6 +97,7 @@ rstest = { workspace = true }
 serial_test = { workspace = true }
 test-log = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
+tokio = { workspace = true, features = ["test-util"] }
 tracing-test = { workspace = true }
 
 [lints]

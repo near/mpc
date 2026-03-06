@@ -88,18 +88,24 @@ respond_verify_foreign_tx({ request, response }) // Respond method for signers
 ### Request DTOs
 
 ```rust
+#[non_exhaustive]
+#[repr(u8)]
+pub enum ForeignTxPayloadVersion {
+    V1 = 1,
+}
+
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub derivation_path: String, // Key derivation path
     pub domain_id: DomainId,
-    pub payload_version: u8,
+    pub payload_version: ForeignTxPayloadVersion,
 }
 
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
-    pub payload_version: u8,
+    pub payload_version: ForeignTxPayloadVersion,
 }
 ```
 

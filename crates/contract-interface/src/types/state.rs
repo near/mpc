@@ -3,7 +3,7 @@
 //! These types mirror the internal contract state types and are used for JSON serialization
 //! in the contract's public API (e.g., the `state()` view function).
 
-use crate::types::PublicKey;
+use crate::types::PublicKeyExtended;
 use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -213,36 +213,6 @@ pub struct DomainConfig {
 pub struct DomainRegistry {
     pub domains: Vec<DomainConfig>,
     pub next_domain_id: u64,
-}
-
-// =============================================================================
-// Public Key Extended (DTO version)
-// =============================================================================
-
-/// Extended public key representation for different signature schemes.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub enum PublicKeyExtended {
-    /// Secp256k1 public key (ECDSA).
-    Secp256k1 {
-        /// The public key in NEAR SDK format (string representation).
-        near_public_key: String,
-    },
-    /// Ed25519 public key.
-    Ed25519 {
-        /// The compressed public key in NEAR SDK format.
-        near_public_key_compressed: String,
-        /// The Edwards point (32 bytes).
-        edwards_point: [u8; 32],
-    },
-    /// BLS12-381 public key.
-    Bls12381 {
-        /// The public key.
-        public_key: PublicKey,
-    },
 }
 
 // =============================================================================

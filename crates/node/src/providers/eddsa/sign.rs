@@ -14,6 +14,7 @@ use threshold_signatures::frost_core::Scalar;
 use threshold_signatures::frost_ed25519::VerifyingKey;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, Signature};
 use threshold_signatures::participants::Participant;
+use threshold_signatures::ReconstructionLowerBound;
 use tokio::time::timeout;
 
 impl EddsaSignatureProvider {
@@ -23,7 +24,8 @@ impl EddsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
 
-        let threshold = self.mpc_config.participants.threshold as usize;
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -34,7 +36,10 @@ impl EddsaSignatureProvider {
 
         let participants = self
             .client
-            .select_random_active_participants_including_me(threshold, &running_participants)
+            .select_random_active_participants_including_me(
+                threshold.value(),
+                &running_participants,
+            )
             .context("Can't choose active participants for a eddsa signature")?;
 
         let channel = self
@@ -90,7 +95,8 @@ impl EddsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let threshold = self.mpc_config.participants.threshold as usize;
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
 
         let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
             anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
@@ -130,7 +136,7 @@ impl EddsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_output: KeygenOutput,
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
     pub message: Vec<u8>,
     pub tweak: Tweak,
 }

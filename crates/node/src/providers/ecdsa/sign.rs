@@ -19,6 +19,7 @@ use threshold_signatures::ecdsa::{RerandomizationArguments, Signature, Signature
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::participants::Participant;
 use threshold_signatures::ParticipantList;
+use threshold_signatures::ReconstructionLowerBound;
 use tokio::time::timeout;
 
 impl EcdsaSignatureProvider {
@@ -30,7 +31,8 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let domain_data = self.domain_data(sign_request.domain)?;
         let participants = presignature.participants.clone();
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
@@ -88,7 +90,8 @@ impl EcdsaSignatureProvider {
         sign_request: SignatureRequest,
     ) -> anyhow::Result<()> {
         let domain_data = self.domain_data(sign_request.domain)?;
-        let threshold = self.mpc_config.participants.threshold.try_into()?;
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
@@ -144,7 +147,7 @@ impl EcdsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
     pub presign_out: PresignOutput,
     pub msg_hash: [u8; 32],
     pub tweak: Tweak,
@@ -213,7 +216,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
 /// The difference is that the follower needs to look up the presignature, which may fail.
 pub struct FollowerSignComputation {
     pub keygen_out: KeygenOutput,
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
     pub msg_hash: [u8; 32],

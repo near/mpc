@@ -2,7 +2,7 @@ use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
         consts::PARTICIPANT_LEN,
-        interface::{IntoContractType, IntoInterfaceType},
+        interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_tee_accounts,
             submit_participant_info,
@@ -71,7 +71,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         &mpc_signer_accounts[0],
         &contract,
         &attestation,
-        &new_uid.tls_public_key.into_interface_type(),
+        &dtos::Ed25519PublicKey::try_from(&new_uid.tls_public_key).expect("expected ED25519 key"),
     )
     .await?;
     assert!(result.is_success());

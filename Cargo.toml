@@ -9,6 +9,7 @@ members = [
     "crates/contract",
     "crates/contract-history",
     "crates/contract-interface",
+    "crates/crypto-types",
     "crates/devnet",
     "crates/foreign-chain-inspector",
     "crates/foreign-chain-rpc-interfaces",
@@ -19,6 +20,7 @@ members = [
     "crates/node",
     "crates/node-types",
     "crates/primitives",
+    "crates/signature-verifier",
     "crates/tee-authority",
     "crates/tee-launcher",
     "crates/test-migration-contract",
@@ -30,7 +32,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.5.1"
+version = "3.6.0"
 edition = "2024"
 license = "MIT"
 
@@ -45,19 +47,21 @@ foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
+mpc-crypto-types = { path = "crates/crypto-types" }
 mpc-node = { path = "crates/node" }
 launcher-interface = { path = "crates/launcher-interface" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
 near-mpc-sdk = { path = "crates/near-mpc-sdk" }
 node-types = { path = "crates/node-types" }
+signature-verifier = { path = "crates/signature-verifier" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
 utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 assert_matches = "1.5.0"
 async-trait = "0.1.89"
 auto_ops = "0.3.0"
@@ -119,6 +123,7 @@ gcloud-sdk = { version = "0.28.5", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
 ] }
+group = "0.13"
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 http = "1.4.0"
@@ -165,8 +170,9 @@ rustls = { version = "0.23.36", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.19"
 serde_json = "1.0"
+serde_repr = "0.1.20"
 serde_with = { version = "3.16.1", features = ["hex"] }
-serial_test = "3.3.1"
+serial_test = "3.4.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
@@ -196,14 +202,14 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88

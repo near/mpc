@@ -8,7 +8,6 @@ use contract_interface::method_names::{
 use contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
-use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -89,13 +88,11 @@ impl ChainCKDRequest {
 pub type ChainVerifyForeignTransactionRequest =
     contract_interface::types::VerifyForeignTransactionRequest;
 
-pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
+pub type ChainSignatureResponse = contract_interface::types::SignatureResponse;
 pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
 pub type ChainVerifyForeignTransactionResponse =
     contract_interface::types::VerifyForeignTransactionResponse;
 
-pub use mpc_contract::crypto_shared::k256_types;
-use mpc_contract::crypto_shared::{ed25519_types, SignatureResponse};
 use mpc_contract::primitives::signature::Payload;
 
 const MAX_RECOVERY_ID: u8 = 3;
@@ -108,9 +105,11 @@ fn k256_signature_response(
     if recovery_id > MAX_RECOVERY_ID {
         anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
-
-    let k256_signature = k256_types::Signature::new(big_r, s, recovery_id);
-    Ok(ChainSignatureResponse::Secp256k1(k256_signature))
+    Ok(ChainSignatureResponse::Secp256k1(dtos::K256Signature {
+        big_r: dtos::K256AffinePoint::from(big_r),
+        s: dtos::K256Scalar::from(s),
+        recovery_id,
+    }))
 }
 pub trait ChainRespondArgs {}
 
@@ -302,18 +301,19 @@ impl ChainSignatureRespondArgs {
         request: &SignatureRequest,
         response: &frost_ed25519::Signature,
     ) -> anyhow::Result<Self> {
-        let response = response
+        let response: [u8; 64] = response
             .serialize()?
             .try_into()
             .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
+
         Ok(ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
                 request.domain,
             ),
-            response: SignatureResponse::Ed25519 {
-                signature: ed25519_types::Signature::new(response),
+            response: dtos::SignatureResponse::Ed25519 {
+                signature: dtos::Ed25519Signature::from(response),
             },
         })
     }
@@ -367,15 +367,9 @@ impl ChainVerifyForeignTransactionRespondArgs {
             payload_hash.as_ref(),
         )?;
 
-        // TODO: this code should be elsewhere
-        let mut r_bytes = [0u8; 33];
-        r_bytes.copy_from_slice(signature.big_r.to_encoded_point(true).as_bytes());
-        let mut s_bytes = [0u8; 32];
-        s_bytes.copy_from_slice(signature.s.to_bytes().as_ref());
-
         let dto_signature = dtos::K256Signature {
-            big_r: r_bytes.into(),
-            s: s_bytes.into(),
+            big_r: dtos::K256AffinePoint::from(signature.big_r),
+            s: dtos::K256Scalar::from(signature.s),
             recovery_id,
         };
         Ok(ChainVerifyForeignTransactionRespondArgs {

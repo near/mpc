@@ -14,7 +14,7 @@ crate-type = ["cdylib", "lib"]
 assert_matches = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
-contract-interface = { workspace = true }
+contract-interface = { workspace = true, features = ["blstrs"] }
 elliptic-curve = { workspace = true }
 hex = { workspace = true }
 near-sdk = { workspace = true }

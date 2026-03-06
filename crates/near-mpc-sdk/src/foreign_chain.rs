@@ -1,4 +1,5 @@
 use crate::sign::NotSet;
+use borsh::{BorshDeserialize, BorshSerialize};
 pub use contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
 
 pub mod abstract_chain;
@@ -12,19 +13,21 @@ pub use contract_interface::types::{Hash256, SignatureResponse, VerifyForeignTra
 // raw request arg type
 pub use contract_interface::types::{
     BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainPolicy,
-    ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
     VerifyForeignTransactionRequestArgs,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
 pub struct ForeignChainSignatureVerifier {
     expected_extracted_values: Vec<ExtractedValue>,
     request: ForeignChainRpcRequest,
 }
 
-pub enum VerifyForeignChainResponse {
+pub enum VerifyForeignChainError {
     FailedToComputeMsgHash,
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
+    UnexpectedSignatureScheme,
+    SignatureVerificationFailed,
 }
 
 impl ForeignChainSignatureVerifier {
@@ -32,8 +35,8 @@ impl ForeignChainSignatureVerifier {
         self,
         response: &VerifyForeignTransactionResponse,
         // TODO(#2232): don't use interface API types for public keys
-        _public_key: &PublicKey,
-    ) -> Result<(), VerifyForeignChainResponse> {
+        public_key: &PublicKey,
+    ) -> Result<(), VerifyForeignChainError> {
         let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: self.request,
             values: self.expected_extracted_values,
@@ -41,25 +44,44 @@ impl ForeignChainSignatureVerifier {
 
         let expected_payload_hash = expected_payload
             .compute_msg_hash()
-            .map_err(|_| VerifyForeignChainResponse::FailedToComputeMsgHash)?;
+            .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
 
         let payload_is_correct = expected_payload_hash == response.payload_hash;
 
         if !payload_is_correct {
-            return Err(VerifyForeignChainResponse::IncorrectPayloadSigned {
+            return Err(VerifyForeignChainError::IncorrectPayloadSigned {
                 got: response.payload_hash.clone(),
                 expected: expected_payload_hash,
             });
         }
+        let verification_result = match (public_key, &response.signature) {
+            (
+                PublicKey::Secp256k1(secp256k1_public_key),
+                SignatureResponse::Secp256k1(k256_signature),
+            ) => signature_verifier::verify_ecdsa_signature(
+                k256_signature,
+                &expected_payload_hash,
+                secp256k1_public_key,
+            ),
+            (PublicKey::Ed25519(ed25519_public_key), SignatureResponse::Ed25519 { signature }) => {
+                signature_verifier::verify_eddsa_signature(
+                    signature,
+                    expected_payload_hash.as_slice(),
+                    ed25519_public_key,
+                )
+            }
+            // TODO(#2234): improve types so these errors can't happen
+            (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
+                return Err(VerifyForeignChainError::UnexpectedSignatureScheme);
+            }
+            _ => return Err(VerifyForeignChainError::UnexpectedSignatureScheme),
+        };
 
-        // TODO(#2246): do signature verification check on the `response.signature`
-        // Not having this check in place is "okay", if the response comes directly from
-        // the MPC contract, since the contract already does this verification.
-        Ok(())
+        verification_result.map_err(|_| VerifyForeignChainError::SignatureVerificationFailed)
     }
 }
 
-pub const DEFAULT_PAYLOAD_VERSION: u8 = 1;
+pub const DEFAULT_PAYLOAD_VERSION: ForeignTxPayloadVersion = ForeignTxPayloadVersion::V1;
 
 #[derive(Debug, Clone)]
 pub struct ForeignChainRequestBuilder<Request, DerivationPath, DomainId> {

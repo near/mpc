@@ -9,7 +9,7 @@ pub(crate) mod echo_broadcast;
 pub(crate) mod helpers;
 pub(crate) mod internal;
 
-use crate::errors::ProtocolError;
+use crate::errors::{MessageError, ProtocolError};
 use crate::participants::Participant;
 
 /// Represents the data making up a message.
@@ -61,5 +61,5 @@ pub trait Protocol {
     fn poke(&mut self) -> Result<Action<Self::Output>, ProtocolError>;
 
     /// Inform the protocol of a new message.
-    fn message(&mut self, from: Participant, data: MessageData);
+    fn message(&mut self, from: Participant, data: MessageData) -> Result<(), MessageError>;
 }

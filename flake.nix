@@ -103,8 +103,8 @@
           };
 
           envDarwin = lib.optionalAttrs stdenv.isDarwin {
-            # Cargo resolves its linker separately from CC — force it to use
-            # the LLVM 19 wrapper so -lSystem (and other SDK libs) are found.
+            # Cargo resolves its linker separately from CC — force it to use the
+            # LLVM 19 clang so -lSystem (and other SDK libs) are found.
             CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${llvmPkgs.clang}/bin/clang";
           };
 
@@ -179,14 +179,14 @@
             strictDeps = true;
 
             packages =
-              dockerTools ++
-              llvmTools ++
-              rustTools ++
-              cargoTools ++
-              pythonTools ++
-              nearTools ++
-              miscTools ++
-              buildLibs;
+              dockerTools
+              ++ llvmTools
+              ++ rustTools
+              ++ cargoTools
+              ++ pythonTools
+              ++ nearTools
+              ++ miscTools
+              ++ buildLibs;
 
             env = envCommon // envDarwin;
 
@@ -196,10 +196,9 @@
 
             shellHook = ''
               ${lib.optionalString stdenv.isDarwin ''
-                # Override CC/CXX to use LLVM 19 clang, matching Rust 1.86's
-                # bundled LLVM version.  These must live in shellHook because
-                # rust-overlay propagates the default stdenv clang (now 21)
-                # via setup hooks that run after env vars are set.
+                # Override CC/CXX to use LLVM 19 clang, matching Rust 1.86.0's
+                # bundled LLVM version. The default stdenv's clang 21 produces
+                # LLVM bitcode that Rust's LLVM 19 cannot read.
                 export CC="${llvmPkgs.clang}/bin/clang"
                 export CXX="${llvmPkgs.clang}/bin/clang++"
                 export CC_aarch64_apple_darwin="${llvmPkgs.clang}/bin/clang"
