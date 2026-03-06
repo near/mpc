@@ -20,6 +20,7 @@ node-types = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
