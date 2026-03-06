@@ -501,39 +501,40 @@ where
                                     ])
                                     .inc();
 
-                                let response =
-                                    match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
-                                    {
-                                        Some(SignatureScheme::CKD) => {
-                                            let response = timeout(
-                                                Duration::from_secs(this.config.ckd.timeout_sec),
-                                                this.ckd_provider
-                                                    .clone()
-                                                    .make_signature(ckd_attempt.request.id),
-                                            )
-                                            .await??;
+                                let response = match this
+                                    .domain_to_scheme
+                                    .get(&ckd_attempt.request.domain_id)
+                                {
+                                    Some(SignatureScheme::CKD) => {
+                                        let response = timeout(
+                                            Duration::from_secs(this.config.ckd.timeout_sec),
+                                            this.ckd_provider
+                                                .clone()
+                                                .make_signature(ckd_attempt.request.id),
+                                        )
+                                        .await??;
 
-                                            let response = ChainCKDRespondArgs::new_ckd(
-                                                &ckd_attempt.request,
-                                                &CKDResponse {
-                                                    big_y: (&response.0 .0).into(),
-                                                    big_c: (&response.0 .1).into(),
-                                                },
-                                            )?;
+                                        let response = ChainCKDRespondArgs::new_ckd(
+                                            &ckd_attempt.request,
+                                            &CKDResponse {
+                                                big_y: (&response.0 .0).into(),
+                                                big_c: (&response.0 .1).into(),
+                                            },
+                                        )?;
 
-                                            Ok(response)
-                                        }
-                                        Some(SignatureScheme::OTBasedECDSA)
-                                        | Some(SignatureScheme::FROST)
-                                        | Some(SignatureScheme::RobustECDSA) => Err(anyhow::anyhow!(
-                                            "Signature scheme is not allowed for domain: {:?}",
-                                            ckd_attempt.request.domain_id.clone()
-                                        )),
-                                        None => Err(anyhow::anyhow!(
-                                            "Signature scheme is not found for domain: {:?}",
-                                            ckd_attempt.request.domain_id.clone()
-                                        )),
-                                    }?;
+                                        Ok(response)
+                                    }
+                                    Some(SignatureScheme::OTBasedECDSA)
+                                    | Some(SignatureScheme::FROST)
+                                    | Some(SignatureScheme::RobustECDSA) => Err(anyhow::anyhow!(
+                                        "Signature scheme is not allowed for domain: {:?}",
+                                        ckd_attempt.request.domain_id.clone()
+                                    )),
+                                    None => Err(anyhow::anyhow!(
+                                        "Signature scheme is not found for domain: {:?}",
+                                        ckd_attempt.request.domain_id.clone()
+                                    )),
+                                }?;
 
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
                                     .with_label_values(&[
