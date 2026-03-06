@@ -6,7 +6,7 @@ use crate::logger::indexer_logger;
 use crate::near_internals_wrapper::{ClientWrapper, RpcHandlerWrapper, ViewClientWrapper};
 use crate::state_viewer::NearContractViewer;
 use crate::stats::IndexerStats;
-use crate::transaction_sender::TransactionSender;
+use crate::transaction_sender::NearTransactionSubmitter;
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -28,8 +28,8 @@ impl ChainGateway {
         )
     }
 
-    pub fn transaction_sender(&self) -> TransactionSender {
-        TransactionSender::new(self.rpc_handler.clone(), self.view_client.clone())
+    pub fn transaction_sender(&self) -> NearTransactionSubmitter {
+        NearTransactionSubmitter::new(self.rpc_handler.clone(), self.view_client.clone())
     }
 }
 

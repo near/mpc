@@ -12,7 +12,7 @@ use chain_gateway::start_with_streamer;
 let (chain_gateway, stream) = start_with_streamer(near_indexer_config).await?;
 
 let viewer = chain_gateway.viewer();           // NearContractViewer
-let tx_sender = chain_gateway.transaction_sender(); // TransactionSender
+let tx_sender = chain_gateway.transaction_sender(); // NearTransactionSubmitter
 ```
 
 ```mermaid
@@ -310,76 +310,49 @@ struct ReceiverFunctionCallEventData {
 
 ### Transaction Sender
 
+The transaction sender uses a trait hierarchy similar to the state viewer. `FunctionCallSubmitter`
+is the public trait for submitting function-call transactions. Production code uses
+`NearTransactionSubmitter` (backed by the real nearcore RPC handler and view client);
+external tests can implement `FunctionCallSubmitter` directly to mock transaction submission.
+
 ```rust
-
-pub struct TransactionSender<V>
-where
-    V: LatestFinalBlock,
-{
-    /// rpc handler for sending txs to the chain (internal type, c.f. indexer.rs)
-    rpc_handler: IndexerRpcHandler,
-    /// method to the view client to query the latest final block (needed for nonce computation)
-    view_client: V,
-}
-
-/// we could probably make this a trait for testing?
-impl<V> TransactionSender<V>
-where
-    V: LatestFinalBlock
-{
-    /// creates a function call transaction for contract `receiver_id` with method `method_name` and args `args`
-    /// returns the CryptoHash for the receipt, such that the execution outcome can be tracked
-    pub async fn submit_function_call_tx(
+/// Public trait for submitting function-call transactions.
+/// Blanket-implemented internally; external users implement directly for testing.
+#[async_trait]
+pub trait FunctionCallSubmitter: Send + Sync + Clone + 'static {
+    async fn submit_function_call_tx(
         &self,
-        /// Key with which this transaction should be signed
-        signer: TransactionSigner,
-        /// contract on which this method should be called
+        signer: Arc<TransactionSigner>,
         receiver_id: AccountId,
-        /// method name to call
         method_name: String,
-        /// arguments for the method
         args: Vec<u8>,
-        /// deposit amount
-        deposit: Near,
-        /// gas to attach
         gas: Gas,
-    ) -> Result<CryptoHash, TxSignerError>;
+    ) -> Result<CryptoHash, ChainGatewayError>;
 }
 
-/// we will implement this for the view client
-trait LatestFinalBlock {
-    async fn latest_final_block(&self) -> Result<BlockView, Error>;
-}
+/// Production implementation backed by the nearcore RPC handler.
+pub struct NearTransactionSubmitter { /* ... */ }
 ```
 
-Additionally, we will expose the following types and methods (omitting internals, c.f. tx_signer.rs)
+`TransactionSigner` handles nonce management and ED25519 signing:
+
 ```rust
-pub struct TransactionSigner {
-    signing_key: SigningKey,
-    account_id: AccountId,
-    nonce: Mutex<u64>,
-}
+pub struct TransactionSigner { /* ... */ }
 
 impl TransactionSigner {
-    pub fn from_key(account_id: AccountId, signing_key: SigningKey) -> Self {
-        TransactionSigner {
-            account_id,
-            signing_key,
-            nonce: Mutex::new(0),
-        }
-    }
-    /// might be good to expose
-    pub fn public_key(&self) -> VerifyingKey {
-        self.signing_key.verifying_key()
-    }
+    pub fn from_key(account_id: AccountId, signing_key: SigningKey) -> Self;
+    pub fn public_key(&self) -> VerifyingKey;
 }
 ```
 
 ## Testing
 
-- **Unit tests** use a `MockViewer` implementing the `ContractViewer` trait to test monitoring
+- **State viewer unit tests** use a `MockViewer` implementing the `ContractViewer` trait to test monitoring
   and subscription logic without a real NEAR node (see `src/state_viewer/monitoring.rs`).
   `MockViewer` is also available to downstream crates behind the `test-utils` feature
   (see `src/state_viewer/mock_viewer.rs`).
+- **Transaction sender unit tests** use an internal `MockTransactionSubmitter` to verify
+  the `FunctionCallSubmitter` blanket impl (signing, nonce, error propagation).
+  Downstream crates can implement `FunctionCallSubmitter` directly for their own mocks.
 - **Integration tests** start a full in-process NEAR node with a WAT contract embedded in genesis,
   exercising the complete path through the actor system (see `tests/state_viewer_integration.rs`).

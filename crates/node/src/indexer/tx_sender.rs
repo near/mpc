@@ -4,8 +4,7 @@ use super::MpcContractStateViewer;
 use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;
-use chain_gateway::transaction_sender::TransactionSigner;
-//use chain_gateway::chain_gateway::SharedContractViewer;
+use chain_gateway::transaction_sender::{FunctionCallSubmitter, NearTransactionSubmitter, TransactionSigner};
 use contract_interface::types::{Attestation, VerifiedAttestation};
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
@@ -50,7 +49,7 @@ impl TransactionProcessorHandle {
         config: RespondConfig,
         mpc_contract_id: AccountId,
         mpc_contract_state_viewer: MpcContractStateViewer,
-        tx_sender: Arc<chain_gateway::transaction_sender::TransactionSender>,
+        tx_sender: NearTransactionSubmitter,
     ) -> anyhow::Result<impl TransactionSender> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
             .context("Failed to initialize transaction signers")?;
@@ -274,7 +273,7 @@ async fn observe_tx_result(
 /// Will make up to `num_attempts` attempts.
 async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
-    tx_sender: Arc<chain_gateway::transaction_sender::TransactionSender>,
+    tx_sender: NearTransactionSubmitter,
     contract_id: near_account_id::AccountId,
     request: ChainSendTransactionRequest,
     params_ser: String,

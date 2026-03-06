@@ -107,7 +107,7 @@ pub fn spawn_real_indexer(
                 respond_config_clone,
                 indexer_state.mpc_contract_id.clone(),
                 mpc_contract_state_viewer.clone(),
-                transaction_sender.into(),
+                transaction_sender,
             );
 
             let Ok(txn_sender) = txn_sender_result else {
