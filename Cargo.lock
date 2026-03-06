@@ -4926,7 +4926,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-interface"
-version = "3.5.1"
+version = "3.6.0"
 dependencies = [
  "assert_matches",
  "bounded-collections",
@@ -10593,7 +10593,7 @@ dependencies = [
 
 [[package]]
 name = "tee-launcher"
-version = "3.5.1"
+version = "3.6.0"
 dependencies = [
  "assert_matches",
  "backon",
