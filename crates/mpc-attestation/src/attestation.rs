@@ -32,12 +32,20 @@ pub enum Attestation {
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub enum VerifiedAttestation {
     Dstack(ValidatedDstackAttestation),
     Mock(MockAttestation),
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub enum MockAttestation {
     #[default]
     /// Always pass validation
@@ -54,6 +62,10 @@ pub enum MockAttestation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct ValidatedDstackAttestation {
     pub mpc_image_hash: MpcDockerImageHash,
     pub launcher_compose_hash: LauncherDockerComposeHash,

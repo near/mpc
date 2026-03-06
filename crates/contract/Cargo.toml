@@ -41,11 +41,16 @@ test-utils = ["rand", "threshold-signatures", "contract-interface/blstrs"]
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
 dev-utils = ["rand", "threshold-signatures", "contract-interface/blstrs"]
-abi = ["borsh/unstable__schema", "mpc-primitives/abi", "contract-interface/abi"]
+abi = [
+    "borsh/unstable__schema",
+    "contract-interface/abi",
+    "mpc-attestation/abi",
+    "mpc-primitives/abi",
+]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
 # if it appears under wasm32 target, it will break compilation too.
-__abi-generate = ["near-sdk/__abi-generate"]
+__abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
 anyhow = { workspace = true }

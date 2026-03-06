@@ -166,9 +166,13 @@ impl DstackAttestation {
                     return Err(VerificationError::EventDecoding(hex::encode(*event.digest)));
                 }
             };
-            let expected_digest =
+            let expected_event_digest =
                 Self::event_digest(event.event_type, &event.event, &payload_bytes);
-            compare_hashes("event_digest", event.digest.as_slice(), &expected_digest)?;
+            compare_hashes(
+                "event_digest",
+                event.digest.as_slice(),
+                &expected_event_digest,
+            )?;
 
             hasher.update(event.digest.as_slice());
 

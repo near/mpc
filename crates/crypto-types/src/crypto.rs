@@ -12,12 +12,54 @@ const BLS12381G2_PUBLIC_KEY_SIZE: usize = 96;
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(schemars::JsonSchema)
 )]
 pub enum PublicKey {
     Secp256k1(Secp256k1PublicKey),
     Ed25519(Ed25519PublicKey),
     Bls12381(Bls12381G2PublicKey),
+}
+
+// Manual BorshSchema impl to avoid name collision with near_sdk::PublicKey
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl borsh::BorshSchema for PublicKey {
+    fn declaration() -> borsh::schema::Declaration {
+        "MpcPublicKey".to_string()
+    }
+
+    fn add_definitions_recursively(
+        definitions: &mut borsh::__private::maybestd::collections::BTreeMap<
+            borsh::schema::Declaration,
+            borsh::schema::Definition,
+        >,
+    ) {
+        <Secp256k1PublicKey as borsh::BorshSchema>::add_definitions_recursively(definitions);
+        <Ed25519PublicKey as borsh::BorshSchema>::add_definitions_recursively(definitions);
+        <Bls12381G2PublicKey as borsh::BorshSchema>::add_definitions_recursively(definitions);
+        definitions.insert(
+            Self::declaration(),
+            borsh::schema::Definition::Enum {
+                tag_width: 1,
+                variants: vec![
+                    (
+                        0,
+                        "Secp256k1".to_string(),
+                        <Secp256k1PublicKey as borsh::BorshSchema>::declaration(),
+                    ),
+                    (
+                        1,
+                        "Ed25519".to_string(),
+                        <Ed25519PublicKey as borsh::BorshSchema>::declaration(),
+                    ),
+                    (
+                        2,
+                        "Bls12381".to_string(),
+                        <Bls12381G2PublicKey as borsh::BorshSchema>::declaration(),
+                    ),
+                ],
+            },
+        );
+    }
 }
 
 #[derive(

@@ -4,6 +4,9 @@ version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
 
+[features]
+abi = ["borsh/unstable__schema", "mpc-primitives/abi"]
+
 [dependencies]
 attestation = { workspace = true }
 borsh = { workspace = true }
