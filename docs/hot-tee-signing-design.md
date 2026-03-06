@@ -80,12 +80,13 @@ class RPC ext;
 
 ### Shared Components
 
-The Archive Signer is built on three reusable layers from this repository (bottom-up):
+The Archive Signer is built on three reusable layers from this repository (bottom-up). The boot, attestation, governance, and upgrade flows these layers follow are described in the [TEE Lifecycle][tee-lifecycle] doc.
 
 - **[Embedded Indexer Node](#embedded-indexer-node)** — runs a full `near-indexer` (including `neard`) inside the CVM for trustless NEAR chain access.
 - **[Chain Gateway][indexer-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
-- **TEE Context** — sits on top of the Chain Gateway; manages the attestation lifecycle: polls allowed image hashes, periodically submits attestation quotes, and monitors for attestation removal. Depends on [`tee-authority`][tee-authority] (attestation generation) and [`mpc-attestation`][mpc-attestation] (on-chain verification).
+- **[TEE Context][tee-context]** — sits on top of the Chain Gateway; manages the attestation lifecycle: polls allowed image hashes, periodically submits attestation quotes, and monitors for attestation removal. Depends on [`tee-authority`][tee-authority] (attestation generation) and [`mpc-attestation`][mpc-attestation] (on-chain verification).
 
+[tee-lifecycle]: tee-lifecycle.md
 [indexer-design]: indexer-design.md
 [tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
 [mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
@@ -218,9 +219,9 @@ If verification fails, the application logs the error and exits without starting
 
 ## TEE Context
 
-The TEE Context is described in the [TEE Lifecycle][tee-context] doc. It is a shared crate managing the attestation lifecycle — polling allowed hashes, periodic attestation submission, attestation removal monitoring, and polling foreign chain policy. The Archive Signer uses it directly, configured to talk to the HOT governance contract. The foreign chain policy task provides the active `ForeignChainPolicy` to the validation SDK so it knows which RPC providers to trust for each chain.
+The TEE Context is described in the [TEE Context design doc][tee-context]. It is a shared crate managing the attestation lifecycle — polling allowed hashes, periodic attestation submission, attestation removal monitoring, and polling foreign chain policy. The Archive Signer uses it directly, configured to talk to the HOT governance contract. The foreign chain policy task provides the active `ForeignChainPolicy` to the validation SDK so it knows which RPC providers to trust for each chain.
 
-[tee-context]: tee-lifecycle.md#tee-context
+[tee-context]: tee-context-design.md
 
 ## HTTP Signing API
 
@@ -417,7 +418,7 @@ Launcher compose hash derivation follows the standard mechanism described in [TE
 
 The generic CVM boot sequence is described in [TEE Lifecycle: CVM Boot Sequence][tee-boot-sequence]. The diagram below extends it with Archive Signer-specific key import steps.
 
-[tee-boot-sequence]: tee-lifecycle.md#cvm-boot-sequence-launcher-pattern
+[tee-boot-sequence]: tee-lifecycle.md#boot
 
 ```mermaid
 sequenceDiagram
@@ -479,7 +480,7 @@ Attestation generation and on-chain verification follow the standard TEE lifecyc
 
 Application upgrades follow the standard [Launcher pattern][tee-upgrade]: governors vote for a new Docker image hash, the running app detects the update, the operator restarts the CVM, and the new app reattests. See [TEE Lifecycle: Application Upgrade][tee-upgrade] for the full flow.
 
-[tee-upgrade]: tee-lifecycle.md#application-upgrade
+[tee-upgrade]: tee-lifecycle.md#upgrade
 
 ## Redundancy and Recovery
 
