@@ -14,7 +14,7 @@ mod solana;
 mod starknet;
 
 pub use abstract_chain::{AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig};
-pub use auth::{AuthConfig, TokenConfig, REDACTED_TOKEN};
+pub use auth::{AuthConfig, TokenConfig};
 pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
 pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
 pub use solana::{SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig};
@@ -37,18 +37,6 @@ pub struct ForeignChainsConfig {
 }
 
 impl ForeignChainsConfig {
-    /// Returns a copy with all secret values (tokens, embedded URL credentials)
-    /// replaced by safe placeholders.
-    pub(crate) fn redacted(&self) -> Self {
-        Self {
-            solana: self.solana.as_ref().map(|c| c.redacted()),
-            bitcoin: self.bitcoin.as_ref().map(|c| c.redacted()),
-            ethereum: self.ethereum.as_ref().map(|c| c.redacted()),
-            abstract_chain: self.abstract_chain.as_ref().map(|c| c.redacted()),
-            starknet: self.starknet.as_ref().map(|c| c.redacted()),
-        }
-    }
-
     pub fn is_empty(&self) -> bool {
         self.solana.is_none()
             && self.bitcoin.is_none()

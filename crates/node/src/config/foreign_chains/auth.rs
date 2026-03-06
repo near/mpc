@@ -6,9 +6,6 @@ use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
-/// Placeholder that replaces secret token values in redacted output.
-pub const REDACTED_TOKEN: &str = "***";
-
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -33,30 +30,6 @@ pub enum AuthConfig {
 }
 
 impl AuthConfig {
-    /// Returns a copy with all [`TokenConfig`] values redacted.
-    pub fn redacted(&self) -> Self {
-        match self {
-            AuthConfig::None => AuthConfig::None,
-            AuthConfig::Header {
-                name,
-                scheme,
-                token,
-            } => AuthConfig::Header {
-                name: name.clone(),
-                scheme: scheme.clone(),
-                token: token.redacted(),
-            },
-            AuthConfig::Path { placeholder, token } => AuthConfig::Path {
-                placeholder: placeholder.clone(),
-                token: token.redacted(),
-            },
-            AuthConfig::Query { name, token } => AuthConfig::Query {
-                name: name.clone(),
-                token: token.redacted(),
-            },
-        }
-    }
-
     /// Returns the RPC URL with auth placeholders stripped.
     ///
     /// For `Path` auth, removes the placeholder string from the URL (returning an owned `String`).
@@ -77,19 +50,6 @@ pub enum TokenConfig {
 }
 
 impl TokenConfig {
-    /// Returns a copy with secret values replaced by [`REDACTED_TOKEN`].
-    ///
-    /// `Env` variants keep the environment-variable name (it is not a secret),
-    /// while `Val` variants have their plaintext value masked.
-    pub fn redacted(&self) -> Self {
-        match self {
-            TokenConfig::Env { env } => TokenConfig::Env { env: env.clone() },
-            TokenConfig::Val { .. } => TokenConfig::Val {
-                val: REDACTED_TOKEN.to_string(),
-            },
-        }
-    }
-
     pub fn resolve(&self) -> anyhow::Result<String> {
         match self {
             TokenConfig::Env { env } => {
@@ -223,100 +183,5 @@ mod tests {
         let result = auth.strip_placeholder(url);
         assert_matches!(result, Cow::Owned(_));
         assert_eq!(result, "https://rpc.ankr.com/near/");
-    }
-
-    // ---- redacted() tests ----
-
-    #[test]
-    fn token_config_redacted__masks_val() {
-        let token = TokenConfig::Val {
-            val: "super-secret".to_string(),
-        };
-        assert_eq!(
-            token.redacted(),
-            TokenConfig::Val {
-                val: REDACTED_TOKEN.to_string()
-            }
-        );
-    }
-
-    #[test]
-    fn token_config_redacted__preserves_env_name() {
-        let token = TokenConfig::Env {
-            env: "MY_API_KEY".to_string(),
-        };
-        assert_eq!(
-            token.redacted(),
-            TokenConfig::Env {
-                env: "MY_API_KEY".to_string()
-            }
-        );
-    }
-
-    #[test]
-    fn auth_config_redacted__none_stays_none() {
-        assert_eq!(AuthConfig::None.redacted(), AuthConfig::None);
-    }
-
-    #[test]
-    fn auth_config_redacted__header_masks_token() {
-        let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("authorization"),
-            scheme: Some("Bearer".to_string()),
-            token: TokenConfig::Val {
-                val: "secret".to_string(),
-            },
-        };
-        let redacted = auth.redacted();
-        assert_eq!(
-            redacted,
-            AuthConfig::Header {
-                name: http::HeaderName::from_static("authorization"),
-                scheme: Some("Bearer".to_string()),
-                token: TokenConfig::Val {
-                    val: REDACTED_TOKEN.to_string()
-                },
-            }
-        );
-    }
-
-    #[test]
-    fn auth_config_redacted__path_masks_token() {
-        let auth = AuthConfig::Path {
-            placeholder: "{key}".to_string(),
-            token: TokenConfig::Val {
-                val: "secret".to_string(),
-            },
-        };
-        let redacted = auth.redacted();
-        assert_eq!(
-            redacted,
-            AuthConfig::Path {
-                placeholder: "{key}".to_string(),
-                token: TokenConfig::Val {
-                    val: REDACTED_TOKEN.to_string()
-                },
-            }
-        );
-    }
-
-    #[test]
-    fn auth_config_redacted__query_masks_token() {
-        let auth = AuthConfig::Query {
-            name: "api_key".to_string(),
-            token: TokenConfig::Val {
-                val: "secret".to_string(),
-            },
-        };
-        let redacted = auth.redacted();
-        assert_eq!(
-            redacted,
-            AuthConfig::Query {
-                name: "api_key".to_string(),
-                token: TokenConfig::Val {
-                    val: REDACTED_TOKEN.to_string()
-                },
-            }
-        );
     }
 }

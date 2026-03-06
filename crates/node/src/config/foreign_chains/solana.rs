@@ -14,13 +14,6 @@ pub struct SolanaChainConfig {
 }
 
 impl SolanaChainConfig {
-    pub(crate) fn redacted(&self) -> Self {
-        Self {
-            providers: self.providers.clone().map(|k, v| (k, v.redacted())),
-            ..self.clone()
-        }
-    }
-
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
         foreign_chains::validate_chain_config(
             "solana",
@@ -37,15 +30,6 @@ pub struct SolanaProviderConfig {
     pub api_variant: SolanaApiVariant,
     #[serde(default)]
     pub auth: auth::AuthConfig,
-}
-
-impl SolanaProviderConfig {
-    pub(crate) fn redacted(&self) -> Self {
-        Self {
-            auth: self.auth.redacted(),
-            ..self.clone()
-        }
-    }
 }
 
 impl ForeignChainProviderConfig for SolanaProviderConfig {

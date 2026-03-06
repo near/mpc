@@ -14,13 +14,6 @@ pub struct EthereumChainConfig {
 }
 
 impl EthereumChainConfig {
-    pub(crate) fn redacted(&self) -> Self {
-        Self {
-            providers: self.providers.clone().map(|k, v| (k, v.redacted())),
-            ..self.clone()
-        }
-    }
-
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
         foreign_chains::validate_chain_config(
             "ethereum",
@@ -37,15 +30,6 @@ pub struct EthereumProviderConfig {
     pub api_variant: EthereumApiVariant,
     #[serde(default)]
     pub auth: auth::AuthConfig,
-}
-
-impl EthereumProviderConfig {
-    pub(crate) fn redacted(&self) -> Self {
-        Self {
-            auth: self.auth.redacted(),
-            ..self.clone()
-        }
-    }
 }
 
 impl ForeignChainProviderConfig for EthereumProviderConfig {

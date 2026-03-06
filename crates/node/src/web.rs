@@ -1,6 +1,10 @@
 use crate::config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SecretsConfig, SignatureConfig, TripleConfig,
+    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
+    BitcoinChainConfig, BitcoinProviderConfig, CKDConfig, ConfigFile, EthereumApiVariant,
+    EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig, IndexerConfig, KeygenConfig,
+    PresignatureConfig, SecretsConfig, SignatureConfig, SolanaApiVariant, SolanaChainConfig,
+    SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
+    TripleConfig,
 };
 use crate::indexer::migrations::ContractMigrationInfo;
 use crate::tracking::TaskHandle;
@@ -19,6 +23,7 @@ use near_account_id::AccountId;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
@@ -54,6 +59,19 @@ pub(crate) async fn metrics() -> String {
     String::from_utf8(buffer).unwrap()
 }
 
+#[derive(Clone)]
+struct WebServerState {
+    /// Root task handle for the whole program.
+    root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
+    /// Sender for debug requests that need the MPC client to respond.
+    debug_request_sender: broadcast::Sender<DebugRequest>,
+    /// Receiver for contract state
+    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
+    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    static_web_data: StaticWebData,
+    node_config: NodeConfigResponse,
+}
+
 /// Safe duplicate of ConfigFile for the debug endpoint.
 /// This struct is intentionally decoupled from ConfigFile so that if secret
 /// fields are added to ConfigFile in the future, they won't be leaked via
@@ -74,7 +92,7 @@ struct NodeConfigResponse {
     signature: SignatureConfig,
     ckd: CKDConfig,
     keygen: KeygenConfig,
-    foreign_chains: ForeignChainsConfig,
+    foreign_chains: ForeignChains,
     cores: Option<usize>,
 }
 
@@ -93,23 +111,224 @@ impl From<&ConfigFile> for NodeConfigResponse {
             signature: config.signature.clone(),
             ckd: config.ckd.clone(),
             keygen: config.keygen.clone(),
-            foreign_chains: config.foreign_chains.redacted(),
+            foreign_chains: ForeignChains::from(&config.foreign_chains),
             cores: config.cores,
         }
     }
 }
 
-#[derive(Clone)]
-struct WebServerState {
-    /// Root task handle for the whole program.
-    root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
-    /// Sender for debug requests that need the MPC client to respond.
-    debug_request_sender: broadcast::Sender<DebugRequest>,
-    /// Receiver for contract state
-    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
-    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
-    static_web_data: StaticWebData,
-    node_config: NodeConfigResponse,
+// ---------------------------------------------------------------------------
+// API-safe duplicates of foreign-chain config types.
+// These deliberately omit sensitive fields (auth tokens, credentials) so they
+// can never be leaked through the debug endpoint.
+// Ordered so that each parent struct appears before the children it contains.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct ForeignChains {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    solana: Option<SolanaChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bitcoin: Option<BitcoinChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ethereum: Option<EthereumChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "abstract")]
+    abstract_chain: Option<AbstractChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    starknet: Option<StarknetChain>,
+}
+
+impl From<&ForeignChainsConfig> for ForeignChains {
+    fn from(config: &ForeignChainsConfig) -> Self {
+        Self {
+            solana: config.solana.as_ref().map(Into::into),
+            bitcoin: config.bitcoin.as_ref().map(Into::into),
+            ethereum: config.ethereum.as_ref().map(Into::into),
+            abstract_chain: config.abstract_chain.as_ref().map(Into::into),
+            starknet: config.starknet.as_ref().map(Into::into),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct SolanaChain {
+    timeout_sec: u64,
+    max_retries: u64,
+    providers: BTreeMap<String, SolanaProvider>,
+}
+
+impl From<&SolanaChainConfig> for SolanaChain {
+    fn from(config: &SolanaChainConfig) -> Self {
+        Self {
+            timeout_sec: config.timeout_sec,
+            max_retries: config.max_retries,
+            providers: config
+                .providers
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct SolanaProvider {
+    rpc_url: String,
+    api_variant: SolanaApiVariant,
+}
+
+impl From<&SolanaProviderConfig> for SolanaProvider {
+    fn from(config: &SolanaProviderConfig) -> Self {
+        Self {
+            rpc_url: config.rpc_url.clone(),
+            api_variant: config.api_variant,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct BitcoinChain {
+    timeout_sec: u64,
+    max_retries: u64,
+    providers: BTreeMap<String, BitcoinProvider>,
+}
+
+impl From<&BitcoinChainConfig> for BitcoinChain {
+    fn from(config: &BitcoinChainConfig) -> Self {
+        Self {
+            timeout_sec: config.timeout_sec,
+            max_retries: config.max_retries,
+            providers: config
+                .providers
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct BitcoinProvider {
+    rpc_url: String,
+    api_variant: BitcoinApiVariant,
+}
+
+impl From<&BitcoinProviderConfig> for BitcoinProvider {
+    fn from(config: &BitcoinProviderConfig) -> Self {
+        Self {
+            rpc_url: config.rpc_url.clone(),
+            api_variant: config.api_variant,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct EthereumChain {
+    timeout_sec: u64,
+    max_retries: u64,
+    providers: BTreeMap<String, EthereumProvider>,
+}
+
+impl From<&EthereumChainConfig> for EthereumChain {
+    fn from(config: &EthereumChainConfig) -> Self {
+        Self {
+            timeout_sec: config.timeout_sec,
+            max_retries: config.max_retries,
+            providers: config
+                .providers
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct EthereumProvider {
+    rpc_url: String,
+    api_variant: EthereumApiVariant,
+}
+
+impl From<&EthereumProviderConfig> for EthereumProvider {
+    fn from(config: &EthereumProviderConfig) -> Self {
+        Self {
+            rpc_url: config.rpc_url.clone(),
+            api_variant: config.api_variant,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct AbstractChain {
+    timeout_sec: u64,
+    max_retries: u64,
+    providers: BTreeMap<String, AbstractProvider>,
+}
+
+impl From<&AbstractChainConfig> for AbstractChain {
+    fn from(config: &AbstractChainConfig) -> Self {
+        Self {
+            timeout_sec: config.timeout_sec,
+            max_retries: config.max_retries,
+            providers: config
+                .providers
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct AbstractProvider {
+    rpc_url: String,
+    api_variant: AbstractApiVariant,
+}
+
+impl From<&AbstractProviderConfig> for AbstractProvider {
+    fn from(config: &AbstractProviderConfig) -> Self {
+        Self {
+            rpc_url: config.rpc_url.clone(),
+            api_variant: config.api_variant,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct StarknetChain {
+    timeout_sec: u64,
+    max_retries: u64,
+    providers: BTreeMap<String, StarknetProvider>,
+}
+
+impl From<&StarknetChainConfig> for StarknetChain {
+    fn from(config: &StarknetChainConfig) -> Self {
+        Self {
+            timeout_sec: config.timeout_sec,
+            max_retries: config.max_retries,
+            providers: config
+                .providers
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct StarknetProvider {
+    rpc_url: String,
+    api_variant: StarknetApiVariant,
+}
+
+impl From<&StarknetProviderConfig> for StarknetProvider {
+    fn from(config: &StarknetProviderConfig) -> Self {
+        Self {
+            rpc_url: config.rpc_url.clone(),
+            api_variant: config.api_variant,
+        }
+    }
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -294,20 +513,14 @@ pub async fn start_web_server(
 mod tests {
     use super::*;
     use crate::config::SyncMode;
-    use crate::config::{
-        AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, AuthConfig,
-        BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, EthereumApiVariant,
-        EthereumChainConfig, EthereumProviderConfig, SolanaApiVariant, SolanaChainConfig,
-        SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
-        TokenConfig, REDACTED_TOKEN,
-    };
+    use crate::config::{AuthConfig, TokenConfig};
     use bounded_collections::NonEmptyBTreeMap;
     use near_indexer_primitives::types::Finality;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
 
     /// Builds a [`ConfigFile`] with one provider per chain, each exercising a
-    /// different [`AuthConfig`] variant so every redaction path is covered.
+    /// different [`AuthConfig`] variant so every conversion path is covered.
     fn test_config() -> ConfigFile {
         ConfigFile {
             my_near_account_id: AccountId::from_str("test.near").unwrap(),
@@ -376,7 +589,7 @@ mod tests {
                         },
                     ),
                 }),
-                // Query auth with Env token (env name should be preserved)
+                // Query auth with Env token
                 ethereum: Some(EthereumChainConfig {
                     timeout_sec: 30,
                     max_retries: 3,
@@ -431,80 +644,142 @@ mod tests {
     }
 
     #[test]
-    fn node_config_response_from__redacts_header_val_token() {
-        let response = NodeConfigResponse::from(&test_config());
+    fn node_config_response_from__omits_auth_from_solana_provider() {
+        // Given
+        let config = test_config();
+
+        // When
+        let response = NodeConfigResponse::from(&config);
+
+        // Then
         let provider = &response.foreign_chains.solana.unwrap().providers["alchemy"];
-
-        assert_eq!(provider.rpc_url, "https://solana-mainnet.g.alchemy.com/v2/");
         assert_eq!(
-            provider.auth,
-            AuthConfig::Header {
-                name: http::HeaderName::from_static("authorization"),
-                scheme: Some("Bearer".to_string()),
-                token: TokenConfig::Val {
-                    val: REDACTED_TOKEN.to_string()
-                },
+            *provider,
+            SolanaProvider {
+                rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
+                api_variant: SolanaApiVariant::Alchemy,
             }
         );
     }
 
     #[test]
-    fn node_config_response_from__redacts_path_val_token() {
-        let response = NodeConfigResponse::from(&test_config());
+    fn node_config_response_from__omits_auth_from_bitcoin_provider() {
+        // Given
+        let config = test_config();
+
+        // When
+        let response = NodeConfigResponse::from(&config);
+
+        // Then
         let provider = &response.foreign_chains.bitcoin.unwrap().providers["ankr"];
-
-        assert_eq!(provider.rpc_url, "https://rpc.ankr.com/btc/{api_key}");
         assert_eq!(
-            provider.auth,
-            AuthConfig::Path {
-                placeholder: "{api_key}".to_string(),
-                token: TokenConfig::Val {
-                    val: REDACTED_TOKEN.to_string()
-                },
+            *provider,
+            BitcoinProvider {
+                rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
+                api_variant: BitcoinApiVariant::Standard,
             }
         );
     }
 
     #[test]
-    fn node_config_response_from__preserves_env_token_name() {
-        let response = NodeConfigResponse::from(&test_config());
+    fn node_config_response_from__omits_auth_from_ethereum_provider() {
+        // Given
+        let config = test_config();
+
+        // When
+        let response = NodeConfigResponse::from(&config);
+
+        // Then
         let provider = &response.foreign_chains.ethereum.unwrap().providers["alchemy"];
-
-        assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
         assert_eq!(
-            provider.auth,
-            AuthConfig::Query {
-                name: "api_key".to_string(),
-                token: TokenConfig::Env {
-                    env: "ALCHEMY_API_KEY".to_string()
-                },
+            *provider,
+            EthereumProvider {
+                rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
+                api_variant: EthereumApiVariant::Alchemy,
             }
         );
     }
 
     #[test]
-    fn node_config_response_from__preserves_none_auth() {
-        let response = NodeConfigResponse::from(&test_config());
-        let provider = &response.foreign_chains.abstract_chain.unwrap().providers["public"];
+    fn node_config_response_from__omits_auth_from_abstract_provider() {
+        // Given
+        let config = test_config();
 
-        assert_eq!(provider.rpc_url, "https://api.testnet.abs.xyz");
-        assert_eq!(provider.auth, AuthConfig::None);
+        // When
+        let response = NodeConfigResponse::from(&config);
+
+        // Then
+        let provider = &response.foreign_chains.abstract_chain.unwrap().providers["public"];
+        assert_eq!(
+            *provider,
+            AbstractProvider {
+                rpc_url: "https://api.testnet.abs.xyz".to_string(),
+                api_variant: AbstractApiVariant::Standard,
+            }
+        );
     }
 
     #[test]
-    fn node_config_response_from__redacts_query_val_token() {
-        let response = NodeConfigResponse::from(&test_config());
-        let provider = &response.foreign_chains.starknet.unwrap().providers["blast"];
+    fn node_config_response_from__omits_auth_from_starknet_provider() {
+        // Given
+        let config = test_config();
 
-        assert_eq!(provider.rpc_url, "https://starknet-mainnet.blastapi.io/");
+        // When
+        let response = NodeConfigResponse::from(&config);
+
+        // Then
+        let provider = &response.foreign_chains.starknet.unwrap().providers["blast"];
         assert_eq!(
-            provider.auth,
-            AuthConfig::Query {
-                name: "api_key".to_string(),
-                token: TokenConfig::Val {
-                    val: REDACTED_TOKEN.to_string()
-                },
+            *provider,
+            StarknetProvider {
+                rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
+                api_variant: StarknetApiVariant::Blast,
             }
+        );
+    }
+
+    #[test]
+    fn node_config_response_from__preserves_chain_level_fields() {
+        // Given
+        let config = test_config();
+
+        // When
+        let response = NodeConfigResponse::from(&config);
+
+        // Then
+        let solana = response.foreign_chains.solana.unwrap();
+        assert_eq!(solana.timeout_sec, 30);
+        assert_eq!(solana.max_retries, 3);
+    }
+
+    #[test]
+    fn node_config_response_json__does_not_contain_auth() {
+        // Given
+        let config = test_config();
+
+        // When
+        let json = serde_json::to_string(&NodeConfigResponse::from(&config)).unwrap();
+
+        // Then
+        assert!(
+            !json.contains("auth"),
+            "JSON response must not contain auth fields, got: {json}"
+        );
+        assert!(
+            !json.contains("token"),
+            "JSON response must not contain token fields, got: {json}"
+        );
+        assert!(
+            !json.contains("sk-SUPER-SECRET-KEY"),
+            "JSON response must not contain secret values"
+        );
+        assert!(
+            !json.contains("ankr-secret-token"),
+            "JSON response must not contain secret values"
+        );
+        assert!(
+            !json.contains("blast-secret"),
+            "JSON response must not contain secret values"
         );
     }
 }

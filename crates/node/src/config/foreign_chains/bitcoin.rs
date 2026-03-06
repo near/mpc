@@ -14,13 +14,6 @@ pub struct BitcoinChainConfig {
 }
 
 impl BitcoinChainConfig {
-    pub(crate) fn redacted(&self) -> Self {
-        Self {
-            providers: self.providers.clone().map(|k, v| (k, v.redacted())),
-            ..self.clone()
-        }
-    }
-
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
         foreign_chains::validate_chain_config(
             "bitcoin",
@@ -37,15 +30,6 @@ pub struct BitcoinProviderConfig {
     pub api_variant: BitcoinApiVariant,
     #[serde(default)]
     pub auth: auth::AuthConfig,
-}
-
-impl BitcoinProviderConfig {
-    pub(crate) fn redacted(&self) -> Self {
-        Self {
-            auth: self.auth.redacted(),
-            ..self.clone()
-        }
-    }
 }
 
 impl ForeignChainProviderConfig for BitcoinProviderConfig {
