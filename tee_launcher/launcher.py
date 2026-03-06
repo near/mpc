@@ -147,7 +147,7 @@ DENIED_CONTAINER_ENV_KEYS = {
 ALLOWED_MPC_ENV_VARS = {
     "MPC_ACCOUNT_ID",  # ID of the MPC account on the network
     "MPC_LOCAL_ADDRESS",  # Local IP address or hostname used by the MPC node
-    "MPC_SECRET_STORE_KEY",  # Key used to encrypt/decrypt secrets // Isn't this deprecated?,
+    "MPC_SECRET_STORE_KEY",  # Key used to encrypt/decrypt secrets
     "MPC_CONTRACT_ID",  # Contract ID associated with the MPC node
     "MPC_ENV",  # Environment (e.g., 'testnet', 'mainnet')
     "MPC_HOME_DIR",  # Home directory for the MPC node
@@ -242,7 +242,6 @@ def is_safe_port_mapping(mapping: str) -> bool:
 
 
 def remove_existing_container():
-    # changed in rust, no point checking current container exists. Just send shutdown signal to MPC_CONTAINER_NAME
     """Stop and remove the MPC container if it exists."""
     try:
         containers = check_output(
@@ -261,7 +260,6 @@ class ImageSpec:
     image_name: str
     registry: str
 
-    # TODO: This post validation is not covered
     def __post_init__(self):
         if not self.tags or not all(is_non_empty_and_cleaned(tag) for tag in self.tags):
             raise ValueError(
