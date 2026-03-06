@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use crate::near_internals_wrapper::errors::RpcClientError;
+use crate::near_internals_wrapper::traits::SignedTransactionSubmitter;
 
 #[derive(Clone)]
 pub(crate) struct RpcHandlerWrapper {
@@ -14,12 +17,16 @@ impl RpcHandlerWrapper {
     ) -> Self {
         Self { rpc_handler }
     }
+}
 
+#[async_trait]
+impl SignedTransactionSubmitter for RpcHandlerWrapper {
+    type Error = RpcClientError;
     /// Creates, signs, and submits a function call with the given method and serialized arguments.
-    pub(crate) async fn submit_tx(
+    async fn submit_signed_transaction(
         &self,
         transaction: near_indexer::near_primitives::transaction::SignedTransaction,
-    ) -> Result<(), RpcClientError> {
+    ) -> Result<(), Self::Error> {
         let response = near_async::messaging::CanSendAsync::send_async(
             &self.rpc_handler,
             near_client::ProcessTxRequest {

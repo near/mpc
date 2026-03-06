@@ -1,4 +1,7 @@
+// todo: unify this with a MockState
+
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
+use crate::near_internals_wrapper::traits::{HasSyncChecker, SyncChecker, ViewFunctionQuerier};
 use crate::state_viewer::ContractViewer;
 use crate::types::RawObservedState;
 use async_trait::async_trait;
@@ -6,8 +9,6 @@ use near_account_id::AccountId;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-
-use super::HasContractViewer;
 
 ///
 /// # Example
@@ -65,6 +66,16 @@ pub struct MockViewer {
     inner: Arc<Mutex<MockViewerState>>,
 }
 
+impl ContractViewer for MockViewer {}
+
+#[async_trait]
+impl SyncChecker for MockViewer {
+    type Error = std::io::Error;
+    async fn is_syncing(&self) -> Result<bool, Self::Error> {
+        return Ok(false);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Call {
     pub contract_id: AccountId,
@@ -79,13 +90,14 @@ struct MockViewerState {
 }
 
 #[async_trait]
-impl ContractViewer for MockViewer {
-    async fn view(
+impl ViewFunctionQuerier for MockViewer {
+    type Error = ChainGatewayError;
+    async fn view_function_query(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> Result<RawObservedState, ChainGatewayError> {
+    ) -> Result<RawObservedState, Self::Error> {
         let call = Call {
             contract_id: contract_id.clone(),
             method_name: method_name.to_string(),
@@ -99,27 +111,13 @@ impl ContractViewer for MockViewer {
             inner.current_value.clone()
         } else {
             inner.num_unexpected_calls += 1;
-            Err(ChainGatewayError::ViewClient {
-                op: ChainGatewayOp::ViewCall {
-                    account_id: contract_id.to_string(),
-                    method_name: method_name.to_string(),
-                },
-                source: Arc::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "unexpected mock call",
-                )),
-            })
+            // todo: make this proper
+            Err(ChainGatewayError::MonitoringClosed)
         }
     }
 }
 
-impl HasContractViewer for MockViewer {
-    type Viewer = Self;
-    fn get_viewer(&self) -> &Self::Viewer {
-        self
-    }
-}
-
+// todo: make custom error types
 impl MockViewer {
     pub fn new(expected_call: Call, value: Result<RawObservedState, ChainGatewayError>) -> Self {
         Self {

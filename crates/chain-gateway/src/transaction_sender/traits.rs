@@ -6,37 +6,18 @@ use near_indexer_primitives::types::Gas;
 use std::sync::Arc;
 
 use crate::errors::ChainGatewayError;
+use crate::near_internals_wrapper::traits::{
+    LatestFinalBlockInfoFetcher, SignedTransactionSubmitter,
+};
 
 use super::TransactionSigner;
 
 /// Blanket-implemented for all `T: TransactionSubmitter` (internal, for testing).
 /// External users implement this trait directly for testing.
 #[async_trait]
-pub trait FunctionCallSubmitter: Send + Sync + Clone + 'static {
-    async fn submit_function_call_tx(
-        &self,
-        signer: Arc<TransactionSigner>,
-        receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
-    ) -> Result<CryptoHash, ChainGatewayError>;
-}
-
-/// Internal low-level seam combining block queries and tx submission.
-#[async_trait]
-pub(super) trait TransactionSubmitter: Send + Sync + Clone + 'static {
-    /// Returns (block_hash, block_height) of the latest finalized block.
-    async fn latest_final_block_info(&self) -> Result<(CryptoHash, u64), ChainGatewayError>;
-    /// Submits a pre-signed transaction to the network.
-    async fn submit_signed_tx(
-        &self,
-        transaction: SignedTransaction,
-    ) -> Result<(), ChainGatewayError>;
-}
-
-#[async_trait]
-impl<T: TransactionSubmitter + Send + Sync> FunctionCallSubmitter for T {
+pub trait FunctionCallSubmitter:
+    LatestFinalBlockInfoFetcher + SignedTransactionSubmitter + Send + Sync + Clone + 'static
+{
     async fn submit_function_call_tx(
         &self,
         signer: Arc<TransactionSigner>,
@@ -45,16 +26,17 @@ impl<T: TransactionSubmitter + Send + Sync> FunctionCallSubmitter for T {
         args: Vec<u8>,
         gas: Gas,
     ) -> Result<CryptoHash, ChainGatewayError> {
-        let (block_hash, block_height) = self.latest_final_block_info().await?;
+        // todo: simplify error handling
+        let info =
+            self.latest_final_block()
+                .await
+                .map_err(|err| ChainGatewayError::ViewClient {
+                    op: crate::errors::ChainGatewayOp::FetchFinalBlock,
+                    source: Arc::new(err),
+                })?;
 
-        let transaction = signer.create_and_sign_function_call_tx(
-            receiver_id,
-            method_name,
-            args,
-            gas,
-            block_hash,
-            block_height,
-        );
+        let transaction =
+            signer.create_and_sign_function_call_tx(receiver_id, method_name, args, gas, info);
 
         let tx_hash = transaction.get_hash();
 
@@ -64,16 +46,64 @@ impl<T: TransactionSubmitter + Send + Sync> FunctionCallSubmitter for T {
             nonce = transaction.transaction.nonce(),
             "sending transaction",
         );
-        self.submit_signed_tx(transaction).await?;
+        // todo: simplify error handling
+        self.submit_signed_transaction(transaction)
+            .await
+            .map_err(|err| ChainGatewayError::RpcClient {
+                source: Arc::new(err),
+            });
         Ok(tx_hash)
     }
 }
+//
+///// Internal low-level seam combining block queries and tx submission.
+//#[async_trait]
+//pub(super) trait TransactionSubmitter:
+//    LatestFinalBlockInfoFetcher + SignedTransactionSubmitter + Send + Sync + Clone + 'static
+//{
+//}
+//
+//#[async_trait]
+//impl<T: TransactionSubmitter + Send + Sync> FunctionCallSubmitter for T {
+//    async fn submit_function_call_tx(
+//        &self,
+//        signer: Arc<TransactionSigner>,
+//        receiver_id: AccountId,
+//        method_name: String,
+//        args: Vec<u8>,
+//        gas: Gas,
+//    ) -> Result<CryptoHash, ChainGatewayError> {
+//        let (block_hash, block_height) = self.latest_final_block_info().await?;
+//
+//        let transaction = signer.create_and_sign_function_call_tx(
+//            receiver_id,
+//            method_name,
+//            args,
+//            gas,
+//            block_hash,
+//            block_height,
+//        );
+//
+//        let tx_hash = transaction.get_hash();
+//
+//        tracing::info!(
+//            tx_hash = ?tx_hash,
+//            public_key = ?signer.public_key(),
+//            nonce = transaction.transaction.nonce(),
+//            "sending transaction",
+//        );
+//        self.submit_signed_tx(transaction).await?;
+//        Ok(tx_hash)
+//    }
+//}
 
 #[cfg(test)]
 mod tests {
+    use crate::types::LatestFinalBlockInfo;
+
     use super::*;
     use near_indexer_primitives::near_primitives::transaction::Transaction;
-    use std::sync::Mutex;
+    use std::{io::ErrorKind, sync::Mutex};
 
     const TEST_GAS: Gas = Gas::from_gas(300_000_000_000_000);
 
@@ -81,19 +111,26 @@ mod tests {
         crate::transaction_sender::signer::test_signer()
     }
 
+    type MyError = Arc<std::io::Error>;
     #[derive(Clone)]
     struct MockTransactionSubmitter {
-        block_result: Result<(CryptoHash, u64), ChainGatewayError>,
+        block_result: Result<LatestFinalBlockInfo, MyError>,
         submit_result: Result<(), ChainGatewayError>,
         submitted: Arc<Mutex<Vec<SignedTransaction>>>,
     }
 
     #[async_trait]
-    impl TransactionSubmitter for MockTransactionSubmitter {
-        async fn latest_final_block_info(&self) -> Result<(CryptoHash, u64), ChainGatewayError> {
+    impl LatestFinalBlockInfoFetcher for MockTransactionSubmitter {
+        type Error = MyError;
+        async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
             self.block_result.clone()
         }
-        async fn submit_signed_tx(
+    }
+
+    #[async_trait]
+    impl SignedTransactionSubmitter for MockTransactionSubmitter {
+        type Error = ChainGatewayError;
+        async fn submit_signed_transaction(
             &self,
             transaction: SignedTransaction,
         ) -> Result<(), ChainGatewayError> {
@@ -101,22 +138,22 @@ mod tests {
             self.submit_result.clone()
         }
     }
+    impl FunctionCallSubmitter for MockTransactionSubmitter {}
 
     fn test_submitter(
-        block_hash: CryptoHash,
-        block_height: u64,
+        info: &LatestFinalBlockInfo,
         submit_result: Result<(), ChainGatewayError>,
     ) -> (MockTransactionSubmitter, Arc<Mutex<Vec<SignedTransaction>>>) {
         let submitted = Arc::new(Mutex::new(Vec::new()));
         let submitter = MockTransactionSubmitter {
-            block_result: Ok((block_hash, block_height)),
+            block_result: Ok(info.clone()),
             submit_result,
             submitted: submitted.clone(),
         };
         (submitter, submitted)
     }
 
-    fn test_submitter_with_block_error(err: ChainGatewayError) -> MockTransactionSubmitter {
+    fn test_submitter_with_block_error(err: MyError) -> MockTransactionSubmitter {
         MockTransactionSubmitter {
             block_result: Err(err),
             submit_result: Ok(()),
@@ -127,13 +164,15 @@ mod tests {
     #[tokio::test]
     async fn blanket_impl_builds_and_submits_correct_transaction() {
         // Use a non-default block hash to verify it flows through.
-        let block_hash = CryptoHash::hash_bytes(b"test block");
-        let block_height = 42u64;
+        let info = LatestFinalBlockInfo {
+            observed_at: 42.into(),
+            value: CryptoHash::hash_bytes(b"test block"),
+        };
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
         let method_name = "do_something".to_string();
         let args = b"test args".to_vec();
 
-        let (submitter, submitted) = test_submitter(block_hash, block_height, Ok(()));
+        let (submitter, submitted) = test_submitter(&info, Ok(()));
 
         // Two signers from the same key — deterministic ed25519 means identical transactions.
         let signer_a = Arc::new(test_signer());
@@ -156,8 +195,7 @@ mod tests {
             method_name.clone(),
             args.clone(),
             TEST_GAS,
-            block_hash,
-            block_height,
+            info,
         );
 
         let txs = submitted.lock().unwrap();
@@ -177,7 +215,7 @@ mod tests {
         };
         assert_eq!(tx.signer_id, "test.near".parse::<AccountId>().unwrap());
         assert_eq!(tx.receiver_id, receiver_id);
-        assert_eq!(tx.block_hash, block_hash);
+        assert_eq!(tx.block_hash, info.value);
 
         match &tx.actions[0] {
             near_indexer_primitives::near_primitives::transaction::Action::FunctionCall(action) => {
@@ -215,10 +253,7 @@ mod tests {
 
     #[tokio::test]
     async fn blanket_impl_does_not_submit_on_block_error() {
-        let err = ChainGatewayError::SendTransactionError {
-            context: "block error".to_string(),
-            source: Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "test")),
-        };
+        let err = Arc::new(std::io::Error::new(ErrorKind::Other, "test".into()));
         let submitted = Arc::new(Mutex::new(Vec::new()));
         let submitter = MockTransactionSubmitter {
             block_result: Err(err),
@@ -244,10 +279,14 @@ mod tests {
 
     #[tokio::test]
     async fn blanket_impl_propagates_submit_error() {
+        let info = LatestFinalBlockInfo {
+            observed_at: 42.into(),
+            value: CryptoHash::hash_bytes(b"test block"),
+        };
         let err = ChainGatewayError::RpcClient {
             source: Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "test")),
         };
-        let (submitter, _) = test_submitter(CryptoHash::default(), 100, Err(err));
+        let (submitter, _) = test_submitter(info, Err(err));
 
         let result = submitter
             .submit_function_call_tx(

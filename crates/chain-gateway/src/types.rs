@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use derive_more::{From, Into};
+use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::errors::ChainGatewayError;
@@ -20,6 +21,8 @@ pub struct ObservedState<T = Vec<u8>> {
     pub value: T,
 }
 
+/// block height and block hash
+pub(crate) type LatestFinalBlockInfo = ObservedState<CryptoHash>;
 /// Raw (not yet deserialized) observed state from a contract view call.
 pub type RawObservedState = ObservedState<Vec<u8>>;
 

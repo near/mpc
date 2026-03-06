@@ -2,7 +2,6 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ecdsa::signature::Signer;
 use near_account_id::AccountId;
 use near_indexer::near_primitives::account::AccessKey;
-use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction,
     SignedTransaction,
@@ -12,6 +11,8 @@ use near_indexer_primitives::near_primitives::transaction::{
 };
 use near_indexer_primitives::types::{Balance, Gas};
 use std::sync::Mutex;
+
+use crate::types::LatestFinalBlockInfo;
 
 pub struct TransactionSigner {
     signing_key: SigningKey,
@@ -43,8 +44,7 @@ impl TransactionSigner {
         method_name: String,
         args: Vec<u8>,
         gas: Gas,
-        block_hash: CryptoHash,
-        block_height: u64,
+        info: LatestFinalBlockInfo,
     ) -> SignedTransaction {
         let action = FunctionCallAction {
             method_name,
@@ -61,9 +61,9 @@ impl TransactionSigner {
         let transaction = Transaction::V0(TransactionV0 {
             signer_id: self.account_id.clone(),
             public_key: near_core_public_key,
-            nonce: self.make_nonce(block_height),
+            nonce: self.make_nonce(info.observed_at.into()),
             receiver_id,
-            block_hash,
+            block_hash: info.value,
             actions: vec![action.into()],
         });
 
@@ -89,6 +89,8 @@ pub(super) fn test_signer() -> TransactionSigner {
 
 #[cfg(test)]
 mod tests {
+    use near_indexer_primitives::CryptoHash;
+
     use super::*;
 
     const TEST_GAS: Gas = Gas::from_gas(300_000_000_000_000);
@@ -137,7 +139,7 @@ mod tests {
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
         let args = b"test args".to_vec();
         let gas = TEST_GAS;
-        let block_hash = CryptoHash::default();
+        let block_hash = near_indexer_primitives::CryptoHash::default();
         let block_height = 100;
 
         let signed_tx = signer.create_and_sign_function_call_tx(
@@ -145,8 +147,10 @@ mod tests {
             "do_something".to_string(),
             args.clone(),
             gas,
-            block_hash,
-            block_height,
+            LatestFinalBlockInfo {
+                observed_at: block_height.into(),
+                value: block_hash,
+            },
         );
 
         let tx = match &signed_tx.transaction {
@@ -176,8 +180,10 @@ mod tests {
             "method".to_string(),
             vec![],
             TEST_GAS,
-            CryptoHash::default(),
-            100,
+            LatestFinalBlockInfo {
+                observed_at: 100.into(),
+                value: CryptoHash::default(),
+            },
         );
 
         let tx_hash = signed_tx.get_hash();

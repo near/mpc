@@ -3,8 +3,8 @@ pub mod errors;
 mod logger;
 pub mod transaction_sender;
 pub mod types;
-
 // todo: make this private
+pub(crate) mod mock;
 pub mod stats;
 
 mod near_internals_wrapper;

@@ -1,30 +1,61 @@
-use crate::errors::ChainGatewayError;
+use std::sync::Arc;
+
+use crate::errors::{ChainGatewayError, ChainGatewayOp};
+use crate::near_internals_wrapper::traits::{SyncChecker, ViewFunctionQuerier};
 use crate::types::ObservedState;
 use async_trait::async_trait;
 use near_account_id::AccountId;
 use serde::{Serialize, de::DeserializeOwned};
 
-/// The low-level testing seam for contract view calls.
+use super::subscription::ContractMethodSubscription;
+
+///// The testing seam for contract view calls
+///// All other traits are derived from this one
+//#[async_trait]
+//pub trait ContractViewer: Send + Sync + Clone + 'static {
+//    async fn view_raw(
+//        &self,
+//        contract_id: &AccountId,
+//        method_name: &str,
+//        args: &[u8],
+//    ) -> Result<ObservedState, ChainGatewayError>;
+//}
+
+/// The testing seam for contract view calls
+/// All other traits are derived from this one
 #[async_trait]
-pub trait ContractViewer: Send + Sync + Clone + 'static {
-    async fn view(
+pub trait ContractViewer:
+    SyncChecker + ViewFunctionQuerier + Send + Sync + Clone + 'static
+{
+    async fn view_raw(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> Result<ObservedState, ChainGatewayError>;
+    ) -> Result<ObservedState, ChainGatewayError> {
+        self.wait_for_full_sync().await;
+        self.view_function_query(contract_id, method_name, args)
+            .await
+            .map_err(|err| ChainGatewayError::ViewClient {
+                op: ChainGatewayOp::ViewCall {
+                    account_id: contract_id.to_string(),
+                    method_name: method_name.to_string(),
+                },
+                source: Arc::new(err),
+            })
+    }
 }
 
-/// Bridges a type to its [`ContractViewer`] implementation.
-///
-/// Implementing this trait automatically provides [`MethodViewer`] and
-/// [`ContractStateSubscriber`] via blanket impls. Both [`super::NearContractViewer`]
-/// and [`super::mock_viewer::MockViewer`] implement this with `type Viewer = Self`.
-pub trait HasContractViewer {
-    type Viewer: ContractViewer;
-
-    fn get_viewer(&self) -> &Self::Viewer;
-}
+///// Bridges a type to its [`ContractViewer`] implementation.
+/////
+///// Implementing this trait automatically provides [`MethodViewer`] and
+///// [`ContractStateSubscriber`] via blanket impls. Both [`super::NearContractViewer`]
+///// and [`super::mock_viewer::MockViewer`] implement this with `type Viewer = Self`.
+//pub trait HasContractViewer {
+//    type Viewer: ContractViewer;
+//
+//    fn get_viewer(&self) -> &Self::Viewer;
+//}
 
 /// Blanket-implemented for all `T: HasContractViewer`.
 ///
@@ -65,7 +96,7 @@ pub trait HasContractViewer {
 /// # }
 /// ```
 #[async_trait]
-pub trait ContractStateSubscriber: HasContractViewer {
+pub trait ContractStateSubscriber: ContractViewer {
     /// Subscribes to a contract view method and returns a stream of state updates.
     ///
     /// The returned stream polls the contract every 200 ms.
@@ -79,7 +110,10 @@ pub trait ContractStateSubscriber: HasContractViewer {
         view_method: &str,
     ) -> impl ContractStateStream<T> + Send
     where
-        T: DeserializeOwned + Send + Clone;
+        T: DeserializeOwned + Send + Clone,
+    {
+        ContractMethodSubscription::new(self.clone(), contract, &view_method, b"{}".to_vec()).await
+    }
 }
 
 /// Blanket-implemented for all `T: HasContractViewer`.
@@ -121,7 +155,7 @@ pub trait ContractStateSubscriber: HasContractViewer {
 /// # }
 /// ```
 #[async_trait]
-pub trait MethodViewer: HasContractViewer {
+pub trait MethodViewer: ContractViewer {
     async fn view<Arg, Res>(
         &self,
         contract_id: AccountId,
@@ -130,7 +164,29 @@ pub trait MethodViewer: HasContractViewer {
     ) -> Result<ObservedState<Res>, ChainGatewayError>
     where
         Arg: Serialize + Sync,
-        Res: DeserializeOwned + Send + Clone;
+        Res: DeserializeOwned + Send + Clone,
+    {
+        let args: Vec<u8> = serde_json::to_string(args)
+            .map_err(|err| ChainGatewayError::Serialization {
+                op: ChainGatewayOp::ViewCall {
+                    account_id: contract_id.to_string(),
+                    method_name: method_name.to_string(),
+                },
+                source: Arc::new(err),
+            })?
+            .into_bytes();
+        let res = self.view_raw(&contract_id, method_name, &args).await?;
+        let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
+            ChainGatewayError::Deserialization {
+                source: Arc::new(err),
+            }
+        })?;
+
+        Ok(ObservedState {
+            observed_at: res.observed_at,
+            value,
+        })
+    }
 }
 
 /// A watch-like stream of contract state changes.

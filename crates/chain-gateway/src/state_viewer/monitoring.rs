@@ -31,7 +31,7 @@ pub(crate) async fn make_monitoring_task<V>(
 where
     V: ContractViewer,
 {
-    let observed_state = viewer.view(&contract_id, method_name, &args).await;
+    let observed_state = viewer.view_raw(&contract_id, method_name, &args).await;
 
     let (sender, last_observed) = tokio::sync::watch::channel(observed_state.clone());
 
@@ -77,7 +77,7 @@ async fn monitor<V: ContractViewer>(
             }
             _ = ticker.tick() => {
                 let val = viewer
-                    .view(&contract_id, &method_name, &args)
+                    .view_raw(&contract_id, &method_name, &args)
                     .await;
 
                 if sender.send_if_modified(|existing| modify(existing, val)) {

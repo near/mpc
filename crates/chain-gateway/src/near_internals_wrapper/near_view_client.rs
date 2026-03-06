@@ -1,16 +1,20 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use near_account_id::AccountId;
+use near_async::messaging::CanSendAsync;
 
 use crate::{
     near_internals_wrapper::errors::{GetBlockError, QueryError, QueryErrorKind, ViewClientError},
-    types::ObservedState,
+    types::{LatestFinalBlockInfo, ObservedState},
 };
+
+use super::traits::{LatestFinalBlockInfoFetcher, ViewFunctionQuerier};
 
 #[derive(Clone)]
 pub(crate) struct ViewClientWrapper {
     view_client:
-        near_async::multithread::MultithreadRuntimeHandle<near_client::ViewClientActorInner>,
+        Arc<near_async::multithread::MultithreadRuntimeHandle<near_client::ViewClientActorInner>>,
 }
 
 impl ViewClientWrapper {
@@ -19,33 +23,43 @@ impl ViewClientWrapper {
             near_client::ViewClientActorInner,
         >,
     ) -> Self {
-        Self { view_client }
+        Self {
+            view_client: Arc::new(view_client),
+        }
     }
+}
 
-    pub(crate) async fn latest_final_block(
-        &self,
-    ) -> Result<near_indexer_primitives::views::BlockView, ViewClientError> {
+#[async_trait]
+impl LatestFinalBlockInfoFetcher for ViewClientWrapper {
+    type Error = ViewClientError;
+    async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
         let block_query =
             near_client::GetBlock(near_indexer_primitives::types::BlockReference::Finality(
                 near_indexer_primitives::types::Finality::Final,
             ));
-        let send_result =
-            near_async::messaging::CanSendAsync::send_async(&self.view_client, block_query).await;
+        let send_result = self.view_client.send_async(block_query).await;
         let response_result = send_result.map_err(|err| GetBlockError::Send {
             source: Arc::new(err),
         })?;
         let response = response_result.map_err(|err| GetBlockError::Response {
             source: Arc::new(err),
         })?;
-        Ok(response)
+        Ok(LatestFinalBlockInfo {
+            observed_at: response.header.height.into(),
+            value: response.header.hash,
+        })
     }
+}
 
-    pub(crate) async fn view_function_query(
+#[async_trait]
+impl ViewFunctionQuerier for ViewClientWrapper {
+    type Error = ViewClientError;
+    async fn view_function_query(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> Result<ObservedState, ViewClientError> {
+    ) -> Result<ObservedState, Self::Error> {
         let query = near_client::Query {
             block_reference: near_indexer_primitives::types::BlockReference::Finality(
                 near_indexer_primitives::types::Finality::Final,
@@ -57,8 +71,7 @@ impl ViewClientWrapper {
             },
         };
 
-        let send_result =
-            near_async::messaging::CanSendAsync::send_async(&self.view_client, query).await;
+        let send_result = self.view_client.send_async(query).await;
 
         let response_result = send_result.map_err(|err| QueryError {
             contract_id: contract_id.clone(),

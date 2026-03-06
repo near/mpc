@@ -1,4 +1,7 @@
-use crate::{near_internals_wrapper::ViewClientWrapper, stats::IndexerStats};
+use crate::{
+    near_internals_wrapper::{ViewClientWrapper, traits::LatestFinalBlockInfoFetcher},
+    stats::IndexerStats,
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -6,7 +9,7 @@ use tokio::sync::Mutex;
 // also, make it private and move into the IndexerStats module
 pub(crate) async fn indexer_logger(
     stats: Arc<Mutex<IndexerStats>>,
-    view_client: Arc<ViewClientWrapper>,
+    view_client: ViewClientWrapper,
 ) {
     let interval_secs = 10;
     let mut prev_blocks_processed_count: u64 = 0;
@@ -25,7 +28,7 @@ pub(crate) async fn indexer_logger(
             if let Ok(block_height) = view_client
                 .latest_final_block()
                 .await
-                .map(|block| block.header.height)
+                .map(|value| Into::<u64>::into(value.observed_at))
             {
                 let blocks_behind = if block_height > stats_copy.last_processed_block_height {
                     block_height - stats_copy.last_processed_block_height

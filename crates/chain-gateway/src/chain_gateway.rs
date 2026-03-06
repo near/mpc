@@ -11,21 +11,18 @@ use crate::transaction_sender::NearTransactionSubmitter;
 #[derive(Clone)]
 pub struct ChainGateway {
     /// For querying blockchain state.
-    view_client: Arc<ViewClientWrapper>,
+    view_client: ViewClientWrapper,
     /// For querying blockchain sync status.
-    client: Arc<ClientWrapper>,
+    client: ClientWrapper,
     /// For sending txs to the chain.
-    rpc_handler: Arc<RpcHandlerWrapper>,
+    rpc_handler: RpcHandlerWrapper,
     /// Stores runtime indexing statistics.
     _stats: Arc<Mutex<IndexerStats>>,
 }
 
 impl ChainGateway {
     pub fn viewer(&self) -> NearContractViewer {
-        NearContractViewer::new(
-            self.client.clone(),
-            self.view_client.clone(),
-        )
+        NearContractViewer::new(self.client.clone(), self.view_client.clone())
     }
 
     pub fn transaction_sender(&self) -> NearTransactionSubmitter {
@@ -63,9 +60,9 @@ pub async fn start_with_streamer(
 
     let stream = indexer.streamer();
 
-    let view_client = Arc::new(ViewClientWrapper::new(near_node.view_client));
-    let client = Arc::new(ClientWrapper::new(near_node.client));
-    let rpc_handler = Arc::new(RpcHandlerWrapper::new(near_node.rpc_handler));
+    let view_client = ViewClientWrapper::new(near_node.view_client);
+    let client = ClientWrapper::new(near_node.client);
+    let rpc_handler = RpcHandlerWrapper::new(near_node.rpc_handler);
     let stats = Arc::new(Mutex::new(IndexerStats::new()));
     tokio::spawn(indexer_logger(stats.clone(), view_client.clone()));
 

@@ -1,21 +1,29 @@
-use crate::errors::{ChainGatewayError, ChainGatewayOp};
+use crate::near_internals_wrapper::traits::{HasSyncChecker, HasViewFunctionQuerier};
 use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
-use crate::types::ObservedState;
-use async_trait::async_trait;
-use near_account_id::AccountId;
-use std::sync::Arc;
 
-use super::HasContractViewer;
 use super::traits::ContractViewer;
 
 #[derive(Clone)]
 pub struct NearContractViewer {
-    client: Arc<ClientWrapper>,
-    view_client: Arc<ViewClientWrapper>,
+    client: ClientWrapper,
+    view_client: ViewClientWrapper,
+}
+
+impl HasSyncChecker for NearContractViewer {
+    type C = ClientWrapper;
+    fn get_checker(&self) -> &Self::C {
+        &self.client
+    }
+}
+impl HasViewFunctionQuerier for NearContractViewer {
+    type V = ViewClientWrapper;
+    fn view_querier(&self) -> &Self::V {
+        &self.view_client
+    }
 }
 
 impl NearContractViewer {
-    pub(crate) fn new(client: Arc<ClientWrapper>, view_client: Arc<ViewClientWrapper>) -> Self {
+    pub(crate) fn new(client: ClientWrapper, view_client: ViewClientWrapper) -> Self {
         Self {
             client,
             view_client,
@@ -23,39 +31,4 @@ impl NearContractViewer {
     }
 }
 
-impl HasContractViewer for NearContractViewer {
-    type Viewer = Self;
-    fn get_viewer(&self) -> &Self::Viewer {
-        self
-    }
-}
-
-#[async_trait]
-impl ContractViewer for NearContractViewer {
-    /// Performs a view call against a NEAR contract.
-    ///
-    /// This methods awaits that the indexer is fully synced before issuing the request, which may
-    /// take an unbounded amount of time.
-    ///
-    /// - `contract_id`: account ID of the contract to query
-    /// - `method_name`: name of the view method to call
-    /// - `args`: serialized method arguments
-    async fn view(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> Result<ObservedState, ChainGatewayError> {
-        self.client.wait_for_full_sync().await;
-        self.view_client
-            .view_function_query(contract_id, method_name, args)
-            .await
-            .map_err(|err| ChainGatewayError::ViewClient {
-                op: ChainGatewayOp::ViewCall {
-                    account_id: contract_id.to_string(),
-                    method_name: method_name.to_string(),
-                },
-                source: Arc::new(err),
-            })
-    }
-}
+impl ContractViewer for NearContractViewer {}
