@@ -729,6 +729,7 @@ mod tests {
 #[cfg(all(test, feature = "integration-test"))]
 mod integration_tests {
     use super::*;
+    use assert_matches::assert_matches;
 
     const TEST_DIGEST: &str =
         "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372";
@@ -771,6 +772,6 @@ mod integration_tests {
         let result = validate_image_hash(&config, expected_digest).await;
 
         // then
-        assert!(result.is_ok(), "validate_image_hash failed: {result:?}");
+        assert_matches!(result, Ok(_));
     }
 }
