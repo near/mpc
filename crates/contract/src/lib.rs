@@ -97,6 +97,10 @@ impl ContractState for MpcContract {}
 
 #[near_bindgen]
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
@@ -126,6 +130,10 @@ pub struct MpcContract {
 /// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
 ///    separate transactions to gradually deallocate this storage.
 #[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 struct StaleData {}
 
 #[near(serializers=[borsh])]
@@ -4487,5 +4495,12 @@ mod tests {
         assert!(votes
             .proposal_by_account
             .contains_key(&dtos::AccountId(first_account.to_string())));
+    }
+
+    #[cfg(all(feature = "__abi-generate", not(target_arch = "wasm32")))]
+    #[test]
+    fn mpc_contract_borsh_schema_has_not_changed() {
+        let schema = borsh::schema::BorshSchemaContainer::for_type::<MpcContract>();
+        insta::assert_debug_snapshot!(schema);
     }
 }
