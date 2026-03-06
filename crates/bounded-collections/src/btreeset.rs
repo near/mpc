@@ -81,7 +81,7 @@ impl<T: Ord + BorshDeserialize> BorshDeserialize for NonEmptyBTreeSet<T> {
 }
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-impl<T: Ord + borsh::BorshSchema> borsh::BorshSchema for NonEmptyBTreeSet<T> {
+impl<T: borsh::BorshSchema> borsh::BorshSchema for NonEmptyBTreeSet<T> {
     fn declaration() -> borsh::schema::Declaration {
         format!("NonEmptyBTreeSet<{}>", T::declaration())
     }
