@@ -39,155 +39,152 @@ use crate::tee::{
 
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
-impl StartConfig {
-    pub async fn run(self) -> anyhow::Result<()> {
-        let root_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()?;
+pub async fn run(config: StartConfig) -> anyhow::Result<()> {
+    let root_runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()?;
 
-        let _tokio_enter_guard = root_runtime.enter();
+    let _tokio_enter_guard = root_runtime.enter();
 
-        // Load configuration and initialize persistent secrets
-        let home_dir = PathBuf::from(self.home_dir.clone());
-        let config = self.node.clone();
-        let persistent_secrets = PersistentSecrets::generate_or_get_existing(
-            &home_dir,
-            config.number_of_responder_keys,
-        )?;
+    // Load configuration and initialize persistent secrets
+    let home_dir = PathBuf::from(config.home_dir.clone());
+    let node_config = config.node.clone();
+    let persistent_secrets = PersistentSecrets::generate_or_get_existing(
+        &home_dir,
+        node_config.number_of_responder_keys,
+    )?;
 
-        profiler::web_server::start_web_server(config.pprof_bind_address).await?;
-        root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
+    profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
+    root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
-        // TODO(#1296): Decide if the MPC responder account is actually needed
-        let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
+    // TODO(#1296): Decide if the MPC responder account is actually needed
+    let respond_config = RespondConfig::from_parts(&node_config, &persistent_secrets);
 
-        let backup_encryption_key_hex = match &self.secrets.backup_encryption_key_hex {
-            Some(key) => key.clone(),
-            None => generate_and_write_backup_encryption_key_to_disk(&home_dir)?,
-        };
+    let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
+        Some(key) => key.clone(),
+        None => generate_and_write_backup_encryption_key_to_disk(&home_dir)?,
+    };
 
-        // Load secrets from configuration and persistent storage
-        let secrets = SecretsConfig::from_parts(
-            &self.secrets.secret_store_key_hex,
-            persistent_secrets.clone(),
-            &backup_encryption_key_hex,
-        )?;
+    // Load secrets from configuration and persistent storage
+    let secrets = SecretsConfig::from_parts(
+        &config.secrets.secret_store_key_hex,
+        persistent_secrets.clone(),
+        &backup_encryption_key_hex,
+    )?;
 
-        // Generate attestation
-        let tee_authority = self.tee.authority.clone().into_tee_authority()?;
-        let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
+    // Generate attestation
+    let tee_authority = config.tee.authority.clone().into_tee_authority()?;
+    let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
-        let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
+    let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
 
-        let report_data = ReportDataV1::new(
-            *Ed25519PublicKey::from(tls_public_key).as_bytes(),
-            *Ed25519PublicKey::from(account_public_key).as_bytes(),
-        )
-        .into();
+    let report_data = ReportDataV1::new(
+        *Ed25519PublicKey::from(tls_public_key).as_bytes(),
+        *Ed25519PublicKey::from(account_public_key).as_bytes(),
+    )
+    .into();
 
-        let attestation = tee_authority.generate_attestation(report_data).await?;
+    let attestation = tee_authority.generate_attestation(report_data).await?;
 
-        // Create communication channels and runtime
-        let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
-        let root_task_handle = Arc::new(OnceLock::new());
+    // Create communication channels and runtime
+    let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+    let root_task_handle = Arc::new(OnceLock::new());
 
-        let (protocol_state_sender, protocol_state_receiver) =
-            watch::channel(ProtocolContractState::NotInitialized);
+    let (protocol_state_sender, protocol_state_receiver) =
+        watch::channel(ProtocolContractState::NotInitialized);
 
-        let (migration_state_sender, migration_state_receiver) =
-            watch::channel((0, BTreeMap::new()));
-        let web_server = root_runtime
-            .block_on(start_web_server(
-                root_task_handle.clone(),
-                debug_request_sender.clone(),
-                config.web_ui,
-                static_web_data(&secrets, Some(attestation)),
-                protocol_state_receiver,
-                migration_state_receiver,
-            ))
-            .context("Failed to create web server.")?;
+    let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+    let web_server = root_runtime
+        .block_on(start_web_server(
+            root_task_handle.clone(),
+            debug_request_sender.clone(),
+            node_config.web_ui,
+            static_web_data(&secrets, Some(attestation)),
+            protocol_state_receiver,
+            migration_state_receiver,
+        ))
+        .context("Failed to create web server.")?;
 
-        let _web_server_join_handle = root_runtime.spawn(web_server);
+    let _web_server_join_handle = root_runtime.spawn(web_server);
 
-        // Create Indexer and wait for indexer to be synced.
-        let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
-        let indexer_api = spawn_real_indexer(
-            home_dir.clone(),
-            config.indexer.clone(),
-            config.my_near_account_id.clone(),
-            persistent_secrets.near_signer_key.clone(),
-            respond_config,
-            indexer_exit_sender,
-            protocol_state_sender,
-            migration_state_sender,
-            *tls_public_key,
-        );
+    // Create Indexer and wait for indexer to be synced.
+    let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
+    let indexer_api = spawn_real_indexer(
+        home_dir.clone(),
+        node_config.indexer.clone(),
+        node_config.my_near_account_id.clone(),
+        persistent_secrets.near_signer_key.clone(),
+        respond_config,
+        indexer_exit_sender,
+        protocol_state_sender,
+        migration_state_sender,
+        *tls_public_key,
+    );
 
-        let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
-        let cancellation_token = CancellationToken::new();
+    let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
+    let cancellation_token = CancellationToken::new();
 
-        let image_hash_watcher_handle = if let (Some(image_hash), Some(latest_allowed_hash_file)) =
-            (&self.tee.image_hash, &self.tee.latest_allowed_hash_file)
-        {
-            let current_image_hash_bytes: [u8; 32] = hex::decode(image_hash)
-                .expect("The currently running image is a hex string.")
-                .try_into()
-                .expect("The currently running image hash hex representation is 32 bytes.");
+    let image_hash_watcher_handle = if let (Some(image_hash), Some(latest_allowed_hash_file)) =
+        (&config.tee.image_hash, &config.tee.latest_allowed_hash_file)
+    {
+        let current_image_hash_bytes: [u8; 32] = hex::decode(image_hash)
+            .expect("The currently running image is a hex string.")
+            .try_into()
+            .expect("The currently running image hash hex representation is 32 bytes.");
 
-            let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
-            let image_hash_storage = AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
+        let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+        let image_hash_storage = AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
 
-            Some(root_runtime.spawn(monitor_allowed_image_hashes(
-                cancellation_token.child_token(),
-                MpcDockerImageHash::from(current_image_hash_bytes),
-                allowed_hashes_in_contract,
-                image_hash_storage,
-                shutdown_signal_sender.clone(),
-            )))
-        } else {
-            tracing::info!(
+        Some(root_runtime.spawn(monitor_allowed_image_hashes(
+            cancellation_token.child_token(),
+            MpcDockerImageHash::from(current_image_hash_bytes),
+            allowed_hashes_in_contract,
+            image_hash_storage,
+            shutdown_signal_sender.clone(),
+        )))
+    } else {
+        tracing::info!(
                     "image_hash and/or latest_allowed_hash_file not set, skipping TEE image hash monitoring"
                 );
-            None
-        };
+        None
+    };
 
-        let root_future = create_root_future(
-            self,
-            home_dir.clone(),
-            config.clone(),
-            secrets.clone(),
-            indexer_api,
-            debug_request_sender,
-            root_task_handle,
-            tee_authority,
-        );
+    let root_future = create_root_future(
+        config,
+        home_dir.clone(),
+        node_config.clone(),
+        secrets.clone(),
+        indexer_api,
+        debug_request_sender,
+        root_task_handle,
+        tee_authority,
+    );
 
-        let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
+    let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
 
-        let exit_reason = tokio::select! {
-            root_task_result = root_task => {
-                root_task_result?
-            }
-            indexer_exit_response = indexer_exit_receiver => {
-                indexer_exit_response.context("Indexer thread dropped response channel.")?
-            }
-            Some(()) = shutdown_signal_receiver.recv() => {
-                Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
-            }
-        };
-
-        // Perform graceful shutdown
-        cancellation_token.cancel();
-
-        if let Some(handle) = image_hash_watcher_handle {
-            info!("Waiting for image hash watcher to gracefully exit.");
-            let exit_result = handle.await;
-            info!(?exit_result, "Image hash watcher exited.");
+    let exit_reason = tokio::select! {
+        root_task_result = root_task => {
+            root_task_result?
         }
+        indexer_exit_response = indexer_exit_receiver => {
+            indexer_exit_response.context("Indexer thread dropped response channel.")?
+        }
+        Some(()) = shutdown_signal_receiver.recv() => {
+            Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
+        }
+    };
 
-        exit_reason
+    // Perform graceful shutdown
+    cancellation_token.cancel();
+
+    if let Some(handle) = image_hash_watcher_handle {
+        info!("Waiting for image hash watcher to gracefully exit.");
+        let exit_result = handle.await;
+        info!(?exit_result, "Image hash watcher exited.");
     }
+
+    exit_reason
 }
 
 #[allow(clippy::too_many_arguments)]

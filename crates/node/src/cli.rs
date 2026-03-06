@@ -11,6 +11,7 @@ use crate::{
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
+    run::run,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
@@ -225,12 +226,15 @@ impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
-                StartConfig::from_json_file(&config_path)?.run().await
+                let node_configuration = StartConfig::from_json_file(&config_path)?;
+                run(node_configuration).await
             }
             CliCommand::Start(start) => {
                 let home_dir = std::path::Path::new(&start.home_dir);
                 let config_file = load_config_file(home_dir)?;
-                start.into_start_config(config_file).run().await
+
+                let node_configuration = start.into_start_config(config_file);
+                run(node_configuration).await
             }
             CliCommand::Init(config) => {
                 let (download_config_type, download_config_url) = if config.download_config {
