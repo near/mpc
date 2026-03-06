@@ -1,7 +1,7 @@
 use bounded_collections::NonEmptyVec;
 use derive_more::From;
 use itertools::Itertools;
-use launcher_interface::types::{ApprovedHashesFile, DockerSha256Digest};
+use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
@@ -42,7 +42,7 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             "Writing approved MPC image hashes to disk (JSON format)."
         );
 
-        let approved_hashes = ApprovedHashesFile {
+        let approved_hashes = ApprovedHashes {
             approved_hashes: approved_hashes.mapped(DockerSha256Digest::from),
         };
 

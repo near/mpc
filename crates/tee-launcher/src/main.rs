@@ -6,7 +6,7 @@ use std::{collections::VecDeque, time::Duration};
 use backon::{ExponentialBuilder, Retryable};
 use clap::Parser;
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
-use launcher_interface::types::{ApprovedHashesFile, DockerSha256Digest};
+use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
 
 use constants::*;
 use docker_types::*;
@@ -74,7 +74,7 @@ async fn run() -> Result<(), LauncherError> {
             source,
         });
 
-    let approved_hashes_on_disk: Option<ApprovedHashesFile> = match approved_hashes_file {
+    let approved_hashes_on_disk: Option<ApprovedHashes> = match approved_hashes_file {
         Err(err) => {
             tracing::warn!(
                 ?err,
@@ -84,7 +84,7 @@ async fn run() -> Result<(), LauncherError> {
             None
         }
         Ok(file) => {
-            let parsed: ApprovedHashesFile =
+            let parsed: ApprovedHashes =
                 serde_json::from_reader(file).map_err(|source| LauncherError::JsonParse {
                     path: IMAGE_DIGEST_FILE.to_string(),
                     source,
@@ -136,7 +136,7 @@ async fn run() -> Result<(), LauncherError> {
 ///   - If `override_hash` is set but NOT in the approved list → error
 ///   - Otherwise → use the newest approved hash (first in the list)
 fn select_image_hash(
-    approved_hashes: Option<&ApprovedHashesFile>,
+    approved_hashes: Option<&ApprovedHashes>,
     default_digest: &DockerSha256Digest,
     override_hash: Option<&DockerSha256Digest>,
 ) -> Result<DockerSha256Digest, LauncherError> {
@@ -460,7 +460,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use bounded_collections::NonEmptyVec;
-    use launcher_interface::types::{ApprovedHashesFile, DockerSha256Digest};
+    use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
 
     use crate::constants::*;
     use crate::docker_run_args;
@@ -469,17 +469,20 @@ mod tests {
     use crate::types::*;
 
     fn digest(hex_char: char) -> DockerSha256Digest {
-        format!("sha256:{}", std::iter::repeat_n(hex_char, 64).collect::<String>())
-            .parse()
-            .unwrap()
+        format!(
+            "sha256:{}",
+            std::iter::repeat_n(hex_char, 64).collect::<String>()
+        )
+        .parse()
+        .unwrap()
     }
 
     fn sample_digest() -> DockerSha256Digest {
         digest('a')
     }
 
-    fn approved_file(hashes: Vec<DockerSha256Digest>) -> ApprovedHashesFile {
-        ApprovedHashesFile {
+    fn approved_file(hashes: Vec<DockerSha256Digest>) -> ApprovedHashes {
+        ApprovedHashes {
             approved_hashes: NonEmptyVec::from_vec(hashes).unwrap(),
         }
     }

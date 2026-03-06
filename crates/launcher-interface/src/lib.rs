@@ -9,11 +9,11 @@ pub mod types {
 
     /// JSON structure for the approved hashes file written by the MPC node, and read by the launcher.
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct ApprovedHashesFile {
+    pub struct ApprovedHashes {
         pub approved_hashes: bounded_collections::NonEmptyVec<DockerSha256Digest>,
     }
 
-    impl ApprovedHashesFile {
+    impl ApprovedHashes {
         pub fn newest_approved_hash(&self) -> &DockerSha256Digest {
             self.approved_hashes.first()
         }
@@ -81,7 +81,7 @@ mod paths {}
 mod tests {
     use assert_matches::assert_matches;
 
-    use super::types::{ApprovedHashesFile, DockerSha256Digest, DockerDigestParseError};
+    use super::types::{ApprovedHashes, DockerDigestParseError, DockerSha256Digest};
     use mpc_primitives::hash::MpcDockerImageHash;
 
     fn sample_digest() -> DockerSha256Digest {
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn serialize_approved_hashes_file() {
-        let file = ApprovedHashesFile {
+        let file = ApprovedHashes {
             approved_hashes: bounded_collections::NonEmptyVec::from_vec(vec![sample_digest()])
                 .unwrap(),
         };
