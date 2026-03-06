@@ -17,7 +17,6 @@ use url::Url;
 
 mod constants;
 mod docker_types;
-mod env_validation;
 mod error;
 mod types;
 
@@ -120,7 +119,7 @@ async fn run() -> Result<(), LauncherError> {
     launch_mpc_container(
         args.platform,
         &image_hash,
-        &dstack_config.mpc_passthrough_env,
+        &dstack_config.mpc_config_file,
         &dstack_config.docker_command_config,
     )?;
 
@@ -355,21 +354,11 @@ async fn validate_image_hash(
 
 fn docker_run_args(
     platform: Platform,
-    mpc_config: &MpcBinaryConfig,
+    mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
     image_digest: &DockerSha256Digest,
-) -> Result<Vec<String>, LauncherError> {
+) -> Vec<String> {
     let mut cmd: Vec<String> = vec![];
-
-    // Required environment variables
-    cmd.extend([
-        "--env".into(),
-        format!("MPC_IMAGE_HASH={}", image_digest.as_raw_hex()),
-    ]);
-    cmd.extend([
-        "--env".into(),
-        format!("MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"),
-    ]);
 
     if platform == Platform::Tee {
         cmd.extend([
@@ -382,9 +371,12 @@ fn docker_run_args(
         ]);
     }
 
-    for (key, value) in mpc_config.env_vars()? {
-        cmd.extend(["--env".into(), format!("{key}={value}")]);
-    }
+    // Mount the MPC config file into the container (read-only)
+    let host_path = mpc_config_file.display();
+    cmd.extend([
+        "-v".into(),
+        format!("{host_path}:{MPC_CONFIG_CONTAINER_PATH}:ro"),
+    ]);
 
     cmd.extend(docker_flags.extra_hosts.docker_args());
     cmd.extend(docker_flags.port_mappings.docker_args());
@@ -403,23 +395,21 @@ fn docker_run_args(
         MPC_CONTAINER_NAME.into(),
         "--detach".into(),
         image_digest.to_string(),
+        // Command for the MPC binary: read config from file
+        "start-with-config-file".into(),
+        MPC_CONFIG_CONTAINER_PATH.into(),
     ]);
 
     let docker_command_string = cmd.join(" ");
     tracing::info!(?docker_command_string, "docker cmd");
 
-    // Final LD_PRELOAD safeguard
-    if docker_command_string.contains("LD_PRELOAD") {
-        return Err(LauncherError::LdPreloadDetected);
-    }
-
-    Ok(cmd)
+    cmd
 }
 
 fn launch_mpc_container(
     platform: Platform,
     valid_hash: &DockerSha256Digest,
-    mpc_config: &MpcBinaryConfig,
+    mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
 ) -> Result<(), LauncherError> {
     tracing::info!("Launching MPC node with validated hash: {valid_hash}",);
@@ -429,7 +419,7 @@ fn launch_mpc_container(
         .args(["rm", "-f", MPC_CONTAINER_NAME])
         .output();
 
-    let docker_run_args = docker_run_args(platform, mpc_config, docker_flags, valid_hash)?;
+    let docker_run_args = docker_run_args(platform, mpc_config_file, docker_flags, valid_hash);
 
     let run_output = Command::new("docker")
         .arg("run")
@@ -456,7 +446,7 @@ fn launch_mpc_container(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::path::Path;
 
     use assert_matches::assert_matches;
     use bounded_collections::NonEmptyVec;
@@ -467,6 +457,8 @@ mod tests {
     use crate::error::LauncherError;
     use crate::select_image_hash;
     use crate::types::*;
+
+    const SAMPLE_CONFIG_PATH: &str = "/tapp/mpc-config.json";
 
     fn digest(hex_char: char) -> DockerSha256Digest {
         format!(
@@ -484,23 +476,6 @@ mod tests {
     fn approved_file(hashes: Vec<DockerSha256Digest>) -> ApprovedHashes {
         ApprovedHashes {
             approved_hashes: NonEmptyVec::from_vec(hashes).unwrap(),
-        }
-    }
-
-    fn base_mpc_config() -> MpcBinaryConfig {
-        MpcBinaryConfig {
-            mpc_account_id: "test-account".into(),
-            mpc_local_address: "127.0.0.1".parse().unwrap(),
-            mpc_secret_key_store: "secret".into(),
-            mpc_backup_encryption_key_hex: "0".repeat(64),
-            mpc_env: MpcEnv::Testnet,
-            mpc_home_dir: "/data".into(),
-            mpc_contract_id: "contract.near".into(),
-            mpc_responder_id: "responder-1".into(),
-            near_boot_nodes: "boot1,boot2".into(),
-            rust_backtrace: RustBacktrace::Enabled,
-            rust_log: RustLog::Level(RustLogLevel::Info),
-            extra_env: BTreeMap::new(),
         }
     }
 
@@ -523,12 +498,11 @@ mod tests {
     #[test]
     fn tee_mode_includes_dstack_mount() {
         // given
-        let config = base_mpc_config();
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(Platform::Tee, &config, &flags, &digest).unwrap();
+        let args = docker_run_args(Platform::Tee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
 
         // then
         let joined = args.join(" ");
@@ -539,12 +513,12 @@ mod tests {
     #[test]
     fn nontee_mode_excludes_dstack_mount() {
         // given
-        let config = base_mpc_config();
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+        let args =
+            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
 
         // then
         let joined = args.join(" ");
@@ -555,12 +529,12 @@ mod tests {
     #[test]
     fn includes_security_opts_and_required_volumes() {
         // given
-        let config = base_mpc_config();
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+        let args =
+            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
 
         // then
         let joined = args.join(" ");
@@ -573,28 +547,67 @@ mod tests {
     }
 
     #[test]
-    fn image_digest_is_last_argument() {
+    fn mounts_config_file_read_only() {
         // given
-        let config = base_mpc_config();
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+        let args =
+            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
 
         // then
-        assert_eq!(args.last().unwrap(), &digest.to_string());
+        let joined = args.join(" ");
+        assert!(joined.contains(&format!(
+            "{SAMPLE_CONFIG_PATH}:{MPC_CONFIG_CONTAINER_PATH}:ro"
+        )));
+    }
+
+    #[test]
+    fn includes_start_with_config_file_command() {
+        // given
+        let flags = empty_docker_flags();
+        let digest = sample_digest();
+
+        // when
+        let args =
+            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+
+        // then
+        let joined = args.join(" ");
+        assert!(joined.contains(&format!(
+            "start-with-config-file {MPC_CONFIG_CONTAINER_PATH}"
+        )));
+    }
+
+    #[test]
+    fn image_digest_appears_before_command() {
+        // given
+        let flags = empty_docker_flags();
+        let digest = sample_digest();
+
+        // when
+        let args =
+            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+
+        // then - image digest should appear before "start-with-config-file"
+        let digest_pos = args.iter().position(|a| a == &digest.to_string()).unwrap();
+        let cmd_pos = args
+            .iter()
+            .position(|a| a == "start-with-config-file")
+            .unwrap();
+        assert!(digest_pos < cmd_pos);
     }
 
     #[test]
     fn includes_ports_and_extra_hosts() {
         // given
-        let config = base_mpc_config();
         let flags = docker_flags_with_host_and_port();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+        let args =
+            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
 
         // then
         let joined = args.join(" ");
@@ -603,36 +616,25 @@ mod tests {
     }
 
     #[test]
-    fn includes_mpc_env_vars() {
+    fn no_env_vars_forwarded_for_mpc_config() {
         // given
-        let config = base_mpc_config();
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(Platform::NonTee, &config, &flags, &digest).unwrap();
+        let args =
+            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
 
-        // then
-        let joined = args.join(" ");
-        assert!(joined.contains("MPC_ACCOUNT_ID=test-account"));
-        assert!(joined.contains("MPC_IMAGE_HASH="));
-        assert!(joined.contains(&format!("MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}")));
-    }
-
-    #[test]
-    fn ld_preload_in_typed_field_is_rejected_by_env_validation() {
-        // given - typed fields are also validated by env_validation::validate_env_value,
-        // so LD_PRELOAD in any env value is caught before the final safeguard.
-        let mut config = base_mpc_config();
-        config.mpc_account_id = "LD_PRELOAD=/evil.so".into();
-        let flags = empty_docker_flags();
-        let digest = sample_digest();
-
-        // when
-        let result = docker_run_args(Platform::NonTee, &config, &flags, &digest);
-
-        // then
-        assert_matches!(result, Err(LauncherError::UnsafeEnvValue { .. }));
+        // then - no MPC_* env vars should be present (only DSTACK_ENDPOINT in TEE mode)
+        let env_args: Vec<&String> = args
+            .windows(2)
+            .filter(|w| w[0] == "--env")
+            .map(|w| &w[1])
+            .collect();
+        assert!(
+            env_args.is_empty(),
+            "expected no --env args in non-TEE mode, got: {env_args:?}"
+        );
     }
 
     // --- select_image_hash ---

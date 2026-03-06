@@ -27,18 +27,6 @@ pub enum LauncherError {
         output: String,
     },
 
-    #[error("Too many env vars to pass through (>{0})")]
-    TooManyEnvVars(usize),
-
-    #[error("Total env payload too large (>{0} bytes)")]
-    EnvPayloadTooLarge(usize),
-
-    #[error("Env var '{key}' has unsafe value: {reason}")]
-    UnsafeEnvValue { key: String, reason: String },
-
-    #[error("Unsafe docker command: LD_PRELOAD detected")]
-    LdPreloadDetected,
-
     #[error("Failed to read {path}: {source}")]
     FileRead {
         path: String,

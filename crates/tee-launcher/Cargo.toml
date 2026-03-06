@@ -16,10 +16,7 @@ backon = { workspace = true }
 bounded-collections = { workspace = true }
 clap = { workspace = true }
 dstack-sdk = { workspace = true }
-hex = { workspace = true }
 launcher-interface = { workspace = true }
-itertools = { workspace = true }
-regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -31,7 +28,6 @@ url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-rstest = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]
