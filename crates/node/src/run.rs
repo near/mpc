@@ -62,7 +62,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
         Some(key) => key.clone(),
-        None => generate_and_write_backup_encryption_key_to_disk(&home_dir)?,
+        None => generate_and_write_backup_encryption_key_to_disk(&config.home_dir)?,
     };
 
     // Load secrets from configuration and persistent storage
@@ -110,7 +110,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
     let indexer_api = spawn_real_indexer(
-        home_dir.clone(),
+        config.home_dir.clone(),
         node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
         persistent_secrets.near_signer_key.clone(),
@@ -149,6 +149,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         None
     };
 
+    let home_dir = config.home_dir.clone();
     let root_future = create_root_future(
         config,
         home_dir.clone(),

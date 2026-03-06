@@ -85,7 +85,7 @@ pub enum CliCommand {
 #[derive(Args, Debug)]
 pub struct StartCmd {
     #[arg(long, env("MPC_HOME_DIR"))]
-    pub home_dir: String,
+    pub home_dir: PathBuf,
     /// Hex-encoded 16 byte AES key for local storage encryption.
     /// This key should come from a secure secret storage.
     /// TODO(#444): After TEE integration decide on what to do with AES encryption key
