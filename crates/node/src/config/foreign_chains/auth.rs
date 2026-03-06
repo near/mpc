@@ -52,7 +52,7 @@ pub enum TokenConfig {
 impl TokenConfig {
     pub fn resolve(&self) -> anyhow::Result<String> {
         match self {
-            // TODO: do not resolve env variables this deep in the binary.
+            // TODO(#2335): do not resolve env variables this deep in the binary.
             // Should be resolved at start, preferably in the config so we can kill env configs
             //
             // One option is to have a separate secrets config file.

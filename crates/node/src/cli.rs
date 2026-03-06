@@ -229,7 +229,7 @@ impl Cli {
                 let node_configuration = StartConfig::from_json_file(&config_path)?;
                 run_mpc_node(node_configuration).await
             }
-            // TODO: deprecate this
+            // TODO(#2334): deprecate this
             CliCommand::Start(start) => {
                 let home_dir = std::path::Path::new(&start.home_dir);
                 let config_file = load_config_file(home_dir)?;

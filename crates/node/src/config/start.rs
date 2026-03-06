@@ -68,7 +68,7 @@ pub enum TeeAuthorityStartConfig {
         #[serde(default = "default_dstack_endpoint")]
         dstack_endpoint: String,
         #[serde(default = "default_quote_upload_url")]
-        // TODO: use URL type for this type
+        // TODO(#2333): use URL type for this type
         quote_upload_url: String,
     },
 }
