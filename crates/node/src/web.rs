@@ -59,6 +59,7 @@ pub(crate) async fn metrics() -> String {
 /// fields are added to ConfigFile in the future, they won't be leaked via
 /// the API. When adding new fields to ConfigFile, only add them here if they
 /// are safe to expose.
+/// Moreover, to decouple internal structure from what's served in the API.
 #[derive(Clone, Serialize)]
 struct NodeConfigResponse {
     my_near_account_id: AccountId,
@@ -92,7 +93,7 @@ impl From<&ConfigFile> for NodeConfigResponse {
             signature: config.signature.clone(),
             ckd: config.ckd.clone(),
             keygen: config.keygen.clone(),
-            foreign_chains: config.foreign_chains.clone(),
+            foreign_chains: config.foreign_chains.redacted(),
             cores: config.cores,
         }
     }
@@ -286,4 +287,224 @@ pub async fn start_web_server(
         anyhow::Ok(())
     }
     .boxed())
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::config::SyncMode;
+    use crate::config::{
+        AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, AuthConfig,
+        BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, EthereumApiVariant,
+        EthereumChainConfig, EthereumProviderConfig, SolanaApiVariant, SolanaChainConfig,
+        SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
+        TokenConfig,
+    };
+    use bounded_collections::NonEmptyBTreeMap;
+    use near_indexer_primitives::types::Finality;
+    use std::net::Ipv4Addr;
+    use std::str::FromStr;
+
+    /// Builds a [`ConfigFile`] with one provider per chain, each exercising a
+    /// different [`AuthConfig`] variant so every redaction path is covered.
+    fn test_config() -> ConfigFile {
+        ConfigFile {
+            my_near_account_id: AccountId::from_str("test.near").unwrap(),
+            near_responder_account_id: AccountId::from_str("test.near").unwrap(),
+            number_of_responder_keys: 1,
+            web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8080),
+            migration_web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8081),
+            pprof_bind_address: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8082),
+            indexer: IndexerConfig {
+                concurrency: 1.try_into().unwrap(),
+                finality: Finality::Final,
+                mpc_contract_id: "mpc.test.near".parse().unwrap(),
+                port_override: None,
+                sync_mode: SyncMode::Latest,
+                validate_genesis: false,
+            },
+            triple: TripleConfig {
+                concurrency: 1,
+                desired_triples_to_buffer: 10,
+                parallel_triple_generation_stagger_time_sec: 1,
+                timeout_sec: 60,
+            },
+            presignature: PresignatureConfig {
+                concurrency: 1,
+                desired_presignatures_to_buffer: 5,
+                timeout_sec: 60,
+            },
+            signature: SignatureConfig { timeout_sec: 60 },
+            ckd: CKDConfig { timeout_sec: 60 },
+            keygen: KeygenConfig { timeout_sec: 60 },
+            foreign_chains: ForeignChainsConfig {
+                // Header auth with Val token
+                solana: Some(SolanaChainConfig {
+                    timeout_sec: 30,
+                    max_retries: 3,
+                    providers: NonEmptyBTreeMap::new(
+                        "alchemy".to_string(),
+                        SolanaProviderConfig {
+                            rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
+                            api_variant: SolanaApiVariant::Alchemy,
+                            auth: AuthConfig::Header {
+                                name: http::HeaderName::from_static("authorization"),
+                                scheme: Some("Bearer".to_string()),
+                                token: TokenConfig::Val {
+                                    val: "sk-SUPER-SECRET-KEY".to_string(),
+                                },
+                            },
+                        },
+                    ),
+                }),
+                // Path auth with Val token (URL contains placeholder)
+                bitcoin: Some(BitcoinChainConfig {
+                    timeout_sec: 30,
+                    max_retries: 3,
+                    providers: NonEmptyBTreeMap::new(
+                        "ankr".to_string(),
+                        BitcoinProviderConfig {
+                            rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
+                            api_variant: BitcoinApiVariant::Standard,
+                            auth: AuthConfig::Path {
+                                placeholder: "{api_key}".to_string(),
+                                token: TokenConfig::Val {
+                                    val: "ankr-secret-token".to_string(),
+                                },
+                            },
+                        },
+                    ),
+                }),
+                // Query auth with Env token (env name should be preserved)
+                ethereum: Some(EthereumChainConfig {
+                    timeout_sec: 30,
+                    max_retries: 3,
+                    providers: NonEmptyBTreeMap::new(
+                        "alchemy".to_string(),
+                        EthereumProviderConfig {
+                            rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
+                            api_variant: EthereumApiVariant::Alchemy,
+                            auth: AuthConfig::Query {
+                                name: "api_key".to_string(),
+                                token: TokenConfig::Env {
+                                    env: "ALCHEMY_API_KEY".to_string(),
+                                },
+                            },
+                        },
+                    ),
+                }),
+                // No auth
+                abstract_chain: Some(AbstractChainConfig {
+                    timeout_sec: 30,
+                    max_retries: 3,
+                    providers: NonEmptyBTreeMap::new(
+                        "public".to_string(),
+                        AbstractProviderConfig {
+                            rpc_url: "https://api.testnet.abs.xyz".to_string(),
+                            api_variant: AbstractApiVariant::Standard,
+                            auth: AuthConfig::None,
+                        },
+                    ),
+                }),
+                // Query auth with Val token
+                starknet: Some(StarknetChainConfig {
+                    timeout_sec: 30,
+                    max_retries: 3,
+                    providers: NonEmptyBTreeMap::new(
+                        "blast".to_string(),
+                        StarknetProviderConfig {
+                            rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
+                            api_variant: StarknetApiVariant::Blast,
+                            auth: AuthConfig::Query {
+                                name: "api_key".to_string(),
+                                token: TokenConfig::Val {
+                                    val: "blast-secret".to_string(),
+                                },
+                            },
+                        },
+                    ),
+                }),
+            },
+            cores: Some(4),
+        }
+    }
+
+    #[test]
+    fn node_config_response_from__redacts_header_val_token() {
+        let response = NodeConfigResponse::from(&test_config());
+        let provider = &response.foreign_chains.solana.unwrap().providers["alchemy"];
+
+        assert_eq!(provider.rpc_url, "https://solana-mainnet.g.alchemy.com/v2/");
+        assert_eq!(
+            provider.auth,
+            AuthConfig::Header {
+                name: http::HeaderName::from_static("authorization"),
+                scheme: Some("Bearer".to_string()),
+                token: TokenConfig::Val {
+                    val: "***".to_string()
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn node_config_response_from__redacts_path_val_token() {
+        let response = NodeConfigResponse::from(&test_config());
+        let provider = &response.foreign_chains.bitcoin.unwrap().providers["ankr"];
+
+        assert_eq!(provider.rpc_url, "https://rpc.ankr.com/btc/{api_key}");
+        assert_eq!(
+            provider.auth,
+            AuthConfig::Path {
+                placeholder: "{api_key}".to_string(),
+                token: TokenConfig::Val {
+                    val: "***".to_string()
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn node_config_response_from__preserves_env_token_name() {
+        let response = NodeConfigResponse::from(&test_config());
+        let provider = &response.foreign_chains.ethereum.unwrap().providers["alchemy"];
+
+        assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
+        assert_eq!(
+            provider.auth,
+            AuthConfig::Query {
+                name: "api_key".to_string(),
+                token: TokenConfig::Env {
+                    env: "ALCHEMY_API_KEY".to_string()
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn node_config_response_from__preserves_none_auth() {
+        let response = NodeConfigResponse::from(&test_config());
+        let provider = &response.foreign_chains.abstract_chain.unwrap().providers["public"];
+
+        assert_eq!(provider.rpc_url, "https://api.testnet.abs.xyz");
+        assert_eq!(provider.auth, AuthConfig::None);
+    }
+
+    #[test]
+    fn node_config_response_from__redacts_query_val_token() {
+        let response = NodeConfigResponse::from(&test_config());
+        let provider = &response.foreign_chains.starknet.unwrap().providers["blast"];
+
+        assert_eq!(provider.rpc_url, "https://starknet-mainnet.blastapi.io/");
+        assert_eq!(
+            provider.auth,
+            AuthConfig::Query {
+                name: "api_key".to_string(),
+                token: TokenConfig::Val {
+                    val: "***".to_string()
+                },
+            }
+        );
+    }
 }

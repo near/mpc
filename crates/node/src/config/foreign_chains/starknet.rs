@@ -14,6 +14,14 @@ pub struct StarknetChainConfig {
 }
 
 impl StarknetChainConfig {
+    pub(crate) fn redacted(&self) -> Self {
+        Self {
+            timeout_sec: self.timeout_sec,
+            max_retries: self.max_retries,
+            providers: self.providers.clone().map(|k, v| (k, v.redacted())),
+        }
+    }
+
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
         foreign_chains::validate_chain_config(
             "starknet",
@@ -30,6 +38,16 @@ pub struct StarknetProviderConfig {
     pub api_variant: StarknetApiVariant,
     #[serde(default)]
     pub auth: auth::AuthConfig,
+}
+
+impl StarknetProviderConfig {
+    pub(crate) fn redacted(&self) -> Self {
+        Self {
+            rpc_url: self.rpc_url.clone(),
+            api_variant: self.api_variant,
+            auth: self.auth.redacted(),
+        }
+    }
 }
 
 impl ForeignChainProviderConfig for StarknetProviderConfig {
