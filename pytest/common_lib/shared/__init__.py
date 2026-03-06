@@ -230,6 +230,7 @@ class ConfigValues:
     migration_address: str
     pprof_address: str
     backup_key: bytes
+    node_config: dict  # JSON-serializable dict matching Rust ConfigFile
 
 
 def generate_mpc_configs(
@@ -331,6 +332,7 @@ def generate_mpc_configs(
         ]
 
         backup_key = os.urandom(32)
+
         configs.append(
             ConfigValues(
                 signer_key,
@@ -341,6 +343,7 @@ def generate_mpc_configs(
                 migration_address,
                 pprof_address,
                 backup_key,
+                node_config=config,
             )
         )
     return configs
@@ -531,6 +534,7 @@ def start_cluster_with_mpc(
             pytest_signer_keys=pytest_signer_keys,
             backup_key=config.backup_key,
             pprof_address=config.pprof_address,
+            node_config=config.node_config,
         )
         mpc_node.init_nonces(validators[0])
         mpc_node.set_block_ingestion(True)
