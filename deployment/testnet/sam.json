@@ -1,0 +1,37 @@
+{
+  "launcher_config": {
+    "image_tags": ["barak-doc-update_localnet_guide-b12bc7d"],
+    "image_name": "nearone/mpc-node",
+    "registry": "registry.hub.docker.com",
+    "rpc_request_timeout_secs": 10,
+    "rpc_request_interval_secs": 1,
+    "rpc_max_attempts": 20,
+    "mpc_hash_override": null
+  },
+  "docker_command_config": {
+    "extra_hosts": {
+      "hosts": []
+    },
+    "port_mappings": {
+      "ports": [
+        { "src": 8080, "dst": 8080 },
+        { "src": 24567, "dst": 24567 },
+        { "src": 13002, "dst": 13002 },
+        { "src": 80, "dst": 80 }
+      ]
+    }
+  },
+  "mpc_passthrough_env": {
+    "mpc_account_id": "$SAM_ACCOUNT",
+    "mpc_local_address": "127.0.0.1",
+    "mpc_secret_key_store": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "mpc_backup_encryption_key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "mpc_env": "Testnet",
+    "mpc_home_dir": "/data",
+    "mpc_contract_id": "$MPC_CONTRACT_ACCOUNT",
+    "mpc_responder_id": "$SAM_ACCOUNT",
+    "near_boot_nodes": "$BOOTNODES",
+    "rust_backtrace": "full",
+    "rust_log": "info"
+  }
+}

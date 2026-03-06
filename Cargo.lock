@@ -4925,6 +4925,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "launcher-interface"
+version = "3.6.0"
+dependencies = [
+ "assert_matches",
+ "bounded-collections",
+ "derive_more 2.1.1",
+ "insta",
+ "mpc-primitives",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5372,6 +5386,7 @@ dependencies = [
  "derive_more 2.1.1",
  "hex",
  "include-measurements",
+ "launcher-interface",
  "mpc-primitives",
  "serde",
  "serde_json",
@@ -5511,6 +5526,7 @@ dependencies = [
  "hyper 0.14.32",
  "itertools 0.14.0",
  "k256",
+ "launcher-interface",
  "lru 0.16.3",
  "mockall",
  "mpc-attestation",
@@ -10573,6 +10589,26 @@ dependencies = [
  "test-utils",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "tee-launcher"
+version = "3.6.0"
+dependencies = [
+ "assert_matches",
+ "backon",
+ "bounded-collections",
+ "clap",
+ "dstack-sdk",
+ "launcher-interface",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

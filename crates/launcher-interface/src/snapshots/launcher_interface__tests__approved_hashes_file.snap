@@ -1,0 +1,9 @@
+---
+source: crates/launcher-interface/src/lib.rs
+expression: json
+---
+{
+  "approved_hashes": [
+    "sha256:abababababababababababababababababababababababababababababababab"
+  ]
+}
