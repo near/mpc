@@ -48,10 +48,9 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let _tokio_enter_guard = root_runtime.enter();
 
     // Load configuration and initialize persistent secrets
-    let home_dir = PathBuf::from(config.home_dir.clone());
     let node_config = config.node.clone();
     let persistent_secrets = PersistentSecrets::generate_or_get_existing(
-        &home_dir,
+        &config.home_dir,
         node_config.number_of_responder_keys,
     )?;
 

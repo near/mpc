@@ -13,7 +13,7 @@ use url::Url;
 /// (JSON file) convert into this type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartConfig {
-    pub home_dir: String,
+    pub home_dir: PathBuf,
     /// Encryption keys and backup settings.
     pub secrets: SecretsStartConfig,
     /// TEE authority and image hash monitoring settings.
@@ -68,6 +68,7 @@ pub enum TeeAuthorityStartConfig {
         #[serde(default = "default_dstack_endpoint")]
         dstack_endpoint: String,
         #[serde(default = "default_quote_upload_url")]
+        // TODO: use URL type for this type
         quote_upload_url: String,
     },
 }
