@@ -1,4 +1,7 @@
-use crate::config::SecretsConfig;
+use crate::config::{
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
+    SecretsConfig, SignatureConfig, TripleConfig,
+};
 use crate::indexer::migrations::ContractMigrationInfo;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
@@ -12,8 +15,10 @@ use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
+use near_account_id::AccountId;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
+use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
@@ -49,6 +54,50 @@ pub(crate) async fn metrics() -> String {
     String::from_utf8(buffer).unwrap()
 }
 
+/// Safe duplicate of ConfigFile for the debug endpoint.
+/// This struct is intentionally decoupled from ConfigFile so that if secret
+/// fields are added to ConfigFile in the future, they won't be leaked via
+/// the API. When adding new fields to ConfigFile, only add them here if they
+/// are safe to expose.
+#[derive(Clone, Serialize)]
+struct NodeConfigResponse {
+    my_near_account_id: AccountId,
+    near_responder_account_id: AccountId,
+    number_of_responder_keys: usize,
+    web_ui: SocketAddr,
+    migration_web_ui: SocketAddr,
+    pprof_bind_address: SocketAddr,
+    indexer: IndexerConfig,
+    triple: TripleConfig,
+    presignature: PresignatureConfig,
+    signature: SignatureConfig,
+    ckd: CKDConfig,
+    keygen: KeygenConfig,
+    foreign_chains: ForeignChainsConfig,
+    cores: Option<usize>,
+}
+
+impl From<&ConfigFile> for NodeConfigResponse {
+    fn from(config: &ConfigFile) -> Self {
+        Self {
+            my_near_account_id: config.my_near_account_id.clone(),
+            near_responder_account_id: config.near_responder_account_id.clone(),
+            number_of_responder_keys: config.number_of_responder_keys,
+            web_ui: config.web_ui,
+            migration_web_ui: config.migration_web_ui,
+            pprof_bind_address: config.pprof_bind_address,
+            indexer: config.indexer.clone(),
+            triple: config.triple.clone(),
+            presignature: config.presignature.clone(),
+            signature: config.signature.clone(),
+            ckd: config.ckd.clone(),
+            keygen: config.keygen.clone(),
+            foreign_chains: config.foreign_chains.clone(),
+            cores: config.cores,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct WebServerState {
     /// Root task handle for the whole program.
@@ -59,6 +108,7 @@ struct WebServerState {
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
+    node_config: NodeConfigResponse,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
@@ -66,6 +116,10 @@ async fn debug_tasks(State(state): State<WebServerState>) -> String {
         Some(root_task_handle) => format!("{:?}", root_task_handle.report()),
         None => "No root task has started yet.".to_string(),
     }
+}
+
+async fn debug_node_config(State(state): State<WebServerState>) -> Json<NodeConfigResponse> {
+    Json(state.node_config.clone())
 }
 
 #[derive(Clone)]
@@ -196,6 +250,7 @@ pub async fn start_web_server(
     static_web_data: StaticWebData,
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    config: &ConfigFile,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
 
@@ -207,6 +262,7 @@ pub async fn start_web_server(
         .route("/debug/ckds", axum::routing::get(debug_ckds))
         .route("/debug/contract", axum::routing::get(contract_state))
         .route("/debug/migrations", axum::routing::get(migrations))
+        .route("/debug/node_config", axum::routing::get(debug_node_config))
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
         .route("/public_data", axum::routing::get(public_data))
@@ -216,6 +272,7 @@ pub async fn start_web_server(
             protocol_state_receiver,
             migration_state_receiver,
             static_web_data,
+            node_config: NodeConfigResponse::from(config),
         });
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;
