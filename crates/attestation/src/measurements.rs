@@ -3,6 +3,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
+use crate::tcb_info::TcbInfo;
+
 /// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
 /// define the trusted baseline that TEE environments must match during verification. They
 /// should be updated when the underlying TEE environment changes.
@@ -49,6 +51,17 @@ pub enum MeasurementsError {
     InvalidHexValue(String, String),
     #[error("invalid length for {0}: {1}")]
     InvalidLength(String, usize),
+}
+
+impl From<&TcbInfo> for Measurements {
+    fn from(tcb: &TcbInfo) -> Self {
+        Self {
+            mrtd: *tcb.mrtd,
+            rtmr0: *tcb.rtmr0,
+            rtmr1: *tcb.rtmr1,
+            rtmr2: *tcb.rtmr2,
+        }
+    }
 }
 
 impl TryFrom<dcap_qvl::verify::VerifiedReport> for Measurements {
