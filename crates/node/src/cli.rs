@@ -1,8 +1,9 @@
 use crate::{
     config::{
-        BlockArgs, CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig,
-        PersistentSecrets, PresignatureConfig, SignatureConfig, StartConfig, SyncMode,
-        TeeAuthorityStartConfig, TripleConfig,
+        load_config_file, BlockArgs, CKDConfig, ConfigFile, ForeignChainsConfig, GcpStartConfig,
+        IndexerConfig, KeygenConfig, PersistentSecrets, PresignatureConfig, SecretsStartConfig,
+        SignatureConfig, StartConfig, SyncMode, TeeAuthorityStartConfig, TeeStartConfig,
+        TripleConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
@@ -143,26 +144,37 @@ pub struct CliImageHashConfig {
     pub latest_allowed_hash_file: Option<PathBuf>,
 }
 
-impl From<StartCmd> for StartConfig {
-    fn from(cmd: StartCmd) -> Self {
+impl StartCmd {
+    fn into_start_config(self, config: ConfigFile) -> StartConfig {
+        let gcp = match (self.gcp_keyshare_secret_id, self.gcp_project_id) {
+            (Some(keyshare_secret_id), Some(project_id)) => Some(GcpStartConfig {
+                keyshare_secret_id,
+                project_id,
+            }),
+            _ => None,
+        };
         StartConfig {
-            home_dir: cmd.home_dir,
-            secret_store_key_hex: cmd.secret_store_key_hex,
-            gcp_keyshare_secret_id: cmd.gcp_keyshare_secret_id,
-            gcp_project_id: cmd.gcp_project_id,
-            tee_authority: match cmd.tee_authority {
-                CliTeeAuthorityConfig::Local => TeeAuthorityStartConfig::Local,
-                CliTeeAuthorityConfig::Dstack {
-                    dstack_endpoint,
-                    quote_upload_url,
-                } => TeeAuthorityStartConfig::Dstack {
-                    dstack_endpoint,
-                    quote_upload_url: quote_upload_url.to_string(),
-                },
+            home_dir: self.home_dir,
+            secrets: SecretsStartConfig {
+                secret_store_key_hex: self.secret_store_key_hex,
+                backup_encryption_key_hex: self.backup_encryption_key_hex,
             },
-            image_hash: cmd.image_hash_config.image_hash,
-            latest_allowed_hash_file: cmd.image_hash_config.latest_allowed_hash_file,
-            backup_encryption_key_hex: cmd.backup_encryption_key_hex,
+            tee: TeeStartConfig {
+                authority: match self.tee_authority {
+                    CliTeeAuthorityConfig::Local => TeeAuthorityStartConfig::Local,
+                    CliTeeAuthorityConfig::Dstack {
+                        dstack_endpoint,
+                        quote_upload_url,
+                    } => TeeAuthorityStartConfig::Dstack {
+                        dstack_endpoint,
+                        quote_upload_url: quote_upload_url.to_string(),
+                    },
+                },
+                image_hash: self.image_hash_config.image_hash,
+                latest_allowed_hash_file: self.image_hash_config.latest_allowed_hash_file,
+            },
+            gcp,
+            node: config,
         }
     }
 }
@@ -240,7 +252,11 @@ impl Cli {
             CliCommand::StartWithConfigFile { config_path } => {
                 StartConfig::from_json_file(&config_path)?.run().await
             }
-            CliCommand::Start(start) => StartConfig::from(start).run().await,
+            CliCommand::Start(start) => {
+                let home_dir = std::path::Path::new(&start.home_dir);
+                let config_file = load_config_file(home_dir)?;
+                start.into_start_config(config_file).run().await
+            }
             CliCommand::Init(config) => {
                 let (download_config_type, download_config_url) = if config.download_config {
                     (

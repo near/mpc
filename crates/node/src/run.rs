@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        generate_and_write_backup_encryption_key_to_disk, load_config_file, ConfigFile,
-        PersistentSecrets, RespondConfig, SecretsConfig, StartConfig,
+        generate_and_write_backup_encryption_key_to_disk, ConfigFile, PersistentSecrets,
+        RespondConfig, SecretsConfig, StartConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -50,7 +50,7 @@ impl StartConfig {
 
         // Load configuration and initialize persistent secrets
         let home_dir = PathBuf::from(self.home_dir.clone());
-        let config = load_config_file(&home_dir)?;
+        let config = self.node.clone();
         let persistent_secrets = PersistentSecrets::generate_or_get_existing(
             &home_dir,
             config.number_of_responder_keys,
@@ -62,20 +62,20 @@ impl StartConfig {
         // TODO(#1296): Decide if the MPC responder account is actually needed
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
-        let backup_encryption_key_hex = match &self.backup_encryption_key_hex {
+        let backup_encryption_key_hex = match &self.secrets.backup_encryption_key_hex {
             Some(key) => key.clone(),
             None => generate_and_write_backup_encryption_key_to_disk(&home_dir)?,
         };
 
         // Load secrets from configuration and persistent storage
         let secrets = SecretsConfig::from_parts(
-            &self.secret_store_key_hex,
+            &self.secrets.secret_store_key_hex,
             persistent_secrets.clone(),
             &backup_encryption_key_hex,
         )?;
 
         // Generate attestation
-        let tee_authority = self.tee_authority.clone().into_tee_authority()?;
+        let tee_authority = self.tee.authority.clone().into_tee_authority()?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
         let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
@@ -129,7 +129,7 @@ impl StartConfig {
 
         let image_hash_watcher_handle =
             if let (Some(image_hash), Some(latest_allowed_hash_file)) =
-                (&self.image_hash, &self.latest_allowed_hash_file)
+                (&self.tee.image_hash, &self.tee.latest_allowed_hash_file)
             {
                 let current_image_hash_bytes: [u8; 32] = hex::decode(image_hash)
                     .expect("The currently running image is a hex string.")
@@ -150,7 +150,7 @@ impl StartConfig {
                 )))
             } else {
                 tracing::info!(
-                    "MPC_IMAGE_HASH and/or MPC_LATEST_ALLOWED_HASH_FILE not set, skipping TEE image hash monitoring"
+                    "image_hash and/or latest_allowed_hash_file not set, skipping TEE image hash monitoring"
                 );
                 None
             };
@@ -226,17 +226,10 @@ where
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
         local_encryption_key: secrets.local_storage_aes_key,
-        gcp: if let Some(secret_id) = start_config.gcp_keyshare_secret_id {
-            let project_id = start_config.gcp_project_id.ok_or_else(|| {
-                anyhow::anyhow!("GCP_PROJECT_ID must be specified to use GCP_KEYSHARE_SECRET_ID")
-            })?;
-            Some(GcpPermanentKeyStorageConfig {
-                project_id,
-                secret_id,
-            })
-        } else {
-            None
-        },
+        gcp: start_config.gcp.map(|gcp| GcpPermanentKeyStorageConfig {
+            project_id: gcp.project_id,
+            secret_id: gcp.keyshare_secret_id,
+        }),
     };
 
     // Spawn periodic attestation submission task

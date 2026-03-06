@@ -14,7 +14,9 @@ use std::{
 };
 
 mod start;
-pub use start::{StartConfig, TeeAuthorityStartConfig};
+pub use start::{
+    GcpStartConfig, SecretsStartConfig, StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
+};
 
 mod foreign_chains;
 pub use foreign_chains::{

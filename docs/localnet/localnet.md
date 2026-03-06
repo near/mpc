@@ -191,64 +191,86 @@ Since this is not a validator node, we can remove `validator_key.json`
 rm ~/.near/mpc-frodo/validator_key.json
 ```
 
-Next we'll create a `config.yaml` for the MPC-indexer:
+Next we'll create a JSON configuration file for Frodo's MPC node. This single file
+contains all settings (secrets, TEE config, and node parameters):
 
 ```shell
-cat > ~/.near/mpc-frodo/config.yaml << 'EOF'
-my_near_account_id: frodo.test.near
-near_responder_account_id: frodo.test.near
-number_of_responder_keys: 1
-web_ui: 127.0.0.1:8081
-migration_web_ui: 127.0.0.1:8079
-pprof_bind_address: 127.0.0.1:34001
-triple:
-  concurrency: 2
-  desired_triples_to_buffer: 128
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-  finality: optimistic
-ckd:
-  timeout_sec: 60
-cores: 4
-foreign_chains:
-  bitcoin:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        api_variant: esplora
-        rpc_url: "https://bitcoin-rpc.publicnode.com"
-        auth:
-          kind: none
-  abstract:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        api_variant: standard
-        rpc_url: "https://api.testnet.abs.xyz"
-        auth:
-          kind: none
-  starknet:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        api_variant: standard
-        rpc_url: "https://starknet-rpc.publicnode.com"
-        auth:
-          kind: none
+cat > ~/.near/mpc-frodo/mpc-config.json << EOF
+{
+  "home_dir": "$HOME/.near/mpc-frodo",
+  "secrets": {
+    "secret_store_key_hex": "11111111111111111111111111111111"
+  },
+  "tee": {
+    "authority": { "type": "local" },
+    "image_hash": "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0",
+    "latest_allowed_hash_file": "/tmp/LATEST_ALLOWED_HASH_FILE.txt"
+  },
+  "node": {
+    "my_near_account_id": "frodo.test.near",
+    "near_responder_account_id": "frodo.test.near",
+    "number_of_responder_keys": 1,
+    "web_ui": "127.0.0.1:8081",
+    "migration_web_ui": "127.0.0.1:8079",
+    "pprof_bind_address": "127.0.0.1:34001",
+    "triple": {
+      "concurrency": 2,
+      "desired_triples_to_buffer": 128,
+      "timeout_sec": 60,
+      "parallel_triple_generation_stagger_time_sec": 1
+    },
+    "presignature": {
+      "concurrency": 4,
+      "desired_presignatures_to_buffer": 64,
+      "timeout_sec": 60
+    },
+    "signature": { "timeout_sec": 60 },
+    "indexer": {
+      "validate_genesis": false,
+      "sync_mode": "Latest",
+      "concurrency": 1,
+      "mpc_contract_id": "mpc-contract.test.near",
+      "finality": "optimistic"
+    },
+    "ckd": { "timeout_sec": 60 },
+    "cores": 4,
+    "foreign_chains": {
+      "bitcoin": {
+        "timeout_sec": 30,
+        "max_retries": 3,
+        "providers": {
+          "public": {
+            "api_variant": "esplora",
+            "rpc_url": "https://bitcoin-rpc.publicnode.com",
+            "auth": { "kind": "none" }
+          }
+        }
+      },
+      "abstract": {
+        "timeout_sec": 30,
+        "max_retries": 3,
+        "providers": {
+          "public": {
+            "api_variant": "standard",
+            "rpc_url": "https://api.testnet.abs.xyz",
+            "auth": { "kind": "none" }
+          }
+        }
+      },
+      "starknet": {
+        "timeout_sec": 30,
+        "max_retries": 3,
+        "providers": {
+          "public": {
+            "api_variant": "standard",
+            "rpc_url": "https://starknet-rpc.publicnode.com",
+            "auth": { "kind": "none" }
+          }
+        }
+      }
+    }
+  }
+}
 EOF
 ```
 
@@ -273,79 +295,99 @@ rm ~/.near/mpc-sam/validator_key.json
 ```
 
 ```shell
-cat > ~/.near/mpc-sam/config.yaml << 'EOF'
-my_near_account_id: sam.test.near
-near_responder_account_id: sam.test.near
-number_of_responder_keys: 1
-web_ui: 127.0.0.1:8082
-migration_web_ui: 127.0.0.1:8078
-pprof_bind_address: 127.0.0.1:34002
-triple:
-  concurrency: 2
-  desired_triples_to_buffer: 128
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-  finality: optimistic
-ckd:
-  timeout_sec: 60
-cores: 4
-foreign_chains:
-  bitcoin:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        api_variant: esplora
-        rpc_url: "https://bitcoin-rpc.publicnode.com"
-        auth:
-          kind: none
-  abstract:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        api_variant: standard
-        rpc_url: "https://api.testnet.abs.xyz"
-        auth:
-          kind: none
-  starknet:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        api_variant: standard
-        rpc_url: "https://starknet-rpc.publicnode.com"
-        auth:
-          kind: none
+cat > ~/.near/mpc-sam/mpc-config.json << EOF
+{
+  "home_dir": "$HOME/.near/mpc-sam",
+  "secrets": {
+    "secret_store_key_hex": "11111111111111111111111111111111"
+  },
+  "tee": {
+    "authority": { "type": "local" },
+    "image_hash": "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0",
+    "latest_allowed_hash_file": "/tmp/LATEST_ALLOWED_HASH_FILE.txt"
+  },
+  "node": {
+    "my_near_account_id": "sam.test.near",
+    "near_responder_account_id": "sam.test.near",
+    "number_of_responder_keys": 1,
+    "web_ui": "127.0.0.1:8082",
+    "migration_web_ui": "127.0.0.1:8078",
+    "pprof_bind_address": "127.0.0.1:34002",
+    "triple": {
+      "concurrency": 2,
+      "desired_triples_to_buffer": 128,
+      "timeout_sec": 60,
+      "parallel_triple_generation_stagger_time_sec": 1
+    },
+    "presignature": {
+      "concurrency": 4,
+      "desired_presignatures_to_buffer": 64,
+      "timeout_sec": 60
+    },
+    "signature": { "timeout_sec": 60 },
+    "indexer": {
+      "validate_genesis": false,
+      "sync_mode": "Latest",
+      "concurrency": 1,
+      "mpc_contract_id": "mpc-contract.test.near",
+      "finality": "optimistic"
+    },
+    "ckd": { "timeout_sec": 60 },
+    "cores": 4,
+    "foreign_chains": {
+      "bitcoin": {
+        "timeout_sec": 30,
+        "max_retries": 3,
+        "providers": {
+          "public": {
+            "api_variant": "esplora",
+            "rpc_url": "https://bitcoin-rpc.publicnode.com",
+            "auth": { "kind": "none" }
+          }
+        }
+      },
+      "abstract": {
+        "timeout_sec": 30,
+        "max_retries": 3,
+        "providers": {
+          "public": {
+            "api_variant": "standard",
+            "rpc_url": "https://api.testnet.abs.xyz",
+            "auth": { "kind": "none" }
+          }
+        }
+      },
+      "starknet": {
+        "timeout_sec": 30,
+        "max_retries": 3,
+        "providers": {
+          "public": {
+            "api_variant": "standard",
+            "rpc_url": "https://starknet-rpc.publicnode.com",
+            "auth": { "kind": "none" }
+          }
+        }
+      }
+    }
+  }
+}
 EOF
 ```
 
 ### Run the MPC binary
 
-In two separate shells run the MPC binary for frodo and sam. Note the last argument repeating (`11111111111111111111111111111111`) is the encryption key for the secret storage, and can be any arbitrary value.
+In two separate shells run the MPC binary for Frodo and Sam using their JSON config files:
 
 ```shell
-RUST_LOG=info mpc-node start --home-dir ~/.near/mpc-sam/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
+RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.json
 ```
 
 ```shell
-RUST_LOG=info mpc-node start --home-dir ~/.near/mpc-frodo/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
+RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-frodo/mpc-config.json
 ```
 
 Notes:
 
-- `8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0` is just an arbitrary hash.
 - If you get the following error:
 
   ```console

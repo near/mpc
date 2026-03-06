@@ -1,3 +1,4 @@
+use super::ConfigFile;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -13,15 +14,33 @@ use url::Url;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartConfig {
     pub home_dir: String,
+    /// Encryption keys and backup settings.
+    pub secrets: SecretsStartConfig,
+    /// TEE authority and image hash monitoring settings.
+    pub tee: TeeStartConfig,
+    /// GCP keyshare storage settings. Optional — omit if not using GCP.
+    #[serde(default)]
+    pub gcp: Option<GcpStartConfig>,
+    /// Node configuration (indexer, protocol parameters, etc.).
+    pub node: ConfigFile,
+}
+
+/// Encryption keys needed at startup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretsStartConfig {
     /// Hex-encoded 16 byte AES key for local storage encryption.
     pub secret_store_key_hex: String,
-    /// If provided, the root keyshare is stored on GCP.
+    /// Hex-encoded 32 byte AES key for backup encryption.
+    /// If not provided, a key is generated and written to disk.
     #[serde(default)]
-    pub gcp_keyshare_secret_id: Option<String>,
-    #[serde(default)]
-    pub gcp_project_id: Option<String>,
+    pub backup_encryption_key_hex: Option<String>,
+}
+
+/// TEE-related configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeeStartConfig {
     /// TEE authority configuration.
-    pub tee_authority: TeeAuthorityStartConfig,
+    pub authority: TeeAuthorityStartConfig,
     /// Hex representation of the hash of the running image. Only required in TEE.
     #[serde(default)]
     pub image_hash: Option<String>,
@@ -29,9 +48,15 @@ pub struct StartConfig {
     /// If not set, assumes running outside of TEE and skips image hash monitoring.
     #[serde(default)]
     pub latest_allowed_hash_file: Option<PathBuf>,
-    /// Hex-encoded 32 byte AES key for backup encryption.
-    #[serde(default)]
-    pub backup_encryption_key_hex: Option<String>,
+}
+
+/// GCP keyshare storage configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GcpStartConfig {
+    /// GCP secret ID for storing the root keyshare.
+    pub keyshare_secret_id: String,
+    /// GCP project ID.
+    pub project_id: String,
 }
 
 /// TEE authority configuration for JSON deserialization.
@@ -74,7 +99,12 @@ impl StartConfig {
     pub fn from_json_file(path: &std::path::Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config file: {}", path.display()))?;
-        serde_json::from_str(&content)
-            .with_context(|| format!("failed to parse config file: {}", path.display()))
+        let config: Self = serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse config file: {}", path.display()))?;
+        config
+            .node
+            .validate()
+            .context("invalid node config in config file")?;
+        Ok(config)
     }
 }
