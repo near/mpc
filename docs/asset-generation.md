@@ -93,8 +93,9 @@ operations:
 
 When `take_owned()` returns an asset, the following holds:
 
-1. **All participants were online at check time.** The queue verifies
-   that the asset is online by the time it is taken from the queue.
+1. **The asset if online at check time.** The queue verifies
+   that the asset is online by the time it is taken from the queue
+   (see [Cold queue](#cold-queue) for how this classification works).
 
 2. **The asset has not been used before.** It is removed from storage
    atomically on retrieval. Each asset is consumed exactly once.
@@ -122,7 +123,7 @@ unusable entries:
   moved to the front of the queue, even during a discard pass.
 
 Additional bulk cleanup happens on startup — see
-[Asset cleanup on startup](#asset-cleanup-on-startup).
+[Asset cleanup on epoch transition](#asset-cleanup-on-epoch-transition).
 
 ## Asset storage
 
@@ -140,13 +141,13 @@ The `DoubleQueue` that holds owned assets has two layers:
 ```
   ┌──────────────┐       ┌────────────────────────────────────────────────┐
   │  Hot queue   │──────►│                Cold queue                      │
-  │ (flume chan) │       │          [ready | unknown | offline]           │
+  │ (MPMC chan) │       │          [ready | unknown | offline]           │
   └──────────────┘       └────────────────────────────────────────────────┘
 ```
 
 ### Hot queue
 
-An unbounded `flume` channel. Newly generated assets are pushed here by
+An unbounded MPMC channel. Newly generated assets are pushed here by
 `add_owned()`. The hot queue is drained into the cold queue the first
 time an asset is needed.
 
@@ -309,12 +310,13 @@ When a signature request arrives:
    wait for all followers to confirm success (`leader_waits_for_success`
    returns `false`).
 
-## Asset cleanup on startup
+## Asset cleanup on epoch transition
 
 Source: `crates/node/src/assets/cleanup.rs`
 
-On node startup, `delete_stale_triples_and_presignatures()` compares
-the current epoch data with what was stored in `RocksDB`:
+Every time the node enters the Running state,
+`delete_stale_triples_and_presignatures()` compares the current epoch
+data with what was stored in `RocksDB`:
 
 | Scenario | Action |
 |----------|--------|
