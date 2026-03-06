@@ -2,6 +2,7 @@
 
 import inspect
 import json
+import os
 import tempfile
 import tee_launcher.launcher as launcher
 
@@ -17,11 +18,7 @@ from tee_launcher.launcher import (
     is_valid_host_entry,
     is_valid_port_mapping,
     Platform,
-    is_safe_env_value,
-    _has_control_chars,
-    is_allowed_container_env_key,
-    MAX_ENV_VALUE_LEN,
-    MAX_PASSTHROUGH_ENV_VARS,
+    get_mpc_config_path,
 )
 from tee_launcher.launcher import (
     JSON_KEY_APPROVED_HASHES,
@@ -139,15 +136,12 @@ def test_build_docker_cmd_sanitizes_ports_and_hosts():
     env = {
         "PORTS": TEST_PORTS_WITH_INJECTION,
         "EXTRA_HOSTS": TEST_EXTRA_HOSTS_WITH_INJECTION,
-        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
     }
     cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
 
     func_name = inspect.currentframe().f_code.co_name
     print(f"[{func_name}] CMD:", " ".join(cmd))
 
-    assert "--env" in cmd
-    assert f"MPC_ACCOUNT_ID={TEST_MPC_ACCOUNT_ID}" in cmd
     assert "-p" in cmd
     assert "11780:11780" in cmd
     assert "--add-host" in cmd
@@ -157,11 +151,13 @@ def test_build_docker_cmd_sanitizes_ports_and_hosts():
     assert not any("BAD=1" in arg for arg in cmd)
     assert not any("/:/mnt" in arg for arg in cmd)
 
+    # Verify config file is passed as command arg
+    assert "start-with-config-file" in cmd
+
 
 def test_extra_hosts_does_not_allow_ld_preload():
     env = {
         "EXTRA_HOSTS": "host:1.2.3.4,--env LD_PRELOAD=/evil.so",
-        "MPC_ACCOUNT_ID": "safe",
     }
     cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
 
@@ -172,7 +168,6 @@ def test_extra_hosts_does_not_allow_ld_preload():
 def test_ports_does_not_allow_volume_injection():
     env = {
         "PORTS": "2200:2200,--volume /:/mnt",
-        "MPC_ACCOUNT_ID": "safe",
     }
     cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
 
@@ -180,67 +175,28 @@ def test_ports_does_not_allow_volume_injection():
     assert not any("/:/mnt" in arg for arg in cmd)
 
 
-def test_invalid_env_key_is_ignored():
-    env = {
-        "BAD_KEY": "should_not_be_used",
-        "MPC_ACCOUNT_ID": "safe",
-    }
-    cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
-
-    assert "should_not_be_used" not in " ".join(cmd)
-    assert "MPC_ACCOUNT_ID=safe" in cmd
-
-
-def test_mpc_backup_encryption_key_is_allowed():
-    env = {
-        "MPC_BACKUP_ENCRYPTION_KEY_HEX": "0000000000000000000000000000000000000000000000000000000000000000",
-    }
-    cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
-
-    assert (
-        "MPC_BACKUP_ENCRYPTION_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000"
-        in " ".join(cmd)
-    )
-
-
 def test_malformed_extra_host_is_ignored():
     env = {
         "EXTRA_HOSTS": "badhostentry,no-colon,also--bad",
-        "MPC_ACCOUNT_ID": "safe",
     }
     cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
 
     assert "--add-host" not in cmd  # All malformed entries should be skipped
 
 
-def test_env_value_with_shell_injection_is_handled_safely():
-    env = {
-        "MPC_ACCOUNT_ID": "safe; rm -rf /",
-    }
-    cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
-
-    assert "--env" in cmd
-    assert "MPC_ACCOUNT_ID=safe; rm -rf /" in cmd
-
-
 def test_parse_and_build_docker_cmd_full_flow():
     config_str = """
     # Valid entries
-    MPC_ACCOUNT_ID=test-user
     PORTS=11780:11780, --env BAD=oops
     EXTRA_HOSTS=host1:192.168.1.1, --volume /:/mnt
-    IMAGE_HASH=sha256:abc123
     """
 
     env = parse_env_string(config_str)
-    image_hash = env.get("IMAGE_HASH", "sha256:default")
 
-    cmd = build_docker_cmd(launcher.Platform.TEE, env, image_hash)
+    cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
 
     print(f"[{inspect.currentframe().f_code.co_name}] CMD: {' '.join(cmd)}")
 
-    assert "--env" in cmd
-    assert "MPC_ACCOUNT_ID=test-user" in cmd
     assert "-p" in cmd
     assert "11780:11780" in cmd
     assert "--add-host" in cmd
@@ -253,146 +209,71 @@ def test_parse_and_build_docker_cmd_full_flow():
 
 # Test that ensures LD_PRELOAD cannot be injected into the docker command
 def test_ld_preload_injection_blocked1():
-    # Set up the environment variable with a dangerous LD_PRELOAD value
     malicious_env = {
-        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
-        "--env LD_PRELOAD": "/path/to/my/malloc.so",  # The dangerous value
+        "--env LD_PRELOAD": "/path/to/my/malloc.so",
     }
 
-    # Call build_docker_cmd to generate the docker command
     docker_cmd = build_docker_cmd(launcher.Platform.TEE, malicious_env, "sha256:abc123")
 
-    # Check that LD_PRELOAD is not included in the command
-    assert "--env" in docker_cmd  # Ensure there is an env var
     assert (
         "LD_PRELOAD" not in docker_cmd
-    )  # Make sure LD_PRELOAD is not in the generated command
-
-    # Alternatively, if you're using a regex to ensure safe environment variables
-    assert not any(
-        "-e " in arg for arg in docker_cmd
-    )  # Ensure no CLI injection for LD_PRELOAD
+    )
 
 
-# Additional tests can go here for host/port validation
-
-
-# Test that ensures LD_PRELOAD cannot be injected through extra hosts
 def test_ld_preload_in_extra_hosts1():
-    # Set up environment with malicious EXRA_HOSTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "EXTRA_HOSTS": "host1:192.168.0.1,host2:192.168.0.2,--env LD_PRELOAD=/path/to/my/malloc.so",
     }
 
-    # Call build_docker_cmd to generate the docker command
     docker_cmd = build_docker_cmd(launcher.Platform.TEE, malicious_env, "sha256:abc123")
 
-    # Check that LD_PRELOAD is not part of the extra hosts in the docker command
-    assert "--add-host" in docker_cmd  # Ensure extra hosts are included
-    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
-
-    # Check that there are no malicious injections
-    assert not any(
-        "--env LD_PRELOAD" in arg for arg in docker_cmd
-    )  # No environment injection
+    assert "--add-host" in docker_cmd
+    assert "LD_PRELOAD" not in docker_cmd
 
 
-# Test that ensures LD_PRELOAD cannot be injected through ports
 def test_ld_preload_in_ports1():
-    # Set up environment with malicious PORTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "PORTS": "11780:11780,--env LD_PRELOAD=/path/to/my/malloc.so",
     }
 
-    # Call build_docker_cmd to generate the docker command
     docker_cmd = build_docker_cmd(launcher.Platform.TEE, malicious_env, "sha256:abc123")
 
-    # Check that LD_PRELOAD is not part of the port mappings in the docker command
-    assert "-p" in docker_cmd  # Ensure port mappings are included
-    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
-
-    # Check that there are no malicious injections
-    assert not any(
-        "--env LD_PRELOAD" in arg for arg in docker_cmd
-    )  # No environment injection
+    assert "-p" in docker_cmd
+    assert "LD_PRELOAD" not in docker_cmd
 
 
-# Additional tests could go here to check other edge cases
-
-
-# Test that ensures LD_PRELOAD cannot be injected through mpc account id
-def test_ld_preload_in_mpc_account_id():
-    # Set up environment with malicious EXRA_HOSTS containing LD_PRELOAD
-    malicious_env = {
-        "MPC_ACCOUNT_ID": f"{TEST_MPC_ACCOUNT_ID}, --env LD_PRELOAD=/path/to/my/malloc.so",
-        "EXTRA_HOSTS": "host1:192.168.0.1,host2:192.168.0.2",
-    }
-
-    # Call build_docker_cmd to generate the docker command
-    docker_cmd = build_docker_cmd(launcher.Platform.TEE, malicious_env, "sha256:abc123")
-
-    # Check that LD_PRELOAD is not part of the extra hosts in the docker command
-    assert "--add-host" in docker_cmd  # Ensure extra hosts are included
-    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
-
-    # Check that there are no malicious injections
-    print(docker_cmd)
-    assert not any(
-        "--env LD_PRELOAD" in arg for arg in docker_cmd
-    )  # No environment injection
-
-
-# Test that ensures LD_PRELOAD cannot be injected into the docker command
 def test_ld_preload_injection_blocked2():
-    # Set up the environment variable with a dangerous LD_PRELOAD value
     malicious_env = {
-        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
-        "-e LD_PRELOAD": "/path/to/my/malloc.so",  # The dangerous value
+        "-e LD_PRELOAD": "/path/to/my/malloc.so",
     }
 
-    # Call build_docker_cmd to generate the docker command
     docker_cmd = build_docker_cmd(launcher.Platform.TEE, malicious_env, "sha256:abc123")
 
     assert (
         "-e LD_PRELOAD" not in docker_cmd
-    )  # Make sure LD_PRELOAD is not in the generated command
+    )
 
 
-# Additional tests can go here for host/port validation
-
-
-# Test that ensures LD_PRELOAD cannot be injected through extra hosts
 def test_ld_preload_in_extra_hosts2():
-    # Set up environment with malicious EXRA_HOSTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "EXTRA_HOSTS": "host1:192.168.0.1,host2:192.168.0.2,-e LD_PRELOAD=/path/to/my/malloc.so",
     }
 
-    # Call build_docker_cmd to generate the docker command
     docker_cmd = build_docker_cmd(launcher.Platform.TEE, malicious_env, "sha256:abc123")
 
-    # Check that LD_PRELOAD is not part of the extra hosts in the docker command
-    assert "--add-host" in docker_cmd  # Ensure extra hosts are included
-    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
+    assert "--add-host" in docker_cmd
+    assert "LD_PRELOAD" not in docker_cmd
 
 
-# Test that ensures LD_PRELOAD cannot be injected through ports
 def test_ld_preload_in_ports2():
-    # Set up environment with malicious PORTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "PORTS": "11780:11780,-e LD_PRELOAD=/path/to/my/malloc.so",
     }
 
-    # Call build_docker_cmd to generate the docker command
     docker_cmd = build_docker_cmd(launcher.Platform.TEE, malicious_env, "sha256:abc123")
 
-    # Check that LD_PRELOAD is not part of the port mappings in the docker command
-    assert "-p" in docker_cmd  # Ensure port mappings are included
-    assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
+    assert "-p" in docker_cmd
+    assert "LD_PRELOAD" not in docker_cmd
 
 
 def test_json_key_matches_node():
@@ -598,24 +479,61 @@ def test_extend_rtmr3_tee_emitevent_fail(monkeypatch, base_env):
 
 def test_build_docker_cmd_nontee_no_dstack_mount(base_env):
     env = {
-        "MPC_ACCOUNT_ID": "x",
         # launcher-only env should be ignored
         launcher.ENV_VAR_RPC_MAX_ATTEMPTS: "5",
     }
     cmd = launcher.build_docker_cmd(launcher.Platform.NONTEE, env, "sha256:" + "c" * 64)
     s = " ".join(cmd)
 
-    assert "DSTACK_ENDPOINT=" not in s
     assert f"{launcher.DSTACK_UNIX_SOCKET}:{launcher.DSTACK_UNIX_SOCKET}" not in s
+    # Config file path should be passed as command arg
+    assert "start-with-config-file" in cmd
 
 
 def test_build_docker_cmd_tee_has_dstack_mount(base_env):
-    env = {"MPC_ACCOUNT_ID": "x"}
+    env = {}
     cmd = launcher.build_docker_cmd(launcher.Platform.TEE, env, "sha256:" + "c" * 64)
     s = " ".join(cmd)
 
-    assert f"DSTACK_ENDPOINT={launcher.DSTACK_UNIX_SOCKET}" in s
     assert f"{launcher.DSTACK_UNIX_SOCKET}:{launcher.DSTACK_UNIX_SOCKET}" in s
+    assert "start-with-config-file" in cmd
+
+
+def test_build_docker_cmd_no_env_passthrough():
+    """Ensure no --env flags are emitted (all config via file now)."""
+    env = {
+        "MPC_ACCOUNT_ID": "test",
+        "MPC_CONTRACT_ID": "contract.near",
+        "RUST_LOG": "info",
+    }
+    cmd = build_docker_cmd(Platform.NONTEE, env, "sha256:" + "a" * 64)
+    assert "--env" not in cmd
+
+
+def test_build_docker_cmd_passes_config_file_path():
+    env = {}
+    cmd = build_docker_cmd(Platform.NONTEE, env, "sha256:" + "a" * 64)
+
+    # Should end with: <image_digest> start-with-config-file <path>
+    assert cmd[-2] == "start-with-config-file"
+    assert cmd[-1] == launcher.DEFAULT_MPC_CONFIG_PATH
+
+
+def test_build_docker_cmd_custom_config_path():
+    env = {launcher.DSTACK_USER_CONFIG_MPC_CONFIG_PATH: "/tapp/custom_config.json"}
+    cmd = build_docker_cmd(Platform.NONTEE, env, "sha256:" + "a" * 64)
+
+    assert cmd[-2] == "start-with-config-file"
+    assert cmd[-1] == "/tapp/custom_config.json"
+
+
+def test_get_mpc_config_path_default():
+    assert get_mpc_config_path({}) == launcher.DEFAULT_MPC_CONFIG_PATH
+
+
+def test_get_mpc_config_path_override():
+    config = {launcher.DSTACK_USER_CONFIG_MPC_CONFIG_PATH: "/tapp/my_config.json"}
+    assert get_mpc_config_path(config) == "/tapp/my_config.json"
 
 
 def test_main_tee_fails_closed_before_launch(monkeypatch, base_env):
@@ -679,20 +597,7 @@ def assert_subsequence(seq, subseq):
 def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     """
     Verify that launcher.main() builds the correct MPC docker command in NONTEE mode.
-
-    Steps:
-    1. Configure the launcher to run with PLATFORM=NONTEE.
-    2. Set required environment variables (DOCKER_CONTENT_TRUST, DEFAULT_IMAGE_DIGEST).
-    3. Create a temporary user_config file with MPC env vars, ports, and extra hosts.
-    4. Simulate a missing IMAGE_DIGEST_FILE so the launcher falls back to DEFAULT_IMAGE_DIGEST.
-    5. Stub image validation and docker interactions to avoid real network or docker usage.
-    6. Invoke launcher.main().
-    7. Capture the docker run command used to start the MPC container.
-    8. Assert that the command:
-       - Includes expected MPC configuration (env vars, ports, hosts, volumes).
-       - Does NOT include dstack socket mounts or DSTACK_ENDPOINT.
-       - Filters out injection attempts in ports and hosts.
-       - Uses the expected full image digest.
+    Config is now passed as a file path argument, not via env vars.
     """
     # --- Arrange: environment (NONTEE) ---
     monkeypatch.setenv(launcher.ENV_VAR_PLATFORM, launcher.Platform.NONTEE.value)
@@ -701,12 +606,11 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     default_digest = "sha256:" + "a" * 64
     monkeypatch.setenv(launcher.ENV_VAR_DEFAULT_IMAGE_DIGEST, default_digest)
 
-    # Provide a temp user config file so main() passes env into build_docker_cmd()
+    # Provide a temp user config file with ports and extra hosts
     user_config = tmp_path / "user_config"
     user_config.write_text(
         "\n".join(
             [
-                f"MPC_ACCOUNT_ID={TEST_MPC_ACCOUNT_ID}",
                 f"PORTS={TEST_PORTS_WITH_INJECTION}",  # injection should be ignored
                 f"EXTRA_HOSTS={TEST_EXTRA_HOSTS_WITH_INJECTION}",  # injection should be ignored
             ]
@@ -759,12 +663,13 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
 
     cmd_str = " ".join(cmd)
 
-    # NONTEE invariants
-    assert "DSTACK_ENDPOINT=" not in cmd_str
+    # NONTEE invariants: no dstack socket mount
     assert f"{launcher.DSTACK_UNIX_SOCKET}:{launcher.DSTACK_UNIX_SOCKET}" not in cmd_str
 
-    # Expected env propagation + sanitization
-    assert f"MPC_ACCOUNT_ID={TEST_MPC_ACCOUNT_ID}" in cmd_str
+    # No env passthrough (all config is via file now)
+    assert "--env" not in cmd
+
+    # Docker networking still works
     assert "-p" in cmd and "11780:11780" in cmd_str
     assert "--add-host" in cmd and TEST_EXTRA_HOSTS_WITH_IP in cmd_str
 
@@ -780,8 +685,10 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     assert "mpc-data:/data" in cmd_str
     assert f"--name {launcher.MPC_CONTAINER_NAME}" in cmd_str
 
-    # Image digest should be the final argument and should be the FULL digest
-    assert cmd[-1] == default_digest
+    # Config file is passed as command arg after the image digest
+    digest_idx = cmd.index(default_digest)
+    assert cmd[digest_idx + 1] == "start-with-config-file"
+    assert cmd[digest_idx + 2] == launcher.DEFAULT_MPC_CONFIG_PATH
 
     expected_core = [
         "docker",
@@ -799,124 +706,3 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
         "--detach",
     ]
     assert_subsequence(cmd, expected_core)
-
-
-def _base_env():
-    # Minimal env for build_docker_cmd (launcher will add required MPC_IMAGE_HASH etc itself)
-    return {
-        "MPC_ACCOUNT_ID": "mpc-user-123",
-        "MPC_CONTRACT_ID": "contract.near",
-        "MPC_ENV": "testnet",
-        "MPC_HOME_DIR": "/data",
-        "NEAR_BOOT_NODES": "boot1,boot2",
-        "RUST_LOG": "info",
-    }
-
-
-def test_has_control_chars_rejects_newline_and_cr():
-    assert _has_control_chars("a\nb") is True
-    assert _has_control_chars("a\rb") is True
-
-
-def test_has_control_chars_rejects_other_control_chars_but_allows_tab():
-    # tab is allowed by the Python helper in the patched launcher
-    assert _has_control_chars("a\tb") is False
-    # ASCII control char 0x1F should be rejected
-    assert _has_control_chars("a" + chr(0x1F) + "b") is True
-
-
-def test_is_safe_env_value_rejects_control_chars():
-    assert is_safe_env_value("ok\nno") is False
-    assert is_safe_env_value("ok\rno") is False
-    assert is_safe_env_value("ok" + chr(0x1F) + "no") is False
-
-
-def test_is_safe_env_value_rejects_ld_preload_substring():
-    assert is_safe_env_value("LD_PRELOAD=/tmp/x.so") is False
-    assert is_safe_env_value("foo LD_PRELOAD bar") is False
-
-
-def test_is_safe_env_value_rejects_too_long_value():
-    assert is_safe_env_value("a" * (MAX_ENV_VALUE_LEN + 1)) is False
-    assert is_safe_env_value("a" * MAX_ENV_VALUE_LEN) is True
-
-
-def testis_allowed_container_env_key_allows_mpc_prefix_uppercase():
-    assert is_allowed_container_env_key("MPC_FOO") is True
-    assert is_allowed_container_env_key("MPC_FOO_123") is True
-    assert is_allowed_container_env_key("MPC_A_B_C") is True
-
-
-def testis_allowed_container_env_key_rejects_lowercase_or_invalid_chars():
-    assert is_allowed_container_env_key("MPC_foo") is False
-    assert is_allowed_container_env_key("MPC-FOO") is False
-    assert is_allowed_container_env_key("MPC.FOO") is False
-    assert is_allowed_container_env_key("MPC_") is False
-
-
-def testis_allowed_container_env_key_allows_compat_non_mpc_keys():
-    assert is_allowed_container_env_key("RUST_LOG") is True
-    assert is_allowed_container_env_key("RUST_BACKTRACE") is True
-    assert is_allowed_container_env_key("NEAR_BOOT_NODES") is True
-
-
-def testis_allowed_container_env_key_denies_sensitive_keys():
-    assert is_allowed_container_env_key("MPC_P2P_PRIVATE_KEY") is False
-    assert is_allowed_container_env_key("MPC_ACCOUNT_SK") is False
-
-
-def test_build_docker_cmd_allows_arbitrary_mpc_prefix_env_vars():
-    env = _base_env()
-    env["MPC_NEW_FEATURE_FLAG"] = "1"
-    env["MPC_SOME_CONFIG"] = "value"
-
-    cmd = build_docker_cmd(Platform.NONTEE, env, "sha256:" + "a" * 64)
-
-    cmd_str = " ".join(cmd)
-    assert "--env MPC_NEW_FEATURE_FLAG=1" in cmd_str
-    assert "--env MPC_SOME_CONFIG=value" in cmd_str
-
-
-def test_build_docker_cmd_blocks_sensitive_mpc_private_keys():
-    env = _base_env()
-    env["MPC_P2P_PRIVATE_KEY"] = "supersecret"
-    env["MPC_ACCOUNT_SK"] = "supersecret2"
-
-    cmd = build_docker_cmd(Platform.NONTEE, env, "sha256:" + "a" * 64)
-    cmd_str = " ".join(cmd)
-
-    assert "MPC_P2P_PRIVATE_KEY" not in cmd_str
-    assert "MPC_ACCOUNT_SK" not in cmd_str
-
-
-def test_build_docker_cmd_rejects_env_value_with_newline():
-    env = _base_env()
-    env["MPC_NEW_FEATURE_FLAG"] = "ok\nbad"
-
-    cmd = build_docker_cmd(Platform.NONTEE, env, "sha256:" + "a" * 64)
-    cmd_str = " ".join(cmd)
-
-    # It should be ignored (not passed)
-    assert "MPC_NEW_FEATURE_FLAG" not in cmd_str
-
-
-def test_build_docker_cmd_enforces_max_env_count_cap():
-    env = _base_env()
-    # add many MPC_* keys to exceed cap
-    for i in range(MAX_PASSTHROUGH_ENV_VARS + 1):
-        env[f"MPC_X_{i}"] = "1"
-
-    with pytest.raises(RuntimeError, match="Too many env vars"):
-        build_docker_cmd(Platform.NONTEE, env, "sha256:" + "a" * 64)
-
-
-def test_build_docker_cmd_enforces_total_env_bytes_cap():
-    env = _base_env()
-
-    # Each env contributes ~ len(key)+1+MAX_ENV_VALUE_LEN bytes.
-    # With MAX_ENV_VALUE_LEN=1024 and MAX_TOTAL_ENV_BYTES=32768, ~35-40 vars will exceed the cap.
-    for i in range(40):
-        env[f"MPC_BIG_{i}"] = "a" * MAX_ENV_VALUE_LEN
-
-    with pytest.raises(RuntimeError, match="Total env payload too large"):
-        build_docker_cmd(Platform.NONTEE, env, "sha256:" + "a" * 64)
