@@ -11,7 +11,7 @@ use crate::{
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
-    run::run,
+    run::run_mpc_node,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
@@ -227,14 +227,14 @@ impl Cli {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
                 let node_configuration = StartConfig::from_json_file(&config_path)?;
-                run(node_configuration).await
+                run_mpc_node(node_configuration).await
             }
             CliCommand::Start(start) => {
                 let home_dir = std::path::Path::new(&start.home_dir);
                 let config_file = load_config_file(home_dir)?;
 
                 let node_configuration = start.into_start_config(config_file);
-                run(node_configuration).await
+                run_mpc_node(node_configuration).await
             }
             CliCommand::Init(config) => {
                 let (download_config_type, download_config_url) = if config.download_config {
