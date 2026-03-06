@@ -47,7 +47,7 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
         };
 
         let json = serde_json::to_string_pretty(&approved_hashes)
-            .expect("previous json! macro would also panic. TODO figure out what to return");
+            .expect("previous json! macro would also panic. figure out what to return");
 
         tracing::debug!(?approved_hashes, "writing approved hashes to disk");
 

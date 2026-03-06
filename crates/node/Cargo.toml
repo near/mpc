@@ -17,7 +17,6 @@ backon = { workspace = true }
 base64 = { workspace = true }
 borsh = { workspace = true }
 bounded-collections = { workspace = true }
-launcher-interface = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
@@ -35,6 +34,7 @@ humantime = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
+launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true }
 mpc-contract = { workspace = true }

@@ -5,12 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-derive_more = { workspace = true }
 bounded-collections = { workspace = true }
+derive_more = { workspace = true }
 mpc-primitives = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-
 
 [dev-dependencies]
 assert_matches = { workspace = true }

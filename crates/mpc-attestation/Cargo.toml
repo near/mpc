@@ -13,12 +13,12 @@ borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 include-measurements = { workspace = true }
+launcher-interface = { workspace = true }
 mpc-primitives = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
-launcher-interface = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
