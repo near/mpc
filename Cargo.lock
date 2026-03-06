@@ -1005,6 +1005,7 @@ dependencies = [
  "tempfile",
  "test-utils",
  "tokio",
+ "url",
 ]
 
 [[package]]

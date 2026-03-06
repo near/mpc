@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use attestation_cli::cli::VerifyArgs;
+use attestation_cli::cli::{Source, VerifyArgs};
 use attestation_cli::verify;
 use ed25519_dalek::VerifyingKey;
 use mpc_attestation::attestation::Attestation;
@@ -28,8 +28,7 @@ fn make_verify_args(
     measurements: Option<PathBuf>,
 ) -> VerifyArgs {
     VerifyArgs {
-        url: None,
-        file: None,
+        source: Source::File { path: compose_path.to_path_buf() },
         allowed_image_hashes: vec![image_hash.to_string()],
         launcher_compose_file: compose_path.to_path_buf(),
         expected_measurements: measurements,
