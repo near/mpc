@@ -133,8 +133,7 @@ mod tests {
     #[test]
     fn host_entry_valid_deserialization() {
         // given
-        let json =
-            serde_json::json!({"hostname": {"Domain": "node.local"}, "ip": "192.168.1.1"});
+        let json = serde_json::json!({"hostname": {"Domain": "node.local"}, "ip": "192.168.1.1"});
 
         // when
         let result = serde_json::from_value::<HostEntry>(json);
@@ -148,8 +147,7 @@ mod tests {
     #[test]
     fn host_entry_rejects_invalid_ip() {
         // given
-        let json =
-            serde_json::json!({"hostname": {"Domain": "node.local"}, "ip": "not-an-ip"});
+        let json = serde_json::json!({"hostname": {"Domain": "node.local"}, "ip": "not-an-ip"});
 
         // when
         let result = serde_json::from_value::<HostEntry>(json);

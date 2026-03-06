@@ -502,7 +502,12 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(Platform::Tee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+        let args = docker_run_args(
+            Platform::Tee,
+            Path::new(SAMPLE_CONFIG_PATH),
+            &flags,
+            &digest,
+        );
 
         // then
         let joined = args.join(" ");
@@ -517,8 +522,12 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args =
-            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+        let args = docker_run_args(
+            Platform::NonTee,
+            Path::new(SAMPLE_CONFIG_PATH),
+            &flags,
+            &digest,
+        );
 
         // then
         let joined = args.join(" ");
@@ -533,8 +542,12 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args =
-            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+        let args = docker_run_args(
+            Platform::NonTee,
+            Path::new(SAMPLE_CONFIG_PATH),
+            &flags,
+            &digest,
+        );
 
         // then
         let joined = args.join(" ");
@@ -553,8 +566,12 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args =
-            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+        let args = docker_run_args(
+            Platform::NonTee,
+            Path::new(SAMPLE_CONFIG_PATH),
+            &flags,
+            &digest,
+        );
 
         // then
         let joined = args.join(" ");
@@ -570,8 +587,12 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args =
-            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+        let args = docker_run_args(
+            Platform::NonTee,
+            Path::new(SAMPLE_CONFIG_PATH),
+            &flags,
+            &digest,
+        );
 
         // then
         let joined = args.join(" ");
@@ -587,8 +608,12 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args =
-            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+        let args = docker_run_args(
+            Platform::NonTee,
+            Path::new(SAMPLE_CONFIG_PATH),
+            &flags,
+            &digest,
+        );
 
         // then - image digest should appear before "start-with-config-file"
         let digest_pos = args.iter().position(|a| a == &digest.to_string()).unwrap();
@@ -606,8 +631,12 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args =
-            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+        let args = docker_run_args(
+            Platform::NonTee,
+            Path::new(SAMPLE_CONFIG_PATH),
+            &flags,
+            &digest,
+        );
 
         // then
         let joined = args.join(" ");
@@ -622,8 +651,12 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args =
-            docker_run_args(Platform::NonTee, Path::new(SAMPLE_CONFIG_PATH), &flags, &digest);
+        let args = docker_run_args(
+            Platform::NonTee,
+            Path::new(SAMPLE_CONFIG_PATH),
+            &flags,
+            &digest,
+        );
 
         // then - no MPC_* env vars should be present (only DSTACK_ENDPOINT in TEE mode)
         let env_args: Vec<&String> = args
