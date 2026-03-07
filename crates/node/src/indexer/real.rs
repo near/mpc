@@ -93,11 +93,10 @@ pub fn spawn_real_indexer(
                 .await
                 .expect("indexer startup must succeed");
 
-            let state_viewer = chain_gateway.viewer();
             let mpc_contract_id = mpc_indexer_config.mpc_contract_id.clone();
             let mpc_contract_state_viewer =
-                MpcContractStateViewer::new(mpc_contract_id.clone(), state_viewer);
-            let transaction_sender = chain_gateway.transaction_sender();
+                MpcContractStateViewer::new(mpc_contract_id.clone(), chain_gateway.clone());
+            let tx_submitter = chain_gateway.clone();
 
             let indexer_state = Arc::new(IndexerState::new(chain_gateway, mpc_contract_id.clone()));
 
@@ -107,7 +106,7 @@ pub fn spawn_real_indexer(
                 respond_config_clone,
                 indexer_state.mpc_contract_id.clone(),
                 mpc_contract_state_viewer.clone(),
-                transaction_sender,
+                tx_submitter,
             );
 
             let Ok(txn_sender) = txn_sender_result else {

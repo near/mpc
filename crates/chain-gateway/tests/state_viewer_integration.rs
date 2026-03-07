@@ -16,9 +16,8 @@ const TEST_CONTRACT_ACCOUNT: &str = "test-contract.near";
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_view_contract_state() {
     let (gw, _stream, _dir) = setup_chain_gateway().await;
-    let viewer = gw.viewer();
 
-    let value: ObservedState<String> = viewer
+    let value: ObservedState<String> = gw
         .view(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
             "get_greeting",
@@ -35,9 +34,8 @@ async fn test_view_contract_state() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_view_nonexistent_method_returns_error() {
     let (gw, _stream, _dir) = setup_chain_gateway().await;
-    let viewer = gw.viewer();
 
-    let result = viewer
+    let result = gw
         .view::<NoArgs, String>(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
             "nonexistent",
@@ -57,9 +55,8 @@ async fn test_view_nonexistent_method_returns_error() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_subscription_receives_initial_value() {
     let (gw, _stream, _dir) = setup_chain_gateway().await;
-    let viewer = gw.viewer();
 
-    let mut sub = viewer
+    let mut sub = gw
         .subscribe::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), "get_greeting")
         .await;
 

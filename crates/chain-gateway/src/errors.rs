@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
+pub use crate::near_internals_wrapper::errors::{ClientError, RpcClientError, ViewClientError};
+
 pub type SharedError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
 #[derive(Debug, Clone)]

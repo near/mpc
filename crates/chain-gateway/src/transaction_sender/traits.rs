@@ -5,10 +5,7 @@ use near_indexer_primitives::types::Gas;
 use std::sync::Arc;
 
 use crate::errors::ChainGatewayError;
-use crate::primitives::{
-    HasLatestFinalBlockInfoFetcher, HasSignedTransactionSubmitter, LatestFinalBlockInfoFetcher,
-    SignedTransactionSubmitter,
-};
+use crate::primitives::{LatestFinalBlockInfoFetcher, SignedTransactionSubmitter};
 
 use super::TransactionSigner;
 
@@ -16,7 +13,7 @@ use super::TransactionSigner;
 /// External users implement this trait directly for testing.
 #[async_trait]
 pub trait FunctionCallSubmitter:
-    HasLatestFinalBlockInfoFetcher + HasSignedTransactionSubmitter + Send + Sync + Clone + 'static
+    LatestFinalBlockInfoFetcher + SignedTransactionSubmitter + Send + Sync + Clone + 'static
 {
     async fn submit_function_call_tx(
         &self,
@@ -27,7 +24,7 @@ pub trait FunctionCallSubmitter:
         gas: Gas,
     ) -> Result<CryptoHash, ChainGatewayError> {
         // todo: simplify error handling
-        let info = self.fetcher().latest_final_block().await.map_err(|err| {
+        let info = self.latest_final_block().await.map_err(|err| {
             ChainGatewayError::ViewClient {
                 op: crate::errors::ChainGatewayOp::FetchFinalBlock,
                 source: Arc::new(err),
@@ -46,8 +43,7 @@ pub trait FunctionCallSubmitter:
             "sending transaction",
         );
         // todo: simplify error handling
-        self.submitter()
-            .submit_signed_transaction(transaction)
+        self.submit_signed_transaction(transaction)
             .await
             .map_err(|err| ChainGatewayError::RpcClient {
                 source: Arc::new(err),
@@ -112,47 +108,49 @@ mod tests {
         crate::transaction_sender::signer::test_signer()
     }
 
-    //type MyError = Arc<std::io::Error>;
-    //#[derive(Clone)]
-    //struct MockTransactionSubmitter {
-    //    block_result: Result<LatestFinalBlockInfo, MyError>,
-    //    submit_result: Result<(), ChainGatewayError>,
-    //    submitted: Arc<Mutex<Vec<SignedTransaction>>>,
-    //}
+    type MyError = Arc<std::io::Error>;
 
-    //#[async_trait]
-    //impl LatestFinalBlockInfoFetcher for MockTransactionSubmitter {
-    //    type Error = MyError;
-    //    async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
-    //        self.block_result.clone()
-    //    }
-    //}
+    #[derive(Clone)]
+    struct MockTransactionSubmitter {
+        block_result: Result<LatestFinalBlockInfo, MyError>,
+        submit_result: Result<(), ChainGatewayError>,
+        submitted: Arc<Mutex<Vec<SignedTransaction>>>,
+    }
 
-    //#[async_trait]
-    //impl SignedTransactionSubmitter for MockTransactionSubmitter {
-    //    type Error = ChainGatewayError;
-    //    async fn submit_signed_transaction(
-    //        &self,
-    //        transaction: SignedTransaction,
-    //    ) -> Result<(), ChainGatewayError> {
-    //        self.submitted.lock().unwrap().push(transaction);
-    //        self.submit_result.clone()
-    //    }
-    //}
-    //impl FunctionCallSubmitter for MockTransactionSubmitter {}
+    #[async_trait]
+    impl LatestFinalBlockInfoFetcher for MockTransactionSubmitter {
+        type Error = MyError;
+        async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
+            self.block_result.clone()
+        }
+    }
 
-    //fn test_submitter(
-    //    info: &LatestFinalBlockInfo,
-    //    submit_result: Result<(), ChainGatewayError>,
-    //) -> (MockTransactionSubmitter, Arc<Mutex<Vec<SignedTransaction>>>) {
-    //    let submitted = Arc::new(Mutex::new(Vec::new()));
-    //    let submitter = MockTransactionSubmitter {
-    //        block_result: Ok(info.clone()),
-    //        submit_result,
-    //        submitted: submitted.clone(),
-    //    };
-    //    (submitter, submitted)
-    //}
+    #[async_trait]
+    impl SignedTransactionSubmitter for MockTransactionSubmitter {
+        type Error = ChainGatewayError;
+        async fn submit_signed_transaction(
+            &self,
+            transaction: SignedTransaction,
+        ) -> Result<(), ChainGatewayError> {
+            self.submitted.lock().unwrap().push(transaction);
+            self.submit_result.clone()
+        }
+    }
+
+    impl FunctionCallSubmitter for MockTransactionSubmitter {}
+
+    fn test_submitter(
+        info: &LatestFinalBlockInfo,
+        submit_result: Result<(), ChainGatewayError>,
+    ) -> (MockTransactionSubmitter, Arc<Mutex<Vec<SignedTransaction>>>) {
+        let submitted = Arc::new(Mutex::new(Vec::new()));
+        let submitter = MockTransactionSubmitter {
+            block_result: Ok(info.clone()),
+            submit_result,
+            submitted: submitted.clone(),
+        };
+        (submitter, submitted)
+    }
 
     fn test_submitter_with_block_error(err: MyError) -> MockTransactionSubmitter {
         MockTransactionSubmitter {
@@ -173,6 +171,7 @@ mod tests {
         let method_name = "do_something".to_string();
         let args = b"test args".to_vec();
 
+        let expected_block_hash = info.value;
         let (submitter, submitted) = test_submitter(&info, Ok(()));
 
         // Two signers from the same key — deterministic ed25519 means identical transactions.
@@ -216,7 +215,7 @@ mod tests {
         };
         assert_eq!(tx.signer_id, "test.near".parse::<AccountId>().unwrap());
         assert_eq!(tx.receiver_id, receiver_id);
-        assert_eq!(tx.block_hash, info.value);
+        assert_eq!(tx.block_hash, expected_block_hash);
 
         match &tx.actions[0] {
             near_indexer_primitives::near_primitives::transaction::Action::FunctionCall(action) => {
@@ -230,10 +229,7 @@ mod tests {
 
     #[tokio::test]
     async fn blanket_impl_propagates_block_query_error() {
-        let err = ChainGatewayError::SendTransactionError {
-            context: "test error".to_string(),
-            source: Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "test")),
-        };
+        let err = Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "test"));
         let submitter = test_submitter_with_block_error(err);
 
         let result = submitter
@@ -248,13 +244,13 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(ChainGatewayError::SendTransactionError { .. })
+            Err(ChainGatewayError::ViewClient { .. })
         ));
     }
 
     #[tokio::test]
     async fn blanket_impl_does_not_submit_on_block_error() {
-        let err = Arc::new(std::io::Error::new(ErrorKind::Other, "test".into()));
+        let err = Arc::new(std::io::Error::new(ErrorKind::Other, "test"));
         let submitted = Arc::new(Mutex::new(Vec::new()));
         let submitter = MockTransactionSubmitter {
             block_result: Err(err),
@@ -287,7 +283,7 @@ mod tests {
         let err = ChainGatewayError::RpcClient {
             source: Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "test")),
         };
-        let (submitter, _) = test_submitter(info, Err(err));
+        let (submitter, _) = test_submitter(&info, Err(err));
 
         let result = submitter
             .submit_function_call_tx(

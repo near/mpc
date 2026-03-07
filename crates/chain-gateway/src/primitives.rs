@@ -3,7 +3,7 @@
 ///!     - LatestFinalBlockInfoFecher --> fetches height and hash of the latest final block
 ///!     - SignedTransactionSubmitter --> submits  asigned transaction to the blockchain
 ///!     - ViewFunctionQueroier --> can call view methods on a contract
-use crate::types::{LatestFinalBlockInfo, ObservedState, RawObservedState};
+use crate::types::{LatestFinalBlockInfo, RawObservedState};
 use async_trait::async_trait;
 use near_account_id::AccountId;
 use near_indexer::near_primitives::transaction::SignedTransaction;
@@ -61,53 +61,3 @@ pub trait ViewFunctionQuerier: Send + Sync + 'static {
     ) -> Result<RawObservedState, Self::Error>;
 }
 
-pub trait HasSyncChecker {
-    type C: SyncChecker;
-    fn get_checker(&self) -> &Self::C;
-}
-
-// below traits are for blanket implementations
-
-pub trait HasViewFunctionQuerier {
-    type V: ViewFunctionQuerier;
-    fn view_querier(&self) -> &Self::V;
-}
-pub trait HasLatestFinalBlockInfoFetcher {
-    type F: LatestFinalBlockInfoFetcher;
-    fn fetcher(&self) -> &Self::F;
-}
-
-pub trait HasSignedTransactionSubmitter {
-    type S: SignedTransactionSubmitter;
-    fn submitter(&self) -> &Self::S;
-}
-
-#[async_trait]
-impl<T> SyncChecker for T
-where
-    T: HasSyncChecker + Send + Sync + 'static,
-{
-    type Error = <T::C as SyncChecker>::Error;
-    async fn is_syncing(&self) -> Result<bool, Self::Error> {
-        self.get_checker().is_syncing().await
-    }
-}
-
-#[async_trait]
-impl<T> ViewFunctionQuerier for T
-where
-    T: HasViewFunctionQuerier + Send + Sync + 'static,
-{
-    type Error = <T::V as ViewFunctionQuerier>::Error;
-
-    async fn view_function_query(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> Result<ObservedState, Self::Error> {
-        self.view_querier()
-            .view_function_query(contract_id, method_name, args)
-            .await
-    }
-}

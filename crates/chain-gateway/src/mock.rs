@@ -1,7 +1,5 @@
 use crate::primitives::{
-    HasLatestFinalBlockInfoFetcher, HasSignedTransactionSubmitter, HasSyncChecker,
-    HasViewFunctionQuerier, LatestFinalBlockInfoFetcher, SignedTransactionSubmitter, SyncChecker,
-    ViewFunctionQuerier,
+    LatestFinalBlockInfoFetcher, SignedTransactionSubmitter, SyncChecker, ViewFunctionQuerier,
 };
 use crate::types::{LatestFinalBlockInfo, RawObservedState};
 use async_trait::async_trait;
@@ -22,28 +20,47 @@ pub struct MockChainState {
     view_function_querier: MockViewFunctionQuerier,
 }
 
-impl HasViewFunctionQuerier for MockChainState {
-    type V = MockViewFunctionQuerier;
-    fn view_querier(&self) -> &Self::V {
-        &self.view_function_querier
+#[async_trait]
+impl SyncChecker for MockChainState {
+    type Error = MockError;
+    async fn is_syncing(&self) -> Result<bool, Self::Error> {
+        self.sync_checker.is_syncing().await
     }
 }
-impl HasLatestFinalBlockInfoFetcher for MockChainState {
-    type F = MockLatestFinalBlockInfoFetcher;
-    fn fetcher(&self) -> &Self::F {
-        &self.latest_final_block_fetcher
+
+#[async_trait]
+impl ViewFunctionQuerier for MockChainState {
+    type Error = MockError;
+    async fn view_function_query(
+        &self,
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<RawObservedState, Self::Error> {
+        self.view_function_querier
+            .view_function_query(contract_id, method_name, args)
+            .await
     }
 }
-impl HasSignedTransactionSubmitter for MockChainState {
-    type S = MockSignedTransactionSubmitter;
-    fn submitter(&self) -> &Self::S {
-        &self.signed_transaction_submitter
+
+#[async_trait]
+impl LatestFinalBlockInfoFetcher for MockChainState {
+    type Error = MockError;
+    async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
+        self.latest_final_block_fetcher.latest_final_block().await
     }
 }
-impl HasSyncChecker for MockChainState {
-    type C = MockSyncChecker;
-    fn get_checker(&self) -> &Self::C {
-        &self.sync_checker
+
+#[async_trait]
+impl SignedTransactionSubmitter for MockChainState {
+    type Error = MockError;
+    async fn submit_signed_transaction(
+        &self,
+        transaction: SignedTransaction,
+    ) -> Result<(), Self::Error> {
+        self.signed_transaction_submitter
+            .submit_signed_transaction(transaction)
+            .await
     }
 }
 

@@ -2,8 +2,9 @@ use crate::indexer::types::{
     ChainCKDRequest, ChainSignatureRequest, ChainVerifyForeignTransactionRequest,
 };
 use anyhow::Context;
+use chain_gateway::ChainGateway;
 use chain_gateway::state_viewer::{
-    ContractStateStream, ContractStateSubscriber, MethodViewer, NearContractViewer,
+    ContractStateStream, ContractStateSubscriber, MethodViewer,
 };
 use chain_gateway::types::NoArgs;
 use mpc_contract::primitives::signature::YieldIndex;
@@ -20,7 +21,7 @@ use super::types::{
 #[derive(Clone)]
 pub(crate) struct MpcContractStateViewer {
     pub(crate) mpc_contract_id: near_account_id::AccountId,
-    pub(crate) mpc_contract_viewer: NearContractViewer,
+    pub(crate) mpc_contract_viewer: ChainGateway,
 }
 
 impl MpcContractStateViewer {
@@ -73,7 +74,7 @@ impl MpcContractStateViewer {
 impl MpcContractStateViewer {
     pub fn new(
         mpc_contract_id: near_account_id::AccountId,
-        mpc_contract_viewer: NearContractViewer,
+        mpc_contract_viewer: ChainGateway,
     ) -> Self {
         Self {
             mpc_contract_id,

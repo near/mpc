@@ -6,7 +6,7 @@ use thiserror::Error;
 pub type SharedError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
 #[derive(Debug, Error)]
-pub(crate) enum RpcClientError {
+pub enum RpcClientError {
     #[error("failed to submit transaction to rpc client")]
     SubmitTransaction {
         #[source]
@@ -18,7 +18,7 @@ pub(crate) enum RpcClientError {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum ClientError {
+pub enum ClientError {
     #[error("failed to send async")]
     AsyncSendError {
         #[source]
@@ -33,15 +33,15 @@ pub(crate) enum ClientError {
 
 #[derive(Debug, Error)]
 #[error("query view {kind} error for {query}")]
-pub(crate) struct ViewClientError {
-    pub(crate) query: ViewClientQuery,
-    pub(crate) kind: ViewClientErrorKind,
+pub struct ViewClientError {
+    pub query: ViewClientQuery,
+    pub kind: ViewClientErrorKind,
     #[source]
-    pub(crate) source: SharedError,
+    pub source: SharedError,
 }
 
 #[derive(Debug)]
-pub(crate) enum ViewClientQuery {
+pub enum ViewClientQuery {
     LatestFinalBlock,
     ViewMethod {
         contract_id: AccountId,
@@ -61,7 +61,7 @@ impl fmt::Display for ViewClientQuery {
 }
 
 #[derive(Debug)]
-pub(crate) enum ViewClientErrorKind {
+pub enum ViewClientErrorKind {
     SendError,
     ResponseError,
     UnexpectedResponse,
@@ -79,4 +79,4 @@ impl fmt::Display for ViewClientErrorKind {
 
 #[derive(Debug, Error)]
 #[error("unexpected response: {0}")]
-pub(crate) struct UnexpectedResponseError(pub String);
+pub struct UnexpectedResponseError(pub String);

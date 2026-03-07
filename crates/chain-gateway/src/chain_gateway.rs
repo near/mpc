@@ -1,13 +1,21 @@
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
-use crate::errors::ChainGatewayError;
+use async_trait::async_trait;
+use near_account_id::AccountId;
+use near_indexer::near_primitives::transaction::SignedTransaction;
+
+use crate::errors::{ChainGatewayError, ClientError, RpcClientError, ViewClientError};
 use crate::near_internals_wrapper::client::ClientWrapper;
 use crate::near_internals_wrapper::rpc::RpcHandlerWrapper;
 use crate::near_internals_wrapper::view_client::ViewClientWrapper;
-use crate::state_viewer::NearContractViewer;
+use crate::primitives::{
+    LatestFinalBlockInfoFetcher, SignedTransactionSubmitter, SyncChecker, ViewFunctionQuerier,
+};
+use crate::state_viewer::{ContractStateSubscriber, ContractViewer, MethodViewer};
 use crate::stats::{IndexerStats, indexer_logger};
-use crate::transaction_sender::NearTransactionSubmitter;
+use crate::transaction_sender::FunctionCallSubmitter;
+use crate::types::{LatestFinalBlockInfo, RawObservedState};
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -21,15 +29,54 @@ pub struct ChainGateway {
     _stats: Arc<Mutex<IndexerStats>>,
 }
 
-impl ChainGateway {
-    pub fn viewer(&self) -> NearContractViewer {
-        NearContractViewer::new(self.client.clone(), self.view_client.clone())
-    }
-
-    pub fn transaction_sender(&self) -> NearTransactionSubmitter {
-        NearTransactionSubmitter::new(self.rpc_handler.clone(), self.view_client.clone())
+#[async_trait]
+impl SyncChecker for ChainGateway {
+    type Error = ClientError;
+    async fn is_syncing(&self) -> Result<bool, Self::Error> {
+        self.client.is_syncing().await
     }
 }
+
+#[async_trait]
+impl ViewFunctionQuerier for ChainGateway {
+    type Error = ViewClientError;
+    async fn view_function_query(
+        &self,
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<RawObservedState, Self::Error> {
+        self.view_client
+            .view_function_query(contract_id, method_name, args)
+            .await
+    }
+}
+
+#[async_trait]
+impl LatestFinalBlockInfoFetcher for ChainGateway {
+    type Error = ViewClientError;
+    async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
+        self.view_client.latest_final_block().await
+    }
+}
+
+#[async_trait]
+impl SignedTransactionSubmitter for ChainGateway {
+    type Error = RpcClientError;
+    async fn submit_signed_transaction(
+        &self,
+        transaction: SignedTransaction,
+    ) -> Result<(), Self::Error> {
+        self.rpc_handler
+            .submit_signed_transaction(transaction)
+            .await
+    }
+}
+
+impl ContractViewer for ChainGateway {}
+impl MethodViewer for ChainGateway {}
+impl ContractStateSubscriber for ChainGateway {}
+impl FunctionCallSubmitter for ChainGateway {}
 
 impl ChainGateway {
     // todo: remove this method soon. Stats should be internal to this crate
