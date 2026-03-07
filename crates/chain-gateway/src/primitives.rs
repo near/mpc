@@ -1,3 +1,8 @@
+///! This file contains the primitives we need to interact with the NEAR blockchain:
+///!     - SyncChecker --> checks whether the node is fully synced
+///!     - LatestFinalBlockInfoFecher --> fetches height and hash of the latest final block
+///!     - SignedTransactionSubmitter --> submits  asigned transaction to the blockchain
+///!     - ViewFunctionQueroier --> can call view methods on a contract
 use crate::types::{LatestFinalBlockInfo, ObservedState, RawObservedState};
 use async_trait::async_trait;
 use near_account_id::AccountId;
@@ -6,7 +11,7 @@ use std::time::Duration;
 
 /// Low-level trait for checking indexer sync status.
 #[async_trait]
-pub(crate) trait SyncChecker: Send + Sync + Clone + 'static {
+pub trait SyncChecker: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     /// Returns whether the node is currently syncing.
     async fn is_syncing(&self) -> Result<bool, Self::Error>;
@@ -30,13 +35,14 @@ pub(crate) trait SyncChecker: Send + Sync + Clone + 'static {
 }
 
 #[async_trait]
-pub(crate) trait LatestFinalBlockInfoFetcher: Send + Sync + Clone + 'static {
+pub trait LatestFinalBlockInfoFetcher: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error>;
 }
 
+/// note: this is the only trait that exposes NEAR internals, but it's only used by tests
 #[async_trait]
-pub(crate) trait SignedTransactionSubmitter: Send + Sync + Clone + 'static {
+pub trait SignedTransactionSubmitter: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     async fn submit_signed_transaction(
         &self,
@@ -45,7 +51,7 @@ pub(crate) trait SignedTransactionSubmitter: Send + Sync + Clone + 'static {
 }
 
 #[async_trait]
-pub(crate) trait ViewFunctionQuerier: Send + Sync + Clone + 'static {
+pub trait ViewFunctionQuerier: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     async fn view_function_query(
         &self,
@@ -55,21 +61,23 @@ pub(crate) trait ViewFunctionQuerier: Send + Sync + Clone + 'static {
     ) -> Result<RawObservedState, Self::Error>;
 }
 
-pub(crate) trait HasSyncChecker {
+pub trait HasSyncChecker {
     type C: SyncChecker;
     fn get_checker(&self) -> &Self::C;
 }
 
-pub(crate) trait HasViewFunctionQuerier {
+// below traits are for blanket implementations
+
+pub trait HasViewFunctionQuerier {
     type V: ViewFunctionQuerier;
     fn view_querier(&self) -> &Self::V;
 }
-pub(crate) trait HasLatestFinalBlockInfoFetcher {
+pub trait HasLatestFinalBlockInfoFetcher {
     type F: LatestFinalBlockInfoFetcher;
     fn fetcher(&self) -> &Self::F;
 }
 
-pub(crate) trait HasSignedTransactionSubmitter {
+pub trait HasSignedTransactionSubmitter {
     type S: SignedTransactionSubmitter;
     fn submitter(&self) -> &Self::S;
 }
@@ -77,7 +85,7 @@ pub(crate) trait HasSignedTransactionSubmitter {
 #[async_trait]
 impl<T> SyncChecker for T
 where
-    T: HasSyncChecker + Send + Sync + Clone + 'static,
+    T: HasSyncChecker + Send + Sync + 'static,
 {
     type Error = <T::C as SyncChecker>::Error;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
@@ -88,7 +96,7 @@ where
 #[async_trait]
 impl<T> ViewFunctionQuerier for T
 where
-    T: HasViewFunctionQuerier + Send + Sync + Clone + 'static,
+    T: HasViewFunctionQuerier + Send + Sync + 'static,
 {
     type Error = <T::V as ViewFunctionQuerier>::Error;
 

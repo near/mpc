@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
-use crate::near_internals_wrapper::traits::{SyncChecker, ViewFunctionQuerier};
+use crate::primitives::{SyncChecker, ViewFunctionQuerier};
 use crate::types::ObservedState;
 use async_trait::async_trait;
 use near_account_id::AccountId;
@@ -24,9 +24,7 @@ use super::subscription::ContractMethodSubscription;
 /// The testing seam for contract view calls
 /// All other traits are derived from this one
 #[async_trait]
-pub trait ContractViewer:
-    SyncChecker + ViewFunctionQuerier + Send + Sync + Clone + 'static
-{
+pub trait ContractViewer: SyncChecker + ViewFunctionQuerier {
     async fn view_raw(
         &self,
         contract_id: &AccountId,
@@ -96,7 +94,7 @@ pub trait ContractViewer:
 /// # }
 /// ```
 #[async_trait]
-pub trait ContractStateSubscriber: ContractViewer {
+pub trait ContractStateSubscriber: ContractViewer + Clone {
     /// Subscribes to a contract view method and returns a stream of state updates.
     ///
     /// The returned stream polls the contract every 200 ms.

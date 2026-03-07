@@ -2,10 +2,11 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
 use crate::errors::ChainGatewayError;
-use crate::logger::indexer_logger;
-use crate::near_internals_wrapper::{ClientWrapper, RpcHandlerWrapper, ViewClientWrapper};
+use crate::near_internals_wrapper::client::ClientWrapper;
+use crate::near_internals_wrapper::rpc::RpcHandlerWrapper;
+use crate::near_internals_wrapper::view_client::ViewClientWrapper;
 use crate::state_viewer::NearContractViewer;
-use crate::stats::IndexerStats;
+use crate::stats::{IndexerStats, indexer_logger};
 use crate::transaction_sender::NearTransactionSubmitter;
 
 #[derive(Clone)]

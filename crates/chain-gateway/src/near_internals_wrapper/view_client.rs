@@ -5,11 +5,12 @@ use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync;
 
 use crate::{
-    near_internals_wrapper::errors::{GetBlockError, QueryError, QueryErrorKind, ViewClientError},
+    near_internals_wrapper::errors::ViewClientError,
+    primitives::{LatestFinalBlockInfoFetcher, ViewFunctionQuerier},
     types::{LatestFinalBlockInfo, ObservedState},
 };
 
-use super::traits::{LatestFinalBlockInfoFetcher, ViewFunctionQuerier};
+use super::errors::{UnexpectedResponseError, ViewClientErrorKind, ViewClientQuery};
 
 #[derive(Clone)]
 pub(crate) struct ViewClientWrapper {
@@ -38,10 +39,14 @@ impl LatestFinalBlockInfoFetcher for ViewClientWrapper {
                 near_indexer_primitives::types::Finality::Final,
             ));
         let send_result = self.view_client.send_async(block_query).await;
-        let response_result = send_result.map_err(|err| GetBlockError::Send {
+        let response_result = send_result.map_err(|err| ViewClientError {
+            query: ViewClientQuery::LatestFinalBlock,
+            kind: ViewClientErrorKind::SendError,
             source: Arc::new(err),
         })?;
-        let response = response_result.map_err(|err| GetBlockError::Response {
+        let response = response_result.map_err(|err| ViewClientError {
+            query: ViewClientQuery::LatestFinalBlock,
+            kind: ViewClientErrorKind::ResponseError,
             source: Arc::new(err),
         })?;
         Ok(LatestFinalBlockInfo {
@@ -73,22 +78,22 @@ impl ViewFunctionQuerier for ViewClientWrapper {
 
         let send_result = self.view_client.send_async(query).await;
 
-        let response_result = send_result.map_err(|err| QueryError {
-            contract_id: contract_id.clone(),
-            method_name: method_name.to_string(),
-            args: args.to_vec(),
-            kind: QueryErrorKind::Send {
-                source: Arc::new(err),
+        let response_result = send_result.map_err(|err| ViewClientError {
+            query: ViewClientQuery::ViewMethod {
+                contract_id: contract_id.clone(),
+                method_name: method_name.to_string(),
             },
+            kind: ViewClientErrorKind::SendError,
+            source: Arc::new(err),
         })?;
 
-        let response = response_result.map_err(|err| QueryError {
-            contract_id: contract_id.clone(),
-            method_name: method_name.to_string(),
-            args: args.to_vec(),
-            kind: QueryErrorKind::Response {
-                source: Arc::new(err),
+        let response = response_result.map_err(|err| ViewClientError {
+            query: ViewClientQuery::ViewMethod {
+                contract_id: contract_id.clone(),
+                method_name: method_name.to_string(),
             },
+            kind: ViewClientErrorKind::ResponseError,
+            source: Arc::new(err),
         })?;
 
         match response.kind {
@@ -98,13 +103,13 @@ impl ViewFunctionQuerier for ViewClientWrapper {
                     value: call_result.result,
                 })
             }
-            other => Err(QueryError {
-                contract_id: contract_id.clone(),
-                method_name: method_name.to_string(),
-                args: args.to_vec(),
-                kind: QueryErrorKind::UnexpectedResponse {
-                    response: format!("{:?}", other),
+            other => Err(ViewClientError {
+                query: ViewClientQuery::ViewMethod {
+                    contract_id: contract_id.clone(),
+                    method_name: method_name.to_string(),
                 },
+                kind: ViewClientErrorKind::UnexpectedResponse,
+                source: Arc::new(UnexpectedResponseError(format!("{:?}", other))),
             }
             .into()),
         }

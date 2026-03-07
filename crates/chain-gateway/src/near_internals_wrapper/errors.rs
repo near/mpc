@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use near_account_id::AccountId;
 use thiserror::Error;
@@ -32,57 +32,51 @@ pub(crate) enum ClientError {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum ViewClientError {
-    #[error(transparent)]
-    GetBlock(#[from] GetBlockError),
-
-    #[error(transparent)]
-    Query(#[from] QueryError),
-}
-
-#[derive(Debug, Error)]
-pub(crate) enum GetBlockError {
-    #[error("get final block: send error")]
-    Send {
-        #[source]
-        source: SharedError,
-    },
-    #[error("get final block: response error")]
-    Response {
-        #[source]
-        source: SharedError,
-    },
-}
-
-#[derive(Debug, Error)]
-#[error(
-    "query view call on contract {contract_id} with method {method_name} and arguments: {args:?}: {kind}"
-)]
-pub(crate) struct QueryError {
-    pub contract_id: AccountId,
-    pub method_name: String,
-    pub args: Vec<u8>,
-
+#[error("query view {kind} error for {query}")]
+pub(crate) struct ViewClientError {
+    pub(crate) query: ViewClientQuery,
+    pub(crate) kind: ViewClientErrorKind,
     #[source]
-    pub kind: QueryErrorKind,
+    pub(crate) source: SharedError,
 }
+
+#[derive(Debug)]
+pub(crate) enum ViewClientQuery {
+    LatestFinalBlock,
+    ViewMethod {
+        contract_id: AccountId,
+        method_name: String,
+    },
+}
+impl fmt::Display for ViewClientQuery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LatestFinalBlock => write!(f, "latest final block query"),
+            Self::ViewMethod {
+                contract_id,
+                method_name,
+            } => write!(f, "view {contract_id}.{method_name}"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ViewClientErrorKind {
+    SendError,
+    ResponseError,
+    UnexpectedResponse,
+}
+
+impl fmt::Display for ViewClientErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SendError => write!(f, "send error"),
+            Self::ResponseError => write!(f, "response error"),
+            Self::UnexpectedResponse => write!(f, "unexpected response"),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
-pub(crate) enum QueryErrorKind {
-    #[error("send error")]
-    Send {
-        #[source]
-        source: SharedError,
-    },
-
-    #[error("response error")]
-    Response {
-        #[source]
-        source: SharedError,
-    },
-
-    #[error("unexpected response: {response:?}")]
-    UnexpectedResponse {
-        // avoid leaking nearcore types
-        response: String,
-    },
-}
+#[error("unexpected response: {0}")]
+pub(crate) struct UnexpectedResponseError(pub String);

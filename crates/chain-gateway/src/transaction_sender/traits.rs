@@ -1,13 +1,13 @@
 use async_trait::async_trait;
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::types::Gas;
 use std::sync::Arc;
 
 use crate::errors::ChainGatewayError;
-use crate::near_internals_wrapper::traits::{
-    LatestFinalBlockInfoFetcher, SignedTransactionSubmitter,
+use crate::primitives::{
+    HasLatestFinalBlockInfoFetcher, HasSignedTransactionSubmitter, LatestFinalBlockInfoFetcher,
+    SignedTransactionSubmitter,
 };
 
 use super::TransactionSigner;
@@ -16,7 +16,7 @@ use super::TransactionSigner;
 /// External users implement this trait directly for testing.
 #[async_trait]
 pub trait FunctionCallSubmitter:
-    LatestFinalBlockInfoFetcher + SignedTransactionSubmitter + Send + Sync + Clone + 'static
+    HasLatestFinalBlockInfoFetcher + HasSignedTransactionSubmitter + Send + Sync + Clone + 'static
 {
     async fn submit_function_call_tx(
         &self,
@@ -27,13 +27,12 @@ pub trait FunctionCallSubmitter:
         gas: Gas,
     ) -> Result<CryptoHash, ChainGatewayError> {
         // todo: simplify error handling
-        let info =
-            self.latest_final_block()
-                .await
-                .map_err(|err| ChainGatewayError::ViewClient {
-                    op: crate::errors::ChainGatewayOp::FetchFinalBlock,
-                    source: Arc::new(err),
-                })?;
+        let info = self.fetcher().latest_final_block().await.map_err(|err| {
+            ChainGatewayError::ViewClient {
+                op: crate::errors::ChainGatewayOp::FetchFinalBlock,
+                source: Arc::new(err),
+            }
+        })?;
 
         let transaction =
             signer.create_and_sign_function_call_tx(receiver_id, method_name, args, gas, info);
@@ -47,11 +46,12 @@ pub trait FunctionCallSubmitter:
             "sending transaction",
         );
         // todo: simplify error handling
-        self.submit_signed_transaction(transaction)
+        self.submitter()
+            .submit_signed_transaction(transaction)
             .await
             .map_err(|err| ChainGatewayError::RpcClient {
                 source: Arc::new(err),
-            });
+            })?;
         Ok(tx_hash)
     }
 }
@@ -102,6 +102,7 @@ mod tests {
     use crate::types::LatestFinalBlockInfo;
 
     use super::*;
+    use near_indexer::near_primitives::transaction::SignedTransaction;
     use near_indexer_primitives::near_primitives::transaction::Transaction;
     use std::{io::ErrorKind, sync::Mutex};
 
@@ -111,47 +112,47 @@ mod tests {
         crate::transaction_sender::signer::test_signer()
     }
 
-    type MyError = Arc<std::io::Error>;
-    #[derive(Clone)]
-    struct MockTransactionSubmitter {
-        block_result: Result<LatestFinalBlockInfo, MyError>,
-        submit_result: Result<(), ChainGatewayError>,
-        submitted: Arc<Mutex<Vec<SignedTransaction>>>,
-    }
+    //type MyError = Arc<std::io::Error>;
+    //#[derive(Clone)]
+    //struct MockTransactionSubmitter {
+    //    block_result: Result<LatestFinalBlockInfo, MyError>,
+    //    submit_result: Result<(), ChainGatewayError>,
+    //    submitted: Arc<Mutex<Vec<SignedTransaction>>>,
+    //}
 
-    #[async_trait]
-    impl LatestFinalBlockInfoFetcher for MockTransactionSubmitter {
-        type Error = MyError;
-        async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
-            self.block_result.clone()
-        }
-    }
+    //#[async_trait]
+    //impl LatestFinalBlockInfoFetcher for MockTransactionSubmitter {
+    //    type Error = MyError;
+    //    async fn latest_final_block(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
+    //        self.block_result.clone()
+    //    }
+    //}
 
-    #[async_trait]
-    impl SignedTransactionSubmitter for MockTransactionSubmitter {
-        type Error = ChainGatewayError;
-        async fn submit_signed_transaction(
-            &self,
-            transaction: SignedTransaction,
-        ) -> Result<(), ChainGatewayError> {
-            self.submitted.lock().unwrap().push(transaction);
-            self.submit_result.clone()
-        }
-    }
-    impl FunctionCallSubmitter for MockTransactionSubmitter {}
+    //#[async_trait]
+    //impl SignedTransactionSubmitter for MockTransactionSubmitter {
+    //    type Error = ChainGatewayError;
+    //    async fn submit_signed_transaction(
+    //        &self,
+    //        transaction: SignedTransaction,
+    //    ) -> Result<(), ChainGatewayError> {
+    //        self.submitted.lock().unwrap().push(transaction);
+    //        self.submit_result.clone()
+    //    }
+    //}
+    //impl FunctionCallSubmitter for MockTransactionSubmitter {}
 
-    fn test_submitter(
-        info: &LatestFinalBlockInfo,
-        submit_result: Result<(), ChainGatewayError>,
-    ) -> (MockTransactionSubmitter, Arc<Mutex<Vec<SignedTransaction>>>) {
-        let submitted = Arc::new(Mutex::new(Vec::new()));
-        let submitter = MockTransactionSubmitter {
-            block_result: Ok(info.clone()),
-            submit_result,
-            submitted: submitted.clone(),
-        };
-        (submitter, submitted)
-    }
+    //fn test_submitter(
+    //    info: &LatestFinalBlockInfo,
+    //    submit_result: Result<(), ChainGatewayError>,
+    //) -> (MockTransactionSubmitter, Arc<Mutex<Vec<SignedTransaction>>>) {
+    //    let submitted = Arc::new(Mutex::new(Vec::new()));
+    //    let submitter = MockTransactionSubmitter {
+    //        block_result: Ok(info.clone()),
+    //        submit_result,
+    //        submitted: submitted.clone(),
+    //    };
+    //    (submitter, submitted)
+    //}
 
     fn test_submitter_with_block_error(err: MyError) -> MockTransactionSubmitter {
         MockTransactionSubmitter {

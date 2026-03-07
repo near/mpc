@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::near_internals_wrapper::errors::RpcClientError;
-use crate::near_internals_wrapper::traits::SignedTransactionSubmitter;
+use crate::{
+    near_internals_wrapper::errors::RpcClientError, primitives::SignedTransactionSubmitter,
+};
 
 #[derive(Clone)]
 pub(crate) struct RpcHandlerWrapper {

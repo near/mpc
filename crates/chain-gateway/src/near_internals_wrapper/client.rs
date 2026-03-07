@@ -3,14 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use near_async::messaging::CanSendAsync;
 
-use crate::near_internals_wrapper::errors::ClientError;
-
-use super::traits::SyncChecker;
+use crate::{near_internals_wrapper::errors::ClientError, primitives::SyncChecker};
 
 #[derive(Clone)]
 pub(crate) struct ClientWrapper {
     client: Arc<near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActorInner>>,
 }
+
 impl ClientWrapper {
     pub(crate) fn new(
         client: near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActorInner>,

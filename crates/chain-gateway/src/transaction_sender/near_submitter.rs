@@ -1,7 +1,7 @@
-use crate::near_internals_wrapper::traits::{
-    HasLatestFinalBlockInfoFetcher, HasSignedTransactionSubmitter,
+use crate::{
+    near_internals_wrapper::{rpc::RpcHandlerWrapper, view_client::ViewClientWrapper},
+    primitives::{HasLatestFinalBlockInfoFetcher, HasSignedTransactionSubmitter},
 };
-use crate::near_internals_wrapper::{RpcHandlerWrapper, ViewClientWrapper};
 
 #[derive(Clone)]
 pub struct NearTransactionSubmitter {

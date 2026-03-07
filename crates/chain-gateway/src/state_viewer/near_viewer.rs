@@ -1,5 +1,7 @@
-use crate::near_internals_wrapper::traits::{HasSyncChecker, HasViewFunctionQuerier};
-use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
+use crate::{
+    near_internals_wrapper::{client::ClientWrapper, view_client::ViewClientWrapper},
+    primitives::{HasSyncChecker, HasViewFunctionQuerier},
+};
 
 use super::traits::ContractViewer;
 
