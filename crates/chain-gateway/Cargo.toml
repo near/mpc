@@ -4,39 +4,39 @@ version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
 
+[features]
+test-utils = []
+
 [dependencies]
 anyhow = { workspace = true }
-near-async = { workspace = true }
-k256 = { workspace = true }
-near-client = { workspace = true }
-tokio-util = { workspace = true }
 async-trait = { workspace = true }
-near-client-primitives = { workspace = true }
-near-indexer = { workspace = true }
-derive_more = {workspace=true}
-near-indexer-primitives = { workspace = true }
+derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
-near-crypto = { workspace = true }
-tracing = { workspace = true }
 humantime = { workspace = true }
-near-o11y = { workspace = true }
-tracing-subscriber = { workspace = true }
+k256 = { workspace = true }
 near-account-id = { workspace = true }
+near-async = { workspace = true }
+near-client = { workspace = true }
+near-client-primitives = { workspace = true }
+near-crypto = { workspace = true }
+near-indexer = { workspace = true }
+near-indexer-primitives = { workspace = true }
+near-o11y = { workspace = true }
 rand = { workspace = true }
-rstest = { workspace = true }
 rand_core = { workspace = true }
+rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-
-[features]
-test-utils = []
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+base64 = "0.22"
 tempfile = { workspace = true }
 wat = "1"
-base64 = "0.22"
 
 [lints]
 workspace = true
