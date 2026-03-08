@@ -4,27 +4,27 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use node_types::http_server::StaticWebData;
 
-use crate::cli::VerifyArgs;
+use crate::cli::Cli;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn load_static_web_data(args: &VerifyArgs) -> anyhow::Result<StaticWebData> {
-    match (&args.url, &args.file) {
-        (Some(url), None) => fetch_from_url(url).await,
-        (None, Some(path)) => load_from_file(path),
+pub async fn load(cli: &Cli) -> anyhow::Result<StaticWebData> {
+    match (&cli.url, &cli.file) {
+        (Some(url), None) => fetch(url).await,
+        (None, Some(path)) => read(path),
         (None, None) => bail!("either --url or --file must be provided"),
         (Some(_), Some(_)) => bail!("--url and --file are mutually exclusive"),
     }
 }
 
-async fn fetch_from_url(url: &str) -> anyhow::Result<StaticWebData> {
+async fn fetch(url: &url::Url) -> anyhow::Result<StaticWebData> {
     let client = reqwest::Client::builder()
         .timeout(HTTP_TIMEOUT)
         .build()
         .context("failed to build HTTP client")?;
 
     let response = client
-        .get(url)
+        .get(url.as_str())
         .send()
         .await
         .with_context(|| format!("failed to fetch from {url}"))?;
@@ -42,12 +42,8 @@ async fn fetch_from_url(url: &str) -> anyhow::Result<StaticWebData> {
     Ok(data)
 }
 
-fn load_from_file(path: &Path) -> anyhow::Result<StaticWebData> {
-    let contents = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-
-    let data: StaticWebData =
-        serde_json::from_str(&contents).context("failed to parse JSON as StaticWebData")?;
-
-    Ok(data)
+fn read(path: &Path) -> anyhow::Result<StaticWebData> {
+    let file =
+        std::fs::File::open(path).with_context(|| format!("failed to read {}", path.display()))?;
+    Ok(serde_json::from_reader(file)?)
 }

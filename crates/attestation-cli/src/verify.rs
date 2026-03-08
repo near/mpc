@@ -6,13 +6,12 @@ use attestation::{
     measurements::{ExpectedMeasurements, Measurements},
     tcb_info::TcbInfo,
 };
-use include_measurements::include_measurements;
 use mpc_attestation::attestation::{ValidatedDstackAttestation, VerifiedAttestation};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use node_types::http_server::StaticWebData;
 use sha2::{Digest, Sha256};
 
-use crate::cli::VerifyArgs;
+use crate::cli::Cli;
 
 const KEY_PROVIDER_EVENT: &str = "key-provider";
 
@@ -26,19 +25,19 @@ pub struct VerificationResult {
 
 pub fn run_verification(
     static_data: &StaticWebData,
-    args: &VerifyArgs,
+    cli: &Cli,
 ) -> Result<VerificationResult, VerificationError> {
     let current_timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock before UNIX epoch")
         .as_secs();
 
-    verify_at_timestamp(static_data, args, current_timestamp)
+    verify_at_timestamp(static_data, cli, current_timestamp)
 }
 
 pub fn verify_at_timestamp(
     static_data: &StaticWebData,
-    args: &VerifyArgs,
+    cli: &Cli,
     timestamp_seconds: u64,
 ) -> Result<VerificationResult, VerificationError> {
     let attestation = static_data.tee_participant_info.as_ref().ok_or_else(|| {
@@ -54,15 +53,14 @@ pub fn verify_at_timestamp(
         mpc_attestation::report_data::ReportDataV1::new(tls_key_bytes, account_key_bytes);
     let report_data: mpc_attestation::report_data::ReportData = report_data.into();
 
-    // Parse CLI arguments into allowed hash lists
-    let allowed_image_hashes = parse_allowed_image_hashes(&args.allowed_image_hashes)?;
-    let allowed_compose_hashes = compute_allowed_compose_hashes(&args.launcher_compose_file)
-        .map_err(|e| {
+    // Compute allowed compose hash from the launcher compose file
+    let allowed_compose_hash =
+        compute_allowed_compose_hash(&cli.launcher_compose_file).map_err(|e| {
             VerificationError::Custom(format!("failed to read launcher compose file: {e}"))
         })?;
 
     // Load measurements (custom file or compiled-in defaults)
-    let measurements = load_measurements(&args.expected_measurements).map_err(|e| {
+    let measurements = load_measurements(&cli.expected_measurements).map_err(|e| {
         VerificationError::Custom(format!("failed to load expected measurements: {e}"))
     })?;
 
@@ -70,8 +68,8 @@ pub fn verify_at_timestamp(
     let verified = attestation.verify(
         report_data.into(),
         timestamp_seconds,
-        &allowed_image_hashes,
-        &allowed_compose_hashes,
+        &cli.allowed_image_hashes,
+        &[allowed_compose_hash],
         &measurements,
     )?;
 
@@ -92,27 +90,14 @@ pub fn verify_at_timestamp(
     }
 }
 
-fn parse_allowed_image_hashes(
-    hex_strings: &[String],
-) -> Result<Vec<MpcDockerImageHash>, VerificationError> {
-    hex_strings
-        .iter()
-        .map(|s| {
-            s.parse::<MpcDockerImageHash>().map_err(|e| {
-                VerificationError::Custom(format!("invalid --allowed-image-hash '{s}': {e}"))
-            })
-        })
-        .collect()
-}
-
-fn compute_allowed_compose_hashes(
+fn compute_allowed_compose_hash(
     launcher_compose_path: &Path,
-) -> anyhow::Result<Vec<LauncherDockerComposeHash>> {
+) -> anyhow::Result<LauncherDockerComposeHash> {
     let contents = std::fs::read_to_string(launcher_compose_path)
         .with_context(|| format!("reading {}", launcher_compose_path.display()))?;
 
     let hash_bytes: [u8; 32] = Sha256::digest(contents.as_bytes()).into();
-    Ok(vec![LauncherDockerComposeHash::from(hash_bytes)])
+    Ok(LauncherDockerComposeHash::from(hash_bytes))
 }
 
 fn load_measurements(
@@ -126,15 +111,8 @@ fn load_measurements(
                 .context("parsing expected measurements JSON")?;
             Ok(vec![measurements])
         }
-        None => Ok(default_measurements()),
+        None => Ok(mpc_attestation::attestation::default_measurements().to_vec()),
     }
-}
-
-fn default_measurements() -> Vec<ExpectedMeasurements> {
-    vec![
-        include_measurements!("../mpc-attestation/assets/tcb_info.json"),
-        include_measurements!("../mpc-attestation/assets/tcb_info_dev.json"),
-    ]
 }
 
 /// Parse a `TcbInfo`-format JSON into `ExpectedMeasurements`, replicating
@@ -142,12 +120,7 @@ fn default_measurements() -> Vec<ExpectedMeasurements> {
 fn parse_measurements_from_json(json: &str) -> anyhow::Result<ExpectedMeasurements> {
     let tcb_info: TcbInfo = serde_json::from_str(json).context("invalid TcbInfo JSON")?;
 
-    let rtmrs = Measurements {
-        mrtd: *tcb_info.mrtd,
-        rtmr0: *tcb_info.rtmr0,
-        rtmr1: *tcb_info.rtmr1,
-        rtmr2: *tcb_info.rtmr2,
-    };
+    let rtmrs = Measurements::from(&tcb_info);
 
     let key_provider_events: Vec<_> = tcb_info
         .event_log
@@ -175,37 +148,6 @@ mod tests {
     use test_utils::attestation::TEST_TCB_INFO_STRING;
 
     #[test]
-    fn parse_allowed_image_hashes_valid_hex() {
-        let hashes =
-            vec!["6e5b08f91752fd7cb10349de45f74272f340fe42a172d2cbc237f3f1d5527a45".to_string()];
-        let result = parse_allowed_image_hashes(&hashes);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 1);
-    }
-
-    #[test]
-    fn parse_allowed_image_hashes_multiple() {
-        let hashes = vec![
-            "6e5b08f91752fd7cb10349de45f74272f340fe42a172d2cbc237f3f1d5527a45".to_string(),
-            "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-        ];
-        let result = parse_allowed_image_hashes(&hashes).unwrap();
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn parse_allowed_image_hashes_invalid_hex() {
-        let hashes = vec!["not_valid_hex".to_string()];
-        parse_allowed_image_hashes(&hashes).unwrap_err();
-    }
-
-    #[test]
-    fn parse_allowed_image_hashes_wrong_length() {
-        let hashes = vec!["abcd".to_string()];
-        parse_allowed_image_hashes(&hashes).unwrap_err();
-    }
-
-    #[test]
     fn parse_measurements_from_json_valid() {
         let measurements = parse_measurements_from_json(TEST_TCB_INFO_STRING).unwrap();
         assert_ne!(measurements.rtmrs.mrtd, [0u8; 48]);
@@ -216,11 +158,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_measurements_from_json_matches_include_macro() {
-        // Use the same file that include_measurements! reads at compile time
+    fn parse_measurements_from_json_matches_compiled() {
         let json = include_str!("../../mpc-attestation/assets/tcb_info.json");
         let runtime = parse_measurements_from_json(json).unwrap();
-        let compiled = include_measurements!("../mpc-attestation/assets/tcb_info.json");
+        let compiled = &mpc_attestation::attestation::default_measurements()[0];
 
         assert_eq!(runtime.rtmrs.mrtd, compiled.rtmrs.mrtd);
         assert_eq!(runtime.rtmrs.rtmr0, compiled.rtmrs.rtmr0);
@@ -238,26 +179,19 @@ mod tests {
     }
 
     #[test]
-    fn default_measurements_not_empty() {
-        let m = default_measurements();
-        assert_eq!(m.len(), 2);
-    }
-
-    #[test]
-    fn compute_allowed_compose_hashes_reads_file() {
+    fn compute_allowed_compose_hash_reads_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("compose.yaml");
         std::fs::write(&path, "test content").unwrap();
 
-        let hashes = compute_allowed_compose_hashes(&path).unwrap();
-        assert_eq!(hashes.len(), 1);
+        let hash = compute_allowed_compose_hash(&path).unwrap();
 
         let expected: [u8; 32] = Sha256::digest(b"test content").into();
-        assert_eq!(*hashes[0].as_ref(), expected);
+        assert_eq!(*hash.as_ref(), expected);
     }
 
     #[test]
-    fn compute_allowed_compose_hashes_missing_file() {
-        compute_allowed_compose_hashes(std::path::Path::new("/nonexistent/file.yaml")).unwrap_err();
+    fn compute_allowed_compose_hash_missing_file() {
+        compute_allowed_compose_hash(std::path::Path::new("/nonexistent/file.yaml")).unwrap_err();
     }
 }

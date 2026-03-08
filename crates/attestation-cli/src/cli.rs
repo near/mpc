@@ -1,27 +1,16 @@
 use std::path::PathBuf;
 
-use clap::{ArgGroup, Args, Parser, Subcommand};
+use clap::{ArgGroup, Parser};
+use mpc_primitives::hash::MpcDockerImageHash;
 
 #[derive(Parser)]
 #[command(name = "attestation-cli")]
 #[command(about = "Standalone verification tool for MPC node TEE attestations")]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Command,
-}
-
-#[derive(Subcommand)]
-pub enum Command {
-    /// Verify a TEE attestation from an MPC node
-    Verify(VerifyArgs),
-}
-
-#[derive(Args)]
 #[command(group(ArgGroup::new("source").required(true)))]
-pub struct VerifyArgs {
+pub struct Cli {
     /// Fetch attestation data from a node's /public_data HTTP endpoint
     #[arg(long, group = "source")]
-    pub url: Option<String>,
+    pub url: Option<url::Url>,
 
     /// Read attestation data from a saved JSON file (same format as /public_data response)
     #[arg(long, group = "source")]
@@ -29,7 +18,7 @@ pub struct VerifyArgs {
 
     /// Allowed MPC Docker image hash (hex-encoded SHA256, repeatable)
     #[arg(long = "allowed-image-hash", required = true)]
-    pub allowed_image_hashes: Vec<String>,
+    pub allowed_image_hashes: Vec<MpcDockerImageHash>,
 
     /// Path to the launcher docker-compose YAML file (SHA256 is computed by the CLI)
     #[arg(long = "launcher-compose-file")]

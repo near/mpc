@@ -1,5 +1,6 @@
 use attestation::attestation::VerificationError;
 use node_types::http_server::StaticWebData;
+use time::OffsetDateTime;
 
 use crate::verify::VerificationResult;
 
@@ -81,32 +82,15 @@ fn print_verification_details(result: &VerificationResult) {
 }
 
 fn format_timestamp(unix_secs: u64) -> String {
-    // Simple UTC formatting without pulling in chrono/time.
-    // Overflow is impossible: valid Unix timestamps (up to year 9999) are well within u64 range.
-    let secs_per_day: u64 = 86400;
-    let days_since_epoch = unix_secs / secs_per_day;
-    let time_of_day = unix_secs % secs_per_day;
-    let hours = time_of_day / 3600;
-    let minutes = (time_of_day % 3600) / 60;
-    let seconds = time_of_day % 60;
-
-    // Rough date calculation (no leap second precision needed for display)
-    let (year, month, day) = days_to_ymd(days_since_epoch);
-
-    format!("{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02}:{seconds:02} UTC")
-}
-
-fn days_to_ymd(days: u64) -> (u64, u64, u64) {
-    // Civil days-to-date algorithm
-    let z = days + 719468;
-    let era = z / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
+    match OffsetDateTime::from_unix_timestamp(unix_secs as i64) {
+        Ok(dt) => {
+            let (year, month, day) = dt.to_calendar_date();
+            let (hour, minute, second) = dt.to_hms();
+            format!(
+                "{year:04}-{:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC",
+                month as u8
+            )
+        }
+        Err(_) => format!("{unix_secs} (invalid timestamp)"),
+    }
 }

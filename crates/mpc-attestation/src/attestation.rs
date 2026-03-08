@@ -104,9 +104,6 @@ impl VerifiedAttestation {
 }
 
 /// Returns the default compiled-in TCB measurements (prod + dev).
-///
-/// These are the same measurements previously hardcoded inside `Attestation::verify()`.
-/// Callers that don't need custom measurements should pass the result of this function.
 pub fn default_measurements() -> &'static [ExpectedMeasurements] {
     static MEASUREMENTS: [ExpectedMeasurements; 2] = [
         include_measurements!("assets/tcb_info.json"),

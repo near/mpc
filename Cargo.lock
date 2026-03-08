@@ -995,7 +995,6 @@ dependencies = [
  "bs58 0.5.1",
  "clap",
  "ed25519-dalek",
- "include-measurements",
  "mpc-attestation",
  "mpc-primitives",
  "node-types",
@@ -1004,7 +1003,9 @@ dependencies = [
  "sha2",
  "tempfile",
  "test-utils",
+ "time",
  "tokio",
+ "url",
 ]
 
 [[package]]

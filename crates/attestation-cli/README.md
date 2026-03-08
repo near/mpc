@@ -37,7 +37,7 @@ Before running verification you need:
 ## Usage
 
 ```
-attestation-cli verify [OPTIONS]
+attestation-cli [OPTIONS]
 ```
 
 ### Required flags
@@ -65,7 +65,7 @@ attestation-cli verify [OPTIONS]
 ### Verify a live node
 
 ```bash
-attestation-cli verify \
+attestation-cli \
   --url http://<node-host>:3000/public_data \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml
@@ -82,7 +82,7 @@ curl -o public_data.json http://<node-host>:3000/public_data
 Then verify offline:
 
 ```bash
-attestation-cli verify \
+attestation-cli \
   --file public_data.json \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml
@@ -91,7 +91,7 @@ attestation-cli verify \
 ### Multiple allowed image hashes
 
 ```bash
-attestation-cli verify \
+attestation-cli \
   --url http://<node-host>:3000/public_data \
   --allowed-image-hash abc123...def \
   --allowed-image-hash 789012...345 \
@@ -101,7 +101,7 @@ attestation-cli verify \
 ### Custom expected measurements
 
 ```bash
-attestation-cli verify \
+attestation-cli \
   --file public_data.json \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml \
@@ -173,7 +173,7 @@ On failure the output includes the error details and ends with `Verdict: FAIL`.
 
 Attestation verification requires DCAP collateral (certificates, CRLs, TCB info) to validate the Intel TDX quote. The CLI uses the collateral **embedded in the node's attestation payload** (the same collateral that was fetched when the node generated its attestation). This is the same approach used by the MPC contract and node.
 
-The CLI does not currently support fetching fresh collateral from Intel's Provisioning Certification Service (PCS) or overriding CRLs. If the embedded collateral is stale, the verification may fail with a DCAP-related error.
+The CLI does not currently support fetching fresh collateral from Intel's Provisioning Certification Service (PCS) or overriding CRLs. If the embedded collateral is stale, the verification may fail with a DCAP-related error. See [#2320](https://github.com/near/mpc/issues/2320) and [#2286](https://github.com/near/mpc/issues/2286) for planned improvements.
 
 ## Troubleshooting
 
