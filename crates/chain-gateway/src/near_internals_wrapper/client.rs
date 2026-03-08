@@ -1,0 +1,47 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use near_async::messaging::CanSendAsync;
+
+use crate::{errors::NearClientError, primitives::SyncChecker};
+
+/// Wrapper around near-internal struct
+#[derive(Clone)]
+pub(crate) struct ClientWrapper {
+    client: Arc<near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActorInner>>,
+}
+
+impl ClientWrapper {
+    pub(crate) fn new(
+        client: near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActorInner>,
+    ) -> Self {
+        Self {
+            client: Arc::new(client),
+        }
+    }
+}
+
+/// Implement SyncChecke for our near client
+#[async_trait]
+impl SyncChecker for ClientWrapper {
+    type Error = NearClientError;
+    async fn is_syncing(&self) -> Result<bool, Self::Error> {
+        let status_request = near_client::Status {
+            is_health_check: false,
+            detailed: false,
+        };
+        let status = &self
+            .client
+            .send_async(
+                near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
+            )
+            .await
+            .map_err(|err| NearClientError::AsyncSendError {
+                source: Arc::new(err),
+            })?
+            .map_err(|err| NearClientError::ResponseError {
+                source: Arc::new(err),
+            })?;
+        Ok(status.sync_info.syncing)
+    }
+}

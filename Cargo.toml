@@ -5,6 +5,7 @@ members = [
     "crates/attestation",
     "crates/backup-cli",
     "crates/bounded-collections",
+    "crates/chain-gateway",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
@@ -38,6 +39,7 @@ license = "MIT"
 #workspace members
 attestation = { path = "crates/attestation" }
 bounded-collections = { path = "crates/bounded-collections" }
+chain-gateway = { path = "crates/chain-gateway" }
 contract-history = { path = "crates/contract-history" }
 contract-interface = { path = "crates/contract-interface" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
@@ -135,6 +137,7 @@ lru = "0.16.3"
 mockall = "0.14.0"
 near-abi = "0.4.4"
 near-account-id = "2.5.0"
+near-client-primitives = "0.33.0"
 near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.6"
 near-primitives = "0.34.6"
@@ -178,7 +181,7 @@ syn = "2.0"
 tempfile = "3.25.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
-tokio = { version = "1.41.0", features = ["full"] }
+tokio = { version = "1.41.0", features = ["full", "test-util" ] }
 tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
