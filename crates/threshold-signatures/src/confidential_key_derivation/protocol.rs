@@ -191,14 +191,11 @@ fn compute_signature_share(
 mod test {
     use super::*;
     use super::{CKD_MAX_INCOMING_COORDINATOR_ENTRIES, CKD_MAX_INCOMING_PARTICIPANT_ENTRIES};
-    use crate::confidential_key_derivation::{
-        ciphersuite::{hash_to_curve, G2Projective},
-        hash_app_id_with_pk, SigningShare, VerifyingKey,
-    };
-    use crate::crypto::polynomials::Polynomial;
-    use crate::protocol::internal::{make_protocol, Comms};
+    use crate::confidential_key_derivation::ciphersuite::hash_to_curve;
+    use crate::confidential_key_derivation::hash_app_id_with_pk;
     use crate::test_utils::{
-        check_one_coordinator_output, generate_participants, run_protocol, GenProtocol,
+        assert_buffer_capacity, check_one_coordinator_output, expected_buffer_by_role,
+        generate_participants, generate_test_keys, make_keygen_output, run_protocol, GenProtocol,
         MockCryptoRng,
     };
     use rand::{seq::SliceRandom as _, RngCore, SeedableRng};
@@ -221,44 +218,22 @@ mod test {
     fn test_ckd() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
 
-        // Create the app necessary items
         let app_id = AppId::try_from(b"Near App").unwrap();
         let app_sk = Scalar::random(&mut rng);
         let app_pk = ElementG1::generator() * app_sk;
 
         let participants = generate_participants(3);
-
-        // choose a coordinator at random
         let coordinator = *participants
             .choose(&mut rng)
             .expect("participant list is not empty");
-        let participant_list = ParticipantList::new(&participants).unwrap();
 
-        // Manually compute signing keys
-        let mut private_shares = Vec::new();
-        let mut msk = Scalar::ZERO;
-        for (i, _) in participants.iter().enumerate() {
-            let mut rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let private_share = SigningShare::new(Scalar::random(&mut rng_p));
-            // compute lambda(i)
-            let lambda_i = participant_list
-                .lagrange::<BLS12381SHA256>(participant_list.get_participant(i).unwrap())
-                .unwrap();
-
-            msk += lambda_i * private_share.to_scalar();
-            private_shares.push(private_share);
-        }
-
-        // Manually compute master verification
-        let pk = VerifyingKey::new(G2Projective::generator() * msk);
+        let (f, pk) = generate_test_keys(participants.len() - 1, &mut rng);
+        let msk = f.eval_at_zero().unwrap().0;
 
         let mut protocols: GenProtocol<CKDOutputOption> = Vec::with_capacity(participants.len());
-        for (i, p) in participants.iter().enumerate() {
+        for p in &participants {
             let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let key_pair = KeygenOutput {
-                public_key: pk,
-                private_share: private_shares[i],
-            };
+            let key_pair = make_keygen_output(&f, &pk, *p);
 
             let protocol = ckd(
                 &participants,
@@ -297,9 +272,6 @@ mod test {
     #[case(5, 3)]
     #[case(10, 4)]
     fn test_ckd_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
-        let coordinator_expected = CKD_MAX_INCOMING_COORDINATOR_ENTRIES;
-        let participant_expected = CKD_MAX_INCOMING_PARTICIPANT_ENTRIES;
-
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let app_id = AppId::try_from(b"Near App").unwrap();
@@ -309,54 +281,30 @@ mod test {
         let participants = generate_participants(num_participants);
         let coordinator = participants[0];
 
-        let degree = threshold - 1;
-        let f = Polynomial::<BLS12381SHA256>::generate_polynomial(None, degree, &mut rng).unwrap();
-        let msk = f.eval_at_zero().unwrap().0;
-        let pk = VerifyingKey::new(G2Projective::generator() * msk);
+        let (f, pk) = generate_test_keys(threshold - 1, &mut rng);
 
-        let mut comms_refs = Vec::new();
-        let mut protocols: GenProtocol<CKDOutputOption> = Vec::new();
-
-        for &p in &participants {
-            let comms = Comms::with_buffer_capacity(usize::MAX);
-            let private_share = SigningShare::new(f.eval_at_participant(p).unwrap().0);
-            let key_pair = KeygenOutput {
-                public_key: pk,
-                private_share,
-            };
-            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let p_list = ParticipantList::new(&participants).unwrap();
-            let fut = run_ckd_protocol(
-                comms.shared_channel(),
+        // When + Then
+        assert_buffer_capacity(
+            &participants,
+            &mut rng,
+            |comms, p_list, p, rng_p| {
+                let key_pair = make_keygen_output(&f, &pk, p);
+                run_ckd_protocol(
+                    comms.shared_channel(),
+                    coordinator,
+                    p,
+                    p_list,
+                    key_pair,
+                    app_id.clone(),
+                    app_pk,
+                    rng_p,
+                )
+            },
+            expected_buffer_by_role(
                 coordinator,
-                p,
-                p_list,
-                key_pair,
-                app_id.clone(),
-                app_pk,
-                rng_p,
-            );
-            comms_refs.push((p, comms.clone()));
-            let prot = make_protocol(comms, fut);
-            protocols.push((p, Box::new(prot)));
-        }
-
-        // When
-        let _ = run_protocol(protocols).unwrap();
-
-        // Then
-        for (p, comms) in &comms_refs {
-            let expected = if *p == coordinator {
-                coordinator_expected
-            } else {
-                participant_expected
-            };
-            assert_eq!(
-                comms.buffer_len(),
-                expected,
-                "Unexpected buffer entries for participant {p:?} (coordinator={})",
-                *p == coordinator
-            );
-        }
+                CKD_MAX_INCOMING_COORDINATOR_ENTRIES,
+                CKD_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
+        );
     }
 }
