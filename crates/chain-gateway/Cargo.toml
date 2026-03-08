@@ -16,8 +16,6 @@ near-client = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-o11y = { workspace = true }
-rand = { workspace = true }
-rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -27,6 +25,8 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 base64 = "0.22"
+rand = { workspace = true }
+rstest = { workspace = true }
 tempfile = { workspace = true }
 wat = "1"
 

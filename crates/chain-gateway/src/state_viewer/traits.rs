@@ -271,7 +271,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn view_raw_blocks_until_synced() {
         let mut rng = StdRng::seed_from_u64(4);
         let (call, response) = random_view_params(&mut rng);
