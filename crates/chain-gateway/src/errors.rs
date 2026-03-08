@@ -30,8 +30,7 @@ pub struct NearViewClientError {
 
 #[derive(Debug)]
 pub enum ViewClientQuery {
-    // todo(#2342)
-    // LatestFinalBlock,
+    // TODO(#2342): LatestFinalBlock,
     ViewMethod {
         contract_id: AccountId,
         method_name: String,
@@ -41,8 +40,7 @@ pub enum ViewClientQuery {
 impl fmt::Display for ViewClientQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            // todo(#2342):
-            // Self::LatestFinalBlock => write!(f, "latest final block query"),
+            // TODO(#2342): Self::LatestFinalBlock => write!(f, "latest final block query"),
             Self::ViewMethod {
                 contract_id,
                 method_name,

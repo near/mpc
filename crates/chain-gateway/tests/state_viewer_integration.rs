@@ -61,7 +61,7 @@ async fn test_subscription_receives_initial_value() {
     assert_eq!(res.value, "hello from test");
 }
 
-// todo(#2343): once we have transactions, add a method that changes the contract state. the verify that
+// TODO(#2343): once we have transactions, add a method that changes the contract state. the verify that
 // the viewer sees it correctly
 
 /// Minimal WASM contract: `get_greeting` returns `"hello from test"`.
