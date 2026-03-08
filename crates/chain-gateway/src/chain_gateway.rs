@@ -1,8 +1,16 @@
 use near_account_id::AccountId;
+use near_indexer::near_primitives::transaction::SignedTransaction;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
 
-use crate::errors::{ChainGatewayError, NearClientError, NearViewClientError};
-use crate::near_internals_wrapper::{NearClientActorHandle, NearViewClientActorHandle};
-use crate::primitives::{IsSyncing, QueryViewFunction};
+use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
+use crate::near_internals_wrapper::{
+    NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
+};
+use crate::primitives::{
+    FetchLatestFinalBlockInfo, IsSyncing, QueryViewFunction, SubmitSignedTransaction,
+};
+use crate::stats::{IndexerStats, indexer_logger};
 use crate::types::ObservedState;
 
 #[derive(Clone)]
@@ -11,6 +19,11 @@ pub struct ChainGateway {
     view_client: NearViewClientActorHandle,
     /// For querying blockchain sync status.
     client: NearClientActorHandle,
+    /// For sending txs to the chain.
+    rpc_handler: NearRpcActorHandle,
+    // todo: remove stats
+    /// Stores runtime indexing statistics.
+    _stats: Arc<Mutex<IndexerStats>>,
 }
 
 impl IsSyncing for ChainGateway {
@@ -54,9 +67,80 @@ impl ChainGateway {
         let view_client = NearViewClientActorHandle::new(near_node.view_client);
         let client = NearClientActorHandle::new(near_node.client);
 
+        let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
+        // todo: remove states
+        let stats = Arc::new(Mutex::new(IndexerStats::new()));
+        tokio::spawn(indexer_logger(stats.clone(), view_client.clone()));
+
         Ok(ChainGateway {
             view_client,
             client,
+            rpc_handler,
+            _stats: stats,
         })
+    }
+    pub async fn start_with_streamer(
+        config: near_indexer::IndexerConfig,
+    ) -> Result<(ChainGateway, mpsc::Receiver<near_indexer::StreamerMessage>), ChainGatewayError>
+    {
+        let near_config =
+            config
+                .load_near_config()
+                .map_err(|err| ChainGatewayError::FailureLoadingConfig {
+                    msg: err.to_string(),
+                })?;
+
+        let near_node = near_indexer::Indexer::start_near_node(&config, near_config.clone())
+            .await
+            .map_err(|err| ChainGatewayError::StartupFailed {
+                msg: err.to_string(),
+            })?;
+
+        let indexer = near_indexer::Indexer::from_near_node(config, near_config, &near_node);
+        let stream = indexer.streamer();
+        let view_client = NearViewClientActorHandle::new(near_node.view_client);
+        let client = NearClientActorHandle::new(near_node.client);
+
+        let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
+        let stats = Arc::new(Mutex::new(IndexerStats::new()));
+        tokio::spawn(indexer_logger(stats.clone(), view_client.clone()));
+
+        Ok((
+            ChainGateway {
+                view_client,
+                client,
+                rpc_handler,
+                _stats: stats,
+            },
+            stream,
+        ))
+    }
+}
+
+impl FetchLatestFinalBlockInfo for ChainGateway {
+    type Error = NearViewClientError;
+    async fn fetch_latest_final_block_info(
+        &self,
+    ) -> Result<crate::types::LatestFinalBlockInfo, Self::Error> {
+        self.view_client.fetch_latest_final_block_info().await
+    }
+}
+
+impl SubmitSignedTransaction for ChainGateway {
+    type Error = NearRpcError;
+    async fn submit_signed_transaction(
+        &self,
+        transaction: SignedTransaction,
+    ) -> Result<(), Self::Error> {
+        self.rpc_handler
+            .submit_signed_transaction(transaction)
+            .await
+    }
+}
+
+impl ChainGateway {
+    // todo: remove this method soon. Stats should be internal to this crate
+    pub fn stats(&self) -> Arc<Mutex<IndexerStats>> {
+        self._stats.clone()
     }
 }

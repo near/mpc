@@ -1,19 +1,18 @@
+use super::contract_state_viewer::MpcContractStateViewer;
 use super::handler::listen_blocks;
 use super::migrations::{monitor_migrations, ContractMigrationInfo};
 use super::participants::monitor_contract_state;
-use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
-use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
-};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
+use chain_gateway::start_with_streamer;
+use chain_gateway::errors::ChainGatewayError;
+use chain_gateway::types::ObservedState;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
-use near_indexer::Indexer;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
@@ -53,8 +52,12 @@ pub fn spawn_real_indexer(
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
-    migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
+    protocol_state_sender: watch::Sender<
+        Result<ObservedState<ProtocolContractState>, ChainGatewayError>,
+    >,
+    migration_state_sender: watch::Sender<
+        Result<ObservedState<ContractMigrationInfo>, ChainGatewayError>,
+    >,
     tls_public_key: VerifyingKey,
 ) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
@@ -86,31 +89,24 @@ pub fn spawn_real_indexer(
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
         indexer_tokio_runtime.block_on(async {
             let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
-
-            let near_config = near_indexer_config
-                .load_near_config()
-                .expect("near config is present");
-
-            let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
+            let (chain_gateway, stream) = start_with_streamer(near_indexer_config)
                 .await
-                .expect("near node has started");
+                .expect("indexer startup must succeed");
 
-            let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
+            let mpc_contract_id = mpc_indexer_config.mpc_contract_id.clone();
+            let mpc_contract_state_viewer =
+                MpcContractStateViewer::new(mpc_contract_id.clone(), chain_gateway.clone());
+            let tx_submitter = chain_gateway.clone();
 
-            let stream = indexer.streamer();
-
-            let indexer_state = Arc::new(IndexerState::new(
-                near_node.view_client,
-                near_node.client,
-                near_node.rpc_handler,
-                mpc_indexer_config.mpc_contract_id.clone(),
-            ));
+            let indexer_state = Arc::new(IndexerState::new(chain_gateway, mpc_contract_id.clone()));
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
                 account_secret_key.clone(),
                 respond_config_clone,
-                Arc::clone(&indexer_state),
+                indexer_state.mpc_contract_id.clone(),
+                mpc_contract_state_viewer.clone(),
+                tx_submitter,
             );
 
             let Ok(txn_sender) = txn_sender_result else {
@@ -124,7 +120,7 @@ pub fn spawn_real_indexer(
             };
 
             let foreign_chain_policy_reader =
-                RealForeignChainPolicyReader::new(indexer_state.clone());
+                RealForeignChainPolicyReader::new(mpc_contract_state_viewer.clone());
             if foreign_chain_policy_reader_sender
                 .send(foreign_chain_policy_reader)
                 .is_err()
@@ -139,30 +135,39 @@ pub fn spawn_real_indexer(
                 process_blocks_receiver
             };
 
-            tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
+            //tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
+            //todo: all of this can probably be simplified massively.
+            //let tee_state = mpc_contract_state_viewer.tee_subscriber()
+            //let migration_state = mpc_contract_state_viewe.migration_state_subscriber()
+            //let tee_context = TeeContext::new(mpc_contract_state_viewer.clone())
+            //let mpc_context = MpcContext::new(mpc_contract_state_viewer.clone())
+            //let
 
-            tokio::spawn(monitor_allowed_docker_images(
+            mpc_contract_state_viewer.spawn_subscriber(
                 allowed_docker_images_sender,
-                indexer_state.clone(),
-            ));
+                contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+            );
 
-            tokio::spawn(monitor_allowed_launcher_compose_hashes(
+            mpc_contract_state_viewer.spawn_subscriber(
                 allowed_launcher_compose_sender,
-                indexer_state.clone(),
-            ));
+                contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
+            );
 
-            tokio::spawn(monitor_tee_accounts(
+            mpc_contract_state_viewer.spawn_subscriber(
                 tee_accounts_sender,
-                indexer_state.clone(),
-            ));
+                contract_interface::method_names::GET_TEE_ACCOUNTS,
+            );
 
+            //  let contract_state_receiver = mpc_contract_state_viewer.monitor_contract_state(protocol_state_sender).await;
             // Returns once the contract state is available.
+            // todo remove unwrap
             let contract_state_receiver = monitor_contract_state(
-                indexer_state.clone(),
+                mpc_contract_state_viewer.clone(),
                 mpc_indexer_config.port_override,
                 protocol_state_sender,
             )
-            .await;
+            .await
+            .unwrap();
 
             if contract_state_sender_oneshot
                 .send(contract_state_receiver)
@@ -173,8 +178,10 @@ pub fn spawn_real_indexer(
                 )
             };
 
+            // todo
+            // let my_migration_info_receiver = mpc_contract_state_viewer.monitor_migrations().await;
             let my_migration_info_receiver = monitor_migrations(
-                indexer_state.clone(),
+                mpc_contract_state_viewer.clone(),
                 migration_state_sender,
                 my_near_account_id,
                 tls_public_key,
@@ -195,7 +202,7 @@ pub fn spawn_real_indexer(
             let indexer_result = listen_blocks(
                 stream,
                 mpc_indexer_config.concurrency,
-                Arc::clone(&indexer_state.stats),
+                Arc::clone(&indexer_state.chain_gateway.stats()),
                 mpc_indexer_config.mpc_contract_id,
                 block_update_sender,
                 process_blocks_receiver,
@@ -206,7 +213,7 @@ pub fn spawn_real_indexer(
             let indexer_result = listen_blocks(
                 stream,
                 mpc_indexer_config.concurrency,
-                Arc::clone(&indexer_state.stats),
+                Arc::clone(&indexer_state.chain_gateway.stats()),
                 mpc_indexer_config.mpc_contract_id,
                 block_update_sender,
             )

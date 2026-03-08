@@ -1,6 +1,9 @@
-use crate::primitives::{IsSyncing, QueryViewFunction};
-use crate::types::ObservedState;
+use crate::primitives::{
+    FetchLatestFinalBlockInfo, IsSyncing, QueryViewFunction, SubmitSignedTransaction,
+};
+use crate::types::{LatestFinalBlockInfo, ObservedState};
 use near_account_id::AccountId;
+use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
@@ -10,6 +13,8 @@ use tokio::sync::Notify;
 pub struct MockChainState {
     sync_response: Arc<Mutex<Result<bool, MockError>>>,
     query_view_function_submitter_state: Arc<Mutex<MockQueryViewFunctionState>>,
+    latest_final_block: Arc<Mutex<Result<LatestFinalBlockInfo, MockError>>>,
+    signed_transaction_submitter_state: Arc<Mutex<MockSignedTransactionSubmitterState>>,
     read_notify: Arc<Notify>,
 }
 
@@ -23,6 +28,11 @@ pub struct Call {
     pub contract_id: AccountId,
     pub method_name: String,
     pub args: Vec<u8>,
+}
+
+pub struct MockSignedTransactionSubmitterState {
+    pub response: Result<(), MockError>,
+    pub submitted: Vec<SignedTransaction>,
 }
 
 impl MockChainState {
@@ -52,11 +62,19 @@ impl MockChainState {
         let inner = self.query_view_function_submitter_state.lock().unwrap();
         inner.submitted.clone()
     }
+
+    /// Returns a snapshot of all recorded signed transactions.
+    pub async fn signed_transactions(&self) -> Vec<SignedTransaction> {
+        let inner = self.signed_transaction_submitter_state.lock().unwrap();
+        inner.submitted.clone()
+    }
 }
 
 pub struct MockChainStateBuilder {
     sync_response: Result<bool, MockError>,
     query_view_function_response: Result<ObservedState, MockError>,
+    latest_final_block: Result<LatestFinalBlockInfo, MockError>,
+    signed_transaction_submitter_response: Result<(), MockError>,
 }
 
 impl Default for MockChainStateBuilder {
@@ -70,11 +88,23 @@ impl MockChainStateBuilder {
         Self {
             sync_response: Err(MockError::NotInitialized),
             query_view_function_response: Err(MockError::NotInitialized),
+            latest_final_block: Err(MockError::NotInitialized),
+            signed_transaction_submitter_response: Err(MockError::NotInitialized),
         }
     }
 
     pub fn with_syncing_status(mut self, s: Result<bool, MockError>) -> Self {
         self.sync_response = s;
+        self
+    }
+
+    pub fn with_latest_block(mut self, b: Result<LatestFinalBlockInfo, MockError>) -> Self {
+        self.latest_final_block = b;
+        self
+    }
+
+    pub fn with_signed_transaction_submitter_response(mut self, r: Result<(), MockError>) -> Self {
+        self.signed_transaction_submitter_response = r;
         self
     }
 
@@ -94,6 +124,13 @@ impl MockChainStateBuilder {
                 submitted: Vec::new(),
             })),
             read_notify: Arc::new(Notify::new()),
+            latest_final_block: Arc::new(Mutex::new(self.latest_final_block)),
+            signed_transaction_submitter_state: Arc::new(Mutex::new(
+                MockSignedTransactionSubmitterState {
+                    response: self.signed_transaction_submitter_response,
+                    submitted: Vec::new(),
+                },
+            )),
         }
     }
 }
@@ -126,14 +163,39 @@ impl QueryViewFunction for MockChainState {
     }
 }
 
+impl FetchLatestFinalBlockInfo for MockChainState {
+    type Error = MockError;
+    fn fetch_latest_final_block_info(
+        &self,
+    ) -> impl Future<Output = Result<LatestFinalBlockInfo, Self::Error>> + Send {
+        async move { self.latest_final_block.lock().unwrap().clone() }
+    }
+}
+
+impl SubmitSignedTransaction for MockChainState {
+    type Error = MockError;
+    async fn submit_signed_transaction(
+        &self,
+        transaction: SignedTransaction,
+    ) -> Result<(), Self::Error> {
+        let mut inner = self.signed_transaction_submitter_state.lock().unwrap();
+        inner.submitted.push(transaction);
+        inner.response.clone()
+    }
+}
+
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum MockError {
     #[error("Failed to sync")]
     SyncError,
+    #[error("Failed to fetch latest final block")]
+    LatestFinalBlockError,
     #[error("mock field not initialized")]
     NotInitialized,
     #[error("mock view client error")]
     ViewClientError,
     #[error("timed out")]
     Timeout,
+    #[error("rpc error")]
+    RpcError,
 }

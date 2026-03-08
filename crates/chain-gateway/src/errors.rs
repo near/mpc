@@ -2,6 +2,14 @@ use std::fmt;
 
 use near_account_id::AccountId;
 
+#[derive(Debug, thiserror::Error)]
+pub enum NearRpcError {
+    #[error("failed to submit transaction: {message}")]
+    SubmitTransaction { message: String },
+    #[error("received invalid response: {response}")]
+    ResponseError { response: String },
+}
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum NearClientError {
     #[error("near client failed to send async: {message}")]
@@ -31,7 +39,7 @@ pub enum NearViewClientError {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum NearViewClientQuery {
-    // TODO(#2342): LatestFinalBlock,
+    LatestFinalBlock,
     ViewMethod {
         contract_id: AccountId,
         method_name: String,
@@ -41,7 +49,7 @@ pub enum NearViewClientQuery {
 impl fmt::Display for NearViewClientQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            // TODO(#2342): Self::LatestFinalBlock => write!(f, "latest final block query"),
+            Self::LatestFinalBlock => write!(f, "latest final block query"),
             Self::ViewMethod {
                 contract_id,
                 method_name,
@@ -84,6 +92,15 @@ pub enum ChainGatewayError {
 
     #[error("deserialization error: {message}")]
     Deserialization { message: String },
+
+    #[error("rpc client error")]
+    RpcClient { message: String },
+
+    #[error("failed to fetch latest final block")]
+    FetchFinalBlock { message: String },
+
+    #[error("failed to submit signed transaction")]
+    SubmitTransaction { message: String },
 
     #[error("failure loading config with {msg}")]
     FailureLoadingConfig { msg: String },

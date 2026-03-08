@@ -3,6 +3,8 @@ pub mod errors;
 mod near_internals_wrapper;
 pub mod primitives;
 pub mod state_viewer;
+pub mod stats;
+pub mod transaction_sender;
 pub mod types;
 
 pub use chain_gateway::ChainGateway;

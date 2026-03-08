@@ -3,13 +3,15 @@
 //!     - QueryViewFunction --> can call view methods on a contract
 //!     - TODO(#2342): LatestFinalBlockInfoFecher --> fetches height and hash of the latest final block
 //!     - TODO(#2342): SignedTransactionSubmitter --> submits  asigned transaction to the blockchain
+use crate::types::LatestFinalBlockInfo;
 use crate::types::ObservedState;
 use near_account_id::AccountId;
+use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::future::Future;
 use std::time::Duration;
 
 /// Low-level trait for checking indexer sync status.
-pub trait IsSyncing: Send + Sync + 'static {
+pub(crate) trait IsSyncing: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     /// Returns whether the node is currently syncing.
     fn is_syncing(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send;
@@ -38,7 +40,7 @@ pub trait IsSyncing: Send + Sync + 'static {
     }
 }
 
-pub trait QueryViewFunction: Send + Sync + 'static {
+pub(crate) trait QueryViewFunction: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     fn query_view_function(
         &self,
@@ -46,4 +48,20 @@ pub trait QueryViewFunction: Send + Sync + 'static {
         method_name: &str,
         args: &[u8],
     ) -> impl Future<Output = Result<ObservedState, Self::Error>> + Send;
+}
+
+pub(crate) trait FetchLatestFinalBlockInfo: Send + Sync + 'static {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn fetch_latest_final_block_info(
+        &self,
+    ) -> impl Future<Output = Result<LatestFinalBlockInfo, Self::Error>> + Send;
+}
+
+/// note: this is the only trait that exposes NEAR internals, but it's only used by tests
+pub(crate) trait SubmitSignedTransaction: Send + Sync + 'static {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn submit_signed_transaction(
+        &self,
+        transaction: SignedTransaction,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }

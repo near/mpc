@@ -34,7 +34,6 @@ async fn test_view_method_contract_state() {
 #[tokio::test]
 async fn test_view_method_nonexistent_method_returns_error() {
     let (gw, _dir) = setup_chain_gateway().await;
-
     let result = gw
         .view_method::<NoArgs, String>(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
@@ -105,6 +104,7 @@ async fn setup_chain_gateway() -> (
     (gw, dir)
 }
 
+// resolve this
 // TODO(#2343): Once we have transactions, add a method that changes the contract state. Then verify that
 // the viewer sees it correctly
 

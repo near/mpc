@@ -13,13 +13,9 @@ use crate::{
 use self::stats::IndexerStats;
 use anyhow::Context;
 use handler::ChainBlockUpdate;
-use mpc_contract::{
-    primitives::signature::YieldIndex,
-    state::ProtocolContractState,
-    tee::{
-        proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
-        tee_state::NodeId,
-    },
+use mpc_contract::tee::{
+    proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
+    tee_state::NodeId,
 };
 use near_account_id::AccountId;
 use near_async::{
@@ -39,20 +35,16 @@ use near_mpc_contract_interface::method_names::{
 };
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
-use serde::Deserialize;
-use std::{future::Future, sync::Arc, time::Duration};
-use tokio::sync::{
-    Mutex, {mpsc, watch},
-};
+use std::{future::Future, sync::Arc};
+use tokio::sync::{mpsc, watch};
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
+pub(crate) mod contract_state_viewer;
 pub mod handler;
 pub mod migrations;
 pub mod participants;
 pub mod real;
-pub mod stats;
-pub mod tee;
 pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
@@ -61,31 +53,17 @@ pub mod types;
 pub mod fake;
 
 pub(crate) struct IndexerState {
-    /// For querying blockchain state.
-    view_client: IndexerViewClient,
-    /// For querying blockchain sync status.
-    client: IndexerClient,
-    /// For sending txs to the chain.
-    rpc_handler: IndexerRpcHandler,
+    /// Chain indexer to interact with the NEAR blockchain
+    chain_gateway: ChainGateway,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
-    /// Stores runtime indexing statistics.
-    stats: Arc<Mutex<IndexerStats>>,
 }
 
 impl IndexerState {
-    pub fn new(
-        view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
-        client: TokioRuntimeHandle<ClientActorInner>,
-        rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
-        mpc_contract_id: AccountId,
-    ) -> Self {
+    pub fn new(chain_gateway: ChainGateway, mpc_contract_id: AccountId) -> Self {
         Self {
-            view_client: IndexerViewClient { view_client },
-            client: IndexerClient { client },
-            rpc_handler: IndexerRpcHandler { rpc_handler },
+            chain_gateway,
             mpc_contract_id,
-            stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
     }
 }
@@ -378,91 +356,28 @@ pub(crate) trait ReadForeignChainPolicy: Send + Sync {
 
 #[derive(Clone)]
 pub(crate) struct RealForeignChainPolicyReader {
-    indexer_state: Arc<IndexerState>,
+    contract_state_viewer: MpcContractStateViewer,
 }
 
 impl RealForeignChainPolicyReader {
-    pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
-        Self { indexer_state }
+    pub(crate) fn new(contract_state_viewer: MpcContractStateViewer) -> Self {
+        Self {
+            contract_state_viewer,
+        }
     }
 }
 
 impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
     async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
-        self.indexer_state
-            .view_client
-            .get_foreign_chain_policy(&self.indexer_state.mpc_contract_id)
-            .await
+        self.contract_state_viewer.get_foreign_chain_policy().await
     }
 
     async fn get_foreign_chain_policy_proposals(
         &self,
     ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
-        self.indexer_state
-            .view_client
-            .get_foreign_chain_policy_proposals(&self.indexer_state.mpc_contract_id)
+        self.contract_state_viewer
+            .get_foreign_chain_policy_proposals()
             .await
-    }
-}
-
-#[derive(Clone)]
-struct IndexerClient {
-    client: TokioRuntimeHandle<ClientActorInner>,
-}
-
-const INTERVAL: Duration = Duration::from_millis(500);
-
-impl IndexerClient {
-    async fn wait_for_full_sync(&self) {
-        loop {
-            tokio::time::sleep(INTERVAL).await;
-
-            let status_request = Status {
-                is_health_check: false,
-                detailed: false,
-            };
-            let status_response = self
-                .client
-                .send_async(
-                    near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
-                )
-                .await;
-
-            let Ok(Ok(status)) = status_response else {
-                continue;
-            };
-
-            if !status.sync_info.syncing {
-                return;
-            }
-        }
-    }
-}
-
-// #[derive(Debug)]
-struct IndexerRpcHandler {
-    rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
-}
-
-impl IndexerRpcHandler {
-    /// Creates, signs, and submits a function call with the given method and serialized arguments.
-    async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<()> {
-        let response = self
-            .rpc_handler
-            .send_async(near_client::ProcessTxRequest {
-                transaction,
-                is_forwarded: false,
-                check_only: false,
-            })
-            .await?;
-
-        match response {
-            // We're not a validator, so we should always be routing the transaction.
-            near_client::ProcessTxResponse::RequestRouted => Ok(()),
-            _ => {
-                anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
-            }
-        }
     }
 }
 
@@ -484,6 +399,8 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
+
+    // group this to TeeContext:
     /// Watcher that keeps track of allowed [`DockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
@@ -491,6 +408,7 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     /// Watcher that tracks node IDs that have TEE attestations in the contract.
     pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
 
+    // add this with contract_state_receiver to "MpcContext"
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
     pub foreign_chain_policy_reader: ForeignChainPolicyReader,
