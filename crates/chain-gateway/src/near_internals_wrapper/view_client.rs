@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
+use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
 
 use crate::{
     errors::{NearViewClientError, NearViewClientQuery},
-    primitives::QueryViewFunction,
+    primitives::{FetchLatestFinalBlockInfo, QueryViewFunction},
     types::ObservedState,
 };
 
@@ -86,6 +87,30 @@ impl QueryViewFunction for NearViewClientActorHandle {
                 method_name: method_name.to_string(),
             },
             message: format!("expected CallResult, got {variant}"),
+        })
+    }
+}
+
+impl FetchLatestFinalBlockInfo for NearViewClientActorHandle {
+    type Error = NearViewClientError;
+    /// queries the near view client for the latest final block info
+    async fn fetch_latest_final_block_info(&self) -> Result<LatestFinalBlockInfo, Self::Error> {
+        let block_query =
+            near_client::GetBlock(near_indexer_primitives::types::BlockReference::Finality(
+                near_indexer_primitives::types::Finality::Final,
+            ));
+        let send_result = self.view_client.send_async(block_query).await;
+        let response_result = send_result.map_err(|err| NearViewClientError::AsyncSendError {
+            query: NearViewClientQuery::LatestFinalBlock,
+            message: err.to_string(),
+        })?;
+        let response = response_result.map_err(|err| NearViewClientError::ResponseError {
+            query: NearViewClientQuery::LatestFinalBlock,
+            message: err.to_string(),
+        })?;
+        Ok(LatestFinalBlockInfo {
+            observed_at: response.header.height.into(),
+            value: response.header.hash,
         })
     }
 }
