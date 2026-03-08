@@ -87,7 +87,7 @@ pub trait ContractStateSubscriber: ContractViewer + Clone {
 /// Blanket-implemented for all `T: HasContractViewer`.
 ///
 /// Performs a one-shot typed view call: serializes `args` as JSON, calls the
-/// underlying [`ContractViewer::view`], and deserializes the response.
+/// underlying [`ContractViewer::view_raw`], and deserializes the response.
 ///
 /// # Example
 ///
