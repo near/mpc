@@ -2,8 +2,7 @@ use async_trait::async_trait;
 use near_account_id::AccountId;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearViewClientError};
-use crate::near_internals_wrapper::client::ClientWrapper;
-use crate::near_internals_wrapper::view_client::ViewClientWrapper;
+use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
 use crate::primitives::{SyncChecker, ViewFunctionQuerier};
 use crate::state_viewer::{ContractStateSubscriber, ContractViewer, MethodViewer};
 use crate::types::RawObservedState;

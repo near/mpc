@@ -1,2 +1,5 @@
-pub(crate) mod client;
-pub(crate) mod view_client;
+mod client;
+mod view_client;
+
+pub(crate) use client::ClientWrapper;
+pub(crate) use view_client::ViewClientWrapper;

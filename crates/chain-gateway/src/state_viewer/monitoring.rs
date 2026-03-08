@@ -92,7 +92,7 @@ async fn monitor<V: ContractViewer>(
     }
 }
 
-/// conditionally modifies `to_modify` in place and returns a bool indicating if it was modified
+/// Conditionally modifies `to_modify` in place and returns a bool indicating if it was modified.
 /// `to_modify` is modified if and only if one of the following holds:
 ///     - `to_modify` is Ok(_) and `update_value` is Err(_) or vice-versa
 ///     - if `to_modify` and `update_value` are both Ok(RawObservedState) with differing value fields
