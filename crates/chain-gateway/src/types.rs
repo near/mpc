@@ -45,7 +45,7 @@ mod tests {
 
     use crate::{
         errors::ChainGatewayError,
-        types::{ObservedState, RawObservedState},
+        types::{NoArgs, ObservedState, RawObservedState},
     };
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -80,7 +80,6 @@ mod tests {
 
     #[test]
     fn test_no_args_serializes_to_empty_json_object() {
-        use super::NoArgs;
         let json = serde_json::to_string(&NoArgs {}).unwrap();
         assert_eq!(json, "{}");
     }
