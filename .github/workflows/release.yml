@@ -85,14 +85,13 @@ jobs:
             -f ref="refs/tags/$TAG" \
             -f sha="$SHA"
 
-  # Trigger the existing Docker retag workflows for each image.
-  # These are the same workflows you'd normally trigger manually from the Actions UI.
-  retag-docker-images:
-    name: "Retag Docker images"
+  # Build and push Docker images from the tagged commit.
+  build-docker-images:
+    name: "Build and push Docker images"
     needs: release-info
     runs-on: ubuntu-latest
     permissions:
-      actions: write
+      contents: read
 
     # Expose image digests to downstream jobs.
     outputs:
@@ -104,79 +103,42 @@ jobs:
       mpc_launcher_image_id: ${{ steps.digests.outputs.mpc_launcher_image_id }}
 
     steps:
-      # Dispatch each retag workflow and immediately capture its run ID.
-      # A brief sleep after each dispatch lets the run appear in the API
-      # before we query for it.
-      - name: Retag mpc-launcher
-        id: launcher
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          SHORT_SHA: ${{ needs.release-info.outputs.short-sha }}
-          VERSION: ${{ needs.release-info.outputs.version }}
-        run: |
-          gh workflow run docker_launcher_release.yml \
-            --repo "$REPO" \
-            -f source-tag="main-${SHORT_SHA}" \
-            -f release-tag="${VERSION}"
-          sleep 5
-          RUN_ID=$(gh run list --workflow=docker_launcher_release.yml --repo "$REPO" --limit=1 --json databaseId -q '.[0].databaseId')
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ needs.release-info.outputs.tag }}
+          persist-credentials: false
 
-      - name: Retag mpc-node-gcp
-        id: node-gcp
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          SHORT_SHA: ${{ needs.release-info.outputs.short-sha }}
-          VERSION: ${{ needs.release-info.outputs.version }}
-        run: |
-          gh workflow run docker_node_release.yml \
-            --repo "$REPO" \
-            -f source-tag="main-${SHORT_SHA}" \
-            -f release-tag="${VERSION}" \
-            -f repository="mpc-node-gcp"
-          sleep 5
-          RUN_ID=$(gh run list --workflow=docker_node_release.yml --repo "$REPO" --limit=1 --json databaseId -q '.[0].databaseId')
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+      - name: Login to Docker Hub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Retag mpc-node
-        id: node
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          SHORT_SHA: ${{ needs.release-info.outputs.short-sha }}
-          VERSION: ${{ needs.release-info.outputs.version }}
-        run: |
-          gh workflow run docker_node_release.yml \
-            --repo "$REPO" \
-            -f source-tag="main-${SHORT_SHA}" \
-            -f release-tag="${VERSION}" \
-            -f repository="mpc-node"
-          sleep 5
-          RUN_ID=$(gh run list --workflow=docker_node_release.yml --repo "$REPO" --limit=1 --json databaseId -q '.[0].databaseId')
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      # Wait for all three dispatched runs to complete.
-      # --exit-status makes gh run watch fail if the workflow itself fails.
-      - name: Wait for retag workflows
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          LAUNCHER_RUN: ${{ steps.launcher.outputs.run_id }}
-          NODE_GCP_RUN: ${{ steps.node-gcp.outputs.run_id }}
-          NODE_RUN: ${{ steps.node.outputs.run_id }}
+      - name: Install repro-env
         run: |
-          for RUN_ID in $LAUNCHER_RUN $NODE_GCP_RUN $NODE_RUN; do
-            gh run watch "$RUN_ID" --repo "$REPO" --exit-status
-          done
+          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
+          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
+          sudo install -m755 repro-env -t /usr/bin
 
       - name: Install skopeo
         run: |
           sudo apt-get update
           sudo apt-get install -y skopeo
 
-      # Inspect each retagged image and store Manifest digest and Image ID as outputs.
+      # Build all three images and push them tagged with the release version.
+      - name: Build and push images
+        env:
+          IMAGE_TAG: ${{ needs.release-info.outputs.version }}
+          NODE_IMAGE_NAME: mpc-node
+          NODE_GCP_IMAGE_NAME: mpc-node-gcp
+          LAUNCHER_IMAGE_NAME: mpc-launcher
+        run: ./deployment/build-images.sh --push
+
+      # Inspect each pushed image and store Manifest digest and Image ID as outputs.
       - name: Get image digests
         id: digests
         env:
@@ -185,8 +147,6 @@ jobs:
           for REPO in mpc-launcher mpc-node-gcp mpc-node; do
             SAFE_NAME="${REPO//-/_}"
             MANIFEST_DIGEST=$(skopeo inspect docker://$DOCKER_ORG/$REPO:$RELEASE_TAG | jq -r '.Digest')
-            # Use --override-os/--override-arch to resolve multi-arch manifest lists
-            # to the platform-specific image manifest, where .config.digest is the Image ID.
             IMAGE_ID=$(skopeo inspect --raw --override-os linux --override-arch amd64 docker://$DOCKER_ORG/$REPO:$RELEASE_TAG | jq -r '.config.digest')
             echo "${SAFE_NAME}_manifest_digest=$MANIFEST_DIGEST" >> "$GITHUB_OUTPUT"
             echo "${SAFE_NAME}_image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
