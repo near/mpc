@@ -224,6 +224,25 @@ jobs:
           cache-provider: "warpbuild"
           lookup-only: true
 
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-binstall
+
+      - name: Install cargo-near
+        run: |
+          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install wasm-opt
+        run: |
+          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
+          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Build the contract with reproducible-wasm to ensure deterministic output.
       # This produces mpc_contract.wasm and mpc_contract_abi.json
       # under target/near/mpc_contract/.
