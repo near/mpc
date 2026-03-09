@@ -44,10 +44,10 @@ pub enum LogFormat {
 
 #[derive(Subcommand, Debug)]
 pub enum CliCommand {
-    /// Starts the MPC node using a single JSON configuration file instead of
+    /// Starts the MPC node using a single TOML configuration file instead of
     /// environment variables and CLI flags.
     StartWithConfigFile {
-        /// Path to a JSON configuration file containing all settings needed to
+        /// Path to a TOML configuration file containing all settings needed to
         /// start the MPC node.
         config_path: PathBuf,
     },
@@ -226,7 +226,7 @@ impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
-                let node_configuration = StartConfig::from_json_file(&config_path)?;
+                let node_configuration = StartConfig::from_toml_file(&config_path)?;
                 run_mpc_node(node_configuration).await
             }
             // TODO(#2334): deprecate this

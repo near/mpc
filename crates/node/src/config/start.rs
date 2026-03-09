@@ -10,7 +10,7 @@ use url::Url;
 
 /// Configuration for starting the MPC node. This is the canonical type used
 /// by the run logic. Both `StartCmd` (CLI flags) and `StartWithConfigFileCmd`
-/// (JSON file) convert into this type.
+/// (TOML file) convert into this type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartConfig {
     pub home_dir: PathBuf,
@@ -74,7 +74,7 @@ pub struct GcpStartConfig {
     pub project_id: String,
 }
 
-/// TEE authority configuration for JSON deserialization.
+/// TEE authority configuration for deserialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TeeAuthorityStartConfig {
@@ -114,10 +114,10 @@ impl TeeAuthorityStartConfig {
 }
 
 impl StartConfig {
-    pub fn from_json_file(path: &std::path::Path) -> anyhow::Result<Self> {
+    pub fn from_toml_file(path: &std::path::Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config file: {}", path.display()))?;
-        let config: Self = serde_json::from_str(&content)
+        let config: Self = toml::from_str(&content)
             .with_context(|| format!("failed to parse config file: {}", path.display()))?;
         config
             .node
