@@ -206,7 +206,7 @@ mod tests {
     // --- view_raw tests ---
 
     #[tokio::test]
-    async fn view_raw_returns_ok_on_success() {
+    async fn test_view_raw_returns_ok_on_success() {
         let mut rng = StdRng::seed_from_u64(1);
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn view_raw_queries_correct_arguments() {
+    async fn test_view_raw_queries_correct_arguments() {
         let mut rng = StdRng::seed_from_u64(2);
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
@@ -241,7 +241,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn view_raw_wraps_error_in_view_client() {
+    async fn test_view_raw_wraps_error_in_view_client() {
         let mut rng = StdRng::seed_from_u64(3);
         let (call, _response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn view_raw_blocks_until_synced() {
+    async fn test_view_raw_blocks_until_synced() {
         let mut rng = StdRng::seed_from_u64(4);
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
@@ -299,7 +299,7 @@ mod tests {
     // --- view (MethodViewer) tests ---
 
     #[tokio::test]
-    async fn view_deserializes_response() {
+    async fn test_view_deserializes_response() {
         let mut rng = StdRng::seed_from_u64(5);
         let block_height: u64 = rng.gen_range(1..1_000_000);
         let value = Alphanumeric.sample_string(&mut rng, 12);
@@ -323,7 +323,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn view_propagates_view_error() {
+    async fn test_view_propagates_view_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Err(MockError::RpcError))
@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn view_returns_deserialization_error_on_bad_bytes() {
+    async fn test_view_returns_deserialization_error_on_bad_bytes() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Ok(RawObservedState {
@@ -358,7 +358,7 @@ mod tests {
     // --- subscribe (ContractStateSubscriber) tests ---
 
     #[tokio::test(start_paused = true)]
-    async fn subscribe_latest_returns_initial_value() {
+    async fn test_subscribe_latest_returns_initial_value() {
         let mut rng = StdRng::seed_from_u64(8);
         let block_height: u64 = rng.gen_range(1..1_000_000);
         let value = Alphanumeric.sample_string(&mut rng, 12);
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn subscribe_latest_returns_deserialization_error() {
+    async fn test_subscribe_latest_returns_deserialization_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Ok(RawObservedState {
@@ -402,7 +402,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn subscribe_changed_fires_on_value_change() {
+    async fn test_subscribe_changed_fires_on_value_change() {
         let mut rng = StdRng::seed_from_u64(10);
         let initial = Alphanumeric.sample_string(&mut rng, 10);
         let updated = Alphanumeric.sample_string(&mut rng, 10);

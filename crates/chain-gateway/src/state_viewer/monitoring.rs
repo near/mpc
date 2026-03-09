@@ -52,7 +52,7 @@ where
     }
 }
 
-const POLL_INTERVAL: Duration = Duration::from_millis(200);
+pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 async fn monitor<V: ContractViewer>(
     viewer: V,
@@ -119,7 +119,7 @@ mod tests {
     use crate::{
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{Call, MockChainState, MockError},
-        state_viewer::monitoring::{modify, monitor},
+        state_viewer::monitoring::{POLL_INTERVAL, modify, monitor},
         types::{ObservedState, RawObservedState},
     };
     use rstest::rstest;
@@ -155,7 +155,7 @@ mod tests {
         Err(ChainGatewayError::FailureLoadingConfig { msg: "hello".to_string() }),
         true
     )]
-    fn test_modify(
+    fn test_modify_modifies_correctly(
         #[case] name: &str,
         #[case] existing_spec: Result<(u64, u8), ChainGatewayError>,
         #[case] update_spec: Result<(u64, u8), ChainGatewayError>,
@@ -188,7 +188,7 @@ mod tests {
     }
 
     /// Verifies that the monitor function queries the correct parameters
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_monitor_queries_correct_params() {
         let init_mock = Ok(ObservedState {
             observed_at: 0.into(),
@@ -197,7 +197,10 @@ mod tests {
 
         let call = expected_call();
         let (viewer, _receiver, _cancel) = setup(call.clone(), init_mock);
-        viewer.await_next_view_call().await;
+        viewer
+            .await_next_view_call(POLL_INTERVAL * 2)
+            .await
+            .unwrap();
         let calls = viewer.view_calls().await;
         assert!(calls.iter().all(|c| c == &call));
         assert!(!calls.is_empty());
@@ -217,7 +220,7 @@ mod tests {
         Err(MockError::SyncError),
         false
     )]
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_monitor_notifies_receiver_correctly(
         #[case] name: &str,
         #[case] init_spec: Result<(u64, u8), MockError>,
@@ -232,7 +235,10 @@ mod tests {
         // when: view response changes
         let next_mock_response = mock_spec(next_spec.clone());
         viewer.set_view_response(next_mock_response).await;
-        viewer.await_next_view_call().await;
+        viewer
+            .await_next_view_call(POLL_INTERVAL * 2)
+            .await
+            .unwrap();
 
         // Then:
         // we expect the receiver to be notified in case of change
@@ -310,7 +316,7 @@ mod tests {
         Err(MockError::SyncError),
         false
     )]
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_monitoring_task_change_semantics(
         #[case] name: &str,
         #[case] init_spec: Result<(u64, u8), MockError>,
@@ -327,7 +333,10 @@ mod tests {
         viewer.set_view_response(next_mock).await;
 
         // Wait for the background monitor loop to actually call view again
-        viewer.await_next_view_call().await;
+        viewer
+            .await_next_view_call(POLL_INTERVAL * 2)
+            .await
+            .unwrap();
 
         // Now check whether the watch receiver reports a change
         assert_eq!(
@@ -355,7 +364,7 @@ mod tests {
 
     /// ensurse that the correct parameters are getting queried
     /// note that this test is redundant, since we are testing this in the other tests already
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_monitoring_task_queries_correct_params() {
         let init_mock = Ok(ObservedState {
             observed_at: 0.into(),
@@ -364,7 +373,10 @@ mod tests {
 
         let call = expected_call();
         let (viewer, _task) = setup_task(call.clone(), init_mock).await;
-        viewer.await_next_view_call().await;
+        viewer
+            .await_next_view_call(POLL_INTERVAL * 2)
+            .await
+            .unwrap();
         let calls = viewer.view_calls().await;
         assert!(calls.iter().all(|c| c == &call));
         assert!(!calls.is_empty());

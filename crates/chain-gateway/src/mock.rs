@@ -4,6 +4,7 @@ use crate::types::RawObservedState;
 use async_trait::async_trait;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
@@ -37,18 +38,22 @@ impl MockChainState {
     }
 
     /// Wait for the next view_function_query call (polls submitted.len() every 5ms).
-    pub async fn await_next_view_call(&self) {
-        let baseline = {
-            let inner = self.view_function_querier_state.lock().await;
-            inner.submitted.len()
-        };
-        loop {
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-            let inner = self.view_function_querier_state.lock().await;
-            if inner.submitted.len() > baseline {
-                return;
+    pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
+        tokio::time::timeout(max_wait_duration, async {
+            let baseline = {
+                let inner = self.view_function_querier_state.lock().await;
+                inner.submitted.len()
+            };
+            loop {
+                let inner = self.view_function_querier_state.lock().await;
+                if inner.submitted.len() > baseline {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
-        }
+        })
+        .await
+        .map_err(|_| MockError::Timeout)
     }
 
     /// Returns a snapshot of all recorded view function calls.
@@ -140,4 +145,6 @@ pub enum MockError {
     NotInitialized,
     #[error("mock rpc error")]
     RpcError,
+    #[error("timed out")]
+    Timeout,
 }

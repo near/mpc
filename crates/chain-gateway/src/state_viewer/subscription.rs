@@ -84,7 +84,7 @@ mod tests {
     use std::time::Duration;
 
     #[tokio::test]
-    async fn new_deserializes_initial_value() {
+    async fn test_subscription_constructor_deserializes_initial_value() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Ok(RawObservedState {
@@ -107,7 +107,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn new_propagates_view_error() {
+    async fn test_subscription_constructor_propagates_view_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Err(MockError::RpcError))
@@ -128,7 +128,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn new_returns_deserialization_error_on_bad_json() {
+    async fn test_subscription_constructor_returns_deserialization_error_on_bad_json() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Ok(RawObservedState {
@@ -151,8 +151,8 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn latest_updates_on_value_change() {
+    #[tokio::test(start_paused = true)]
+    async fn test_subscription_latest_updates_on_value_change() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Ok(RawObservedState {
@@ -188,8 +188,8 @@ mod tests {
         assert_eq!(found.observed_at, 2.into());
     }
 
-    #[tokio::test]
-    async fn changed_resolves_and_updates_cache() {
+    #[tokio::test(start_paused = true)]
+    async fn test_subscription_changed_resolves_and_updates_cache() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Ok(RawObservedState {
