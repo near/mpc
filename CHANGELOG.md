@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [9.9.4] - 2026-03-09
+
+### 💼 Other
+
+- (@SimonRastikian): V9.9.3
+
+
 ## [9.9.2] - 2026-03-09
 
 ### 💼 Other
