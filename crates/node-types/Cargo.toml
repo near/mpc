@@ -5,13 +5,12 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [dependencies]
-anyhow = { workspace = true }
-bs58 = { workspace = true }
-ed25519-dalek = { workspace = true }
 mpc-attestation = { workspace = true }
+mpc-crypto-types = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
+mpc-crypto-types = { workspace = true, features = ["ed25519-dalek"] }
 rand_chacha = { workspace = true }
 serde_json = { workspace = true }
 
