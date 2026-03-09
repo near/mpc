@@ -1251,35 +1251,6 @@ expression: abi
         }
       },
       {
-        "name": "vote_remove_launcher_hash",
-        "doc": " Vote to remove a launcher image hash from the allowed set. Requires ALL participants\n to vote for removal, since this invalidates attestations of nodes running that launcher.",
-        "kind": "call",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "launcher_hash",
-              "type_schema": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
         "name": "vote_foreign_chain_policy",
         "doc": " Propose a new foreign chain policy.\n If all current participants vote for the exact same policy, it is applied.",
         "kind": "call",
@@ -1346,6 +1317,35 @@ expression: abi
               "name": "public_key",
               "type_schema": {
                 "$ref": "#/definitions/PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_launcher_hash",
+        "doc": " Vote to remove a launcher image hash from the allowed set. Requires ALL participants\n to vote for removal, since this invalidates attestations of nodes running that launcher.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
               }
             }
           ]
