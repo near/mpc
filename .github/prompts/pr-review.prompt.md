@@ -34,6 +34,7 @@ PRIORITY CHECKS (report only if found):
    - Concurrency issues (Arc/Mutex misuse, data races)
 
 6. Security
+   - Injection vulnerabilities (e.g., command injection, path traversal, prompt injection)
    - Hardcoded secrets or credentials in source code
    - Secret values (tokens, keys, credentials) leaking through any output channel: serialization, debug formatting, logs, error messages, or API responses
    - New config fields containing secrets must be protected from accidental exposure
