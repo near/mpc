@@ -33,10 +33,15 @@ PRIORITY CHECKS (report only if found):
    - Incorrect ownership patterns or lifetime issues
    - Concurrency issues (Arc/Mutex misuse, data races)
 
-6. Code Quality
+6. Security
+   - Hardcoded secrets or credentials in source code
+   - Secret values (tokens, keys, credentials) leaking through any output channel: serialization, debug formatting, logs, error messages, or API responses
+   - New config fields containing secrets must be protected from accidental exposure
+   - Sensitive data lingering in memory without zeroization where cryptographic material is involved
+
+7. Code Quality
    - Poor modularity (functions >100 lines, god objects)
    - Violated Single Responsibility Principle
-   - Security vulnerabilities (injection, hardcoded secrets)
 
 REVIEW STYLE:
 - List only issues that should block the merge
