@@ -2162,6 +2162,7 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
+    use crate::tee::proposal::get_docker_compose_hash;
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use bounded_collections::NonEmptyBTreeSet;
@@ -4946,7 +4947,6 @@ mod tests {
             "M3 paired with both L1 and L2"
         );
 
-        use crate::tee::proposal::get_docker_compose_hash;
         let compose_hashes = contract.allowed_launcher_compose_hashes();
         assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m1)));
         assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m2)));
