@@ -3,6 +3,7 @@ resolver = "3"
 exclude = ["libs/nearcore"]
 members = [
     "crates/attestation",
+    "crates/attestation-cli",
     "crates/backup-cli",
     "crates/bounded-collections",
     "crates/ckd-example-cli",
@@ -183,6 +184,7 @@ tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
+toml = "1.0.6"
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = [
