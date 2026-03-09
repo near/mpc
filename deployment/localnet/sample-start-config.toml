@@ -1,0 +1,88 @@
+home_dir = "/data"
+
+[secrets]
+secret_store_key_hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+backup_encryption_key_hex = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+
+[tee]
+# image_hash = "sha256:abcdef..."
+# latest_allowed_hash_file = "/path/to/hashes.txt"
+
+[tee.authority]
+type = "local"
+
+# [tee.authority]  # dstack variant:
+# type = "dstack"
+# dstack_endpoint = "http://localhost:8090"
+# quote_upload_url = "https://..."
+
+# [gcp]
+# keyshare_secret_id = "my-secret"
+# project_id = "my-gcp-project"
+
+[node]
+my_near_account_id = "node0.test.near"
+near_responder_account_id = "responder0.test.near"
+number_of_responder_keys = 5
+web_ui = "0.0.0.0:8080"
+migration_web_ui = "0.0.0.0:8081"
+pprof_bind_address = "127.0.0.1:34001"
+# cores = 4
+
+[node.indexer]
+validate_genesis = false
+sync_mode = "Latest"
+finality = "Final"
+concurrency = 2
+mpc_contract_id = "mpc-contract.test.near"
+
+[node.triple]
+concurrency = 2
+desired_triples_to_buffer = 100
+timeout_sec = 600
+parallel_triple_generation_stagger_time_sec = 5
+
+[node.presignature]
+concurrency = 2
+desired_presignatures_to_buffer = 50
+timeout_sec = 300
+
+[node.signature]
+timeout_sec = 30
+
+[node.ckd]
+timeout_sec = 30
+
+[node.keygen]
+timeout_sec = 60
+
+[node.foreign_chains.ethereum]
+timeout_sec = 60
+max_retries = 3
+
+[node.foreign_chains.ethereum.providers.alchemy]
+rpc_url = "https://eth-mainnet.g.alchemy.com/v2/{API_KEY}"
+api_variant = "alchemy"
+
+[node.foreign_chains.ethereum.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+
+[node.foreign_chains.ethereum.providers.alchemy.auth.token]
+env = "ALCHEMY_API_KEY"
+
+[node.foreign_chains.solana]
+timeout_sec = 60
+max_retries = 3
+
+[node.foreign_chains.solana.providers.helius]
+rpc_url = "https://mainnet.helius-rpc.com"
+api_variant = "helius"
+
+[node.foreign_chains.solana.providers.helius.auth]
+kind = "header"
+name = "authorization"
+scheme = "Bearer"
+
+[node.foreign_chains.solana.providers.helius.auth.token]
+env = "HELIUS_API_KEY"

@@ -1,0 +1,77 @@
+home_dir: /data
+
+secrets:
+  secret_store_key_hex: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  backup_encryption_key_hex: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+
+tee:
+  authority:
+    type: local
+  # image_hash: "sha256:abcdef..."
+  # latest_allowed_hash_file: /path/to/hashes.txt
+
+# gcp:
+#   keyshare_secret_id: my-secret
+#   project_id: my-gcp-project
+
+node:
+  my_near_account_id: node0.test.near
+  near_responder_account_id: responder0.test.near
+  number_of_responder_keys: 5
+  web_ui: "0.0.0.0:8080"
+  migration_web_ui: "0.0.0.0:8081"
+  pprof_bind_address: "127.0.0.1:34001"
+
+  indexer:
+    validate_genesis: false
+    sync_mode: Latest
+    finality: Final
+    concurrency: 2
+    mpc_contract_id: mpc-contract.test.near
+
+  triple:
+    concurrency: 2
+    desired_triples_to_buffer: 100
+    timeout_sec: 600
+    parallel_triple_generation_stagger_time_sec: 5
+
+  presignature:
+    concurrency: 2
+    desired_presignatures_to_buffer: 50
+    timeout_sec: 300
+
+  signature:
+    timeout_sec: 30
+
+  ckd:
+    timeout_sec: 30
+
+  keygen:
+    timeout_sec: 60
+
+  foreign_chains:
+    ethereum:
+      timeout_sec: 60
+      max_retries: 3
+      providers:
+        alchemy:
+          rpc_url: "https://eth-mainnet.g.alchemy.com/v2/{API_KEY}"
+          api_variant: alchemy
+          auth:
+            kind: path
+            placeholder: "{API_KEY}"
+            token:
+              env: ALCHEMY_API_KEY
+    solana:
+      timeout_sec: 60
+      max_retries: 3
+      providers:
+        helius:
+          rpc_url: "https://mainnet.helius-rpc.com"
+          api_variant: helius
+          auth:
+            kind: header
+            name: authorization
+            scheme: Bearer
+            token:
+              env: HELIUS_API_KEY
