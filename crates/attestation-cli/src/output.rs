@@ -88,7 +88,7 @@ fn format_timestamp(unix_secs: u64) -> String {
             let (hour, minute, second) = dt.to_hms();
             format!(
                 "{year:04}-{:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC",
-                month as u8
+                u8::from(month)
             )
         }
         Err(_) => format!("{unix_secs} (invalid timestamp)"),

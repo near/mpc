@@ -107,9 +107,9 @@ fn load_measurements(
         Some(path) => {
             let contents = std::fs::read_to_string(path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            let measurements = parse_measurements_from_json(&contents)
+            let measurement = parse_measurements_from_json(&contents)
                 .context("parsing expected measurements JSON")?;
-            Ok(vec![measurements])
+            Ok(vec![measurement])
         }
         None => Ok(mpc_attestation::attestation::default_measurements().to_vec()),
     }
