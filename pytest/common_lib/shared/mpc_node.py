@@ -131,6 +131,15 @@ class MpcNode(NearAccount):
             for file_path in pathlib.Path(self.home_dir).glob(pattern):
                 file_path.unlink()
 
+    @staticmethod
+    def _strip_none(obj):
+        """Recursively remove keys with None values since TOML has no null."""
+        if isinstance(obj, dict):
+            return {k: MpcNode._strip_none(v) for k, v in obj.items() if v is not None}
+        if isinstance(obj, list):
+            return [MpcNode._strip_none(v) for v in obj]
+        return obj
+
     def _write_start_config(self) -> str:
         """Build a StartConfig TOML file and write it to the node's home dir.
         Returns the path to the written config file."""
@@ -149,7 +158,7 @@ class MpcNode(NearAccount):
         }
         config_path = str(pathlib.Path(self.home_dir) / "start_config.toml")
         with open(config_path, "wb") as f:
-            tomli_w.dump(start_config, f)
+            tomli_w.dump(self._strip_none(start_config), f)
         return config_path
 
     def run(self):
