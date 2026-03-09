@@ -1,3 +1,4 @@
+use assert_matches::assert_matches;
 use base64::Engine;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::state_viewer::ContractStateStream;
@@ -9,6 +10,8 @@ use near_indexer::near_primitives::types::Finality;
 use std::path::Path;
 
 const TEST_CONTRACT_ACCOUNT: &str = "test-contract.near";
+const TEST_STRING: &str = "hello from test";
+const TEST_METHOD: &str = "get_greeting";
 
 /// spawns a local neard node, inserts a test contract and checks if viewing a valid contract method succeeds
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -18,13 +21,13 @@ async fn test_view_contract_state() {
     let value: ObservedState<String> = gw
         .view(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
-            "get_greeting",
+            TEST_METHOD,
             &NoArgs {},
         )
         .await
         .expect("view call should succeed");
 
-    assert_eq!(value.value, "hello from test");
+    assert_eq!(value.value, TEST_STRING);
 }
 
 /// spawns a local neard node, inserts a test contract and checks if viewing an invalid contract method fails
@@ -41,42 +44,43 @@ async fn test_view_nonexistent_method_returns_error() {
         .await;
 
     let err = result.expect_err("calling a nonexistent method should fail");
-    assert!(
-        matches!(err, ChainGatewayError::ViewClient { .. }),
-        "error should be a ViewClient variant, got: {err:?}"
-    );
+    assert_matches!(err, ChainGatewayError::ViewClient { .. });
 }
 
-/// spawns a local neard node, inserts a test contract and checks if suscribing to the state
+/// Spawns a local neard node, inserts a test contract and checks if subscribing to the state
 /// succeeds
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_subscription_receives_initial_value() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let mut sub = gw
-        .subscribe::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), "get_greeting")
+        .subscribe::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), TEST_METHOD)
         .await;
 
     let res = sub.latest().expect("subscription latest should succeed");
-    assert_eq!(res.value, "hello from test");
+    assert_eq!(res.value, TEST_STRING);
 }
 
-// TODO(#2343): once we have transactions, add a method that changes the contract state. the verify that
+// TODO(#2343): Once we have transactions, add a method that changes the contract state. Then verify that
 // the viewer sees it correctly
 
-/// Minimal WASM contract: `get_greeting` returns `"hello from test"`.
+/// Minimal WASM contract: `get_greeting` returns `TEST_STRING`.
 fn test_contract_wasm() -> Vec<u8> {
-    wat::parse_str(
+    let wat = format!(
         r#"(module
             (import "env" "value_return" (func $value_return (param i64 i64)))
             (memory (export "memory") 1)
-            (data (i32.const 0) "\"hello from test\"")
-            (func (export "get_greeting")
-                (call $value_return (i64.const 17) (i64.const 0))
+            (data (i32.const 0) "\"{}\"")
+            (func (export "{}")
+                (call $value_return (i64.const {}) (i64.const 0))
             )
         )"#,
-    )
-    .expect("WAT should compile to valid WASM")
+        TEST_STRING,
+        TEST_METHOD,
+        TEST_STRING.len() + 2, // adjust for quotes
+    );
+
+    wat::parse_str(&wat).expect("WAT should compile to valid WASM")
 }
 
 /// Inject a contract account into genesis.json before the node starts.
@@ -155,8 +159,8 @@ fn randomize_config_ports(home_dir: &Path) {
     let network_port = find_available_port();
     let rpc_port = find_available_port();
 
-    config["network"]["addr"] = serde_json::json!(format!("0.0.0.0:{network_port}"));
-    config["rpc"]["addr"] = serde_json::json!(format!("0.0.0.0:{rpc_port}"));
+    config["network"]["addr"] = serde_json::json!(format!("127.0.0.1:{network_port}"));
+    config["rpc"]["addr"] = serde_json::json!(format!("127.0.0.1:{rpc_port}"));
 
     let updated = serde_json::to_string_pretty(&config).expect("serialize config.json");
     std::fs::write(&config_path, updated).expect("write config.json");
@@ -201,7 +205,7 @@ async fn setup_chain_gateway() -> (
 
     let gw = chain_gateway::chain_gateway::start(indexer_config)
         .await
-        .expect("start_with_streamer should succeed");
+        .expect("chain_gateway::start should succeed");
 
     (gw, dir)
 }
