@@ -1,6 +1,6 @@
 //! This file contains the primitives we need to interact with the NEAR blockchain:
 //!     - SyncChecker --> checks whether the node is fully synced
-//!     - ViewFunctionQueroier --> can call view methods on a contract
+//!     - ViewFunctionQuerier --> can call view methods on a contract
 //!     - TODO(#2342): LatestFinalBlockInfoFecher --> fetches height and hash of the latest final block
 //!     - TODO(#2342): SignedTransactionSubmitter --> submits  asigned transaction to the blockchain
 use crate::types::RawObservedState;

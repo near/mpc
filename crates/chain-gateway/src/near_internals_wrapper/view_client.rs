@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use near_account_id::AccountId;
-use near_async::messaging::CanSendAsync;
+use near_async::messaging::CanSendAsync as _;
 
 use crate::{
     errors::{
