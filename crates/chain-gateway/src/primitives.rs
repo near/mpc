@@ -15,9 +15,9 @@ pub trait SyncChecker: Send + Sync + 'static {
     /// Returns whether the node is currently syncing.
     async fn is_syncing(&self) -> Result<bool, Self::Error>;
 
+    const INTERVAL: Duration = Duration::from_millis(500);
     /// Polls [`is_syncing`](Self::is_syncing) until the node is fully synced.
     async fn wait_for_full_sync(&self) {
-        const INTERVAL: Duration = Duration::from_millis(500);
         loop {
             match self.is_syncing().await {
                 Ok(false) => return,
@@ -28,7 +28,7 @@ pub trait SyncChecker: Send + Sync + 'static {
                     tracing::warn!(err = %err, "error while waiting for sync");
                 }
             }
-            tokio::time::sleep(INTERVAL).await;
+            tokio::time::sleep(Self::INTERVAL).await;
         }
     }
 }
