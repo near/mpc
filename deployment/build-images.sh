@@ -140,15 +140,20 @@ fi
 if $USE_PUSH; then
     # This assumes that docker is logged-in to the dockerhub registry
 
-    branch_name=$(git branch --show-current)
-    if [ -z "$branch_name" ]; then
-        branch_name="detached"
-    fi
-    sanitized_branch_name="${branch_name//\//-}"
+    if [ -n "${IMAGE_TAG:-}" ]; then
+        image_tag="$IMAGE_TAG"
+        echo "Using custom tag: $image_tag"
+    else
+        branch_name=$(git branch --show-current)
+        if [ -z "$branch_name" ]; then
+            branch_name="detached"
+        fi
+        sanitized_branch_name="${branch_name//\//-}"
 
-    short_hash=$(git rev-parse --short HEAD)
-    image_tag="$sanitized_branch_name-$short_hash"
-    echo "Using branch-hash tag: $image_tag"
+        short_hash=$(git rev-parse --short HEAD)
+        image_tag="$sanitized_branch_name-$short_hash"
+        echo "Using branch-hash tag: $image_tag"
+    fi
 
     if $USE_LAUNCHER; then
         temp_dir=$(mktemp -d)
