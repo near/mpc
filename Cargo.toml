@@ -166,7 +166,6 @@ rustls = { version = "0.23.36", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.19"
 serde_json = "1.0"
-toml = "1.0.6"
 serde_repr = "0.1.20"
 serde_with = { version = "3.16.1", features = ["hex"] }
 serial_test = "3.4.0"
@@ -184,6 +183,7 @@ tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
+toml = "1.0.6"
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = [
