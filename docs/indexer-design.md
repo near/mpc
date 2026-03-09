@@ -211,7 +211,7 @@ An improved indexer design should achieve the following goals:
 
 We propose to split the two functionalities of the current indexer (MPC orchestration and Chain Indexing) into two separate components:
 
-The **Chain Indexer**:
+The **Chain Gateway**:
 This component is responsible for:
 - spinning-up a neard node;
 - abstracting the neard indexer interface such that no nearcore internals are exposed.
@@ -252,7 +252,7 @@ subgraph CONTEXT[MPC Context]
 
 end
 
-subgraph CHAIN[Chain Indexer]
+subgraph CHAIN[Chain Gateway]
     direction TB
     TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
         **Filters** non-finalized NEAR blocks for specific transactions
@@ -306,12 +306,12 @@ end
 CORE --> VIEW
 CORE --> WRITE
 
-%% Context --> Chain Indexer
+%% Context --> Chain Gateway
 VIEW --> CONTRACT_STATE_VIEWER
 VIEW --> TX_SUBSCRIBER
 WRITE --> TX_SENDER
 
-%% Chain Indexer --> Neard Node
+%% Chain Gateway --> Neard Node
 TX_SUBSCRIBER --> BLOCK_STREAMER
 CONTRACT_STATE_VIEWER --> VIEW_CLIENT
 TX_SENDER --> RPC_HANDLER
@@ -367,7 +367,7 @@ subgraph SERVICES[MPC Services]
     HOT_SERVICE[HOT MPC Service]
 end
 
-subgraph CHAIN[Chain Indexer]
+subgraph CHAIN[Chain Gateway]
     direction TB
     TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
         **Filters** non-finalized NEAR blocks for specific transactions
@@ -406,52 +406,85 @@ HOT_SERVICE --> TX_SENDER
 
 ### API Proposal
 
-In this section, we propose API designs for the Chain Indexer and MPC Context.
+In this section, we propose API designs for the Chain Gateway and MPC Context.
 
-#### Chain Indexer
+#### Chain Gateway
 
-The chain indexer consists of three functionalities, each one with their own API:
+The Chain Gateway provides three functionalities:
 
-- **Contract State subscriber:** subscribe to arbitrary view methods on arbitrary contracts on the NEAR blockchain.
+- **State viewing:** allows to:
+    - subscribe to arbitrary view methods on arbitrary contracts on the NEAR blockchain
+    - query arbitrary view methods on arbitrary contracts on the NEAR blockchain
 - **Block Events:** Filter the mempool for transactions matching a specific pattern (receipient or executor id and method names). Receive a stream of all matching transactions.
 - **Transaction Sender:** send transactions to the NEAR blockchain.
 
-##### Contract State Subscriber
+##### State Viewer
 
-The chain indexer should offer a convenient method for viewing and subscribing to contract state. We assume that contract state is seen through view methods in the contract implementation and propose the following interface:
+The Chain Gateway offers a trait-based API for viewing and subscribing to contract state.
+
+It offers the following API:
+```rust
+
+/// One-shot typed view call with JSON serialization/deserialization.
+pub trait MethodViewer: ContractViewer {
+    async fn view<Arg: Serialize + Sync, Res: DeserializeOwned + Send + Clone>(
+        &self, contract_id: AccountId, method_name: &str, args: &Arg,
+    ) -> Result<ObservedState<Res>, ChainGatewayError>;
+}
+
+/// Polls every 200ms; emits change only when returned bytes differ.
+pub trait ContractStateSubscriber: ContractViewer + Clone {
+    async fn subscribe<T: DeserializeOwned + Send + Clone>(
+        &self, contract: AccountId, view_method: &str,
+    ) -> impl ContractStateStream<T> + Send;
+}
+
+pub trait ContractStateStream<Res> {
+    /// Returns the last observed value and the block height at which it was observed.
+    fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
+    /// Waits until the observed value changes.
+    async fn changed(&mut self) -> Result<(), ChainGatewayError>;
+}
+
+pub struct ObservedState<T = Vec<u8>> {
+    pub observed_at: BlockHeight,
+    pub value: T,
+}
+pub type RawObservedState = ObservedState<Vec<u8>>;
+
+/// Empty arguments for view calls that take no parameters.
+pub struct NoArgs {}
+
+pub struct BlockHeight(u64);
+```
+
+Note that the above traits derive from `ContractViewer`, which in turn derives from two low-level traits.
 
 ```rust
-trait ContractStateSnapshot<T> {
-    /// is synchronous, contains the last seen value
-    fn latest(&self) -> Result<(BlockHeight, &T), Error>;
-}
-
-trait ContractStateStream<T> {
-    /// is synchronous, contains the last seen value
-    fn latest(&self) -> Result<(BlockHeight, &T), Error>;
-    /// returns if the value of type `T` has changed
-    async fn changed(&mut self) -> Result<(), Error>;
-}
-
-
-impl ContractStateSubscriber {
-    async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
+/// Waits for sync then delegates to ViewFunctionQuerier.
+/// Supertraits provide the raw RPC plumbing.
+pub trait ContractViewer: SyncChecker + ViewFunctionQuerier {
+    async fn view_raw(
         &self,
-        contract: AccountId,
-        view_method: &str,
-    ) -> Result<impl ContractStateStream<T> + Send, Error>;
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<ObservedState, ChainGatewayError>;
+}
 
-    async fn view<T: DeserializeOwned + PartialEq + Send + 'static>(
+// queries the actual state
+pub trait ViewFunctionQuerier: Send + Sync + 'static {
+    async fn view_function_query(
         &self,
-        contract: AccountId,
-        view_method: &str,
-    ) -> Result<impl ContractStateSnapshot<T> + Send, Error>;
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<RawObservedState, Error>;
 }
-
-pub struct ContractStateSubscriber {
-    /// nearcore view client
-    view_client: IndexerViewClient
-}
+// returns true if the node is still syncing with the blockchain
+pub trait SyncChecker: Send + Sync + 'static {
+    /// Returns whether the node is currently syncing.
+    async fn is_syncing(&self) -> Result<bool, Error>;
 ```
 
 
@@ -599,49 +632,25 @@ struct ReceiverFunctionCallEventData {
 ##### Transaction Sender
 
 We propose the following API for the transaction sender:
+
 ```rust
-
-pub struct TransactionSender<V>
-where
-    V: LatestFinalBlock,
+/// Default impl fetches the latest final block, signs, and submits.
+pub trait FunctionCallSubmitter:
+    LatestFinalBlockInfoFetcher + SignedTransactionSubmitter + Send + Sync + Clone + 'static
 {
-    /// rpc handler for sending txs to the chain (internal type, c.f. indexer.rs)
-    rpc_handler: IndexerRpcHandler,
-    /// method to the view client to query the latest final block (needed for nonce computation)
-    view_client: V,
-}
-
-/// we could probably make this a trait for testing?
-impl<V> TransactionSender<V>
-where
-    V: LatestFinalBlock
-{
-    /// creates a function call transaction for contract `receiver_id` with method `method_name` and args `args`
-    /// returns the CryptoHash for the receipt, such that the execution outcome can be tracked
-    pub async fn submit_function_call_tx(
+    async fn submit_function_call_tx(
         &self,
-        /// Key with which this transaction should be signed
-        signer: TransactionSigner,
-        /// contract on which this method should be called
+        signer: Arc<TransactionSigner>,
         receiver_id: AccountId,
-        /// method name to call
         method_name: String,
-        /// arguments for the method
         args: Vec<u8>,
-        /// deposit amount
-        deposit: Near,
-        /// gas to attach
         gas: Gas,
-    ) -> Result<CryptoHash, TxSignerError>;
-}
-
-/// we will implement this for the view client
-trait LatestFinalBlock {
-    async fn latest_final_block(&self) -> Result<BlockView, Error>;
+    ) -> Result<CryptoHash, ChainGatewayError>;
 }
 ```
 
-Additionally, we will expose the following types and methods (omitting internals, c.f. tx_signer.rs)
+`TransactionSigner` handles nonce management and ED25519 signing:
+
 ```rust
 pub struct TransactionSigner {
     signing_key: SigningKey,
@@ -650,17 +659,8 @@ pub struct TransactionSigner {
 }
 
 impl TransactionSigner {
-    pub fn from_key(account_id: AccountId, signing_key: SigningKey) -> Self {
-        TransactionSigner {
-            account_id,
-            signing_key,
-            nonce: Mutex::new(0),
-        }
-    }
-    /// might be good to expose
-    pub fn public_key(&self) -> VerifyingKey {
-        self.signing_key.verifying_key()
-    }
+    pub fn from_key(account_id: AccountId, signing_key: SigningKey) -> Self;
+    pub fn public_key(&self) -> VerifyingKey;
 }
 ```
 
