@@ -3,6 +3,7 @@ resolver = "3"
 exclude = ["libs/nearcore"]
 members = [
     "crates/attestation",
+    "crates/attestation-cli",
     "crates/backup-cli",
     "crates/bounded-collections",
     "crates/ckd-example-cli",

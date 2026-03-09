@@ -299,6 +299,7 @@ impl StartCmd {
                 static_web_data(&secrets, Some(attestation)),
                 protocol_state_receiver,
                 migration_state_receiver,
+                &config,
             ))
             .context("Failed to create web server.")?;
 
