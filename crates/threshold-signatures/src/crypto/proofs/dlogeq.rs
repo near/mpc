@@ -143,6 +143,7 @@ pub fn verify<C: Ciphersuite>(
 ) -> Result<bool, ProtocolError>
 where
     Element<C>: ConstantTimeEq,
+    Scalar<C>: ConstantTimeEq,
 {
     if statement.generator1.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);
@@ -160,7 +161,7 @@ where
     let mut rng = transcript.challenge_then_build_rng(NEAR_DLOGEQ_CHALLENGE_LABEL);
     let e = frost_core::random_nonzero::<C, _>(&mut rng);
 
-    Ok(e == proof.e.0)
+    Ok(bool::from(e.ct_eq(&proof.e.0)))
 }
 
 #[cfg(test)]
