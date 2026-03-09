@@ -41,7 +41,7 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
 
     let (migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
         backup_service_info: Some(BackupServiceInfo {
-            public_key: client_key.verifying_key().to_bytes().into(),
+            public_key: (&client_key.verifying_key()).into(),
         }),
         active_migration: false,
     });
