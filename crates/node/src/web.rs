@@ -457,7 +457,7 @@ pub async fn start_web_server(
     static_web_data: StaticWebData,
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
-    config: &ConfigFile,
+    config: ConfigFile,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
 
@@ -479,7 +479,7 @@ pub async fn start_web_server(
             protocol_state_receiver,
             migration_state_receiver,
             static_web_data,
-            node_config: NodeConfigResponse::from(config.clone()),
+            node_config: NodeConfigResponse::from(config),
         });
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;

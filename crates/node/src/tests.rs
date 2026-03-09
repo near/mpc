@@ -112,7 +112,7 @@ impl OneNodeTestConfig {
                     static_web_data(&self.secrets, None),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
-                    &self.config,
+                    self.config.clone(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
