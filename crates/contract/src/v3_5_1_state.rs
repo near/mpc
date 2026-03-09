@@ -180,3 +180,40 @@ impl From<MpcContract> for crate::MpcContract {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_migrate_launcher_compose_hashes_empty() {
+        let result = migrate_launcher_compose_hashes(vec![]);
+        assert_eq!(result.all_compose_hashes().len(), 0);
+        assert_eq!(result.launcher_hashes().len(), 0);
+    }
+
+    #[test]
+    fn test_migrate_launcher_compose_hashes_preserves_hashes() {
+        let hash1 = LauncherDockerComposeHash::from([0x11; 32]);
+        let hash2 = LauncherDockerComposeHash::from([0x22; 32]);
+
+        let result = migrate_launcher_compose_hashes(vec![hash1.clone(), hash2.clone()]);
+
+        let compose_hashes = result.all_compose_hashes();
+        assert_eq!(compose_hashes.len(), 2);
+        assert!(compose_hashes.contains(&hash1));
+        assert!(compose_hashes.contains(&hash2));
+
+        let launcher_hashes = result.launcher_hashes();
+        assert_eq!(launcher_hashes.len(), 1);
+
+        let expected_launcher_bytes: [u8; 32] = hex::decode(LEGACY_LAUNCHER_IMAGE_HASH)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        assert_eq!(
+            launcher_hashes[0],
+            mpc_primitives::hash::LauncherImageHash::from(expected_launcher_bytes)
+        );
+    }
+}

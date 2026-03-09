@@ -14,7 +14,7 @@ built_launcher_hash=$(sha256sum $temp_dir/manifest.json | cut -d' ' -f1)
 echo "Built launcher image hash: $built_launcher_hash"
 
 # Step 2: Extract the launcher and MPC hashes from the deployment compose file
-deployed_launcher_hash=$(sed -n '5p' tee_launcher/launcher_docker_compose.yaml | grep -o '@sha256:.*' | cut -c 9-)
+deployed_launcher_hash=$(grep -o 'nearone/mpc-launcher@sha256:.*' tee_launcher/launcher_docker_compose.yaml | grep -o '@sha256:.*' | cut -c 9-)
 deployed_mpc_hash=$(grep 'DEFAULT_IMAGE_DIGEST=sha256:' tee_launcher/launcher_docker_compose.yaml | grep -o 'sha256:.*' | cut -c 8-)
 
 # Step 3: Fill the contract template with the deployment compose hashes and compare
