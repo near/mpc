@@ -93,6 +93,8 @@ fn inject_test_contract(home_dir: &Path, account_id: &str) {
     let genesis_text = std::fs::read_to_string(&genesis_path).expect("read genesis.json");
     let mut genesis: serde_json::Value =
         serde_json::from_str(&genesis_text).expect("parse genesis.json");
+    *genesis.get_mut("total_supply").unwrap() =
+        serde_json::json!("2050000010000000000000000000000000");
 
     let wasm = test_contract_wasm();
     let code_hash = hash(&wasm).to_string();
@@ -200,7 +202,7 @@ async fn setup_chain_gateway() -> (
         sync_mode: near_indexer::SyncModeEnum::LatestSynced,
         await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
         finality: Finality::Final,
-        validate_genesis: false,
+        validate_genesis: true,
     };
 
     let gw = chain_gateway::chain_gateway::start(indexer_config)
