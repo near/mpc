@@ -17,7 +17,7 @@ on:
         type: string
 
 env:
-  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'nearone' }}
+  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'asaphine' }}
 
 jobs:
   retag-launcher-image:

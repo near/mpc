@@ -7,7 +7,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'nearone' }}
+  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'asaphine' }}
 
 # Trigger this workflow when:
 #   1. A pull request targeting main is closed (filters to merged release PRs via job `if`).

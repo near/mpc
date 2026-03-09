@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'nearone' }}
+  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'asaphine' }}
 
 jobs:
   build-and-push-images:

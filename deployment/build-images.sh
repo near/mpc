@@ -82,7 +82,7 @@ DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
 
 DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
-: "${DOCKER_ORG:=nearone}"
+: "${DOCKER_ORG:=asaphine}"
 
 
 SOURCE_DATE_EPOCH=0
