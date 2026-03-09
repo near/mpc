@@ -7,7 +7,7 @@ on:
 jobs:
   lint-pr-title:
     name: "Check PR title format"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
@@ -31,7 +31,7 @@ jobs:
 
   check-pr-title-type:
     name: "Validate title type matches changes"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
