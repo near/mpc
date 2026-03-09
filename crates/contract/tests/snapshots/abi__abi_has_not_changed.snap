@@ -415,7 +415,7 @@ expression: abi
               "type_schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/definitions/SignatureScheme"
+                    "$ref": "#/definitions/Curve"
                   },
                   {
                     "type": "null"
@@ -1699,7 +1699,7 @@ expression: abi
               "$ref": "#/definitions/DomainPurpose"
             },
             "scheme": {
-              "$ref": "#/definitions/SignatureScheme"
+              "$ref": "#/definitions/Curve"
             }
           }
         },
@@ -1726,7 +1726,7 @@ expression: abi
               ]
             },
             "scheme": {
-              "$ref": "#/definitions/SignatureScheme2"
+              "$ref": "#/definitions/Curve2"
             }
           }
         },
@@ -2700,7 +2700,7 @@ expression: abi
                 "scheme": {
                   "type": "string",
                   "enum": [
-                    "Ed25519"
+                    "Curve25519"
                   ]
                 },
                 "signature": {
@@ -3200,7 +3200,7 @@ expression: abi
                 "scheme": {
                   "type": "string",
                   "enum": [
-                    "Ed25519"
+                    "Curve25519"
                   ]
                 },
                 "signature": {
@@ -3210,34 +3210,22 @@ expression: abi
             }
           ]
         },
-        "SignatureScheme": {
+        "Curve": {
           "description": "Uniquely identifies a specific request algorithm. More protocols may be added in the future. When adding new protocols, both Borsh *and* JSON serialization must be kept compatible.",
           "type": "string",
           "enum": [
             "Secp256k1",
-            "Ed25519",
-            "Bls12381",
-            "V2Secp256k1"
+            "Curve25519",
+            "Bls12381"
           ]
         },
-        "SignatureScheme2": {
+        "Curve2": {
           "description": "Supported signature schemes.",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Secp256k1",
-                "Ed25519",
-                "Bls12381"
-              ]
-            },
-            {
-              "description": "Robust ECDSA variant.",
-              "type": "string",
-              "enum": [
-                "V2Secp256k1"
-              ]
-            }
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Curve25519",
+            "Bls12381"
           ]
         },
         "SolanaExtractor": {

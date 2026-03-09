@@ -211,7 +211,7 @@ pub mod running_tests {
     use rstest::rstest;
 
     use crate::primitives::domain::{
-        AddDomainsVotes, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
     };
     use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
     use crate::state::key_event::tests::Environment;
@@ -349,11 +349,11 @@ pub mod running_tests {
     }
 
     #[rstest]
-    #[case(SignatureScheme::Bls12381, DomainPurpose::Sign)]
-    #[case(SignatureScheme::Ed25519, DomainPurpose::ForeignTx)]
-    #[case(SignatureScheme::Secp256k1, DomainPurpose::CKD)]
+    #[case(Curve::Bls12381, DomainPurpose::Sign)]
+    #[case(Curve::Curve25519, DomainPurpose::ForeignTx)]
+    #[case(Curve::Secp256k1, DomainPurpose::CKD)]
     fn vote_add_domains__should_reject_invalid_scheme_purpose(
-        #[case] scheme: SignatureScheme,
+        #[case] scheme: Curve,
         #[case] purpose: DomainPurpose,
     ) {
         // Given

@@ -13,7 +13,7 @@ use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use anyhow::anyhow;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId};
 use near_jsonrpc_client::methods::send_tx;
 use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
 use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
@@ -282,15 +282,13 @@ impl RunLoadtestCmd {
                 .get_domain_config(DomainId(domain_id))
                 .expect("require valid domain id");
             match domain_config.scheme {
-                SignatureScheme::Bls12381 => {
+                Curve::Bls12381 => {
                     ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,
                     })
                 }
-                SignatureScheme::Ed25519
-                | SignatureScheme::Secp256k1
-                | SignatureScheme::V2Secp256k1 => {
+                Curve::Curve25519 | Curve::Secp256k1 => {
                     ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,

@@ -38,14 +38,13 @@ impl Display for DomainId {
 /// *and* JSON serialization must be kept compatible.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SignatureScheme {
+pub enum Curve {
     Secp256k1,
-    Ed25519,
+    Curve25519,
     Bls12381,
-    V2Secp256k1, // Robust ECDSA
 }
 
-impl Default for SignatureScheme {
+impl Default for Curve {
     fn default() -> Self {
         Self::Secp256k1
     }
@@ -53,22 +52,21 @@ impl Default for SignatureScheme {
 
 /// Infer a default purpose from the signature scheme.
 /// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
+pub fn infer_purpose_from_scheme(scheme: Curve) -> DomainPurpose {
     match scheme {
-        SignatureScheme::Bls12381 => DomainPurpose::CKD,
+        Curve::Bls12381 => DomainPurpose::CKD,
         _ => DomainPurpose::Sign,
     }
 }
 
 /// Returns whether the given scheme is valid for the given purpose.
-pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureScheme) -> bool {
+pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: Curve) -> bool {
     matches!(
         (purpose, scheme),
-        (DomainPurpose::Sign, SignatureScheme::Secp256k1)
-            | (DomainPurpose::Sign, SignatureScheme::V2Secp256k1)
-            | (DomainPurpose::Sign, SignatureScheme::Ed25519)
-            | (DomainPurpose::ForeignTx, SignatureScheme::Secp256k1)
-            | (DomainPurpose::CKD, SignatureScheme::Bls12381)
+        (DomainPurpose::Sign, Curve::Secp256k1)
+            | (DomainPurpose::Sign, Curve::Curve25519)
+            | (DomainPurpose::ForeignTx, Curve::Secp256k1)
+            | (DomainPurpose::CKD, Curve::Bls12381)
     )
 }
 
@@ -78,7 +76,7 @@ pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureSche
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
-    pub scheme: SignatureScheme,
+    pub scheme: Curve,
     pub purpose: DomainPurpose,
 }
 
@@ -87,7 +85,7 @@ pub struct DomainConfig {
 #[derive(serde::Deserialize)]
 struct DomainConfigCompat {
     id: DomainId,
-    scheme: SignatureScheme,
+    scheme: Curve,
     #[serde(default)]
     purpose: Option<DomainPurpose>,
 }
@@ -122,13 +120,13 @@ impl DomainRegistry {
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
     pub fn new_single_ecdsa_key_from_legacy() -> Self {
         let mut registry = Self::default();
-        registry.add_domain(SignatureScheme::Secp256k1, DomainPurpose::Sign);
+        registry.add_domain(Curve::Secp256k1, DomainPurpose::Sign);
         registry
     }
 
     /// Add a single domain with the given protocol and purpose, returning the DomainId of the
     /// added domain.
-    fn add_domain(&mut self, scheme: SignatureScheme, purpose: DomainPurpose) -> DomainId {
+    fn add_domain(&mut self, scheme: Curve, purpose: DomainPurpose) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
             scheme,
@@ -174,7 +172,7 @@ impl DomainRegistry {
 
     /// Returns the most recently added domain for the given protocol,
     /// or None if no such domain exists.
-    pub fn most_recent_domain_for_protocol(&self, scheme: SignatureScheme) -> Option<DomainId> {
+    pub fn most_recent_domain_for_protocol(&self, scheme: Curve) -> Option<DomainId> {
         self.domains
             .iter()
             .rev()
@@ -264,8 +262,8 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        infer_purpose_from_scheme, is_valid_scheme_for_purpose, AddDomainsVotes, DomainConfig,
-        DomainId, DomainPurpose, DomainRegistry, Participants, SignatureScheme,
+        infer_purpose_from_scheme, is_valid_scheme_for_purpose, AddDomainsVotes, Curve,
+        DomainConfig, DomainId, DomainPurpose, DomainRegistry, Participants,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{gen_participant, gen_participants};
@@ -279,38 +277,31 @@ pub mod tests {
         let domains1 = vec![
             DomainConfig {
                 id: DomainId(0),
-                scheme: SignatureScheme::Secp256k1,
+                scheme: Curve::Secp256k1,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
-                scheme: SignatureScheme::Ed25519,
+                scheme: Curve::Curve25519,
                 purpose: DomainPurpose::Sign,
             },
         ];
         let new_registry = registry.add_domains(domains1.clone()).unwrap();
         assert_eq!(new_registry.domains, domains1);
 
-        let domains2 = vec![
-            DomainConfig {
-                id: DomainId(2),
-                scheme: SignatureScheme::Bls12381,
-                purpose: DomainPurpose::CKD,
-            },
-            DomainConfig {
-                id: DomainId(3),
-                scheme: SignatureScheme::V2Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
-        ];
+        let domains2 = vec![DomainConfig {
+            id: DomainId(2),
+            scheme: Curve::Bls12381,
+            purpose: DomainPurpose::CKD,
+        }];
         let new_registry = new_registry.add_domains(domains2.clone()).unwrap();
         assert_eq!(&new_registry.domains[0..2], &domains1);
-        assert_eq!(&new_registry.domains[2..4], &domains2);
+        assert_eq!(&new_registry.domains[2..3], &domains2);
 
         // This fails because the domain ID does not start from next_domain_id.
         let domains3 = vec![DomainConfig {
-            id: DomainId(5),
-            scheme: SignatureScheme::Secp256k1,
+            id: DomainId(4),
+            scheme: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         }];
         let _ = new_registry.add_domains(domains3).unwrap_err();
@@ -318,13 +309,13 @@ pub mod tests {
         // This fails because the domain IDs are not sorted.
         let domains4 = vec![
             DomainConfig {
-                id: DomainId(5),
-                scheme: SignatureScheme::Secp256k1,
+                id: DomainId(4),
+                scheme: Curve::Secp256k1,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
-                id: DomainId(4),
-                scheme: SignatureScheme::Secp256k1,
+                id: DomainId(3),
+                scheme: Curve::Secp256k1,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -336,34 +327,26 @@ pub mod tests {
         let expected = vec![
             DomainConfig {
                 id: DomainId(0),
-                scheme: SignatureScheme::Secp256k1,
+                scheme: Curve::Secp256k1,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
-                scheme: SignatureScheme::Ed25519,
+                scheme: Curve::Curve25519,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
-                scheme: SignatureScheme::Bls12381,
+                scheme: Curve::Bls12381,
                 purpose: DomainPurpose::CKD,
             },
-            DomainConfig {
-                id: DomainId(4),
-                scheme: SignatureScheme::V2Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
         ];
-        let mut registry = DomainRegistry::from_raw_validated(expected.clone(), 6).unwrap();
+        let mut registry = DomainRegistry::from_raw_validated(expected.clone(), 5).unwrap();
         assert_eq!(registry.domains, expected);
-        assert_eq!(registry.next_domain_id, 6);
-        registry.retain_domains(3);
-        assert_eq!(registry.domains, expected[0..3]);
-        assert_eq!(registry.next_domain_id, 6);
+        assert_eq!(registry.next_domain_id, 5);
         registry.retain_domains(2);
         assert_eq!(registry.domains, expected[0..2]);
-        assert_eq!(registry.next_domain_id, 6);
+        assert_eq!(registry.next_domain_id, 5);
         registry.retain_domains(0);
         assert_eq!(registry.domains, Vec::new());
         assert_eq!(registry.next_domain_id, 6);
@@ -375,17 +358,17 @@ pub mod tests {
             vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
+                    scheme: Curve::Secp256k1,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
+                    scheme: Curve::Curve25519,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
-                    scheme: SignatureScheme::Secp256k1,
+                    scheme: Curve::Secp256k1,
                     purpose: DomainPurpose::Sign,
                 },
             ],
@@ -393,11 +376,11 @@ pub mod tests {
         )
         .unwrap();
         assert_eq!(
-            registry.most_recent_domain_for_protocol(SignatureScheme::Secp256k1),
+            registry.most_recent_domain_for_protocol(Curve::Secp256k1),
             Some(DomainId(3))
         );
         assert_eq!(
-            registry.most_recent_domain_for_protocol(SignatureScheme::Ed25519),
+            registry.most_recent_domain_for_protocol(Curve::Curve25519),
             Some(DomainId(2))
         );
     }
@@ -406,7 +389,7 @@ pub mod tests {
     fn test_serialization_format() {
         let domain_config = DomainConfig {
             id: DomainId(3),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         };
         let json = serde_json::to_string(&domain_config).unwrap();
@@ -414,24 +397,20 @@ pub mod tests {
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
-        assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
+        assert_eq!(domain_config.scheme, Curve::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
     }
 
     #[rstest]
     #[case(
         r#"{"id":0,"scheme":"Secp256k1"}"#,
-        SignatureScheme::Secp256k1,
+        Curve::Secp256k1,
         DomainPurpose::Sign
     )]
-    #[case(
-        r#"{"id":1,"scheme":"Bls12381"}"#,
-        SignatureScheme::Bls12381,
-        DomainPurpose::CKD
-    )]
+    #[case(r#"{"id":1,"scheme":"Bls12381"}"#, Curve::Bls12381, DomainPurpose::CKD)]
     fn test_deserialization_without_purpose(
         #[case] json: &str,
-        #[case] expected_scheme: SignatureScheme,
+        #[case] expected_scheme: Curve,
         #[case] expected_purpose: DomainPurpose,
     ) {
         // Simulates JSON from a 3.4.1 contract that lacks the `purpose` field.
@@ -441,33 +420,27 @@ pub mod tests {
     }
 
     #[rstest]
-    #[case(SignatureScheme::Secp256k1, DomainPurpose::Sign)]
-    #[case(SignatureScheme::Ed25519, DomainPurpose::Sign)]
-    #[case(SignatureScheme::V2Secp256k1, DomainPurpose::Sign)]
-    #[case(SignatureScheme::Bls12381, DomainPurpose::CKD)]
-    fn test_infer_purpose_from_scheme(
-        #[case] scheme: SignatureScheme,
-        #[case] expected: DomainPurpose,
-    ) {
+    #[case(Curve::Secp256k1, DomainPurpose::Sign)]
+    #[case(Curve::Curve25519, DomainPurpose::Sign)]
+    #[case(Curve::Bls12381, DomainPurpose::CKD)]
+    fn test_infer_purpose_from_scheme(#[case] scheme: Curve, #[case] expected: DomainPurpose) {
         assert_eq!(infer_purpose_from_scheme(scheme), expected);
     }
 
     #[rstest]
     // Valid combinations
-    #[case(DomainPurpose::Sign, SignatureScheme::Secp256k1, true)]
-    #[case(DomainPurpose::Sign, SignatureScheme::V2Secp256k1, true)]
-    #[case(DomainPurpose::Sign, SignatureScheme::Ed25519, true)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::Secp256k1, true)]
-    #[case(DomainPurpose::CKD, SignatureScheme::Bls12381, true)]
+    #[case(DomainPurpose::Sign, Curve::Secp256k1, true)]
+    #[case(DomainPurpose::Sign, Curve::Curve25519, true)]
+    #[case(DomainPurpose::ForeignTx, Curve::Secp256k1, true)]
+    #[case(DomainPurpose::CKD, Curve::Bls12381, true)]
     // Invalid combinations
-    #[case(DomainPurpose::Sign, SignatureScheme::Bls12381, false)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::Ed25519, false)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::Bls12381, false)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1, false)]
-    #[case(DomainPurpose::CKD, SignatureScheme::Secp256k1, false)]
+    #[case(DomainPurpose::Sign, Curve::Bls12381, false)]
+    #[case(DomainPurpose::ForeignTx, Curve::Curve25519, false)]
+    #[case(DomainPurpose::ForeignTx, Curve::Bls12381, false)]
+    #[case(DomainPurpose::CKD, Curve::Secp256k1, false)]
     fn test_valid_scheme_purpose_combinations(
         #[case] purpose: DomainPurpose,
-        #[case] scheme: SignatureScheme,
+        #[case] scheme: Curve,
         #[case] expected: bool,
     ) {
         assert_eq!(is_valid_scheme_for_purpose(purpose, scheme), expected);
@@ -494,7 +467,7 @@ pub mod tests {
     fn sample_proposal() -> Vec<DomainConfig> {
         vec![DomainConfig {
             id: DomainId(0),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         }]
     }
@@ -572,12 +545,12 @@ pub mod tests {
         let (participants, auth_ids) = setup_participants(3);
         let proposal_a = vec![DomainConfig {
             id: DomainId(0),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         }];
         let proposal_b = vec![DomainConfig {
             id: DomainId(0),
-            scheme: SignatureScheme::Ed25519,
+            scheme: Curve::Curve25519,
             purpose: DomainPurpose::Sign,
         }];
         let mut votes = AddDomainsVotes::default();

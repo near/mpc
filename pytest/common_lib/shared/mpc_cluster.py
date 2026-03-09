@@ -159,7 +159,7 @@ class MpcCluster:
         self,
         participants: List[MpcNode],
         threshold: int,
-        domains=["Secp256k1", "Ed25519", "Bls12381"],
+        domains=["Secp256k1", "Curve25519", "Bls12381"],
     ):
         """
         initializes the contract with `participants` and `threshold`.
@@ -466,7 +466,7 @@ class MpcCluster:
         deposit = constants.SIGNATURE_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            if domain.scheme == "Secp256k1" or domain.scheme == "Ed25519":
+            if domain.scheme == "Secp256k1" or domain.scheme == "Curve25519":
                 print(
                     f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m sign requests for {domain}.\033[0m"
                 )

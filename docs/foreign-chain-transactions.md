@@ -241,13 +241,13 @@ pub enum DomainPurpose {
 
 pub struct DomainConfig {
     pub id: DomainId,
-    pub scheme: SignatureScheme,
+    pub scheme: Curve,
     pub purpose: DomainPurpose,
 }
 ```
 
 Compatibility note: legacy contract state does not include `DomainPurpose`. New nodes reading old state
-must infer the purpose (e.g., treat existing Secp256k1/Ed25519/V2Secp256k1 domains as `Sign` and
+must infer the purpose (e.g., treat existing Secp256k1/Curve25519 domains as `Sign` and
 Bls12381 domains as `CKD`) until a migration writes explicit purposes.
 
 ## Tweak Derivation (Sign vs ForeignTx)

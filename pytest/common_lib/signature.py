@@ -6,15 +6,15 @@ import base64
 
 from typing import Dict, Literal, Optional
 
-from common_lib.contract_state import Domain, SignatureScheme
+from common_lib.contract_state import Domain, Curve
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 PayloadType = Literal["Ecdsa", "Eddsa"]
 
-signature_scheme_to_payload: Dict[SignatureScheme, PayloadType] = {
+signature_scheme_to_payload: Dict[Curve, PayloadType] = {
     "Secp256k1": "Ecdsa",
-    "Ed25519": "Eddsa",
+    "Curve25519": "Eddsa",
 }
 
 

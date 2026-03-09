@@ -9,7 +9,7 @@ class ProtocolState(str, Enum):
     RESHARING = "Resharing"
 
 
-SignatureScheme = Literal["Secp256k1", "Ed25519", "Bls12381"]
+Curve = Literal["Secp256k1", "Curve25519", "Bls12381"]
 
 
 @dataclass
@@ -48,7 +48,7 @@ class Keyset:
 DomainPurpose = Literal["Sign", "ForeignTx", "CKD"]
 
 
-def infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose:
+def infer_purpose_from_scheme(scheme: Curve) -> DomainPurpose:
     """Infer the default purpose from the signature scheme."""
     if scheme == "Bls12381":
         return "CKD"
@@ -58,7 +58,7 @@ def infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose:
 @dataclass
 class Domain:
     id: int
-    scheme: SignatureScheme
+    scheme: Curve
     purpose: DomainPurpose = "Sign"
 
 

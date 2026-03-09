@@ -16,7 +16,7 @@ use contract_interface::types::{self as dtos, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::CKDResponse,
     primitives::{
-        domain::{DomainConfig, DomainPurpose, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainPurpose},
         key_state::{EpochId, Keyset},
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
@@ -110,9 +110,9 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
 /// Needed when comparing state read from an old contract (no `purpose` field) against
 /// state read from the new contract (which fills `purpose` during migration).
 fn fill_missing_purposes(state: &mut ProtocolContractState) {
-    fn infer_purpose(scheme: dtos::SignatureScheme) -> dtos::DomainPurpose {
+    fn infer_purpose(scheme: dtos::Curve) -> dtos::DomainPurpose {
         match scheme {
-            dtos::SignatureScheme::Bls12381 => dtos::DomainPurpose::CKD,
+            dtos::Curve::Bls12381 => dtos::DomainPurpose::CKD,
             _ => dtos::DomainPurpose::Sign,
         }
     }
@@ -397,12 +397,12 @@ async fn upgrade_allows_new_request_types(
     let domains_to_add = [
         DomainConfig {
             id: first_available_domain_id.into(),
-            scheme: SignatureScheme::Bls12381,
+            scheme: Curve::Bls12381,
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
-            scheme: SignatureScheme::Ed25519,
+            scheme: Curve::Curve25519,
             purpose: DomainPurpose::Sign,
         },
     ];

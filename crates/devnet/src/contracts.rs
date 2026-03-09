@@ -6,7 +6,7 @@ use contract_interface::{
 };
 use mpc_contract::primitives::{
     ckd::CKDRequestArgs,
-    domain::{DomainConfig, SignatureScheme},
+    domain::{Curve, DomainConfig},
     signature::{Bytes, Payload, SignRequestArgs},
 };
 use near_account_id::AccountId;
@@ -54,13 +54,13 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             let mut ckd_calls_by_domain = BTreeMap::new();
             for (domain, prot_calls) in args.calls_by_domain {
                 match domain.scheme {
-                    SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+                    Curve::Secp256k1 => {
                         ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    SignatureScheme::Ed25519 => {
+                    Curve::Curve25519 => {
                         eddsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    SignatureScheme::Bls12381 => {
+                    Curve::Bls12381 => {
                         ckd_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                 }
@@ -165,12 +165,12 @@ struct ParallelSignArgsV2 {
     seed: u64,
 }
 
-fn make_payload(scheme: SignatureScheme) -> Payload {
+fn make_payload(scheme: Curve) -> Payload {
     match scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+        Curve::Secp256k1 => {
             Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
         }
-        SignatureScheme::Ed25519 => {
+        Curve::Curve25519 => {
             let len = rand::random_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
@@ -178,7 +178,7 @@ fn make_payload(scheme: SignatureScheme) -> Payload {
             rand::rng().fill_bytes(&mut payload);
             Payload::Eddsa(Bytes::new(payload).unwrap())
         }
-        SignatureScheme::Bls12381 => {
+        Curve::Bls12381 => {
             unreachable!("make_payload should not be called with `Bls12381` scheme")
         }
     }

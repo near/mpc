@@ -26,7 +26,7 @@ pub struct ForeignChainSignatureVerifier {
 pub enum VerifyForeignChainError {
     FailedToComputeMsgHash,
     IncorrectPayloadSigned { got: Hash256, expected: Hash256 },
-    UnexpectedSignatureScheme,
+    UnexpectedCurve,
     SignatureVerificationFailed,
 }
 
@@ -72,9 +72,9 @@ impl ForeignChainSignatureVerifier {
             }
             // TODO(#2234): improve types so these errors can't happen
             (PublicKey::Bls12381(_bls12381_g2_public_key), _) => {
-                return Err(VerifyForeignChainError::UnexpectedSignatureScheme);
+                return Err(VerifyForeignChainError::UnexpectedCurve);
             }
-            _ => return Err(VerifyForeignChainError::UnexpectedSignatureScheme),
+            _ => return Err(VerifyForeignChainError::UnexpectedCurve),
         };
 
         verification_result.map_err(|_| VerifyForeignChainError::SignatureVerificationFailed)

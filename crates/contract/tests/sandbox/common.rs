@@ -13,9 +13,7 @@ use dtos::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{
-            infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
-        },
+        domain::{infer_purpose_from_scheme, Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         test_utils::bogus_ed25519_near_public_key,
@@ -205,9 +203,9 @@ pub async fn init_with_candidates(
             .map(|(i, pk)| {
                 let domain_id = DomainId((i as u64) * 2);
                 let scheme = match pk {
-                    dtos::PublicKey::Ed25519(_) => SignatureScheme::Ed25519,
-                    dtos::PublicKey::Secp256k1(_) => SignatureScheme::Secp256k1,
-                    dtos::PublicKey::Bls12381(_) => SignatureScheme::Bls12381,
+                    dtos::PublicKey::Ed25519(_) => Curve::Curve25519,
+                    dtos::PublicKey::Secp256k1(_) => Curve::Secp256k1,
+                    dtos::PublicKey::Bls12381(_) => Curve::Bls12381,
                 };
                 let key: PublicKeyExtended = pk.try_into().unwrap();
                 let purpose = infer_purpose_from_scheme(scheme);
@@ -262,10 +260,7 @@ pub struct SandboxTestSetup {
     pub keys: Vec<DomainKey>,
 }
 
-pub async fn init_env(
-    schemes: &[SignatureScheme],
-    number_of_participants: usize,
-) -> SandboxTestSetup {
+pub async fn init_env(schemes: &[Curve], number_of_participants: usize) -> SandboxTestSetup {
     let (public_keys, secret_keys): (Vec<_>, Vec<_>) = schemes
         .iter()
         .map(|scheme| make_key_for_domain(*scheme))
@@ -534,17 +529,17 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            scheme: SignatureScheme::Ed25519,
+            scheme: Curve::Curve25519,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
-            scheme: SignatureScheme::Secp256k1,
+            scheme: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
-            scheme: SignatureScheme::Ed25519,
+            scheme: Curve::Curve25519,
             purpose: DomainPurpose::Sign,
         },
     ];

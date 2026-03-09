@@ -66,7 +66,7 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
+    domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -255,16 +255,16 @@ impl MpcContract {
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
         match domain_config.scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+            Curve::Secp256k1 => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            SignatureScheme::Ed25519 => {
+            Curve::Curve25519 => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
-            SignatureScheme::Bls12381 => {
+            Curve::Bls12381 => {
                 env::panic_str(&InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function").to_string(),);
             }
         }
@@ -400,7 +400,7 @@ impl MpcContract {
     /// within a secure enclave. The signature_scheme parameter specifies which protocol
     /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
     /// to query across all protocols.
-    pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
+    pub fn latest_key_version(&self, signature_scheme: Option<Curve>) -> u32 {
         self.protocol_state
             .most_recent_domain_for_protocol(signature_scheme.unwrap_or_default())
             .unwrap()
@@ -716,7 +716,7 @@ impl MpcContract {
                 .is_ok()
             }
             (signature_response, public_key_requested) => {
-                return Err(RespondError::SignatureSchemeMismatch.message(format!(
+                return Err(RespondError::CurveMismatch.message(format!(
                     "Signature response from MPC: {:?}. Key requested by user {:?}",
                     signature_response, public_key_requested
                 )));
@@ -817,7 +817,7 @@ impl MpcContract {
                 .is_ok()
             }
             (signature_response, public_key_requested) => {
-                return Err(RespondError::SignatureSchemeMismatch.message(format!(
+                return Err(RespondError::CurveMismatch.message(format!(
                     "Verify Foreign tx response from MPC: {:?}. Key requested by user {:?}",
                     signature_response, public_key_requested
                 )));
@@ -2073,7 +2073,7 @@ mod tests {
         NUM_PROTOCOLS,
     };
     use crate::primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
+        domain::{infer_purpose_from_scheme, Curve, DomainConfig, DomainId},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2175,19 +2175,19 @@ mod tests {
     }
 
     pub fn make_public_key_for_domain(
-        domain_scheme: SignatureScheme,
+        domain_scheme: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (dtos::PublicKey, SharedSecretKey) {
         match domain_scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+            Curve::Secp256k1 => {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
-            SignatureScheme::Ed25519 => {
+            Curve::Curve25519 => {
                 let (pk, sk) = new_ed25519(rng);
                 (pk.into(), SharedSecretKey::Ed25519(sk))
             }
-            SignatureScheme::Bls12381 => {
+            Curve::Bls12381 => {
                 let (pk, sk) = new_bls12381g2(rng);
                 (pk.into(), SharedSecretKey::Bls12381(sk))
             }
@@ -2195,14 +2195,14 @@ mod tests {
     }
 
     fn basic_setup(
-        scheme: SignatureScheme,
+        scheme: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
         basic_setup_with_purpose(scheme, infer_purpose_from_scheme(scheme), rng)
     }
 
     fn basic_setup_with_purpose(
-        scheme: SignatureScheme,
+        scheme: Curve,
         purpose: DomainPurpose,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
@@ -2277,8 +2277,7 @@ mod tests {
     }
 
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
-        let (context, mut contract, secret_key) =
-            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2365,7 +2364,7 @@ mod tests {
 
     #[test]
     fn test_signature_timeout() {
-        let (context, mut contract, _) = basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let payload = Payload::from_legacy_ecdsa([0u8; 32]);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
@@ -2394,8 +2393,7 @@ mod tests {
 
     #[test]
     fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
@@ -2435,8 +2433,7 @@ mod tests {
 
     #[test]
     fn test_ckd_timeout() {
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
@@ -2467,11 +2464,8 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (context, mut contract, secret_key) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
@@ -2543,11 +2537,8 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _secret_key) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (context, mut contract, _secret_key) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let request_args = VerifyForeignTransactionRequestArgs {
             derivation_path: "".to_string(),
@@ -2586,7 +2577,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.sign(SignRequestArgs {
@@ -2607,7 +2598,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
@@ -2627,11 +2618,8 @@ mod tests {
     fn verify_foreign_tx__should_reject_chain_not_in_policy() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         // Policy has Solana but not Bitcoin
         contract.foreign_chain_policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
@@ -2663,7 +2651,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.request_app_private_key(CKDRequestArgs {
@@ -2911,8 +2899,7 @@ mod tests {
     #[test]
     fn test_respond_ckd_fails_for_attested_non_participant() {
         // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
 
         // Submit valid attestations for all participants (so contract is in Running state)
         // 2. Extract participants list (we have 4 by default)
@@ -3959,7 +3946,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
         assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
         assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
 
@@ -3981,7 +3968,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
         assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
         assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
 
@@ -4003,7 +3990,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
 
         // When — two v1 calls and one v2 call
         contract.sign(SignRequestArgs {
@@ -4096,10 +4083,10 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            scheme: SignatureScheme::Secp256k1,
+            scheme: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         }];
-        let (pk, _) = make_public_key_for_domain(SignatureScheme::Secp256k1, &mut OsRng);
+        let (pk, _) = make_public_key_for_domain(Curve::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -4201,7 +4188,7 @@ mod tests {
         Hash32<Image>,
         near_sdk::PublicKey,
     ) {
-        let (_context, contract, _secret_key) = basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (_context, contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
 
         let participant_account_ids: Vec<_> = contract
             .protocol_state

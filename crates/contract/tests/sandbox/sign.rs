@@ -13,7 +13,7 @@ use contract_interface::method_names;
 use mpc_contract::{
     errors,
     primitives::{
-        domain::SignatureScheme,
+        domain::Curve,
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
@@ -277,7 +277,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let key = &keys[0];
     const LEGACY_KEY_VERSION: u64 = 0; // this is the first cait-sith domain in the contract

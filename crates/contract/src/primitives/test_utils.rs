@@ -1,6 +1,4 @@
-use super::domain::{
-    infer_purpose_from_scheme, DomainConfig, DomainId, DomainRegistry, SignatureScheme,
-};
+use super::domain::{infer_purpose_from_scheme, Curve, DomainConfig, DomainId, DomainRegistry};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -13,12 +11,7 @@ use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
-const ALL_PROTOCOLS: [SignatureScheme; 4] = [
-    SignatureScheme::Secp256k1,
-    SignatureScheme::Ed25519,
-    SignatureScheme::Bls12381,
-    SignatureScheme::V2Secp256k1,
-];
+const ALL_PROTOCOLS: [Curve; 3] = [Curve::Secp256k1, Curve::Curve25519, Curve::Bls12381];
 pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 
 /// Generates a valid DomainRegistry with various signature schemes, with num_domains total.

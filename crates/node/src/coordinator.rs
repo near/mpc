@@ -21,7 +21,6 @@ use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
-use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
@@ -33,7 +32,7 @@ use anyhow::Context;
 use contract_interface::types as dtos;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{Curve, DomainId};
 use mpc_contract::primitives::key_state::EpochId;
 use near_time::Clock;
 use std::collections::HashMap;
@@ -530,33 +529,27 @@ where
                 );
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
-                let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
-                    HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     DomainId,
                     confidential_key_derivation::KeygenOutput,
                 > = HashMap::new();
-                let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
+                let mut domain_to_scheme: HashMap<DomainId, Curve> = HashMap::new();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
                         KeyshareData::Secp256k1(data) => {
                             ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
+                            domain_to_scheme.insert(domain_id, Curve::Secp256k1);
                         }
                         KeyshareData::Ed25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                            domain_to_scheme.insert(domain_id, Curve::Curve25519);
                         }
                         KeyshareData::Bls12381(data) => {
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Bls12381);
-                        }
-                        KeyshareData::V2Secp256k1(data) => {
-                            robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::V2Secp256k1);
+                            domain_to_scheme.insert(domain_id, Curve::Bls12381);
                         }
                     }
                 }
@@ -569,16 +562,6 @@ where
                     secret_db.clone(),
                     sign_request_store.clone(),
                     ecdsa_keyshares,
-                )?);
-
-                let robust_ecdsa_signature_provider = Arc::new(RobustEcdsaSignatureProvider::new(
-                    config_file.clone().into(),
-                    running_mpc_config.clone().into(),
-                    network_client.clone(),
-                    clock,
-                    secret_db,
-                    sign_request_store.clone(),
-                    robust_ecdsa_keyshares,
                 )?);
 
                 let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
@@ -615,7 +598,6 @@ where
                     ckd_request_store,
                     verify_foreign_tx_request_store,
                     ecdsa_signature_provider,
-                    robust_ecdsa_signature_provider,
                     eddsa_signature_provider,
                     ckd_provider,
                     verify_foreign_tx_provider,

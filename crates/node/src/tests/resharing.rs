@@ -7,7 +7,7 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{
-    infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
+    infer_purpose_from_scheme, Curve, DomainConfig, DomainId, DomainPurpose,
 };
 use near_time::Clock;
 use rstest::rstest;
@@ -19,14 +19,12 @@ use super::DEFAULT_BLOCK_TIME;
 #[tokio::test]
 #[test_log::test]
 #[rstest]
-#[case(0, SignatureScheme::Secp256k1, 3)]
-#[case(1, SignatureScheme::Ed25519, 3)]
-#[case(2, SignatureScheme::Bls12381, 3)]
-// TODO(#1946): re-enable once it is no longer flaky
-// #[case(3, SignatureScheme::V2Secp256k1, 5)]
+#[case(0, Curve::Secp256k1, 3)]
+#[case(1, Curve::Curve25519, 3)]
+#[case(2, Curve::Bls12381, 3)]
 async fn test_key_resharing_simple(
     #[case] case: u16,
-    #[case] scheme: SignatureScheme,
+    #[case] scheme: Curve,
     #[case] threshold: usize,
 ) {
     let num_participants: usize = threshold + 1;
@@ -77,7 +75,7 @@ async fn test_key_resharing_simple(
 
     // Sanity check.
     match domain.scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 | SignatureScheme::V2Secp256k1 => {
+        Curve::Secp256k1 | Curve::Curve25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -87,7 +85,7 @@ async fn test_key_resharing_simple(
             .await
             .is_some());
         }
-        SignatureScheme::Bls12381 => {
+        Curve::Bls12381 => {
             assert!(request_ckd_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -121,7 +119,7 @@ async fn test_key_resharing_simple(
         .expect("Timeout waiting for resharing to complete");
 
     match domain.scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 | SignatureScheme::V2Secp256k1 => {
+        Curve::Secp256k1 | Curve::Curve25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -131,7 +129,7 @@ async fn test_key_resharing_simple(
             .await
             .is_some());
         }
-        SignatureScheme::Bls12381 => {
+        Curve::Bls12381 => {
             assert!(request_ckd_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -172,7 +170,7 @@ async fn test_key_resharing_multistage() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        scheme: Curve::Secp256k1,
         purpose: DomainPurpose::Sign,
     };
 
@@ -377,7 +375,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        scheme: Curve::Secp256k1,
         purpose: DomainPurpose::Sign,
     };
 

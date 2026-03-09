@@ -42,7 +42,7 @@ pub enum RespondError {
     #[error("The provided signature is invalid.")]
     InvalidSignature,
     #[error("The provided signature scheme does not match the requestued key's scheme")]
-    SignatureSchemeMismatch,
+    CurveMismatch,
     #[error("The provided domain was not found.")]
     DomainNotFound,
     #[error("The provided tweak is not on the curve of the public key.")]
@@ -202,7 +202,7 @@ pub enum DomainError {
     DomainsMismatch,
     #[error("Invalid scheme-purpose combination: scheme {scheme:?} is not compatible with purpose {purpose:?}")]
     InvalidSchemePurposeCombination {
-        scheme: crate::primitives::domain::SignatureScheme,
+        scheme: crate::primitives::domain::Curve,
         purpose: crate::primitives::domain::DomainPurpose,
     },
 }

@@ -152,12 +152,10 @@ pub struct AuthenticatedAccountId(pub AccountId);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub enum SignatureScheme {
+pub enum Curve {
     Secp256k1,
-    Ed25519,
+    Curve25519,
     Bls12381,
-    /// Robust ECDSA variant.
-    V2Secp256k1,
 }
 
 /// The purpose that a domain serves.
@@ -198,7 +196,7 @@ pub enum DomainPurpose {
 )]
 pub struct DomainConfig {
     pub id: DomainId,
-    pub scheme: SignatureScheme,
+    pub scheme: Curve,
     /// `None` when reading state from an old contract that predates domain purposes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<DomainPurpose>,

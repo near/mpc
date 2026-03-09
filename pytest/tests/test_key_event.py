@@ -99,7 +99,7 @@ def test_multi_domain():
     cluster.send_and_await_ckd_requests(1)
 
     cluster.add_domains(
-        ["Secp256k1", "Ed25519", "Secp256k1", "Ed25519"],
+        ["Secp256k1", "Curve25519", "Secp256k1", "Curve25519"],
         wait_for_running=False,
     )
     cluster.wait_for_state(ProtocolState.RUNNING)

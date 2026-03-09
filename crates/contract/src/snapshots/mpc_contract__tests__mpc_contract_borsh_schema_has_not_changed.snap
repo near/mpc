@@ -222,7 +222,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "scheme",
-                        "SignatureScheme",
+                        "Curve",
                     ),
                     (
                         "purpose",
@@ -1066,41 +1066,33 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "SignatureScheme": Enum {
+        "Curve": Enum {
             tag_width: 1,
             variants: [
                 (
                     0,
                     "Secp256k1",
-                    "SignatureScheme__Secp256k1",
+                    "Curve__Secp256k1",
                 ),
                 (
                     1,
-                    "Ed25519",
-                    "SignatureScheme__Ed25519",
+                    "Curve25519",
+                    "Curve__Curve25519",
                 ),
                 (
                     2,
                     "Bls12381",
-                    "SignatureScheme__Bls12381",
-                ),
-                (
-                    3,
-                    "V2Secp256k1",
-                    "SignatureScheme__V2Secp256k1",
+                    "Curve__Bls12381",
                 ),
             ],
         },
-        "SignatureScheme__Bls12381": Struct {
+        "Curve__Bls12381": Struct {
             fields: Empty,
         },
-        "SignatureScheme__Ed25519": Struct {
+        "Curve__Curve25519": Struct {
             fields: Empty,
         },
-        "SignatureScheme__Secp256k1": Struct {
-            fields: Empty,
-        },
-        "SignatureScheme__V2Secp256k1": Struct {
+        "Curve__Secp256k1": Struct {
             fields: Empty,
         },
         "StaleData": Struct {

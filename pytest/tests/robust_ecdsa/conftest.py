@@ -28,7 +28,7 @@ def shared_cluster():
         presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
         triples_to_buffer=0,
     )
-    cluster.init_cluster(mpc_nodes, threshold, ["V2Secp256k1"])
+    cluster.init_cluster(mpc_nodes, threshold, ["Secp256k1"])
     cluster.wait_for_state(contract_state.ProtocolState.RUNNING)
 
     mpc_cluster_metrics.assert_num_presignatures_available(

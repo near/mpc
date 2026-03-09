@@ -14,7 +14,6 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
-use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
@@ -27,7 +26,7 @@ use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 
 use mpc_contract::crypto_shared::{derive_foreign_tx_tweak, derive_tweak, CKDResponse};
-use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{Curve, DomainId};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -52,11 +51,10 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     ckd_request_store: Arc<CKDRequestStorage>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-    robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
     verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
-    domain_to_scheme: HashMap<DomainId, SignatureScheme>,
+    domain_to_scheme: HashMap<DomainId, Curve>,
 }
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
@@ -71,11 +69,10 @@ where
         ckd_request_store: Arc<CKDRequestStorage>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-        robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
         verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
-        domain_to_scheme: HashMap<DomainId, SignatureScheme>,
+        domain_to_scheme: HashMap<DomainId, Curve>,
     ) -> Self {
         Self {
             config,
@@ -84,7 +81,6 @@ where
             ckd_request_store,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
-            robust_ecdsa_signature_provider,
             eddsa_signature_provider,
             ckd_provider,
             verify_foreign_tx_provider,
@@ -157,13 +153,6 @@ where
                 .spawn_background_tasks(),
         );
 
-        let robust_ecdsa_background_tasks = tracking::spawn(
-            "robust_ecdsa_background_tasks",
-            self.robust_ecdsa_signature_provider
-                .clone()
-                .spawn_background_tasks(),
-        );
-
         let eddsa_background_tasks = tracking::spawn(
             "eddsa_background_tasks",
             self.eddsa_signature_provider
@@ -179,7 +168,6 @@ where
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
         monitor_chain.await?;
-        let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
         let _ = ckd_background_tasks.await?;
@@ -389,7 +377,7 @@ where
                                     .domain_to_scheme
                                     .get(&signature_attempt.request.domain)
                                 {
-                                    Some(SignatureScheme::Secp256k1) => {
+                                    Some(Curve::Secp256k1) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.ecdsa_signature_provider
@@ -406,7 +394,7 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(SignatureScheme::Ed25519) => {
+                                    Some(Curve::Curve25519) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -422,27 +410,10 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(SignatureScheme::Bls12381) => Err(anyhow::anyhow!(
+                                    Some(Curve::Bls12381) => Err(anyhow::anyhow!(
                                         "Incorrect protocol for domain: {:?}",
                                         signature_attempt.request.domain.clone()
                                     )),
-                                    Some(SignatureScheme::V2Secp256k1) => {
-                                        let (signature, public_key) = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.robust_ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response = ChainSignatureRespondArgs::new_ecdsa(
-                                            &signature_attempt.request,
-                                            &signature,
-                                            &public_key,
-                                        )?;
-
-                                        Ok(response)
-                                    }
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
                                         signature_attempt.request.domain.clone()
@@ -504,7 +475,7 @@ where
                                 let response =
                                     match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
                                     {
-                                        Some(SignatureScheme::Bls12381) => {
+                                        Some(Curve::Bls12381) => {
                                             let response = timeout(
                                                 Duration::from_secs(this.config.ckd.timeout_sec),
                                                 this.ckd_provider
@@ -523,12 +494,12 @@ where
 
                                             Ok(response)
                                         }
-                                        Some(SignatureScheme::Secp256k1)
-                                        | Some(SignatureScheme::V2Secp256k1)
-                                        | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
-                                            "Signature scheme is not allowed for domain: {:?}",
-                                            ckd_attempt.request.domain_id.clone()
-                                        )),
+                                        Some(Curve::Secp256k1) | Some(Curve::Curve25519) => {
+                                            Err(anyhow::anyhow!(
+                                                "Signature scheme is not allowed for domain: {:?}",
+                                                ckd_attempt.request.domain_id.clone()
+                                            ))
+                                        }
                                         None => Err(anyhow::anyhow!(
                                             "Signature scheme is not found for domain: {:?}",
                                             ckd_attempt.request.domain_id.clone()
@@ -595,7 +566,7 @@ where
                                     .domain_to_scheme
                                     .get(&verify_foreign_tx_attempt.request.domain_id)
                                 {
-                                    Some(SignatureScheme::Secp256k1) => {
+                                    Some(Curve::Secp256k1) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.verify_foreign_tx_provider.clone().make_signature(
@@ -615,12 +586,12 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(SignatureScheme::Bls12381)
-                                    | Some(SignatureScheme::V2Secp256k1)
-                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        verify_foreign_tx_attempt.request.domain_id.clone()
-                                    )),
+                                    Some(Curve::Bls12381) | Some(Curve::Curve25519) => {
+                                        Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            verify_foreign_tx_attempt.request.domain_id.clone()
+                                        ))
+                                    }
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
@@ -701,10 +672,7 @@ where
             }
             MpcTaskId::CKDTaskId(_) => self.ckd_provider.clone().process_channel(channel).await?,
             MpcTaskId::RobustEcdsaTaskId(_) => {
-                self.robust_ecdsa_signature_provider
-                    .clone()
-                    .process_channel(channel)
-                    .await?
+                anyhow::bail!("V2Secp256k1 (robust ECDSA) is no longer supported")
             }
             MpcTaskId::VerifyForeignTxTaskId(_) => {
                 self.verify_foreign_tx_provider

@@ -19,7 +19,7 @@ use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainPurpose, SignatureScheme},
+        domain::{infer_purpose_from_scheme, Curve, DomainConfig, DomainPurpose},
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -40,7 +40,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     };
     let epoch_id = init_running.keyset.epoch_id;
     let domain_id = init_running.domains.next_domain_id;
-    let scheme = SignatureScheme::Ed25519;
+    let scheme = Curve::Curve25519;
 
     // vote to add the domain and verify we enter initializing state
     vote_add_domains(
@@ -166,7 +166,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         };
         assert_eq!(init.domains.next_domain_id, next_domain_id + 1);
         let expected_purpose = match scheme {
-            SignatureScheme::Bls12381 => dtos::DomainPurpose::CKD,
+            Curve::Bls12381 => dtos::DomainPurpose::CKD,
             _ => dtos::DomainPurpose::Sign,
         };
         let expected_domain = dtos::DomainConfig {

@@ -71,7 +71,7 @@ def test_threshold_from_previous_running_state_is_maintained_robust_ecdsa_only()
     )
 
     cluster.init_cluster(
-        participants=mpc_nodes[:-1], threshold=threshold, domains=["V2Secp256k1"]
+        participants=mpc_nodes[:-1], threshold=threshold, domains=["Secp256k1"]
     )
 
     # One more node join, increase threshold

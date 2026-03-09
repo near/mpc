@@ -20,7 +20,7 @@ use crate::{
     derive_foreign_tx_tweak,
     errors::{ConversionError, Error},
     primitives::{
-        domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+        domain::{AddDomainsVotes, Curve, DomainConfig, DomainId, DomainRegistry},
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
             KeyForDomain, Keyset,
@@ -512,13 +512,12 @@ impl IntoInterfaceType<dtos::AuthenticatedAccountId> for &AuthenticatedAccountId
 
 // --- Domain types ---
 
-impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
-    fn into_dto_type(self) -> dtos::SignatureScheme {
+impl IntoInterfaceType<dtos::Curve> for Curve {
+    fn into_dto_type(self) -> dtos::Curve {
         match self {
-            SignatureScheme::Secp256k1 => dtos::SignatureScheme::Secp256k1,
-            SignatureScheme::Ed25519 => dtos::SignatureScheme::Ed25519,
-            SignatureScheme::Bls12381 => dtos::SignatureScheme::Bls12381,
-            SignatureScheme::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
+            Curve::Secp256k1 => dtos::Curve::Secp256k1,
+            Curve::Curve25519 => dtos::Curve::Curve25519,
+            Curve::Bls12381 => dtos::Curve::Bls12381,
         }
     }
 }

@@ -16,9 +16,7 @@ use contract_interface::method_names;
 use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     errors::InvalidState,
-    primitives::{
-        domain::SignatureScheme, participants::Participants, test_utils::bogus_ed25519_public_key,
-    },
+    primitives::{domain::Curve, participants::Participants, test_utils::bogus_ed25519_public_key},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_workspaces::Contract;
@@ -605,7 +603,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_COUNT).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_COUNT).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     assert_eq!(initial_participants.participants.len(), PARTICIPANT_COUNT);
