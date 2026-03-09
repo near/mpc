@@ -773,6 +773,13 @@ $ curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'$ed25519:5S
 
 The `attestation-cli` tool performs the same Intel TDX (DCAP) attestation verification that the NEAR contract and MPC nodes use, allowing you to independently validate that the node is running trusted code inside genuine hardware.
 
+> **Note:** Run the `attestation-cli` on a trusted machine (e.g., your local workstation), not on the TDX server itself. The verification should be performed from an environment you control and trust.
+
+The CLI supports two modes:
+
+- **Online mode** (`--url`) — Fetches attestation data directly from the node's `/public_data` endpoint.
+- **Offline mode** (`--file`) — Reads attestation data from a previously saved JSON file. This is useful if you want to save the data first, inspect it, or verify on an air-gapped machine.
+
 For full documentation, see the [attestation-cli README](../crates/attestation-cli/README.md).
 
 #### Install the attestation-cli
@@ -806,6 +813,8 @@ cargo install --path crates/attestation-cli
 
 #### Run the verification
 
+**Online mode** — fetch and verify directly from the node:
+
 ```bash
 attestation-cli \
   --url http://<IP>:8080/public_data \
@@ -813,7 +822,20 @@ attestation-cli \
   --launcher-compose-file launcher_docker_compose.yaml
 ```
 
-Replace `<IP>` with your node's IP address (or `localhost` if running on the TDX server), and `<IMAGE_HASH>` with the hash from the contract.
+**Offline mode** — save the data first, then verify locally:
+
+```bash
+# Save the attestation data
+curl -o public_data.json http://<IP>:8080/public_data
+
+# Verify from the saved file
+attestation-cli \
+  --file public_data.json \
+  --allowed-image-hash <IMAGE_HASH> \
+  --launcher-compose-file launcher_docker_compose.yaml
+```
+
+Replace `<IP>` with your node's IP address, and `<IMAGE_HASH>` with the hash from the contract.
 
 #### Verify the output
 
