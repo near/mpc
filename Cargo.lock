@@ -7377,10 +7377,8 @@ dependencies = [
 name = "node-types"
 version = "3.6.0"
 dependencies = [
- "anyhow",
- "bs58 0.5.1",
- "ed25519-dalek",
  "mpc-attestation",
+ "mpc-crypto-types",
  "rand_chacha 0.3.1",
  "serde",
  "serde_json",

@@ -6,7 +6,7 @@ use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
-use ed25519_dalek::VerifyingKey;
+use contract_interface::types::Ed25519PublicKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
@@ -137,25 +137,29 @@ async fn third_party_licenses() -> Html<&'static str> {
 }
 
 struct PublicKeys {
-    near_signer_public_key: VerifyingKey,
-    near_p2p_public_key: VerifyingKey,
-    near_responder_public_keys: Vec<VerifyingKey>,
+    near_signer_public_key: Ed25519PublicKey,
+    near_p2p_public_key: Ed25519PublicKey,
+    near_responder_public_keys: Vec<Ed25519PublicKey>,
 }
 
 fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
-    let near_signer_public_key = secrets_config
-        .persistent_secrets
-        .near_signer_key
-        .verifying_key();
-    let near_p2p_public_key = secrets_config
-        .persistent_secrets
-        .p2p_private_key
-        .verifying_key();
+    let near_signer_public_key = Ed25519PublicKey::from(
+        &secrets_config
+            .persistent_secrets
+            .near_signer_key
+            .verifying_key(),
+    );
+    let near_p2p_public_key = Ed25519PublicKey::from(
+        &secrets_config
+            .persistent_secrets
+            .p2p_private_key
+            .verifying_key(),
+    );
     let near_responder_public_keys = secrets_config
         .persistent_secrets
         .near_responder_keys
         .iter()
-        .map(|x| x.verifying_key())
+        .map(|x| Ed25519PublicKey::from(&x.verifying_key()))
         .collect();
 
     PublicKeys {
