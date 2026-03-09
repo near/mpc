@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use attestation_cli::cli::Cli;
 use attestation_cli::verify;
-use ed25519_dalek::VerifyingKey;
 use mpc_attestation::attestation::Attestation;
+use mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use test_utils::attestation::{
     TEST_LAUNCHER_IMAGE_COMPOSE_STRING, TEST_MPC_IMAGE_DIGEST_HEX, VALID_ATTESTATION_TIMESTAMP,
@@ -11,12 +11,9 @@ use test_utils::attestation::{
 };
 
 fn make_static_web_data(attestation: Attestation) -> StaticWebData {
-    let p2p_key = VerifyingKey::from_bytes(&p2p_tls_key()).expect("valid p2p key");
-    let account = VerifyingKey::from_bytes(&account_key()).expect("valid account key");
-
     StaticWebData {
-        near_signer_public_key: account,
-        near_p2p_public_key: p2p_key,
+        near_signer_public_key: Ed25519PublicKey(account_key()),
+        near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
         near_responder_public_keys: vec![],
         tee_participant_info: Some(attestation),
     }
@@ -109,8 +106,8 @@ fn verification_fails_with_wrong_compose_file() {
 #[test]
 fn run_verification_rejects_none_attestation() {
     let static_data = StaticWebData {
-        near_signer_public_key: VerifyingKey::from_bytes(&account_key()).unwrap(),
-        near_p2p_public_key: VerifyingKey::from_bytes(&p2p_tls_key()).unwrap(),
+        near_signer_public_key: Ed25519PublicKey(account_key()),
+        near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
         near_responder_public_keys: vec![],
         tee_participant_info: None,
     };
@@ -137,8 +134,8 @@ fn run_verification_rejects_none_attestation() {
 #[test]
 fn run_verification_rejects_mock_attestation() {
     let static_data = StaticWebData {
-        near_signer_public_key: VerifyingKey::from_bytes(&account_key()).unwrap(),
-        near_p2p_public_key: VerifyingKey::from_bytes(&p2p_tls_key()).unwrap(),
+        near_signer_public_key: Ed25519PublicKey(account_key()),
+        near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
         near_responder_public_keys: vec![],
         tee_participant_info: Some(Attestation::Mock(
             mpc_attestation::attestation::MockAttestation::Valid,
