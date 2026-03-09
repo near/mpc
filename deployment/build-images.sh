@@ -82,6 +82,7 @@ DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
 
 DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
+: "${DOCKER_ORG:=nearone}"
 
 
 SOURCE_DATE_EPOCH=0
@@ -137,7 +138,7 @@ if $USE_NODE_GCP; then
 fi
 
 if $USE_PUSH; then
-    # This assumes that docker is logged-in dockerhub registry with nearone user
+    # This assumes that docker is logged-in to the dockerhub registry
 
     branch_name=$(git branch --show-current)
     if [ -z "$branch_name" ]; then
@@ -156,17 +157,17 @@ if $USE_PUSH; then
         # digest in $temp_dir/manifest.json
         skopeo copy --all --dest-compress docker-daemon:$LAUNCHER_IMAGE_NAME:latest dir:$temp_dir
         # Then we publish the image from the directory, making sure the manifest digest does not change
-        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$image_tag
+        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/$DOCKER_ORG/$LAUNCHER_IMAGE_NAME:$image_tag
     fi
 
     if $USE_NODE; then
-        docker tag $NODE_IMAGE_NAME nearone/$NODE_IMAGE_NAME:$image_tag
-        docker push nearone/$NODE_IMAGE_NAME:$image_tag
+        docker tag $NODE_IMAGE_NAME $DOCKER_ORG/$NODE_IMAGE_NAME:$image_tag
+        docker push $DOCKER_ORG/$NODE_IMAGE_NAME:$image_tag
     fi
 
     if $USE_NODE_GCP; then
-        docker tag $NODE_GCP_IMAGE_NAME nearone/$NODE_GCP_IMAGE_NAME:$image_tag
-        docker push nearone/$NODE_GCP_IMAGE_NAME:$image_tag
+        docker tag $NODE_GCP_IMAGE_NAME $DOCKER_ORG/$NODE_GCP_IMAGE_NAME:$image_tag
+        docker push $DOCKER_ORG/$NODE_GCP_IMAGE_NAME:$image_tag
     fi
 fi
 

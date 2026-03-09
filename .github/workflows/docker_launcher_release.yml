@@ -16,10 +16,13 @@ on:
         required: true
         type: string
 
+env:
+  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'nearone' }}
+
 jobs:
   retag-launcher-image:
     name: "Retag launcher image for release"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: ubuntu-latest
     permissions:
       contents: read
 
@@ -39,8 +42,8 @@ jobs:
         env:
           SOURCE_TAG: ${{ github.event.inputs.source-tag }}
         run: |
-          if ! skopeo inspect docker://nearone/mpc-launcher:$SOURCE_TAG > /dev/null 2>&1; then
-            echo "❌ Source image nearone/mpc-launcher:$SOURCE_TAG does not exist"
+          if ! skopeo inspect docker://$DOCKER_ORG/mpc-launcher:$SOURCE_TAG > /dev/null 2>&1; then
+            echo "❌ Source image $DOCKER_ORG/mpc-launcher:$SOURCE_TAG does not exist"
             exit 1
           fi
 
@@ -50,5 +53,5 @@ jobs:
           RELEASE_TAG: ${{ github.event.inputs.release-tag }}
         run: |
           skopeo copy \
-            docker://nearone/mpc-launcher:$SOURCE_TAG \
-            docker://nearone/mpc-launcher:$RELEASE_TAG
+            docker://$DOCKER_ORG/mpc-launcher:$SOURCE_TAG \
+            docker://$DOCKER_ORG/mpc-launcher:$RELEASE_TAG

@@ -6,6 +6,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'nearone' }}
+
 # Trigger this workflow when:
 #   1. A pull request targeting main is closed (filters to merged release PRs via job `if`).
 #   2. A version tag (v*) is pushed directly (e.g. `git push origin v3.6.0`).
@@ -27,7 +30,7 @@ jobs:
       github.event_name == 'push'
       || (github.event.pull_request.merged == true
           && startsWith(github.event.pull_request.head.ref, 'release/v'))
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: ubuntu-latest
     # Write permission on contents is required to push a new tag (PR path).
     permissions:
       contents: write
@@ -87,7 +90,7 @@ jobs:
   retag-docker-images:
     name: "Retag Docker images"
     needs: release-info
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: ubuntu-latest
     permissions:
       actions: write
 
@@ -181,10 +184,10 @@ jobs:
         run: |
           for REPO in mpc-launcher mpc-node-gcp mpc-node; do
             SAFE_NAME="${REPO//-/_}"
-            MANIFEST_DIGEST=$(skopeo inspect docker://nearone/$REPO:$RELEASE_TAG | jq -r '.Digest')
+            MANIFEST_DIGEST=$(skopeo inspect docker://$DOCKER_ORG/$REPO:$RELEASE_TAG | jq -r '.Digest')
             # Use --override-os/--override-arch to resolve multi-arch manifest lists
             # to the platform-specific image manifest, where .config.digest is the Image ID.
-            IMAGE_ID=$(skopeo inspect --raw --override-os linux --override-arch amd64 docker://nearone/$REPO:$RELEASE_TAG | jq -r '.config.digest')
+            IMAGE_ID=$(skopeo inspect --raw --override-os linux --override-arch amd64 docker://$DOCKER_ORG/$REPO:$RELEASE_TAG | jq -r '.config.digest')
             echo "${SAFE_NAME}_manifest_digest=$MANIFEST_DIGEST" >> "$GITHUB_OUTPUT"
             echo "${SAFE_NAME}_image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
           done
@@ -197,7 +200,7 @@ jobs:
     name: "Build contract"
     needs: release-info
     # Uses a 16x runner because the reproducible contract build is resource-intensive.
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: ubuntu-latest
     permissions:
       contents: read
 
@@ -221,7 +224,6 @@ jobs:
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           save-if: false
-          cache-provider: "warpbuild"
           lookup-only: true
 
       - name: Install cargo-binstall
@@ -283,7 +285,7 @@ jobs:
   create-release:
     name: "Create draft GitHub release"
     needs: [release-info, retag-docker-images, build-contract]
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
@@ -331,15 +333,15 @@ jobs:
 
           ## Docker images
 
-          nearone/mpc-node:${VERSION}
+          $DOCKER_ORG/mpc-node:${VERSION}
           Manifest digest: ${NODE_MANIFEST}
           Image ID: ${NODE_IMAGE_ID}
 
-          nearone/mpc-node-gcp:${VERSION}
+          $DOCKER_ORG/mpc-node-gcp:${VERSION}
           Manifest digest: ${NODE_GCP_MANIFEST}
           Image ID: ${NODE_GCP_IMAGE_ID}
 
-          nearone/mpc-launcher:${VERSION}
+          $DOCKER_ORG/mpc-launcher:${VERSION}
           Manifest digest: ${LAUNCHER_MANIFEST}
           Image ID: ${LAUNCHER_IMAGE_ID}
 

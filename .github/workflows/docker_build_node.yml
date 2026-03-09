@@ -10,10 +10,13 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  DOCKER_ORG: ${{ vars.DOCKER_ORG || 'nearone' }}
+
 jobs:
   build-and-push-images:
     name: "Build and push Docker node image with commit hash"
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: ubuntu-latest
     permissions:
       contents: read
 
