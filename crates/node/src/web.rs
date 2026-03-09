@@ -149,170 +149,50 @@ impl From<ForeignChainsConfig> for ForeignChains {
     }
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct SolanaChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, SolanaProvider>,
-}
-
-impl From<SolanaChainConfig> for SolanaChain {
-    fn from(config: SolanaChainConfig) -> Self {
-        let providers: BTreeMap<String, SolanaProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
+/// Generates API-safe chain + provider structs that omit the `auth` field
+/// from provider configs, plus `From` impls to convert from the full configs.
+macro_rules! define_foreign_chain {
+    ($Chain:ident, $Provider:ident, $ChainCfg:ty, $ProvCfg:ty, $ApiVar:ty) => {
+        #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+        struct $Chain {
+            timeout_sec: u64,
+            max_retries: u64,
+            providers: BTreeMap<String, $Provider>,
         }
-    }
-}
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct SolanaProvider {
-    rpc_url: String,
-    api_variant: SolanaApiVariant,
-}
-
-impl From<SolanaProviderConfig> for SolanaProvider {
-    fn from(config: SolanaProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
+        impl From<$ChainCfg> for $Chain {
+            fn from(config: $ChainCfg) -> Self {
+                let providers: BTreeMap<String, $ProvCfg> = config.providers.into();
+                Self {
+                    timeout_sec: config.timeout_sec,
+                    max_retries: config.max_retries,
+                    providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
+                }
+            }
         }
-    }
-}
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BitcoinChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, BitcoinProvider>,
-}
-
-impl From<BitcoinChainConfig> for BitcoinChain {
-    fn from(config: BitcoinChainConfig) -> Self {
-        let providers: BTreeMap<String, BitcoinProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
+        #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+        struct $Provider {
+            rpc_url: String,
+            api_variant: $ApiVar,
         }
-    }
-}
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BitcoinProvider {
-    rpc_url: String,
-    api_variant: BitcoinApiVariant,
-}
-
-impl From<BitcoinProviderConfig> for BitcoinProvider {
-    fn from(config: BitcoinProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
+        impl From<$ProvCfg> for $Provider {
+            fn from(config: $ProvCfg) -> Self {
+                Self {
+                    rpc_url: config.rpc_url,
+                    api_variant: config.api_variant,
+                }
+            }
         }
-    }
+    };
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct EthereumChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, EthereumProvider>,
-}
-
-impl From<EthereumChainConfig> for EthereumChain {
-    fn from(config: EthereumChainConfig) -> Self {
-        let providers: BTreeMap<String, EthereumProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct EthereumProvider {
-    rpc_url: String,
-    api_variant: EthereumApiVariant,
-}
-
-impl From<EthereumProviderConfig> for EthereumProvider {
-    fn from(config: EthereumProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct AbstractChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, AbstractProvider>,
-}
-
-impl From<AbstractChainConfig> for AbstractChain {
-    fn from(config: AbstractChainConfig) -> Self {
-        let providers: BTreeMap<String, AbstractProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct AbstractProvider {
-    rpc_url: String,
-    api_variant: AbstractApiVariant,
-}
-
-impl From<AbstractProviderConfig> for AbstractProvider {
-    fn from(config: AbstractProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct StarknetChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, StarknetProvider>,
-}
-
-impl From<StarknetChainConfig> for StarknetChain {
-    fn from(config: StarknetChainConfig) -> Self {
-        let providers: BTreeMap<String, StarknetProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct StarknetProvider {
-    rpc_url: String,
-    api_variant: StarknetApiVariant,
-}
-
-impl From<StarknetProviderConfig> for StarknetProvider {
-    fn from(config: StarknetProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
+define_foreign_chain!(SolanaChain, SolanaProvider, SolanaChainConfig, SolanaProviderConfig, SolanaApiVariant);
+define_foreign_chain!(BitcoinChain, BitcoinProvider, BitcoinChainConfig, BitcoinProviderConfig, BitcoinApiVariant);
+define_foreign_chain!(EthereumChain, EthereumProvider, EthereumChainConfig, EthereumProviderConfig, EthereumApiVariant);
+define_foreign_chain!(AbstractChain, AbstractProvider, AbstractChainConfig, AbstractProviderConfig, AbstractApiVariant);
+define_foreign_chain!(StarknetChain, StarknetProvider, StarknetChainConfig, StarknetProviderConfig, StarknetApiVariant);
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
     match state.root_task_handle.get() {
