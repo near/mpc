@@ -47,7 +47,7 @@ use contract_interface::types::{
     VerifyForeignTransactionResponse,
 };
 use crypto_shared::{
-    derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak,
+    derive_key_secp256k1, derive_tweak,
     kdf::derive_public_key_edwards_point_ed25519,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
@@ -619,7 +619,7 @@ impl MpcContract {
                 .return_signature_and_clean_state_on_success_call_tera_gas,
         );
 
-        let request = args_into_verify_foreign_tx_request(request, &predecessor);
+        let request = args_into_verify_foreign_tx_request(request);
 
         let promise_index = env::promise_yield_create(
             method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
@@ -802,7 +802,7 @@ impl MpcContract {
                     .as_affine();
                 let expected_public_key = derive_key_secp256k1(
                     &affine,
-                    &crate::primitives::signature::Tweak::new(request.tweak.0),
+                    &crate::primitives::signature::Tweak::new([0u8; 32]),
                 )
                 .map_err(RespondError::from)?;
 
@@ -2467,7 +2467,7 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup_with_purpose(
+        let (_context, mut contract, secret_key) = basic_setup_with_purpose(
             SignatureScheme::Secp256k1,
             DomainPurpose::ForeignTx,
             &mut rng,
@@ -2476,9 +2476,7 @@ mod tests {
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
-        let derivation_path = "what is it".to_string();
         let request_args = VerifyForeignTransactionRequestArgs {
-            derivation_path: derivation_path.clone(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2487,10 +2485,8 @@ mod tests {
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
         };
-        let predecessor = context.predecessor_account_id;
-
         // When
-        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
         contract.verify_foreign_transaction(request_args);
         contract
             .get_pending_verify_foreign_tx_request(&request)
@@ -2502,11 +2498,10 @@ mod tests {
             )],
         });
         let payload_hash = payload.compute_msg_hash().unwrap().0;
-        // simulate signature and response to the request
-        let tweak = derive_foreign_tx_tweak(&predecessor, &derivation_path);
+        // simulate signature and response to the request (no tweak for foreign tx)
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let derived_secret_key = derive_secret_key(&secret_key_ec, &Tweak::new(tweak.0));
+        let derived_secret_key = derive_secret_key(&secret_key_ec, &Tweak::new([0u8; 32]));
         let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
         let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload_hash).unwrap();
         let signature = dtos::SignatureResponse::Secp256k1(
@@ -2543,14 +2538,13 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _secret_key) = basic_setup_with_purpose(
+        let (_context, mut contract, _secret_key) = basic_setup_with_purpose(
             SignatureScheme::Secp256k1,
             DomainPurpose::ForeignTx,
             &mut rng,
         );
         contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let request_args = VerifyForeignTransactionRequestArgs {
-            derivation_path: "".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2559,8 +2553,7 @@ mod tests {
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
         };
-        let predecessor = context.predecessor_account_id;
-        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
 
         // When
         contract.verify_foreign_transaction(request_args);
@@ -2611,7 +2604,6 @@ mod tests {
 
         // When
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
-            derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2644,7 +2636,6 @@ mod tests {
 
         // When - requesting Bitcoin which is not in the policy
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
-            derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {

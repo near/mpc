@@ -66,7 +66,7 @@ impl From<BuildableAbstractRequest> for ForeignChainRpcRequestWithExpectations {
     }
 }
 
-impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet> {
     pub fn new_abstract() -> Self {
         Self {
             request: AbstractRequest {
@@ -75,17 +75,16 @@ impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet, NotSet>
                 expected_block_hash: None,
                 expected_logs: vec![],
             },
-            derivation_path: NotSet,
             domain_id: NotSet,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet> {
     pub fn with_tx_id(
         self,
         tx_id: impl Into<EvmTxId>,
-    ) -> ForeignChainRequestBuilder<AbstractRequest<EvmTxId, NotSet>, NotSet, NotSet> {
+    ) -> ForeignChainRequestBuilder<AbstractRequest<EvmTxId, NotSet>, NotSet> {
         ForeignChainRequestBuilder {
             request: AbstractRequest {
                 tx_id: tx_id.into(),
@@ -93,17 +92,16 @@ impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet, NotSet>
                 expected_block_hash: None,
                 expected_logs: vec![],
             },
-            derivation_path: self.derivation_path,
             domain_id: self.domain_id,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<AbstractRequest<EvmTxId, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<AbstractRequest<EvmTxId, NotSet>, NotSet> {
     pub fn with_finality(
         self,
         finality: impl Into<EvmFinality>,
-    ) -> ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet, NotSet> {
+    ) -> ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet> {
         ForeignChainRequestBuilder {
             request: AbstractRequest {
                 finality: finality.into(),
@@ -111,13 +109,12 @@ impl ForeignChainRequestBuilder<AbstractRequest<EvmTxId, NotSet>, NotSet, NotSet
                 expected_block_hash: self.request.expected_block_hash,
                 expected_logs: self.request.expected_logs,
             },
-            derivation_path: self.derivation_path,
             domain_id: self.domain_id,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet> {
     pub fn with_expected_block_hash(self, block_hash: impl Into<AbstractBlockHash>) -> Self {
         ForeignChainRequestBuilder {
             request: AbstractRequest {
@@ -126,7 +123,6 @@ impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet, NotSet> {
                 expected_block_hash: Some(block_hash.into()),
                 expected_logs: self.request.expected_logs,
             },
-            derivation_path: self.derivation_path,
             domain_id: self.domain_id,
         }
     }
@@ -224,7 +220,6 @@ mod test {
             .with_finality(EvmFinality::Finalized)
             .with_expected_log(1, log_a.clone())
             .with_expected_log(2, log_b.clone())
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             .build();
 
@@ -251,7 +246,6 @@ mod test {
     #[test]
     fn build_produces_correct_request_args() {
         // given
-        let path = "test_path".to_string();
         let domain_id = DomainId::from(2);
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
@@ -263,7 +257,6 @@ mod test {
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash)
             .with_expected_log(5, log.clone())
-            .with_derivation_path(path.clone())
             .with_domain_id(domain_id)
             .build();
 
@@ -274,7 +267,6 @@ mod test {
                 finality: EvmFinality::Finalized,
                 extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
             }),
-            derivation_path: path,
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };
@@ -295,7 +287,6 @@ mod test {
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash)
             .with_expected_log(5, log.clone())
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             .build();
 
@@ -323,7 +314,6 @@ mod test {
         let (verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(EvmTxId::from([123; 32]))
             .with_finality(EvmFinality::Safe)
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             // when
             .build();
@@ -338,7 +328,6 @@ mod test {
         let (_verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(EvmTxId::from([42; 32]))
             .with_finality(EvmFinality::Latest)
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             .build();
 

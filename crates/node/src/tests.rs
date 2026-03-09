@@ -112,7 +112,7 @@ impl OneNodeTestConfig {
                     static_web_data(&self.secrets, None),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
-                    &self.config,
+                    self.config.clone(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
@@ -457,7 +457,6 @@ pub async fn request_verify_foreign_tx_and_await_response(
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
             domain_id: domain.id.0.into(),
-            derivation_path: "m/44'/60'/0'/0/0".to_string(),
             payload_version: ForeignTxPayloadVersion::V1,
         },
     };

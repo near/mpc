@@ -50,7 +50,7 @@ impl From<BuildableBitcoinRequest> for ForeignChainRpcRequestWithExpectations {
     }
 }
 
-impl ForeignChainRequestBuilder<BitcoinRequest<NotSet, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<BitcoinRequest<NotSet, NotSet>, NotSet> {
     pub fn new_bitcoin() -> Self {
         Self {
             request: BitcoinRequest {
@@ -58,47 +58,44 @@ impl ForeignChainRequestBuilder<BitcoinRequest<NotSet, NotSet>, NotSet, NotSet> 
                 confirmations: NotSet,
                 expected_block_hash: None,
             },
-            derivation_path: NotSet,
             domain_id: NotSet,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<BitcoinRequest<NotSet, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<BitcoinRequest<NotSet, NotSet>, NotSet> {
     pub fn with_tx_id(
         self,
         tx_id: impl Into<BitcoinTxId>,
-    ) -> ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet, NotSet> {
+    ) -> ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet> {
         ForeignChainRequestBuilder {
             request: BitcoinRequest {
                 tx_id: tx_id.into(),
                 confirmations: self.request.confirmations,
                 expected_block_hash: None,
             },
-            derivation_path: self.derivation_path,
             domain_id: self.domain_id,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<BitcoinRequest<BitcoinTxId, NotSet>, NotSet> {
     pub fn with_block_confirmations(
         self,
         confirmations: impl Into<BlockConfirmations>,
-    ) -> ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet, NotSet> {
+    ) -> ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet> {
         ForeignChainRequestBuilder {
             request: BitcoinRequest {
                 confirmations: confirmations.into(),
                 tx_id: self.request.tx_id,
                 expected_block_hash: self.request.expected_block_hash,
             },
-            derivation_path: self.derivation_path,
             domain_id: self.domain_id,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet> {
     pub fn with_expected_block_hash(self, block_hash: impl Into<BitcoinBlockHash>) -> Self {
         ForeignChainRequestBuilder {
             request: BitcoinRequest {
@@ -106,7 +103,6 @@ impl ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet, NotSet> {
                 confirmations: self.request.confirmations,
                 expected_block_hash: Some(block_hash.into()),
             },
-            derivation_path: self.derivation_path,
             domain_id: self.domain_id,
         }
     }
@@ -168,7 +164,6 @@ mod test {
     #[test]
     fn build_produces_correct_request_args() {
         // given
-        let path = "test_path".to_string();
         let domain_id = DomainId::from(2);
         let tx_id = BitcoinTxId::from([123; 32]);
         let expected_hash = [9; 32];
@@ -178,7 +173,6 @@ mod test {
             .with_tx_id(tx_id.clone())
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
-            .with_derivation_path(path.clone())
             .with_domain_id(domain_id)
             .build();
 
@@ -189,7 +183,6 @@ mod test {
                 confirmations: BlockConfirmations::from(10),
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
-            derivation_path: path,
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };
@@ -208,7 +201,6 @@ mod test {
             .with_tx_id(tx_id.clone())
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             .build();
 
@@ -233,7 +225,6 @@ mod test {
         let (verifier, request_args) = ForeignChainRequestBuilder::new_bitcoin()
             .with_tx_id(BitcoinTxId::from([123; 32]))
             .with_block_confirmations(10)
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             // when
             .build();

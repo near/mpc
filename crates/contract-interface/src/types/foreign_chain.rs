@@ -6,7 +6,7 @@ use sha2::Digest;
 use std::collections::BTreeMap;
 
 use crate::types::SignatureResponse;
-use crate::types::primitives::{AccountId, DomainId, Tweak};
+use crate::types::primitives::{AccountId, DomainId};
 
 #[derive(
     Debug,
@@ -71,7 +71,6 @@ impl schemars::JsonSchema for ForeignTxPayloadVersion {
 )]
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
-    pub derivation_path: String,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
 }
@@ -95,7 +94,6 @@ pub struct VerifyForeignTransactionRequestArgs {
 )]
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
-    pub tweak: Tweak,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
 }
