@@ -47,8 +47,8 @@ pub fn verify_at_timestamp(
     })?;
 
     // Build expected report data from the node's public keys
-    let tls_key_bytes = static_data.near_p2p_public_key.to_bytes();
-    let account_key_bytes = static_data.near_signer_public_key.to_bytes();
+    let tls_key_bytes = *static_data.near_p2p_public_key.as_bytes();
+    let account_key_bytes = *static_data.near_signer_public_key.as_bytes();
     let report_data =
         mpc_attestation::report_data::ReportDataV1::new(tls_key_bytes, account_key_bytes);
     let report_data: mpc_attestation::report_data::ReportData = report_data.into();
