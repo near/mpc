@@ -7,6 +7,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 ## [9.9.2] - 2026-03-09
 
+### 💼 Other
+
+- (@SimonRastikian): V9.9.2
+
+
 ### 🚜 Refactor
 
 - (@anodar): Retry read calls in localnet script (#2318)
