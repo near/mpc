@@ -1,4 +1,4 @@
-use crate::primitives::{SyncChecker, ViewFunctionQuerier};
+use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
 use crate::state_viewer::{ContractStateSubscriber, ContractViewer, MethodViewer};
 use crate::types::RawObservedState;
 use async_trait::async_trait;
@@ -11,10 +11,10 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct MockChainState {
     pub sync_response: Arc<RwLock<Result<bool, MockError>>>,
-    pub view_function_querier_state: Arc<Mutex<MockViewFunctionQuerierState>>,
+    pub view_function_querier_state: Arc<Mutex<MockViewFunctionQuerySubmitterState>>,
 }
 
-pub struct MockViewFunctionQuerierState {
+pub struct MockViewFunctionQuerySubmitterState {
     pub response: Result<RawObservedState, MockError>,
     pub submitted: Vec<Call>,
 }
@@ -98,10 +98,12 @@ impl MockChainStateBuilder {
     pub fn build(self) -> MockChainState {
         MockChainState {
             sync_response: Arc::new(RwLock::new(self.sync_response)),
-            view_function_querier_state: Arc::new(Mutex::new(MockViewFunctionQuerierState {
-                response: self.view_function_query_response,
-                submitted: Vec::new(),
-            })),
+            view_function_querier_state: Arc::new(Mutex::new(
+                MockViewFunctionQuerySubmitterState {
+                    response: self.view_function_query_response,
+                    submitted: Vec::new(),
+                },
+            )),
         }
     }
 }
@@ -115,7 +117,7 @@ impl SyncChecker for MockChainState {
 }
 
 #[async_trait]
-impl ViewFunctionQuerier for MockChainState {
+impl ViewFunctionQuerySubmitter for MockChainState {
     type Error = MockError;
     async fn view_function_query(
         &self,

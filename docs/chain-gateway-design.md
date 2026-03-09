@@ -461,9 +461,9 @@ pub struct BlockHeight(u64);
 Note that the above traits derive from `ContractViewer`, which in turn derives from two low-level traits.
 
 ```rust
-/// Waits for sync then delegates to ViewFunctionQuerier.
+/// Waits for sync then delegates to ViewFunctionQuerySubmitter.
 /// Supertraits provide the raw RPC plumbing.
-pub trait ContractViewer: SyncChecker + ViewFunctionQuerier {
+pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
     async fn view_raw(
         &self,
         contract_id: &AccountId,
@@ -473,7 +473,7 @@ pub trait ContractViewer: SyncChecker + ViewFunctionQuerier {
 }
 
 // queries the actual state
-pub trait ViewFunctionQuerier: Send + Sync + 'static {
+pub trait ViewFunctionQuerySubmitter: Send + Sync + 'static {
     async fn view_function_query(
         &self,
         contract_id: &AccountId,

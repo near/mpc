@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
-use crate::primitives::{SyncChecker, ViewFunctionQuerier};
+use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
 use crate::types::ObservedState;
 use async_trait::async_trait;
 use near_account_id::AccountId;
@@ -11,7 +11,7 @@ use super::subscription::ContractMethodSubscription;
 
 /// All other viewer traits are derived from this one
 #[async_trait]
-pub trait ContractViewer: SyncChecker + ViewFunctionQuerier {
+pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
     // waits until self is synced and then queries the view function
     async fn view_raw(
         &self,
