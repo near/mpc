@@ -17,7 +17,7 @@ use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConf
 use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     primitives::{
@@ -218,7 +218,8 @@ impl MpcAddKeysCmd {
             let public_data: StaticWebData = response.json::<StaticWebData>().await.unwrap();
 
             let mpc_participant = MpcParticipantSetup {
-                p2p_public_key: public_data.near_p2p_public_key,
+                p2p_public_key: VerifyingKey::try_from(&public_data.near_p2p_public_key)
+                    .expect("valid p2p public key"),
                 responding_account_id: participant.responding_account_id.clone(),
             };
 
@@ -228,17 +229,22 @@ impl MpcAddKeysCmd {
                 .set_mpc_participant(mpc_participant.clone());
 
             // add all access keys:
-            for key in public_data.near_responder_public_keys {
+            for key in &public_data.near_responder_public_keys {
                 setup
                     .accounts
                     .account_mut(&mpc_participant.responding_account_id)
-                    .add_access_key(key)
+                    .add_access_key(
+                        VerifyingKey::try_from(key).expect("valid responder public key"),
+                    )
                     .await;
             }
             setup
                 .accounts
                 .account_mut(account_id)
-                .add_access_key(public_data.near_signer_public_key)
+                .add_access_key(
+                    VerifyingKey::try_from(&public_data.near_signer_public_key)
+                        .expect("valid signer public key"),
+                )
                 .await;
         }
     }
