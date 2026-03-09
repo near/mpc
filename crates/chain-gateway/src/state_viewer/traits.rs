@@ -127,15 +127,14 @@ pub trait MethodViewer: ContractViewer {
         Arg: Serialize + Sync,
         Res: DeserializeOwned + Send + Clone,
     {
-        let args: Vec<u8> = serde_json::to_string(args)
-            .map_err(|err| ChainGatewayError::Serialization {
+        let args: Vec<u8> =
+            serde_json::to_vec(args).map_err(|err| ChainGatewayError::Serialization {
                 op: ChainGatewayOp::ViewCall {
                     account_id: contract_id.to_string(),
                     method_name: method_name.to_string(),
                 },
                 source: Arc::new(err),
-            })?
-            .into_bytes();
+            })?;
         let res = self.view_raw(&contract_id, method_name, &args).await?;
         let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
             ChainGatewayError::Deserialization {
