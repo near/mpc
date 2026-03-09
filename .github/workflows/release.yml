@@ -244,7 +244,7 @@ jobs:
   # Runs after both retag-docker-images and build-contract complete.
   create-release:
     name: "Create draft GitHub release"
-    needs: [release-info, retag-docker-images, build-contract]
+    needs: [release-info, build-docker-images, build-contract]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -280,12 +280,12 @@ jobs:
       - name: Compose release body
         env:
           VERSION: ${{ needs.release-info.outputs.version }}
-          NODE_MANIFEST: ${{ needs.retag-docker-images.outputs.mpc_node_manifest_digest }}
-          NODE_IMAGE_ID: ${{ needs.retag-docker-images.outputs.mpc_node_image_id }}
-          NODE_GCP_MANIFEST: ${{ needs.retag-docker-images.outputs.mpc_node_gcp_manifest_digest }}
-          NODE_GCP_IMAGE_ID: ${{ needs.retag-docker-images.outputs.mpc_node_gcp_image_id }}
-          LAUNCHER_MANIFEST: ${{ needs.retag-docker-images.outputs.mpc_launcher_manifest_digest }}
-          LAUNCHER_IMAGE_ID: ${{ needs.retag-docker-images.outputs.mpc_launcher_image_id }}
+          NODE_MANIFEST: ${{ needs.build-docker-images.outputs.mpc_node_manifest_digest }}
+          NODE_IMAGE_ID: ${{ needs.build-docker-images.outputs.mpc_node_image_id }}
+          NODE_GCP_MANIFEST: ${{ needs.build-docker-images.outputs.mpc_node_gcp_manifest_digest }}
+          NODE_GCP_IMAGE_ID: ${{ needs.build-docker-images.outputs.mpc_node_gcp_image_id }}
+          LAUNCHER_MANIFEST: ${{ needs.build-docker-images.outputs.mpc_launcher_manifest_digest }}
+          LAUNCHER_IMAGE_ID: ${{ needs.build-docker-images.outputs.mpc_launcher_image_id }}
           CONTRACT_HASH: ${{ needs.build-contract.outputs.contract-hash }}
         run: |
           cp release-notes-raw.md release-notes.md
