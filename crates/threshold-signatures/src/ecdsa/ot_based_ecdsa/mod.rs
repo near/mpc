@@ -51,9 +51,7 @@ pub struct PresignOutput {
 
 impl ConstantTimeEq for PresignOutput {
     fn ct_eq(&self, other: &Self) -> Choice {
-        self.big_r.ct_eq(&other.big_r)
-            & self.k.ct_eq(&other.k)
-            & self.sigma.ct_eq(&other.sigma)
+        self.big_r.ct_eq(&other.big_r) & self.k.ct_eq(&other.k) & self.sigma.ct_eq(&other.sigma)
     }
 }
 
