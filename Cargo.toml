@@ -94,7 +94,7 @@ derive_more = { version = "2.1.1", features = [
     "from",
     "into",
 ] }
-digest = "0.10.7"
+digest = "0.11.1"
 dstack-sdk = { version = "0.1.2" }
 dstack-sdk-types = { version = "0.1.2", features = ["borsh"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
