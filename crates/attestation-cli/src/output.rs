@@ -82,7 +82,9 @@ fn print_verification_details(result: &VerificationResult) {
 }
 
 fn format_timestamp(unix_secs: u64) -> String {
-    match OffsetDateTime::from_unix_timestamp(i64::try_from(unix_secs).expect("timestamp should be lower than `i64::MAX`")) {
+    match OffsetDateTime::from_unix_timestamp(
+        i64::try_from(unix_secs).expect("timestamp should be lower than `i64::MAX`"),
+    ) {
         Ok(dt) => {
             let (year, month, day) = dt.to_calendar_date();
             let (hour, minute, second) = dt.to_hms();
