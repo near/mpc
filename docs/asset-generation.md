@@ -214,83 +214,32 @@ unowned assets, since it delegates to `clean_db()`. The only event that
 clears them is a full asset wipe on epoch change (resharing). In normal
 operation this constitutes a slow disk storage leak.
 
-## Background asset generation loops
+## Background asset generation
 
-Background generation is launched by `spawn_background_tasks()`
-(`crates/node/src/providers/ecdsa.rs`). It spawns:
+Assets are continuously generated in the background. The node
+configuration specifies:
 
-1. **One** triple generation loop (shared across all OT-based ECDSA domains).
-2. **One** presignature generation loop **per domain**.
+- The number of triples and presignatures each node should own
+  (`desired_triples_to_buffer`, `desired_presignatures_to_buffer`).
+- The number of asset generation computations a node can run
+  concurrently (`concurrency`).
 
-### Triple generation loop
+If a node owns fewer assets than configured, it initiates new generation
+computations (see
+[`providers/ecdsa/triple.rs`](https://github.com/near/mpc/blob/main/crates/node/src/providers/ecdsa/triple.rs)
+and
+[`providers/ecdsa/presign.rs`](https://github.com/near/mpc/blob/main/crates/node/src/providers/ecdsa/presign.rs)).
+Triples are generated in batches of 64, while presignatures are generated one at
+a time. There is one triple generation loop shared across all OT-based ECDSA
+domains, and one presignature generation loop per domain.
 
-Source: `crates/node/src/providers/ecdsa/triple.rs`
+The followers for a presignature computation must match the borrowers of
+the triple pair consumed in that computation. Since `take_owned()` on
+the triple store **blocks** if no online triples are available, this is
+the most common reason presignature generation stalls.
 
-```
-loop {
-    update metrics
-    if num_owned + in_flight < desired_triples_to_buffer
-       AND in_flight < concurrency * 2 * 64:
-        pick threshold random online participants
-        reserve batch of 64 IDs
-        spawn async task (semaphore-limited to `concurrency`):
-            run MPC triple protocol → 64 triples
-            pair and store each as owned
-        sleep(parallel_triple_generation_stagger_time_sec)
-        continue
-
-    if store is full (num_owned == desired):
-        maybe_discard_owned(32)   // clean out unusable assets
-
-    sleep 100ms
-}
-```
-
-Key details:
-
-- Triples are generated in **batches of 64** (`SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE`).
-  Each batch produces 64 raw triples which are paired into 32 `PairedTriple` values.
-- The leader selects `threshold` random online participants.
-- `InFlightGenerationTracker` counts how many triples are "in flight"
-  (spawned but not yet completed) using an atomic counter with a drop guard.
-- A tokio semaphore limits actual concurrent protocol executions to
-  `config.concurrency`.
-- A stagger delay (`parallel_triple_generation_stagger_time_sec`) between
-  successive spawns prevents all tasks from starting at the same time
-  and competing for resources.
-
-### Presignature generation loop
-
-Source: `crates/node/src/providers/ecdsa/presign.rs`
-
-```
-loop {
-    update metrics + progress tracker
-    if num_owned + in_flight < desired_presignatures_to_buffer
-       AND in_flight < concurrency * 2:
-        reserve 1 ID
-        take_owned triple (BLOCKS until one is available)
-        participant set = participants from that triple
-        spawn async task (semaphore-limited to `concurrency`):
-            run MPC presign protocol → 1 presignature
-            store as owned presignature
-        continue
-
-    if store is full (num_owned == desired):
-        maybe_discard_owned(1)
-
-    sleep 100ms
-}
-```
-
-Key details:
-
-- Presignatures are generated **one at a time**.
-- The followers for a presignature computation must match the borrowers
-  of the triple pair consumed in that computation.
-- `take_owned()` on the triple store will **block** if no online triples
-  are available.
-- The progress tracker reports whether the loop is "waiting for triples".
+See [Appendix](#appendix)
+for a more detailed explanation.
 
 ## Signature consumption
 
@@ -398,3 +347,69 @@ Eventually the node will exhaust its owned presignatures. At that point
 never arrive), and the node stops being able to lead signature
 computations. It can still participate as a **follower**, since
 `take_unowned(id)` does not depend on the local generation loop.
+
+## Appendix
+
+### Triple generation loop
+
+Source: `crates/node/src/providers/ecdsa/triple.rs`
+
+```
+loop {
+    update metrics
+    if num_owned + in_flight < desired_triples_to_buffer
+       AND in_flight < concurrency * 2 * 64:
+        pick threshold random online participants
+        reserve batch of 64 IDs
+        spawn async task (semaphore-limited to `concurrency`):
+            run MPC triple protocol → 64 triples
+            pair and store each as owned
+        sleep(parallel_triple_generation_stagger_time_sec)
+        continue
+
+    if store is full (num_owned == desired):
+        maybe_discard_owned(32)   // clean out unusable assets
+
+    sleep 100ms
+}
+```
+
+- Triples are generated in **batches of 64** (`SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE`).
+  Each batch produces 64 raw triples which are paired into 32 `PairedTriple` values.
+- The leader selects `threshold` random online participants.
+- `InFlightGenerationTracker` counts how many triples are "in flight"
+  (spawned but not yet completed) using an atomic counter with a drop guard.
+- A tokio semaphore limits actual concurrent protocol executions to
+  `config.concurrency`.
+- A stagger delay (`parallel_triple_generation_stagger_time_sec`) between
+  successive spawns prevents all tasks from starting at the same time
+  and competing for resources.
+
+### Presignature generation loop
+
+Source: `crates/node/src/providers/ecdsa/presign.rs`
+
+```
+loop {
+    update metrics + progress tracker
+    if num_owned + in_flight < desired_presignatures_to_buffer
+       AND in_flight < concurrency * 2:
+        reserve 1 ID
+        take_owned triple (BLOCKS until one is available)
+        participant set = participants from that triple
+        spawn async task (semaphore-limited to `concurrency`):
+            run MPC presign protocol → 1 presignature
+            store as owned presignature
+        continue
+
+    if store is full (num_owned == desired):
+        maybe_discard_owned(1)
+
+    sleep 100ms
+}
+```
+
+- Presignatures are generated **one at a time**.
+- `take_owned()` on the triple store will **block** if no online triples
+  are available.
+- The progress tracker reports whether the loop is "waiting for triples".
