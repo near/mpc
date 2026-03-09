@@ -4860,6 +4860,107 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_launcher_compose_lifecycle_with_mpc_expiry() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let sec = 1_000_000_000u64; // nanoseconds per second
+        let day = 24 * 60 * 60 * sec; // nanoseconds in a day
+        let upgrade_deadline = 7 * day; // default tee_upgrade_deadline_duration (7 days)
+        let t0 = sec; // base timestamp (1 second in nanoseconds)
+
+        // Helper: vote all participants for an MPC hash at a given timestamp
+        let vote_mpc = |contract: &mut MpcContract, hash: MpcDockerImageHash, ts: u64| {
+            for (account_id, _, _) in participant_list {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(ts)
+                    .build());
+                contract
+                    .vote_code_hash(hash.clone())
+                    .expect("mpc vote should succeed");
+            }
+        };
+
+        // Helper: vote threshold participants for a launcher hash at a given timestamp
+        let vote_launcher = |contract: &mut MpcContract, hash: LauncherImageHash, ts: u64| {
+            for (account_id, _, _) in &participant_list[0..3] {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(ts)
+                    .build());
+                contract
+                    .vote_add_launcher_hash(hash.clone())
+                    .expect("launcher vote should succeed");
+            }
+        };
+
+        let l1 = make_launcher_hash(0xA1);
+        let l2 = make_launcher_hash(0xA2);
+        let m1 = MpcDockerImageHash::from([0x11; 32]);
+        let m2 = MpcDockerImageHash::from([0x22; 32]);
+        let m3 = MpcDockerImageHash::from([0x33; 32]);
+
+        // Step 1: Vote M1 at t0, then add L1 → compose: {L1,M1}
+        vote_mpc(&mut contract, m1.clone(), t0);
+        vote_launcher(&mut contract, l1.clone(), t0);
+        assert_eq!(contract.allowed_launcher_compose_hashes().len(), 1);
+
+        // Step 2: Vote M2 at t0 + 1 day → compose: {L1,M1}, {L1,M2}
+        let t1 = t0 + day;
+        vote_mpc(&mut contract, m2.clone(), t1);
+        assert_eq!(contract.allowed_launcher_compose_hashes().len(), 2);
+
+        // Step 3: Advance time past M2's deadline so M1 is fully expired.
+        // valid_entries keeps the last expired entry as cutoff, so M1 only drops
+        // when M2's grace period also passes. M2 remains as the cutoff entry.
+        // M2 added at t1, deadline = t1 + 7 days. Advance past that.
+        let t2 = t1 + upgrade_deadline + sec;
+
+        // Stored compose hashes persist (they're in AllowedLauncherImages, not re-derived)
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(participant_list[0].0.clone())
+            .predecessor_account_id(participant_list[0].0.clone())
+            .block_timestamp(t2)
+            .build());
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes().len(),
+            2,
+            "stored compose hashes persist even after MPC hash expires"
+        );
+
+        // Step 4: Add L2 at t2. M1 is fully expired, M2 at cutoff → L2 gets only {L2,M2}
+        // Total: {L1,M1}, {L1,M2}, {L2,M2}
+        vote_launcher(&mut contract, l2.clone(), t2);
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes().len(),
+            3,
+            "L2 paired only with valid M2, not expired M1"
+        );
+
+        // Step 5: Vote M3 at t2 → adds {L1,M3} and {L2,M3}
+        // Total: {L1,M1}, {L1,M2}, {L1,M3}, {L2,M2}, {L2,M3}
+        vote_mpc(&mut contract, m3.clone(), t2);
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes().len(),
+            5,
+            "M3 paired with both L1 and L2"
+        );
+
+        // Verify specific compose hashes
+        use crate::tee::proposal::get_docker_compose_hash;
+        let compose_hashes = contract.allowed_launcher_compose_hashes();
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m1)));
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m2)));
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m3)));
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l2, &m2)));
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l2, &m3)));
+        // L2 was never paired with M1 (M1 was expired when L2 was added)
+        assert!(!compose_hashes.contains(&get_docker_compose_hash(&l2, &m1)));
+    }
+
     #[cfg(all(feature = "__abi-generate", not(target_arch = "wasm32")))]
     #[test]
     fn mpc_contract_borsh_schema_has_not_changed() {
