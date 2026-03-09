@@ -609,7 +609,7 @@ To launch the MPC node in the TEE environment, use the Docker Compose file from 
 
 Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image digest retrieved from the contract.
 
-For details on how to map this hash to a specific Docker image published on DockerHub, or to the corresponding source code, see the section [MPC Node Upgrades](#mpc-node-upgrades).
+For details on how to map this hash to a specific Docker image published on DockerHub, or to the corresponding source code, see the section [MPC Node Image Upgrade](#mpc-node-image-upgrade).
 
 Example digest value:
 
@@ -617,7 +617,7 @@ Example digest value:
 DEFAULT_IMAGE_DIGEST=sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
 ```
 
-You can retrieve the allowed MPC Docker image hash directly from the contract using the NEAR CLI. The latest allowed image hash 
+You can retrieve the allowed MPC Docker image hash directly from the contract using the NEAR CLI. The latest allowed image hash
 will appear first in the returned vector:
 
 ```bash
@@ -1021,26 +1021,28 @@ You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issue
 
 And when the resharing has finished look for… (TBD) [#906](https://github.com/near/mpc/issues/906)
 
-## MPC Node Upgrades
+## Upgrades
 
-From time to time, MPC nodes will need to be upgraded.  
-This section describes how to vote for a new MPC Docker image hash and how to securely upgrade the MPC node in the CVM.
+There are two types of upgrades, with different frequencies and operator effort:
 
-When a new MPC node is released, the release will along with precompiled binaries contain the following information:
+| Upgrade Type | Frequency | Operator Effort | Sealing Key Changes |
+| :--- | :--- | :--- | :--- |
+| MPC node image | High (~monthly) | Vote + restart CVM | No |
+| Launcher / CVM | Low | Vote + deploy new CVM + migrate key shares | Yes |
 
-* Git commit used to build the MPC image, identified by the release tag.
-* Link to Docker Hub (or another repository) containing the released MPC Docker image.  
-* Hash of the MPC Docker image (note: this is not the same as the Docker image manifest hash published on Docker Hub).  
+When either type of hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
-> **Important:** Each operator is responsible for verifying that the MPC Docker image hash being voted for corresponds to the intended MPC Git commit, and for performing their own due diligence on the code.
+## MPC Node Image Upgrade
 
-**Main Steps:**
+This is the most common upgrade. When a new MPC node version is released, operators vote for the new image hash and restart their CVM. The MPC node image hash does **not** affect the sealing key, so existing key shares remain accessible.
 
-1. Verify that the Docker image hash matches the expected MPC node Git commit.  
-2. Vote for the new Docker image hash in the contract.  
-3. Upgrade the MPC node running in your CVM.
+**Steps:**
 
-### MPC node Image/code inspection
+1. Verify the Docker image hash (see [Image/code inspection](#imagecode-inspection)).
+2. Vote for the new hash in the contract.
+3. Update `user-config.conf` and restart the CVM.
+
+### Image/code inspection
 
 The following steps allow you to inspect the code that was used to build the
 docker image. Let's assume you want to vote for a docker image with tag
@@ -1086,20 +1088,20 @@ before. In the same way, the launcher images published in
 verified. The one shown above corresponds to
 [mpc-launcher:main-828f816](https://hub.docker.com/layers/nearone/mpc-launcher/main-828f816/)
 
-* Do your own self do diligence on the code/binary
+* Do your own due diligence on the code/binary
 
-### **Voting for the Image**
+> **Important:** Each operator is responsible for verifying that the image hashes being voted for correspond to the intended Git commit, and for performing their own due diligence on the code.
 
-After deciding to vote for a new MPC Docker image hash, each participant submits a vote for that hash.  
-A **threshold** number of participant votes is required in order for the vote to pass.
+### Voting for the MPC image hash
 
-Vote Command using NEAR CLI:
+Each participant submits a vote for the new MPC Docker image hash.
+A **threshold** number of participant votes is required for the vote to pass.
 
 ```bash
-  near contract call-function as-transaction \
+near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_code_hash \
-  json-args '{"code_hash": "<IMAGE_HASH>"}' \
+  json-args '{“code_hash”: “<IMAGE_HASH>”}' \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1112,33 +1114,104 @@ The **IMAGE_HASH** argument must be provided as an SHA-256 hex digest.
 
 For example, for the digest
 
-````bash
+```bash
 IMAGE_HASH=4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
-````
+```
 
 TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
 
-### **Update the MPC node**
+### Update the MPC node
 
-After voting has finished, the MPC node will detect that there is a new approved MPC docker image hash register on the contract, and will download and save the hash into a secure location inside the CVM.
+After voting has finished, the MPC node will detect that there is a new approved MPC docker image hash registered on the contract, and will download and save the hash into a secure location inside the CVM.
 
 You can view this has happened by
 
 TBD [#909](https://github.com/near/mpc/issues/909) \- add logs/screen shoot.
 
-Following the hash update, you should upgrade the MPC node by following those steps:  
-1\. Manually confirm the MPC dockerhub path/tag.  (optionly)
-2\. Update the dockerhub image path/tag in the user-config.conf  
-3\. Restart the CVM.  
+Following the hash update, you should upgrade the MPC node by following those steps:
+1. (Optional) Manually confirm the MPC DockerHub path/tag matches the voted hash.
+2. Update the DockerHub image path/tag in `user-config.conf`.
+3. Restart the CVM.
 
-#### Confirm that you have the correct dockerhub link to the approved MPC docker image
+#### Confirm that you have the correct DockerHub link to the approved MPC docker image
 
-* Assume the dockerhub link provided to you is  nearone/mpc-node-gcp:abc..
-* download the image to some local machine via the command:
-  “docker pull nearone/mpc-node-gcp:abc..  
-* Retrieve the image hash via  
-  * docker inspect nearone/mpc-node-gcp:abc | grep “Id”:  
-* Check that you got "Id":"xyz…", that matches the hash you voted for.
+* Assume the DockerHub link provided to you is `nearone/mpc-node-gcp:abc..`
+* Download the image to some local machine via the command:
+  `docker pull nearone/mpc-node-gcp:abc..`
+* Retrieve the image hash via
+  * `docker inspect nearone/mpc-node-gcp:abc | grep “Id”:`
+* Check that you got `”Id”:”xyz…”`, that matches the hash you voted for.
+
+## Launcher / CVM Upgrade
+
+Launcher upgrades are less frequent than MPC node upgrades. Unlike MPC node upgrades, changing the launcher image affects the sealing key derivation, which means existing encrypted key shares **cannot** be decrypted by the new CVM. This requires deploying a new CVM and migrating key shares from the old one.
+
+For full design details, see the [CVM Upgrades section in the TEE design doc](securing-mpc-with-tee-design-doc.md#cvm-upgrades).
+
+**Steps:**
+
+1. Verify the launcher image hash.
+2. Participants vote to approve the new launcher image hash.
+3. Operator deploys a new CVM with the new launcher image.
+4. Operator migrates key shares from the old CVM to the new one using the [migration service](node-migration-guide.md).
+5. After all operators have migrated, participants vote to remove the old launcher hash.
+
+### Launcher image/code inspection
+
+TBD - add launcher image verification steps.
+
+### Voting for a launcher image hash
+
+**Adding a launcher image hash** (requires threshold votes):
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_add_launcher_hash \
+  json-args '{“launcher_hash”: “<LAUNCHER_IMAGE_HASH>”}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+**Removing a launcher image hash** (requires ALL participants to vote):
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_remove_launcher_hash \
+  json-args '{“launcher_hash”: “<LAUNCHER_IMAGE_HASH>”}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+You can query the currently allowed launcher image hashes:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  allowed_launcher_image_hashes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+### Deploy new CVM and migrate key shares
+
+After the new launcher hash is approved, deploy a new CVM with the updated launcher image and migrate key shares from the old node. Both old and new launcher hashes are accepted by the contract during the migration period.
+
+For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](migration-service.md).
+
+### Remove old launcher hash
+
+After all operators have migrated to the new CVM, participants should vote to remove the old launcher hash using `vote_remove_launcher_hash` (see above). This requires **all** participants to vote, ensuring no node is still running with the old launcher.
 
 ## Updating the CVM `user-config.conf` with new registry information
 

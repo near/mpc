@@ -56,7 +56,7 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 
-use mpc_primitives::hash::LauncherDockerComposeHash;
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
     env::{self},
     log, near, near_bindgen,
@@ -74,7 +74,7 @@ use primitives::{
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
-    proposal::MpcDockerImageHash,
+    proposal::{LauncherVoteAction, MpcDockerImageHash},
     tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
 
@@ -1385,6 +1385,80 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Vote to add a new launcher image hash to the allowed set. Requires threshold votes.
+    /// When the threshold is reached, compose hashes are automatically derived for all
+    /// currently allowed MPC image hashes.
+    #[handle_result]
+    pub fn vote_add_launcher_hash(
+        &mut self,
+        launcher_hash: LauncherImageHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_add_launcher_hash: signer={}, launcher_hash={:?}",
+            env::signer_account_id(),
+            launcher_hash,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for a new launcher hash before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = LauncherVoteAction::Add(launcher_hash.clone());
+        let votes = self.tee_state.vote_launcher(action, &participant);
+
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        if votes >= self.threshold()?.value() {
+            let added = self
+                .tee_state
+                .add_launcher_image(launcher_hash, tee_upgrade_deadline_duration);
+            log!("launcher hash add result: {}", added);
+        }
+
+        Ok(())
+    }
+
+    /// Vote to remove a launcher image hash from the allowed set. Requires ALL participants
+    /// to vote for removal, since this invalidates attestations of nodes running that launcher.
+    #[handle_result]
+    pub fn vote_remove_launcher_hash(
+        &mut self,
+        launcher_hash: LauncherImageHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_remove_launcher_hash: signer={}, launcher_hash={:?}",
+            env::signer_account_id(),
+            launcher_hash,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote to remove a launcher hash before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = LauncherVoteAction::Remove(launcher_hash.clone());
+        let votes = self.tee_state.vote_launcher(action, &participant);
+
+        // Removal requires ALL participants to vote
+        let total_participants = threshold_parameters.participants().len() as u64;
+        if votes >= total_participants {
+            let removed = self.tee_state.remove_launcher_image(&launcher_hash);
+            log!("launcher hash remove result: {}", removed);
+        }
+
+        Ok(())
+    }
+
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
@@ -1663,7 +1737,11 @@ impl MpcContract {
     }
 
     pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
-        self.tee_state.allowed_launcher_compose_hashes.clone()
+        self.tee_state.get_allowed_launcher_compose_hashes()
+    }
+
+    pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash> {
+        self.tee_state.get_allowed_launcher_hashes()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
@@ -4229,6 +4307,7 @@ mod tests {
     }
 
     /// Sets up a contract with an approved MPC hash by having the participants vote for it.
+    /// Also adds the legacy launcher image hash so that compose hashes are derived correctly.
     /// This is a helper function commonly used in tests that require pre-approved hashes.
     fn setup_approved_mpc_hash(
         contract: &mut MpcContract,
@@ -4236,6 +4315,10 @@ mod tests {
         mpc_hash: &Hash32<Image>,
         block_timestamp_ns: u64,
     ) {
+        // Add the legacy launcher image first, so that compose hashes are derived
+        // when the MPC hash is voted in.
+        setup_approved_launcher_hash(contract, participant_account_ids, block_timestamp_ns);
+
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(participant_account_id.clone())
@@ -4246,6 +4329,32 @@ mod tests {
             contract
                 .vote_code_hash(mpc_hash.clone())
                 .expect("vote succeeds");
+        }
+    }
+
+    /// Adds the legacy launcher image hash used in test attestation data.
+    fn setup_approved_launcher_hash(
+        contract: &mut MpcContract,
+        participant_account_ids: &[near_sdk::AccountId],
+        block_timestamp_ns: u64,
+    ) {
+        let launcher_hash_bytes: [u8; 32] =
+            hex::decode("e28cb0425db06255fe5fc7aadb79534ac63c94c7a721f75c1af1e934d2eb0701")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let launcher_hash = LauncherImageHash::from(launcher_hash_bytes);
+
+        for participant_account_id in participant_account_ids {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(participant_account_id.clone())
+                .predecessor_account_id(participant_account_id.clone())
+                .block_timestamp(block_timestamp_ns)
+                .build());
+
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("launcher vote succeeds");
         }
     }
 
@@ -4495,6 +4604,260 @@ mod tests {
         assert!(votes
             .proposal_by_account
             .contains_key(&dtos::AccountId(first_account.to_string())));
+    }
+
+    fn make_launcher_hash(byte: u8) -> LauncherImageHash {
+        LauncherImageHash::from([byte; 32])
+    }
+
+    #[test]
+    fn test_vote_add_launcher_hash_reaches_threshold() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xAA);
+
+        // First 2 votes (below threshold of 3) — launcher should NOT be added yet
+        for (account_id, _, _) in &participant_list[0..2] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("vote should succeed");
+        }
+        assert!(
+            contract.allowed_launcher_image_hashes().is_empty(),
+            "launcher hash should not be added before threshold"
+        );
+
+        // 3rd vote reaches threshold — launcher should be added
+        let (account_id, _, _) = &participant_list[2];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+
+        let allowed = contract.allowed_launcher_image_hashes();
+        assert_eq!(allowed.len(), 1);
+        assert_eq!(allowed[0], launcher_hash);
+    }
+
+    #[test]
+    fn test_vote_add_launcher_hash_duplicate_vote_is_idempotent() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xBB);
+
+        let (account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+
+        // Same participant votes twice — should count as 1 vote
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("duplicate vote should succeed");
+
+        assert!(
+            contract.allowed_launcher_image_hashes().is_empty(),
+            "duplicate vote should not double-count"
+        );
+    }
+
+    #[test]
+    fn test_vote_remove_launcher_hash_requires_unanimity() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xCC);
+
+        // First, add the launcher hash (all 4 vote to add)
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("add vote should succeed");
+        }
+        assert_eq!(contract.allowed_launcher_image_hashes().len(), 1);
+
+        // Now vote to remove — first 3 votes (not all 4) should NOT remove
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_remove_launcher_hash(launcher_hash.clone())
+                .expect("remove vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_launcher_image_hashes().len(),
+            1,
+            "launcher hash should not be removed before unanimity"
+        );
+
+        // 4th vote — unanimous, should remove
+        let (account_id, _, _) = &participant_list[3];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_remove_launcher_hash(launcher_hash.clone())
+            .expect("remove vote should succeed");
+
+        assert!(
+            contract.allowed_launcher_image_hashes().is_empty(),
+            "launcher hash should be removed after unanimity"
+        );
+    }
+
+    #[test]
+    fn test_vote_add_launcher_hash_derives_compose_hashes() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xDD);
+
+        // First approve an MPC image hash so compose hashes can be derived
+        let mpc_hash_bytes: [u8; 32] = [0x11; 32];
+        let mpc_hash = mpc_primitives::hash::MpcDockerImageHash::from(mpc_hash_bytes);
+        let block_ts = 1_000_000_000u64;
+
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_code_hash(mpc_hash.clone())
+                .expect("mpc vote should succeed");
+        }
+
+        // Now add a launcher hash — should auto-derive compose hashes
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("launcher vote should succeed");
+        }
+
+        let compose_hashes = contract.allowed_launcher_compose_hashes();
+        assert_eq!(
+            compose_hashes.len(),
+            1,
+            "should have 1 compose hash (1 launcher x 1 mpc)"
+        );
+    }
+
+    #[test]
+    fn test_allowed_launcher_image_hashes_view_returns_empty_initially() {
+        let (contract, _participants, _first) = setup_tee_test_contract(3, 2);
+        assert!(contract.allowed_launcher_image_hashes().is_empty());
+    }
+
+    #[test]
+    fn test_vote_add_launcher_hash_clears_votes_on_success() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xEE);
+
+        // Vote with 3 participants to reach threshold
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("vote should succeed");
+        }
+        assert_eq!(contract.allowed_launcher_image_hashes().len(), 1);
+
+        // Votes should be cleared — voting for a second hash should start from 0
+        let launcher_hash_2 = make_launcher_hash(0xFF);
+        let (account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash_2.clone())
+            .expect("vote should succeed");
+
+        // Only 1 vote for hash_2, should not be added yet
+        assert_eq!(
+            contract.allowed_launcher_image_hashes().len(),
+            1,
+            "second hash should not be added with only 1 vote"
+        );
+    }
+
+    #[test]
+    fn test_new_mpc_image_derives_compose_for_existing_launchers() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xAA);
+        let block_ts = 1_000_000_000u64;
+
+        // First approve an MPC image
+        let mpc_hash_1 = mpc_primitives::hash::MpcDockerImageHash::from([0x11; 32]);
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_code_hash(mpc_hash_1.clone())
+                .expect("mpc vote should succeed");
+        }
+
+        // Add a launcher hash
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("launcher vote should succeed");
+        }
+        assert_eq!(contract.allowed_launcher_compose_hashes().len(), 1);
+
+        // Now vote in a second MPC image — should auto-derive a new compose hash
+        let mpc_hash_2 = mpc_primitives::hash::MpcDockerImageHash::from([0x22; 32]);
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_code_hash(mpc_hash_2.clone())
+                .expect("mpc vote 2 should succeed");
+        }
+
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes().len(),
+            2,
+            "should have 2 compose hashes (1 launcher x 2 mpc images)"
+        );
     }
 
     #[cfg(all(feature = "__abi-generate", not(target_arch = "wasm32")))]

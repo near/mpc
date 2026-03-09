@@ -109,6 +109,22 @@ pub struct Image;
     BorshDeserialize,
 )]
 pub struct Compose;
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+pub struct Launcher;
 
 /// Hash of an MPC Docker image running in the TEE environment. Used as a proposal for a new TEE
 /// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
@@ -116,9 +132,13 @@ pub struct Compose;
 pub type MpcDockerImageHash = Hash32<Image>;
 
 /// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment. It
-/// is computed from the launcher's Docker Compose template populated with the MPC node's Docker
-/// image hash.
+/// is computed from the launcher's Docker Compose template populated with the launcher image hash
+/// and the MPC node's Docker image hash.
 pub type LauncherDockerComposeHash = Hash32<Compose>;
+
+/// Hash of the launcher Docker image itself. Voted on by participants to allow
+/// launcher upgrades without contract redeployment.
+pub type LauncherImageHash = Hash32<Launcher>;
 
 #[cfg(test)]
 mod tests {

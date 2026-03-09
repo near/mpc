@@ -57,6 +57,26 @@ expression: abi
         }
       },
       {
+        "name": "allowed_launcher_image_hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
+        }
+      },
+      {
         "name": "clean_tee_status",
         "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
         "kind": "call",
@@ -1139,6 +1159,35 @@ expression: abi
         }
       },
       {
+        "name": "vote_add_launcher_hash",
+        "doc": " Vote to add a new launcher image hash to the allowed set. Requires threshold votes.\n When the threshold is reached, compose hashes are automatically derived for all\n currently allowed MPC image hashes.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_cancel_keygen",
         "doc": " Casts a vote to cancel key generation. Any keys that have already been generated\n are kept and we transition into Running state; remaining domains are permanently deleted.\n Deleted domain IDs cannot be reused again in future calls to vote_add_domains.\n\n A next_domain_id that matches that in the state's domains struct must be passed in. This is\n to prevent stale requests from accidentally cancelling a future key generation state.",
         "kind": "call",
@@ -1181,6 +1230,35 @@ expression: abi
           "args": [
             {
               "name": "code_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_launcher_hash",
+        "doc": " Vote to remove a launcher image hash from the allowed set. Requires ALL participants\n to vote for removal, since this invalidates attestations of nodes running that launcher.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
               "type_schema": {
                 "type": "array",
                 "items": {
