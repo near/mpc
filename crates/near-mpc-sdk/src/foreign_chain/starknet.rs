@@ -50,7 +50,7 @@ impl From<BuildableStarknetRequest> for ForeignChainRpcRequestWithExpectations {
     }
 }
 
-impl ForeignChainRequestBuilder<StarknetRequest<NotSet, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<StarknetRequest<NotSet, NotSet>, NotSet> {
     pub fn new_starknet() -> Self {
         Self {
             request: StarknetRequest {
@@ -58,47 +58,47 @@ impl ForeignChainRequestBuilder<StarknetRequest<NotSet, NotSet>, NotSet, NotSet>
                 finality: NotSet,
                 expected_block_hash: None,
             },
-            derivation_path: NotSet,
+
             domain_id: NotSet,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<StarknetRequest<NotSet, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<StarknetRequest<NotSet, NotSet>, NotSet> {
     pub fn with_tx_id(
         self,
         tx_id: impl Into<StarknetTxId>,
-    ) -> ForeignChainRequestBuilder<StarknetRequest<StarknetTxId, NotSet>, NotSet, NotSet> {
+    ) -> ForeignChainRequestBuilder<StarknetRequest<StarknetTxId, NotSet>, NotSet> {
         ForeignChainRequestBuilder {
             request: StarknetRequest {
                 tx_id: tx_id.into(),
                 finality: NotSet,
                 expected_block_hash: None,
             },
-            derivation_path: self.derivation_path,
+
             domain_id: self.domain_id,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<StarknetRequest<StarknetTxId, NotSet>, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<StarknetRequest<StarknetTxId, NotSet>, NotSet> {
     pub fn with_finality(
         self,
         finality: impl Into<StarknetFinality>,
-    ) -> ForeignChainRequestBuilder<BuildableStarknetRequest, NotSet, NotSet> {
+    ) -> ForeignChainRequestBuilder<BuildableStarknetRequest, NotSet> {
         ForeignChainRequestBuilder {
             request: StarknetRequest {
                 finality: finality.into(),
                 tx_id: self.request.tx_id,
                 expected_block_hash: self.request.expected_block_hash,
             },
-            derivation_path: self.derivation_path,
+
             domain_id: self.domain_id,
         }
     }
 }
 
-impl ForeignChainRequestBuilder<BuildableStarknetRequest, NotSet, NotSet> {
+impl ForeignChainRequestBuilder<BuildableStarknetRequest, NotSet> {
     pub fn with_expected_block_hash(self, block_hash: impl Into<StarknetBlockHash>) -> Self {
         ForeignChainRequestBuilder {
             request: StarknetRequest {
@@ -106,7 +106,7 @@ impl ForeignChainRequestBuilder<BuildableStarknetRequest, NotSet, NotSet> {
                 finality: self.request.finality,
                 expected_block_hash: Some(block_hash.into()),
             },
-            derivation_path: self.derivation_path,
+
             domain_id: self.domain_id,
         }
     }
@@ -169,7 +169,6 @@ mod test {
     #[test]
     fn build_produces_correct_request_args() {
         // given
-        let path = "test_path".to_string();
         let domain_id = DomainId::from(2);
         let tx_id = StarknetTxId::from(StarknetFelt([123; 32]));
         let expected_hash = [9; 32];
@@ -179,7 +178,6 @@ mod test {
             .with_tx_id(tx_id.clone())
             .with_finality(StarknetFinality::AcceptedOnL1)
             .with_expected_block_hash(expected_hash)
-            .with_derivation_path(path.clone())
             .with_domain_id(domain_id)
             .build();
 
@@ -190,7 +188,7 @@ mod test {
                 finality: StarknetFinality::AcceptedOnL1,
                 extractors: vec![StarknetExtractor::BlockHash],
             }),
-            derivation_path: path,
+
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };
@@ -209,7 +207,6 @@ mod test {
             .with_tx_id(tx_id.clone())
             .with_finality(StarknetFinality::AcceptedOnL1)
             .with_expected_block_hash(expected_hash)
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             .build();
 
@@ -234,7 +231,6 @@ mod test {
         let (verifier, request_args) = ForeignChainRequestBuilder::new_starknet()
             .with_tx_id(StarknetTxId::from(StarknetFelt([123; 32])))
             .with_finality(StarknetFinality::AcceptedOnL2)
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             // when
             .build();
@@ -249,7 +245,6 @@ mod test {
         let (_verifier, request_args) = ForeignChainRequestBuilder::new_starknet()
             .with_tx_id(StarknetTxId::from(StarknetFelt([42; 32])))
             .with_finality(StarknetFinality::AcceptedOnL2)
-            .with_derivation_path("path".to_string())
             .with_domain_id(DomainId::from(1))
             .build();
 
