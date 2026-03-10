@@ -403,3 +403,32 @@ sequenceDiagram
 | **No direct key provisioning** | Operator never handles the AES key itself — only authorizes its creation via a signature |
 | **On-chain availability** | Encrypted seed is posted on the blockchain, allowing any authorized node CVM to derive the key without a direct channel to the migration CVM |
 | **Attestation binding** | Operator verifies CVM attestation before issuing the authorization signature |
+
+### Trust Assumptions Matrix
+
+In the following senarios, two trust assumptions are made;
+- As long as the Smartcontract is honest, everything that is posted there is signed. When the information is read from there the signature is verified - which authenticates the posting party.
+- The operator's  (MPC) public key stored in advance on the smart contract is authentic.
+
+| Entity | Scenario 1 | Scenario 2 | Scenario 3 | Scenario 4 | Scenario 5 | Scenario 6 | Scenario 7 | 
+|--------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Network | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Node CVM | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Node Host | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Migration Service CVM | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Migration Service Host | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| NEAR Blockchain / Smart Contract | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | 
+| Operator | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| TLS connection between CVMs | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| **Protocol Needed** | **(1)** | **(2)** | **(3)** | **(4)** | **(5)** | **(6)** | **(7)** |
+
+1. Baseline — all trusted components honest. No need for special AES transport key -- a basic TLS between the CVMs works. The TLS keys are stored in the smart contract.
+2. Operator compromised — attacker has operator credentials.
+Similarly to (1) a basic TLS between the CVMs works. The TLS keys are stored in the smart contract.
+3. Smart Contract cannot be trusted  -- The CVMs can communicate over the TLS securely as long as they receive their TLS keys from the operator.
+4. TLS compromised — If only the TLS is compromised/misconfigured, it would be sufficient to double layer the TLS communication of the CVMs with another similar secure communication channel such as Quick. The keys can be stored in the smart contract.
+5. Both the Smart contract is compromised and the TLS channel is misconfigured -- Barak's proposal should do the job.
+6. Both the operator is malicious and the TLS channel is misconfigured. The solution of (4) should apply well.
+7. Both the smart contract is compromised and the operator is malicious: This is an extreme case which we cannot allow as this would break the MPC assumption. -- Might need a more detailed argument
+
+**Last Senario**: Knowing that Senario 7 is not possible, we should build a protocol that defends for both "worst-case" senarios Senario 5 + Senario 6. In this regard, Simon claims that his proposal should be enough. Left to study in depth his proposal.
