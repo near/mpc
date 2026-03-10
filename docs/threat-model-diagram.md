@@ -417,7 +417,7 @@ In the following senarios, two trust assumptions are made;
 | Node Host | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Migration Service CVM | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Migration Service Host | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| NEAR Blockchain / Smart Contract | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | 
+| NEAR Blockchain / Smart Contract | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | 
 | Operator | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
 | TLS connection between CVMs | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
 | **Protocol Needed** | **(1)** | **(2)** | **(3)** | **(4)** | **(5)** | **(6)** | **(7)** |
