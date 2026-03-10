@@ -22,6 +22,13 @@ The `ckd()` protocol function -- a **single-round** protocol:
 - The coordinator aggregates and returns `CKDOutput`
 - Non-coordinator participants return `None`
 
+### `protocol_pv.rs`
+
+A variant of the CKD protocol with **public verifiability** (`ckd_pv()`):
+- The app public key is a pair `(a·G1, a·G2)` (type `AppPublicKeyPV`) instead of a single point
+- Nodes verify the app public key consistency
+- The coordinator verifies the aggregated output
+
 ### `app_id.rs`
 
 The `AppId` type -- an application identifier.
@@ -34,6 +41,7 @@ BLS scalar wrapper utilities for `hash_to_field` compatibility.
 
 - **`CKDOutput`** -- contains `(Y, C)` (the blinding point and encrypted signature). Provides `unmask(secret_scalar)` to recover the BLS signature.
 - **`CKDOutputOption`** -- `Option<CKDOutput>`, since only the coordinator receives output
+- **`AppPublicKeyPV`** -- app public key for the publicly verifiable variant: `(pk1: G1, pk2: G2)` where both encode the same secret scalar
 - **`hash_app_id_with_pk(pk, app_id)`** -- hash-to-curve on BLS12-381 G1
 
 ## DKG
