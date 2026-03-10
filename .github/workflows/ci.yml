@@ -172,15 +172,24 @@ jobs:
           os_and_arch=${os}-${arch}
           cd libs/nearcore
 
-          branch_name=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' | head -n 1 || echo "no-branch")
+          branches=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' || true)
           commit_hash=$(git rev-parse HEAD || echo "no-commit")
 
-          url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
-
           mkdir -p target/release
-          status_code=$(curl -v -o target/release/neard -w "%{http_code}" "${url}")
-          if [ "$status_code" -ne 200 ]; then
-            echo "curl failed with URL: ${url}, Status Code: ${status_code}"
+          downloaded=false
+          for branch_name in $branches; do
+            url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
+            status_code=$(curl -s -o target/release/neard -w "%{http_code}" "${url}")
+            if [ "$status_code" -eq 200 ]; then
+              echo "Downloaded neard from branch: ${branch_name}"
+              downloaded=true
+              break
+            fi
+            echo "Branch ${branch_name} failed (status ${status_code}), trying next..."
+          done
+
+          if [ "$downloaded" != "true" ]; then
+            echo "All branches failed for commit ${commit_hash}"
             exit 1
           fi
           chmod +x target/release/neard
