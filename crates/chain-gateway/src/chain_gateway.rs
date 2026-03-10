@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use near_account_id::AccountId;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearViewClientError};
@@ -19,7 +18,6 @@ impl ContractViewer for ChainGateway {}
 impl ContractStateSubscriber for ChainGateway {}
 impl MethodViewer for ChainGateway {}
 
-#[async_trait]
 impl SyncChecker for ChainGateway {
     type Error = NearClientError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
@@ -27,7 +25,6 @@ impl SyncChecker for ChainGateway {
     }
 }
 
-#[async_trait]
 impl ViewFunctionQuerySubmitter for ChainGateway {
     type Error = NearViewClientError;
     async fn view_function_query(

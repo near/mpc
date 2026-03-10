@@ -2,7 +2,6 @@ use super::monitoring::{MonitoringTask, make_monitoring_task};
 use super::traits::{ContractStateStream, ContractViewer};
 use crate::errors::ChainGatewayError;
 use crate::types::ObservedState;
-use async_trait::async_trait;
 use near_account_id::AccountId;
 use serde::de::DeserializeOwned;
 
@@ -23,7 +22,6 @@ where
     }
 }
 
-#[async_trait]
 impl<Res> ContractStateStream<Res> for ContractMethodSubscription<Res>
 where
     Res: DeserializeOwned + Send + Clone,

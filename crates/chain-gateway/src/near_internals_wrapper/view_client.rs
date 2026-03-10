@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
 
@@ -31,7 +30,6 @@ impl ViewClientWrapper {
     }
 }
 
-#[async_trait]
 impl ViewFunctionQuerySubmitter for ViewClientWrapper {
     type Error = NearViewClientError;
     /// calls view method contract_id::method_name(args) and returns the result

@@ -1,7 +1,6 @@
 use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
 use crate::state_viewer::{ContractStateSubscriber, ContractViewer, MethodViewer};
 use crate::types::RawObservedState;
-use async_trait::async_trait;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -108,7 +107,6 @@ impl MockChainStateBuilder {
     }
 }
 
-#[async_trait]
 impl SyncChecker for MockChainState {
     type Error = MockError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
@@ -116,7 +114,6 @@ impl SyncChecker for MockChainState {
     }
 }
 
-#[async_trait]
 impl ViewFunctionQuerySubmitter for MockChainState {
     type Error = MockError;
     async fn view_function_query(

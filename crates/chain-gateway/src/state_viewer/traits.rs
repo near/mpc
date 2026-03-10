@@ -1,34 +1,35 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
 use crate::types::ObservedState;
-use async_trait::async_trait;
 use near_account_id::AccountId;
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::subscription::ContractMethodSubscription;
 
 /// All other viewer traits are derived from this one
-#[async_trait]
 pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
     // waits until self is synced and then queries the view function
-    async fn view_raw(
+    fn view_raw(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> Result<ObservedState, ChainGatewayError> {
-        self.wait_for_full_sync().await;
-        self.view_function_query(contract_id, method_name, args)
-            .await
-            .map_err(|err| ChainGatewayError::ViewClient {
-                op: ChainGatewayOp::ViewCall {
-                    account_id: contract_id.to_string(),
-                    method_name: method_name.to_string(),
-                },
-                source: Arc::new(err),
-            })
+    ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send {
+        async move {
+            self.wait_for_full_sync().await;
+            self.view_function_query(contract_id, method_name, args)
+                .await
+                .map_err(|err| ChainGatewayError::ViewClient {
+                    op: ChainGatewayOp::ViewCall {
+                        account_id: contract_id.to_string(),
+                        method_name: method_name.to_string(),
+                    },
+                    source: Arc::new(err),
+                })
+        }
     }
 }
 
@@ -63,7 +64,6 @@ pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
 ///     assert_eq!(state.value, "hello");
 /// }
 /// ```
-#[async_trait]
 pub trait ContractStateSubscriber: ContractViewer + Clone {
     /// Subscribes to a contract view method and returns a stream of state updates.
     ///
@@ -72,6 +72,7 @@ pub trait ContractStateSubscriber: ContractViewer + Clone {
     /// # Type Parameter
     ///
     /// `T` is the deserialized return type of the contract method.
+    #[allow(async_fn_in_trait)]
     async fn subscribe<T>(
         &self,
         contract: AccountId,
@@ -115,8 +116,8 @@ pub trait ContractStateSubscriber: ContractViewer + Clone {
 ///     assert_eq!(result.observed_at, 1.into());
 /// }
 /// ```
-#[async_trait]
 pub trait MethodViewer: ContractViewer {
+    #[allow(async_fn_in_trait)]
     async fn view<Arg, Res>(
         &self,
         contract_id: AccountId,
@@ -155,12 +156,12 @@ pub trait MethodViewer: ContractViewer {
 /// and [`changed()`](ContractStateStream::changed) to wait for the next update.
 /// Only actual value changes (different bytes) trigger a notification (block
 /// height increases alone do not).
-#[async_trait]
 pub trait ContractStateStream<Res> {
     /// Returns the last value observed on chain and the block height at which it was first
     /// observed.
     fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
     /// Waits until the observed value changes.
+    #[allow(async_fn_in_trait)]
     async fn changed(&mut self) -> Result<(), ChainGatewayError>;
 }
 

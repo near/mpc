@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use near_async::messaging::CanSendAsync as _;
 
 use crate::{errors::NearClientError, primitives::SyncChecker};
@@ -22,7 +21,6 @@ impl ClientWrapper {
 }
 
 /// Implement SyncChecker for our near client
-#[async_trait]
 impl SyncChecker for ClientWrapper {
     type Error = NearClientError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
