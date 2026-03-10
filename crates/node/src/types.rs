@@ -77,7 +77,6 @@ pub struct VerifyForeignTxRequest {
     /// The receipt that generated the verify_foreign_tx request, which can be used to look up on chain.
     pub receipt_id: CryptoHash,
     pub request: dtos::ForeignChainRpcRequest,
-    pub tweak: dtos::Tweak,
     pub payload_version: dtos::ForeignTxPayloadVersion,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,

@@ -391,7 +391,6 @@ def test_verify_foreign_transaction_bitcoin(
                     "extractors": ["BlockHash"],
                 }
             },
-            "derivation_path": "test",
             "domain_id": secp_domain.id,
             "payload_version": 1,
         }
@@ -470,7 +469,6 @@ def test_verify_foreign_transaction_abstract(
                     "extractors": ["BlockHash", {"Log": {"log_index": 0}}],
                 }
             },
-            "derivation_path": "test",
             "domain_id": secp_domain.id,
             "payload_version": 1,
         }
@@ -549,7 +547,6 @@ def test_verify_foreign_transaction_starknet(
                     "extractors": ["BlockHash"],
                 }
             },
-            "derivation_path": "test",
             "domain_id": secp_domain.id,
             "payload_version": 1,
         }
