@@ -331,8 +331,9 @@ An alternative AES transport key establishment protocol that eliminates direct o
 ### Assumptions
 
 - There is an authenticated communication channel between the operator and CVMs.
-- **From the CVM perspective:** the operator public key (`pk_operator`) posted on the smart contract is assumed to be authentic.
-- **From the operator perspective:** each CVM provides attestation evidence together with its public key (`pk_cvm`).
+   - **From the CVM perspective:** the operator public key (`pk_operator`) posted on the smart contract is assumed to be authentic.
+   - **From the operator perspective:** each CVM provides attestation evidence together with its public key (`pk_cvm`).
+- As long as the Smartcontract is honest, everything that is posted there is signed. When the information is read from there the signature is verified - which authenticates the posting party.
 
 ### Protocol
 
@@ -340,9 +341,8 @@ An alternative AES transport key establishment protocol that eliminates direct o
 2. **Operator authorization** — Either CVM communicates with the operator, who returns a signature (`Signature_operator`) authorizing the start of communication.
 3. **Seed generation** — The migration CVM picks a random value `rand` and computes `AES-GCM-seed = H(Signature_operator, rand)`. Mixing the operator signature into the hash ensures the seed cannot be produced without prior operator authorization.
 4. **On-chain broadcast** — The migration CVM posts the following on the blockchain:
-   - `Enc_{pk_operator}(Signature_operator || AES-GCM-seed || rand)` — the seed material encrypted to the operator's public key so that only authorized CVMs (who can obtain decryption via the operator) can recover it.
-   - `Sig_{migration_CVM}(ciphertext)` — a signature over the ciphertext proving it originated from the attested migration CVM. The KEM-DEM paradigm can be used for the encryption step.
-5. **Node-side verification & derivation** — The node CVM reads the ciphertext from the blockchain, verifies `Sig_{migration_CVM}(ct)` to confirm it originated from the attested migration CVM, decrypts it, verifies `Signature_operator`, checks that `AES-GCM-seed == H(Signature_operator, rand)`, and derives the AES-GCM key.
+   - `ct = Enc_{pk_operator}(Signature_operator || AES-GCM-seed || rand)` — the seed material encrypted to the operator's public key so that only authorized CVMs (who can obtain decryption via the operator) can recover it.
+5. **Node-side verification & derivation** — The node CVM reads the ciphertext from the blockchain, confirms `ct` coming from the migration CVM, decrypts it, verifies `Signature_operator`, checks that `AES-GCM-seed == H(Signature_operator, rand)`.
 6. **Shared key** — Both CVMs independently derive the AES-GCM key from `AES-GCM-seed`. From this point they can use AES-GCM encrypted communication over TLS (defense-in-depth).
 
 ```mermaid
