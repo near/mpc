@@ -1,17 +1,20 @@
 # Triple and Presignature Asset Generation
 
-This document describes how the MPC node generates and manages its
-cryptographic assets — **triples** and **presignatures** — and their
-consumption during **signature generation**. It applies only to
-**OT-based ECDSA** (**Cait-Sith**) at this point.
+Some multi-party computation (MPC) protocols require pre-computed
+cryptographic material in the form of **triples** and **presignatures**
+(herein simply called **assets**) as input. This document describes how
+our MPC nodes manage asset generation, storage and consumption. It
+applies only to **OT-based ECDSA** (**Cait-Sith**) at this point.
 
-Triples and presignatures are pre-computed cryptographic material that
-the MPC protocol consumes during signing. Each one is generated once,
-stored, and consumed exactly once. Generating them ahead of time
-decouples the expensive cryptographic work from the latency-sensitive
-signature path.
-
-## Pipeline overview
+The system supports an arbitrary number of secret keys. Each key is
+uniquely identified by a `DomainId`, which maps to a combination of
+signature scheme (ECDSA/EdDSA), protocol (OT-Based ECDSA, Robust ECDSA,
+FROST EdDSA) and application (signatures, CKD, foreign transactions).
+See [#1649](github.com/near/mpc/issues/1649) for more information on
+domains. Triples are not domain-specific; a single shared triple store
+feeds presignature generation for all OT-based ECDSA domains.
+Presignatures are per-domain because they depend on the domain's key
+share.
 
 ```
 Triples  ──►  Presignatures  ──►  Signatures
@@ -19,19 +22,10 @@ Triples  ──►  Presignatures  ──►  Signatures
 ```
 
 Each MPC signature requires one **presignature**, and each presignature
-requires a pair of **triples** (called a `PairedTriple`). Triple generation
-is the bottleneck: it involves heavy OT-based cryptographic computation.
-Presignature generation is significantly faster, and signature generation
-is fairly cheap.
-
-The system supports an arbitrary number of secret keys. Each key is
-uniquely identified by a `DomainId`, which maps to a combination of
-signature scheme (ECDSA/EdDSA), protocol (OT-Based ECDSA, Robust ECDSA,
-FROST EdDSA) and application (signatures, CKD, foreign transactions).
-See #1649 for more information on domains.
-Triples are not domain-specific; a single shared triple store feeds
-presignature generation for all OT-based ECDSA domains. Presignatures
-are per-domain because they incorporate the domain's key share.
+requires a pair of **triples** (called a `PairedTriple`). Triple
+generation is the bottleneck: it involves heavy OT-based cryptographic
+computation. Presignature generation is significantly faster, and
+signature generation is fairly cheap.
 
 ## Queue design
 
