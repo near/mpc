@@ -179,7 +179,7 @@ jobs:
           downloaded=false
           for branch_name in $branches; do
             url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
-            status_code=$(curl -s -o target/release/neard -w "%{http_code}" "${url}")
+            status_code=$(curl -s -f -o target/release/neard -w "%{http_code}" "${url}" || true)
             if [ "$status_code" -eq 200 ]; then
               echo "Downloaded neard from branch: ${branch_name}"
               downloaded=true
