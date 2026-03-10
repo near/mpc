@@ -331,7 +331,7 @@ An alternative AES transport key establishment protocol that eliminates direct o
 ### Assumptions
 
 - There is an authenticated communication channel between the operator and CVMs.
-   - **From the CVM perspective:** the operator public key (`pk_operator`) posted on the smart contract is assumed to be authentic.
+   - **From the CVM perspective:** the operator public key (`pk_operator`) posted on the smart contract is assumed to be authentic. -- Here better using pk_operator to be a fresh signing key.
    - **From the operator perspective:** each CVM provides attestation evidence together with its public key (`pk_cvm`).
 - As long as the Smartcontract is honest, everything that is posted there is signed. When the information is read from there the signature is verified - which authenticates the posting party.
 
@@ -384,7 +384,7 @@ sequenceDiagram
     NODE ->> BC: Read ct
     BC -->> NODE: ct
     NODE ->> NODE: Decrypt ct with operator key
-    NODE ->> NODE: Verify Signature_operator
+    NODE ->> NODE: Verify(Signature_operator, pk_operator)
     NODE ->> NODE: Verify AES-GCM-seed == H(Signature_operator, rand)
 
     Note over MIG,NODE: Step 6 — Shared Key Established
