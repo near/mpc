@@ -9,30 +9,38 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use super::subscription::ContractMethodSubscription;
 
-/// Internal trait combining sync-checking and view-function querying.
-/// Waits for the node to be fully synced, then performs a raw (untyped) view call.
+/// Internal trait for performing raw (untyped) view calls.
 ///
 /// This is `pub(crate)` because it is an implementation detail — public consumers
 /// should use [`ViewMethod`] or [`SubscribeMethod`] instead.
-pub(crate) trait ViewRaw: SyncChecker + ViewFunctionQuerySubmitter {
+pub(crate) trait ViewRaw: Send + Sync + 'static {
     fn view_raw(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send {
-        async move {
-            self.wait_for_full_sync().await;
-            self.view_function_query(contract_id, method_name, args)
-                .await
-                .map_err(|err| ChainGatewayError::ViewClient {
-                    op: ChainGatewayOp::ViewCall {
-                        account_id: contract_id.to_string(),
-                        method_name: method_name.to_string(),
-                    },
-                    source: Arc::new(err),
-                })
-        }
+    ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send;
+}
+
+/// Blanket impl: any type that can check sync and submit view queries gets `ViewRaw`
+/// by waiting for full sync, then delegating to the view function query.
+impl<T: SyncChecker + ViewFunctionQuerySubmitter> ViewRaw for T {
+    async fn view_raw(
+        &self,
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<ObservedState, ChainGatewayError> {
+        self.wait_for_full_sync().await;
+        self.view_function_query(contract_id, method_name, args)
+            .await
+            .map_err(|err| ChainGatewayError::ViewClient {
+                op: ChainGatewayOp::ViewCall {
+                    account_id: contract_id.to_string(),
+                    method_name: method_name.to_string(),
+                },
+                source: Arc::new(err),
+            })
     }
 }
 
