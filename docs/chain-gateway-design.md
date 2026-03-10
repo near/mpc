@@ -425,15 +425,15 @@ The Chain Gateway offers a trait-based API for viewing and subscribing to contra
 It offers the following public API:
 ```rust
 /// One-shot typed view call with JSON serialization/deserialization.
-pub trait ViewMethod: Send + Sync {
-    async fn view_method<Arg: Serialize + Sync, Res: DeserializeOwned + Send + Clone>(
+pub trait ViewContractMethod {
+    async fn view_contract_method<Arg: Serialize + Sync, Res: DeserializeOwned + Send + Clone>(
         &self, contract_id: AccountId, method_name: &str, args: &Arg,
     ) -> Result<ObservedState<Res>, ChainGatewayError>;
 }
 
 /// Polls every 200ms; emits change only when returned bytes differ.
-pub trait SubscribeMethod: Send + Sync {
-    async fn subscribe_method<T: DeserializeOwned + Send + Clone>(
+pub trait SubscribeToContractMethod {
+    async fn subscribe_to_contract_method<T: DeserializeOwned + Send + Clone>(
         &self, contract: AccountId, view_method: &str,
     ) -> impl ContractStateStream<T> + Send;
 }
@@ -457,13 +457,14 @@ pub struct NoArgs {}
 pub struct BlockHeight(u64);
 ```
 
-The public traits (`ViewMethod`, `SubscribeMethod`) have no supertraits — they describe
-pure capabilities. Internally, `ChainGateway` implements them via a `pub(crate)` trait
-hierarchy that handles sync-waiting and raw RPC plumbing:
+The public traits (`ViewContractMethod`, `SubscribeToContractMethod`) have no supertraits
+— they describe pure capabilities. Internally, `ChainGateway` implements them via a
+`pub(crate)` trait hierarchy that handles sync-waiting and raw RPC plumbing:
 
 ```rust
-// Internal: waits for sync then delegates to ViewFunctionQuerySubmitter.
-pub(crate) trait ViewRaw: SyncChecker + ViewFunctionQuerySubmitter { ... }
+// Internal trait with no supertraits. Blanket-implemented for any type
+// that implements SyncChecker + ViewFunctionQuerySubmitter.
+pub(crate) trait ViewRaw { ... }
 
 // Internal: queries the actual state via the NEAR view client actor.
 pub(crate) trait ViewFunctionQuerySubmitter: Send + Sync + 'static { ... }
@@ -472,9 +473,9 @@ pub(crate) trait ViewFunctionQuerySubmitter: Send + Sync + 'static { ... }
 pub(crate) trait SyncChecker: Send + Sync + 'static { ... }
 ```
 
-Blanket impls provide `ViewMethod` for all `T: ViewRaw` and `SubscribeMethod`
-for all `T: ViewRaw + Clone`, so implementors only need to provide the low-level
-primitives.
+Blanket impls provide `ViewContractMethod` for all `T: ViewRaw` and
+`SubscribeToContractMethod` for all `T: ViewRaw + Clone`, so implementors only
+need to provide the low-level primitives.
 
 
 ##### Block Event Subscriber

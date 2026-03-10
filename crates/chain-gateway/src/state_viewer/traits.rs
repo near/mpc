@@ -12,7 +12,7 @@ use super::subscription::ContractMethodSubscription;
 /// Internal trait for performing raw (untyped) view calls.
 ///
 /// This is `pub(crate)` because it is an implementation detail — public consumers
-/// should use [`ViewMethod`] or [`SubscribeMethod`] instead.
+/// should use [`ViewContractMethod`] or [`SubscribeToContractMethod`] instead.
 pub(crate) trait ViewRaw: Send + Sync + 'static {
     fn view_raw(
         &self,
@@ -51,7 +51,7 @@ impl<T: SyncChecker + ViewFunctionQuerySubmitter> ViewRaw for T {
 ///
 /// ```
 /// use chain_gateway::mock::MockChainState;
-/// use chain_gateway::state_viewer::ViewMethod;
+/// use chain_gateway::state_viewer::ViewContractMethod;
 /// use chain_gateway::types::{NoArgs, ObservedState};
 ///
 /// #[tokio::main]
@@ -65,7 +65,7 @@ impl<T: SyncChecker + ViewFunctionQuerySubmitter> ViewRaw for T {
 ///         .build();
 ///
 ///     let result: ObservedState<String> = viewer
-///         .view_method("contract.near".parse().unwrap(), "get_greeting", &NoArgs {})
+///         .view_contract_method("contract.near".parse().unwrap(), "get_greeting", &NoArgs {})
 ///         .await
 ///         .unwrap();
 ///
@@ -73,8 +73,8 @@ impl<T: SyncChecker + ViewFunctionQuerySubmitter> ViewRaw for T {
 ///     assert_eq!(result.observed_at, 1.into());
 /// }
 /// ```
-pub trait ViewMethod {
-    fn view_method<Arg, Res>(
+pub trait ViewContractMethod {
+    fn view_contract_method<Arg, Res>(
         &self,
         contract_id: AccountId,
         method_name: &str,
@@ -93,7 +93,7 @@ pub trait ViewMethod {
 ///
 /// ```
 /// use chain_gateway::mock::MockChainState;
-/// use chain_gateway::state_viewer::{ContractStateStream, SubscribeMethod};
+/// use chain_gateway::state_viewer::{ContractStateStream, SubscribeToContractMethod};
 /// use chain_gateway::types::ObservedState;
 ///
 /// #[tokio::main]
@@ -107,14 +107,14 @@ pub trait ViewMethod {
 ///         .build();
 ///
 ///     let mut stream = viewer
-///         .subscribe_method::<String>("contract.near".parse().unwrap(), "get_greeting")
+///         .subscribe_to_contract_method::<String>("contract.near".parse().unwrap(), "get_greeting")
 ///         .await;
 ///
 ///     let state = stream.latest().unwrap();
 ///     assert_eq!(state.value, "hello");
 /// }
 /// ```
-pub trait SubscribeMethod {
+pub trait SubscribeToContractMethod {
     /// Subscribes to a contract view method and returns a stream of state updates.
     ///
     /// The returned stream polls the contract every 200 ms.
@@ -122,10 +122,10 @@ pub trait SubscribeMethod {
     /// # Type Parameter
     ///
     /// `T` is the deserialized return type of the contract method.
-    fn subscribe_method<T>(
+    fn subscribe_to_contract_method<T>(
         &self,
         contract: AccountId,
-        view_method: &str,
+        view_contract_method: &str,
     ) -> impl Future<Output = impl ContractStateStream<T> + Send> + Send
     where
         T: DeserializeOwned + Send + Clone;
@@ -145,9 +145,9 @@ pub trait ContractStateStream<Res> {
     fn changed(&mut self) -> impl Future<Output = Result<(), ChainGatewayError>> + Send;
 }
 
-/// Implement `ViewMethod` for any type that implements `ViewRaw`.
-impl<T: ViewRaw> ViewMethod for T {
-    async fn view_method<Arg, Res>(
+/// Implement `ViewContractMethod` for any type that implements `ViewRaw`.
+impl<T: ViewRaw> ViewContractMethod for T {
+    async fn view_contract_method<Arg, Res>(
         &self,
         contract_id: AccountId,
         method_name: &str,
@@ -179,17 +179,17 @@ impl<T: ViewRaw> ViewMethod for T {
     }
 }
 
-/// Implement `SubscribeMethod` for any cloneable type that implements `ViewRaw`.
-impl<T: ViewRaw + Clone> SubscribeMethod for T {
-    fn subscribe_method<R>(
+/// Implement `SubscribeToContractMethod` for any cloneable type that implements `ViewRaw`.
+impl<T: ViewRaw + Clone> SubscribeToContractMethod for T {
+    fn subscribe_to_contract_method<R>(
         &self,
         contract: AccountId,
-        view_method: &str,
+        view_contract_method: &str,
     ) -> impl Future<Output = impl ContractStateStream<R> + Send> + Send
     where
         R: DeserializeOwned + Send + Clone,
     {
-        ContractMethodSubscription::new(self.clone(), contract, view_method, b"{}".to_vec())
+        ContractMethodSubscription::new(self.clone(), contract, view_contract_method, b"{}".to_vec())
     }
 }
 
@@ -198,7 +198,7 @@ mod tests {
     use super::ViewRaw;
     use crate::errors::{ChainGatewayError, ChainGatewayOp};
     use crate::mock::{Call, MockChainState, MockError};
-    use crate::state_viewer::{ContractStateStream, SubscribeMethod, ViewMethod};
+    use crate::state_viewer::{ContractStateStream, SubscribeToContractMethod, ViewContractMethod};
     use crate::types::{NoArgs, RawObservedState};
     use near_account_id::AccountId;
     use rand::distributions::{Alphanumeric, DistString};
@@ -325,10 +325,10 @@ mod tests {
         handle.await.unwrap().unwrap();
     }
 
-    // --- view_method (ViewMethod) tests ---
+    // --- view_contract_method (ViewContractMethod) tests ---
 
     #[tokio::test]
-    async fn test_view_method_deserializes_response() {
+    async fn test_view_contract_method_deserializes_response() {
         let mut rng = StdRng::seed_from_u64(5);
         let block_height: u64 = rng.gen_range(1..1_000_000);
         let value = Alphanumeric.sample_string(&mut rng, 12);
@@ -343,7 +343,7 @@ mod tests {
             .build();
 
         let result = viewer
-            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_contract_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
             .await
             .unwrap();
 
@@ -352,14 +352,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_view_method_propagates_view_error() {
+    async fn test_view_contract_method_propagates_view_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Err(MockError::RpcError))
             .build();
 
         let err = viewer
-            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_contract_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
             .await
             .unwrap_err();
 
@@ -367,7 +367,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_view_method_returns_deserialization_error_on_bad_bytes() {
+    async fn test_view_contract_method_returns_deserialization_error_on_bad_bytes() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Ok(RawObservedState {
@@ -377,17 +377,17 @@ mod tests {
             .build();
 
         let err = viewer
-            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_contract_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
             .await
             .unwrap_err();
 
         assert!(matches!(err, ChainGatewayError::Deserialization { .. }));
     }
 
-    // --- subscribe_method (SubscribeMethod) tests ---
+    // --- subscribe_to_contract_method (SubscribeToContractMethod) tests ---
 
     #[tokio::test(start_paused = true)]
-    async fn test_subscribe_method_latest_returns_initial_value() {
+    async fn test_subscribe_to_contract_method_latest_returns_initial_value() {
         let mut rng = StdRng::seed_from_u64(8);
         let block_height: u64 = rng.gen_range(1..1_000_000);
         let value = Alphanumeric.sample_string(&mut rng, 12);
@@ -402,7 +402,7 @@ mod tests {
             .build();
 
         let mut sub = viewer
-            .subscribe_method::<String>("a.testnet".parse().unwrap(), "m")
+            .subscribe_to_contract_method::<String>("a.testnet".parse().unwrap(), "m")
             .await;
 
         let state = sub.latest().unwrap();
@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_subscribe_method_latest_returns_deserialization_error() {
+    async fn test_subscribe_to_contract_method_latest_returns_deserialization_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_view_function_query_response(Ok(RawObservedState {
@@ -421,7 +421,7 @@ mod tests {
             .build();
 
         let mut sub = viewer
-            .subscribe_method::<String>("a.testnet".parse().unwrap(), "m")
+            .subscribe_to_contract_method::<String>("a.testnet".parse().unwrap(), "m")
             .await;
 
         assert!(matches!(
@@ -431,7 +431,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_subscribe_method_changed_fires_on_value_change() {
+    async fn test_subscribe_to_contract_method_changed_fires_on_value_change() {
         let mut rng = StdRng::seed_from_u64(10);
         let initial = Alphanumeric.sample_string(&mut rng, 10);
         let updated = Alphanumeric.sample_string(&mut rng, 10);
@@ -445,7 +445,7 @@ mod tests {
             .build();
 
         let mut sub = viewer
-            .subscribe_method::<String>("a.testnet".parse().unwrap(), "m")
+            .subscribe_to_contract_method::<String>("a.testnet".parse().unwrap(), "m")
             .await;
         assert_eq!(sub.latest().unwrap().value, initial);
 
