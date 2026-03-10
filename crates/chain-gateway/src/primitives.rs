@@ -1,6 +1,6 @@
 //! This file contains the primitives we need to interact with the NEAR blockchain:
-//!     - SyncChecker --> checks whether the node is fully synced
-//!     - ViewFunctionQuerySubmitter --> can call view methods on a contract
+//!     - CheckSync --> checks whether the node is fully synced
+//!     - QueryViewFunction --> can call view methods on a contract
 //!     - TODO(#2342): LatestFinalBlockInfoFecher --> fetches height and hash of the latest final block
 //!     - TODO(#2342): SignedTransactionSubmitter --> submits  asigned transaction to the blockchain
 use crate::types::RawObservedState;
@@ -9,7 +9,7 @@ use std::future::Future;
 use std::time::Duration;
 
 /// Low-level trait for checking indexer sync status.
-pub trait SyncChecker: Send + Sync + 'static {
+pub trait CheckSync: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     /// Returns whether the node is currently syncing.
     fn is_syncing(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send;
@@ -34,9 +34,9 @@ pub trait SyncChecker: Send + Sync + 'static {
     }
 }
 
-pub trait ViewFunctionQuerySubmitter: Send + Sync + 'static {
+pub trait QueryViewFunction: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
-    fn view_function_query(
+    fn query_view_function(
         &self,
         contract_id: &AccountId,
         method_name: &str,

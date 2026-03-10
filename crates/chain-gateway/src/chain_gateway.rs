@@ -2,7 +2,7 @@ use near_account_id::AccountId;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearViewClientError};
 use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
-use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
+use crate::primitives::{CheckSync, QueryViewFunction};
 use crate::types::RawObservedState;
 
 #[derive(Clone)]
@@ -13,23 +13,23 @@ pub struct ChainGateway {
     client: ClientWrapper,
 }
 
-impl SyncChecker for ChainGateway {
+impl CheckSync for ChainGateway {
     type Error = NearClientError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
         self.client.is_syncing().await
     }
 }
 
-impl ViewFunctionQuerySubmitter for ChainGateway {
+impl QueryViewFunction for ChainGateway {
     type Error = NearViewClientError;
-    async fn view_function_query(
+    async fn query_view_function(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
     ) -> Result<RawObservedState, Self::Error> {
         self.view_client
-            .view_function_query(contract_id, method_name, args)
+            .query_view_function(contract_id, method_name, args)
             .await
     }
 }

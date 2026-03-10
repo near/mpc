@@ -1,4 +1,4 @@
-use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
+use crate::primitives::{CheckSync, QueryViewFunction};
 use crate::types::RawObservedState;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
@@ -39,7 +39,7 @@ impl MockChainState {
         inner.response = value;
     }
 
-    /// Wait for the next view_function_query call (polls submitted.len() every 10ms).
+    /// Wait for the next query_view_function call (polls submitted.len() every 10ms).
     pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
         tokio::time::timeout(max_wait_duration, async {
             let baseline = {
@@ -67,7 +67,7 @@ impl MockChainState {
 
 pub struct MockChainStateBuilder {
     sync_response: Result<bool, MockError>,
-    view_function_query_response: Result<RawObservedState, MockError>,
+    query_view_function_response: Result<RawObservedState, MockError>,
 }
 
 impl Default for MockChainStateBuilder {
@@ -80,7 +80,7 @@ impl MockChainStateBuilder {
     pub fn new() -> Self {
         Self {
             sync_response: Err(MockError::NotInitialized),
-            view_function_query_response: Err(MockError::NotInitialized),
+            query_view_function_response: Err(MockError::NotInitialized),
         }
     }
 
@@ -93,7 +93,7 @@ impl MockChainStateBuilder {
         mut self,
         r: Result<RawObservedState, MockError>,
     ) -> Self {
-        self.view_function_query_response = r;
+        self.query_view_function_response = r;
         self
     }
 
@@ -102,7 +102,7 @@ impl MockChainStateBuilder {
             sync_response: Arc::new(RwLock::new(self.sync_response)),
             view_function_query_submitter_state: Arc::new(Mutex::new(
                 MockViewFunctionQuerySubmitterState {
-                    response: self.view_function_query_response,
+                    response: self.query_view_function_response,
                     submitted: Vec::new(),
                 },
             )),
@@ -110,16 +110,16 @@ impl MockChainStateBuilder {
     }
 }
 
-impl SyncChecker for MockChainState {
+impl CheckSync for MockChainState {
     type Error = MockError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
         self.sync_response.read().unwrap().clone()
     }
 }
 
-impl ViewFunctionQuerySubmitter for MockChainState {
+impl QueryViewFunction for MockChainState {
     type Error = MockError;
-    async fn view_function_query(
+    async fn query_view_function(
         &self,
         contract_id: &AccountId,
         method_name: &str,

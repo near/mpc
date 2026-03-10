@@ -463,14 +463,14 @@ The public traits (`ViewContractMethod`, `SubscribeToContractMethod`) have no su
 
 ```rust
 // Internal trait with no supertraits. Blanket-implemented for any type
-// that implements SyncChecker + ViewFunctionQuerySubmitter.
+// that implements CheckSync + QueryViewFunction.
 pub(crate) trait ViewRaw { ... }
 
 // Internal: queries the actual state via the NEAR view client actor.
-pub(crate) trait ViewFunctionQuerySubmitter: Send + Sync + 'static { ... }
+pub(crate) trait QueryViewFunction: Send + Sync + 'static { ... }
 
 // Internal: checks whether the node is still syncing with the blockchain.
-pub(crate) trait SyncChecker: Send + Sync + 'static { ... }
+pub(crate) trait CheckSync: Send + Sync + 'static { ... }
 ```
 
 Blanket impls provide `ViewContractMethod` for all `T: ViewRaw` and

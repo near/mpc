@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
-use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
+use crate::primitives::{CheckSync, QueryViewFunction};
 use crate::types::ObservedState;
 use near_account_id::AccountId;
 use serde::{Serialize, de::DeserializeOwned};
@@ -24,7 +24,7 @@ pub(crate) trait ViewRaw: Send + Sync + 'static {
 
 /// Blanket impl: any type that can check sync and submit view queries gets `ViewRaw`
 /// by waiting for full sync, then delegating to the view function query.
-impl<T: SyncChecker + ViewFunctionQuerySubmitter> ViewRaw for T {
+impl<T: CheckSync + QueryViewFunction> ViewRaw for T {
     async fn view_raw(
         &self,
         contract_id: &AccountId,
@@ -32,7 +32,7 @@ impl<T: SyncChecker + ViewFunctionQuerySubmitter> ViewRaw for T {
         args: &[u8],
     ) -> Result<ObservedState, ChainGatewayError> {
         self.wait_for_full_sync().await;
-        self.view_function_query(contract_id, method_name, args)
+        self.query_view_function(contract_id, method_name, args)
             .await
             .map_err(|err| ChainGatewayError::ViewClient {
                 op: ChainGatewayOp::ViewCall {
@@ -189,7 +189,12 @@ impl<T: ViewRaw + Clone> SubscribeToContractMethod for T {
     where
         R: DeserializeOwned + Send + Clone,
     {
-        ContractMethodSubscription::new(self.clone(), contract, view_contract_method, b"{}".to_vec())
+        ContractMethodSubscription::new(
+            self.clone(),
+            contract,
+            view_contract_method,
+            b"{}".to_vec(),
+        )
     }
 }
 
