@@ -73,7 +73,7 @@ impl<T: SyncChecker + ViewFunctionQuerySubmitter> ViewRaw for T {
 ///     assert_eq!(result.observed_at, 1.into());
 /// }
 /// ```
-pub trait ViewMethod: Send + Sync {
+pub trait ViewMethod {
     fn view_method<Arg, Res>(
         &self,
         contract_id: AccountId,
@@ -114,7 +114,7 @@ pub trait ViewMethod: Send + Sync {
 ///     assert_eq!(state.value, "hello");
 /// }
 /// ```
-pub trait SubscribeMethod: Send + Sync {
+pub trait SubscribeMethod {
     /// Subscribes to a contract view method and returns a stream of state updates.
     ///
     /// The returned stream polls the contract every 200 ms.
