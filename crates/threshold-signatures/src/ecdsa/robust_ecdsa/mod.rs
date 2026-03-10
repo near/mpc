@@ -9,6 +9,7 @@ use crate::{
     MaxMalicious,
 };
 use serde::{Deserialize, Serialize};
+use subtle::{Choice, ConstantTimeEq};
 use zeroize::ZeroizeOnDrop;
 
 /// The necessary inputs for the creation of a presignature.
@@ -23,7 +24,7 @@ pub struct PresignArguments {
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
 /// independently of the message
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ZeroizeOnDrop)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct PresignOutput {
     /// The public nonce commitment.
     #[zeroize(skip)]
@@ -35,6 +36,23 @@ pub struct PresignOutput {
     pub alpha: Scalar,
     pub beta: Scalar,
 }
+
+impl ConstantTimeEq for PresignOutput {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.big_r.ct_eq(&other.big_r)
+            & self.c.ct_eq(&other.c)
+            & self.e.ct_eq(&other.e)
+            & self.alpha.ct_eq(&other.alpha)
+            & self.beta.ct_eq(&other.beta)
+    }
+}
+
+impl PartialEq for PresignOutput {
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
+    }
+}
+impl Eq for PresignOutput {}
 
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
