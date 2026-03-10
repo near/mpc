@@ -1,5 +1,5 @@
 use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
-use crate::state_viewer::{ContractStateSubscriber, ContractViewer, MethodViewer};
+use crate::state_viewer::ViewRaw;
 use crate::types::RawObservedState;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
@@ -136,9 +136,7 @@ impl ViewFunctionQuerySubmitter for MockChainState {
     }
 }
 
-impl ContractViewer for MockChainState {}
-impl MethodViewer for MockChainState {}
-impl ContractStateSubscriber for MockChainState {}
+impl ViewRaw for MockChainState {}
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum MockError {

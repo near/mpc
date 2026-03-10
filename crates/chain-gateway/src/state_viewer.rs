@@ -2,4 +2,5 @@ mod monitoring;
 mod subscription;
 mod traits;
 
-pub use traits::{ContractStateStream, ContractStateSubscriber, ContractViewer, MethodViewer};
+pub(crate) use traits::ViewRaw;
+pub use traits::{ContractStateStream, SubscribeMethod, ViewMethod};

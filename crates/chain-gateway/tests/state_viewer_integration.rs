@@ -2,7 +2,7 @@ use assert_matches::assert_matches;
 use base64::Engine;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::state_viewer::ContractStateStream;
-use chain_gateway::state_viewer::{ContractStateSubscriber, MethodViewer};
+use chain_gateway::state_viewer::{SubscribeMethod, ViewMethod};
 use chain_gateway::types::NoArgs;
 use chain_gateway::types::ObservedState;
 use near_indexer::near_primitives::hash::hash;
@@ -19,7 +19,7 @@ async fn test_view_contract_state() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let value: ObservedState<String> = gw
-        .view(
+        .view_method(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
             TEST_METHOD,
             &NoArgs {},
@@ -36,7 +36,7 @@ async fn test_view_nonexistent_method_returns_error() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let result = gw
-        .view::<NoArgs, String>(
+        .view_method::<NoArgs, String>(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
             "nonexistent",
             &NoArgs {},
@@ -54,7 +54,7 @@ async fn test_subscription_receives_initial_value() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let mut sub = gw
-        .subscribe::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), TEST_METHOD)
+        .subscribe_method::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), TEST_METHOD)
         .await;
 
     let res = sub.latest().expect("subscription latest should succeed");

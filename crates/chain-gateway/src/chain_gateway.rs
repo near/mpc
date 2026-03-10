@@ -3,7 +3,7 @@ use near_account_id::AccountId;
 use crate::errors::{ChainGatewayError, NearClientError, NearViewClientError};
 use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
 use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
-use crate::state_viewer::{ContractStateSubscriber, ContractViewer, MethodViewer};
+use crate::state_viewer::ViewRaw;
 use crate::types::RawObservedState;
 
 #[derive(Clone)]
@@ -14,9 +14,7 @@ pub struct ChainGateway {
     client: ClientWrapper,
 }
 
-impl ContractViewer for ChainGateway {}
-impl ContractStateSubscriber for ChainGateway {}
-impl MethodViewer for ChainGateway {}
+impl ViewRaw for ChainGateway {}
 
 impl SyncChecker for ChainGateway {
     type Error = NearClientError;

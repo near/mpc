@@ -1,5 +1,5 @@
 use super::monitoring::{MonitoringTask, make_monitoring_task};
-use super::traits::{ContractStateStream, ContractViewer};
+use super::traits::{ContractStateStream, ViewRaw};
 use crate::errors::ChainGatewayError;
 use crate::types::ObservedState;
 use near_account_id::AccountId;
@@ -53,7 +53,7 @@ impl<Res> ContractMethodSubscription<Res>
 where
     Res: DeserializeOwned,
 {
-    pub(super) async fn new<V: ContractViewer>(
+    pub(super) async fn new<V: ViewRaw>(
         viewer: V,
         contract_id: AccountId,
         method_name: &str,

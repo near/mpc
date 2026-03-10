@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use super::traits::ContractViewer;
+use super::traits::ViewRaw;
 
 pub(crate) struct MonitoringTask {
     _task_handle: JoinHandle<()>,
@@ -29,7 +29,7 @@ pub(crate) async fn make_monitoring_task<V>(
     args: Vec<u8>,
 ) -> MonitoringTask
 where
-    V: ContractViewer,
+    V: ViewRaw,
 {
     let observed_state = viewer.view_raw(&contract_id, method_name, &args).await;
 
@@ -54,7 +54,7 @@ where
 
 pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-async fn monitor<V: ContractViewer>(
+async fn monitor<V: ViewRaw>(
     viewer: V,
     contract_id: AccountId,
     method_name: String,
