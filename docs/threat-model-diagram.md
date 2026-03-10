@@ -364,7 +364,7 @@ sequenceDiagram
 
     Note over MIG,NODE: Step 1 — TLS Key Registration
     MIG ->> BC: Post TLS public key
-    NODE ->> BC: Post TLS public key
+    NODE ->> BC: Post TLS public key and a pk_node
 
     Note over OP,NODE: Step 2 — Operator Authorization
     MIG ->> OP: Request authorization (with attestation + pk_cvm)
@@ -376,22 +376,20 @@ sequenceDiagram
     MIG ->> MIG: Compute AES-GCM-seed = H(Signature_operator, rand)
 
     Note over MIG,BC: Step 4 — On-Chain Broadcast
-    MIG ->> MIG: Encrypt: ct = Enc_{pk_operator}(Signature_operator || AES-GCM-seed || rand)
-    MIG ->> MIG: Sign: sig = Sig_{migration_CVM}(ct)
+    MIG ->> MIG: Encrypt: ct = Enc_{pk_node}(Signature_operator || AES-GCM-seed || rand)
     Note right of MIG: KEM-DEM paradigm can be used
-    MIG ->> BC: Post (ct, sig)
+    MIG ->> BC: Post ct
 
     Note over NODE: Step 5 — Verification & Derivation
-    NODE ->> BC: Read (ct, sig)
-    BC -->> NODE: (ct, sig)
-    NODE ->> NODE: Verify Sig_{migration_CVM}(ct)
+    NODE ->> BC: Read ct
+    BC -->> NODE: ct
     NODE ->> NODE: Decrypt ct with operator key
     NODE ->> NODE: Verify Signature_operator
     NODE ->> NODE: Verify AES-GCM-seed == H(Signature_operator, rand)
-    NODE ->> NODE: Derive AES-GCM key from AES-GCM-seed
 
     Note over MIG,NODE: Step 6 — Shared Key Established
     MIG ->> MIG: Derive AES-GCM key from AES-GCM-seed
+    NODE ->> NODE: Derive AES-GCM key from AES-GCM-seed
     Note over MIG,NODE: Both CVMs now share the same AES-GCM key<br/>for defense-in-depth encrypted communication over TLS
 ```
 
