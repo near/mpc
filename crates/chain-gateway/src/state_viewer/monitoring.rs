@@ -68,7 +68,7 @@ async fn monitor<V: ContractViewer>(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
-                tracing::debug!(
+                tracing::info!(
                     contract_id = ?contract_id,
                     method_name = ?method_name,
                     "contract monitoring task cancelled"
@@ -251,7 +251,7 @@ mod tests {
         } else {
             init_spec
         };
-        let expected = spec_to_observed(expected, call);
+        let expected = spec_to_observed(expected, call.clone());
         match (found, expected) {
             (Ok(g), Ok(e)) => assert_eq!(g, e, "case: {name}"),
             (Err(g), Err(e)) => assert_eq!(g.to_string(), e.to_string(), "case: {name}"),
@@ -259,7 +259,7 @@ mod tests {
         }
 
         let calls = viewer.view_calls().await;
-        assert!(calls.iter().all(|c| c == &expected_call()), "case: {name}");
+        assert!(calls.iter().all(|c| c == &call), "case: {name}");
     }
 
     /// Verifies that the monitor function drops the sender when cancelled

@@ -74,6 +74,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::ContractMethodSubscription;
     use crate::errors::ChainGatewayError;
     use crate::mock::{MockChainState, MockError};
@@ -119,10 +121,10 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(
+        assert_matches!(
             sub.latest().unwrap_err(),
             ChainGatewayError::ViewClient { .. }
-        ));
+        );
     }
 
     #[tokio::test]

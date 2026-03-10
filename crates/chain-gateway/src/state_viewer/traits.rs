@@ -289,8 +289,9 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
         assert!(!handle.is_finished(), "should block while syncing");
 
-        *viewer.sync_response.write().unwrap() = Ok(false);
+        viewer.set_sync_response(Ok(false));
 
+        // wait_for_full_sync polls every 500ms; advance past one interval
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         handle.await.unwrap().unwrap();
     }

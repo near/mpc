@@ -47,7 +47,7 @@ pub async fn start(config: near_indexer::IndexerConfig) -> Result<ChainGateway, 
                 msg: err.to_string(),
             })?;
 
-    let near_node = near_indexer::Indexer::start_near_node(&config, near_config.clone())
+    let near_node = near_indexer::Indexer::start_near_node(&config, near_config)
         .await
         .map_err(|err| ChainGatewayError::StartupFailed {
             msg: err.to_string(),

@@ -9,8 +9,8 @@ use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct MockChainState {
-    pub sync_response: Arc<RwLock<Result<bool, MockError>>>,
-    pub view_function_querier_state: Arc<Mutex<MockViewFunctionQuerySubmitterState>>,
+    sync_response: Arc<RwLock<Result<bool, MockError>>>,
+    view_function_query_submitter_state: Arc<Mutex<MockViewFunctionQuerySubmitterState>>,
 }
 
 pub struct MockViewFunctionQuerySubmitterState {
@@ -30,21 +30,25 @@ impl MockChainState {
         MockChainStateBuilder::new()
     }
 
+    pub fn set_sync_response(&self, value: Result<bool, MockError>) {
+        *self.sync_response.write().unwrap() = value;
+    }
+
     /// Update the view function query response.
     pub async fn set_view_response(&self, value: Result<RawObservedState, MockError>) {
-        let mut inner = self.view_function_querier_state.lock().await;
+        let mut inner = self.view_function_query_submitter_state.lock().await;
         inner.response = value;
     }
 
-    /// Wait for the next view_function_query call (polls submitted.len() every 5ms).
+    /// Wait for the next view_function_query call (polls submitted.len() every 10ms).
     pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
         tokio::time::timeout(max_wait_duration, async {
             let baseline = {
-                let inner = self.view_function_querier_state.lock().await;
+                let inner = self.view_function_query_submitter_state.lock().await;
                 inner.submitted.len()
             };
             loop {
-                let inner = self.view_function_querier_state.lock().await;
+                let inner = self.view_function_query_submitter_state.lock().await;
                 if inner.submitted.len() > baseline {
                     return;
                 }
@@ -57,7 +61,7 @@ impl MockChainState {
 
     /// Returns a snapshot of all recorded view function calls.
     pub async fn view_calls(&self) -> Vec<Call> {
-        let inner = self.view_function_querier_state.lock().await;
+        let inner = self.view_function_query_submitter_state.lock().await;
         inner.submitted.clone()
     }
 }
@@ -97,7 +101,7 @@ impl MockChainStateBuilder {
     pub fn build(self) -> MockChainState {
         MockChainState {
             sync_response: Arc::new(RwLock::new(self.sync_response)),
-            view_function_querier_state: Arc::new(Mutex::new(
+            view_function_query_submitter_state: Arc::new(Mutex::new(
                 MockViewFunctionQuerySubmitterState {
                     response: self.view_function_query_response,
                     submitted: Vec::new(),
@@ -122,7 +126,7 @@ impl ViewFunctionQuerySubmitter for MockChainState {
         method_name: &str,
         args: &[u8],
     ) -> Result<RawObservedState, Self::Error> {
-        let mut inner = self.view_function_querier_state.lock().await;
+        let mut inner = self.view_function_query_submitter_state.lock().await;
         inner.submitted.push(Call {
             contract_id: contract_id.clone(),
             method_name: method_name.to_string(),
