@@ -18,7 +18,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConstantTimeEq};
-use zeroize::ZeroizeOnDrop;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// The arguments needed to create a presignature.
 #[derive(Debug, Clone)]
@@ -32,6 +32,20 @@ pub struct PresignArguments {
     pub keygen_out: KeygenOutput,
     /// The desired threshold for the presignature, which must match the original threshold
     pub threshold: ReconstructionLowerBound,
+}
+
+impl Zeroize for PresignArguments {
+    fn zeroize(&mut self) {
+        self.triple0.0.zeroize();
+        self.triple1.0.zeroize();
+        self.keygen_out.zeroize();
+    }
+}
+
+impl Drop for PresignArguments {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 /// The output of the presigning protocol.
