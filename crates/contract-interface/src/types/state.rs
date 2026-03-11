@@ -201,7 +201,7 @@ pub enum DomainPurpose {
 )]
 pub struct DomainConfig {
     pub id: DomainId,
-    #[serde(alias = "scheme")]
+    #[serde(rename = "scheme")]
     pub curve: Curve,
     /// `None` when reading state from an old contract that predates domain purposes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
