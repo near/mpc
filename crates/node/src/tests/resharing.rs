@@ -6,9 +6,8 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{
-    infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
-};
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
+use mpc_contract::primitives::test_utils::infer_purpose_from_scheme;
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;
