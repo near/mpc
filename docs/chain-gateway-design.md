@@ -425,14 +425,14 @@ The Chain Gateway offers the following traits for viewing and subscribing to con
 ```rust
 
 /// One-shot typed view call with JSON serialization/deserialization.
-pub trait MethodViewer: ContractViewer {
+pub trait ViewMethod: ViewContract {
     async fn view<Arg: Serialize + Sync, Res: DeserializeOwned + Send + Clone>(
         &self, contract_id: AccountId, method_name: &str, args: &Arg,
     ) -> Result<ObservedState<Res>, ChainGatewayError>;
 }
 
 /// Polls every 200ms; emits change only when returned bytes differ.
-pub trait ContractStateSubscriber: ContractViewer + Clone {
+pub trait SubscribeContractState: ViewContract + Clone {
     async fn subscribe<T: DeserializeOwned + Send + Clone>(
         &self, contract: AccountId, view_method: &str,
     ) -> impl ContractStateStream<T> + Send;
@@ -449,7 +449,6 @@ pub struct ObservedState<T = Vec<u8>> {
     pub observed_at: BlockHeight,
     pub value: T,
 }
-pub type RawObservedState = ObservedState<Vec<u8>>;
 
 /// Empty arguments for view calls that take no parameters.
 pub struct NoArgs {}
@@ -457,12 +456,12 @@ pub struct NoArgs {}
 pub struct BlockHeight(u64);
 ```
 
-Note that the above traits derive from `ContractViewer`, which in turn derives from two low-level traits.
+Note that the above traits derive from `ViewContract`, which in turn derives from two low-level traits.
 
 ```rust
-/// Waits for sync then delegates to ViewFunctionQuerySubmitter.
+/// Waits for sync then delegates to QueryViewFunction.
 /// Supertraits provide the raw RPC plumbing.
-pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
+pub trait ViewContract: IsSyncing + QueryViewFunction {
     async fn view_raw(
         &self,
         contract_id: &AccountId,
@@ -472,7 +471,7 @@ pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
 }
 
 // queries the actual state
-pub trait ViewFunctionQuerySubmitter: Send + Sync + 'static {
+pub trait QueryViewFunction: Send + Sync + 'static {
     async fn view_function_query(
         &self,
         contract_id: &AccountId,
@@ -481,7 +480,7 @@ pub trait ViewFunctionQuerySubmitter: Send + Sync + 'static {
     ) -> Result<RawObservedState, Error>;
 }
 // returns true if the node is still syncing with the blockchain
-pub trait SyncChecker: Send + Sync + 'static {
+pub trait IsSyncing: Send + Sync + 'static {
     /// Returns whether the node is currently syncing.
     async fn is_syncing(&self) -> Result<bool, Error>;
 ```
@@ -634,8 +633,8 @@ We propose the following API for the transaction sender:
 
 ```rust
 /// Default impl fetches the latest final block, signs, and submits.
-pub trait FunctionCallSubmitter:
-    LatestFinalBlockInfoFetcher + SignedTransactionSubmitter + Send + Sync + Clone + 'static
+pub trait SubmitFunctionCall:
+    FetchLatestFinalBlockInfo + SubmitSignedTransaction + Send + Sync + Clone + 'static
 {
     async fn submit_function_call_tx(
         &self,

@@ -1,4 +1,4 @@
-use crate::primitives::{IsSyncing, SubmitViewFunctionQuery};
+use crate::primitives::{IsSyncing, QueryViewFunction};
 use crate::state_viewer::{SubscribeContractState, ViewContract, ViewMethod};
 use crate::types::ObservedState;
 use near_account_id::AccountId;
@@ -10,10 +10,10 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct MockChainState {
     sync_response: Arc<RwLock<Result<bool, MockError>>>,
-    view_function_query_submitter_state: Arc<Mutex<MockSubmitViewFunctionQueryState>>,
+    view_function_query_submitter_state: Arc<Mutex<MockQueryViewFunctionState>>,
 }
 
-pub struct MockSubmitViewFunctionQueryState {
+pub struct MockQueryViewFunctionState {
     pub response: Result<ObservedState, MockError>,
     pub submitted: Vec<Call>,
 }
@@ -101,12 +101,10 @@ impl MockChainStateBuilder {
     pub fn build(self) -> MockChainState {
         MockChainState {
             sync_response: Arc::new(RwLock::new(self.sync_response)),
-            view_function_query_submitter_state: Arc::new(Mutex::new(
-                MockSubmitViewFunctionQueryState {
-                    response: self.view_function_query_response,
-                    submitted: Vec::new(),
-                },
-            )),
+            view_function_query_submitter_state: Arc::new(Mutex::new(MockQueryViewFunctionState {
+                response: self.view_function_query_response,
+                submitted: Vec::new(),
+            })),
         }
     }
 }
@@ -118,7 +116,7 @@ impl IsSyncing for MockChainState {
     }
 }
 
-impl SubmitViewFunctionQuery for MockChainState {
+impl QueryViewFunction for MockChainState {
     type Error = MockError;
     async fn view_function_query(
         &self,

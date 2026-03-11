@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
-use crate::primitives::{IsSyncing, SubmitViewFunctionQuery};
+use crate::primitives::{IsSyncing, QueryViewFunction};
 use crate::types::ObservedState;
 use near_account_id::AccountId;
 use serde::{Serialize, de::DeserializeOwned};
@@ -10,7 +10,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use super::subscription::ContractMethodSubscription;
 
 /// All other viewer traits are derived from this one
-pub trait ViewContract: IsSyncing + SubmitViewFunctionQuery {
+pub trait ViewContract: IsSyncing + QueryViewFunction {
     // waits until self is synced and then queries the view function
     fn view_raw(
         &self,

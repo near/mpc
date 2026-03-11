@@ -2,7 +2,7 @@ use near_account_id::AccountId;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearViewClientError};
 use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
-use crate::primitives::{IsSyncing, SubmitViewFunctionQuery};
+use crate::primitives::{IsSyncing, QueryViewFunction};
 use crate::state_viewer::{SubscribeContractState, ViewContract, ViewMethod};
 use crate::types::ObservedState;
 
@@ -25,7 +25,7 @@ impl IsSyncing for ChainGateway {
     }
 }
 
-impl SubmitViewFunctionQuery for ChainGateway {
+impl QueryViewFunction for ChainGateway {
     type Error = NearViewClientError;
     async fn view_function_query(
         &self,

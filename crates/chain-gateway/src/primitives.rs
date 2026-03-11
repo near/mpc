@@ -1,6 +1,6 @@
 //! This file contains the primitives we need to interact with the NEAR blockchain:
 //!     - IsSyncing --> checks whether the node is fully synced
-//!     - SubmitViewFunctionQuery --> can call view methods on a contract
+//!     - QueryViewFunction --> can call view methods on a contract
 //!     - TODO(#2342): LatestFinalBlockInfoFecher --> fetches height and hash of the latest final block
 //!     - TODO(#2342): SignedTransactionSubmitter --> submits  asigned transaction to the blockchain
 use crate::types::ObservedState;
@@ -34,7 +34,7 @@ pub trait IsSyncing: Send + Sync + 'static {
     }
 }
 
-pub trait SubmitViewFunctionQuery: Send + Sync + 'static {
+pub trait QueryViewFunction: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     fn view_function_query(
         &self,
