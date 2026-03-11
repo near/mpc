@@ -2,14 +2,14 @@ use crate::primitives::{IsSyncing, QueryViewFunction};
 use crate::types::ObservedState;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 #[derive(Clone)]
 pub struct MockChainState {
     sync_response: Arc<RwLock<Result<bool, MockError>>>,
     query_view_function_submitter_state: Arc<Mutex<MockQueryViewFunctionState>>,
+    view_call_notify: Arc<Notify>,
 }
 
 pub struct MockQueryViewFunctionState {
@@ -39,23 +39,9 @@ impl MockChainState {
         inner.response = value;
     }
 
-    /// Wait for the next query_view_function call (polls submitted.len() every 10ms).
-    pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
-        tokio::time::timeout(max_wait_duration, async {
-            let baseline = {
-                let inner = self.query_view_function_submitter_state.lock().await;
-                inner.submitted.len()
-            };
-            loop {
-                let inner = self.query_view_function_submitter_state.lock().await;
-                if inner.submitted.len() > baseline {
-                    return;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .map_err(|_| MockError::Timeout)
+    /// Wait for the next query_view_function call.
+    pub async fn await_next_view_call(&self) {
+        self.view_call_notify.notified().await;
     }
 
     /// Returns a snapshot of all recorded view function calls.
@@ -104,6 +90,7 @@ impl MockChainStateBuilder {
                 response: self.query_view_function_response,
                 submitted: Vec::new(),
             })),
+            view_call_notify: Arc::new(Notify::new()),
         }
     }
 }
@@ -129,7 +116,10 @@ impl QueryViewFunction for MockChainState {
             method_name: method_name.to_string(),
             args: args.to_vec(),
         });
-        inner.response.clone()
+        let response = inner.response.clone();
+        drop(inner);
+        self.view_call_notify.notify_waiters();
+        response
     }
 }
 

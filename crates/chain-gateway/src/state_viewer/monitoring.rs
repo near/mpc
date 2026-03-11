@@ -119,7 +119,7 @@ mod tests {
     use crate::{
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{Call, MockChainState, MockError},
-        state_viewer::monitoring::{POLL_INTERVAL, modify, monitor},
+        state_viewer::monitoring::{modify, monitor},
         types::ObservedState,
     };
     use rstest::rstest;
@@ -197,10 +197,7 @@ mod tests {
 
         let call = expected_call();
         let (viewer, _receiver, _cancel) = setup(call.clone(), init_mock);
-        viewer
-            .await_next_view_call(POLL_INTERVAL * 2)
-            .await
-            .unwrap();
+        viewer.await_next_view_call().await;
         let calls = viewer.view_calls().await;
         assert!(calls.iter().all(|c| c == &call));
         assert!(!calls.is_empty());
@@ -235,10 +232,7 @@ mod tests {
         // when: view response changes
         let next_mock_response = mock_spec(next_spec.clone());
         viewer.set_view_response(next_mock_response).await;
-        viewer
-            .await_next_view_call(POLL_INTERVAL * 2)
-            .await
-            .unwrap();
+        viewer.await_next_view_call().await;
 
         // Then:
         // we expect the receiver to be notified in case of change
@@ -333,10 +327,7 @@ mod tests {
         viewer.set_view_response(next_mock).await;
 
         // Wait for the background monitor loop to actually call view again
-        viewer
-            .await_next_view_call(POLL_INTERVAL * 2)
-            .await
-            .unwrap();
+        viewer.await_next_view_call().await;
 
         // Now check whether the watch receiver reports a change
         assert_eq!(
@@ -373,10 +364,7 @@ mod tests {
 
         let call = expected_call();
         let (viewer, _task) = setup_task(call.clone(), init_mock).await;
-        viewer
-            .await_next_view_call(POLL_INTERVAL * 2)
-            .await
-            .unwrap();
+        viewer.await_next_view_call().await;
         let calls = viewer.view_calls().await;
         assert!(calls.iter().all(|c| c == &call));
         assert!(!calls.is_empty());
