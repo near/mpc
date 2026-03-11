@@ -91,12 +91,23 @@ else
 fi
 
 ### Constants / defaults
-#alice
-#IP_PREFIX="51.68.219."
-#IP_START_OCTET=1
-#bob
-IP_PREFIX="${IP_PREFIX:-5.196.36.}"
-IP_START_OCTET="${IP_START_OCTET:-113}"
+# Host profile: alice | bob
+HOST_PROFILE="${HOST_PROFILE:-bob}"
+
+case "$HOST_PROFILE" in
+  alice)
+    IP_PREFIX="51.68.219."
+    IP_START_OCTET=1
+    ;;
+  bob)
+    IP_PREFIX="5.196.36."
+    IP_START_OCTET=113
+    ;;
+  *)
+    err "Unknown HOST_PROFILE: $HOST_PROFILE (supported: alice | bob)"
+    exit 1
+    ;;
+esac
 
 # Optional per-node IP override (format: "5=5.196.36.113 6=5.196.36.114 ...")
 NODE_IP_OVERRIDES="${NODE_IP_OVERRIDES:-}"
