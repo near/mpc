@@ -120,7 +120,7 @@ impl<V: ViewRaw + Clone> SubscribeToContractMethod for V {
 ///         .build();
 ///
 ///     let result: ObservedState<String> = viewer
-///         .view("contract.near".parse().unwrap(), "get_greeting", &NoArgs {})
+///         .view_method("contract.near".parse().unwrap(), "get_greeting", &NoArgs {})
 ///         .await
 ///         .unwrap();
 ///
@@ -129,7 +129,7 @@ impl<V: ViewRaw + Clone> SubscribeToContractMethod for V {
 /// }
 /// ```
 pub trait ViewMethod {
-    fn view<Arg, Res>(
+    fn view_method<Arg, Res>(
         &self,
         contract_id: AccountId,
         method_name: &str,
@@ -141,7 +141,7 @@ pub trait ViewMethod {
 }
 
 impl<T: ViewRaw> ViewMethod for T {
-    async fn view<Arg, Res>(
+    async fn view_method<Arg, Res>(
         &self,
         contract_id: AccountId,
         method_name: &str,
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_view_deserializes_response() {
+    async fn test_view_method_deserializes_response() {
         let mut rng = StdRng::seed_from_u64(5);
         let block_height: u64 = rng.gen_range(1..1_000_000);
         let value = Alphanumeric.sample_string(&mut rng, 12);
@@ -333,7 +333,7 @@ mod tests {
             .build();
 
         let result = viewer
-            .view::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
             .await
             .unwrap();
 
@@ -342,14 +342,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_view_propagates_view_error() {
+    async fn test_view_method_propagates_view_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
             .with_query_view_function_response(Err(MockError::RpcError))
             .build();
 
         let err = viewer
-            .view::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
             .await
             .unwrap_err();
 
@@ -367,7 +367,7 @@ mod tests {
             .build();
 
         let err = viewer
-            .view::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
             .await
             .unwrap_err();
 

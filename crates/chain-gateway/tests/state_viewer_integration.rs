@@ -15,11 +15,11 @@ const TEST_METHOD: &str = "get_greeting";
 
 /// spawns a local neard node, inserts a test contract and checks if viewing a valid contract method succeeds
 #[tokio::test]
-async fn test_view_contract_state() {
+async fn test_view_method_contract_state() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let value: ObservedState<String> = gw
-        .view(
+        .view_method(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
             TEST_METHOD,
             &NoArgs {},
@@ -32,11 +32,11 @@ async fn test_view_contract_state() {
 
 /// spawns a local neard node, inserts a test contract and checks if viewing an invalid contract method fails
 #[tokio::test]
-async fn test_view_nonexistent_method_returns_error() {
+async fn test_view_method_nonexistent_method_returns_error() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let result = gw
-        .view::<NoArgs, String>(
+        .view_method::<NoArgs, String>(
             TEST_CONTRACT_ACCOUNT.parse().unwrap(),
             "nonexistent",
             &NoArgs {},
