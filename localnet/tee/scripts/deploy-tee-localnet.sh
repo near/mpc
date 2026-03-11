@@ -91,8 +91,12 @@ else
 fi
 
 ### Constants / defaults
-IP_PREFIX="51.68.219."
-IP_START_OCTET=1
+#alice
+#IP_PREFIX="51.68.219."
+#IP_START_OCTET=1
+#bob
+IP_PREFIX="${IP_PREFIX:-5.196.36.}"
+IP_START_OCTET="${IP_START_OCTET:-113}"
 
 # Optional per-node IP override (format: "5=5.196.36.113 6=5.196.36.114 ...")
 NODE_IP_OVERRIDES="${NODE_IP_OVERRIDES:-}"
@@ -988,10 +992,12 @@ PY
 ### =========================
 build_contract() {
   log "Building MPC contract"
-  cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
+  cargo near build non-reproducible-wasm --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked
   export MPC_CONTRACT_PATH="$(pwd)/target/near/mpc_contract/mpc_contract.wasm"
   [ -f "$MPC_CONTRACT_PATH" ] || { err "Contract wasm not found at $MPC_CONTRACT_PATH"; exit 1; }
   log "MPC_CONTRACT_PATH=$MPC_CONTRACT_PATH"
+  log "Contract size: $(stat -c '%s' "$MPC_CONTRACT_PATH") bytes"
+  log "Contract sha256: $(sha256sum "$MPC_CONTRACT_PATH" | awk '{print $1}')"
 }
 
 deploy_contract() {
@@ -1505,13 +1511,19 @@ main() {
     maybe_stop_after_phase near_vote_domain
   fi
 
-  if should_run_from_start near_vote_new_params; then
-    near_phase_vote_new_parameters
-    maybe_stop_after_phase near_vote_new_params
-  fi
-  if should_run_from_start near_vote_new_params_votes; then
-    near_phase_vote_new_params_votes_only
-    maybe_stop_after_phase near_vote_new_params_votes
+  # By default, a normal deployment ends after near_vote_domain.
+  # Only enter scaling phases if scaling was explicitly requested.
+  if [ "${ADD_NODES:-0}" != "0" ] || [ -n "${NEW_TOTAL_N:-}" ]; then
+    if should_run_from_start near_vote_new_params; then
+      near_phase_vote_new_parameters
+      maybe_stop_after_phase near_vote_new_params
+    fi
+    if should_run_from_start near_vote_new_params_votes; then
+      near_phase_vote_new_params_votes_only
+      maybe_stop_after_phase near_vote_new_params_votes
+    fi
+  else
+    log "No scaling requested (ADD_NODES=0, NEW_TOTAL_N unset); ending after near_vote_domain"
   fi
 
   code_hash="$(extract_code_hash || true)"
