@@ -40,7 +40,7 @@ async fn test_basic_multidomain() {
         },
         DomainConfig {
             id: DomainId(1),
-            curve: Curve::Ed25519,
+            curve: Curve::Curve25519,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
@@ -74,7 +74,7 @@ async fn test_basic_multidomain() {
     tracing::info!("requesting signature");
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Ed25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Curve25519 | Curve::V2Secp256k1 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -99,7 +99,7 @@ async fn test_basic_multidomain() {
     let new_domains = vec![
         DomainConfig {
             id: DomainId(3),
-            curve: Curve::Ed25519,
+            curve: Curve::Curve25519,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
@@ -139,7 +139,7 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Ed25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Curve25519 | Curve::V2Secp256k1 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -186,7 +186,7 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Ed25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Curve25519 | Curve::V2Secp256k1 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),

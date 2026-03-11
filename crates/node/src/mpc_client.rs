@@ -405,7 +405,7 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Ed25519) => {
+                                    Some(Curve::Curve25519) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -525,7 +525,7 @@ where
                                     }
                                     Some(Curve::Secp256k1)
                                     | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Ed25519) => Err(anyhow::anyhow!(
+                                    | Some(Curve::Curve25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
@@ -617,7 +617,7 @@ where
                                     }
                                     Some(Curve::Bls12381)
                                     | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Ed25519) => Err(anyhow::anyhow!(
+                                    | Some(Curve::Curve25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
                                     )),

@@ -40,7 +40,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     };
     let epoch_id = init_running.keyset.epoch_id;
     let domain_id = init_running.domains.next_domain_id;
-    let curve = Curve::Ed25519;
+    let curve = Curve::Curve25519;
 
     // vote to add the domain and verify we enter initializing state
     vote_add_domains(

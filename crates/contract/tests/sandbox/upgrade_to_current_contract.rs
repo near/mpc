@@ -355,7 +355,7 @@ async fn upgrade_allows_new_request_types(
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
-            curve: Curve::Ed25519,
+            curve: Curve::Curve25519,
             purpose: DomainPurpose::Sign,
         },
     ];

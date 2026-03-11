@@ -261,7 +261,7 @@ impl MpcContract {
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            Curve::Ed25519 => {
+            Curve::Curve25519 => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
             Curve::Bls12381 => {
@@ -2174,7 +2174,7 @@ mod tests {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
-            Curve::Ed25519 => {
+            Curve::Curve25519 => {
                 let (pk, sk) = new_ed25519(rng);
                 (pk.into(), SharedSecretKey::Ed25519(sk))
             }

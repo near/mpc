@@ -348,7 +348,7 @@ pub mod running_tests {
 
     #[rstest]
     #[case(Curve::Bls12381, DomainPurpose::Sign)]
-    #[case(Curve::Ed25519, DomainPurpose::ForeignTx)]
+    #[case(Curve::Curve25519, DomainPurpose::ForeignTx)]
     #[case(Curve::Secp256k1, DomainPurpose::CKD)]
     fn vote_add_domains__should_reject_invalid_curve_purpose(
         #[case] curve: Curve,
