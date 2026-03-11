@@ -425,14 +425,14 @@ The Chain Gateway offers the following traits for viewing and subscribing to con
 ```rust
 
 /// One-shot typed view call with JSON serialization/deserialization.
-pub trait ViewMethod: ViewContract {
+pub trait ViewMethod: ViewRaw {
     async fn view<Arg: Serialize + Sync, Res: DeserializeOwned + Send + Clone>(
         &self, contract_id: AccountId, method_name: &str, args: &Arg,
     ) -> Result<ObservedState<Res>, ChainGatewayError>;
 }
 
 /// Polls every 200ms; emits change only when returned bytes differ.
-pub trait SubscribeContractState: ViewContract + Clone {
+pub trait SubscribeContractState: ViewRaw + Clone {
     async fn subscribe<T: DeserializeOwned + Send + Clone>(
         &self, contract: AccountId, view_method: &str,
     ) -> impl ContractStateStream<T> + Send;
@@ -456,12 +456,12 @@ pub struct NoArgs {}
 pub struct BlockHeight(u64);
 ```
 
-Note that the above traits derive from `ViewContract`, which in turn derives from two low-level traits.
+Note that the above traits derive from `ViewRaw`, which in turn derives from two low-level traits.
 
 ```rust
 /// Waits for sync then delegates to QueryViewFunction.
 /// Supertraits provide the raw RPC plumbing.
-pub trait ViewContract: IsSyncing + QueryViewFunction {
+pub trait ViewRaw: IsSyncing + QueryViewFunction {
     async fn view_raw(
         &self,
         contract_id: &AccountId,

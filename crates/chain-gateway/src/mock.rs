@@ -1,5 +1,5 @@
 use crate::primitives::{IsSyncing, QueryViewFunction};
-use crate::state_viewer::{SubscribeContractState, ViewContract, ViewMethod};
+use crate::state_viewer::{SubscribeContractState, ViewMethod, ViewRaw};
 use crate::types::ObservedState;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
@@ -134,7 +134,7 @@ impl QueryViewFunction for MockChainState {
     }
 }
 
-impl ViewContract for MockChainState {}
+impl ViewRaw for MockChainState {}
 impl ViewMethod for MockChainState {}
 impl SubscribeContractState for MockChainState {}
 

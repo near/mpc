@@ -10,7 +10,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use super::subscription::ContractMethodSubscription;
 
 /// All other viewer traits are derived from this one
-pub trait ViewContract: IsSyncing + QueryViewFunction {
+pub trait ViewRaw: IsSyncing + QueryViewFunction {
     // waits until self is synced and then queries the view function
     fn view_raw(
         &self,
@@ -62,7 +62,7 @@ pub trait ViewContract: IsSyncing + QueryViewFunction {
 ///     assert_eq!(state.value, "hello");
 /// }
 /// ```
-pub trait SubscribeContractState: ViewContract + Clone {
+pub trait SubscribeContractState: ViewRaw + Clone {
     /// Subscribes to a contract view method and returns a stream of state updates.
     ///
     /// The returned stream polls the contract every 200 ms.
@@ -82,10 +82,8 @@ pub trait SubscribeContractState: ViewContract + Clone {
     }
 }
 
-/// Blanket-implemented for all `T: HasViewContract`.
-///
 /// Performs a one-shot typed view call: serializes `args` as JSON, calls the
-/// underlying [`ViewContract::view_raw`], and deserializes the response.
+/// underlying [`ViewRaw::view_raw`], and deserializes the response.
 ///
 /// # Example
 ///
@@ -113,7 +111,7 @@ pub trait SubscribeContractState: ViewContract + Clone {
 ///     assert_eq!(result.observed_at, 1.into());
 /// }
 /// ```
-pub trait ViewMethod: ViewContract {
+pub trait ViewMethod: ViewRaw {
     fn view<Arg, Res>(
         &self,
         contract_id: AccountId,
@@ -164,7 +162,7 @@ pub trait StreamContractState<Res> {
 
 #[cfg(test)]
 mod tests {
-    use super::ViewContract;
+    use super::ViewRaw;
     use crate::errors::{ChainGatewayError, ChainGatewayOp};
     use crate::mock::{Call, MockChainState, MockError};
     use crate::state_viewer::{StreamContractState, SubscribeContractState, ViewMethod};
