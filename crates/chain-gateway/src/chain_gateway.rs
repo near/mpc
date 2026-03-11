@@ -4,7 +4,7 @@ use crate::errors::{ChainGatewayError, NearClientError, NearViewClientError};
 use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
 use crate::primitives::{IsSyncing, SubmitViewFunctionQuery};
 use crate::state_viewer::{SubscribeContractState, ViewContract, ViewMethod};
-use crate::types::RawObservedState;
+use crate::types::ObservedState;
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -32,7 +32,7 @@ impl SubmitViewFunctionQuery for ChainGateway {
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> Result<RawObservedState, Self::Error> {
+    ) -> Result<ObservedState, Self::Error> {
         self.view_client
             .view_function_query(contract_id, method_name, args)
             .await

@@ -3,7 +3,7 @@
 //!     - SubmitViewFunctionQuery --> can call view methods on a contract
 //!     - TODO(#2342): LatestFinalBlockInfoFecher --> fetches height and hash of the latest final block
 //!     - TODO(#2342): SignedTransactionSubmitter --> submits  asigned transaction to the blockchain
-use crate::types::RawObservedState;
+use crate::types::ObservedState;
 use near_account_id::AccountId;
 use std::future::Future;
 use std::time::Duration;
@@ -41,5 +41,5 @@ pub trait SubmitViewFunctionQuery: Send + Sync + 'static {
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> impl Future<Output = Result<RawObservedState, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<ObservedState, Self::Error>> + Send;
 }

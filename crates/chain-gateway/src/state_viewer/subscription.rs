@@ -80,14 +80,14 @@ mod tests {
     use crate::errors::ChainGatewayError;
     use crate::mock::{MockChainState, MockError};
     use crate::state_viewer::StreamContractState;
-    use crate::types::RawObservedState;
+    use crate::types::ObservedState;
     use std::time::Duration;
 
     #[tokio::test]
     async fn test_subscription_constructor_deserializes_initial_value() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: 42.into(),
                 value: serde_json::to_vec(&"hello").unwrap(),
             }))
@@ -131,7 +131,7 @@ mod tests {
     async fn test_subscription_constructor_returns_deserialization_error_on_bad_json() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not json".to_vec(),
             }))
@@ -155,7 +155,7 @@ mod tests {
     async fn test_subscription_latest_updates_on_value_change() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&"initial").unwrap(),
             }))
@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(sub.latest().unwrap().value, "initial");
 
         viewer
-            .set_view_response(Ok(RawObservedState {
+            .set_view_response(Ok(ObservedState {
                 observed_at: 2.into(),
                 value: serde_json::to_vec(&"updated").unwrap(),
             }))
@@ -192,7 +192,7 @@ mod tests {
     async fn test_subscription_changed_resolves_and_updates_cache() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&"before").unwrap(),
             }))
@@ -208,7 +208,7 @@ mod tests {
         assert_eq!(sub.latest().unwrap().value, "before");
 
         viewer
-            .set_view_response(Ok(RawObservedState {
+            .set_view_response(Ok(ObservedState {
                 observed_at: 5.into(),
                 value: serde_json::to_vec(&"after").unwrap(),
             }))

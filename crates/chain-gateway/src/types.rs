@@ -20,9 +20,6 @@ pub struct ObservedState<T = Vec<u8>> {
     pub value: T,
 }
 
-/// Raw (not yet deserialized) observed state from a contract view call.
-pub type RawObservedState = ObservedState<Vec<u8>>;
-
 impl ObservedState<Vec<u8>> {
     pub fn deserialize<Res: DeserializeOwned>(
         self,
@@ -45,7 +42,7 @@ mod tests {
 
     use crate::{
         errors::ChainGatewayError,
-        types::{NoArgs, ObservedState, RawObservedState},
+        types::{NoArgs, ObservedState},
     };
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -55,7 +52,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_ok() {
-        let observed = RawObservedState {
+        let observed = ObservedState {
             observed_at: 7.into(),
             value: br#"{"a":1}"#.to_vec(),
         };
@@ -68,7 +65,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_err() {
-        let observed = RawObservedState {
+        let observed = ObservedState {
             observed_at: 7.into(),
             value: b"not json".to_vec(),
         };

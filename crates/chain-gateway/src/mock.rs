@@ -1,6 +1,6 @@
 use crate::primitives::{IsSyncing, SubmitViewFunctionQuery};
 use crate::state_viewer::{SubscribeContractState, ViewContract, ViewMethod};
-use crate::types::RawObservedState;
+use crate::types::ObservedState;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -14,7 +14,7 @@ pub struct MockChainState {
 }
 
 pub struct MockSubmitViewFunctionQueryState {
-    pub response: Result<RawObservedState, MockError>,
+    pub response: Result<ObservedState, MockError>,
     pub submitted: Vec<Call>,
 }
 
@@ -35,7 +35,7 @@ impl MockChainState {
     }
 
     /// Update the view function query response.
-    pub async fn set_view_response(&self, value: Result<RawObservedState, MockError>) {
+    pub async fn set_view_response(&self, value: Result<ObservedState, MockError>) {
         let mut inner = self.view_function_query_submitter_state.lock().await;
         inner.response = value;
     }
@@ -68,7 +68,7 @@ impl MockChainState {
 
 pub struct MockChainStateBuilder {
     sync_response: Result<bool, MockError>,
-    view_function_query_response: Result<RawObservedState, MockError>,
+    view_function_query_response: Result<ObservedState, MockError>,
 }
 
 impl Default for MockChainStateBuilder {
@@ -92,7 +92,7 @@ impl MockChainStateBuilder {
 
     pub fn with_view_function_query_response(
         mut self,
-        r: Result<RawObservedState, MockError>,
+        r: Result<ObservedState, MockError>,
     ) -> Self {
         self.view_function_query_response = r;
         self
@@ -125,7 +125,7 @@ impl SubmitViewFunctionQuery for MockChainState {
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> Result<RawObservedState, Self::Error> {
+    ) -> Result<ObservedState, Self::Error> {
         let mut inner = self.view_function_query_submitter_state.lock().await;
         inner.submitted.push(Call {
             contract_id: contract_id.clone(),

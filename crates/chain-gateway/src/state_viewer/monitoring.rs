@@ -1,5 +1,5 @@
 use crate::errors::ChainGatewayError;
-use crate::types::RawObservedState;
+use crate::types::ObservedState;
 use near_account_id::AccountId;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -10,7 +10,7 @@ use super::traits::ViewContract;
 pub(crate) struct MonitoringTask {
     _task_handle: JoinHandle<()>,
     cancel_token: CancellationToken,
-    pub last_observed: tokio::sync::watch::Receiver<Result<RawObservedState, ChainGatewayError>>,
+    pub last_observed: tokio::sync::watch::Receiver<Result<ObservedState, ChainGatewayError>>,
 }
 
 impl Drop for MonitoringTask {
@@ -59,7 +59,7 @@ async fn monitor<V: ViewContract>(
     contract_id: AccountId,
     method_name: String,
     args: Vec<u8>,
-    sender: tokio::sync::watch::Sender<Result<RawObservedState, ChainGatewayError>>,
+    sender: tokio::sync::watch::Sender<Result<ObservedState, ChainGatewayError>>,
     cancel: CancellationToken,
 ) {
     let mut ticker = tokio::time::interval(POLL_INTERVAL);
@@ -95,11 +95,11 @@ async fn monitor<V: ViewContract>(
 /// Conditionally modifies `to_modify` in place and returns a bool indicating if it was modified.
 /// `to_modify` is modified if and only if one of the following holds:
 ///     - `to_modify` is Ok(_) and `update_value` is Err(_) or vice-versa
-///     - if `to_modify` and `update_value` are both Ok(RawObservedState) with differing value fields
+///     - if `to_modify` and `update_value` are both Ok(ObservedState) with differing value fields
 ///     - if `to_modify` and `update_value` are different errors
 fn modify(
-    to_modify: &mut Result<RawObservedState, ChainGatewayError>,
-    update_value: Result<RawObservedState, ChainGatewayError>,
+    to_modify: &mut Result<ObservedState, ChainGatewayError>,
+    update_value: Result<ObservedState, ChainGatewayError>,
 ) -> bool {
     let value_changed = match (&to_modify, &update_value) {
         (Ok(prev), Ok(current)) => prev.value != current.value,
@@ -120,7 +120,7 @@ mod tests {
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{Call, MockChainState, MockError},
         state_viewer::monitoring::{POLL_INTERVAL, modify, monitor},
-        types::{ObservedState, RawObservedState},
+        types::ObservedState,
     };
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
@@ -161,11 +161,11 @@ mod tests {
         #[case] update_spec: Result<(u64, u8), ChainGatewayError>,
         #[case] expected_changed: bool,
     ) {
-        let mut to_modify = existing_spec.map(|(at, b)| RawObservedState {
+        let mut to_modify = existing_spec.map(|(at, b)| ObservedState {
             observed_at: at.into(),
             value: vec![b],
         });
-        let update_value = update_spec.map(|(at, b)| RawObservedState {
+        let update_value = update_spec.map(|(at, b)| ObservedState {
             observed_at: at.into(),
             value: vec![b],
         });
@@ -412,7 +412,7 @@ mod tests {
 
     async fn setup_task(
         call: Call,
-        mock_response: Result<RawObservedState, MockError>,
+        mock_response: Result<ObservedState, MockError>,
     ) -> (MockChainState, MonitoringTask) {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
@@ -432,10 +432,10 @@ mod tests {
 
     fn setup(
         call: Call,
-        mock_response: Result<RawObservedState, MockError>,
+        mock_response: Result<ObservedState, MockError>,
     ) -> (
         MockChainState,
-        tokio::sync::watch::Receiver<Result<RawObservedState, ChainGatewayError>>,
+        tokio::sync::watch::Receiver<Result<ObservedState, ChainGatewayError>>,
         CancellationToken,
     ) {
         let viewer = MockChainState::builder()
@@ -467,8 +467,8 @@ mod tests {
         (viewer, receiver, cancel)
     }
 
-    fn mock_spec(spec: Result<(u64, u8), MockError>) -> Result<RawObservedState, MockError> {
-        spec.map(|(at, b)| RawObservedState {
+    fn mock_spec(spec: Result<(u64, u8), MockError>) -> Result<ObservedState, MockError> {
+        spec.map(|(at, b)| ObservedState {
             observed_at: at.into(),
             value: vec![b],
         })
@@ -477,9 +477,9 @@ mod tests {
     fn spec_to_observed(
         spec: Result<(u64, u8), MockError>,
         call: Call,
-    ) -> Result<RawObservedState, ChainGatewayError> {
+    ) -> Result<ObservedState, ChainGatewayError> {
         match spec {
-            Ok((at, b)) => Ok(RawObservedState {
+            Ok((at, b)) => Ok(ObservedState {
                 observed_at: at.into(),
                 value: vec![b],
             }),

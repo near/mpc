@@ -170,15 +170,15 @@ mod tests {
     use crate::errors::{ChainGatewayError, ChainGatewayOp};
     use crate::mock::{Call, MockChainState, MockError};
     use crate::state_viewer::{StreamContractState, SubscribeContractState, ViewMethod};
-    use crate::types::{NoArgs, RawObservedState};
+    use crate::types::{NoArgs, ObservedState};
     use near_account_id::AccountId;
     use rand::distributions::{Alphanumeric, DistString};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
-    /// Produces a deterministic `(Call, RawObservedState)` pair from the given RNG
+    /// Produces a deterministic `(Call, ObservedState)` pair from the given RNG
     /// so every test uses unique but reproducible data.
-    fn random_view_params(rng: &mut StdRng) -> (Call, RawObservedState) {
+    fn random_view_params(rng: &mut StdRng) -> (Call, ObservedState) {
         let contract_id: AccountId = format!(
             "{}.testnet",
             Alphanumeric.sample_string(rng, 8).to_lowercase()
@@ -195,7 +195,7 @@ mod tests {
                 method_name,
                 args,
             },
-            RawObservedState {
+            ObservedState {
                 observed_at: block_height.into(),
                 value: payload,
             },
@@ -303,7 +303,7 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: block_height.into(),
                 value: json_bytes,
             }))
@@ -337,7 +337,7 @@ mod tests {
     async fn test_view_returns_deserialization_error_on_bad_bytes() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not valid json".to_vec(),
             }))
@@ -362,7 +362,7 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: block_height.into(),
                 value: json_bytes,
             }))
@@ -381,7 +381,7 @@ mod tests {
     async fn test_subscribe_latest_returns_deserialization_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not json".to_vec(),
             }))
@@ -405,7 +405,7 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(RawObservedState {
+            .with_view_function_query_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&initial).unwrap(),
             }))
@@ -417,7 +417,7 @@ mod tests {
         assert_eq!(sub.latest().unwrap().value, initial);
 
         viewer
-            .set_view_response(Ok(RawObservedState {
+            .set_view_response(Ok(ObservedState {
                 observed_at: 2.into(),
                 value: serde_json::to_vec(&updated).unwrap(),
             }))

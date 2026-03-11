@@ -420,9 +420,8 @@ The Chain Gateway provides three functionalities:
 
 ##### State Viewer
 
-The Chain Gateway offers a trait-based API for viewing and subscribing to contract state.
+The Chain Gateway offers the following traits for viewing and subscribing to contract state:
 
-It offers the following API:
 ```rust
 
 /// One-shot typed view call with JSON serialization/deserialization.
