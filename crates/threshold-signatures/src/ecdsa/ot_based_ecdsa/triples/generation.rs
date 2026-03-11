@@ -119,13 +119,6 @@ struct PolynomialCommitmentsMessageMany<const N: usize> {
     phi_proof1_v: [dlog::Proof<Secp256K1Sha256>; N],
 }
 
-/// Converts a `Vec<T>` to `[T; N]`, returning a `ProtocolError` on length mismatch.
-fn vec_to_array<T, const N: usize>(v: Vec<T>) -> Result<[T; N], ProtocolError> {
-    v.try_into().map_err(|v: Vec<T>| {
-        ProtocolError::Other(format!("expected vector of length {N}, got {}", v.len()))
-    })
-}
-
 #[allow(clippy::too_many_lines)]
 async fn do_generation_many<const N: usize>(
     comms: Comms,
@@ -290,12 +283,12 @@ async fn do_generation_many<const N: usize>(
         // Spec 2.7
         let wait2 = chan.next_waitpoint();
         let message: PolynomialCommitmentsMessageMany<N> = PolynomialCommitmentsMessageMany {
-            big_e_v: vec_to_array(big_e_i_v)?,
-            big_f_v: vec_to_array(big_f_i_v)?,
-            big_l_v: vec_to_array(big_l_i_v)?,
-            randomizer_v: vec_to_array(my_randomizers)?,
-            phi_proof0_v: vec_to_array(my_phi_proof0v)?,
-            phi_proof1_v: vec_to_array(my_phi_proof1v)?,
+            big_e_v: big_e_i_v.to_array()?,
+            big_f_v: big_f_i_v.to_array()?,
+            big_l_v: big_l_i_v.to_array()?,
+            randomizer_v: my_randomizers.to_array()?,
+            phi_proof0_v: my_phi_proof0v.to_array()?,
+            phi_proof1_v: my_phi_proof1v.to_array()?,
         };
         chan.send_many(wait2, &message)?;
         let (big_e_i_v, big_f_i_v, big_l_i_v) = (message.big_e_v, message.big_f_v, message.big_l_v);
@@ -803,6 +796,22 @@ pub fn generate_triple_many<const N: usize>(
     )?);
     let fut = do_generation_many::<N>(ctx.clone(), participants, me, threshold, rng);
     Ok(make_protocol(ctx, fut))
+}
+
+/// Extension trait for converting a `Vec<T>` into a fixed-size array `[T; N]`.
+trait ToArray<T, const N: usize> {
+    fn to_array(self) -> Result<[T; N], ProtocolError>;
+}
+
+impl<T, const N: usize> ToArray<T, N> for Vec<T> {
+    fn to_array(self) -> Result<[T; N], ProtocolError> {
+        let len = self.len();
+        self.try_into()
+            .map_err(|_: Self| ProtocolError::UnexpectedLength {
+                expected: N,
+                actual: len,
+            })
+    }
 }
 
 #[cfg(test)]
