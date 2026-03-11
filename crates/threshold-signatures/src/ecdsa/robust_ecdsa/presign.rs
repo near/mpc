@@ -17,6 +17,7 @@ use frost_core::serialization::SerializableScalar;
 use frost_secp256k1::{Group, Secp256K1Group};
 use rand_core::CryptoRngCore;
 use subtle::ConstantTimeEq;
+use zeroize::Zeroize;
 
 type C = Secp256K1Sha256;
 
@@ -347,6 +348,20 @@ fn zero_secret_polynomial(
 /// (k, a, b, d, e)
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Shares([SerializableScalar<C>; 5]);
+
+impl Zeroize for Shares {
+    fn zeroize(&mut self) {
+        for s in &mut self.0 {
+            s.0.zeroize();
+        }
+    }
+}
+
+impl Drop for Shares {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
 
 impl Shares {
     /// Constructs a new Shares out of five polynomials

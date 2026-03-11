@@ -11,6 +11,7 @@ use crate::{
 };
 use frost_core::{serialization::SerializableScalar, Group};
 use subtle::ConstantTimeEq;
+use zeroize::Zeroize;
 
 use super::strobe_transcript::Transcript;
 
@@ -40,9 +41,18 @@ impl<C: Ciphersuite> Statement<'_, C> {
 
 /// The private witness for this proof.
 /// This holds the scalar the prover needs to know.
-#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Witness<C: Ciphersuite> {
     pub x: SerializableScalar<C>,
+}
+
+impl<C: Ciphersuite> Zeroize for Witness<C>
+where
+    crate::Scalar<C>: Zeroize,
+{
+    fn zeroize(&mut self) {
+        self.x.0.zeroize();
+    }
 }
 
 /// Represents a proof of the statement.
@@ -59,7 +69,7 @@ pub struct Proof<C: Ciphersuite> {
 pub fn prove_with_nonce<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
-    witness: Witness<C>,
+    witness: &Witness<C>,
     nonce: (Scalar<C>, Element<C>),
 ) -> Result<Proof<C>, ProtocolError> {
     transcript.message(NEAR_DLOG_STATEMENT_LABEL, &statement.encode()?);

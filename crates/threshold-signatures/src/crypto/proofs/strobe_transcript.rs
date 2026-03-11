@@ -1,5 +1,5 @@
 use byteorder::{ByteOrder, LittleEndian};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::crypto::constants::MERLIN_PROTOCOL_LABEL;
 
@@ -98,6 +98,7 @@ impl Transcript {
     }
 }
 
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct TranscriptRng {
     strobe: Strobe128,
 }

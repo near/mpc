@@ -3,6 +3,7 @@ use frost_core::{
 };
 use rand_core::CryptoRngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+use zeroize::Zeroize;
 
 use super::ciphersuite::Ciphersuite;
 use crate::{errors::ProtocolError, participants::Participant};
@@ -15,6 +16,15 @@ pub struct Polynomial<C: Ciphersuite> {
     /// The coefficients of our polynomial,
     /// The 0 term being the constant term of the polynomial
     coefficients: Vec<Scalar<C>>,
+}
+
+impl<C: Ciphersuite> Zeroize for Polynomial<C>
+where
+    Scalar<C>: Zeroize,
+{
+    fn zeroize(&mut self) {
+        self.coefficients.zeroize();
+    }
 }
 
 impl<C: Ciphersuite> Polynomial<C> {
