@@ -82,12 +82,20 @@ pub enum TeeValidationResult {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub(crate) struct NodeAttestation {
     pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
 }
 
 #[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
@@ -174,6 +182,7 @@ impl TeeState {
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.allowed_launcher_compose_hashes,
+            mpc_attestation::attestation::default_measurements(),
         )?;
 
         let tls_pk = node_id.tls_public_key.clone();

@@ -17,7 +17,6 @@ use near_sdk::env::sha256_array;
 use crate::{
     config::Config,
     crypto_shared::types::PublicKeyExtended,
-    derive_foreign_tx_tweak,
     errors::{ConversionError, Error},
     primitives::{
         domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
@@ -764,12 +763,9 @@ impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
 
 pub fn args_into_verify_foreign_tx_request(
     args: dtos::VerifyForeignTransactionRequestArgs,
-    predecessor_id: &AccountId,
 ) -> dtos::VerifyForeignTransactionRequest {
-    let tweak = derive_foreign_tx_tweak(predecessor_id, &args.derivation_path);
     dtos::VerifyForeignTransactionRequest {
         domain_id: args.domain_id,
-        tweak,
         request: args.request,
         payload_version: args.payload_version,
     }

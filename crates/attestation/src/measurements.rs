@@ -51,6 +51,17 @@ pub enum MeasurementsError {
     InvalidLength(String, usize),
 }
 
+impl From<&crate::tcb_info::TcbInfo> for Measurements {
+    fn from(tcb: &crate::tcb_info::TcbInfo) -> Self {
+        Self {
+            mrtd: *tcb.mrtd,
+            rtmr0: *tcb.rtmr0,
+            rtmr1: *tcb.rtmr1,
+            rtmr2: *tcb.rtmr2,
+        }
+    }
+}
+
 impl TryFrom<dcap_qvl::verify::VerifiedReport> for Measurements {
     type Error = MeasurementsError;
 

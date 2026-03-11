@@ -19,7 +19,8 @@ use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainPurpose, SignatureScheme},
+        domain::{DomainConfig, DomainPurpose, SignatureScheme},
+        test_utils::infer_purpose_from_scheme,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
