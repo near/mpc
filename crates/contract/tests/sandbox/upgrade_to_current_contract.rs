@@ -16,7 +16,7 @@ use contract_interface::types::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     primitives::{
-        domain::{DomainConfig, DomainPurpose, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainPurpose},
         key_state::{EpochId, Keyset},
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
@@ -350,12 +350,12 @@ async fn upgrade_allows_new_request_types(
     let domains_to_add = [
         DomainConfig {
             id: first_available_domain_id.into(),
-            scheme: SignatureScheme::Bls12381,
+            curve: Curve::Bls12381,
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
-            scheme: SignatureScheme::Ed25519,
+            curve: Curve::Ed25519,
             purpose: DomainPurpose::Sign,
         },
     ];

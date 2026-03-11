@@ -1,6 +1,4 @@
-use super::domain::{
-    infer_purpose_from_scheme, DomainConfig, DomainId, DomainRegistry, SignatureScheme,
-};
+use super::domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainRegistry};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -13,23 +11,23 @@ use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
-const ALL_PROTOCOLS: [SignatureScheme; 4] = [
-    SignatureScheme::Secp256k1,
-    SignatureScheme::Ed25519,
-    SignatureScheme::Bls12381,
-    SignatureScheme::V2Secp256k1,
+const ALL_CURVES: [Curve; 4] = [
+    Curve::Secp256k1,
+    Curve::Ed25519,
+    Curve::Bls12381,
+    Curve::V2Secp256k1,
 ];
-pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
+pub const NUM_CURVES: usize = ALL_CURVES.len();
 
-/// Generates a valid DomainRegistry with various signature schemes, with num_domains total.
+/// Generates a valid DomainRegistry with various curves, with num_domains total.
 pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
     for i in 0..num_domains {
-        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
+        let curve = ALL_CURVES[i % ALL_CURVES.len()];
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
-            scheme,
-            purpose: infer_purpose_from_scheme(scheme),
+            curve,
+            purpose: infer_purpose_from_curve(curve),
         });
     }
     DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
@@ -39,11 +37,11 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
 pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<DomainConfig> {
     let mut new_domains = Vec::new();
     for i in 0..num_domains {
-        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
+        let curve = ALL_CURVES[i % ALL_CURVES.len()];
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
-            scheme,
-            purpose: infer_purpose_from_scheme(scheme),
+            curve,
+            purpose: infer_purpose_from_curve(curve),
         });
     }
     new_domains

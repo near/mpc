@@ -3,7 +3,7 @@ use k256::elliptic_curve::{Field as _, Group as _, PrimeField as _};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainId},
         signature::Tweak,
     },
 };
@@ -57,17 +57,17 @@ pub fn new_secp256k1() -> (dtos::PublicKey, ts_ecdsa::KeygenOutput) {
     (pk, keygen_output)
 }
 
-pub fn make_key_for_domain(domain_scheme: SignatureScheme) -> (dtos::PublicKey, SharedSecretKey) {
-    match domain_scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+pub fn make_key_for_domain(domain_curve: Curve) -> (dtos::PublicKey, SharedSecretKey) {
+    match domain_curve {
+        Curve::Secp256k1 | Curve::V2Secp256k1 => {
             let (pk, sk) = new_secp256k1();
             (pk, SharedSecretKey::Secp256k1(sk))
         }
-        SignatureScheme::Ed25519 => {
+        Curve::Ed25519 => {
             let (pk, sk) = new_ed25519();
             (pk, SharedSecretKey::Ed25519(sk))
         }
-        SignatureScheme::Bls12381 => {
+        Curve::Bls12381 => {
             let (pk, sk) = new_bls12381();
             (pk, SharedSecretKey::Bls12381(sk))
         }
