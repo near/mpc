@@ -21,7 +21,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     primitives::{
-        domain::{infer_purpose_from_scheme, Curve, DomainConfig, DomainId},
+        domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -616,7 +616,7 @@ impl MpcVoteAddDomainsCmd {
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
                 curve: *scheme,
-                purpose: infer_purpose_from_scheme(*scheme),
+                purpose: infer_purpose_from_curve(*scheme),
             });
             next_domain += 1;
         }
