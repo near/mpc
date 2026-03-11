@@ -5,8 +5,8 @@ use crate::types::ObservedState;
 use near_account_id::AccountId;
 use serde::de::DeserializeOwned;
 
-/// Holds  a Monitoring task and the latest cached value.
-/// This is useful such that we don't unnecessarily deserialze the same state multiple times.
+/// Holds a Monitoring task and the latest cached value.
+/// This is useful such that we don't unnecessarily deserialize the same state multiple times.
 pub(crate) struct ContractMethodSubscription<Res> {
     inner: MonitoringTask,
     cached: Result<ObservedState<Res>, ChainGatewayError>,
