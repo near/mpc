@@ -7,7 +7,7 @@ a stronger notion of security than the one promised by plain PedPop.
 PedPop+ is a five-and-a-half-rounds protocol and makes use in three of its rounds of a reliable broadcast channel. A reliable broadcast is a three-round protocol,
 implying that the effective total number of PedPop+ rounds is eleven and a half. The broadcast channel is implemented in `src/protocol/echo_broadcast.rs`.
 
-The implemented DKG serves as a generic one that can be used with multiple different underlying elliptic curves. We thus use it with `Secp256k1` for ECDSA schemes, `Curve25519` for EdDSA scheme, and `BLS12-381` for the confidential key derivation functionality.
+The implemented DKG serves as a generic one that can be used with multiple different underlying elliptic curves. We thus use it with `Secp256k1` for ECDSA schemes, `Edwards25519` for EdDSA scheme, and `BLS12-381` for the confidential key derivation functionality.
 
 ## Keygen, Reshare and Refresh
 

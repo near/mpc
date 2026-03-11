@@ -7,7 +7,7 @@ use near_sdk::{Gas, NearToken};
 pub const PARTICIPANT_LEN: usize = 10;
 pub const ALL_CURVES: &[Curve; 4] = &[
     Curve::Secp256k1,
-    Curve::Curve25519,
+    Curve::Edwards25519,
     Curve::Bls12381,
     Curve::V2Secp256k1,
 ];

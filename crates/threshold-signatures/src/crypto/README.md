@@ -11,7 +11,7 @@ Defines the library's [`Ciphersuite`](ciphersuite.rs) trait, which extends `fros
 | Type | Curve | Byte Order |
 |------|-------|------------|
 | `Secp256K1Sha256` | Secp256k1 | Big-endian |
-| `Ed25519Sha512` | Curve25519 | Little-endian |
+| `Ed25519Sha512` | Edwards25519 | Little-endian |
 | `JubjubBlake2b512` | JubJub | Little-endian |
 | `BLS12381SHA256` | BLS12-381 (G2) | Little-endian |
 

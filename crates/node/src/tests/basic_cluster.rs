@@ -37,7 +37,7 @@ async fn test_basic_cluster() {
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
-        curve: Curve::Curve25519,
+        curve: Curve::Edwards25519,
         purpose: DomainPurpose::Sign,
     };
 

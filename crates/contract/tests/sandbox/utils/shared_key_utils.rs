@@ -63,7 +63,7 @@ pub fn make_key_for_domain(domain_curve: Curve) -> (dtos::PublicKey, SharedSecre
             let (pk, sk) = new_secp256k1();
             (pk, SharedSecretKey::Secp256k1(sk))
         }
-        Curve::Curve25519 => {
+        Curve::Edwards25519 => {
             let (pk, sk) = new_ed25519();
             (pk, SharedSecretKey::Ed25519(sk))
         }
