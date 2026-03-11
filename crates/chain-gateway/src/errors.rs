@@ -1,11 +1,10 @@
 use std::{fmt, sync::Arc};
 
 use near_account_id::AccountId;
-use thiserror::Error;
 
 pub type SharedError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum NearClientError {
     #[error("failed to send async")]
     AsyncSendError {
@@ -19,7 +18,7 @@ pub enum NearClientError {
     },
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 #[error("query view {kind} error for {query}")]
 pub struct NearViewClientError {
     pub query: ViewClientQuery,
@@ -66,7 +65,7 @@ impl fmt::Display for NearViewClientErrorKind {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 #[error("unexpected response: {0}")]
 pub struct UnexpectedResponseError(pub String);
 
@@ -91,7 +90,7 @@ impl std::fmt::Display for ChainGatewayOp {
     }
 }
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum ChainGatewayError {
     #[error("monitoring task closed")]
     MonitoringClosed,
