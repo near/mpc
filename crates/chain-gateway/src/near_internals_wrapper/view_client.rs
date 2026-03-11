@@ -33,7 +33,7 @@ impl ViewClientWrapper {
 impl QueryViewFunction for ViewClientWrapper {
     type Error = NearViewClientError;
     /// calls view method contract_id::method_name(args) and returns the result
-    async fn view_function_query(
+    async fn query_view_function(
         &self,
         contract_id: &AccountId,
         method_name: &str,

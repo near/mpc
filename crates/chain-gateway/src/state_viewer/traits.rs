@@ -20,7 +20,7 @@ pub trait ViewContract: IsSyncing + QueryViewFunction {
     ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send {
         async move {
             self.wait_for_full_sync().await;
-            self.view_function_query(contract_id, method_name, args)
+            self.query_view_function(contract_id, method_name, args)
                 .await
                 .map_err(|err| ChainGatewayError::ViewClient {
                     op: ChainGatewayOp::ViewCall {
@@ -48,7 +48,7 @@ pub trait ViewContract: IsSyncing + QueryViewFunction {
 /// async fn main() {
 ///     let viewer = MockChainState::builder()
 ///         .with_syncing_status(Ok(false))
-///         .with_view_function_query_response(Ok(ObservedState {
+///         .with_query_view_function_response(Ok(ObservedState {
 ///             observed_at: 1.into(),
 ///             value: br#""hello""#.to_vec(),
 ///         }))
@@ -98,7 +98,7 @@ pub trait SubscribeContractState: ViewContract + Clone {
 /// async fn main() {
 ///     let viewer = MockChainState::builder()
 ///         .with_syncing_status(Ok(false))
-///         .with_view_function_query_response(Ok(ObservedState {
+///         .with_query_view_function_response(Ok(ObservedState {
 ///             observed_at: 1.into(),
 ///             value: br#""hello""#.to_vec(),
 ///         }))
@@ -206,7 +206,7 @@ mod tests {
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(response.clone()))
+            .with_query_view_function_response(Ok(response.clone()))
             .build();
 
         let state = viewer
@@ -224,7 +224,7 @@ mod tests {
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(response))
+            .with_query_view_function_response(Ok(response))
             .build();
 
         viewer
@@ -241,7 +241,7 @@ mod tests {
         let (call, _response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Err(MockError::SyncError))
+            .with_query_view_function_response(Err(MockError::SyncError))
             .build();
 
         let err = viewer
@@ -272,7 +272,7 @@ mod tests {
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(true))
-            .with_view_function_query_response(Ok(response))
+            .with_query_view_function_response(Ok(response))
             .build();
 
         let v = viewer.clone();
@@ -301,7 +301,7 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: block_height.into(),
                 value: json_bytes,
             }))
@@ -320,7 +320,7 @@ mod tests {
     async fn test_view_propagates_view_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Err(MockError::RpcError))
+            .with_query_view_function_response(Err(MockError::RpcError))
             .build();
 
         let err = viewer
@@ -335,7 +335,7 @@ mod tests {
     async fn test_view_returns_deserialization_error_on_bad_bytes() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not valid json".to_vec(),
             }))
@@ -360,7 +360,7 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: block_height.into(),
                 value: json_bytes,
             }))
@@ -379,7 +379,7 @@ mod tests {
     async fn test_subscribe_latest_returns_deserialization_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not json".to_vec(),
             }))
@@ -403,7 +403,7 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&initial).unwrap(),
             }))

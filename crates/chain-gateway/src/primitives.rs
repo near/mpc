@@ -36,7 +36,7 @@ pub trait IsSyncing: Send + Sync + 'static {
 
 pub trait QueryViewFunction: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
-    fn view_function_query(
+    fn query_view_function(
         &self,
         contract_id: &AccountId,
         method_name: &str,

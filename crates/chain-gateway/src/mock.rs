@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct MockChainState {
     sync_response: Arc<RwLock<Result<bool, MockError>>>,
-    view_function_query_submitter_state: Arc<Mutex<MockQueryViewFunctionState>>,
+    query_view_function_submitter_state: Arc<Mutex<MockQueryViewFunctionState>>,
 }
 
 pub struct MockQueryViewFunctionState {
@@ -36,19 +36,19 @@ impl MockChainState {
 
     /// Update the view function query response.
     pub async fn set_view_response(&self, value: Result<ObservedState, MockError>) {
-        let mut inner = self.view_function_query_submitter_state.lock().await;
+        let mut inner = self.query_view_function_submitter_state.lock().await;
         inner.response = value;
     }
 
-    /// Wait for the next view_function_query call (polls submitted.len() every 10ms).
+    /// Wait for the next query_view_function call (polls submitted.len() every 10ms).
     pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
         tokio::time::timeout(max_wait_duration, async {
             let baseline = {
-                let inner = self.view_function_query_submitter_state.lock().await;
+                let inner = self.query_view_function_submitter_state.lock().await;
                 inner.submitted.len()
             };
             loop {
-                let inner = self.view_function_query_submitter_state.lock().await;
+                let inner = self.query_view_function_submitter_state.lock().await;
                 if inner.submitted.len() > baseline {
                     return;
                 }
@@ -61,14 +61,14 @@ impl MockChainState {
 
     /// Returns a snapshot of all recorded view function calls.
     pub async fn view_calls(&self) -> Vec<Call> {
-        let inner = self.view_function_query_submitter_state.lock().await;
+        let inner = self.query_view_function_submitter_state.lock().await;
         inner.submitted.clone()
     }
 }
 
 pub struct MockChainStateBuilder {
     sync_response: Result<bool, MockError>,
-    view_function_query_response: Result<ObservedState, MockError>,
+    query_view_function_response: Result<ObservedState, MockError>,
 }
 
 impl Default for MockChainStateBuilder {
@@ -81,7 +81,7 @@ impl MockChainStateBuilder {
     pub fn new() -> Self {
         Self {
             sync_response: Err(MockError::NotInitialized),
-            view_function_query_response: Err(MockError::NotInitialized),
+            query_view_function_response: Err(MockError::NotInitialized),
         }
     }
 
@@ -90,19 +90,19 @@ impl MockChainStateBuilder {
         self
     }
 
-    pub fn with_view_function_query_response(
+    pub fn with_query_view_function_response(
         mut self,
         r: Result<ObservedState, MockError>,
     ) -> Self {
-        self.view_function_query_response = r;
+        self.query_view_function_response = r;
         self
     }
 
     pub fn build(self) -> MockChainState {
         MockChainState {
             sync_response: Arc::new(RwLock::new(self.sync_response)),
-            view_function_query_submitter_state: Arc::new(Mutex::new(MockQueryViewFunctionState {
-                response: self.view_function_query_response,
+            query_view_function_submitter_state: Arc::new(Mutex::new(MockQueryViewFunctionState {
+                response: self.query_view_function_response,
                 submitted: Vec::new(),
             })),
         }
@@ -118,13 +118,13 @@ impl IsSyncing for MockChainState {
 
 impl QueryViewFunction for MockChainState {
     type Error = MockError;
-    async fn view_function_query(
+    async fn query_view_function(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
     ) -> Result<ObservedState, Self::Error> {
-        let mut inner = self.view_function_query_submitter_state.lock().await;
+        let mut inner = self.query_view_function_submitter_state.lock().await;
         inner.submitted.push(Call {
             contract_id: contract_id.clone(),
             method_name: method_name.to_string(),

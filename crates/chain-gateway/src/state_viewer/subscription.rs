@@ -87,7 +87,7 @@ mod tests {
     async fn test_subscription_constructor_deserializes_initial_value() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: 42.into(),
                 value: serde_json::to_vec(&"hello").unwrap(),
             }))
@@ -110,7 +110,7 @@ mod tests {
     async fn test_subscription_constructor_propagates_view_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Err(MockError::RpcError))
+            .with_query_view_function_response(Err(MockError::RpcError))
             .build();
 
         let mut sub = ContractMethodSubscription::<String>::new(
@@ -131,7 +131,7 @@ mod tests {
     async fn test_subscription_constructor_returns_deserialization_error_on_bad_json() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not json".to_vec(),
             }))
@@ -155,7 +155,7 @@ mod tests {
     async fn test_subscription_latest_updates_on_value_change() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&"initial").unwrap(),
             }))
@@ -192,7 +192,7 @@ mod tests {
     async fn test_subscription_changed_resolves_and_updates_cache() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(Ok(ObservedState {
+            .with_query_view_function_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&"before").unwrap(),
             }))

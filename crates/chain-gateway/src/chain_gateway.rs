@@ -27,14 +27,14 @@ impl IsSyncing for ChainGateway {
 
 impl QueryViewFunction for ChainGateway {
     type Error = NearViewClientError;
-    async fn view_function_query(
+    async fn query_view_function(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
     ) -> Result<ObservedState, Self::Error> {
         self.view_client
-            .view_function_query(contract_id, method_name, args)
+            .query_view_function(contract_id, method_name, args)
             .await
     }
 }

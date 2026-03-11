@@ -634,7 +634,7 @@ We propose the following API for the transaction sender:
 ```rust
 /// Default impl fetches the latest final block, signs, and submits.
 pub trait SubmitFunctionCall:
-    FetchLatestFinalBlockInfo + SubmitSignedTransaction + Send + Sync + Clone + 'static
+    FetchLatestFinalBlockInfo + SubmitSignedTransaction
 {
     async fn submit_function_call_tx(
         &self,

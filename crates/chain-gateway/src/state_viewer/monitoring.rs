@@ -416,7 +416,7 @@ mod tests {
     ) -> (MockChainState, MonitoringTask) {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(mock_response)
+            .with_query_view_function_response(mock_response)
             .build();
 
         let task = make_monitoring_task(
@@ -440,7 +440,7 @@ mod tests {
     ) {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_view_function_query_response(mock_response.clone())
+            .with_query_view_function_response(mock_response.clone())
             .build();
 
         // Initial channel value matches what view_raw would return (wrapping errors)
