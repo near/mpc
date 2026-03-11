@@ -426,7 +426,7 @@ In the following senarios, two trust assumptions are made;
 2. Operator compromised — attacker has operator credentials.
 Similarly to (1) a basic TLS between the CVMs works. The TLS keys are stored in the smart contract.
 3. Smart Contract cannot be trusted  -- The CVMs can communicate over the TLS securely as long as they receive their TLS keys from the operator.
-4. TLS compromised — If only the TLS is compromised/misconfigured, it would be sufficient to double layer the TLS communication of the CVMs with another similar secure communication channel such as Quick. The keys can be stored in the smart contract.
+4. TLS compromised — If only the TLS is compromised/misconfigured, it would be sufficient to double layer the TLS communication of the CVMs with another similar secure communication channel such as Noise. The keys can be stored in the smart contract.
 5. Both the Smart contract is compromised and the TLS channel is misconfigured -- Barak's proposal should do the job.
 6. Both the operator is malicious and the TLS channel is misconfigured. The solution of (4) should apply well.
 7. Both the smart contract is compromised and the operator is malicious: This is an extreme case which we cannot allow as this would break the MPC assumption. -- Might need a more detailed argument
