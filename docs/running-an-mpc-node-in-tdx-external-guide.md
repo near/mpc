@@ -773,7 +773,7 @@ $ curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'$ed25519:5S
 
 The `attestation-cli` tool performs the same Intel TDX (DCAP) attestation verification that the NEAR contract and MPC nodes use, allowing you to independently validate that the node is running trusted code inside genuine hardware.
 
-> **Note:** Run the `attestation-cli` on a trusted machine (e.g., your local workstation), not on the TDX server itself. The verification should be performed from an environment you control and trust.
+> **Note:** Run the `attestation-cli` on a trusted machine. The verification should be performed from an environment you control and trust.
 
 The CLI supports two modes:
 
