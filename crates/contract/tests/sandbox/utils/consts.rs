@@ -1,15 +1,15 @@
 use std::time::Duration;
 
-use mpc_contract::primitives::domain::SignatureScheme;
+use mpc_contract::primitives::domain::Curve;
 use near_sdk::{Gas, NearToken};
 
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
-pub const ALL_SIGNATURE_SCHEMES: &[SignatureScheme; 4] = &[
-    SignatureScheme::Secp256k1,
-    SignatureScheme::Ed25519,
-    SignatureScheme::Bls12381,
-    SignatureScheme::V2Secp256k1,
+pub const ALL_CURVES: &[Curve; 4] = &[
+    Curve::Secp256k1,
+    Curve::Ed25519,
+    Curve::Bls12381,
+    Curve::V2Secp256k1,
 ];
 
 /* --- Gas constants --- */

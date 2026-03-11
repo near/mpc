@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{candidates, create_account_given_id, init, init_env, SandboxTestSetup},
     utils::{
-        consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
+        consts::{ALL_CURVES, PARTICIPANT_LEN},
         shared_key_utils::SharedSecretKey,
         sign_utils::{
             gen_secp_256k1_sign_test, submit_signature_response, verify_timeout, DomainResponseTest,
@@ -13,7 +13,7 @@ use contract_interface::method_names;
 use mpc_contract::{
     errors,
     primitives::{
-        domain::SignatureScheme,
+        domain::Curve,
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
@@ -34,7 +34,7 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
 
     let account_ids: [AccountId; 5] = [
@@ -72,7 +72,7 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
 
     for key in &keys {
@@ -118,7 +118,7 @@ async fn test_contract_request_timeout_all_schemes() -> anyhow::Result<()> {
         contract,
         keys,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     for key in &keys {
         let alice = worker.dev_create_account().await.unwrap();
@@ -141,7 +141,7 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let attested_account = &mpc_signer_accounts[0];
 
@@ -181,7 +181,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
         contract,
         keys,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
@@ -219,7 +219,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let attested_account = &mpc_signer_accounts[0];
     let predecessor_id = contract.id();
@@ -277,7 +277,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let key = &keys[0];
     const LEGACY_KEY_VERSION: u64 = 0; // this is the first cait-sith domain in the contract

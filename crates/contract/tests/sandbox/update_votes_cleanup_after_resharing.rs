@@ -16,9 +16,7 @@ use anyhow::Result;
 use contract_interface::method_names;
 use contract_interface::types as dtos;
 use mpc_contract::{
-    primitives::{
-        domain::SignatureScheme, participants::Participants, thresholds::ThresholdParameters,
-    },
+    primitives::{domain::Curve, participants::Participants, thresholds::ThresholdParameters},
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
@@ -35,7 +33,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -151,7 +149,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -165,7 +163,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     };
     let domains_to_add = vec![dtos::DomainConfig {
         id: dtos::DomainId(next_domain_id),
-        scheme: dtos::SignatureScheme::Ed25519,
+        curve: dtos::Curve::Ed25519,
         purpose: Some(dtos::DomainPurpose::Sign),
     }];
     execute_async_transactions(
