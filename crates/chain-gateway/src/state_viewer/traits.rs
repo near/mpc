@@ -202,8 +202,6 @@ mod tests {
         )
     }
 
-    // --- view_raw tests ---
-
     #[tokio::test]
     async fn test_view_raw_returns_ok_on_success() {
         let mut rng = StdRng::seed_from_u64(1);
@@ -295,8 +293,6 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         handle.await.unwrap().unwrap();
     }
-
-    // --- view (MethodViewer) tests ---
 
     #[tokio::test]
     async fn test_view_deserializes_response() {
