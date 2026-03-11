@@ -12,10 +12,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 /// Polynomial structure of non-empty or non-zero coefficients
 /// Represents a polynomial with coefficients in the scalar field of the curve.
-pub struct Polynomial<C: Ciphersuite>
-where
-    Scalar<C>: Zeroize,
-{
+pub struct Polynomial<C: Ciphersuite> {
     /// The coefficients of our polynomial,
     /// The 0 term being the constant term of the polynomial
     coefficients: Vec<Scalar<C>>,
@@ -30,19 +27,7 @@ where
     }
 }
 
-impl<C: Ciphersuite> Drop for Polynomial<C>
-where
-    Scalar<C>: Zeroize,
-{
-    fn drop(&mut self) {
-        self.zeroize();
-    }
-}
-
-impl<C: Ciphersuite> Polynomial<C>
-where
-    Scalar<C>: Zeroize,
-{
+impl<C: Ciphersuite> Polynomial<C> {
     /// Constructs the polynomial out of scalars
     /// The first scalar (coefficients[0]) is the constant term
     /// The highest degree null coefficients are dropped
