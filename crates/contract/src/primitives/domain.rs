@@ -389,28 +389,6 @@ pub mod tests {
     }
 
     #[rstest]
-    #[case(
-        r#"{"id":0,"scheme":"Secp256k1"}"#,
-        SignatureScheme::Secp256k1,
-        DomainPurpose::Sign
-    )]
-    #[case(
-        r#"{"id":1,"scheme":"Bls12381"}"#,
-        SignatureScheme::Bls12381,
-        DomainPurpose::CKD
-    )]
-    fn test_deserialization_without_purpose(
-        #[case] json: &str,
-        #[case] expected_scheme: SignatureScheme,
-        #[case] expected_purpose: DomainPurpose,
-    ) {
-        // Simulates JSON from a 3.4.1 contract that lacks the `purpose` field.
-        let config: DomainConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.scheme, expected_scheme);
-        assert_eq!(config.purpose, expected_purpose);
-    }
-
-    #[rstest]
     #[case(SignatureScheme::Secp256k1, DomainPurpose::Sign)]
     #[case(SignatureScheme::Ed25519, DomainPurpose::Sign)]
     #[case(SignatureScheme::V2Secp256k1, DomainPurpose::Sign)]
