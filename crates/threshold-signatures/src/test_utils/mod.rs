@@ -89,10 +89,7 @@ pub fn build_frost_key_packages_with_dealer<C: Ciphersuite>(
     max_signers: u16,
     min_signers: u16,
     rng: &mut impl CryptoRngCore,
-) -> GenOutput<C>
-where
-    Scalar<C>: Zeroize,
-{
+) -> GenOutput<C> {
     let participants = generate_participants_with_random_ids(max_signers as usize, rng);
     let (f, pk) = generate_test_keys::<C>((min_signers - 1) as usize, rng);
     participants

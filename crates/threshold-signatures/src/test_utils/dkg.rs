@@ -5,7 +5,6 @@ use crate::participants::Participant;
 use crate::test_utils::{run_protocol, GenOutput, GenProtocol};
 use crate::thresholds::ReconstructionLowerBound;
 use crate::{keygen, refresh, reshare, Ciphersuite, Element, KeygenOutput, Scalar, VerifyingKey};
-use zeroize::Zeroize;
 
 // +++++++++++++++++ DKG Functions +++++++++++++++++ //
 type DKGGenProtocol<C> = GenProtocol<KeygenOutput<C>>;
@@ -21,7 +20,7 @@ pub fn run_keygen<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stati
 ) -> GenOutput<C>
 where
     Element<C>: Send,
-    Scalar<C>: Send + Zeroize,
+    Scalar<C>: Send,
 {
     let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
 
@@ -44,7 +43,7 @@ pub fn run_refresh<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
 ) -> GenOutput<C>
 where
     Element<C>: Send,
-    Scalar<C>: Send + Zeroize,
+    Scalar<C>: Send,
 {
     let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
 
@@ -78,7 +77,7 @@ pub fn run_reshare<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
 ) -> GenOutput<C>
 where
     Element<C>: Send,
-    Scalar<C>: Send + Zeroize,
+    Scalar<C>: Send,
 {
     assert!(!new_participants.is_empty());
     let mut setup = vec![];
