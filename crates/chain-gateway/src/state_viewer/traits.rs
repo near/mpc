@@ -9,37 +9,6 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use super::subscription::ContractMethodSubscription;
 
-/// All other viewer traits are derived from this one
-pub(crate) trait ViewRaw: IsSyncing + QueryViewFunction {
-    // waits until self is synced and then queries the view function
-    fn view_raw(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send;
-}
-
-impl<T: IsSyncing + QueryViewFunction> ViewRaw for T {
-    async fn view_raw(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> Result<ObservedState, ChainGatewayError> {
-        self.wait_for_full_sync().await;
-        self.query_view_function(contract_id, method_name, args)
-            .await
-            .map_err(|err| ChainGatewayError::ViewClient {
-                op: ChainGatewayOp::ViewCall {
-                    account_id: contract_id.to_string(),
-                    method_name: method_name.to_string(),
-                },
-                source: Arc::new(err),
-            })
-    }
-}
-
 /// Provides a subscribe-and-poll interface for observing contract state changes.
 /// Polls the view method every 200 ms and emits change notifications only when
 /// the returned bytes differ.
@@ -86,21 +55,8 @@ pub trait SubscribeToContractMethod {
         T: DeserializeOwned + Send + Clone;
 }
 
-impl<V: ViewRaw + Clone> SubscribeToContractMethod for V {
-    fn subscribe_to_contract_method<T>(
-        &self,
-        contract: AccountId,
-        view_method: &str,
-    ) -> impl Future<Output = impl StreamContractState<T> + Send> + Send
-    where
-        T: DeserializeOwned + Send + Clone,
-    {
-        ContractMethodSubscription::new(self.clone(), contract, view_method, b"{}".to_vec())
-    }
-}
-
-/// Performs a one-shot typed view call: serializes `args` as JSON, calls the
-/// underlying [`ViewRaw::view_raw`], and deserializes the response.
+/// Performs a typed view call: serializes `args` as JSON, calls the
+/// contract and deserializes the response.
 ///
 /// # Example
 ///
@@ -140,6 +96,64 @@ pub trait ViewMethod {
         Res: DeserializeOwned + Send + Clone;
 }
 
+/// All other viewer traits are derived from this one
+pub(crate) trait ViewRaw: IsSyncing + QueryViewFunction {
+    // waits until self is synced and then queries the view function
+    fn view_raw(
+        &self,
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send;
+}
+
+/// A watch-like stream of contract state changes.
+///
+/// Call [`latest()`](StreamContractState::latest) to get the most recent value,
+/// and [`changed()`](StreamContractState::changed) to wait for the next update.
+/// Only actual value changes (different bytes) trigger a notification (block
+/// height increases alone do not).
+pub trait StreamContractState<Res> {
+    /// Returns the last value observed on chain and the block height at which it was first
+    /// observed.
+    fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
+    /// Waits until the observed value changes.
+    fn changed(&mut self) -> impl Future<Output = Result<(), ChainGatewayError>> + Send;
+}
+
+impl<T: IsSyncing + QueryViewFunction> ViewRaw for T {
+    async fn view_raw(
+        &self,
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<ObservedState, ChainGatewayError> {
+        self.wait_for_full_sync().await;
+        self.query_view_function(contract_id, method_name, args)
+            .await
+            .map_err(|err| ChainGatewayError::ViewClient {
+                op: ChainGatewayOp::ViewCall {
+                    account_id: contract_id.to_string(),
+                    method_name: method_name.to_string(),
+                },
+                source: Arc::new(err),
+            })
+    }
+}
+
+impl<V: ViewRaw + Clone> SubscribeToContractMethod for V {
+    fn subscribe_to_contract_method<T>(
+        &self,
+        contract: AccountId,
+        view_method: &str,
+    ) -> impl Future<Output = impl StreamContractState<T> + Send> + Send
+    where
+        T: DeserializeOwned + Send + Clone,
+    {
+        ContractMethodSubscription::new(self.clone(), contract, view_method, b"{}".to_vec())
+    }
+}
+
 impl<T: ViewRaw> ViewMethod for T {
     async fn view_method<Arg, Res>(
         &self,
@@ -171,20 +185,6 @@ impl<T: ViewRaw> ViewMethod for T {
             value,
         })
     }
-}
-
-/// A watch-like stream of contract state changes.
-///
-/// Call [`latest()`](StreamContractState::latest) to get the most recent value,
-/// and [`changed()`](StreamContractState::changed) to wait for the next update.
-/// Only actual value changes (different bytes) trigger a notification (block
-/// height increases alone do not).
-pub trait StreamContractState<Res> {
-    /// Returns the last value observed on chain and the block height at which it was first
-    /// observed.
-    fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
-    /// Waits until the observed value changes.
-    fn changed(&mut self) -> impl Future<Output = Result<(), ChainGatewayError>> + Send;
 }
 
 #[cfg(test)]
