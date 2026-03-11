@@ -10,26 +10,33 @@ use serde::{Serialize, de::DeserializeOwned};
 use super::subscription::ContractMethodSubscription;
 
 /// All other viewer traits are derived from this one
-pub trait ViewRaw: IsSyncing + QueryViewFunction {
+pub(crate) trait ViewRaw: IsSyncing + QueryViewFunction {
     // waits until self is synced and then queries the view function
     fn view_raw(
         &self,
         contract_id: &AccountId,
         method_name: &str,
         args: &[u8],
-    ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send {
-        async move {
-            self.wait_for_full_sync().await;
-            self.query_view_function(contract_id, method_name, args)
-                .await
-                .map_err(|err| ChainGatewayError::ViewClient {
-                    op: ChainGatewayOp::ViewCall {
-                        account_id: contract_id.to_string(),
-                        method_name: method_name.to_string(),
-                    },
-                    source: Arc::new(err),
-                })
-        }
+    ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send;
+}
+
+impl<T: IsSyncing + QueryViewFunction> ViewRaw for T {
+    async fn view_raw(
+        &self,
+        contract_id: &AccountId,
+        method_name: &str,
+        args: &[u8],
+    ) -> Result<ObservedState, ChainGatewayError> {
+        self.wait_for_full_sync().await;
+        self.query_view_function(contract_id, method_name, args)
+            .await
+            .map_err(|err| ChainGatewayError::ViewClient {
+                op: ChainGatewayOp::ViewCall {
+                    account_id: contract_id.to_string(),
+                    method_name: method_name.to_string(),
+                },
+                source: Arc::new(err),
+            })
     }
 }
 
@@ -62,7 +69,7 @@ pub trait ViewRaw: IsSyncing + QueryViewFunction {
 ///     assert_eq!(state.value, "hello");
 /// }
 /// ```
-pub trait SubscribeContractState: ViewRaw + Clone {
+pub trait SubscribeContractState {
     /// Subscribes to a contract view method and returns a stream of state updates.
     ///
     /// The returned stream polls the contract every 200 ms.
@@ -70,6 +77,16 @@ pub trait SubscribeContractState: ViewRaw + Clone {
     /// # Type Parameter
     ///
     /// `T` is the deserialized return type of the contract method.
+    fn subscribe<T>(
+        &self,
+        contract: AccountId,
+        view_method: &str,
+    ) -> impl Future<Output = impl StreamContractState<T> + Send> + Send
+    where
+        T: DeserializeOwned + Send + Clone;
+}
+
+impl<V: ViewRaw + Clone> SubscribeContractState for V {
     fn subscribe<T>(
         &self,
         contract: AccountId,
@@ -111,7 +128,7 @@ pub trait SubscribeContractState: ViewRaw + Clone {
 ///     assert_eq!(result.observed_at, 1.into());
 /// }
 /// ```
-pub trait ViewMethod: ViewRaw {
+pub trait ViewMethod {
     fn view<Arg, Res>(
         &self,
         contract_id: AccountId,
@@ -120,29 +137,39 @@ pub trait ViewMethod: ViewRaw {
     ) -> impl Future<Output = Result<ObservedState<Res>, ChainGatewayError>> + Send
     where
         Arg: Serialize + Sync,
+        Res: DeserializeOwned + Send + Clone;
+}
+
+impl<T: ViewRaw> ViewMethod for T {
+    async fn view<Arg, Res>(
+        &self,
+        contract_id: AccountId,
+        method_name: &str,
+        args: &Arg,
+    ) -> Result<ObservedState<Res>, ChainGatewayError>
+    where
+        Arg: Serialize + Sync,
         Res: DeserializeOwned + Send + Clone,
     {
-        async move {
-            let args: Vec<u8> =
-                serde_json::to_vec(args).map_err(|err| ChainGatewayError::Serialization {
-                    op: ChainGatewayOp::ViewCall {
-                        account_id: contract_id.to_string(),
-                        method_name: method_name.to_string(),
-                    },
-                    source: Arc::new(err),
-                })?;
-            let res = self.view_raw(&contract_id, method_name, &args).await?;
-            let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
-                ChainGatewayError::Deserialization {
-                    source: Arc::new(err),
-                }
+        let args: Vec<u8> =
+            serde_json::to_vec(args).map_err(|err| ChainGatewayError::Serialization {
+                op: ChainGatewayOp::ViewCall {
+                    account_id: contract_id.to_string(),
+                    method_name: method_name.to_string(),
+                },
+                source: Arc::new(err),
             })?;
+        let res = self.view_raw(&contract_id, method_name, &args).await?;
+        let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
+            ChainGatewayError::Deserialization {
+                source: Arc::new(err),
+            }
+        })?;
 
-            Ok(ObservedState {
-                observed_at: res.observed_at,
-                value,
-            })
-        }
+        Ok(ObservedState {
+            observed_at: res.observed_at,
+            value,
+        })
     }
 }
 

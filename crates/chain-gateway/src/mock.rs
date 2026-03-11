@@ -1,5 +1,4 @@
 use crate::primitives::{IsSyncing, QueryViewFunction};
-use crate::state_viewer::{SubscribeContractState, ViewMethod, ViewRaw};
 use crate::types::ObservedState;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
@@ -133,10 +132,6 @@ impl QueryViewFunction for MockChainState {
         inner.response.clone()
     }
 }
-
-impl ViewRaw for MockChainState {}
-impl ViewMethod for MockChainState {}
-impl SubscribeContractState for MockChainState {}
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum MockError {
