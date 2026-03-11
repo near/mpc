@@ -65,7 +65,10 @@ impl<C: Ciphersuite> Statement<'_, C> {
 /// The private witness for this proof.
 /// This holds the scalar the prover needs to know.
 #[derive(Clone)]
-pub struct Witness<C: Ciphersuite> {
+pub struct Witness<C: Ciphersuite>
+where
+    Scalar<C>: Zeroize,
+{
     pub x: SerializableScalar<C>,
 }
 
@@ -75,6 +78,15 @@ where
 {
     fn zeroize(&mut self) {
         self.x.0.zeroize();
+    }
+}
+
+impl<C: Ciphersuite> Drop for Witness<C>
+where
+    Scalar<C>: Zeroize,
+{
+    fn drop(&mut self) {
+        self.zeroize();
     }
 }
 
@@ -120,6 +132,7 @@ pub fn prove_with_nonce<C: Ciphersuite>(
 ) -> Result<Proof<C>, ProtocolError>
 where
     Element<C>: ConstantTimeEq,
+    Scalar<C>: Zeroize,
 {
     if statement.generator1.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);

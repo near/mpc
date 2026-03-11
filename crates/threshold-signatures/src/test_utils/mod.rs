@@ -20,9 +20,10 @@ use crate::crypto::polynomials::Polynomial;
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 use crate::protocol::Protocol;
-use crate::{Ciphersuite, KeygenOutput};
+use crate::{Ciphersuite, KeygenOutput, Scalar};
 use frost_core::{keys::SigningShare, Group, VerifyingKey};
 use rand_core::CryptoRngCore;
+use zeroize::Zeroize;
 
 /// Type representing DKG output keys
 pub type GenOutput<C> = Vec<(Participant, KeygenOutput<C>)>;
@@ -61,7 +62,10 @@ pub fn one_coordinator_output<ProtocolOutput: Clone>(
 pub fn generate_test_keys<C: Ciphersuite>(
     degree: usize,
     rng: &mut impl CryptoRngCore,
-) -> (Polynomial<C>, VerifyingKey<C>) {
+) -> (Polynomial<C>, VerifyingKey<C>)
+where
+    Scalar<C>: Zeroize,
+{
     let f = Polynomial::<C>::generate_polynomial(None, degree, rng).unwrap();
     let secret = f.eval_at_zero().unwrap().0;
     (
@@ -76,7 +80,10 @@ pub fn make_keygen_output<C: Ciphersuite>(
     f: &Polynomial<C>,
     pk: &VerifyingKey<C>,
     p: Participant,
-) -> KeygenOutput<C> {
+) -> KeygenOutput<C>
+where
+    Scalar<C>: Zeroize,
+{
     KeygenOutput {
         private_share: SigningShare::new(f.eval_at_participant(p).unwrap().0),
         public_key: *pk,
@@ -89,7 +96,10 @@ pub fn build_frost_key_packages_with_dealer<C: Ciphersuite>(
     max_signers: u16,
     min_signers: u16,
     rng: &mut impl CryptoRngCore,
-) -> GenOutput<C> {
+) -> GenOutput<C>
+where
+    Scalar<C>: Zeroize,
+{
     let participants = generate_participants_with_random_ids(max_signers as usize, rng);
     let (f, pk) = generate_test_keys::<C>((min_signers - 1) as usize, rng);
     participants

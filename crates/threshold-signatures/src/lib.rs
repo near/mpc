@@ -96,7 +96,7 @@ pub fn keygen<C: Ciphersuite>(
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
 where
     Element<C>: Send,
-    Scalar<C>: Send,
+    Scalar<C>: Send + Zeroize,
 {
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     let participants = assert_key_invariants(participants, me, threshold)?;
@@ -118,7 +118,7 @@ pub fn reshare<C: Ciphersuite>(
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
 where
     Element<C>: Send,
-    Scalar<C>: Send,
+    Scalar<C>: Send + Zeroize,
 {
     let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     let threshold = new_threshold;
@@ -154,7 +154,7 @@ pub fn refresh<C: Ciphersuite>(
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
 where
     Element<C>: Send,
-    Scalar<C>: Send,
+    Scalar<C>: Send + Zeroize,
 {
     if old_signing_key.is_none() {
         return Err(InitializationError::BadParameters(format!(

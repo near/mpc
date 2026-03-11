@@ -42,7 +42,10 @@ impl<C: Ciphersuite> Statement<'_, C> {
 /// The private witness for this proof.
 /// This holds the scalar the prover needs to know.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct Witness<C: Ciphersuite> {
+pub struct Witness<C: Ciphersuite>
+where
+    crate::Scalar<C>: Zeroize,
+{
     pub x: SerializableScalar<C>,
 }
 
@@ -52,6 +55,15 @@ where
 {
     fn zeroize(&mut self) {
         self.x.0.zeroize();
+    }
+}
+
+impl<C: Ciphersuite> Drop for Witness<C>
+where
+    crate::Scalar<C>: Zeroize,
+{
+    fn drop(&mut self) {
+        self.zeroize();
     }
 }
 
@@ -71,7 +83,10 @@ pub fn prove_with_nonce<C: Ciphersuite>(
     statement: Statement<'_, C>,
     witness: &Witness<C>,
     nonce: (Scalar<C>, Element<C>),
-) -> Result<Proof<C>, ProtocolError> {
+) -> Result<Proof<C>, ProtocolError>
+where
+    Scalar<C>: Zeroize,
+{
     transcript.message(NEAR_DLOG_STATEMENT_LABEL, &statement.encode()?);
 
     let (k, big_k) = nonce;

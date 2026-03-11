@@ -18,6 +18,7 @@ use frost_core::{
     Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey,
 };
 use rand_core::CryptoRngCore;
+use zeroize::Zeroize;
 
 /// This function prevents calling keyshare function with inproper inputs
 fn assert_keyshare_inputs<C: Ciphersuite>(
@@ -58,7 +59,10 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
 /// If the first coefficient is set to zero then skip it
 fn generate_coefficient_commitment<C: Ciphersuite>(
     secret_coefficients: &Polynomial<C>,
-) -> Result<PolynomialCommitment<C>, ProtocolError> {
+) -> Result<PolynomialCommitment<C>, ProtocolError>
+where
+    Scalar<C>: Zeroize,
+{
     let mut secret_coefficients = secret_coefficients.get_coefficients();
     // we skip the zero share as neither zero scalar
     // nor identity group element are serializable
@@ -122,7 +126,10 @@ fn proof_of_knowledge<C: Ciphersuite>(
     coefficients: &Polynomial<C>,
     coefficient_commitment: &PolynomialCommitment<C>,
     rng: &mut impl CryptoRngCore,
-) -> Result<Signature<C>, ProtocolError> {
+) -> Result<Signature<C>, ProtocolError>
+where
+    Scalar<C>: Zeroize,
+{
     // creates an identifier for the participant
     let id = me.scalar::<C>();
     let vk_share = coefficient_commitment.eval_at_zero()?;
@@ -347,7 +354,10 @@ async fn do_keyshare<C: Ciphersuite>(
     secret: Scalar<C>,
     old_reshare_package: Option<(VerifyingKey<C>, ParticipantList)>,
     rng: &mut impl CryptoRngCore,
-) -> Result<KeygenOutput<C>, ProtocolError> {
+) -> Result<KeygenOutput<C>, ProtocolError>
+where
+    Scalar<C>: Zeroize,
+{
     let mut all_full_commitments = ParticipantMap::new(&participants);
     let mut domain_separator = DomainSeparator::new();
     // Make sure you do not call do_keyshare with zero as secret on an old participant
@@ -543,7 +553,10 @@ pub async fn do_keygen<C: Ciphersuite>(
     me: Participant,
     threshold: impl Into<ReconstructionLowerBound>,
     mut rng: impl CryptoRngCore,
-) -> Result<KeygenOutput<C>, ProtocolError> {
+) -> Result<KeygenOutput<C>, ProtocolError>
+where
+    Scalar<C>: Zeroize,
+{
     let threshold = threshold.into();
     // pick share at random
     let secret = SigningKey::<C>::new(&mut rng).to_scalar();
@@ -606,7 +619,10 @@ pub async fn do_reshare<C: Ciphersuite>(
     old_public_key: VerifyingKey<C>,
     old_participants: ParticipantList,
     mut rng: impl CryptoRngCore,
-) -> Result<KeygenOutput<C>, ProtocolError> {
+) -> Result<KeygenOutput<C>, ProtocolError>
+where
+    Scalar<C>: Zeroize,
+{
     let threshold = threshold.into();
     let intersection = old_participants.intersection(&participants);
     // either extract the share and linearize it or set it to zero
@@ -687,9 +703,10 @@ pub mod test {
     };
     use crate::{keygen, reshare, DKG_MAX_INCOMING_BUFFER_ENTRIES};
     use crate::{KeygenOutput, ReconstructionLowerBound};
-    use frost_core::{Field, Group};
+    use frost_core::{Field, Group, Scalar};
     use rand_core::{CryptoRngCore, SeedableRng};
     use rstest::rstest;
+    use zeroize::Zeroize;
 
     #[test]
     fn test_domain_separate_hash() {
@@ -728,7 +745,7 @@ pub mod test {
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
         <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send + Zeroize,
     {
         let result = run_keygen::<C, R>(participants, threshold, rng);
         assert!(result.len() == participants.len());
@@ -748,7 +765,7 @@ pub mod test {
         rng: &mut R,
     ) where
         <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send + Zeroize,
     {
         let threshold = 1;
         let participants = generate_participants(2);
@@ -772,7 +789,7 @@ pub mod test {
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
         <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send + Zeroize,
     {
         let result0 = run_keygen::<C, R>(participants, threshold, rng);
         assert_public_key_invariant(&result0);
@@ -794,7 +811,7 @@ pub mod test {
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
         <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send + Zeroize,
     {
         let result0 = run_keygen::<C, R>(participants, threshold0, rng);
         assert_public_key_invariant(&result0);
@@ -828,7 +845,7 @@ pub mod test {
         rng: &mut R,
     ) where
         <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
-        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send + Zeroize,
     {
         let participants = generate_participants(2);
         let threshold0 = 2;
