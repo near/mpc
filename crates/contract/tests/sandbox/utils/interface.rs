@@ -15,13 +15,13 @@ pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
 }
 
-impl IntoInterfaceType<dtos::Curve> for Curve {
-    fn into_interface_type(self) -> dtos::Curve {
+impl IntoInterfaceType<dtos::SignatureScheme> for Curve {
+    fn into_interface_type(self) -> dtos::SignatureScheme {
         match self {
-            Curve::Secp256k1 => dtos::Curve::Secp256k1,
-            Curve::Ed25519 => dtos::Curve::Ed25519,
-            Curve::Bls12381 => dtos::Curve::Bls12381,
-            Curve::V2Secp256k1 => dtos::Curve::V2Secp256k1,
+            Curve::Secp256k1 => dtos::SignatureScheme::Secp256k1,
+            Curve::Ed25519 => dtos::SignatureScheme::Ed25519,
+            Curve::Bls12381 => dtos::SignatureScheme::Bls12381,
+            Curve::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
         }
     }
 }

@@ -163,7 +163,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     };
     let domains_to_add = vec![dtos::DomainConfig {
         id: dtos::DomainId(next_domain_id),
-        curve: dtos::Curve::Ed25519,
+        scheme: dtos::SignatureScheme::Ed25519,
         purpose: Some(dtos::DomainPurpose::Sign),
     }];
     execute_async_transactions(
