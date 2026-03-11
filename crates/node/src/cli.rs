@@ -80,6 +80,10 @@ pub enum CliCommand {
         /// optional argument. If set, generates additional config for participants\[id\] for each id in migrating_nodes.
         #[arg(long, value_delimiter = ',')]
         migrating_nodes: Vec<usize>,
+        /// Port seed for MPC node port allocation. Different values produce non-overlapping port ranges,
+        /// enabling parallel test execution. Default 0 matches PortSeed::CLI_FOR_PYTEST.
+        #[arg(long, default_value = "0")]
+        port_seed: u16,
     },
 }
 #[derive(Args, Debug)]
@@ -278,6 +282,7 @@ impl Cli {
                 desired_presignatures_to_buffer,
                 desired_responder_keys_per_participant,
                 ref migrating_nodes,
+                port_seed,
             } => {
                 anyhow::ensure!(
                     participants.len() == responders.len(),
@@ -292,6 +297,7 @@ impl Cli {
                     desired_presignatures_to_buffer,
                     desired_responder_keys_per_participant,
                     migrating_nodes,
+                    port_seed,
                 )
             }
         }
@@ -420,6 +426,7 @@ fn run_generate_test_configs(
     desired_presignatures_to_buffer: usize,
     desired_responder_keys_per_participant: usize,
     migrating_nodes: &[usize],
+    port_seed: u16,
 ) -> anyhow::Result<()> {
     let participants = duplicate_migrating_accounts(participants, migrating_nodes)?;
     let responders = duplicate_migrating_accounts(responders, migrating_nodes)?;
@@ -439,10 +446,11 @@ fn run_generate_test_configs(
     let configs = generate_test_p2p_configs(
         &participants,
         threshold,
-        PortSeed::CLI_FOR_PYTEST,
+        PortSeed::new(port_seed),
         Some(p2p_key_pairs),
     )?;
     let participants_config = configs[0].0.participants.clone();
+    let port_seed = PortSeed::new(port_seed);
     for (i, (_config, _p2p_private_key)) in configs.into_iter().enumerate() {
         let subdir = format!("{}/{}", output_dir, i);
         std::fs::create_dir_all(&subdir)?;
@@ -452,6 +460,7 @@ fn run_generate_test_configs(
             i,
             desired_triples_to_buffer,
             desired_presignatures_to_buffer,
+            port_seed,
         );
         std::fs::write(
             format!("{}/mpc_node_config.json", subdir),
@@ -471,6 +480,7 @@ fn create_file_config(
     index: usize,
     desired_triples_to_buffer: usize,
     desired_presignatures_to_buffer: usize,
+    port_seed: PortSeed,
 ) -> ConfigFile {
     ConfigFile {
         my_near_account_id: participant.clone(),
@@ -478,15 +488,15 @@ fn create_file_config(
         number_of_responder_keys: 1,
         web_ui: SocketAddr::new(
             Ipv4Addr::LOCALHOST.into(),
-            PortSeed::CLI_FOR_PYTEST.web_port(index),
+            port_seed.web_port(index),
         ),
         migration_web_ui: SocketAddr::new(
             Ipv4Addr::LOCALHOST.into(),
-            PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
+            port_seed.migration_web_port(index),
         ),
         pprof_bind_address: SocketAddr::new(
             Ipv4Addr::LOCALHOST.into(),
-            PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),
+            port_seed.pprof_web_port(index),
         ),
         indexer: IndexerConfig {
             validate_genesis: true,

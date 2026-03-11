@@ -39,8 +39,17 @@ from transaction import (
 
 from key import Key
 
-dot_near = pathlib.Path.home() / ".near"
 SECRETS_JSON = "secrets.json"
+
+
+def _dot_near() -> pathlib.Path:
+    """Return the .near directory, reading NEAR_DOT_DIR at call time (not import time).
+
+    This must be a function rather than a module-level variable because
+    pytest-xdist workers set the env var in pytest_configure, which runs
+    after module imports.
+    """
+    return pathlib.Path(os.environ.get('NEAR_DOT_DIR', str(pathlib.Path.home() / ".near")))
 NUMBER_OF_VALIDATORS = 1
 MPC_NODE_CONFIG_JSON = "mpc_node_config.json"
 
@@ -249,6 +258,7 @@ def generate_mpc_configs(
       (2) observer nodes that corresponds to the mpc participant hasn't been started yet,
         so we can not make any requests from them yet.
     """
+    dot_near = _dot_near()
     signers = ",".join(f"signer_{i}.test0" for i in range(num_mpc_nodes))
     responders = [f"responder_{i}.test0" for i in range(num_mpc_nodes)]
     cmd = (
@@ -283,6 +293,12 @@ def generate_mpc_configs(
             "--desired-triples-to-buffer",
             str(triples_to_buffer),
         )
+
+    port_seed = os.environ.get('MPC_PORT_SEED', '0')
+    cmd += (
+        "--port-seed",
+        port_seed,
+    )
 
     subprocess.run(cmd)
 
@@ -368,6 +384,7 @@ def move_mpc_configs(observers: list[LocalNode]):
     Rust code generates a folder per each participant, we want to move everything in one place
     Name of each folder is just a node index, e.g. 0, 1, 2, ...
     """
+    dot_near = _dot_near()
     for idx, observer in enumerate(observers):
         mpc_config_dir = dot_near / str(idx)
         for fname in os.listdir(mpc_config_dir):
