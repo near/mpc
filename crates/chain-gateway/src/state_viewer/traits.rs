@@ -33,8 +33,6 @@ pub trait ViewContract: IsSyncing + QueryViewFunction {
     }
 }
 
-/// Blanket-implemented for all `T: HasViewContract`.
-///
 /// Provides a subscribe-and-poll interface for observing contract state changes.
 /// Polls the view method every 200 ms and emits change notifications only when
 /// the returned bytes differ.
