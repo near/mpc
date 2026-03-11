@@ -80,16 +80,14 @@ class RPC ext;
 
 ### Shared Components
 
-The Archive Signer is built on three reusable layers from this repository (bottom-up). The boot, attestation, governance, and upgrade flows these layers follow are described in the [TEE Lifecycle][tee-lifecycle] doc.
+The Archive Signer is built on three reusable layers from this repository. For the shared boot, attestation, governance, and upgrade patterns, see [TEE Lifecycle][tee-lifecycle].
 
 - **[Embedded Indexer Node](#embedded-indexer-node)** — runs a full `near-indexer` (including `neard`) inside the CVM for trustless NEAR chain access.
 - **[Chain Gateway][indexer-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
-- **[TEE Context][tee-context]** — sits on top of the Chain Gateway; manages the attestation lifecycle: polls allowed image hashes, periodically submits attestation quotes, and monitors for attestation removal. Depends on [`tee-authority`][tee-authority] (attestation generation) and [`mpc-attestation`][mpc-attestation] (on-chain verification).
+- **[TEE Context][tee-context]** — sits on top of the Chain Gateway; provides the contract interface for the [attestation lifecycle][tee-lifecycle].
 
 [tee-lifecycle]: tee-lifecycle.md
 [indexer-design]: indexer-design.md
-[tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
-[mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
 
 ### Crate Dependencies
 

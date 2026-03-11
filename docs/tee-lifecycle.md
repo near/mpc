@@ -123,7 +123,7 @@ After boot, every service must continuously prove to the governance contract tha
 3. **Removal monitoring** — if the contract removes the node's attestation (e.g., after an image-hash rotation), the service detects this and resubmits immediately.
 4. **Collective verification** — every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate all stored attestations and evict nodes whose image hashes are no longer on the approved list.
 
-The [TEE Context][tee-context-design] crate handles all of the above. Each service either uses it directly (Backup Service, Archive Signer) or through the [MPC Context][mpc-context] wrapper (MPC node). See the [TEE Context design doc][tee-context-design] for background tasks and protocol details.
+The [TEE Context][tee-context-design] crate provides the contract interface for the above — each service is responsible for its own attestation scheduling. Services either use TEE Context directly (Backup Service, Archive Signer) or through the [MPC Context][mpc-context] wrapper (MPC node). See the [TEE Context design doc][tee-context-design] for the interface and usage examples.
 
 The governance contract verifies each submitted quote by checking the cryptographic chain of trust, replaying the TDX event log to reconstruct enclave measurements, and confirming that the Docker image and launcher compose hashes match the allowed lists. For the full verification steps, see [Attestation verification on the contract][attestation-verification].
 
