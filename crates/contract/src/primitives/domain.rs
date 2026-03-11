@@ -426,6 +426,12 @@ pub mod tests {
         DomainPurpose::Sign
     )]
     #[case(r#"{"id":1,"curve":"Bls12381"}"#, Curve::Bls12381, DomainPurpose::CKD)]
+    // Old JSON used "scheme" as the key — verify the alias still works.
+    #[case(
+        r#"{"id":0,"scheme":"Secp256k1"}"#,
+        Curve::Secp256k1,
+        DomainPurpose::Sign
+    )]
     fn test_deserialization_without_purpose(
         #[case] json: &str,
         #[case] expected_curve: Curve,
