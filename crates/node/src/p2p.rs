@@ -777,8 +777,7 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
-// TODO(#1675): move this inside test feature
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(feature = "test-utils")]
 pub mod testing {
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
     use crate::primitives::ParticipantId;
@@ -847,7 +846,6 @@ pub mod testing {
         pub const CLI_FOR_PYTEST: Self = Self::new(0);
     }
 
-    #[cfg(any(test, feature = "test-utils"))]
     impl PortSeed {
         // Each place that passes a PortSeed in should define a unique one here.
         pub const P2P_BASIC_TEST: Self = Self::new(1);
