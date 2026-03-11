@@ -101,7 +101,6 @@ sudo apt install build-essential qemu-system docker.io
 ```bash
 # allow the MPC user to access docker and KVM for running CVMs.
 sudo useradd -m -G docker,kvm -s /usr/bin/bash mpc
-sudo usermod -aG kvm mpc
 sudo passwd mpc
 # create installation folder
 sudo mkdir /opt/mpc
