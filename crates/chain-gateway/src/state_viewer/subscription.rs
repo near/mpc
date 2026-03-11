@@ -1,5 +1,5 @@
 use super::monitoring::{MonitoringTask, make_monitoring_task};
-use super::traits::{ContractStateStream, ContractViewer};
+use super::traits::{StreamContractState, ViewContract};
 use crate::errors::ChainGatewayError;
 use crate::types::ObservedState;
 use near_account_id::AccountId;
@@ -22,7 +22,7 @@ where
     }
 }
 
-impl<Res> ContractStateStream<Res> for ContractMethodSubscription<Res>
+impl<Res> StreamContractState<Res> for ContractMethodSubscription<Res>
 where
     Res: DeserializeOwned + Send + Clone,
 {
@@ -53,7 +53,7 @@ impl<Res> ContractMethodSubscription<Res>
 where
     Res: DeserializeOwned,
 {
-    pub(super) async fn new<V: ContractViewer>(
+    pub(super) async fn new<V: ViewContract>(
         viewer: V,
         contract_id: AccountId,
         method_name: &str,
@@ -79,7 +79,7 @@ mod tests {
     use super::ContractMethodSubscription;
     use crate::errors::ChainGatewayError;
     use crate::mock::{MockChainState, MockError};
-    use crate::state_viewer::ContractStateStream;
+    use crate::state_viewer::StreamContractState;
     use crate::types::RawObservedState;
     use std::time::Duration;
 

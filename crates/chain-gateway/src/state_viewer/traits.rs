@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
-use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
+use crate::primitives::{IsSyncing, SubmitViewFunctionQuery};
 use crate::types::ObservedState;
 use near_account_id::AccountId;
 use serde::{Serialize, de::DeserializeOwned};
@@ -10,7 +10,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use super::subscription::ContractMethodSubscription;
 
 /// All other viewer traits are derived from this one
-pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
+pub trait ViewContract: IsSyncing + SubmitViewFunctionQuery {
     // waits until self is synced and then queries the view function
     fn view_raw(
         &self,
@@ -33,7 +33,7 @@ pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
     }
 }
 
-/// Blanket-implemented for all `T: HasContractViewer`.
+/// Blanket-implemented for all `T: HasViewContract`.
 ///
 /// Provides a subscribe-and-poll interface for observing contract state changes.
 /// Polls the view method every 200 ms and emits change notifications only when
@@ -43,7 +43,7 @@ pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
 ///
 /// ```
 /// use chain_gateway::mock::{MockChainState, Call};
-/// use chain_gateway::state_viewer::{ContractStateStream, ContractStateSubscriber};
+/// use chain_gateway::state_viewer::{StreamContractState, SubscribeContractState};
 /// use chain_gateway::types::ObservedState;
 ///
 /// #[tokio::main]
@@ -64,7 +64,7 @@ pub trait ContractViewer: SyncChecker + ViewFunctionQuerySubmitter {
 ///     assert_eq!(state.value, "hello");
 /// }
 /// ```
-pub trait ContractStateSubscriber: ContractViewer + Clone {
+pub trait SubscribeContractState: ViewContract + Clone {
     /// Subscribes to a contract view method and returns a stream of state updates.
     ///
     /// The returned stream polls the contract every 200 ms.
@@ -76,7 +76,7 @@ pub trait ContractStateSubscriber: ContractViewer + Clone {
         &self,
         contract: AccountId,
         view_method: &str,
-    ) -> impl Future<Output = impl ContractStateStream<T> + Send> + Send
+    ) -> impl Future<Output = impl StreamContractState<T> + Send> + Send
     where
         T: DeserializeOwned + Send + Clone,
     {
@@ -84,16 +84,16 @@ pub trait ContractStateSubscriber: ContractViewer + Clone {
     }
 }
 
-/// Blanket-implemented for all `T: HasContractViewer`.
+/// Blanket-implemented for all `T: HasViewContract`.
 ///
 /// Performs a one-shot typed view call: serializes `args` as JSON, calls the
-/// underlying [`ContractViewer::view_raw`], and deserializes the response.
+/// underlying [`ViewContract::view_raw`], and deserializes the response.
 ///
 /// # Example
 ///
 /// ```
 /// use chain_gateway::mock::{MockChainState, Call};
-/// use chain_gateway::state_viewer::MethodViewer;
+/// use chain_gateway::state_viewer::ViewMethod;
 /// use chain_gateway::types::{NoArgs, ObservedState};
 ///
 /// #[tokio::main]
@@ -115,7 +115,7 @@ pub trait ContractStateSubscriber: ContractViewer + Clone {
 ///     assert_eq!(result.observed_at, 1.into());
 /// }
 /// ```
-pub trait MethodViewer: ContractViewer {
+pub trait ViewMethod: ViewContract {
     fn view<Arg, Res>(
         &self,
         contract_id: AccountId,
@@ -152,11 +152,11 @@ pub trait MethodViewer: ContractViewer {
 
 /// A watch-like stream of contract state changes.
 ///
-/// Call [`latest()`](ContractStateStream::latest) to get the most recent value,
-/// and [`changed()`](ContractStateStream::changed) to wait for the next update.
+/// Call [`latest()`](StreamContractState::latest) to get the most recent value,
+/// and [`changed()`](StreamContractState::changed) to wait for the next update.
 /// Only actual value changes (different bytes) trigger a notification (block
 /// height increases alone do not).
-pub trait ContractStateStream<Res> {
+pub trait StreamContractState<Res> {
     /// Returns the last value observed on chain and the block height at which it was first
     /// observed.
     fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
@@ -166,10 +166,10 @@ pub trait ContractStateStream<Res> {
 
 #[cfg(test)]
 mod tests {
-    use super::ContractViewer;
+    use super::ViewContract;
     use crate::errors::{ChainGatewayError, ChainGatewayOp};
     use crate::mock::{Call, MockChainState, MockError};
-    use crate::state_viewer::{ContractStateStream, ContractStateSubscriber, MethodViewer};
+    use crate::state_viewer::{StreamContractState, SubscribeContractState, ViewMethod};
     use crate::types::{NoArgs, RawObservedState};
     use near_account_id::AccountId;
     use rand::distributions::{Alphanumeric, DistString};
@@ -351,7 +351,7 @@ mod tests {
         assert!(matches!(err, ChainGatewayError::Deserialization { .. }));
     }
 
-    // --- subscribe (ContractStateSubscriber) tests ---
+    // --- subscribe (SubscribeContractState) tests ---
 
     #[tokio::test(start_paused = true)]
     async fn test_subscribe_latest_returns_initial_value() {

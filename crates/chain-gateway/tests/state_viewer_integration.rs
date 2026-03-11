@@ -1,8 +1,8 @@
 use assert_matches::assert_matches;
 use base64::Engine;
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::ContractStateStream;
-use chain_gateway::state_viewer::{ContractStateSubscriber, MethodViewer};
+use chain_gateway::state_viewer::StreamContractState;
+use chain_gateway::state_viewer::{SubscribeContractState, ViewMethod};
 use chain_gateway::types::NoArgs;
 use chain_gateway::types::ObservedState;
 use near_indexer::near_primitives::hash::hash;

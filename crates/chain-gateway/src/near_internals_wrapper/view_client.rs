@@ -7,7 +7,7 @@ use crate::{
     errors::{
         NearViewClientError, NearViewClientErrorKind, UnexpectedResponseError, ViewClientQuery,
     },
-    primitives::ViewFunctionQuerySubmitter,
+    primitives::SubmitViewFunctionQuery,
     types::ObservedState,
 };
 
@@ -30,7 +30,7 @@ impl ViewClientWrapper {
     }
 }
 
-impl ViewFunctionQuerySubmitter for ViewClientWrapper {
+impl SubmitViewFunctionQuery for ViewClientWrapper {
     type Error = NearViewClientError;
     /// calls view method contract_id::method_name(args) and returns the result
     async fn view_function_query(

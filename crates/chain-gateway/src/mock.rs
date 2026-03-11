@@ -1,5 +1,5 @@
-use crate::primitives::{SyncChecker, ViewFunctionQuerySubmitter};
-use crate::state_viewer::{ContractStateSubscriber, ContractViewer, MethodViewer};
+use crate::primitives::{IsSyncing, SubmitViewFunctionQuery};
+use crate::state_viewer::{SubscribeContractState, ViewContract, ViewMethod};
 use crate::types::RawObservedState;
 use near_account_id::AccountId;
 use std::sync::{Arc, RwLock};
@@ -10,10 +10,10 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct MockChainState {
     sync_response: Arc<RwLock<Result<bool, MockError>>>,
-    view_function_query_submitter_state: Arc<Mutex<MockViewFunctionQuerySubmitterState>>,
+    view_function_query_submitter_state: Arc<Mutex<MockSubmitViewFunctionQueryState>>,
 }
 
-pub struct MockViewFunctionQuerySubmitterState {
+pub struct MockSubmitViewFunctionQueryState {
     pub response: Result<RawObservedState, MockError>,
     pub submitted: Vec<Call>,
 }
@@ -102,7 +102,7 @@ impl MockChainStateBuilder {
         MockChainState {
             sync_response: Arc::new(RwLock::new(self.sync_response)),
             view_function_query_submitter_state: Arc::new(Mutex::new(
-                MockViewFunctionQuerySubmitterState {
+                MockSubmitViewFunctionQueryState {
                     response: self.view_function_query_response,
                     submitted: Vec::new(),
                 },
@@ -111,14 +111,14 @@ impl MockChainStateBuilder {
     }
 }
 
-impl SyncChecker for MockChainState {
+impl IsSyncing for MockChainState {
     type Error = MockError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
         self.sync_response.read().unwrap().clone()
     }
 }
 
-impl ViewFunctionQuerySubmitter for MockChainState {
+impl SubmitViewFunctionQuery for MockChainState {
     type Error = MockError;
     async fn view_function_query(
         &self,
@@ -136,9 +136,9 @@ impl ViewFunctionQuerySubmitter for MockChainState {
     }
 }
 
-impl ContractViewer for MockChainState {}
-impl MethodViewer for MockChainState {}
-impl ContractStateSubscriber for MockChainState {}
+impl ViewContract for MockChainState {}
+impl ViewMethod for MockChainState {}
+impl SubscribeContractState for MockChainState {}
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum MockError {

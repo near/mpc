@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use near_async::messaging::CanSendAsync as _;
 
-use crate::{errors::NearClientError, primitives::SyncChecker};
+use crate::{errors::NearClientError, primitives::IsSyncing};
 
 /// Wrapper around near-internal struct
 #[derive(Clone)]
@@ -20,8 +20,8 @@ impl ClientWrapper {
     }
 }
 
-/// Implement SyncChecker for our near client
-impl SyncChecker for ClientWrapper {
+/// Implement IsSyncing for our near client
+impl IsSyncing for ClientWrapper {
     type Error = NearClientError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
         let status_request = near_client::Status {
