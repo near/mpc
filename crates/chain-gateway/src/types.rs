@@ -5,10 +5,6 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::errors::ChainGatewayError;
 
-/// An empty argument struct for contract view calls that take no arguments.
-#[derive(Serialize)]
-pub struct NoArgs {}
-
 #[derive(
     Into, From, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug,
 )]
@@ -40,10 +36,7 @@ impl ObservedState<Vec<u8>> {
 mod tests {
     use serde::Deserialize;
 
-    use crate::{
-        errors::ChainGatewayError,
-        types::{NoArgs, ObservedState},
-    };
+    use crate::{errors::ChainGatewayError, types::ObservedState};
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
     struct T {
@@ -73,11 +66,5 @@ mod tests {
         let err = observed.deserialize::<T>().unwrap_err();
 
         assert!(matches!(err, ChainGatewayError::Deserialization { .. }));
-    }
-
-    #[test]
-    fn test_no_args_serializes_to_empty_json_object() {
-        let json = serde_json::to_string(&NoArgs {}).unwrap();
-        assert_eq!(json, "{}");
     }
 }

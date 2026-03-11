@@ -3,7 +3,6 @@ use base64::Engine;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::state_viewer::StreamContractState;
 use chain_gateway::state_viewer::{SubscribeToContractMethod, ViewMethod};
-use chain_gateway::types::NoArgs;
 use chain_gateway::types::ObservedState;
 use near_indexer::near_primitives::hash::hash;
 use near_indexer::near_primitives::types::Finality;
@@ -19,11 +18,7 @@ async fn test_view_method_contract_state() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let value: ObservedState<String> = gw
-        .view_method(
-            TEST_CONTRACT_ACCOUNT.parse().unwrap(),
-            TEST_METHOD,
-            &NoArgs {},
-        )
+        .view_method(TEST_CONTRACT_ACCOUNT.parse().unwrap(), TEST_METHOD, &())
         .await
         .expect("view call should succeed");
 
@@ -36,11 +31,7 @@ async fn test_view_method_nonexistent_method_returns_error() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let result = gw
-        .view_method::<NoArgs, String>(
-            TEST_CONTRACT_ACCOUNT.parse().unwrap(),
-            "nonexistent",
-            &NoArgs {},
-        )
+        .view_method::<(), String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), "nonexistent", &())
         .await;
 
     let err = result.expect_err("calling a nonexistent method should fail");
