@@ -87,6 +87,7 @@ pub struct DomainConfig {
 #[derive(serde::Deserialize)]
 struct DomainConfigCompat {
     id: DomainId,
+    #[serde(alias = "scheme")]
     curve: Curve,
     #[serde(default)]
     purpose: Option<DomainPurpose>,
