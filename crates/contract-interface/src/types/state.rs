@@ -133,7 +133,7 @@ pub struct AuthenticatedAccountId(pub AccountId);
 // Domain Types
 // =============================================================================
 
-/// Elliptic curve used by a domain.
+/// Supported signature schemes.
 #[derive(
     Clone,
     Copy,
@@ -152,16 +152,13 @@ pub struct AuthenticatedAccountId(pub AccountId);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub enum Curve {
+pub enum SignatureScheme {
     Secp256k1,
     Ed25519,
     Bls12381,
     /// Robust ECDSA variant.
     V2Secp256k1,
 }
-
-/// Backwards-compatible type alias.
-pub type SignatureScheme = Curve;
 
 /// The purpose that a domain serves.
 #[derive(
@@ -201,8 +198,7 @@ pub enum DomainPurpose {
 )]
 pub struct DomainConfig {
     pub id: DomainId,
-    #[serde(rename = "scheme")]
-    pub curve: Curve,
+    pub scheme: SignatureScheme,
     /// `None` when reading state from an old contract that predates domain purposes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<DomainPurpose>,
