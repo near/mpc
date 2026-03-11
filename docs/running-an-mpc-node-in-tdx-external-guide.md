@@ -518,6 +518,7 @@ Including
 * Configuring and starting your CVM with the MPC node.  
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
+* Verify the node's attestation before trusting the keys.
 * Add the node key to your Near account.
 
 ### Create a NEAR Account for Your Node
@@ -765,6 +766,99 @@ $ curl -s http://<IP>:8080/public_data | jq -r '.near_signer_public_key'
 ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5
 $ curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'$ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
 ```
+
+### Verify Node Attestation
+
+> **Important:** Before using the node's keys (P2P key or account key), you must verify the node's attestation to confirm that the keys were generated inside a genuine TEE. Without this step, you are susceptible to a man-in-the-middle attack — an adversary could substitute their own keys for the node's real keys.
+
+The `attestation-cli` tool performs the same Intel TDX (DCAP) attestation verification that the NEAR contract and MPC nodes use, allowing you to independently validate that the node is running trusted code inside genuine hardware.
+
+> **Note:** Run the `attestation-cli` on a trusted machine. The verification should be performed from an environment you control and trust.
+
+The CLI supports two modes:
+
+- **Online mode** (`--url`) — Fetches attestation data directly from the node's `/public_data` endpoint.
+- **Offline mode** (`--file`) — Reads attestation data from a previously saved JSON file. This is useful if you want to save the data first, inspect it, or verify on an air-gapped machine.
+
+For full documentation, see the [attestation-cli README](../crates/attestation-cli/README.md).
+
+#### Install the attestation-cli
+
+From the [NEAR MPC repository](https://github.com/near/mpc) root:
+
+```bash
+cargo install --path crates/attestation-cli
+```
+
+#### Gather the required inputs
+
+1. **Allowed MPC Docker image hash** — The SHA256 hex hash of the approved MPC Docker image. You can query it from the contract:
+
+   ```bash
+   near contract call-function as-transaction \
+     v1.signer-prod.testnet \
+     allowed_docker_image_hashes \
+     json-args '{}' \
+     prepaid-gas '100.0 Tgas' \
+     attached-deposit '0 NEAR' \
+     sign-as <your-account-id> \
+     network-config testnet \
+     sign-with-keychain \
+     send
+   ```
+
+   The latest allowed image hash will appear first in the returned vector.
+
+2. **Launcher docker-compose file** — The same `launcher_docker_compose.yaml` you prepared in the [Preparing a Docker Compose File](#preparing-a-docker-compose-file) section. The CLI computes its SHA256 hash and compares it against the hash attested by the node.
+
+#### Run the verification
+
+**Online mode** — fetch and verify directly from the node:
+
+```bash
+attestation-cli \
+  --url http://<IP>:8080/public_data \
+  --allowed-image-hash <IMAGE_HASH> \
+  --launcher-compose-file launcher_docker_compose.yaml
+```
+
+**Offline mode** — save the data first, then verify locally:
+
+```bash
+# Save the attestation data
+curl -o public_data.json http://<IP>:8080/public_data
+
+# Verify from the saved file
+attestation-cli \
+  --file public_data.json \
+  --allowed-image-hash <IMAGE_HASH> \
+  --launcher-compose-file launcher_docker_compose.yaml
+```
+
+Replace `<IP>` with your node's IP address, and `<IMAGE_HASH>` with the hash from the contract.
+
+#### Verify the output
+
+On success, the output will show the node's keys and end with `Verdict: PASS`:
+
+```
+=== MPC Node Attestation Verification ===
+
+TLS Public Key (P2P):   ed25519:<base58-encoded key>
+Account Public Key:     ed25519:<base58-encoded key>
+Attestation Type:       Dstack (TDX)
+
+--- Extracted Values ---
+MPC Image Hash:         <64-char hex>
+Launcher Compose Hash:  <64-char hex>
+Expiry Timestamp:       2025-07-15 12:00:00 UTC (unix: 1752577200)
+
+Verdict: PASS
+```
+
+Confirm that the **TLS Public Key (P2P)** and **Account Public Key** shown in the output match the keys you retrieved in the previous step. If they match and the verdict is PASS, the keys are authenticated — you can proceed to register them.
+
+If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubleshooting](../crates/attestation-cli/README.md#troubleshooting) section for guidance.
 
 ### Add the Node Account Key to Your Account
 
