@@ -764,7 +764,8 @@ Sample curl command to extract the keys:
 ```bash
 $ curl -s http://<IP>:8080/public_data | jq -r '.near_signer_public_key'
 ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5
-$ curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'$ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
+$ curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'
+ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
 ```
 
 ### Verify Node Attestation
@@ -882,23 +883,25 @@ This section shows how to add the MPC node's public key (from the previous secti
 * **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:  
 
   ```txt
-  respond,
-  respond_ckd,
-  vote_pk,
-  start_keygen_instance,
-  vote_reshared,
-  start_reshare_instance,
-  vote_abort_key_event_instance,
-  verify_tee,
-  submit_participant_info
+  respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration
   ```
+
+  > **Note:** This must be a single comma-separated string with no spaces or newlines.
 
 ---
 
 #### Example Command
 
 ```bash
-./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance '1 NEAR'   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config testnet   sign-with-keychain   send
+./target/release/near account add-key $ACCOUNT_ID \
+  grant-function-call-access \
+  --allowance '1 NEAR' \
+  --contract-account-id $MPC_CONTRACT_ID \
+  --function-names $METHOD_NAMES \
+  use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
+  network-config testnet \
+  sign-with-keychain \
+  send
 ```
 
 ---
@@ -916,10 +919,18 @@ ALLOWANCE="1 NEAR"
 NETWORK="testnet"   # or "mainnet"
 
 # Methods the MPC node is allowed to call
-METHOD_NAMES="respond,respond_ckd,vote_pk,start_keygen_instance,vote_reshared,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info"
+METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
 # === Add Access Key ===
-./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance "$ALLOWANCE"   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config $NETWORK   sign-with-keychain   send
+./target/release/near account add-key $ACCOUNT_ID \
+  grant-function-call-access \
+  --allowance "$ALLOWANCE" \
+  --contract-account-id $MPC_CONTRACT_ID \
+  --function-names $METHOD_NAMES \
+  use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
+  network-config $NETWORK \
+  sign-with-keychain \
+  send
 ```
 
 ---
