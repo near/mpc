@@ -2578,7 +2578,7 @@ mod tests {
     #[should_panic(
         expected = "verify_foreign_transaction() requires a domain with purpose ForeignTx"
     )]
-    fn verify_foreign_tx_should_reject_non_foreign_tx_domain(#[case] purpose: DomainPurpose) {
+    fn verify_foreign_tx__should_reject_non_foreign_tx_domain(#[case] purpose: DomainPurpose) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
