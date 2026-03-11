@@ -2,7 +2,7 @@ use assert_matches::assert_matches;
 use base64::Engine;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::state_viewer::StreamContractState;
-use chain_gateway::state_viewer::{SubscribeContractState, ViewMethod};
+use chain_gateway::state_viewer::{SubscribeToContractMethod, ViewMethod};
 use chain_gateway::types::NoArgs;
 use chain_gateway::types::ObservedState;
 use near_indexer::near_primitives::hash::hash;
@@ -54,7 +54,7 @@ async fn test_subscription_receives_initial_value() {
     let (gw, _dir) = setup_chain_gateway().await;
 
     let mut sub = gw
-        .subscribe::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), TEST_METHOD)
+        .subscribe_to_contract_method::<String>(TEST_CONTRACT_ACCOUNT.parse().unwrap(), TEST_METHOD)
         .await;
 
     let res = sub.latest().expect("subscription latest should succeed");
