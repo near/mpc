@@ -408,7 +408,7 @@ The initial governor set and vote threshold are configured at contract deploymen
 
 Launcher compose hash derivation follows the standard mechanism described in [TEE Lifecycle: Launcher Compose Hash Derivation][tee-launcher-hash]. The HOT TEE governance contract uses its own launcher compose template, since the Archive Signer has a different Docker Compose configuration than the MPC node.
 
-[tee-launcher-hash]: tee-lifecycle.md#launcher-compose-hash-derivation
+[tee-launcher-hash]: tee-lifecycle.md#voting-methods
 
 ## Attestation Flow
 
