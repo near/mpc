@@ -18,10 +18,11 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use mpc_contract::primitives::test_utils::infer_purpose_from_scheme;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
+        domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},

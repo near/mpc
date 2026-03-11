@@ -13,12 +13,10 @@ use dtos::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{
-            infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
-        },
+        domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        test_utils::bogus_ed25519_near_public_key,
+        test_utils::{bogus_ed25519_near_public_key, infer_purpose_from_scheme},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,

@@ -2057,14 +2057,13 @@ mod tests {
     };
 
     use super::*;
-    use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
         NUM_PROTOCOLS,
     };
     use crate::primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
+        domain::{DomainConfig, DomainId, SignatureScheme},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2076,6 +2075,10 @@ mod tests {
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::tee_state::NodeId;
+    use crate::{
+        errors::{ErrorKind, NodeMigrationError},
+        primitives::test_utils::infer_purpose_from_scheme,
+    };
     use assert_matches::assert_matches;
     use bounded_collections::NonEmptyBTreeSet;
     use contract_interface::types::{

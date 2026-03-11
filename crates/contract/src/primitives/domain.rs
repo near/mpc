@@ -51,15 +51,6 @@ impl Default for SignatureScheme {
     }
 }
 
-/// Infer a default purpose from the signature scheme.
-/// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
-    match scheme {
-        SignatureScheme::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
-    }
-}
-
 /// Returns whether the given scheme is valid for the given purpose.
 pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureScheme) -> bool {
     matches!(
@@ -74,34 +65,11 @@ pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureSche
 
 /// Describes the configuration of a domain: the domain ID and the protocol it uses.
 #[near(serializers=[borsh, json])]
-#[serde(from = "DomainConfigCompat")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
     pub purpose: DomainPurpose,
-}
-
-/// JSON-only compatibility helper:
-/// old 3.4.x state omitted `purpose`, so we infer it from `scheme` when absent.
-#[derive(serde::Deserialize)]
-struct DomainConfigCompat {
-    id: DomainId,
-    scheme: SignatureScheme,
-    #[serde(default)]
-    purpose: Option<DomainPurpose>,
-}
-
-impl From<DomainConfigCompat> for DomainConfig {
-    fn from(value: DomainConfigCompat) -> Self {
-        Self {
-            id: value.id,
-            scheme: value.scheme,
-            purpose: value
-                .purpose
-                .unwrap_or_else(|| infer_purpose_from_scheme(value.scheme)),
-        }
-    }
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -264,11 +232,13 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        infer_purpose_from_scheme, is_valid_scheme_for_purpose, AddDomainsVotes, DomainConfig,
-        DomainId, DomainPurpose, DomainRegistry, Participants, SignatureScheme,
+        is_valid_scheme_for_purpose, AddDomainsVotes, DomainConfig, DomainId, DomainPurpose,
+        DomainRegistry, Participants, SignatureScheme,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
-    use crate::primitives::test_utils::{gen_participant, gen_participants};
+    use crate::primitives::test_utils::{
+        gen_participant, gen_participants, infer_purpose_from_scheme,
+    };
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
