@@ -4,7 +4,7 @@ use near_sdk::{env::log_str, near};
 #[near(contract_state)]
 pub struct Contract {}
 
-#[near(contract_state)]
+#[near]
 impl Contract {
     #[private]
     #[init(ignore_state)]
