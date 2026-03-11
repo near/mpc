@@ -1,16 +1,7 @@
-// We disallow using `near_sdk::AccountId` in our own code.
-// However, the `near_bindgen` proc macro expands to code that uses it
-// internally, and Clippy applies the `disallowed_types` lint to that
-// generated code as well. Since the lint cannot be suppressed only for the
-// macro expansion, we allow it in this file to avoid false positives.
-#![allow(clippy::disallowed_types)]
-
 use contract_interface::method_names;
 use elliptic_curve::group::Group;
-use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::Serialize;
-use near_sdk::state::ContractState;
-use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise};
+use near_sdk::{env, near, serde_json, AccountId, Gas, NearToken, Promise};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
@@ -53,13 +44,11 @@ pub fn generate_app_public_key(seed: u64) -> Bls12381G1PublicKey {
     Bls12381G1PublicKey::from(&big_x)
 }
 
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, Default)]
+#[near(contract_state)]
+#[derive(Default)]
 pub struct TestContract;
 
-impl ContractState for TestContract {}
-
-#[near_bindgen]
+#[near]
 impl TestContract {
     pub fn make_parallel_sign_calls(
         &self,
