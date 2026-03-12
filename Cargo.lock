@@ -5395,6 +5395,7 @@ dependencies = [
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-sdk",
+ "near-mpc-signature-verifier",
  "near-sdk",
  "near-workspaces",
  "rand 0.8.5",
@@ -5407,7 +5408,6 @@ dependencies = [
  "sha2",
  "sha3",
  "signature",
- "signature-verifier",
  "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",
@@ -6417,7 +6417,20 @@ dependencies = [
  "derive_more 2.1.1",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
- "signature-verifier",
+ "near-mpc-signature-verifier",
+]
+
+[[package]]
+name = "near-mpc-signature-verifier"
+version = "0.0.1"
+dependencies = [
+ "assert_matches",
+ "ed25519-dalek",
+ "k256",
+ "near-mpc-contract-interface",
+ "near-sdk",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
 ]
 
 [[package]]
@@ -10148,19 +10161,6 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest 0.10.7",
  "rand_core 0.6.4",
-]
-
-[[package]]
-name = "signature-verifier"
-version = "0.0.1"
-dependencies = [
- "assert_matches",
- "ed25519-dalek",
- "k256",
- "near-mpc-contract-interface",
- "near-sdk",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
 ]
 
 [[package]]

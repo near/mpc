@@ -35,11 +35,6 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{
-    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
-};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
     kdf::derive_public_key_edwards_point_ed25519,
@@ -49,6 +44,11 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{
+    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
+};
 
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
@@ -672,7 +672,7 @@ impl MpcContract {
                 let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
 
                 // Check the signature is correct
-                signature_verifier::verify_ecdsa_signature(
+                near_mpc_signature_verifier::verify_ecdsa_signature(
                     signature_response,
                     payload_hash,
                     &expected_public_key,
@@ -695,7 +695,7 @@ impl MpcContract {
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
-                signature_verifier::verify_eddsa_signature(
+                near_mpc_signature_verifier::verify_eddsa_signature(
                     signature,
                     message,
                     &derived_public_key_32_bytes,
@@ -787,7 +787,7 @@ impl MpcContract {
                 let payload_hash: [u8; 32] = response.payload_hash.0;
 
                 // Check the signature is correct against the root public key
-                signature_verifier::verify_ecdsa_signature(
+                near_mpc_signature_verifier::verify_ecdsa_signature(
                     signature_response,
                     &payload_hash,
                     &secp_pk,
@@ -2067,11 +2067,6 @@ mod tests {
         primitives::test_utils::infer_purpose_from_scheme,
     };
     use assert_matches::assert_matches;
-    use near_mpc_bounded_collections::NonEmptyBTreeSet;
-    use near_mpc_contract_interface::types::{
-        BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
-        ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
-    };
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
@@ -2080,6 +2075,11 @@ mod tests {
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
     use mpc_primitives::hash::{Hash32, Image};
+    use near_mpc_bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_contract_interface::types::{
+        BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
+        ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
+    };
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::seq::SliceRandom;

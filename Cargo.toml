@@ -17,10 +17,10 @@ members = [
     "crates/near-mpc-contract-interface",
     "crates/near-mpc-crypto-types",
     "crates/near-mpc-sdk",
+    "crates/near-mpc-signature-verifier",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
-    "crates/signature-verifier",
     "crates/tee-authority",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
@@ -51,8 +51,8 @@ near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections" }
 near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface" }
 near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types" }
 near-mpc-sdk = { path = "crates/near-mpc-sdk" }
+near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier" }
 node-types = { path = "crates/node-types" }
-signature-verifier = { path = "crates/signature-verifier" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
