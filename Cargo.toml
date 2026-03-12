@@ -47,11 +47,11 @@ mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
-near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections" }
-near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface" }
-near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types" }
-near-mpc-sdk = { path = "crates/near-mpc-sdk" }
-near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier" }
+near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
+near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface", version = "0.0.1" }
+near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types", version = "0.0.1" }
+near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
+near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
