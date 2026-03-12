@@ -1,14 +1,13 @@
 use crate::primitives::{IsSyncing, QueryViewFunction};
 use crate::types::ObservedState;
 use near_account_id::AccountId;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct MockChainState {
-    sync_response: Arc<RwLock<Result<bool, MockError>>>,
+    sync_response: Arc<Mutex<Result<bool, MockError>>>,
     query_view_function_submitter_state: Arc<Mutex<MockQueryViewFunctionState>>,
 }
 
@@ -30,12 +29,12 @@ impl MockChainState {
     }
 
     pub fn set_sync_response(&self, value: Result<bool, MockError>) {
-        *self.sync_response.write().unwrap() = value;
+        *self.sync_response.lock().unwrap() = value;
     }
 
     /// Update the view function query response.
     pub async fn set_view_response(&self, value: Result<ObservedState, MockError>) {
-        let mut inner = self.query_view_function_submitter_state.lock().await;
+        let mut inner = self.query_view_function_submitter_state.lock().unwrap();
         inner.response = value;
     }
 
@@ -43,13 +42,15 @@ impl MockChainState {
     pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
         tokio::time::timeout(max_wait_duration, async {
             let baseline = {
-                let inner = self.query_view_function_submitter_state.lock().await;
+                let inner = self.query_view_function_submitter_state.lock().unwrap();
                 inner.submitted.len()
             };
             loop {
-                let inner = self.query_view_function_submitter_state.lock().await;
-                if inner.submitted.len() > baseline {
-                    return;
+                {
+                    let inner = self.query_view_function_submitter_state.lock().unwrap();
+                    if inner.submitted.len() > baseline {
+                        return;
+                    }
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
@@ -60,7 +61,7 @@ impl MockChainState {
 
     /// Returns a snapshot of all recorded view function calls.
     pub async fn view_calls(&self) -> Vec<Call> {
-        let inner = self.query_view_function_submitter_state.lock().await;
+        let inner = self.query_view_function_submitter_state.lock().unwrap();
         inner.submitted.clone()
     }
 }
@@ -99,7 +100,7 @@ impl MockChainStateBuilder {
 
     pub fn build(self) -> MockChainState {
         MockChainState {
-            sync_response: Arc::new(RwLock::new(self.sync_response)),
+            sync_response: Arc::new(Mutex::new(self.sync_response)),
             query_view_function_submitter_state: Arc::new(Mutex::new(MockQueryViewFunctionState {
                 response: self.query_view_function_response,
                 submitted: Vec::new(),
@@ -111,7 +112,7 @@ impl MockChainStateBuilder {
 impl IsSyncing for MockChainState {
     type Error = MockError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
-        self.sync_response.read().unwrap().clone()
+        self.sync_response.lock().unwrap().clone()
     }
 }
 
@@ -123,7 +124,7 @@ impl QueryViewFunction for MockChainState {
         method_name: &str,
         args: &[u8],
     ) -> Result<ObservedState, Self::Error> {
-        let mut inner = self.query_view_function_submitter_state.lock().await;
+        let mut inner = self.query_view_function_submitter_state.lock().unwrap();
         inner.submitted.push(Call {
             contract_id: contract_id.clone(),
             method_name: method_name.to_string(),
