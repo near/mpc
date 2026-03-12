@@ -1,11 +1,5 @@
 #![doc = include_str!("../README.md")]
 #![deny(clippy::mod_module_files)]
-// We disallow using `near_sdk::AccountId` in our own code.
-// However, the `near_bindgen` proc macro expands to code that uses it
-// internally, and Clippy applies the `disallowed_types` lint to that
-// generated code as well. Since the lint cannot be suppressed only for the
-// macro expansion, we allow it in this file to avoid false positives.
-#![allow(clippy::disallowed_types)]
 
 pub mod config;
 pub mod crypto_shared;
@@ -58,9 +52,7 @@ use k256::elliptic_curve::PrimeField;
 
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
-    env::{self},
-    log, near, near_bindgen,
-    state::ContractState,
+    env, log, near,
     store::{IterableMap, LookupMap},
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
@@ -93,14 +85,9 @@ impl Default for MpcContract {
         env::panic_str("Calling default not allowed.");
     }
 }
-impl ContractState for MpcContract {}
 
-#[near_bindgen]
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
+#[near(contract_state)]
+#[derive(Debug)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
@@ -202,7 +189,7 @@ impl MpcContract {
 }
 
 // User contract API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
@@ -643,7 +630,7 @@ impl MpcContract {
 }
 
 // Node API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     #[handle_result]
     pub fn respond(
@@ -1491,7 +1478,7 @@ impl MpcContract {
 }
 
 // Contract developer helper API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     #[handle_result]
     #[init]
@@ -1848,7 +1835,7 @@ impl MpcContract {
 }
 
 /// Methods for Migration service
-#[near_bindgen]
+#[near]
 impl MpcContract {
     pub fn migration_info(
         &self,
