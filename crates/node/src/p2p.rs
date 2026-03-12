@@ -231,57 +231,82 @@ impl OutgoingConnection {
                 let mut sent_bytes: u64 = 0;
                 let peer_id_string = peer_id.to_string();
 
-                loop {
-                    tokio::select! {
-                        data = receiver.recv() => {
-                            let Some(data) = data else {
-                                break;
-                            };
-                            let serialized = borsh::to_vec(&data)?;
-                            let bytes = Bytes::from(serialized);
-                            let payload_size = bytes.len();
+                let result: anyhow::Result<()> = async {
+                    loop {
+                        tokio::select! {
+                            data = receiver.recv() => {
+                                let Some(data) = data else {
+                                    break;
+                                };
+                                let serialized = borsh::to_vec(&data)?;
+                                let bytes = Bytes::from(serialized);
+                                let payload_size = bytes.len();
 
-                            // Add timeout to write operations to detect if writes are hanging
-                            // (e.g., due to half-open connection where peer stopped ACKing)
-                            match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
-                                Ok(Ok(_)) => {},
-                                Ok(Err(e)) => return Err(e.into()),
-                                Err(_) => {
-                                    // Write timed out - connection is likely stuck/half-open
-                                    return Err(anyhow::anyhow!(
-                                        "write operation timed out after {}s (connection may be half-open)",
-                                        WRITE_OPERATION_TIMEOUT.as_secs()
-                                    ));
+                                // Add timeout to write operations to detect if writes are hanging
+                                // (e.g., due to half-open connection where peer stopped ACKing)
+                                match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
+                                    Ok(Ok(_)) => {},
+                                    Ok(Err(e)) => return Err(e.into()),
+                                    Err(_) => {
+                                        // Write timed out - connection is likely stuck/half-open
+                                        return Err(anyhow::anyhow!(
+                                            "write operation timed out after {}s (connection may be half-open)",
+                                            WRITE_OPERATION_TIMEOUT.as_secs()
+                                        ));
+                                    }
                                 }
+
+
+                                let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES as u64 + payload_size as u64;
+
+                                let metric_labels = [
+                                    peer_id_string.as_str(),
+                                    OUTGOING_CONNECTION,
+                                    data.message_type_label(),
+                                ];
+
+                                MPC_P2P_TCP_WRITE_SIZE_BYTES
+                                    .with_label_values(&metric_labels)
+                                    .observe(total_message_size_bytes as f64);
+
+                                sent_bytes += total_message_size_bytes;
+                                tracking::set_progress(&format!("sent {} bytes", sent_bytes));
                             }
-
-
-                            let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES as u64 + payload_size as u64;
-
-                            let metric_labels = [
-                                peer_id_string.as_str(),
-                                OUTGOING_CONNECTION,
-                                data.message_type_label(),
-                            ];
-
-                            MPC_P2P_TCP_WRITE_SIZE_BYTES
-                                .with_label_values(&metric_labels)
-                                .observe(total_message_size_bytes as f64);
-
-                            sent_bytes += total_message_size_bytes;
-                            tracking::set_progress(&format!("sent {} bytes", sent_bytes));
-                        }
-                        _ = futures::StreamExt::next(&mut framed_tls_stream) => {
-                            // We do not expect any data from the other side. However,
-                            // selecting on it will quickly return error if the connection
-                            // is broken before we have data to send. That way we can
-                            // immediately quit the loop as soon as the connection is broken
-                            // (so we can reconnect).
-                            break;
+                            _ = futures::StreamExt::next(&mut framed_tls_stream) => {
+                                // We do not expect any data from the other side. However,
+                                // selecting on it will quickly return error if the connection
+                                // is broken before we have data to send. That way we can
+                                // immediately quit the loop as soon as the connection is broken
+                                // (so we can reconnect).
+                                break;
+                            }
                         }
                     }
+                    anyhow::Ok(())
+                }.await;
+
+                // Peer closing without close_notify is normal in P2P networks (task aborts,
+                // reconnections, process restarts). Treat it as a clean close, not an error.
+                let result = match &result {
+                    Err(err) if is_tls_close_notify_error(err) => {
+                        tracing::debug!(
+                            err = %err,
+                            peer_id = %peer_id,
+                            "peer closed connection without TLS close_notify"
+                        );
+                        Ok(())
+                    }
+                    _ => result,
+                };
+
+                // Send TLS close_notify before dropping the connection so
+                // the peer does not see an unexpected EOF.
+                let mut tls_stream = framed_tls_stream.into_inner();
+                if let Err(err) = tls_stream.shutdown().await {
+                    tracing::debug!(err = %err, "TLS shutdown failed on outgoing connection");
                 }
-                anyhow::Ok(())
+
+                result
             },
         );
         let sender_clone = sender.clone();
@@ -622,50 +647,93 @@ async fn incoming_connection_handler(
 
     let peer_id_string = peer_id.to_string();
 
-    loop {
-        let payload_bytes = framed_tls_stream_reader
-            .next()
-            .timeout(MESSAGE_READ_TIMEOUT_DURATION)
-            .await?
-            .ok_or(anyhow!("infallible, tls stream is unending"))??;
+    let result: anyhow::Result<()> = async {
+        loop {
+            let payload_bytes = framed_tls_stream_reader
+                .next()
+                .timeout(MESSAGE_READ_TIMEOUT_DURATION)
+                .await?
+                .ok_or(anyhow!("infallible, tls stream is unending"))??;
 
-        let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES as u64 + payload_bytes.len() as u64;
+            let total_message_size_bytes =
+                FRAME_HEADER_SIZE_BYTES as u64 + payload_bytes.len() as u64;
 
-        let packet =
-            Packet::try_from_slice(&payload_bytes).context("Failed to deserialize packet")?;
+            let packet =
+                Packet::try_from_slice(&payload_bytes).context("Failed to deserialize packet")?;
 
-        let message_label = packet.message_type_label();
+            let message_label = packet.message_type_label();
 
-        match packet {
-            Packet::Ping => {
-                // Do nothing. Pings are just for TCP keepalive.
+            match packet {
+                Packet::Ping => {
+                    // Do nothing. Pings are just for TCP keepalive.
+                }
+                Packet::MpcMessage(mpc_message) => {
+                    message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
+                        from: peer_id,
+                        message: mpc_message,
+                    }))?;
+                }
+                Packet::IndexerHeight(message) => {
+                    message_sender.send(PeerMessage::IndexerHeight(PeerIndexerHeightMessage {
+                        from: peer_id,
+                        message,
+                    }))?;
+                }
             }
-            Packet::MpcMessage(mpc_message) => {
-                message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
-                    from: peer_id,
-                    message: mpc_message,
-                }))?;
-            }
-            Packet::IndexerHeight(message) => {
-                message_sender.send(PeerMessage::IndexerHeight(PeerIndexerHeightMessage {
-                    from: peer_id,
-                    message,
-                }))?;
+
+            let metric_labels = [peer_id_string.as_str(), INCOMING_CONNECTION, message_label];
+
+            MPC_P2P_TCP_WRITE_SIZE_BYTES
+                .with_label_values(&metric_labels)
+                .observe(total_message_size_bytes as f64);
+
+            received_bytes += total_message_size_bytes;
+            tracking::set_progress(&format!(
+                "Received {} bytes from {}",
+                received_bytes, peer_id
+            ));
+        }
+    }
+    .await;
+
+    // Peer closing without close_notify is normal in P2P networks (task aborts,
+    // reconnections, process restarts). Treat it as a clean close, not an error.
+    let result = match &result {
+        Err(err) if is_tls_close_notify_error(err) => {
+            tracing::debug!(
+                err = %err,
+                peer_id = %peer_id,
+                "peer closed connection without TLS close_notify"
+            );
+            Ok(())
+        }
+        _ => result,
+    };
+
+    // Send TLS close_notify before dropping the connection so
+    // the peer does not see an unexpected EOF.
+    let mut tls_stream = framed_tls_stream_reader.into_inner();
+    if let Err(err) = tls_stream.shutdown().await {
+        tracing::debug!(err = %err, "TLS shutdown failed on incoming connection");
+    }
+
+    result
+}
+
+
+/// Checks whether an error is caused by the peer closing the TLS connection
+/// without sending a close_notify alert. This is expected in P2P networks
+/// where connections are frequently torn down (task aborts, reconnections,
+/// process restarts) and the peer may not get a chance to send close_notify.
+fn is_tls_close_notify_error(err: &anyhow::Error) -> bool {
+    for cause in err.chain() {
+        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+            if io_err.kind() == std::io::ErrorKind::UnexpectedEof {
+                return true;
             }
         }
-
-        let metric_labels = [peer_id_string.as_str(), INCOMING_CONNECTION, message_label];
-
-        MPC_P2P_TCP_WRITE_SIZE_BYTES
-            .with_label_values(&metric_labels)
-            .observe(total_message_size_bytes as f64);
-
-        received_bytes += total_message_size_bytes;
-        tracking::set_progress(&format!(
-            "Received {} bytes from {}",
-            received_bytes, peer_id
-        ));
     }
+    false
 }
 
 fn configure_tcp_stream(tcp_stream: TcpStream) -> anyhow::Result<TcpStream> {
