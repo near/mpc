@@ -995,8 +995,8 @@ dependencies = [
  "bs58 0.5.1",
  "clap",
  "mpc-attestation",
- "mpc-crypto-types",
  "mpc-primitives",
+ "near-mpc-crypto-types",
  "node-types",
  "reqwest 0.12.28",
  "serde_json",
@@ -5416,28 +5416,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpc-crypto-types"
-version = "0.0.1"
-dependencies = [
- "assert_matches",
- "blstrs",
- "borsh",
- "bs58 0.5.1",
- "curve25519-dalek",
- "derive_more 2.1.1",
- "ed25519-dalek",
- "group",
- "k256",
- "near-sdk",
- "rand 0.8.5",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "serde_with",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "mpc-devnet"
 version = "3.6.0"
 dependencies = [
@@ -6397,8 +6375,8 @@ dependencies = [
  "derive_more 2.1.1",
  "hex",
  "insta",
- "mpc-crypto-types",
  "near-mpc-bounded-collections",
+ "near-mpc-crypto-types",
  "rstest",
  "schemars 0.8.22",
  "serde",
@@ -6406,6 +6384,28 @@ dependencies = [
  "serde_repr",
  "serde_with",
  "sha2",
+]
+
+[[package]]
+name = "near-mpc-crypto-types"
+version = "0.0.1"
+dependencies = [
+ "assert_matches",
+ "blstrs",
+ "borsh",
+ "bs58 0.5.1",
+ "curve25519-dalek",
+ "derive_more 2.1.1",
+ "ed25519-dalek",
+ "group",
+ "k256",
+ "near-sdk",
+ "rand 0.8.5",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -7401,7 +7401,7 @@ name = "node-types"
 version = "3.6.0"
 dependencies = [
  "mpc-attestation",
- "mpc-crypto-types",
+ "near-mpc-crypto-types",
  "rand_chacha 0.3.1",
  "serde",
  "serde_json",

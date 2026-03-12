@@ -2,7 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
 ## [3.6.0] - 2026-03-05
@@ -11,28 +10,27 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2199](https://github.com/near/mpc/pull/2199)(@DSharifi): Add new collection type, `BoundedVec`, to the bounded collections crate (#2199)
 
-- [#2132](https://github.com/near/mpc/pull/2132)(@barakeinav1): Allow passing mpc_ env variables (#2132)
+- [#2132](https://github.com/near/mpc/pull/2132)(@barakeinav1): Allow passing mpc\_ env variables (#2132)
 
 - [#2202](https://github.com/near/mpc/pull/2202)(@DSharifi): Create `near-mpc-sdk` crate with types for sign requests (#2202)
 
-- [#2218](https://github.com/near/mpc/pull/2218)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for bitcoin (#2218)
+- [#2218](https://github.com/near/mpc/pull/2218)(@DSharifi): _(sdk)_ The SDK can build foreign chain requests for bitcoin (#2218)
 
-- [#2222](https://github.com/near/mpc/pull/2222)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for abstract (#2222)
+- [#2222](https://github.com/near/mpc/pull/2222)(@DSharifi): _(sdk)_ The SDK can build foreign chain requests for abstract (#2222)
 
-- [#2224](https://github.com/near/mpc/pull/2224)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for starknet (#2224)
+- [#2224](https://github.com/near/mpc/pull/2224)(@DSharifi): _(sdk)_ The SDK can build foreign chain requests for starknet (#2224)
 
-- [#2233](https://github.com/near/mpc/pull/2233)(@DSharifi): *(sdk)* Add verification support of  foreign transaction signatures (#2233)
+- [#2233](https://github.com/near/mpc/pull/2233)(@DSharifi): _(sdk)_ Add verification support of foreign transaction signatures (#2233)
 
-- [#2254](https://github.com/near/mpc/pull/2254)(@DSharifi): *(sdk)* Chain-specific builder entry points for foreign chain request builder (#2254)
+- [#2254](https://github.com/near/mpc/pull/2254)(@DSharifi): _(sdk)_ Chain-specific builder entry points for foreign chain request builder (#2254)
 
 - [#2258](https://github.com/near/mpc/pull/2258)(@olga24912): Add StarkNet event log extraction support (#2258)
 
-- [#2266](https://github.com/near/mpc/pull/2266)(@DSharifi): *(sdk)* Add borsh serialization derives to all contract interface types and SDK verifier (#2266)
+- [#2266](https://github.com/near/mpc/pull/2266)(@DSharifi): _(sdk)_ Add borsh serialization derives to all contract interface types and SDK verifier (#2266)
 
-- [#2265](https://github.com/near/mpc/pull/2265)(@DSharifi): *(sdk)* Verify foreign transaction payload signatures (#2265)
+- [#2265](https://github.com/near/mpc/pull/2265)(@DSharifi): _(sdk)_ Verify foreign transaction payload signatures (#2265)
 
 - [#2281](https://github.com/near/mpc/pull/2281)(@gilcu3): Added support for abi generation in mpc-sdk and signature-verifier crate (#2281)
-
 
 ### 🐛 Bug Fixes
 
@@ -50,7 +48,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2317](https://github.com/near/mpc/pull/2317)(@netrome): Ensure resharing leaders wait for start events to prevent them from getting stuck forever (#2317)
 
-
 ### 💼 Other
 
 - [#2195](https://github.com/near/mpc/pull/2195)(@gilcu3): Make sure nix includes all needed tools (#2195)
@@ -59,19 +56,17 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2291](https://github.com/near/mpc/pull/2291)(@anodar): Clang version in Nix flake for Darwin (#2291)
 
-
 ### 🚜 Refactor
 
 - [#2279](https://github.com/near/mpc/pull/2279)(@anodar): Use strong threshold types in signature provider layer (#2279)
 
 - [#2277](https://github.com/near/mpc/pull/2277)(@gilcu3): Unify crypto conversions (#2277)
 
-- [#2294](https://github.com/near/mpc/pull/2294)(@gilcu3): Create mpc-crypto-types crate (#2294)
+- [#2294](https://github.com/near/mpc/pull/2294)(@gilcu3): Create near-mpc-crypto-types crate (#2294)
 
 - [#2313](https://github.com/near/mpc/pull/2313)(@anodar): Handle errors on conversions to usize (#2313)
 
 - [#2295](https://github.com/near/mpc/pull/2295)(@gilcu3): Reduce code duplication in buffer limit tests (#2295)
-
 
 ### 📚 Documentation
 
@@ -81,11 +76,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2204](https://github.com/near/mpc/pull/2204)(@pbeza): Archive Signer design for legacy HOT key support (#2204)
 
-
 ### ⚡ Performance
 
 - [#2276](https://github.com/near/mpc/pull/2276)(@SimonRastikian): Split eddsa benchmarks (#2276)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -113,7 +106,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2314](https://github.com/near/mpc/pull/2314)(@gilcu3): Update nearcore to 2.10.7 (#2314)
 
-
 ## [3.5.1] - 2026-02-20
 
 ### 🐛 Bug Fixes
@@ -122,11 +114,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2190](https://github.com/near/mpc/pull/2190)(@gilcu3): Add_domain_votes are preserver after resharing (#2190)
 
-
 ### 📚 Documentation
 
 - [#2103](https://github.com/near/mpc/pull/2103)(@kevindeforth): Indexer proposal (#2103)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -135,7 +125,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2192](https://github.com/near/mpc/pull/2192)(@gilcu3): Resolve rustdoc warnings and enforce warnings check in CI (#2192)
 
 - [#2198](https://github.com/near/mpc/pull/2198)(@netrome): Update changelog and bump crate versions for 3.5.1 (#2198)
-
 
 ## [3.5.0] - 2026-02-19
 
@@ -159,11 +148,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2065](https://github.com/near/mpc/pull/2065)(@netrome): Allow SecretDB to open unknown column families (#2065)
 
-- [#1990](https://github.com/near/mpc/pull/1990)(@pbeza): *(dtos)* Add Participants JSON serialization types to contract-interface (#1990)
+- [#1990](https://github.com/near/mpc/pull/1990)(@pbeza): _(dtos)_ Add Participants JSON serialization types to contract-interface (#1990)
 
 - [#2070](https://github.com/near/mpc/pull/2070)(@netrome): Remove observed_at_block special response field (#2070)
 
-- [#2075](https://github.com/near/mpc/pull/2075)(@DSharifi): Add extractor for evm `Log`s  (#2075)
+- [#2075](https://github.com/near/mpc/pull/2075)(@DSharifi): Add extractor for evm `Log`s (#2075)
 
 - [#2087](https://github.com/near/mpc/pull/2087)(@gilcu3): Integrate Abstract in the node (#2087)
 
@@ -181,7 +170,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2180](https://github.com/near/mpc/pull/2180)(@netrome): Add abstract rpc configuration in localnet guide + foreign policy serialization fix (#2180)
 
-
 ### 🐛 Bug Fixes
 
 - [#2014](https://github.com/near/mpc/pull/2014)(@gilcu3): Broken reproducibility (#2014)
@@ -198,7 +186,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2149](https://github.com/near/mpc/pull/2149)(@gilcu3): Boot nodes deduplication in docs (#2149)
 
-
 ### 💼 Other
 
 - [#2048](https://github.com/near/mpc/pull/2048)(@DSharifi): Bump cargo resolver version to version `3` (#2048)
@@ -207,18 +194,15 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2184](https://github.com/near/mpc/pull/2184)(@DSharifi): Set Cargo linker for aarch64-darwin to resolve -lSystem (#2184)
 
-
 ### 🚜 Refactor
 
 - [#2044](https://github.com/near/mpc/pull/2044)(@pbeza): Improve gas benchmark tests by optimizing account handling (#2044)
 
 - [#2141](https://github.com/near/mpc/pull/2141)(@SimonRastikian): Const string contract methods (#2141)
 
-
 ### 📚 Documentation
 
 - [#2013](https://github.com/near/mpc/pull/2013)(@barakeinav1): Add node migration guide for operators (#2013)
-
 
 ### 🧪 Testing
 
@@ -230,12 +214,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2125](https://github.com/near/mpc/pull/2125)(@gilcu3): Added system test for starknet (#2125)
 
-
 ### ⚙️ Miscellaneous Tasks
 
 - [#1985](https://github.com/near/mpc/pull/1985)(@barakeinav1): Correct error codes (#1985)
 
-- [#1995](https://github.com/near/mpc/pull/1995)(@DSharifi): *(nix)* Bump cargo-near version to 0.19.1 (#1995)
+- [#1995](https://github.com/near/mpc/pull/1995)(@DSharifi): _(nix)_ Bump cargo-near version to 0.19.1 (#1995)
 
 - [#2000](https://github.com/near/mpc/pull/2000)(@gilcu3): Make cargo-deny and license checks optional in CI (#2000)
 
@@ -247,7 +230,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2010](https://github.com/near/mpc/pull/2010)(@DSharifi): Use `jsonrpsee` to support JSON-RPC v2 instead of manual implementation (#2010)
 
-- [#2028](https://github.com/near/mpc/pull/2028)(@DSharifi): *(cargo-deny)* Remove unnecessary skip for `prost` (#2028)
+- [#2028](https://github.com/near/mpc/pull/2028)(@DSharifi): _(cargo-deny)_ Remove unnecessary skip for `prost` (#2028)
 
 - [#2034](https://github.com/near/mpc/pull/2034)(@gilcu3): Update ts reference (#2034)
 
@@ -289,7 +272,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2153](https://github.com/near/mpc/pull/2153)(@gilcu3): Disable rust cache temporarily, as warpbuilds is providing different runners for the same label (#2153)
 
-- [#2144](https://github.com/near/mpc/pull/2144)(@DSharifi): *(nix)* Add jq and ruff to dev shell packages (#2144)
+- [#2144](https://github.com/near/mpc/pull/2144)(@DSharifi): _(nix)_ Add jq and ruff to dev shell packages (#2144)
 
 - [#2155](https://github.com/near/mpc/pull/2155)(@pbeza): Add CI workflow to validate PR title type against changed files (#2155)
 
@@ -309,17 +292,15 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2187](https://github.com/near/mpc/pull/2187)(@SimonRastikian): Bump crate versions to 3.5.0 and update changelog (#2187)
 
-
 ## [3.4.1] - 2026-02-05
 
 ### 🚀 Features
 
-- [#1923](https://github.com/near/mpc/pull/1923)(@DSharifi): *(contract)* Define contract API for verification of foreign transactions (#1923)
+- [#1923](https://github.com/near/mpc/pull/1923)(@DSharifi): _(contract)_ Define contract API for verification of foreign transactions (#1923)
 
 - [#1948](https://github.com/near/mpc/pull/1948)(@gilcu3): Added indexer types for verify foreign tx (#1948)
 
 - [#1961](https://github.com/near/mpc/pull/1961)(@netrome): Add foreign chain policy types and voting method (#1961)
-
 
 ### 🐛 Bug Fixes
 
@@ -327,8 +308,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1831](https://github.com/near/mpc/pull/1831)(@kevindeforth): Properly fix network race condition (#1831)
 
-- [#1983](https://github.com/near/mpc/pull/1983)(@kevindeforth): *(network)* TCP Listener task must not die (#1983)
-
+- [#1983](https://github.com/near/mpc/pull/1983)(@kevindeforth): _(network)_ TCP Listener task must not die (#1983)
 
 ### 📚 Documentation
 
@@ -346,7 +326,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1964](https://github.com/near/mpc/pull/1964)(@DSharifi): Add note on branch being pushed to github pre `git-cliff` instructions (#1964)
 
-
 ### 🧪 Testing
 
 - [#1945](https://github.com/near/mpc/pull/1945)(@gilcu3): Add timeout/retry mechanism to try to fix flaky test creating many accounts (#1945)
@@ -354,7 +333,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1951](https://github.com/near/mpc/pull/1951)(@gilcu3): Enable test_embedded abi test (#1951)
 
 - [#1937](https://github.com/near/mpc/pull/1937)(@barakeinav1): Add localnet TEE automation scripts and templates (#1937)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -368,7 +346,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1879](https://github.com/near/mpc/pull/1879)(@barakeinav1): TEE testnet automation scripts and launcher (#1879)
 
-- [#1933](https://github.com/near/mpc/pull/1933)(@DSharifi): *(clippy)* Enable warning on `assertions_on_result_states` clippy lint (#1933)
+- [#1933](https://github.com/near/mpc/pull/1933)(@DSharifi): _(clippy)_ Enable warning on `assertions_on_result_states` clippy lint (#1933)
 
 - [#1947](https://github.com/near/mpc/pull/1947)(@gilcu3): Update nearcore to 2.10.6 (#1947)
 
@@ -380,13 +358,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1972](https://github.com/near/mpc/pull/1972)(@SimonRastikian): Bump crate versions to 3.4.1 (#1972)
 
-
 ## [3.4.0] - 2026-01-29
 
 ### 🚀 Features
 
 - [#1887](https://github.com/near/mpc/pull/1887)(@netrome): Remove storage deposit requirement from contract (#1887)
-
 
 ### 🐛 Bug Fixes
 
@@ -400,25 +376,21 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1876](https://github.com/near/mpc/pull/1876)(@gilcu3): Bump wasmtime version due to RUSTSEC-2026-0006 (#1876)
 
-
 ### 💼 Other
 
-- [#1808](https://github.com/near/mpc/pull/1808)(@DSharifi): *(nix)* Include `apple-sdk_14` package to build `neard` on MacOs (#1808)
+- [#1808](https://github.com/near/mpc/pull/1808)(@DSharifi): _(nix)_ Include `apple-sdk_14` package to build `neard` on MacOs (#1808)
 
-- [#1812](https://github.com/near/mpc/pull/1812)(@DSharifi): *(nix)* Include `neard` as a nix flake (#1812)
+- [#1812](https://github.com/near/mpc/pull/1812)(@DSharifi): _(nix)_ Include `neard` as a nix flake (#1812)
 
-- [#1845](https://github.com/near/mpc/pull/1845)(@DSharifi): *(nix)* Remove neard as a tool in dev shell (#1845)
-
+- [#1845](https://github.com/near/mpc/pull/1845)(@DSharifi): _(nix)_ Remove neard as a tool in dev shell (#1845)
 
 ### 📚 Documentation
 
 - [#1850](https://github.com/near/mpc/pull/1850)(@barakeinav1): Add port 80 configuration support (#1850)
 
-
 ### ⚡ Performance
 
 - [#1859](https://github.com/near/mpc/pull/1859)(@DSharifi): Avoid fragmented header writes on TCP connections (#1859)
-
 
 ### 🧪 Testing
 
@@ -434,7 +406,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1899](https://github.com/near/mpc/pull/1899)(@gilcu3): Add fixture tests for key derivation path (#1899)
 
-
 ### ⚙️ Miscellaneous Tasks
 
 - [#1816](https://github.com/near/mpc/pull/1816)(@DSharifi): Make pprof web server endpoint queriable (#1816)
@@ -447,7 +418,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1838](https://github.com/near/mpc/pull/1838)(@gilcu3): Make launcher-script more user friendly (#1838)
 
-- [#1837](https://github.com/near/mpc/pull/1837)(@DSharifi): *(metrics)* Track tokio runtime and task metrics and export it to prometheus (#1837)
+- [#1837](https://github.com/near/mpc/pull/1837)(@DSharifi): _(metrics)_ Track tokio runtime and task metrics and export it to prometheus (#1837)
 
 - [#1840](https://github.com/near/mpc/pull/1840)(@gilcu3): Remove outdated research file (#1840)
 
@@ -469,18 +440,15 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1903](https://github.com/near/mpc/pull/1903)(@barakeinav1): Bump crate versions to 3.4.0 and update changelog (#1903)
 
-
 ## [3.3.2] - 2026-01-20
 
 ### 🐛 Bug Fixes
 
 - [#1802](https://github.com/near/mpc/pull/1802)(@DSharifi): Include default value for pprof address (#1802)
 
-
 ### ⚙️ Miscellaneous Tasks
 
 - [#1806](https://github.com/near/mpc/pull/1806)(@kevindeforth): Bump crate versions to 3.3.2 and update changelog (#1806)
-
 
 ## [3.3.1] - 2026-01-19
 
@@ -488,25 +456,21 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1795](https://github.com/near/mpc/pull/1795)(@netrome): Revert #1707 (use SocketAddr instead of custom struct) (#1795)
 
-
 ### 💼 Other
 
 - [#1786](https://github.com/near/mpc/pull/1786)(@DSharifi): Add instruction how to get `rust-analyzer` to work with nix flakes (#1786)
-
 
 ### ⚙️ Miscellaneous Tasks
 
 - [#1798](https://github.com/near/mpc/pull/1798)(@netrome): Update version and changelog for `3.3.1` release (#1798)
 
-
 ## [3.3.0] - 2026-01-16
 
 ### 🚀 Features
 
-- [#1723](https://github.com/near/mpc/pull/1723)(@DSharifi): *(node)* Add web endpoint to collect CPU profiles with `pprof-rs` (#1723)
+- [#1723](https://github.com/near/mpc/pull/1723)(@DSharifi): _(node)_ Add web endpoint to collect CPU profiles with `pprof-rs` (#1723)
 
-- [#1735](https://github.com/near/mpc/pull/1735)(@barakeinav1): *(launcher)* Add ability to use the launcher also for non tee setups. (#1735)
-
+- [#1735](https://github.com/near/mpc/pull/1735)(@barakeinav1): _(launcher)_ Add ability to use the launcher also for non tee setups. (#1735)
 
 ### 🐛 Bug Fixes
 
@@ -514,24 +478,21 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1752](https://github.com/near/mpc/pull/1752)(@gilcu3): Enable TCP_KEEPALIVE for network connections (#1752)
 
-- [#1764](https://github.com/near/mpc/pull/1764)(@kevindeforth): *(network)* Do not accept incoming connection if previous one is still active (#1764)
+- [#1764](https://github.com/near/mpc/pull/1764)(@kevindeforth): _(network)_ Do not accept incoming connection if previous one is still active (#1764)
 
 - [#1772](https://github.com/near/mpc/pull/1772)(@DSharifi): Don't crash MPC node on startup for failed attestation submission (#1772)
 
-
 ### 💼 Other
 
-- [#1738](https://github.com/near/mpc/pull/1738)(@DSharifi): *(rust)* Add support for Nix build environment (#1738)
+- [#1738](https://github.com/near/mpc/pull/1738)(@DSharifi): _(rust)_ Add support for Nix build environment (#1738)
 
-- [#1767](https://github.com/near/mpc/pull/1767)(@DSharifi): *(nix)* Add instructions to enable direnv with Nix flake (#1767)
+- [#1767](https://github.com/near/mpc/pull/1767)(@DSharifi): _(nix)_ Add instructions to enable direnv with Nix flake (#1767)
 
-- [#1771](https://github.com/near/mpc/pull/1771)(@DSharifi): *(nix)* Resolve openssl-sys compilation errors in devShell (#1771)
-
+- [#1771](https://github.com/near/mpc/pull/1771)(@DSharifi): _(nix)_ Resolve openssl-sys compilation errors in devShell (#1771)
 
 ### 🚜 Refactor
 
 - [#1697](https://github.com/near/mpc/pull/1697)(@DSharifi): Return Result type in `is_caller_an_attested_participant ` (#1697)
-
 
 ### 📚 Documentation
 
@@ -539,13 +500,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1661](https://github.com/near/mpc/pull/1661)(@barakeinav1): Support running two MPC CVMs (Frodo + Sam) on the same physical machine (#1661)
 
-
 ### ⚡ Performance
 
 - [#1713](https://github.com/near/mpc/pull/1713)(@DSharifi): Enable `TCP_NODELAY` for nodes' P2P TCP connections (#1713)
 
-- [#1663](https://github.com/near/mpc/pull/1663)(@DSharifi): *(contract)* Contract should not store full attestation submission (#1663)
-
+- [#1663](https://github.com/near/mpc/pull/1663)(@DSharifi): _(contract)_ Contract should not store full attestation submission (#1663)
 
 ### 🧪 Testing
 
@@ -556,7 +515,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1725](https://github.com/near/mpc/pull/1725)(@pbeza): Fix contract integration tests (#1725)
 
 - [#1769](https://github.com/near/mpc/pull/1769)(@gilcu3): Handle transaction nonces locally (#1769)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -602,7 +560,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1791](https://github.com/near/mpc/pull/1791)(@pbeza): Update version and changelog for `3.3.0` release (#1791)
 
-
 ## [3.2.0] - 2025-12-18
 
 ### 🚀 Features
@@ -614,7 +571,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1658](https://github.com/near/mpc/pull/1658)(@kevindeforth): Add new signature scheme variant to contract (#1658)
 
 - [#1679](https://github.com/near/mpc/pull/1679)(@gilcu3): Robust_ecdsa provider implementation (#1679)
-
 
 ### 🐛 Bug Fixes
 
@@ -630,7 +586,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1673](https://github.com/near/mpc/pull/1673)(@gilcu3): Fix derivation_path params in ckd-example-cli (#1673)
 
-
 ### 🚜 Refactor
 
 - [#1626](https://github.com/near/mpc/pull/1626)(@pbeza): Remove `ReportData::new()` (#1626)
@@ -641,22 +596,19 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1695](https://github.com/near/mpc/pull/1695)(@DSharifi): Clarify that `tee_state` contains attestations for not just active participants (#1695)
 
-
 ### 📚 Documentation
 
 - [#1456](https://github.com/near/mpc/pull/1456)(@barakeinav1): Create a guide for localnet + MPC node running in TEE setup (#1456)
 
 - [#1604](https://github.com/near/mpc/pull/1604)(@barakeinav1): Testnet with tee support guide (#1604)
 
-
 ### ⚡ Performance
 
 - [#1659](https://github.com/near/mpc/pull/1659)(@netrome): Use procedural macro to include expected measurements at compile time (#1659)
 
-
 ### 🧪 Testing
 
-- [#1623](https://github.com/near/mpc/pull/1623)(@DSharifi): *(pytest)* Run all pytests with 1 validator (#1623)
+- [#1623](https://github.com/near/mpc/pull/1623)(@DSharifi): _(pytest)_ Run all pytests with 1 validator (#1623)
 
 - [#1637](https://github.com/near/mpc/pull/1637)(@kevindeforth): Migration system test (#1637)
 
@@ -667,7 +619,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1678](https://github.com/near/mpc/pull/1678)(@kevindeforth): Fix sign sandbox tests (#1678)
 
 - [#1682](https://github.com/near/mpc/pull/1682)(@gilcu3): Add tests for robust ecdsa (#1682)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -689,12 +640,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1681](https://github.com/near/mpc/pull/1681)(@DSharifi): Enable debug-asserttions on CI test profile (#1681)
 
-- [#1692](https://github.com/near/mpc/pull/1692)(@gilcu3): Update version and changelog for 3.2.0 release  (#1692)
+- [#1692](https://github.com/near/mpc/pull/1692)(@gilcu3): Update version and changelog for 3.2.0 release (#1692)
 
-- [#1683](https://github.com/near/mpc/pull/1683)(@kevindeforth): *(contract)* Sandbox code organization (#1683)
+- [#1683](https://github.com/near/mpc/pull/1683)(@kevindeforth): _(contract)_ Sandbox code organization (#1683)
 
 - [#1698](https://github.com/near/mpc/pull/1698)(@gilcu3): Bump nearcore to 2.10.3 (#1698)
-
 
 ## [3.1.0] - 2025-12-04
 
@@ -706,12 +656,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1563](https://github.com/near/mpc/pull/1563)(@gilcu3): Embed abi in contract (#1563)
 
-- [#1527](https://github.com/near/mpc/pull/1527)(@barakeinav1): *(launcher)* Add support for multiple MPC hashes with fallback logic (#1527)
+- [#1527](https://github.com/near/mpc/pull/1527)(@barakeinav1): _(launcher)_ Add support for multiple MPC hashes with fallback logic (#1527)
 
-- [#1566](https://github.com/near/mpc/pull/1566)(@DSharifi): *(contract)* Make contract configuration values configurable (#1566)
+- [#1566](https://github.com/near/mpc/pull/1566)(@DSharifi): _(contract)_ Make contract configuration values configurable (#1566)
 
 - [#1559](https://github.com/near/mpc/pull/1559)(@pbeza): Clear update votes from non-participants after resharing (#1559)
-
 
 ### 🐛 Bug Fixes
 
@@ -721,18 +670,15 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1594](https://github.com/near/mpc/pull/1594)(@gilcu3): Wrong tag name in gcp image creation (#1594)
 
-
 ### 📚 Documentation
 
 - [#1610](https://github.com/near/mpc/pull/1610)(@DSharifi): Create release changelog for `3.1.0` release (#1610)
-
 
 ### 🧪 Testing
 
 - [#1581](https://github.com/near/mpc/pull/1581)(@DSharifi): Fix broken example `pytest` command (#1581)
 
-- [#1538](https://github.com/near/mpc/pull/1538)(@DSharifi): *(pytest fix)* Remove 1 validator override in pytests (#1538)
-
+- [#1538](https://github.com/near/mpc/pull/1538)(@DSharifi): _(pytest fix)_ Remove 1 validator override in pytests (#1538)
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -744,9 +690,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1569](https://github.com/near/mpc/pull/1569)(@DSharifi): Don't take self needlessly on contract methods (#1569)
 
-- [#1580](https://github.com/near/mpc/pull/1580)(@DSharifi): *(dead-code)* Remove `allowed_code_hashes` and `mig_migration_info` methods from the contract (#1580)
+- [#1580](https://github.com/near/mpc/pull/1580)(@DSharifi): _(dead-code)_ Remove `allowed_code_hashes` and `mig_migration_info` methods from the contract (#1580)
 
-- [#1579](https://github.com/near/mpc/pull/1579)(@DSharifi): Bump `near-sdk` to 5.18.1  (#1579)
+- [#1579](https://github.com/near/mpc/pull/1579)(@DSharifi): Bump `near-sdk` to 5.18.1 (#1579)
 
 - [#1577](https://github.com/near/mpc/pull/1577)(@gilcu3): Create mpc attestation wrapper crate (#1577)
 
@@ -768,7 +714,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1609](https://github.com/near/mpc/pull/1609)(@netrome): Bump nearcore to 2.10.1 (#1609)
 
-
 ## [3.0.6] - 2025-11-25
 
 ### 🚀 Features
@@ -779,12 +724,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1542](https://github.com/near/mpc/pull/1542)(@gilcu3): Initial ckd example app (#1542)
 
-
 ### 🐛 Bug Fixes
 
 - [#1521](https://github.com/near/mpc/pull/1521)(@gilcu3): Both test could be fixed by bumping gas appropiately (#1521)
 
-- [#1530](https://github.com/near/mpc/pull/1530)(@gilcu3): Enable pytest optimizations removed in #1511  (#1530)
+- [#1530](https://github.com/near/mpc/pull/1530)(@gilcu3): Enable pytest optimizations removed in #1511 (#1530)
 
 - [#1531](https://github.com/near/mpc/pull/1531)(@gilcu3): Use reproducible build in existing test (#1531)
 
@@ -792,16 +736,13 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1547](https://github.com/near/mpc/pull/1547)(@gilcu3): Patch nearcore version 210 (#1547)
 
-
 ### 📚 Documentation
 
 - [#1467](https://github.com/near/mpc/pull/1467)(@pbeza): Design TEE-enabled backup service (#1467)
 
-
 ### ⚙️ Miscellaneous Tasks
 
 - [#1549](https://github.com/near/mpc/pull/1549)(@netrome): Bump crate versions to 3.0.6 and update changelog (#1549)
-
 
 ## [3.0.5] - 2025-11-23
 
@@ -813,26 +754,23 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1510](https://github.com/near/mpc/pull/1510)(@gilcu3): Sandbox tests support for any number of participants (#1510)
 
-
 ### 🐛 Bug Fixes
 
-- [#1488](https://github.com/near/mpc/pull/1488)(@kevindeforth): *(contract)* Fix ProposeUpdate vote method and add unit test (#1488)
+- [#1488](https://github.com/near/mpc/pull/1488)(@kevindeforth): _(contract)_ Fix ProposeUpdate vote method and add unit test (#1488)
 
 - [#1490](https://github.com/near/mpc/pull/1490)(@gilcu3): Remove balance checks (#1490)
 
-- [#1492](https://github.com/near/mpc/pull/1492)(@barakeinav1): *(test)* Enable and update test_from_str_valid (#1492)
+- [#1492](https://github.com/near/mpc/pull/1492)(@barakeinav1): _(test)_ Enable and update test_from_str_valid (#1492)
 
 - [#1509](https://github.com/near/mpc/pull/1509)(@andrei-near): Nightly build MPC workflow (#1509)
 
 - [#1525](https://github.com/near/mpc/pull/1525)(@netrome): Use patched near core supporting reproducible builds (#1525)
-
 
 ### 🧪 Testing
 
 - [#1498](https://github.com/near/mpc/pull/1498)(@pbeza): Add unit tests for `do_update` function in `contract.rs` (#1498)
 
 - [#1504](https://github.com/near/mpc/pull/1504)(@barakeinav1): Update attestation test and refresh asset extraction files (#1504)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -842,12 +780,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1523](https://github.com/near/mpc/pull/1523)(@netrome): Bump crate versions to 3.0.5 and update changelog (#1523)
 
-
 ## [3.0.4] - 2025-11-18
 
 ### 🚀 Features
 
-- [#1428](https://github.com/near/mpc/pull/1428)(@barakeinav1): *(verification)* Allow RTMR2 to match production or dev measurements (#1428)
+- [#1428](https://github.com/near/mpc/pull/1428)(@barakeinav1): _(verification)_ Allow RTMR2 to match production or dev measurements (#1428)
 
 - [#1438](https://github.com/near/mpc/pull/1438)(@gilcu3): Add support for abi snapshots (#1438)
 
@@ -855,10 +792,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1468](https://github.com/near/mpc/pull/1468)(@gilcu3): Group compatible pytests to use shared cluster (#1468)
 
-
 ### 🐛 Bug Fixes
 
-- [#1448](https://github.com/near/mpc/pull/1448)(@barakeinav1): *(localnet)* Ensure MPC node can sync after delay by updating neard retention policy (#1448)
+- [#1448](https://github.com/near/mpc/pull/1448)(@barakeinav1): _(localnet)_ Ensure MPC node can sync after delay by updating neard retention policy (#1448)
 
 - [#1446](https://github.com/near/mpc/pull/1446)(@gilcu3): Align waiting time with number of added domains (#1446)
 
@@ -869,7 +805,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1471](https://github.com/near/mpc/pull/1471)(@gilcu3): Make sure cargo-near is installed from binary release (#1471)
 
 - [#1480](https://github.com/near/mpc/pull/1480)(@gilcu3): Fetch mpc secret store key and add gcp image (#1480)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -883,13 +818,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1487](https://github.com/near/mpc/pull/1487)(@netrome): Bump crate versions to 3.0.4 and update changelog (#1487)
 
-
 ## [3.0.3] - 2025-11-12
 
 ### 🐛 Bug Fixes
 
 - [#1441](https://github.com/near/mpc/pull/1441)(@pbeza): Reduce log noise in migration monitor task (#1441)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -899,13 +832,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1445](https://github.com/near/mpc/pull/1445)(@netrome): Bump crate versions to 3.0.3 and update changelog (#1445)
 
-
 ## [3.0.2] - 2025-11-11
 
 ### 🚀 Features
 
 - [#1412](https://github.com/near/mpc/pull/1412)(@gilcu3): Validate attestation before submission (#1412)
-
 
 ### 🐛 Bug Fixes
 
@@ -917,17 +848,15 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1418](https://github.com/near/mpc/pull/1418)(@gilcu3): Path to store latest mpc node image hashes in devnet (#1418)
 
-- [#1426](https://github.com/near/mpc/pull/1426)(@barakeinav1): *(tee)* Add  prefix to written image digest for launcher compatibility (#1426)
+- [#1426](https://github.com/near/mpc/pull/1426)(@barakeinav1): _(tee)_ Add prefix to written image digest for launcher compatibility (#1426)
 
 - [#1432](https://github.com/near/mpc/pull/1432)(@gilcu3): Enable user_views tests in the contract (#1432)
 
 - [#1436](https://github.com/near/mpc/pull/1436)(@gilcu3): Add pub_migrate function to get current contract migration unstuck (#1436)
 
-
 ### 🧪 Testing
 
 - [#1406](https://github.com/near/mpc/pull/1406)(@kevindeforth): Improve unit tests (#1406)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -939,20 +868,17 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1439](https://github.com/near/mpc/pull/1439)(@netrome): Update version and changelog for 3.0.2 release (#1439)
 
-
 ## [3.0.1] - 2025-11-06
 
 ### 🚀 Features
 
 - [#1401](https://github.com/near/mpc/pull/1401)(@pbeza): Add default behavior if `MPC_LATEST_ALLOWED_HASH_FILE` is not set (#1401)
 
-
 ### 🐛 Bug Fixes
 
 - [#1396](https://github.com/near/mpc/pull/1396)(@gilcu3): Compute fresh attestations before submitting (#1396)
 
 - [#1403](https://github.com/near/mpc/pull/1403)(@kevindeforth): Node uses correct latest docker image hash (#1403)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -964,62 +890,61 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1404](https://github.com/near/mpc/pull/1404)(@netrome): Update version and changelog for 3.0.1 release (#1404)
 
-
 ## [3.0.0] - 2025-11-05
 
 ### 🚀 Features
 
-- [#489](https://github.com/near/mpc/pull/489)(@kevindeforth): *(devnet)* Loadtest tracks success statistics (#489)
+- [#489](https://github.com/near/mpc/pull/489)(@kevindeforth): _(devnet)_ Loadtest tracks success statistics (#489)
 
-- [#410](https://github.com/near/mpc/pull/410)(@pbeza): *(contract)* Add support for TEE (#410)
+- [#410](https://github.com/near/mpc/pull/410)(@pbeza): _(contract)_ Add support for TEE (#410)
 
-- [#511](https://github.com/near/mpc/pull/511)(@DSharifi): *(contract)* Add method to contract to get allowed image hashes (#511)
+- [#511](https://github.com/near/mpc/pull/511)(@DSharifi): _(contract)_ Add method to contract to get allowed image hashes (#511)
 
-- [#468](https://github.com/near/mpc/pull/468)(@kevindeforth): *(Tee)* Automatic kickout mechanism for invalid TEE status (#468)
+- [#468](https://github.com/near/mpc/pull/468)(@kevindeforth): _(Tee)_ Automatic kickout mechanism for invalid TEE status (#468)
 
-- [#509](https://github.com/near/mpc/pull/509)(@pbeza): *(contract)* Verification of TEE RTMRs 0-2 and MRTD (#509)
+- [#509](https://github.com/near/mpc/pull/509)(@pbeza): _(contract)_ Verification of TEE RTMRs 0-2 and MRTD (#509)
 
-- [#513](https://github.com/near/mpc/pull/513)(@DSharifi): *(indexer)* Periodically fetch allowed image hashes from mpc contract (#513)
+- [#513](https://github.com/near/mpc/pull/513)(@DSharifi): _(indexer)_ Periodically fetch allowed image hashes from mpc contract (#513)
 
-- [#525](https://github.com/near/mpc/pull/525)(@DSharifi): *(tee)* Node monitors latest allowed image hashes from contract (#525)
+- [#525](https://github.com/near/mpc/pull/525)(@DSharifi): _(tee)_ Node monitors latest allowed image hashes from contract (#525)
 
 - [#524](https://github.com/near/mpc/pull/524)(@barakeinav1): Initial launcher script (#524)
 
-- [#445](https://github.com/near/mpc/pull/445)(@kuksag): *(tee)* Generate p2p key/near signer key inside MPC node (#445)
+- [#445](https://github.com/near/mpc/pull/445)(@kuksag): _(tee)_ Generate p2p key/near signer key inside MPC node (#445)
 
-- [#516](https://github.com/near/mpc/pull/516)(@pbeza): *(contract)* Verification of RTMR3 (#516)
+- [#516](https://github.com/near/mpc/pull/516)(@pbeza): _(contract)_ Verification of RTMR3 (#516)
 
-- [#537](https://github.com/near/mpc/pull/537)(@pbeza): *(contract)* Verify `report_data` field of the TEE quote (#537)
+- [#537](https://github.com/near/mpc/pull/537)(@pbeza): _(contract)_ Verify `report_data` field of the TEE quote (#537)
 
-- [#541](https://github.com/near/mpc/pull/541)(@barakeinav1): *(remote attestation )* RTMRs and app_compose field checks (#541)
+- [#541](https://github.com/near/mpc/pull/541)(@barakeinav1): _(remote attestation )_ RTMRs and app_compose field checks (#541)
 
 - [#543](https://github.com/near/mpc/pull/543)(@DSharifi): Submit remote attestation on startup (#543)
 
-- [#553](https://github.com/near/mpc/pull/553)(@kevindeforth): *(Tee)* Join logic for new participant and readme (#553)
+- [#553](https://github.com/near/mpc/pull/553)(@kevindeforth): _(Tee)_ Join logic for new participant and readme (#553)
 
-- [#558](https://github.com/near/mpc/pull/558)(@kevindeforth): *(devnet)* Enable ssd support (#558)
+- [#558](https://github.com/near/mpc/pull/558)(@kevindeforth): _(devnet)_ Enable ssd support (#558)
 
-- [#576](https://github.com/near/mpc/pull/576)(@kevindeforth): *(pytest)* Interactive pytest (#576)
+- [#576](https://github.com/near/mpc/pull/576)(@kevindeforth): _(pytest)_ Interactive pytest (#576)
 
 - [#560](https://github.com/near/mpc/pull/560)(@kevindeforth): Enable network hardship simulation (#560)
 
-- [#639](https://github.com/near/mpc/pull/639)(@barakeinav1): *(tee)* Add p2p public key to StaticWebData and http endpoint (#639)
+- [#639](https://github.com/near/mpc/pull/639)(@barakeinav1): _(tee)_ Add p2p public key to StaticWebData and http endpoint (#639)
 
-- [#632](https://github.com/near/mpc/pull/632)(@pbeza): *(tee)* Custom attestation module (#632)
+- [#632](https://github.com/near/mpc/pull/632)(@pbeza): _(tee)_ Custom attestation module (#632)
 
-- [#653](https://github.com/near/mpc/pull/653)(@pbeza): *(tee)* Implement attestation quote generation in attestation module (#653)
+- [#653](https://github.com/near/mpc/pull/653)(@pbeza): _(tee)_ Implement attestation quote generation in attestation module (#653)
 
-- [#665](https://github.com/near/mpc/pull/665)(@DSharifi): *(contract)* Key resharing can be cancelled on the contract (#665)
+- [#665](https://github.com/near/mpc/pull/665)(@DSharifi): _(contract)_ Key resharing can be cancelled on the contract (#665)
 
-- [#684](https://github.com/near/mpc/pull/684)(@kevindeforth): *(metrics)* Expose peers block height metric (#684)
+- [#684](https://github.com/near/mpc/pull/684)(@kevindeforth): _(metrics)_ Expose peers block height metric (#684)
 
-- [#683](https://github.com/near/mpc/pull/683)(@pbeza): *(tee)* Implement TEE quote verification in attestation module (#683)
+- [#683](https://github.com/near/mpc/pull/683)(@pbeza): _(tee)_ Implement TEE quote verification in attestation module (#683)
 
 - [#722](https://github.com/near/mpc/pull/722)(@gilcu3): Added TEE enabled dockerfile + github workflow (#722)
 
 - [#734](https://github.com/near/mpc/pull/734)(@gilcu3): Add support for cargo-near reproducible build (#734)
 
-- [#711](https://github.com/near/mpc/pull/711)(@pbeza): *(tee)* Add Docker image verification logic to attestation (#711)
+- [#711](https://github.com/near/mpc/pull/711)(@pbeza): _(tee)_ Add Docker image verification logic to attestation (#711)
 
 - [#776](https://github.com/near/mpc/pull/776)(@kevindeforth): Export account balances as metric (#776)
 
@@ -1035,7 +960,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#957](https://github.com/near/mpc/pull/957)(@gilcu3): CKD support in indexer - store + web changes (#957)
 
-- [#942](https://github.com/near/mpc/pull/942)(@pbeza): *(tee)* Clean TEE state when concluding a resharing (#942)
+- [#942](https://github.com/near/mpc/pull/942)(@pbeza): _(tee)_ Clean TEE state when concluding a resharing (#942)
 
 - [#964](https://github.com/near/mpc/pull/964)(@andrei-near): Overwrite mpc/near configs from ENV vars (#964)
 
@@ -1059,7 +984,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1064](https://github.com/near/mpc/pull/1064)(@gilcu3): Achieve reproducible builds for the mpc node and launcher (#1064)
 
-- [#1070](https://github.com/near/mpc/pull/1070)(@barakeinav1): *(pytest)* Restrict signer keys to MPC contract method (clean) (#1070)
+- [#1070](https://github.com/near/mpc/pull/1070)(@barakeinav1): _(pytest)_ Restrict signer keys to MPC contract method (clean) (#1070)
 
 - [#1153](https://github.com/near/mpc/pull/1153)(@andrei-near): Failed cluster signatures metrics main (#1153)
 
@@ -1123,34 +1048,33 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1375](https://github.com/near/mpc/pull/1375)(@netrome): Don't enforce secure time (#1375)
 
-- [#1380](https://github.com/near/mpc/pull/1380)(@netrome): *(launcher)* Allow passing through NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE env var (#1380)
+- [#1380](https://github.com/near/mpc/pull/1380)(@netrome): _(launcher)_ Allow passing through NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE env var (#1380)
 
 - [#1376](https://github.com/near/mpc/pull/1376)(@kevindeforth): Send AES-256 encrypted secrets over mutual TLS instead of plaintext (#1376)
 
 - [#1384](https://github.com/near/mpc/pull/1384)(@pbeza): Implement `KeyshareStorageAdapter` for keyshare persistence (#1384)
 
-
 ### 🐛 Bug Fixes
 
-- [#552](https://github.com/near/mpc/pull/552)(@pbeza): *(tee)* Hotfix of TEE `report_data` verification (#552)
+- [#552](https://github.com/near/mpc/pull/552)(@pbeza): _(tee)_ Hotfix of TEE `report_data` verification (#552)
 
-- [#585](https://github.com/near/mpc/pull/585)(@pbeza): *(tee)* Ensure quote verification status is `UpToDate` (#585)
+- [#585](https://github.com/near/mpc/pull/585)(@pbeza): _(tee)_ Ensure quote verification status is `UpToDate` (#585)
 
-- [#578](https://github.com/near/mpc/pull/578)(@kevindeforth): *(devnet)* Refill contract account for initalization (#578)
+- [#578](https://github.com/near/mpc/pull/578)(@kevindeforth): _(devnet)_ Refill contract account for initalization (#578)
 
 - [#595](https://github.com/near/mpc/pull/595)(@kevindeforth): Ignore peers who are behind in a computation (#595)
 
 - [#589](https://github.com/near/mpc/pull/589)(@barakeinav1): Harden launcher docker-compose config against privilege escalation (#589)
 
-- [#617](https://github.com/near/mpc/pull/617)(@DSharifi): *(dstack)* Bump dstack rust sdk version (#617)
+- [#617](https://github.com/near/mpc/pull/617)(@DSharifi): _(dstack)_ Bump dstack rust sdk version (#617)
 
-- [#627](https://github.com/near/mpc/pull/627)(@DSharifi): *(tee)* Don't re-encode tdx_quote to hex (#627)
+- [#627](https://github.com/near/mpc/pull/627)(@DSharifi): _(tee)_ Don't re-encode tdx_quote to hex (#627)
 
-- [#629](https://github.com/near/mpc/pull/629)(@DSharifi): *(tee)* Serialize `quote_collateral` to a `serde_json::Value` instead of String (#629)
+- [#629](https://github.com/near/mpc/pull/629)(@DSharifi): _(tee)_ Serialize `quote_collateral` to a `serde_json::Value` instead of String (#629)
 
-- [#588](https://github.com/near/mpc/pull/588)(@barakeinav1): *(launcher)* Enforce env var allow-list and custom host/port parsing in user-config (#588)
+- [#588](https://github.com/near/mpc/pull/588)(@barakeinav1): _(launcher)_ Enforce env var allow-list and custom host/port parsing in user-config (#588)
 
-- [#620](https://github.com/near/mpc/pull/620)(@DSharifi): *(dstack)* Bump dstack rust sdk version (#620)
+- [#620](https://github.com/near/mpc/pull/620)(@DSharifi): _(dstack)_ Bump dstack rust sdk version (#620)
 
 - [#612](https://github.com/near/mpc/pull/612)(@DSharifi): Create tokio enter guard for spawning TEE related tasks (#612)
 
@@ -1158,11 +1082,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#680](https://github.com/near/mpc/pull/680)(@kuksag): Adjust invariant checks when selecting participants (#680)
 
-- [#705](https://github.com/near/mpc/pull/705)(@kevindeforth): *(deployment)* Gcp start script key error (#705)
+- [#705](https://github.com/near/mpc/pull/705)(@kevindeforth): _(deployment)_ Gcp start script key error (#705)
 
 - [#704](https://github.com/near/mpc/pull/704)(@netrome): Transparent serialization for Hash32 (#704)
 
-- [#715](https://github.com/near/mpc/pull/715)(@kevindeforth): *(devnet)* Compatibility with upcoming mpc node version 3.0.0 (#715)
+- [#715](https://github.com/near/mpc/pull/715)(@kevindeforth): _(devnet)_ Compatibility with upcoming mpc node version 3.0.0 (#715)
 
 - [#724](https://github.com/near/mpc/pull/724)(@gilcu3): Fixes test_from_str_valid test in the contract crate (#724)
 
@@ -1172,7 +1096,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#768](https://github.com/near/mpc/pull/768)(@DSharifi): Defer creating `allowed_image_hash` file until write (#768)
 
-- [#762](https://github.com/near/mpc/pull/762)(@barakeinav1): *(launcher)* Fixing of issues found during testing (#762)
+- [#762](https://github.com/near/mpc/pull/762)(@barakeinav1): _(launcher)_ Fixing of issues found during testing (#762)
 
 - [#778](https://github.com/near/mpc/pull/778)(@kevindeforth): Spawn mointor docker images task before listening to blocks indefinitely (#778)
 
@@ -1182,13 +1106,13 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#802](https://github.com/near/mpc/pull/802)(@DSharifi): Node ignores peers lagging 50 blocks behind (#802)
 
-- [#780](https://github.com/near/mpc/pull/780)(@barakeinav1): *(node)* Enforce RTMR3 validation on event checks (#780)
+- [#780](https://github.com/near/mpc/pull/780)(@barakeinav1): _(node)_ Enforce RTMR3 validation on event checks (#780)
 
 - [#807](https://github.com/near/mpc/pull/807)(@kevindeforth): Node abort_key_event_instance instead of abort_key_event (#807)
 
 - [#774](https://github.com/near/mpc/pull/774)(@gilcu3): Verify docker compose hashes correctly (#774)
 
-- [#816](https://github.com/near/mpc/pull/816)(@barakeinav1): *(contract)* Correct tee_status and verify_tee logic (#816)
+- [#816](https://github.com/near/mpc/pull/816)(@barakeinav1): _(contract)_ Correct tee_status and verify_tee logic (#816)
 
 - [#838](https://github.com/near/mpc/pull/838)(@gilcu3): Fix typos and name inconsistencies (#838)
 
@@ -1198,7 +1122,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#788](https://github.com/near/mpc/pull/788)(@gilcu3): Use download_config parameter in mpc-node cli (#788)
 
-- [#887](https://github.com/near/mpc/pull/887)(@pbeza): *(tee)* Ensure participants run valid TEE or none (#887)
+- [#887](https://github.com/near/mpc/pull/887)(@pbeza): _(tee)_ Ensure participants run valid TEE or none (#887)
 
 - [#925](https://github.com/near/mpc/pull/925)(@kevindeforth): Increase gas limit for sign calls (#925)
 
@@ -1206,7 +1130,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#955](https://github.com/near/mpc/pull/955)(@gilcu3): Add domainid ckdrequest again (#955)
 
-- [#971](https://github.com/near/mpc/pull/971)(@pbeza): *(tee)* Avoid passing `ExpectedMeasurements` as a parameter in contract (#971)
+- [#971](https://github.com/near/mpc/pull/971)(@pbeza): _(tee)_ Avoid passing `ExpectedMeasurements` as a parameter in contract (#971)
 
 - [#997](https://github.com/near/mpc/pull/997)(@think-in-universe): Redundant secure_time validation for app compose (#997)
 
@@ -1264,14 +1188,13 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1382](https://github.com/near/mpc/pull/1382)(@gilcu3): Update the measurements that are actually used in the contract (#1382)
 
-
 ### 🚜 Refactor
 
-- [#670](https://github.com/near/mpc/pull/670)(@barakeinav1): *(launcher)* Update user-config format and values (#670)
+- [#670](https://github.com/near/mpc/pull/670)(@barakeinav1): _(launcher)_ Update user-config format and values (#670)
 
-- [#758](https://github.com/near/mpc/pull/758)(@pbeza): *(tee)* Move attestation generation logic (#758)
+- [#758](https://github.com/near/mpc/pull/758)(@pbeza): _(tee)_ Move attestation generation logic (#758)
 
-- [#882](https://github.com/near/mpc/pull/882)(@DSharifi): *(attestation)* Remove `TcbInfo` wrapper struct (#882)
+- [#882](https://github.com/near/mpc/pull/882)(@DSharifi): _(attestation)_ Remove `TcbInfo` wrapper struct (#882)
 
 - [#884](https://github.com/near/mpc/pull/884)(@DSharifi): Remove `Quote` wrapper struct in attestation (#884)
 
@@ -1280,7 +1203,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#998](https://github.com/near/mpc/pull/998)(@netrome): Get rid of `mod.rs` files (#998)
 
 - [#1098](https://github.com/near/mpc/pull/1098)(@DSharifi): Make `verify_tee_participant` API infallible (#1098)
-
 
 ### 📚 Documentation
 
@@ -1336,26 +1258,25 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1262](https://github.com/near/mpc/pull/1262)(@netrome): Operator guide includes installation instructions for dstack-vmm instead of referencing their readme (#1262)
 
-- [#1278](https://github.com/near/mpc/pull/1278)(@pbeza): *(localnet)* Refine `localnet` setup instructions (#1278)
-
+- [#1278](https://github.com/near/mpc/pull/1278)(@pbeza): _(localnet)_ Refine `localnet` setup instructions (#1278)
 
 ### 🧪 Testing
 
 - [#481](https://github.com/near/mpc/pull/481)(@DSharifi): Test that threshold from previous running state is used when serving sign requests in resharing (#481)
 
-- [#498](https://github.com/near/mpc/pull/498)(@kevindeforth): *(node)* Add timeout to avoid race condition in integration test (#498)
+- [#498](https://github.com/near/mpc/pull/498)(@kevindeforth): _(node)_ Add timeout to avoid race condition in integration test (#498)
 
-- [#555](https://github.com/near/mpc/pull/555)(@kevindeforth): *(pytest)* Resolve pytest nonce conflicts (#555)
+- [#555](https://github.com/near/mpc/pull/555)(@kevindeforth): _(pytest)_ Resolve pytest nonce conflicts (#555)
 
 - [#682](https://github.com/near/mpc/pull/682)(@DSharifi): Create pytest to test cancellation of key resharing (#682)
 
-- [#746](https://github.com/near/mpc/pull/746)(@pbeza): *(tee)* Add an integration test for attestation verification (#746)
+- [#746](https://github.com/near/mpc/pull/746)(@pbeza): _(tee)_ Add an integration test for attestation verification (#746)
 
-- [#819](https://github.com/near/mpc/pull/819)(@pbeza): *(tee)* Add contract integration test for MPC image hash voting (#819)
+- [#819](https://github.com/near/mpc/pull/819)(@pbeza): _(tee)_ Add contract integration test for MPC image hash voting (#819)
 
 - [#834](https://github.com/near/mpc/pull/834)(@DSharifi): Re-organize tests in attestation crate (#834)
 
-- [#828](https://github.com/near/mpc/pull/828)(@pbeza): *(contract)* Integration test to ensure contract rejects invalid remote attestations (#828)
+- [#828](https://github.com/near/mpc/pull/828)(@pbeza): _(contract)_ Integration test to ensure contract rejects invalid remote attestations (#828)
 
 - [#1099](https://github.com/near/mpc/pull/1099)(@pbeza): Expired attestation kickout flow (#1099)
 
@@ -1371,8 +1292,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1211](https://github.com/near/mpc/pull/1211)(@DSharifi): Resolve flaky test caused by ordering of attestations (#1211)
 
-- [#1066](https://github.com/near/mpc/pull/1066)(@pbeza): *(contract)* System test for `submit_tee_participant_info` (#1066)
-
+- [#1066](https://github.com/near/mpc/pull/1066)(@pbeza): _(contract)_ System test for `submit_tee_participant_info` (#1066)
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -1380,11 +1300,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#494](https://github.com/near/mpc/pull/494)(@netrome): Initial Changelog + CI check (#494)
 
-- [#508](https://github.com/near/mpc/pull/508)(@kuksag): *(pytests)* Split cluster setup logic  (#508)
+- [#508](https://github.com/near/mpc/pull/508)(@kuksag): _(pytests)_ Split cluster setup logic (#508)
 
 - [#526](https://github.com/near/mpc/pull/526)(@DSharifi): Increase bytes allocated to version in report data from u8 to u16 (#526)
 
-- [#549](https://github.com/near/mpc/pull/549)(@kevindeforth): *(tee)* Launcher cleanup (#549)
+- [#549](https://github.com/near/mpc/pull/549)(@kevindeforth): _(tee)_ Launcher cleanup (#549)
 
 - [#564](https://github.com/near/mpc/pull/564)(@DSharifi): Fix docker build and publish action (#564)
 
@@ -1424,7 +1344,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#686](https://github.com/near/mpc/pull/686)(@kuksag): Make python formatter apply for the whole repo (#686)
 
-- [#633](https://github.com/near/mpc/pull/633)(@IkerAlus): *(readme)* Eddsa example in readme.md (#633)
+- [#633](https://github.com/near/mpc/pull/633)(@IkerAlus): _(readme)_ Eddsa example in readme.md (#633)
 
 - [#685](https://github.com/near/mpc/pull/685)(@kuksag): Add TEE Launcher image building step to CI (#685)
 
@@ -1436,7 +1356,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#700](https://github.com/near/mpc/pull/700)(@DSharifi): Remove unused threshold parameter in start_cluster_with_mpc (#700)
 
-- [#707](https://github.com/near/mpc/pull/707)(@kevindeforth): *(deployment)* Gcp start bash script: avoid unnecessary warning (#707)
+- [#707](https://github.com/near/mpc/pull/707)(@kevindeforth): _(deployment)_ Gcp start bash script: avoid unnecessary warning (#707)
 
 - [#708](https://github.com/near/mpc/pull/708)(@kevindeforth): Rename web endpoint /get_public_data to /public_data (#708)
 
@@ -1444,11 +1364,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#720](https://github.com/near/mpc/pull/720)(@netrome): Move MPC node modules to `lib.rs` (#720)
 
-- [#742](https://github.com/near/mpc/pull/742)(@DSharifi): *(devnet)* Add support for voting new approved code hash on devnet (#742)
+- [#742](https://github.com/near/mpc/pull/742)(@DSharifi): _(devnet)_ Add support for voting new approved code hash on devnet (#742)
 
 - [#749](https://github.com/near/mpc/pull/749)(@kuksag): Remove mpc-keys crate in contract (#749)
 
-- [#660](https://github.com/near/mpc/pull/660)(@hackpk): *(lazy_static)* Replace lazy_static with LazyLock  (#660)
+- [#660](https://github.com/near/mpc/pull/660)(@hackpk): _(lazy_static)_ Replace lazy_static with LazyLock (#660)
 
 - [#750](https://github.com/near/mpc/pull/750)(@kuksag): Add python linter (#750)
 
@@ -1460,21 +1380,21 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#783](https://github.com/near/mpc/pull/783)(@gilcu3): Unify near-sdk versions (#783)
 
-- [#787](https://github.com/near/mpc/pull/787)(@kevindeforth): *(ci)* Split ci-tests into multiple jobs (#787)
+- [#787](https://github.com/near/mpc/pull/787)(@kevindeforth): _(ci)_ Split ci-tests into multiple jobs (#787)
 
 - [#790](https://github.com/near/mpc/pull/790)(@gilcu3): Remove nightly features from fmt config (#790)
 
 - [#793](https://github.com/near/mpc/pull/793)(@gilcu3): Fix cargo-near install failure in CI (#793)
 
-- [#792](https://github.com/near/mpc/pull/792)(@barakeinav1): *(launcher)* Small update of variable and file name for better clarity (#792)
+- [#792](https://github.com/near/mpc/pull/792)(@barakeinav1): _(launcher)_ Small update of variable and file name for better clarity (#792)
 
-- [#796](https://github.com/near/mpc/pull/796)(@kevindeforth): *(pytests)* Speedup - reduce rpc poll timeout and send txs in parallel (#796)
+- [#796](https://github.com/near/mpc/pull/796)(@kevindeforth): _(pytests)_ Speedup - reduce rpc poll timeout and send txs in parallel (#796)
 
-- [#798](https://github.com/near/mpc/pull/798)(@kevindeforth): *(ci)* Add clippy all-features (#798)
+- [#798](https://github.com/near/mpc/pull/798)(@kevindeforth): _(ci)_ Add clippy all-features (#798)
 
-- [#810](https://github.com/near/mpc/pull/810)(@kevindeforth): *(pytest)* Improve test_lost_assets.py performance and coverage (#810)
+- [#810](https://github.com/near/mpc/pull/810)(@kevindeforth): _(pytest)_ Improve test_lost_assets.py performance and coverage (#810)
 
-- [#812](https://github.com/near/mpc/pull/812)(@kevindeforth): *(pytest)* Fix flaky test_signature_lifecycle (#812)
+- [#812](https://github.com/near/mpc/pull/812)(@kevindeforth): _(pytest)_ Fix flaky test_signature_lifecycle (#812)
 
 - [#813](https://github.com/near/mpc/pull/813)(@gilcu3): Use our own fork of dcap-qvl v0.2.4 (#813)
 
@@ -1486,21 +1406,21 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#840](https://github.com/near/mpc/pull/840)(@DSharifi): Update `dcap-qvl` crate to upstream version (#840)
 
-- [#833](https://github.com/near/mpc/pull/833)(@barakeinav1): *(launcher script)* Update readme (#833)
+- [#833](https://github.com/near/mpc/pull/833)(@barakeinav1): _(launcher script)_ Update readme (#833)
 
 - [#870](https://github.com/near/mpc/pull/870)(@DSharifi): Replace `YamlValue` with a String wrapper for docker_compose_file (#870)
 
 - [#835](https://github.com/near/mpc/pull/835)(@DSharifi): Add docker TEE build as a CI check (#835)
 
-- [#871](https://github.com/near/mpc/pull/871)(@gilcu3): Added  test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list test (#871)
+- [#871](https://github.com/near/mpc/pull/871)(@gilcu3): Added test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list test (#871)
 
 - [#873](https://github.com/near/mpc/pull/873)(@DSharifi): Implement borsh schema for attestation crate types (#873)
 
-- [#874](https://github.com/near/mpc/pull/874)(@kevindeforth): *(test)* More detailed error checking in contract test (#874)
+- [#874](https://github.com/near/mpc/pull/874)(@kevindeforth): _(test)_ More detailed error checking in contract test (#874)
 
 - [#876](https://github.com/near/mpc/pull/876)(@DSharifi): Update phala cloud API endpoint for collateral generation (#876)
 
-- [#869](https://github.com/near/mpc/pull/869)(@pbeza): *(tee)* Remove account key from report data (#869)
+- [#869](https://github.com/near/mpc/pull/869)(@pbeza): _(tee)_ Remove account key from report data (#869)
 
 - [#867](https://github.com/near/mpc/pull/867)(@gilcu3): Integrate ts#22 refactor (#867)
 
@@ -1508,17 +1428,17 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#889](https://github.com/near/mpc/pull/889)(@DSharifi): Remove `near_crypto` from attestation crate (#889)
 
-- [#922](https://github.com/near/mpc/pull/922)(@kevindeforth): *(contract)* Remove stale log of random seed in contract (#922)
+- [#922](https://github.com/near/mpc/pull/922)(@kevindeforth): _(contract)_ Remove stale log of random seed in contract (#922)
 
 - [#933](https://github.com/near/mpc/pull/933)(@DSharifi): Remove `near_crypto` dependency from smart contract (#933)
 
 - [#937](https://github.com/near/mpc/pull/937)(@DSharifi): Move config.rs unit test behind feature gated test module (#937)
 
-- [#872](https://github.com/near/mpc/pull/872)(@barakeinav1): *(deploy script)* Update MPC node ports  (#872)
+- [#872](https://github.com/near/mpc/pull/872)(@barakeinav1): _(deploy script)_ Update MPC node ports (#872)
 
 - [#914](https://github.com/near/mpc/pull/914)(@DSharifi): [**breaking**] Remove near_crypto from node code (#914)
 
-- [#963](https://github.com/near/mpc/pull/963)(@kevindeforth): *(node)* Move tls into crate (#963)
+- [#963](https://github.com/near/mpc/pull/963)(@kevindeforth): _(node)_ Move tls into crate (#963)
 
 - [#989](https://github.com/near/mpc/pull/989)(@gilcu3): Bump version tracing-subscriber (#989)
 
@@ -1536,7 +1456,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1011](https://github.com/near/mpc/pull/1011)(@gilcu3): Fix warning while building contract in pytests (#1011)
 
-- [#1021](https://github.com/near/mpc/pull/1021)(@gilcu3): Fix deployment start script  (#1021)
+- [#1021](https://github.com/near/mpc/pull/1021)(@gilcu3): Fix deployment start script (#1021)
 
 - [#1013](https://github.com/near/mpc/pull/1013)(@DSharifi): Use `test_utils` crate for image hashes in contract tests (#1013)
 
@@ -1548,7 +1468,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1016](https://github.com/near/mpc/pull/1016)(@DSharifi): Enhance mock attestation struct with conditional validation (#1016)
 
-- [#1068](https://github.com/near/mpc/pull/1068)(@kevindeforth): *(test)* Fix resharing tests (#1068)
+- [#1068](https://github.com/near/mpc/pull/1068)(@kevindeforth): _(test)_ Fix resharing tests (#1068)
 
 - [#1082](https://github.com/near/mpc/pull/1082)(@kevindeforth): Update disaster recovery doc (#1082)
 
@@ -1572,9 +1492,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1125](https://github.com/near/mpc/pull/1125)(@DSharifi): Pin serde to `1.0.2191` to fix compilation issue with `dstack-sdk` (#1125)
 
-- [#1127](https://github.com/near/mpc/pull/1127)(@gilcu3): *(ci)* Separate CI actions for launcher and node (#1127)
+- [#1127](https://github.com/near/mpc/pull/1127)(@gilcu3): _(ci)_ Separate CI actions for launcher and node (#1127)
 
-- [#1131](https://github.com/near/mpc/pull/1131)(@gilcu3): *(docs)* Update docs after #1127 (#1131)
+- [#1131](https://github.com/near/mpc/pull/1131)(@gilcu3): _(docs)_ Update docs after #1127 (#1131)
 
 - [#1136](https://github.com/near/mpc/pull/1136)(@DSharifi): Move all workspace members in to `/crates` directory (#1136)
 
@@ -1644,11 +1564,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1388](https://github.com/near/mpc/pull/1388)(@netrome): Support publishing images from git tags (#1388)
 
-
 ### ◀️ Revert
 
 - [#779](https://github.com/near/mpc/pull/779)(@DSharifi): "refactor(tee): move attestation generation logic" (#779)
-
 
 ## [2.2.0-rc1] - 2025-06-11
 
@@ -1656,23 +1574,19 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#490](https://github.com/near/mpc/pull/490)(@DSharifi): Bump versions for new release candidate (#490)
 
-
 ## [2.0.1-rc2] - 2025-06-10
 
 ### 🚀 Features
 
-- [#466](https://github.com/near/mpc/pull/466)(@DSharifi): *(TEE)* Implement remote attestation information generation (#466)
-
+- [#466](https://github.com/near/mpc/pull/466)(@DSharifi): _(TEE)_ Implement remote attestation information generation (#466)
 
 ### 🐛 Bug Fixes
 
 - [#480](https://github.com/near/mpc/pull/480)(@DSharifi): Use threshold number for previous running state in resharing (#480)
 
-
 ### ⚙️ Miscellaneous Tasks
 
 - [#477](https://github.com/near/mpc/pull/477)(@netrome): Add MIT license and third party license notices (#477)
-
 
 ## [2.0.1-rc1] - 2025-06-03
 
@@ -1680,16 +1594,13 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#438](https://github.com/near/mpc/pull/438)(@DSharifi): Parallel resharing and running (#438)
 
-
 ### 🐛 Bug Fixes
 
 - [#370](https://github.com/near/mpc/pull/370)(@DSharifi): Return early in Indexer thread and listen_blocks if channel to MPC node is closed.
 
-
 ### 💼 Other
 
-- [#416](https://github.com/near/mpc/pull/416)(@andrei-near): Fix import keyshare  (#416)
-
+- [#416](https://github.com/near/mpc/pull/416)(@andrei-near): Fix import keyshare (#416)
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -1701,24 +1612,21 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#406](https://github.com/near/mpc/pull/406)(@DSharifi): Remove unwrap in `monitor_passive_channels_inner` (#406)
 
-
 ## [2.0.0-rc.1] - 2025-04-11
 
 ### 🚀 Features
 
-- [#294](https://github.com/near/mpc/pull/294)(@DSharifi): *(EdDSA)* Add support for EdDSA signature requests on the smart contract (#294)
-
+- [#294](https://github.com/near/mpc/pull/294)(@DSharifi): _(EdDSA)_ Add support for EdDSA signature requests on the smart contract (#294)
 
 ### 🐛 Bug Fixes
 
-- [#209](https://github.com/near/mpc/pull/209)(@pbeza): *(audit)* Fix TLS certificate verification (#209)
+- [#209](https://github.com/near/mpc/pull/209)(@pbeza): _(audit)_ Fix TLS certificate verification (#209)
 
 - [#268](https://github.com/near/mpc/pull/268)(@DSharifi): Pinned legacy contract dependency to git revistion (#268)
 
 - [#328](https://github.com/near/mpc/pull/328)(@DSharifi): Add pre-computed edwards_point of EdDSA keys to contract state (#328)
 
 - [#358](https://github.com/near/mpc/pull/358)(@DSharifi): Use internal tag for signature response type for backwards compatibility (#358)
-
 
 ### 💼 Other
 
@@ -1742,17 +1650,15 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#336](https://github.com/near/mpc/pull/336)(@peter-near): Added IDE configs to git ignore (#336)
 
-
 ### 🚜 Refactor
 
-- [#210](https://github.com/near/mpc/pull/210)(@pbeza): *(audit)* Remove explicit .into_iter (#210)
+- [#210](https://github.com/near/mpc/pull/210)(@pbeza): _(audit)_ Remove explicit .into_iter (#210)
 
-- [#215](https://github.com/near/mpc/pull/215)(@pbeza): *(audit)* Shorten CLI's function bodies (#215)
+- [#215](https://github.com/near/mpc/pull/215)(@pbeza): _(audit)_ Shorten CLI's function bodies (#215)
 
 - [#283](https://github.com/near/mpc/pull/283)(@DSharifi): Use `[u8; 32]` instead of Scalar type from `k256` crate in contract (#283)
 
 - [#341](https://github.com/near/mpc/pull/341)(@DSharifi): Remove ScalarExt trait (#341)
-
 
 ### 🧪 Testing
 
@@ -1760,10 +1666,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#339](https://github.com/near/mpc/pull/339)(@DSharifi): Test public key derivation in contract (#339)
 
-- [#347](https://github.com/near/mpc/pull/347)(@DSharifi): *(eddsa)* Add integration test for EdDSA signature requests (#347)
+- [#347](https://github.com/near/mpc/pull/347)(@DSharifi): _(eddsa)_ Add integration test for EdDSA signature requests (#347)
 
 - [#348](https://github.com/near/mpc/pull/348)(@DSharifi): Enable EdDSA signature requets in pytests (#348)
-
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -1777,7 +1682,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#334](https://github.com/near/mpc/pull/334)(@DSharifi): Add docs to EdDSA fields in `PublicKeyExtended`. (#334)
 
-
 ## [testnet-upgrade] - 2025-01-09
 
 ### 💼 Other
@@ -1787,6 +1691,3 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#115](https://github.com/near/mpc/pull/115)(@andrei-near): Workflow to build and publish MPC docker images (#115)
 
 - [#116](https://github.com/near/mpc/pull/116)(@andrei-near): Docker image builder nit (#116)
-
-
-
