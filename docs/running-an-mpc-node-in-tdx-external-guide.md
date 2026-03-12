@@ -99,7 +99,8 @@ sudo apt install build-essential qemu-system docker.io
 * Create `mpc` user and installation folder
 
 ```bash
-sudo useradd -m -G docker -s /usr/bin/bash mpc
+# allow the MPC user to access docker and KVM for running CVMs.
+sudo useradd -m -G docker,kvm -s /usr/bin/bash mpc
 sudo passwd mpc
 # create installation folder
 sudo mkdir /opt/mpc
@@ -132,7 +133,7 @@ All steps below assume the current user is `mpc` and the current directory is
 
    ```bash
    cd dstack
-   git checkout v0.5.4 # Should point to commit `3e4e462cac2a57c204698d2443d252d13e75cd29`
+   git checkout v0.5.7 # Should point to commit `eb97c56bc8f58dafb57f9cc4ec538a4f00bdb5b6`
 
    cargo build --release -p dstack-vmm -p supervisor
    mkdir -p vmm-data
@@ -173,7 +174,7 @@ range = [
 ]
 
 [host_api]
-address = "127.0.0.1"
+address = "vsock:2"
 port = 9300
 EOF
 ```
