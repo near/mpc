@@ -24,14 +24,13 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 // TODO(#1639): extract timestamp from certificate itself
 pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Mock(MockAttestation),
 }
 
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

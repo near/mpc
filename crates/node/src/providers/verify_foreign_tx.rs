@@ -18,7 +18,7 @@ pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
     foreign_chain_policy_reader: ForeignChainPolicyReader,
     // TODO(#2076): This field might become useful when domain separation is implemented
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     mpc_config: Arc<MpcConfig>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,

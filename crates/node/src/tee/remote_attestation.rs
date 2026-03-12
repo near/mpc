@@ -184,7 +184,7 @@ fn is_node_in_contract_tee_accounts(
 ///
 /// This function watches TEE account changes in the contract and resubmits attestations when
 /// the node's TEE attestation is no longer available.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     node_account_id: AccountId,
     tee_authority: TeeAuthority,

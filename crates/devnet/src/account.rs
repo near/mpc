@@ -179,7 +179,7 @@ impl OperatingAccessKey {
 
         let verifying_key = signing_key.verifying_key();
         let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
-        #[allow(clippy::disallowed_methods)]
+        #[expect(clippy::disallowed_methods)]
         let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
 
         let request = methods::send_tx::RpcSendTransactionRequest {
@@ -210,10 +210,9 @@ impl OperatingAccessKey {
         );
 
         let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
-        #[allow(clippy::disallowed_methods)]
+        #[expect(clippy::disallowed_methods)]
         let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
 
-        #[allow(clippy::disallowed_methods)]
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::from_actions(
                 self.next_nonce().await,
@@ -246,7 +245,7 @@ impl OperatingAccessKey {
     }
 
     /// Submits a transaction to the chain to mutably call a function on a contract.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_tx_to_call_function(
         &mut self,
         contract_id: &AccountId,
@@ -602,7 +601,6 @@ impl OperatingAccounts {
             .unwrap()
     }
 
-    #[allow(dead_code)]
     pub fn account_mut(&mut self, account_id: &AccountId) -> &mut OperatingAccount {
         self.accounts.get_mut(account_id).unwrap()
     }

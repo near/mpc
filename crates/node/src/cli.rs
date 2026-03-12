@@ -405,7 +405,7 @@ mod testing {
     use near_indexer_primitives::types::Finality;
     use near_sdk::AccountId;
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub(crate) fn run_generate_test_configs(
         output_dir: &str,
         participants: Vec<AccountId>,
