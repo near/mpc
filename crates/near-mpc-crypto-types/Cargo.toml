@@ -3,6 +3,8 @@ name = "near-mpc-crypto-types"
 version = "0.0.1"
 license = { workspace = true }
 edition = { workspace = true }
+repository.workspace = true
+description = "Cryptographic primitives and key types for the NEAR MPC network"
 
 [features]
 abi = ["borsh/unstable__schema", "schemars"]
