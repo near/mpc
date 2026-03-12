@@ -287,7 +287,11 @@ impl AllowedLauncherImages {
     /// Removes a launcher image hash and all its associated compose hashes.
     /// Returns `false` if the launcher hash was not found or if removal would leave the list empty.
     pub fn remove(&mut self, launcher_hash: &LauncherImageHash) -> bool {
-        let would_remain = self.entries.iter().filter(|e| &e.launcher_hash != launcher_hash).count();
+        let would_remain = self
+            .entries
+            .iter()
+            .filter(|e| &e.launcher_hash != launcher_hash)
+            .count();
         if would_remain == 0 {
             return false;
         }
