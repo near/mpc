@@ -68,13 +68,9 @@ impl TransactionProcessorHandle {
                         return;
                     };
                     tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-                    let transaction_status = ensure_send_transaction(
-                        tx_signer.clone(),
-                        indexer_state,
-                        tx_request,
-                        txn_json,
-                    )
-                    .await;
+                    let transaction_status =
+                        ensure_send_transaction(&tx_signer, indexer_state, tx_request, txn_json)
+                            .await;
 
                     if let Some(tx_response_channel) = tx_response_channel {
                         let _ = tx_response_channel.send(transaction_status);
@@ -135,7 +131,7 @@ pub enum TransactionStatus {
 
 /// Creates, signs, and submits a function call with the given method and serialized arguments.
 async fn submit_tx(
-    tx_signer: Arc<TransactionSigner>,
+    tx_signer: &TransactionSigner,
     indexer_state: Arc<IndexerState>,
     method: String,
     params_ser: String,
@@ -304,13 +300,13 @@ async fn observe_tx_result(
 /// If the submitted transaction is not observed by the indexer before the `timeout`, tries again.
 /// Will make up to `num_attempts` attempts.
 async fn ensure_send_transaction(
-    tx_signer: Arc<TransactionSigner>,
+    tx_signer: &TransactionSigner,
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
     params_ser: String,
 ) -> TransactionStatus {
     if let Err(err) = submit_tx(
-        tx_signer.clone(),
+        &tx_signer,
         indexer_state.clone(),
         request.method().to_string(),
         params_ser.clone(),
