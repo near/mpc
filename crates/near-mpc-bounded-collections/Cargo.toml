@@ -3,6 +3,8 @@ name = "near-mpc-bounded-collections"
 version = "0.0.1"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "A collection of bounded types, part of the NEAR MPC API"
 
 [features]
 abi = ["borsh/unstable__schema", "schemars"]
