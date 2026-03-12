@@ -5,6 +5,7 @@ members = [
     "crates/attestation",
     "crates/attestation-cli",
     "crates/backup-cli",
+    "crates/chain-gateway",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
@@ -179,7 +180,7 @@ syn = "2.0"
 tempfile = "3.26.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
-tokio = { version = "1.41.0", features = ["full"] }
+tokio = { version = "1.41.0", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
@@ -195,6 +196,7 @@ tracing-subscriber = { version = "0.3.22", features = [
 ] }
 tracing-test = "0.2.6"
 url = "2"
+wat = "1"
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"

@@ -23,11 +23,11 @@ All TEE services run inside a [Dstack][dstack] CVM on Intel TDX hardware. They s
 | [Transaction Sender][transaction-sender] | Submits attestation transactions to the governance contract |
 
 [dstack]: https://github.com/Dstack-TEE/dstack
-[chain-indexer]: indexer-design.md
+[chain-indexer]: chain-gateway-design.md
 [tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
 [mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
-[contract-state-subscriber]: indexer-design.md#contract-state-subscriber
-[transaction-sender]: indexer-design.md#transaction-sender
+[contract-state-subscriber]: chain-gateway-design.md#state-viewer
+[transaction-sender]: chain-gateway-design.md#transaction-sender
 
 ### Crate Dependencies
 
@@ -120,7 +120,7 @@ Individual services may add steps between "Start application container" and the 
 
 The TEE Context is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate, depending on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation], reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, backup service) use the TEE Context directly.
 
-[mpc-context]: indexer-design.md
+[mpc-context]: chain-gateway-design.md
 
 [remote-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs
 [allowed-hashes-watcher]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/allowed_image_hashes_watcher.rs#L103
