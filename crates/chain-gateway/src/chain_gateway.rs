@@ -34,25 +34,29 @@ impl QueryViewFunction for ChainGateway {
     }
 }
 
-pub async fn start(config: near_indexer::IndexerConfig) -> Result<ChainGateway, ChainGatewayError> {
-    let near_config =
-        config
-            .load_near_config()
-            .map_err(|err| ChainGatewayError::FailureLoadingConfig {
+impl ChainGateway {
+    pub async fn start(
+        config: near_indexer::IndexerConfig,
+    ) -> Result<ChainGateway, ChainGatewayError> {
+        let near_config =
+            config
+                .load_near_config()
+                .map_err(|err| ChainGatewayError::FailureLoadingConfig {
+                    msg: err.to_string(),
+                })?;
+
+        let near_node = near_indexer::Indexer::start_near_node(&config, near_config)
+            .await
+            .map_err(|err| ChainGatewayError::StartupFailed {
                 msg: err.to_string(),
             })?;
 
-    let near_node = near_indexer::Indexer::start_near_node(&config, near_config)
-        .await
-        .map_err(|err| ChainGatewayError::StartupFailed {
-            msg: err.to_string(),
-        })?;
+        let view_client = NearViewClientActorHandle::new(near_node.view_client);
+        let client = NearClientActorHandle::new(near_node.client);
 
-    let view_client = NearViewClientActorHandle::new(near_node.view_client);
-    let client = NearClientActorHandle::new(near_node.client);
-
-    Ok(ChainGateway {
-        view_client,
-        client,
-    })
+        Ok(ChainGateway {
+            view_client,
+            client,
+        })
+    }
 }

@@ -18,11 +18,15 @@ pub trait IsSyncing: Send + Sync + 'static {
     /// Polls [`is_syncing`](Self::is_syncing) until the node is fully synced.
     fn wait_for_full_sync(&self) -> impl Future<Output = ()> + Send {
         async {
+            let mut attempt = 0u32;
             loop {
                 match self.is_syncing().await {
                     Ok(false) => return,
                     Ok(true) => {
-                        tracing::info!("waiting for full sync");
+                        if attempt % 120 == 0 {
+                            tracing::info!("has been syncing for: {} seconds", attempt / 2);
+                        }
+                        attempt += 1;
                     }
                     Err(err) => {
                         tracing::warn!(err = %err, "error while waiting for sync");

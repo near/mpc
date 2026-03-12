@@ -98,7 +98,7 @@ async fn setup_chain_gateway() -> (
         validate_genesis: true,
     };
 
-    let gw = chain_gateway::chain_gateway::start(indexer_config)
+    let gw = chain_gateway::chain_gateway::ChainGateway::start(indexer_config)
         .await
         .expect("chain_gateway::start should succeed");
 
