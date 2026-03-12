@@ -15,7 +15,7 @@ however is implemented from scratch and follows
 
 The EdDSA implementation is mainly a wrapper of the
 [Frost](https://github.com/ZcashFoundation/frost) signing functions instantiated
-with Curve25519.
+with Edwards25519.
 
 The Confidential Key Derivation (CKD) code implements a threshold protocol to
 generate deterministic keys in a confidential manner. The scheme is based on
@@ -99,7 +99,7 @@ More details can be found in
 ### Threshold EdDSA Functionalities
 
 The threshold EdDSA scheme is implemented over curve
-Curve25519. We refer to such scheme as Ed25519.
+Edwards25519. We refer to such scheme as Ed25519.
 The following functionalities are provided:
 
 1) **Distributed Key Generation (DKG)**: Same as in ECDSA.

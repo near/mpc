@@ -148,7 +148,7 @@ impl TestSetupBuilder {
                         .contract
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
-                            curve: Curve::Ed25519,
+                            curve: Curve::Edwards25519,
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();

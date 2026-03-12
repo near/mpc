@@ -203,7 +203,7 @@ pub async fn init_with_candidates(
             .map(|(i, pk)| {
                 let domain_id = DomainId((i as u64) * 2);
                 let curve = match pk {
-                    dtos::PublicKey::Ed25519(_) => Curve::Ed25519,
+                    dtos::PublicKey::Ed25519(_) => Curve::Edwards25519,
                     dtos::PublicKey::Secp256k1(_) => Curve::Secp256k1,
                     dtos::PublicKey::Bls12381(_) => Curve::Bls12381,
                 };
@@ -529,7 +529,7 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            curve: Curve::Ed25519,
+            curve: Curve::Edwards25519,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
@@ -539,7 +539,7 @@ pub async fn execute_key_generation_and_add_random_state(
         },
         DomainConfig {
             id: 2.into(),
-            curve: Curve::Ed25519,
+            curve: Curve::Edwards25519,
             purpose: DomainPurpose::Sign,
         },
     ];
