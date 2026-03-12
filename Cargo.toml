@@ -34,6 +34,7 @@ members = [
 version = "3.6.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/near/mpc"
 
 [workspace.dependencies]
 #workspace members
