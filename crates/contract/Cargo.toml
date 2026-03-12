@@ -37,13 +37,21 @@ container_build_command = [
 crate-type = ["cdylib", "lib"]
 
 [features]
-test-utils = ["rand", "threshold-signatures", "contract-interface/blstrs"]
+test-utils = [
+    "rand",
+    "threshold-signatures",
+    "near-mpc-contract-interface/blstrs",
+]
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
-dev-utils = ["rand", "threshold-signatures", "contract-interface/blstrs"]
+dev-utils = [
+    "rand",
+    "threshold-signatures",
+    "near-mpc-contract-interface/blstrs",
+]
 abi = [
     "borsh/unstable__schema",
-    "contract-interface/abi",
+    "near-mpc-contract-interface/abi",
     "mpc-attestation/abi",
     "mpc-primitives/abi",
 ]
@@ -56,11 +64,6 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 anyhow = { workspace = true }
 assert_matches = { workspace = true }
 borsh = { workspace = true }
-contract-interface = { workspace = true, features = [
-    "ed25519-dalek",
-    "k256",
-    "near",
-] }
 curve25519-dalek = { workspace = true }
 derive_more = { workspace = true, features = ["from", "deref"] }
 hex = { workspace = true, features = [] }
@@ -79,6 +82,11 @@ near-account-id = { workspace = true, features = [
     "serde",
 ] }
 near-mpc-bounded-collections = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = [
+    "ed25519-dalek",
+    "k256",
+    "near",
+] }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
 schemars = { workspace = true }

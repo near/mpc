@@ -35,8 +35,8 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
-use contract_interface::method_names;
-use contract_interface::types::{
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{
     self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
@@ -1617,11 +1617,11 @@ impl MpcContract {
         }
     }
 
-    pub fn state(&self) -> contract_interface::types::ProtocolContractState {
+    pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
         (&self.protocol_state).into_dto_type()
     }
 
-    pub fn metrics(&self) -> contract_interface::types::Metrics {
+    pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {
         self.metrics.clone()
     }
 
@@ -2068,7 +2068,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
-    use contract_interface::types::{
+    use near_mpc_contract_interface::types::{
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
         ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
     };

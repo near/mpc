@@ -11,7 +11,7 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::types::{self as dtos, Attestation, MockAttestation};
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     primitives::{
         domain::SignatureScheme, participants::Participants,

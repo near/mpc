@@ -20,7 +20,7 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
 use near_indexer_primitives::CryptoHash;
 use tokio::time::{timeout, Duration};

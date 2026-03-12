@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
-use contract_interface::method_names;
-use contract_interface::types::{
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{
     Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
 };
 use mpc_contract::tee::tee_state::NodeId;

@@ -15,8 +15,8 @@ use crate::sandbox::{
         },
     },
 };
-use contract_interface::method_names;
-use contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
 use rand_core::OsRng;
@@ -96,7 +96,7 @@ async fn test_propose_update_config() {
         .contains("not a voter"));
 
     // have each participant propose a new update:
-    let new_config = contract_interface::types::Config {
+    let new_config = near_mpc_contract_interface::types::Config {
         key_event_timeout_blocks: 11,
         tee_upgrade_deadline_duration_seconds: 22,
         contract_upgrade_deposit_tera_gas: 33,
@@ -129,7 +129,7 @@ async fn test_propose_update_config() {
         proposals.push(proposal_id);
     }
 
-    let old_config: contract_interface::types::Config = contract
+    let old_config: near_mpc_contract_interface::types::Config = contract
         .view(method_names::CONFIG)
         .await
         .unwrap()
@@ -166,7 +166,7 @@ async fn test_propose_update_config() {
         }
     }
     // check that the proposal executed since the threshold got changed.
-    let config: contract_interface::types::Config = contract
+    let config: near_mpc_contract_interface::types::Config = contract
         .view(method_names::CONFIG)
         .await
         .unwrap()
@@ -368,7 +368,7 @@ async fn test_propose_incorrect_updates() {
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
-    let dummy_config = contract_interface::types::InitConfig::default();
+    let dummy_config = near_mpc_contract_interface::types::InitConfig::default();
 
     // Can not propose update both to code and config
     let execution = mpc_signer_accounts[0]

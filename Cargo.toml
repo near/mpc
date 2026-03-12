@@ -8,7 +8,6 @@ members = [
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
-    "crates/contract-interface",
     "crates/crypto-types",
     "crates/devnet",
     "crates/foreign-chain-inspector",
@@ -16,6 +15,7 @@ members = [
     "crates/include-measurements",
     "crates/mpc-attestation",
     "crates/near-mpc-bounded-collections",
+    "crates/near-mpc-contract-interface",
     "crates/near-mpc-sdk",
     "crates/node",
     "crates/node-types",
@@ -39,7 +39,6 @@ license = "MIT"
 #workspace members
 attestation = { path = "crates/attestation" }
 contract-history = { path = "crates/contract-history" }
-contract-interface = { path = "crates/contract-interface" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
@@ -50,6 +49,7 @@ mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
 near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections" }
+near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface" }
 near-mpc-sdk = { path = "crates/near-mpc-sdk" }
 node-types = { path = "crates/node-types" }
 signature-verifier = { path = "crates/signature-verifier" }

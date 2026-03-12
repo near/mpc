@@ -6,7 +6,7 @@ license.workspace = true
 
 [features]
 abi = [
-    "contract-interface/abi",
+    "near-mpc-contract-interface/abi",
     "signature-verifier/abi",
     "near-mpc-bounded-collections/abi",
     "borsh/unstable__schema",
@@ -14,9 +14,9 @@ abi = [
 
 [dependencies]
 borsh = { workspace = true }
-contract-interface = { workspace = true }
 derive_more = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
 signature-verifier = { workspace = true }
 
 [dev-dependencies]

@@ -1,4 +1,4 @@
-use contract_interface::types::StarknetLog;
+use near_mpc_contract_interface::types::StarknetLog;
 use mpc_primitives::hash::Hash32;
 
 pub mod inspector;

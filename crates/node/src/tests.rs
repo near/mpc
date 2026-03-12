@@ -1,5 +1,5 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
-use contract_interface::types::{
+use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,

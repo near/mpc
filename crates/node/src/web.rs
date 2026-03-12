@@ -13,7 +13,7 @@ use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
-use contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;

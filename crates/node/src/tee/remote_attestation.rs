@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
-use contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use mpc_attestation::{
     attestation::{Attestation, VerificationError},
     report_data::{ReportData, ReportDataV1},

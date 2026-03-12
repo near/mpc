@@ -1,4 +1,4 @@
-use contract_interface::types as contract_types;
+use near_mpc_contract_interface::types as contract_types;
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
 use rand_core::OsRng;

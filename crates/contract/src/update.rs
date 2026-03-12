@@ -8,8 +8,8 @@ use crate::{
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
-use contract_interface::method_names;
-use contract_interface::types::UpdateHash;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::UpdateHash;
 use derive_more::Deref;
 use near_account_id::AccountId;
 use near_sdk::{
@@ -71,7 +71,7 @@ impl From<u64> for UpdateId {
 )]
 pub enum Update {
     Contract(Vec<u8>),
-    Config(contract_interface::types::Config),
+    Config(near_mpc_contract_interface::types::Config),
 }
 
 #[derive(
@@ -89,7 +89,7 @@ pub enum Update {
 )]
 pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
-    pub config: Option<contract_interface::types::Config>,
+    pub config: Option<near_mpc_contract_interface::types::Config>,
 }
 
 impl TryFrom<ProposeUpdateArgs> for Update {

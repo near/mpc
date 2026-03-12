@@ -15,7 +15,7 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::method_names;
+use near_mpc_contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::primitives::test_utils::infer_purpose_from_scheme;
@@ -354,7 +354,7 @@ impl MpcInitContractCmd {
             ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
-            init_config: contract_interface::types::InitConfig::default(),
+            init_config: near_mpc_contract_interface::types::InitConfig::default(),
         })
         .unwrap();
 
@@ -377,13 +377,13 @@ impl MpcInitContractCmd {
 #[derive(Serialize)]
 struct InitV2Args {
     parameters: ThresholdParameters,
-    init_config: contract_interface::types::InitConfig,
+    init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
     ParticipantInfo {
-        sign_pk: near_sdk::PublicKey::from(contract_interface::types::Ed25519PublicKey::from(
+        sign_pk: near_sdk::PublicKey::from(near_mpc_contract_interface::types::Ed25519PublicKey::from(
             &mpc_setup.p2p_public_key,
         )),
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),

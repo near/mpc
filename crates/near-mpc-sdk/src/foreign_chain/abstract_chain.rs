@@ -3,10 +3,10 @@ use crate::{
     sign::NotSet,
 };
 
-use contract_interface::types::{ExtractedValue, Hash256};
+use near_mpc_contract_interface::types::{ExtractedValue, Hash256};
 
 // API types
-pub use contract_interface::types::{
+pub use near_mpc_contract_interface::types::{
     EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest,
 };
@@ -142,7 +142,9 @@ impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet> {
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
-    use contract_interface::types::{DomainId, Hash160, VerifyForeignTransactionRequestArgs};
+    use near_mpc_contract_interface::types::{
+        DomainId, Hash160, VerifyForeignTransactionRequestArgs,
+    };
 
     use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
 

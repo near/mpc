@@ -1,4 +1,4 @@
-use contract_interface::method_names;
+use near_mpc_contract_interface::method_names;
 use mpc_contract::primitives::domain::SignatureScheme;
 use near_sdk::{CurveType, PublicKey};
 use serde_json::json;

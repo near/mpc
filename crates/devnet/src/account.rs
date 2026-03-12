@@ -515,7 +515,7 @@ impl OperatingAccounts {
         let secret_key = SigningKey::generate(&mut OsRng);
 
         let verifying_key = secret_key.verifying_key();
-        let ed25519_pk = contract_interface::types::Ed25519PublicKey::from(&verifying_key);
+        let ed25519_pk = near_mpc_contract_interface::types::Ed25519PublicKey::from(&verifying_key);
         let near_sdk_public_key = near_sdk::PublicKey::from(ed25519_pk);
 
         let mut data = std::collections::HashMap::new();

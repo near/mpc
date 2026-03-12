@@ -12,13 +12,13 @@ use crate::{
 
 use self::stats::IndexerStats;
 use anyhow::Context;
-use contract_interface::method_names::{
+use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
     GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
     GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
     STATE,
 };
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
@@ -232,8 +232,8 @@ impl IndexerViewClient {
     pub(crate) async fn get_participant_attestation(
         &self,
         mpc_contract_id: &AccountId,
-        participant_tls_public_key: &contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<Option<contract_interface::types::VerifiedAttestation>> {
+        participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
+    ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
         let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
             tls_public_key: participant_tls_public_key,
         })
@@ -260,7 +260,7 @@ impl IndexerViewClient {
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
-                Option<contract_interface::types::VerifiedAttestation>,
+                Option<near_mpc_contract_interface::types::VerifiedAttestation>,
             >(&call_result.result)
             .context("failed to deserialize pending request response"),
             _ => {

@@ -11,8 +11,8 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
-use contract_interface::method_names;
-use contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     primitives::{

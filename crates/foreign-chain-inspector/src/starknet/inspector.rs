@@ -1,6 +1,6 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
-use contract_interface::types::{StarknetFelt, StarknetLog};
+use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 use foreign_chain_rpc_interfaces::starknet::{
     GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
     StarknetFinalityStatus,

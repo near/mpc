@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use contract_interface::{
+use near_mpc_contract_interface::{
     method_names,
     types::{EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES},
 };

@@ -1,17 +1,19 @@
 use crate::sign::NotSet;
 use borsh::{BorshDeserialize, BorshSerialize};
-pub use contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
+pub use near_mpc_contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as VERIFY_FOREIGN_TRANSACTION_METHOD_NAME;
 
 pub mod abstract_chain;
 pub mod bitcoin;
 pub mod starknet;
 
-use contract_interface::types::PublicKey;
+use near_mpc_contract_interface::types::PublicKey;
 // response types
-pub use contract_interface::types::{Hash256, SignatureResponse, VerifyForeignTransactionResponse};
+pub use near_mpc_contract_interface::types::{
+    Hash256, SignatureResponse, VerifyForeignTransactionResponse,
+};
 
 // raw request arg type
-pub use contract_interface::types::{
+pub use near_mpc_contract_interface::types::{
     BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainPolicy,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
     VerifyForeignTransactionRequestArgs,

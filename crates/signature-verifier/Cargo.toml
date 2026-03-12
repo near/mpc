@@ -5,17 +5,20 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-abi = ["contract-interface/abi"]
+abi = ["near-mpc-contract-interface/abi"]
 
 [dependencies]
-contract-interface = { workspace = true, features = ["near"] }
+near-mpc-contract-interface = { workspace = true, features = ["near"] }
 near-sdk = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-contract-interface = { workspace = true, features = ["k256", "ed25519-dalek"] }
 ed25519-dalek = { workspace = true }
 k256 = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = [
+    "k256",
+    "ed25519-dalek",
+] }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 

@@ -11,7 +11,7 @@ use crate::storage::SignRequestStorage;
 use crate::types::SignatureId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
 use std::collections::HashMap;

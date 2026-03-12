@@ -7,7 +7,7 @@ use sha2::Sha256;
 use sha3::{Digest, Sha3_256};
 use std::io::{self, Write as _};
 
-use contract_interface::types::{AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CkdAppId};
+use near_mpc_contract_interface::types::{AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CkdAppId};
 
 use crate::{
     cli::Args,
@@ -29,7 +29,7 @@ pub fn run(args: Args) -> Result<()> {
         ephemeral_public_key,
         args.domain_id,
     ));
-    let function_name = contract_interface::method_names::REQUEST_APP_PRIVATE_KEY;
+    let function_name = near_mpc_contract_interface::method_names::REQUEST_APP_PRIVATE_KEY;
     println!("Call the function {function_name} with parameters:");
 
     let ckd_params_json = serde_json::to_string(&ckd_params)?;

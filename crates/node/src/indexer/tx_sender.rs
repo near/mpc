@@ -4,7 +4,7 @@ use super::IndexerState;
 use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;
-use contract_interface::types::{Attestation, VerifiedAttestation};
+use near_mpc_contract_interface::types::{Attestation, VerifiedAttestation};
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;

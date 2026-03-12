@@ -3,11 +3,11 @@ use super::shared_key_utils::{
     derive_secret_key_ed25519, derive_secret_key_secp256k1, generate_random_app_public_key,
     DomainKey, SharedSecretKey,
 };
-use contract_interface::method_names::{
+use near_mpc_contract_interface::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     SIGN,
 };
-use contract_interface::types::{self as dtos};
+use near_mpc_contract_interface::types::{self as dtos};
 use digest::{Digest, FixedOutput};
 use k256::{
     elliptic_curve::{Field as _, Group as _},

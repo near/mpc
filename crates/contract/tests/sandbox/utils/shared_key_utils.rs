@@ -1,4 +1,4 @@
-use contract_interface::types::{self as dtos, Bls12381G1PublicKey};
+use near_mpc_contract_interface::types::{self as dtos, Bls12381G1PublicKey};
 use k256::elliptic_curve::{Field as _, Group as _, PrimeField as _};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,

@@ -1179,11 +1179,11 @@ version = "3.6.0"
 dependencies = [
  "anyhow",
  "clap",
- "contract-interface",
  "ed25519-dalek",
  "mpc-contract",
  "mpc-node",
  "near-account-id 2.5.0",
+ "near-mpc-contract-interface",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "serde",
@@ -1776,11 +1776,11 @@ dependencies = [
  "anyhow",
  "blstrs",
  "clap",
- "contract-interface",
  "derive_more 2.1.1",
  "elliptic-curve",
  "hex",
  "hkdf",
+ "near-mpc-contract-interface",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
@@ -1979,25 +1979,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
-]
-
-[[package]]
-name = "contract-interface"
-version = "0.0.1"
-dependencies = [
- "borsh",
- "derive_more 2.1.1",
- "hex",
- "insta",
- "mpc-crypto-types",
- "near-mpc-bounded-collections",
- "rstest",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "serde_repr",
- "serde_with",
- "sha2",
 ]
 
 [[package]]
@@ -3409,7 +3390,6 @@ name = "foreign-chain-inspector"
 version = "3.6.0"
 dependencies = [
  "assert_matches",
- "contract-interface",
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
@@ -3417,6 +3397,7 @@ dependencies = [
  "httpmock",
  "jsonrpsee",
  "mpc-primitives",
+ "near-mpc-contract-interface",
  "rstest",
  "serde",
  "serde_json",
@@ -5396,7 +5377,6 @@ dependencies = [
  "borsh",
  "cargo-near-build",
  "contract-history",
- "contract-interface",
  "curve25519-dalek",
  "derive_more 2.1.1",
  "digest 0.10.7",
@@ -5413,6 +5393,7 @@ dependencies = [
  "near-abi",
  "near-account-id 2.5.0",
  "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
  "near-mpc-sdk",
  "near-sdk",
  "near-workspaces",
@@ -5464,7 +5445,6 @@ dependencies = [
  "borsh",
  "bs58 0.5.1",
  "clap",
- "contract-interface",
  "ed25519-dalek",
  "flume",
  "futures",
@@ -5474,6 +5454,7 @@ dependencies = [
  "near-crypto 0.28.0",
  "near-jsonrpc-client 0.15.1",
  "near-jsonrpc-primitives 0.28.0",
+ "near-mpc-contract-interface",
  "near-primitives 0.28.0",
  "near-sdk",
  "node-types",
@@ -5503,7 +5484,6 @@ dependencies = [
  "built",
  "bytes",
  "clap",
- "contract-interface",
  "derive_more 2.1.1",
  "ed25519-dalek",
  "either",
@@ -5530,6 +5510,7 @@ dependencies = [
  "near-indexer",
  "near-indexer-primitives",
  "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
  "near-o11y",
  "near-sdk",
  "near-time 2.10.7",
@@ -6409,14 +6390,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-mpc-contract-interface"
+version = "0.0.1"
+dependencies = [
+ "borsh",
+ "derive_more 2.1.1",
+ "hex",
+ "insta",
+ "mpc-crypto-types",
+ "near-mpc-bounded-collections",
+ "rstest",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "serde_with",
+ "sha2",
+]
+
+[[package]]
 name = "near-mpc-sdk"
 version = "0.0.1"
 dependencies = [
  "assert_matches",
  "borsh",
- "contract-interface",
  "derive_more 2.1.1",
  "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
  "signature-verifier",
 ]
 
@@ -10155,9 +10155,9 @@ name = "signature-verifier"
 version = "0.0.1"
 dependencies = [
  "assert_matches",
- "contract-interface",
  "ed25519-dalek",
  "k256",
+ "near-mpc-contract-interface",
  "near-sdk",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -10670,10 +10670,10 @@ dependencies = [
  "assert_matches",
  "blstrs",
  "borsh",
- "contract-interface",
  "elliptic-curve",
  "getrandom 0.2.17",
  "hex",
+ "near-mpc-contract-interface",
  "near-sdk",
  "serde",
  "sha2",
@@ -10683,10 +10683,10 @@ dependencies = [
 name = "test-utils"
 version = "3.6.0"
 dependencies = [
- "contract-interface",
  "hex",
  "mpc-attestation",
  "mpc-primitives",
+ "near-mpc-contract-interface",
  "near-sdk",
  "serde_json",
  "sha2",

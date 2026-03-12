@@ -13,7 +13,7 @@ use foreign_chain_inspector::{
 };
 
 use assert_matches::assert_matches;
-use contract_interface::types::{StarknetFelt, StarknetLog};
+use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 use foreign_chain_rpc_interfaces::starknet::{
     GetTransactionReceiptResponse, H256, StarknetEvent, StarknetExecutionStatus,
     StarknetFinalityStatus,

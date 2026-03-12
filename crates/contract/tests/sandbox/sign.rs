@@ -9,7 +9,7 @@ use crate::sandbox::{
     },
 };
 use anyhow::Context;
-use contract_interface::method_names;
+use near_mpc_contract_interface::method_names;
 use mpc_contract::{
     errors,
     primitives::{

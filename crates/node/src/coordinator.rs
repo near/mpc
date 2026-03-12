@@ -30,7 +30,7 @@ use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
 use anyhow::Context;
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -964,7 +964,7 @@ mod tests {
     use super::Coordinator;
     use crate::indexer::fake::FakeForeignChainPolicyReader;
     use crate::tests::common::MockTransactionSender;
-    use contract_interface::types as dtos;
+    use near_mpc_contract_interface::types as dtos;
 
     #[test]
     fn is_supported_foreign_chain__supports_starknet() {

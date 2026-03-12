@@ -3,8 +3,8 @@ use crate::sandbox::utils::{
     mpc_contract::get_state,
     transactions::execute_async_transactions,
 };
-use contract_interface::method_names;
-use contract_interface::types::{self as dtos, ProtocolContractState};
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, ProtocolContractState};
 use dtos::{AttemptId, EpochId, KeyEventId};
 use mpc_contract::primitives::thresholds::ThresholdParameters;
 use near_workspaces::{Account, Contract};

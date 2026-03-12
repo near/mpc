@@ -12,8 +12,8 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::method_names;
-use contract_interface::types::{self as dtos, Attestation, MockAttestation};
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     errors::InvalidState,
     primitives::{

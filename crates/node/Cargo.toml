@@ -19,12 +19,6 @@ borsh = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
-contract-interface = { workspace = true, features = [
-    "k256",
-    "ed25519-dalek",
-    "blstrs",
-    "near",
-] }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 either = { workspace = true }
@@ -50,6 +44,12 @@ near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = [
+    "k256",
+    "ed25519-dalek",
+    "blstrs",
+    "near",
+] }
 near-o11y = { workspace = true }
 near-sdk = { workspace = true }
 near-time = { workspace = true }

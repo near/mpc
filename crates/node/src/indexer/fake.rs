@@ -17,7 +17,7 @@ use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;

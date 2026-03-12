@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::BTreeMap};
 
 use anyhow::Context;
 use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
 mod abstract_chain;
@@ -728,7 +728,7 @@ foreign_chains:
         // Then
         let solana_providers = policy
             .chains
-            .get(&contract_interface::types::ForeignChain::Solana)
+            .get(&near_mpc_contract_interface::types::ForeignChain::Solana)
             .unwrap();
         let provider = solana_providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
@@ -903,7 +903,7 @@ foreign_chains:
         // Then
         let eth_providers = policy
             .chains
-            .get(&contract_interface::types::ForeignChain::Ethereum)
+            .get(&near_mpc_contract_interface::types::ForeignChain::Ethereum)
             .unwrap();
         let provider = eth_providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");

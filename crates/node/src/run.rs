@@ -15,7 +15,7 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
