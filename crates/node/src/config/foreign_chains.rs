@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::{borrow::Cow, collections::BTreeMap};
 
 use anyhow::Context;
-use bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
+use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 

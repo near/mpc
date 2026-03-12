@@ -501,8 +501,8 @@ mod tests {
     use super::*;
     use crate::config::SyncMode;
     use crate::config::{AuthConfig, TokenConfig};
-    use bounded_collections::NonEmptyBTreeMap;
     use near_indexer_primitives::types::Finality;
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
 

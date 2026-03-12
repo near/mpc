@@ -2067,7 +2067,7 @@ mod tests {
         primitives::test_utils::infer_purpose_from_scheme,
     };
     use assert_matches::assert_matches;
-    use bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use contract_interface::types::{
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
         ForeignTxPayloadVersion, ForeignTxSignPayloadV1,

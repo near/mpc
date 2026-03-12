@@ -375,7 +375,7 @@ mod tests {
     };
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
-    use bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use std::collections::BTreeMap;
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
@@ -387,7 +387,7 @@ mod tests {
     }
 
     fn bitcoin_foreign_chains_config() -> ForeignChainsConfig {
-        let providers = bounded_collections::NonEmptyBTreeMap::new(
+        let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
             "public".to_string(),
             BitcoinProviderConfig {
                 rpc_url: "https://blockstream.info/api".to_string(),

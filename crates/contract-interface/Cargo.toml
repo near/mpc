@@ -7,7 +7,7 @@ edition = { workspace = true }
 [features]
 abi = [
     "borsh/unstable__schema",
-    "bounded-collections/abi",
+    "near-mpc-bounded-collections/abi",
     "mpc-crypto-types/abi",
     "schemars",
 ]
@@ -18,9 +18,9 @@ near = ["mpc-crypto-types/near"]
 
 [dependencies]
 borsh = { workspace = true }
-bounded-collections = { workspace = true }
 derive_more = { workspace = true }
 mpc-crypto-types = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 serde = { workspace = true }
 serde_repr = { workspace = true }
 serde_with = { workspace = true }

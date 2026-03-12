@@ -80,7 +80,7 @@ impl SignRequestBuilder<String, Payload, DomainId> {
 
 #[cfg(test)]
 mod test {
-    use bounded_collections::BoundedVec;
+    use near_mpc_bounded_collections::BoundedVec;
 
     use super::*;
 
