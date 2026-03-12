@@ -253,44 +253,6 @@ fn <system_under_test>__should_<test_assertion>(){
 the system under test (SUT) can be many things, but typically this would be a function,
 method or a struct.
 
-## Updating snapshots
-We use [`cargo insta`](https://insta.rs/) for snapshot testing to guard against
-unintended changes to ABIs, serialization formats, and deterministic outputs.
-
-If a snapshot test fails, it means the output has changed relative to the
-accepted `.snap` file. To resolve this:
-
-1. **Review the diff.** Run the failing test to see what changed:
-   ```bash
-   cargo nextest run --cargo-profile=test-release <test_name>
-   ```
-   This creates a `.snap.new` file next to the existing `.snap` file.
-
-2. **Accept or reject.** Use `cargo insta` to interactively review pending
-   snapshots:
-   ```bash
-   cargo insta review
-   ```
-   This walks you through each changed snapshot and lets you accept or reject it.
-
-   Alternatively, to accept all pending snapshots at once:
-   ```bash
-   cargo insta accept
-   ```
-
-3. **Commit the updated `.snap` files.** The updated snapshots should be
-   committed alongside your code changes.
-
-> **Important:** Snapshot tests exist to catch accidental breaking changes.
-> Before accepting a new snapshot, make sure the change is intentional and
-> won't break compatibility (e.g. with existing on-chain data or client
-> integrations).
-
-If you don't have `cargo insta` installed:
-```bash
-cargo install cargo-insta
-```
-
 ## Measure performance
 It's easy to get stuck in arguments about what's faster or more expensive
 when comparing different approaches. In these scenarios, we should strive
