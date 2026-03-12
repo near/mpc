@@ -1724,8 +1724,8 @@ impl MpcContract {
     }
 
     /// Returns the current launcher hash votes, showing each participant's vote.
-    pub fn launcher_hash_votes(&self) -> &LauncherHashVotes {
-        &self.tee_state.launcher_votes
+    pub fn launcher_hash_votes(&self) -> LauncherHashVotes {
+        self.tee_state.launcher_votes.clone()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
