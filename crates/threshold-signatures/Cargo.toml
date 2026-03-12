@@ -103,6 +103,7 @@ harness = false
 required-features = ["test-utils"]
 
 [lints.clippy]
+mod_module_files = "deny"
 # We might revisit these exceptions in the future
 missing-const-for-fn = "allow"
 trait-duplication-in-bounds = "allow"
