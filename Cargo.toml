@@ -5,22 +5,22 @@ members = [
     "crates/attestation",
     "crates/attestation-cli",
     "crates/backup-cli",
-    "crates/bounded-collections",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
-    "crates/contract-interface",
-    "crates/crypto-types",
     "crates/devnet",
     "crates/foreign-chain-inspector",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
     "crates/mpc-attestation",
+    "crates/near-mpc-bounded-collections",
+    "crates/near-mpc-contract-interface",
+    "crates/near-mpc-crypto-types",
     "crates/near-mpc-sdk",
+    "crates/near-mpc-signature-verifier",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
-    "crates/signature-verifier",
     "crates/tee-authority",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
@@ -38,21 +38,21 @@ license = "MIT"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-bounded-collections = { path = "crates/bounded-collections" }
 contract-history = { path = "crates/contract-history" }
-contract-interface = { path = "crates/contract-interface" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
-mpc-crypto-types = { path = "crates/crypto-types" }
 mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
+near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections" }
+near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface" }
+near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types" }
 near-mpc-sdk = { path = "crates/near-mpc-sdk" }
+near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier" }
 node-types = { path = "crates/node-types" }
-signature-verifier = { path = "crates/signature-verifier" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }

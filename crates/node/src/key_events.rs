@@ -20,9 +20,9 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use contract_interface::types as dtos;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
+use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
@@ -212,7 +212,7 @@ async fn resharing_computation_inner(
 
     let keyshare_data = match (public_key, domain.scheme) {
         (
-            contract_interface::types::PublicKey::Secp256k1(inner_public_key),
+            near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
             SignatureScheme::Secp256k1,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
@@ -234,7 +234,7 @@ async fn resharing_computation_inner(
             KeyshareData::Secp256k1(res)
         }
         (
-            contract_interface::types::PublicKey::Secp256k1(inner_public_key),
+            near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
             SignatureScheme::V2Secp256k1,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
@@ -256,7 +256,7 @@ async fn resharing_computation_inner(
             KeyshareData::V2Secp256k1(res)
         }
         (
-            contract_interface::types::PublicKey::Ed25519(inner_public_key),
+            near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),
             SignatureScheme::Ed25519,
         ) => {
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;

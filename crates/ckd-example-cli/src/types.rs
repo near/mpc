@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use contract_interface::types::Bls12381G1PublicKey;
+use near_mpc_contract_interface::types::Bls12381G1PublicKey;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, derive_more::Constructor)]
 pub struct CKDResponse {

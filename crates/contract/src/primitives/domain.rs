@@ -6,7 +6,7 @@ use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-pub use contract_interface::types::DomainPurpose;
+pub use near_mpc_contract_interface::types::DomainPurpose;
 
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.

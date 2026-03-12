@@ -11,8 +11,6 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
-use contract_interface::method_names;
-use contract_interface::types::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     primitives::{
@@ -23,6 +21,8 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
