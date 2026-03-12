@@ -17,7 +17,7 @@ use super::subscription::ContractMethodSubscription;
 ///
 /// ```
 /// use chain_gateway::mock::{MockChainState, Call};
-/// use chain_gateway::state_viewer::{StreamContractState, SubscribeToContractMethod};
+/// use chain_gateway::state_viewer::{WatchContractState, SubscribeToContractMethod};
 /// use chain_gateway::types::ObservedState;
 ///
 /// #[tokio::main]
@@ -50,7 +50,7 @@ pub trait SubscribeToContractMethod {
         &self,
         contract: AccountId,
         view_method: &str,
-    ) -> impl Future<Output = impl StreamContractState<T> + Send> + Send
+    ) -> impl Future<Output = impl WatchContractState<T> + Send> + Send
     where
         T: DeserializeOwned + Send + Clone;
 }
@@ -109,11 +109,11 @@ pub(crate) trait ViewRaw: IsSyncing + QueryViewFunction {
 
 /// A watch-like stream of contract state changes.
 ///
-/// Call [`latest()`](StreamContractState::latest) to get the most recent value,
-/// and [`changed()`](StreamContractState::changed) to wait for the next update.
+/// Call [`latest()`](WatchContractState::latest) to get the most recent value,
+/// and [`changed()`](WatchContractState::changed) to wait for the next update.
 /// Only actual value changes (different bytes) trigger a notification (block
 /// height increases alone do not).
-pub trait StreamContractState<Res> {
+pub trait WatchContractState<Res> {
     /// Returns the last value observed on chain and the block height at which it was first
     /// observed.
     fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
@@ -146,7 +146,7 @@ impl<V: ViewRaw + Clone> SubscribeToContractMethod for V {
         &self,
         contract: AccountId,
         view_method: &str,
-    ) -> impl Future<Output = impl StreamContractState<T> + Send> + Send
+    ) -> impl Future<Output = impl WatchContractState<T> + Send> + Send
     where
         T: DeserializeOwned + Send + Clone,
     {
@@ -192,7 +192,7 @@ mod tests {
     use super::ViewRaw;
     use crate::errors::{ChainGatewayError, ChainGatewayOp};
     use crate::mock::{Call, MockChainState, MockError};
-    use crate::state_viewer::{StreamContractState, SubscribeToContractMethod, ViewMethod};
+    use crate::state_viewer::{SubscribeToContractMethod, ViewMethod, WatchContractState};
     use crate::types::{NoArgs, ObservedState};
     use near_account_id::AccountId;
     use rand::distributions::{Alphanumeric, DistString};

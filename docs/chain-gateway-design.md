@@ -435,10 +435,10 @@ pub trait ViewMethod: ViewRaw {
 pub trait SubscribeContractState: ViewRaw + Clone {
     async fn subscribe<T: DeserializeOwned + Send + Clone>(
         &self, contract: AccountId, view_method: &str,
-    ) -> impl ContractStateStream<T> + Send;
+    ) -> impl WatchContractState<T> + Send;
 }
 
-pub trait ContractStateStream<Res> {
+pub trait WatchContractState<Res> {
     /// Returns the last observed value and the block height at which it was observed.
     fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
     /// Waits until the observed value changes.

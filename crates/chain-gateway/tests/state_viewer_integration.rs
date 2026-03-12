@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use base64::Engine;
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::StreamContractState;
+use chain_gateway::state_viewer::WatchContractState;
 use chain_gateway::state_viewer::{SubscribeToContractMethod, ViewMethod};
 use chain_gateway::types::NoArgs;
 use chain_gateway::types::ObservedState;
