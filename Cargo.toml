@@ -3,12 +3,14 @@ resolver = "3"
 exclude = ["libs/nearcore"]
 members = [
     "crates/attestation",
+    "crates/attestation-cli",
     "crates/backup-cli",
     "crates/bounded-collections",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
     "crates/contract-interface",
+    "crates/crypto-types",
     "crates/devnet",
     "crates/foreign-chain-inspector",
     "crates/foreign-chain-rpc-interfaces",
@@ -29,7 +31,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.5.1"
+version = "3.6.0"
 edition = "2024"
 license = "MIT"
 
@@ -44,6 +46,7 @@ foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
+mpc-crypto-types = { path = "crates/crypto-types" }
 mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
@@ -160,11 +163,12 @@ regex = "1.12.3"
 reqwest = { version = "0.12.28", features = ["multipart", "json"] }
 rmp-serde = "1.3.1"
 rstest = { version = "0.26.1" }
-rustls = { version = "0.23.36", default-features = false, features = ["std"] }
+rustls = { version = "0.23.37", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.19"
 serde_json = "1.0"
-serde_with = { version = "3.16.1", features = ["hex"] }
+serde_repr = "0.1.20"
+serde_with = { version = "3.17.0", features = ["hex"] }
 serial_test = "3.4.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
@@ -172,7 +176,7 @@ signature = "2.2.0"
 socket2 = "0.6.2"
 subtle = "2.6.1"
 syn = "2.0"
-tempfile = "3.25.0"
+tempfile = "3.26.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
 tokio = { version = "1.41.0", features = ["full"] }
@@ -180,6 +184,7 @@ tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
+toml = "1.0.6"
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = [
@@ -195,14 +200,14 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88

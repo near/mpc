@@ -97,7 +97,7 @@ def compile_mpc_node(request):
                 "mpc-node",
                 "--release",
                 "--features",
-                "network-hardship-simulation",
+                "network-hardship-simulation,test-utils",
                 "--locked",
             ],
             check=True,

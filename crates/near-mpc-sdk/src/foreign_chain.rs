@@ -13,7 +13,7 @@ pub use contract_interface::types::{Hash256, SignatureResponse, VerifyForeignTra
 // raw request arg type
 pub use contract_interface::types::{
     BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainPolicy,
-    ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
     VerifyForeignTransactionRequestArgs,
 };
 
@@ -81,47 +81,30 @@ impl ForeignChainSignatureVerifier {
     }
 }
 
-pub const DEFAULT_PAYLOAD_VERSION: u8 = 1;
+pub const DEFAULT_PAYLOAD_VERSION: ForeignTxPayloadVersion = ForeignTxPayloadVersion::V1;
 
 #[derive(Debug, Clone)]
-pub struct ForeignChainRequestBuilder<Request, DerivationPath, DomainId> {
+pub struct ForeignChainRequestBuilder<Request, DomainId> {
     request: Request,
-    derivation_path: DerivationPath,
     domain_id: DomainId,
 }
 
 impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
-    ForeignChainRequestBuilder<Request, NotSet, NotSet>
-{
-    pub fn with_derivation_path(
-        self,
-        derivation_path: String,
-    ) -> ForeignChainRequestBuilder<Request, String, NotSet> {
-        ForeignChainRequestBuilder {
-            request: self.request,
-            derivation_path,
-            domain_id: self.domain_id,
-        }
-    }
-}
-
-impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
-    ForeignChainRequestBuilder<Request, String, NotSet>
+    ForeignChainRequestBuilder<Request, NotSet>
 {
     pub fn with_domain_id(
         self,
         domain_id: impl Into<DomainId>,
-    ) -> ForeignChainRequestBuilder<Request, String, DomainId> {
+    ) -> ForeignChainRequestBuilder<Request, DomainId> {
         ForeignChainRequestBuilder {
             request: self.request,
-            derivation_path: self.derivation_path,
             domain_id: domain_id.into(),
         }
     }
 }
 
 impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
-    ForeignChainRequestBuilder<Request, String, DomainId>
+    ForeignChainRequestBuilder<Request, DomainId>
 {
     pub fn build(
         self,
@@ -141,7 +124,6 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
 
         let request_args = VerifyForeignTransactionRequestArgs {
             request,
-            derivation_path: self.derivation_path,
             domain_id: self.domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };

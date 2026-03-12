@@ -26,7 +26,7 @@ use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 
-use mpc_contract::crypto_shared::{derive_foreign_tx_tweak, derive_tweak, CKDResponse};
+use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
@@ -304,7 +304,7 @@ where
                         .verify_foreign_tx_requests
                         .into_iter()
                         .map(|verify_foreign_tx_request_from_chain| {
-                            let VerifyForeignTxRequestFromChain { verify_foreign_tx_id, receipt_id, request, predecessor_id, entropy, timestamp_nanosec } = verify_foreign_tx_request_from_chain;
+                            let VerifyForeignTxRequestFromChain { verify_foreign_tx_id, receipt_id, request, entropy, timestamp_nanosec, .. } = verify_foreign_tx_request_from_chain;
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
@@ -313,7 +313,6 @@ where
                                 payload_version: request.payload_version,
                                 request: request.request,
                                 timestamp_nanosec,
-                                tweak: derive_foreign_tx_tweak(&predecessor_id, &request.derivation_path),
                             };
                             // Index the foreign tx requests as soon as we see them. We'll decide
                             // whether to *process* them after.

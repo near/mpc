@@ -11,10 +11,8 @@ use contract_interface::method_names::{
     RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
 };
 use contract_interface::types as dtos;
-use contract_interface::types::VerifyForeignTransactionRequest;
 use contract_interface::types::VerifyForeignTransactionRequestArgs;
 use futures::StreamExt;
-use mpc_contract::crypto_shared::derive_foreign_tx_tweak;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
@@ -434,31 +432,18 @@ fn try_get_verify_foreign_tx_args(
         }
     };
 
-    let tweak = derive_foreign_tx_tweak(
-        &receipt.predecessor_id,
-        &verify_foreign_tx_args.request.derivation_path,
-    );
-
-    let verify_foreign_tx_request = VerifyForeignTransactionRequest {
-        request: verify_foreign_tx_args.request.request.clone(),
-        tweak,
-        domain_id: verify_foreign_tx_args.request.domain_id,
-        payload_version: verify_foreign_tx_args.request.payload_version,
-    };
-
     tracing::info!(
         target: "mpc",
         receipt_id = %receipt.receipt_id,
         next_receipt_id = %next_receipt_id,
         caller_id = receipt.predecessor_id.to_string(),
-        request = ?verify_foreign_tx_request,
+        request = ?verify_foreign_tx_args.request,
         "indexed new `{}` function call", expected_name
     );
     Some((
         next_receipt_id,
         VerifyForeignTransactionRequestArgs {
             request: verify_foreign_tx_args.request.request,
-            derivation_path: verify_foreign_tx_args.request.derivation_path,
             domain_id: verify_foreign_tx_args.request.domain_id,
             payload_version: verify_foreign_tx_args.request.payload_version,
         },

@@ -191,11 +191,9 @@ async fn fut_wrapper(
 #[cfg(test)]
 mod test {
     use super::{
-        x_coordinate, OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+        fut_wrapper, x_coordinate, OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
         OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
     };
-    use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::{run_protocol, GenProtocol};
     use crate::{
         ecdsa::{
             ot_based_ecdsa::{
@@ -204,11 +202,44 @@ mod test {
             },
             Polynomial,
         },
-        test_utils::{generate_participants, MockCryptoRng},
+        participants::Participant,
+        test_utils::{
+            assert_buffer_capacity, expected_buffer_by_role, generate_participants, MockCryptoRng,
+        },
     };
     use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, ProjectivePoint, PublicKey};
     use rand::SeedableRng;
     use rstest::rstest;
+
+    fn simulate_presignatures(
+        participants: &[Participant],
+        threshold: usize,
+        rng: &mut MockCryptoRng,
+    ) -> (ProjectivePoint, Vec<(Participant, PresignOutput)>) {
+        let degree = threshold - 1;
+        let f = Polynomial::generate_polynomial(None, degree, rng).unwrap();
+        let x = f.eval_at_zero().unwrap().0;
+        let public_key = ProjectivePoint::GENERATOR * x;
+        let g = Polynomial::generate_polynomial(None, degree, rng).unwrap();
+        let k = g.eval_at_zero().unwrap().0;
+        let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
+        let sigma = k * x;
+        let h = Polynomial::generate_polynomial(Some(sigma), degree, rng).unwrap();
+        let presignatures = participants
+            .iter()
+            .map(|p| {
+                (
+                    *p,
+                    PresignOutput {
+                        big_r,
+                        k: g.eval_at_participant(*p).unwrap().0,
+                        sigma: h.eval_at_participant(*p).unwrap().0,
+                    },
+                )
+            })
+            .collect();
+        (public_key, presignatures)
+    }
 
     #[test]
     fn test_sign_without_rerandomization() {
@@ -216,31 +247,9 @@ mod test {
         let threshold: usize = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
-        let degree = threshold - 1;
-        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
-        let x = f.eval_at_zero().unwrap().0;
-        let public_key = ProjectivePoint::GENERATOR * x;
-
-        let g = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
-
-        let k = g.eval_at_zero().unwrap().0;
-        let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
-
-        let sigma = k * x;
-
-        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut rng).unwrap();
-
         let participants = generate_participants(2);
-
-        let mut participants_presign = Vec::new();
-        for p in &participants {
-            let presignature = PresignOutput {
-                big_r,
-                k: g.eval_at_participant(*p).unwrap().0,
-                sigma: h.eval_at_participant(*p).unwrap().0,
-            };
-            participants_presign.push((*p, presignature));
-        }
+        let (public_key, participants_presign) =
+            simulate_presignatures(&participants, threshold, &mut rng);
 
         let (_, sig) = run_sign_without_rerandomization(
             &participants_presign,
@@ -261,43 +270,22 @@ mod test {
         let threshold: usize = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
-        let degree = threshold - 1;
-        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
-        let x = f.eval_at_zero().unwrap().0;
-        let public_key = frost_core::VerifyingKey::new(ProjectivePoint::GENERATOR * x);
-
-        let g = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
-
-        let k = g.eval_at_zero().unwrap().0;
-        let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
-
-        let sigma = k * x;
-
-        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut rng).unwrap();
-
         let participants = generate_participants(2);
-
-        let mut participants_presign = Vec::new();
-        for p in &participants {
-            let presignature = PresignOutput {
-                big_r,
-                k: g.eval_at_participant(*p).unwrap().0,
-                sigma: h.eval_at_participant(*p).unwrap().0,
-            };
-            participants_presign.push((*p, presignature));
-        }
+        let (public_key, participants_presign) =
+            simulate_presignatures(&participants, threshold, &mut rng);
+        let public_key_vk = frost_core::VerifyingKey::new(public_key);
 
         let (tweak, _, sig) = run_sign_with_rerandomization(
             &participants_presign,
             threshold.into(),
-            public_key.to_element(),
+            public_key,
             msg,
             &mut rng,
         )
         .unwrap();
         let signature = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
 
-        let public_key = tweak.derive_verifying_key(&public_key).to_element();
+        let public_key = tweak.derive_verifying_key(&public_key_vk).to_element();
         VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
             .verify(msg, &signature)
             .unwrap();
@@ -310,70 +298,39 @@ mod test {
     #[case(5, 3)]
     #[case(10, 4)]
     fn test_sign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
-        let coordinator_expected = OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES;
-        let participant_expected = OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES;
-
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let degree = threshold - 1;
-        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
-        let public_key = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
-        let g = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
-        let k = g.eval_at_zero().unwrap().0;
-        let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
-        let sigma = k * f.eval_at_zero().unwrap().0;
-        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut rng).unwrap();
-
         let participants = crate::test_utils::generate_participants(num_participants);
+        let (public_key, presignatures) =
+            simulate_presignatures(&participants, threshold, &mut rng);
         let coordinator = participants[0];
         let msg_scalar = crate::crypto::hash::test::scalar_hash_secp256k1(b"test msg");
 
-        let mut comms_refs = Vec::new();
-        let mut protocols: GenProtocol<crate::ecdsa::SignatureOption> = Vec::new();
-
-        for &p in &participants {
-            let presignature = crate::ecdsa::ot_based_ecdsa::PresignOutput {
-                big_r,
-                k: g.eval_at_participant(p).unwrap().0,
-                sigma: h.eval_at_participant(p).unwrap().0,
-            };
-            let rerandomized =
-                crate::ecdsa::ot_based_ecdsa::RerandomizedPresignOutput::new_without_rerandomization(
-                    &presignature,
-                );
-            let comms = Comms::with_buffer_capacity(usize::MAX);
-            let participant_list =
-                crate::participants::ParticipantList::new(&participants).unwrap();
-            let fut = super::fut_wrapper(
-                comms.shared_channel(),
-                participant_list,
+        // When + Then
+        assert_buffer_capacity(
+            &participants,
+            &mut rng,
+            |comms, p_list, p, _rng_p| {
+                let presignature = &presignatures.iter().find(|(pp, _)| *pp == p).unwrap().1;
+                let rerandomized =
+                    crate::ecdsa::ot_based_ecdsa::RerandomizedPresignOutput::new_without_rerandomization(
+                        presignature,
+                    );
+                fut_wrapper(
+                    comms.shared_channel(),
+                    p_list,
+                    coordinator,
+                    p,
+                    public_key.to_affine(),
+                    rerandomized,
+                    msg_scalar,
+                )
+            },
+            expected_buffer_by_role(
                 coordinator,
-                p,
-                public_key.to_affine(),
-                rerandomized,
-                msg_scalar,
-            );
-            comms_refs.push((p, comms.clone()));
-            let prot = make_protocol(comms, fut);
-            protocols.push((p, Box::new(prot)));
-        }
-
-        // When
-        let _ = run_protocol(protocols).unwrap();
-
-        // Then
-        for (p, comms) in &comms_refs {
-            let expected = if *p == coordinator {
-                coordinator_expected
-            } else {
-                participant_expected
-            };
-            assert_eq!(
-                comms.buffer_len(),
-                expected,
-                "Unexpected buffer entries for participant {p:?} (coordinator={})",
-                *p == coordinator
-            );
-        }
+                OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
+        );
     }
 }

@@ -1,6 +1,4 @@
-use super::domain::{
-    infer_purpose_from_scheme, DomainConfig, DomainId, DomainRegistry, SignatureScheme,
-};
+use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -8,6 +6,7 @@ use crate::{
         thresholds::{Threshold, ThresholdParameters},
     },
 };
+use contract_interface::types::DomainPurpose;
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
@@ -146,4 +145,13 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+}
+
+/// Infer a default purpose from the signature scheme.
+/// Used during migration from old state that lacks the `purpose` field.
+pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
+    match scheme {
+        SignatureScheme::Bls12381 => DomainPurpose::CKD,
+        _ => DomainPurpose::Sign,
+    }
 }
