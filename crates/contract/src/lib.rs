@@ -1,11 +1,5 @@
 #![doc = include_str!("../README.md")]
 #![deny(clippy::mod_module_files)]
-// We disallow using `near_sdk::AccountId` in our own code.
-// However, the `near_bindgen` proc macro expands to code that uses it
-// internally, and Clippy applies the `disallowed_types` lint to that
-// generated code as well. Since the lint cannot be suppressed only for the
-// macro expansion, we allow it in this file to avoid false positives.
-#![allow(clippy::disallowed_types)]
 
 pub mod config;
 pub mod crypto_shared;
@@ -18,7 +12,7 @@ pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
-pub mod v3_5_1_state;
+pub mod v3_6_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -47,7 +41,7 @@ use contract_interface::types::{
     VerifyForeignTransactionResponse,
 };
 use crypto_shared::{
-    derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak,
+    derive_key_secp256k1, derive_tweak,
     kdf::derive_public_key_edwards_point_ed25519,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
@@ -58,9 +52,7 @@ use k256::elliptic_curve::PrimeField;
 
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
-    env::{self},
-    log, near, near_bindgen,
-    state::ContractState,
+    env, log, near,
     store::{IterableMap, LookupMap},
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
@@ -93,14 +85,9 @@ impl Default for MpcContract {
         env::panic_str("Calling default not allowed.");
     }
 }
-impl ContractState for MpcContract {}
 
-#[near_bindgen]
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
+#[near(contract_state)]
+#[derive(Debug)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
@@ -202,7 +189,7 @@ impl MpcContract {
 }
 
 // User contract API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
@@ -619,7 +606,7 @@ impl MpcContract {
                 .return_signature_and_clean_state_on_success_call_tera_gas,
         );
 
-        let request = args_into_verify_foreign_tx_request(request, &predecessor);
+        let request = args_into_verify_foreign_tx_request(request);
 
         let promise_index = env::promise_yield_create(
             method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
@@ -643,7 +630,7 @@ impl MpcContract {
 }
 
 // Node API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     #[handle_result]
     pub fn respond(
@@ -794,25 +781,16 @@ impl MpcContract {
                 dtos::SignatureResponse::Secp256k1(signature_response),
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
-                // generate the expected public key
                 let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
                     .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(&secp_pk)
-                    .expect("stored key is always valid")
-                    .as_affine();
-                let expected_public_key = derive_key_secp256k1(
-                    &affine,
-                    &crate::primitives::signature::Tweak::new(request.tweak.0),
-                )
-                .map_err(RespondError::from)?;
 
                 let payload_hash: [u8; 32] = response.payload_hash.0;
 
-                // Check the signature is correct
+                // Check the signature is correct against the root public key
                 signature_verifier::verify_ecdsa_signature(
                     signature_response,
                     &payload_hash,
-                    &expected_public_key,
+                    &secp_pk,
                 )
                 .is_ok()
             }
@@ -1500,7 +1478,7 @@ impl MpcContract {
 }
 
 // Contract developer helper API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     #[handle_result]
     #[init]
@@ -1624,11 +1602,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_5_1_state::MpcContract>() {
+        match try_state_read::<v3_6_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.5.1 state: {:?}", err);
+                log!("failed to deserialize state into v3.6.0 state: {:?}", err);
             }
         };
 
@@ -1857,7 +1835,7 @@ impl MpcContract {
 }
 
 /// Methods for Migration service
-#[near_bindgen]
+#[near]
 impl MpcContract {
     pub fn migration_info(
         &self,
@@ -2066,14 +2044,13 @@ mod tests {
     };
 
     use super::*;
-    use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
         NUM_PROTOCOLS,
     };
     use crate::primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
+        domain::{DomainConfig, DomainId, SignatureScheme},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2085,6 +2062,10 @@ mod tests {
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::tee_state::NodeId;
+    use crate::{
+        errors::{ErrorKind, NodeMigrationError},
+        primitives::test_utils::infer_purpose_from_scheme,
+    };
     use assert_matches::assert_matches;
     use bounded_collections::NonEmptyBTreeSet;
     use contract_interface::types::{
@@ -2467,7 +2448,7 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup_with_purpose(
+        let (_context, mut contract, secret_key) = basic_setup_with_purpose(
             SignatureScheme::Secp256k1,
             DomainPurpose::ForeignTx,
             &mut rng,
@@ -2476,9 +2457,7 @@ mod tests {
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
-        let derivation_path = "what is it".to_string();
         let request_args = VerifyForeignTransactionRequestArgs {
-            derivation_path: derivation_path.clone(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2487,10 +2466,9 @@ mod tests {
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
         };
-        let predecessor = context.predecessor_account_id;
 
         // When
-        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
         contract.verify_foreign_transaction(request_args);
         contract
             .get_pending_verify_foreign_tx_request(&request)
@@ -2502,12 +2480,10 @@ mod tests {
             )],
         });
         let payload_hash = payload.compute_msg_hash().unwrap().0;
-        // simulate signature and response to the request
-        let tweak = derive_foreign_tx_tweak(&predecessor, &derivation_path);
+        // simulate signature with the root key (no tweak for foreign tx)
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let derived_secret_key = derive_secret_key(&secret_key_ec, &Tweak::new(tweak.0));
-        let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
+        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
         let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload_hash).unwrap();
         let signature = dtos::SignatureResponse::Secp256k1(
             dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
@@ -2543,14 +2519,13 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _secret_key) = basic_setup_with_purpose(
+        let (_context, mut contract, _secret_key) = basic_setup_with_purpose(
             SignatureScheme::Secp256k1,
             DomainPurpose::ForeignTx,
             &mut rng,
         );
         contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let request_args = VerifyForeignTransactionRequestArgs {
-            derivation_path: "".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2559,8 +2534,7 @@ mod tests {
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
         };
-        let predecessor = context.predecessor_account_id;
-        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
 
         // When
         contract.verify_foreign_transaction(request_args);
@@ -2611,7 +2585,6 @@ mod tests {
 
         // When
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
-            derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2644,7 +2617,6 @@ mod tests {
 
         // When - requesting Bitcoin which is not in the policy
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
-            derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {

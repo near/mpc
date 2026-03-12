@@ -17,6 +17,7 @@ use crate::{
     ReconstructionLowerBound,
 };
 use serde::{Deserialize, Serialize};
+use subtle::{Choice, ConstantTimeEq};
 use zeroize::ZeroizeOnDrop;
 
 /// The arguments needed to create a presignature.
@@ -37,7 +38,7 @@ pub struct PresignArguments {
 ///
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, ZeroizeOnDrop)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct PresignOutput {
     /// The public nonce commitment.
     #[zeroize[skip]]
@@ -47,6 +48,19 @@ pub struct PresignOutput {
     /// Our share of the sigma value.
     pub sigma: Scalar,
 }
+
+impl ConstantTimeEq for PresignOutput {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.big_r.ct_eq(&other.big_r) & self.k.ct_eq(&other.k) & self.sigma.ct_eq(&other.sigma)
+    }
+}
+
+impl PartialEq for PresignOutput {
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
+    }
+}
+impl Eq for PresignOutput {}
 
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements

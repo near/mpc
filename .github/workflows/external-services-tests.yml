@@ -1,4 +1,4 @@
-name: Contract Verification
+name: External Services Tests
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  verify-contracts:
-    name: "Verify deployed contracts match expectations"
+  external-services-tests:
+    name: "Run tests that depend on external services"
     runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 15
     permissions:
@@ -30,6 +30,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
-      - name: Run contract verification tests
-        run: |
-          cargo test -p contract-history --features external-services-tests --release
+      - name: Run contract-history tests
+        if: always()
+        run: cargo test -p contract-history --features external-services-tests --profile test-release --locked
+
+      - name: Run tee-authority tests
+        if: always()
+        run: cargo test -p tee-authority --features external-services-tests --profile test-release --locked test_upload_quote_for_collateral_with_phala_endpoint
