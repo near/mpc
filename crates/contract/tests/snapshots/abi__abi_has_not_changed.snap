@@ -1672,7 +1672,7 @@ expression: abi
           "type": "string",
           "enum": [
             "Secp256k1",
-            "Edwards25519",
+            "Ed25519",
             "Bls12381",
             "V2Secp256k1"
           ]

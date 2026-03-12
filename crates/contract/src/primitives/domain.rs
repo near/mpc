@@ -40,7 +40,7 @@ impl Display for DomainId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Curve {
     Secp256k1,
-    #[serde(alias = "Ed25519")]
+    #[serde(rename = "Ed25519")]
     Edwards25519,
     Bls12381,
     V2Secp256k1, // Robust ECDSA
