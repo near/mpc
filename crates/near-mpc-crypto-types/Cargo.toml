@@ -3,6 +3,8 @@ name = "near-mpc-crypto-types"
 version = "0.0.1"
 license = { workspace = true }
 edition = { workspace = true }
+repository.workspace = true
+description = "This crate defines crypto types for interacting with the NEAR MPC contract."
 
 [features]
 abi = ["borsh/unstable__schema", "schemars"]

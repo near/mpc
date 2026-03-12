@@ -4,7 +4,7 @@ version = "0.0.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "A collection of bounded types, part of the NEAR MPC API"
+description = "A collection of bounded types, used in the API `near-mpc-sdk`."
 
 [features]
 abi = ["borsh/unstable__schema", "schemars"]

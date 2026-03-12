@@ -3,6 +3,9 @@ name = "near-mpc-contract-interface"
 version = "0.0.1"
 license = { workspace = true }
 edition = { workspace = true }
+repository.workspace = true
+description = "This crate defines types for interacting with the NEAR MPC contract."
+readme = "README.md"
 
 [features]
 abi = [
