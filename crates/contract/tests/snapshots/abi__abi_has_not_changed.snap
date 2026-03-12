@@ -455,6 +455,17 @@ expression: abi
         }
       },
       {
+        "name": "launcher_hash_votes",
+        "doc": " Returns the current launcher hash votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/LauncherHashVotes"
+          }
+        }
+      },
+      {
         "name": "metrics",
         "kind": "view",
         "result": {
@@ -2468,6 +2479,64 @@ expression: abi
               "$ref": "#/definitions/EpochId2"
             }
           }
+        },
+        "LauncherHashVotes": {
+          "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
+          "type": "object",
+          "required": [
+            "vote_by_account"
+          ],
+          "properties": {
+            "vote_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/LauncherVoteAction"
+              }
+            }
+          }
+        },
+        "LauncherVoteAction": {
+          "description": "The action a participant is voting for on a launcher image hash.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Add"
+              ],
+              "properties": {
+                "Add": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Remove"
+              ],
+              "properties": {
+                "Remove": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "Metrics": {
           "type": "object",
