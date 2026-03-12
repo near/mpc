@@ -83,13 +83,10 @@ mod tests {
     async fn test_get_contract_state() {
         // Given
         let storage_path = PathBuf::from(TEST_CONTRACT_STATE_PATH);
-        let near_mpc_contract_interface = ContractStateFixture::new(storage_path);
+        let contract_interface = ContractStateFixture::new(storage_path);
 
         // When
-        let contract_state = near_mpc_contract_interface
-            .get_contract_state()
-            .await
-            .unwrap();
+        let contract_state = contract_interface.get_contract_state().await.unwrap();
 
         // Then
         assert_eq!(contract_state.name(), "Running");
