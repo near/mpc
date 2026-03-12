@@ -66,36 +66,26 @@ impl QueryViewFunction for NearViewClientActorHandle {
             message: err.to_string(),
         })?;
 
-        match response.kind {
+        let variant = match response.kind {
             near_indexer_primitives::views::QueryResponseKind::CallResult(call_result) => {
-                Ok(ObservedState {
+                return Ok(ObservedState {
                     observed_at: response.block_height.into(),
                     value: call_result.result,
-                })
+                });
             }
-            other => {
-                let variant = match &other {
-                    near_indexer_primitives::views::QueryResponseKind::ViewAccount(_) => {
-                        "ViewAccount"
-                    }
-                    near_indexer_primitives::views::QueryResponseKind::ViewCode(_) => "ViewCode",
-                    near_indexer_primitives::views::QueryResponseKind::ViewState(_) => "ViewState",
-                    near_indexer_primitives::views::QueryResponseKind::CallResult(_) => {
-                        unreachable!()
-                    }
-                    near_indexer_primitives::views::QueryResponseKind::AccessKey(_) => "AccessKey",
-                    near_indexer_primitives::views::QueryResponseKind::AccessKeyList(_) => {
-                        "AccessKeyList"
-                    }
-                };
-                Err(NearViewClientError::UnexpectedResponseError {
-                    query: NearViewClientQuery::ViewMethod {
-                        contract_id: contract_id.clone(),
-                        method_name: method_name.to_string(),
-                    },
-                    message: format!("expected CallResult, got {variant}"),
-                })
-            }
-        }
+            near_indexer_primitives::views::QueryResponseKind::ViewAccount(_) => "ViewAccount",
+            near_indexer_primitives::views::QueryResponseKind::ViewCode(_) => "ViewCode",
+            near_indexer_primitives::views::QueryResponseKind::ViewState(_) => "ViewState",
+            near_indexer_primitives::views::QueryResponseKind::AccessKey(_) => "AccessKey",
+            near_indexer_primitives::views::QueryResponseKind::AccessKeyList(_) => "AccessKeyList",
+        };
+
+        Err(NearViewClientError::UnexpectedResponseError {
+            query: NearViewClientQuery::ViewMethod {
+                contract_id: contract_id.clone(),
+                method_name: method_name.to_string(),
+            },
+            message: format!("expected CallResult, got {variant}"),
+        })
     }
 }
