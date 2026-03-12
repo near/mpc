@@ -4786,7 +4786,10 @@ mod tests {
         );
     }
 
-    /// Tests launcher_hash_votes view: tracks votes, clears on threshold.
+    /// Tests the `launcher_hash_votes()` view method:
+    /// 1. Starts empty
+    /// 2. After each vote, reflects the correct count and action (Add)
+    /// 3. After threshold is reached, votes are cleared
     #[test]
     fn test_launcher_hash_votes_view() {
         let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
