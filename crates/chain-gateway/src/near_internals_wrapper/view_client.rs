@@ -9,7 +9,7 @@ use crate::{
     types::ObservedState,
 };
 
-/// Arc-wrapper around near-internal ViewClientActor
+/// Arc-wrapper around near-internal struct
 #[derive(Clone)]
 pub(crate) struct NearViewClientActorHandle {
     view_client:

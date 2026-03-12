@@ -4,7 +4,7 @@ use near_async::messaging::CanSendAsync as _;
 
 use crate::{errors::NearClientError, primitives::IsSyncing};
 
-/// Wrapper around near-internal struct
+/// Arc-wrapper around near-internal struct
 #[derive(Clone)]
 pub(crate) struct NearClientActorHandle {
     client: Arc<near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActorInner>>,
