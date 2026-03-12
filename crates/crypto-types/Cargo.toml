@@ -1,6 +1,6 @@
 [package]
 name = "mpc-crypto-types"
-version = { workspace = true }
+version = "0.0.1"
 license = { workspace = true }
 edition = { workspace = true }
 
