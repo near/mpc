@@ -193,6 +193,7 @@ mod tests {
     use crate::mock::{Call, MockChainState, MockError};
     use crate::state_viewer::{SubscribeToContractMethod, ViewMethod, WatchContractState};
     use crate::types::{NoArgs, ObservedState};
+    use assert_matches::assert_matches;
     use near_account_id::AccountId;
     use rand::distributions::{Alphanumeric, DistString};
     use rand::rngs::StdRng;
@@ -339,15 +340,26 @@ mod tests {
     async fn test_view_method_propagates_view_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Err(MockError::RpcError))
+            .with_query_view_function_response(Err(MockError::ViewClientError))
             .build();
 
+        let account_id: AccountId = "a.testnet".parse().unwrap();
+        let method_name = "m".to_string();
         let err = viewer
-            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_method::<NoArgs, String>(account_id.clone(), &method_name, &NoArgs {})
             .await
             .unwrap_err();
 
-        assert!(matches!(err, ChainGatewayError::ViewClient { .. }));
+        assert_eq!(
+            err,
+            ChainGatewayError::ViewClient {
+                op: ChainGatewayOp::ViewQuery {
+                    account_id: account_id.to_string(),
+                    method_name
+                },
+                message: MockError::ViewClientError.to_string()
+            }
+        );
     }
 
     #[tokio::test]
@@ -365,7 +377,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(err, ChainGatewayError::Deserialization { .. }));
+        assert_matches!(err, ChainGatewayError::Deserialization { .. });
     }
 
     #[tokio::test(start_paused = true)]
@@ -406,10 +418,8 @@ mod tests {
             .subscribe_to_contract_method::<String>("a.testnet".parse().unwrap(), "m")
             .await;
 
-        assert!(matches!(
-            sub.latest().unwrap_err(),
-            ChainGatewayError::Deserialization { .. }
-        ));
+        let err = sub.latest().unwrap_err();
+        assert_matches!(err, ChainGatewayError::Deserialization { .. });
     }
 
     #[tokio::test(start_paused = true)]

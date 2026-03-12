@@ -75,6 +75,7 @@ where
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use near_account_id::AccountId;
 
     use super::ContractMethodSubscription;
     use crate::errors::ChainGatewayError;
@@ -108,23 +109,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_subscription_constructor_propagates_view_error() {
+        let account_id: AccountId = "test.testnet".parse().unwrap();
+        let method_name = "get_value".to_string();
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Err(MockError::RpcError))
+            .with_query_view_function_response(Err(MockError::ViewClientError))
             .build();
 
         let mut sub = ContractMethodSubscription::<String>::new(
             viewer,
-            "test.testnet".parse().unwrap(),
-            "get_value",
+            account_id.clone(),
+            &method_name,
             b"{}".to_vec(),
         )
         .await;
 
-        assert_matches!(
+        assert_eq!(
             sub.latest().unwrap_err(),
-            // todo: probably we should assert more here?
-            ChainGatewayError::ViewClient { .. }
+            ChainGatewayError::ViewClient {
+                op: crate::errors::ChainGatewayOp::ViewQuery {
+                    account_id: account_id.to_string(),
+                    method_name
+                },
+                message: MockError::ViewClientError.to_string(),
+            }
         );
     }
 
@@ -146,10 +154,10 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(
+        assert_matches!(
             sub.latest().unwrap_err(),
             ChainGatewayError::Deserialization { .. }
-        ));
+        );
     }
 
     #[tokio::test(start_paused = true)]

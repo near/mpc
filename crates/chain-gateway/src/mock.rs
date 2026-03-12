@@ -132,8 +132,8 @@ pub enum MockError {
     SyncError,
     #[error("mock field not initialized")]
     NotInitialized,
-    #[error("mock rpc error")]
-    RpcError,
+    #[error("mock view client error")]
+    ViewClientError,
     #[error("timed out")]
     Timeout,
 }
