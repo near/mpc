@@ -1472,7 +1472,7 @@ dependencies = [
 
 [[package]]
 name = "bounded-collections"
-version = "3.6.0"
+version = "0.0.1"
 dependencies = [
  "assert_matches",
  "borsh",
@@ -1998,7 +1998,7 @@ dependencies = [
 
 [[package]]
 name = "contract-interface"
-version = "3.6.0"
+version = "0.0.1"
 dependencies = [
  "borsh",
  "bounded-collections",
@@ -5451,7 +5451,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-crypto-types"
-version = "3.6.0"
+version = "0.0.1"
 dependencies = [
  "assert_matches",
  "blstrs",
@@ -6410,7 +6410,7 @@ dependencies = [
 
 [[package]]
 name = "near-mpc-sdk"
-version = "3.6.0"
+version = "0.0.1"
 dependencies = [
  "assert_matches",
  "borsh",
@@ -10152,7 +10152,7 @@ dependencies = [
 
 [[package]]
 name = "signature-verifier"
-version = "3.6.0"
+version = "0.0.1"
 dependencies = [
  "assert_matches",
  "contract-interface",
