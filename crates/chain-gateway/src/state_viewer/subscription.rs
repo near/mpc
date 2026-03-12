@@ -81,6 +81,7 @@ mod tests {
     use crate::errors::ChainGatewayError;
     use crate::mock::{MockChainState, MockError};
     use crate::state_viewer::WatchContractState;
+    use crate::state_viewer::monitoring::POLL_INTERVAL;
     use crate::types::ObservedState;
     use std::time::Duration;
 
@@ -187,7 +188,7 @@ mod tests {
             .await;
 
         // Advance past poll interval
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        tokio::time::sleep(2 * POLL_INTERVAL).await;
 
         let found = sub.latest().unwrap();
         assert_eq!(found.value, "updated");

@@ -44,7 +44,7 @@ mod tests {
     };
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
-    struct T {
+    struct Num {
         a: u32,
     }
 
@@ -55,10 +55,10 @@ mod tests {
             value: br#"{"a":1}"#.to_vec(),
         };
 
-        let typed: ObservedState<T> = observed.deserialize().unwrap();
+        let typed: ObservedState<Num> = observed.deserialize().unwrap();
 
         assert_eq!(typed.observed_at, 7.into());
-        assert_eq!(typed.value, T { a: 1 });
+        assert_eq!(typed.value, Num { a: 1 });
     }
 
     #[test]
@@ -68,7 +68,7 @@ mod tests {
             value: b"not json".to_vec(),
         };
 
-        let err = observed.deserialize::<T>().unwrap_err();
+        let err = observed.deserialize::<Num>().unwrap_err();
 
         assert!(matches!(err, ChainGatewayError::Deserialization { .. }));
     }
