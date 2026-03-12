@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{near, store::IterableMap};
 
 use crate::{primitives::participants::ParticipantInfo, storage_keys::StorageKey};

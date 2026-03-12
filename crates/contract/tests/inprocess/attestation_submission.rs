@@ -1,4 +1,3 @@
-use near_mpc_contract_interface::types::{Attestation, InitConfig, MockAttestation, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -10,6 +9,9 @@ use mpc_contract::{
     },
     tee::tee_state::NodeId,
     MpcContract,
+};
+use near_mpc_contract_interface::types::{
+    Attestation, InitConfig, MockAttestation, ProtocolContractState,
 };
 
 use assert_matches::assert_matches;

@@ -12,13 +12,6 @@ use crate::{
 
 use self::stats::IndexerStats;
 use anyhow::Context;
-use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
-    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
-    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
-    STATE,
-};
-use near_mpc_contract_interface::types as dtos;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
@@ -38,6 +31,13 @@ use near_indexer_primitives::{
     types::{BlockReference, Finality},
     views::{BlockView, QueryRequest, QueryResponseKind},
 };
+use near_mpc_contract_interface::method_names::{
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
+    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
+    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
+    STATE,
+};
+use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
 use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};

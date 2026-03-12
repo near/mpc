@@ -1,5 +1,5 @@
-use near_mpc_contract_interface::method_names;
 use elliptic_curve::group::Group;
+use near_mpc_contract_interface::method_names;
 use near_sdk::serde::Serialize;
 use near_sdk::{env, near, serde_json, AccountId, Gas, NearToken, Promise};
 use sha2::{Digest, Sha256};

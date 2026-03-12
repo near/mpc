@@ -86,7 +86,10 @@ mod tests {
         let near_mpc_contract_interface = ContractStateFixture::new(storage_path);
 
         // When
-        let contract_state = near_mpc_contract_interface.get_contract_state().await.unwrap();
+        let contract_state = near_mpc_contract_interface
+            .get_contract_state()
+            .await
+            .unwrap();
 
         // Then
         assert_eq!(contract_state.name(), "Running");

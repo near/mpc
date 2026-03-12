@@ -1,4 +1,3 @@
-use near_mpc_contract_interface::types::{self as dtos, Bls12381G1PublicKey};
 use k256::elliptic_curve::{Field as _, Group as _, PrimeField as _};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
@@ -7,6 +6,7 @@ use mpc_contract::{
         signature::Tweak,
     },
 };
+use near_mpc_contract_interface::types::{self as dtos, Bls12381G1PublicKey};
 use rand::rngs::OsRng;
 use rand_core::CryptoRngCore;
 use threshold_signatures::{

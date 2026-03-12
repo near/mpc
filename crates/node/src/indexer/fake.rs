@@ -17,7 +17,6 @@ use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
-use near_mpc_contract_interface::types as dtos;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
@@ -34,6 +33,7 @@ use mpc_contract::state::{
     resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};

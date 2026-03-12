@@ -20,9 +20,9 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use near_mpc_contract_interface::types as dtos;
 use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
 use near_indexer_primitives::CryptoHash;
+use near_mpc_contract_interface::types as dtos;
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);

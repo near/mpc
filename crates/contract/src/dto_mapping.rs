@@ -4,7 +4,6 @@
 //! These types are mapped with the [IntoContractType] trait. We can not use [`From`]
 //! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
-use near_mpc_contract_interface::types as dtos;
 use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation, VerifiedAttestation},
@@ -12,6 +11,7 @@ use mpc_attestation::{
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
 
 use crate::{

@@ -1,6 +1,6 @@
 use crate::{crypto_shared::kdf::derive_app_id, primitives::domain::DomainId};
-use near_mpc_contract_interface::types as dtos;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::near;
 
 #[derive(Clone, Debug)]

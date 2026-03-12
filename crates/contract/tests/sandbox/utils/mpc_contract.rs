@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
+use mpc_contract::tee::tee_state::NodeId;
+use mpc_primitives::hash::MpcDockerImageHash;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
 };
-use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::MpcDockerImageHash;
 use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {

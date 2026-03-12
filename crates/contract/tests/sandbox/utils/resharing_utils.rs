@@ -3,10 +3,10 @@ use crate::sandbox::utils::{
     mpc_contract::get_state,
     transactions::execute_async_transactions,
 };
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{self as dtos, ProtocolContractState};
 use dtos::{AttemptId, EpochId, KeyEventId};
 use mpc_contract::primitives::thresholds::ThresholdParameters;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, ProtocolContractState};
 use near_workspaces::{Account, Contract};
 use serde_json::json;
 

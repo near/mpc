@@ -25,18 +25,24 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::Attestation> 
                     dstack_attestation.into_contract_interface_type(),
                 )
             }
-            Attestation::Mock(mock_attestation) => near_mpc_contract_interface::types::Attestation::Mock(
-                mock_attestation.into_contract_interface_type(),
-            ),
+            Attestation::Mock(mock_attestation) => {
+                near_mpc_contract_interface::types::Attestation::Mock(
+                    mock_attestation.into_contract_interface_type(),
+                )
+            }
         }
     }
 }
 
-impl IntoContractInterfaceType<near_mpc_contract_interface::types::MockAttestation> for MockAttestation {
+impl IntoContractInterfaceType<near_mpc_contract_interface::types::MockAttestation>
+    for MockAttestation
+{
     fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::MockAttestation {
         match self {
             MockAttestation::Valid => near_mpc_contract_interface::types::MockAttestation::Valid,
-            MockAttestation::Invalid => near_mpc_contract_interface::types::MockAttestation::Invalid,
+            MockAttestation::Invalid => {
+                near_mpc_contract_interface::types::MockAttestation::Invalid
+            }
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
@@ -50,7 +56,9 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::MockAttestati
     }
 }
 
-impl IntoContractInterfaceType<near_mpc_contract_interface::types::DstackAttestation> for DstackAttestation {
+impl IntoContractInterfaceType<near_mpc_contract_interface::types::DstackAttestation>
+    for DstackAttestation
+{
     fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::DstackAttestation {
         let DstackAttestation {
             quote,

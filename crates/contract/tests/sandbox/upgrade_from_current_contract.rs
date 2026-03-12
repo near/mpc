@@ -15,9 +15,9 @@ use crate::sandbox::{
         },
     },
 };
+use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::ProtocolContractState;
-use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
 use rand_core::OsRng;
 

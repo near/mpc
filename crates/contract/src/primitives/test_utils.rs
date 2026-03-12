@@ -6,9 +6,9 @@ use crate::{
         thresholds::{Threshold, ThresholdParameters},
     },
 };
-use near_mpc_contract_interface::types::DomainPurpose;
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::DomainPurpose;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 

@@ -8,10 +8,10 @@ use crate::{
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::UpdateHash;
 use derive_more::Deref;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::UpdateHash;
 use near_sdk::{
     env, near,
     serde::{Deserialize, Serialize},

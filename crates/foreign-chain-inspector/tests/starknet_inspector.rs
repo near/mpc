@@ -13,7 +13,6 @@ use foreign_chain_inspector::{
 };
 
 use assert_matches::assert_matches;
-use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 use foreign_chain_rpc_interfaces::starknet::{
     GetTransactionReceiptResponse, H256, StarknetEvent, StarknetExecutionStatus,
     StarknetFinalityStatus,
@@ -21,6 +20,7 @@ use foreign_chain_rpc_interfaces::starknet::{
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
+use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 use rstest::rstest;
 
 fn mock_receipt(

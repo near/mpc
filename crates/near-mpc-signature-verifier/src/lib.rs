@@ -44,8 +44,8 @@ pub fn verify_eddsa_signature(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use near_mpc_contract_interface::types::{Ed25519Signature, K256Signature, Secp256k1PublicKey};
     use ed25519_dalek::Signer;
+    use near_mpc_contract_interface::types::{Ed25519Signature, K256Signature, Secp256k1PublicKey};
     use rand::{Rng, SeedableRng};
 
     fn make_ecdsa_test_case(

@@ -9,11 +9,11 @@ use crate::{
 };
 use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
-use near_mpc_contract_interface::types::Ed25519PublicKey;
 use mpc_attestation::{
     attestation::{Attestation, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 

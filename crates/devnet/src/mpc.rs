@@ -15,7 +15,6 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::primitives::test_utils::infer_purpose_from_scheme;
@@ -35,6 +34,7 @@ use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_mpc_contract_interface::method_names;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::borsh;
@@ -383,9 +383,9 @@ struct InitV2Args {
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
     ParticipantInfo {
-        sign_pk: near_sdk::PublicKey::from(near_mpc_contract_interface::types::Ed25519PublicKey::from(
-            &mpc_setup.p2p_public_key,
-        )),
+        sign_pk: near_sdk::PublicKey::from(
+            near_mpc_contract_interface::types::Ed25519PublicKey::from(&mpc_setup.p2p_public_key),
+        ),
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
     }
 }

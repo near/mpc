@@ -12,8 +12,6 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     errors::InvalidState,
     primitives::{
@@ -21,6 +19,8 @@ use mpc_contract::{
     },
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_workspaces::Contract;
 use test_utils::attestation::{image_digest, p2p_tls_key};
 

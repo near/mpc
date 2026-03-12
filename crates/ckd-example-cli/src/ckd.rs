@@ -7,7 +7,9 @@ use sha2::Sha256;
 use sha3::{Digest, Sha3_256};
 use std::io::{self, Write as _};
 
-use near_mpc_contract_interface::types::{AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CkdAppId};
+use near_mpc_contract_interface::types::{
+    AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CkdAppId,
+};
 
 use crate::{
     cli::Args,

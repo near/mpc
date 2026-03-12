@@ -3,8 +3,8 @@ use crate::sandbox::{
     upgrade_from_current_contract::current_contract_proposal,
     utils::consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
 };
-use near_mpc_contract_interface::method_names;
 use mpc_contract::update::UpdateId;
+use near_mpc_contract_interface::method_names;
 
 #[tokio::test]
 async fn test_high_gas_deposit_config_value_passes_upgrades() {
