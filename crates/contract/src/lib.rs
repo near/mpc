@@ -4786,6 +4786,56 @@ mod tests {
         );
     }
 
+    /// Tests launcher_hash_votes view: tracks votes, clears on threshold.
+    #[test]
+    fn test_launcher_hash_votes_view() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xCC);
+
+        assert!(contract.launcher_hash_votes().vote_by_account.is_empty());
+
+        // First vote
+        let (account_0, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_0.clone())
+            .predecessor_account_id(account_0.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+
+        let votes = contract.launcher_hash_votes();
+        assert_eq!(votes.vote_by_account.len(), 1);
+
+        // Second vote
+        let (account_1, _, _) = &participant_list[1];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_1.clone())
+            .predecessor_account_id(account_1.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+
+        assert_eq!(contract.launcher_hash_votes().vote_by_account.len(), 2);
+
+        // Third vote reaches threshold — votes should be cleared
+        let (account_2, _, _) = &participant_list[2];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_2.clone())
+            .predecessor_account_id(account_2.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+
+        assert!(
+            contract.launcher_hash_votes().vote_by_account.is_empty(),
+            "votes should be cleared after threshold reached"
+        );
+    }
+
     #[test]
     fn test_new_mpc_image_derives_compose_for_existing_launchers() {
         let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
