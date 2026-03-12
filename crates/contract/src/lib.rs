@@ -2145,7 +2145,7 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::proposal::get_docker_compose_hash;
+    use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
     use crate::{
         errors::{ErrorKind, NodeMigrationError},
@@ -4805,8 +4805,10 @@ mod tests {
             .vote_add_launcher_hash(launcher_hash.clone())
             .expect("vote should succeed");
 
-        let votes = contract.launcher_hash_votes();
-        assert_eq!(votes.vote_by_account.len(), 1);
+        let votes = &contract.launcher_hash_votes().vote_by_account;
+        assert_eq!(votes.len(), 1);
+        let expected_action = LauncherVoteAction::Add(launcher_hash.clone());
+        assert!(votes.values().all(|v| *v == expected_action));
 
         // Second vote
         let (account_1, _, _) = &participant_list[1];
@@ -4818,7 +4820,9 @@ mod tests {
             .vote_add_launcher_hash(launcher_hash.clone())
             .expect("vote should succeed");
 
-        assert_eq!(contract.launcher_hash_votes().vote_by_account.len(), 2);
+        let votes = &contract.launcher_hash_votes().vote_by_account;
+        assert_eq!(votes.len(), 2);
+        assert!(votes.values().all(|v| *v == expected_action));
 
         // Third vote reaches threshold — votes should be cleared
         let (account_2, _, _) = &participant_list[2];
