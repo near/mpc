@@ -51,7 +51,6 @@ use errors::{
 use k256::elliptic_curve::PrimeField;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
-use tee::proposal::LauncherHashVotes;
 use near_sdk::{
     env, log, near,
     store::{IterableMap, LookupMap},
@@ -64,6 +63,7 @@ use primitives::{
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
+use tee::proposal::LauncherHashVotes;
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
