@@ -4,7 +4,7 @@ version = "0.0.1"
 license = { workspace = true }
 edition = { workspace = true }
 repository.workspace = true
-description = "This crate defines types for interacting with the NEAR MPC contract."
+description = "Request and response types for the NEAR MPC signer contract"
 readme = "README.md"
 
 [features]
