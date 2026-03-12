@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use bounded_collections::{BoundedVec, hex_serde};
+use near_mpc_bounded_collections::{BoundedVec, hex_serde};
 use serde::{Deserialize, Serialize};
 
 use crate::types::DomainId;

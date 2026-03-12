@@ -88,8 +88,8 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
-    /// use bounded_collections::witnesses;
+    /// use near_mpc_bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::witnesses;
     /// let data: BoundedVec<_, 0, 8, witnesses::PossiblyEmpty<8>> =
     ///     BoundedVec::<_, 0, 8, witnesses::PossiblyEmpty<8>>::from_vec(vec![1u8, 2]).unwrap();
     /// ```
@@ -113,8 +113,8 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
-    /// use bounded_collections::witnesses;
+    /// use near_mpc_bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::witnesses;
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<u8, 0, 8, witnesses::PossiblyEmpty<8>> = vec![1u8, 2].try_into().unwrap();
@@ -128,8 +128,8 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
-    /// use bounded_collections::witnesses;
+    /// use near_mpc_bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::witnesses;
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<u8, 0, 8, witnesses::PossiblyEmpty<8>> = vec![1u8, 2].try_into().unwrap();
@@ -143,8 +143,8 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
-    /// use bounded_collections::witnesses;
+    /// use near_mpc_bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::witnesses;
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<u8, 0, 8, witnesses::PossiblyEmpty<8>> = vec![1u8, 2].try_into().unwrap();
@@ -161,7 +161,7 @@ impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
@@ -175,7 +175,7 @@ impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
@@ -190,7 +190,7 @@ impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
     /// # Example
     ///
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// let data: BoundedVec<u8, 2, 8> = [1u8,2].into();
     /// let elem = *data.get(1).unwrap();
     /// assert_eq!(elem, 2);
@@ -203,7 +203,7 @@ impl<T, const L: usize, const U: usize, W> BoundedVec<T, L, U, W> {
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<u8, 2, 4> = vec![1u8,2].try_into().unwrap();
@@ -238,8 +238,8 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
-    /// use bounded_collections::witnesses;
+    /// use near_mpc_bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::witnesses;
     /// let data: BoundedVec<_, 2, 8, witnesses::NonEmpty<2, 8>> =
     ///     BoundedVec::<_, 2, 8, witnesses::NonEmpty<2, 8>>::from_vec(vec![1u8, 2]).unwrap();
     /// ```
@@ -268,7 +268,7 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
@@ -282,7 +282,7 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
     ///
     /// # Example
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// use std::convert::TryInto;
     ///
     /// let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
@@ -318,7 +318,7 @@ where
     /// # Example
     ///
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// let data: BoundedVec<u8, 2, 8> = [1u8,2].into();
     /// let data = data.mapped(|x|x*2);
     /// assert_eq!(data, [2u8,4].into());
@@ -341,7 +341,7 @@ where
     /// # Example
     ///
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// let data: BoundedVec<u8, 2, 8> = [1u8,2].into();
     /// let data = data.mapped_ref(|x|x*2);
     /// assert_eq!(data, [2u8,4].into());
@@ -376,7 +376,7 @@ where
     /// # Example
     ///
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// let data: BoundedVec<u8, 2, 8> = [1u8,2].into();
     /// let data: Result<BoundedVec<u8, 2, 8>, _> = data.try_mapped(|x| Err("failed"));
     /// assert_eq!(data, Err("failed"));
@@ -411,7 +411,7 @@ where
     /// # Example
     ///
     /// ```
-    /// use bounded_collections::BoundedVec;
+    /// use near_mpc_bounded_collections::BoundedVec;
     /// let data: BoundedVec<u8, 2, 8> = [1u8,2].into();
     /// let data: Result<BoundedVec<u8, 2, 8>, _> = data.try_mapped_ref(|x| Err("failed"));
     /// assert_eq!(data, Err("failed"));
@@ -530,7 +530,7 @@ impl<T, const L: usize, const U: usize, W> AsRef<[T]> for BoundedVec<T, L, U, W>
 /// a fixed length known at compile time.
 ///
 /// ```
-/// use bounded_collections::BoundedVec;
+/// use near_mpc_bounded_collections::BoundedVec;
 /// let data: BoundedVec<u8, 3, 3> = [1u8, 2, 3].into();
 /// let arr: &[u8; 3] = data.as_ref();
 /// assert_eq!(arr, &[1, 2, 3]);
@@ -538,14 +538,14 @@ impl<T, const L: usize, const U: usize, W> AsRef<[T]> for BoundedVec<T, L, U, W>
 ///
 /// Does not compile when L != U (variable-length vec):
 /// ```compile_fail,E0277
-/// use bounded_collections::BoundedVec;
+/// use near_mpc_bounded_collections::BoundedVec;
 /// let data: BoundedVec<u8, 2, 8> = vec![1u8, 2].try_into().unwrap();
 /// let _: &[u8; 2] = data.as_ref();
 /// ```
 ///
 /// Does not compile when N differs from L and U:
 /// ```compile_fail,E0277
-/// use bounded_collections::BoundedVec;
+/// use near_mpc_bounded_collections::BoundedVec;
 /// let data: BoundedVec<u8, 3, 3> = [1u8, 2, 3].into();
 /// let _: &[u8; 4] = data.as_ref();
 /// ```
@@ -692,22 +692,22 @@ mod serde_impl {
 
 /// Serde helper for serializing/deserializing `BoundedVec<u8, L, U>` as a hex string.
 ///
-/// Use with `#[serde(with = "bounded_collections::hex_serde")]` on fields
+/// Use with `#[serde(with = "near_mpc_bounded_collections::hex_serde")]` on fields
 /// whose type is `BoundedVec<u8, L, U>`.
 ///
 /// When the `abi` feature is enabled, pair with
-/// `#[schemars(with = "bounded_collections::hex_serde::HexString<L, U>")]`
+/// `#[schemars(with = "near_mpc_bounded_collections::hex_serde::HexString<L, U>")]`
 /// to generate a string schema with hex length constraints.
 ///
 /// # Example
 /// ```ignore
-/// use bounded_collections::BoundedVec;
+/// use near_mpc_bounded_collections::BoundedVec;
 ///
 /// #[derive(serde::Serialize, serde::Deserialize)]
 /// #[cfg_attr(feature = "abi", derive(schemars::JsonSchema))]
 /// struct MyStruct {
-///     #[serde(with = "bounded_collections::hex_serde")]
-///     #[cfg_attr(feature = "abi", schemars(with = "bounded_collections::hex_serde::HexString<1, 64>"))]
+///     #[serde(with = "near_mpc_bounded_collections::hex_serde")]
+///     #[cfg_attr(feature = "abi", schemars(with = "near_mpc_bounded_collections::hex_serde::HexString<1, 64>"))]
 ///     data: BoundedVec<u8, 1, 64>,
 /// }
 /// ```
@@ -741,8 +741,8 @@ pub mod hex_serde {
 
     /// Marker type for JSON schema generation of hex-encoded `BoundedVec<u8, L, U>`.
     ///
-    /// Use with `#[schemars(with = "bounded_collections::hex_serde::HexString<L, U>")]`
-    /// alongside `#[serde(with = "bounded_collections::hex_serde")]`.
+    /// Use with `#[schemars(with = "near_mpc_bounded_collections::hex_serde::HexString<L, U>")]`
+    /// alongside `#[serde(with = "near_mpc_bounded_collections::hex_serde")]`.
     #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
     pub struct HexString<const L: usize, const U: usize>;
 

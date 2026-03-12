@@ -1,11 +1,11 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
-use contract_interface::types::{StarknetFelt, StarknetLog};
 use foreign_chain_rpc_interfaces::starknet::{
     GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
     StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
+use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 

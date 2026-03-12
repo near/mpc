@@ -6,8 +6,6 @@ use crate::sandbox::utils::{
     shared_key_utils::{make_key_for_domain, DomainKey},
     sign_utils::{make_and_submit_requests, PendingSignRequest},
 };
-use contract_interface::method_names;
-use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use digest::Digest;
 use dtos::ProtocolContractState;
 use mpc_contract::{
@@ -23,6 +21,8 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_sdk::NearToken;
 use near_workspaces::{
     network::Sandbox,

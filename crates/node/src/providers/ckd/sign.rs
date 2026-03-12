@@ -4,7 +4,7 @@ use anyhow::Context;
 use rand::rngs::OsRng;
 use tokio::time::timeout;
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use threshold_signatures::{
     confidential_key_derivation::{protocol::ckd, AppId, ElementG1, KeygenOutput, VerifyingKey},
     participants::Participant,

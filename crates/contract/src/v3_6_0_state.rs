@@ -10,9 +10,9 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::types as dtos;
 use mpc_attestation::attestation::VerifiedAttestation;
 use mpc_primitives::hash::LauncherDockerComposeHash;
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, store::LookupMap};
 
 use crate::{

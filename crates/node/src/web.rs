@@ -13,13 +13,13 @@ use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
-use contract_interface::types::Ed25519PublicKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
@@ -501,8 +501,8 @@ mod tests {
     use super::*;
     use crate::config::SyncMode;
     use crate::config::{AuthConfig, TokenConfig};
-    use bounded_collections::NonEmptyBTreeMap;
     use near_indexer_primitives::types::Finality;
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
 
