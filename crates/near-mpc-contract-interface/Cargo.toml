@@ -1,5 +1,5 @@
 [package]
-name = "contract-interface"
+name = "near-mpc-contract-interface"
 version = "0.0.1"
 license = { workspace = true }
 edition = { workspace = true }
@@ -7,20 +7,20 @@ edition = { workspace = true }
 [features]
 abi = [
     "borsh/unstable__schema",
-    "bounded-collections/abi",
-    "mpc-crypto-types/abi",
+    "near-mpc-bounded-collections/abi",
+    "near-mpc-crypto-types/abi",
     "schemars",
 ]
-blstrs = ["mpc-crypto-types/blstrs"]
-ed25519-dalek = ["mpc-crypto-types/ed25519-dalek"]
-k256 = ["mpc-crypto-types/k256"]
-near = ["mpc-crypto-types/near"]
+blstrs = ["near-mpc-crypto-types/blstrs"]
+ed25519-dalek = ["near-mpc-crypto-types/ed25519-dalek"]
+k256 = ["near-mpc-crypto-types/k256"]
+near = ["near-mpc-crypto-types/near"]
 
 [dependencies]
 borsh = { workspace = true }
-bounded-collections = { workspace = true }
 derive_more = { workspace = true }
-mpc-crypto-types = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
+near-mpc-crypto-types = { workspace = true }
 serde = { workspace = true }
 serde_repr = { workspace = true }
 serde_with = { workspace = true }

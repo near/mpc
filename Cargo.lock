@@ -995,8 +995,8 @@ dependencies = [
  "bs58 0.5.1",
  "clap",
  "mpc-attestation",
- "mpc-crypto-types",
  "mpc-primitives",
+ "near-mpc-crypto-types",
  "node-types",
  "reqwest 0.12.28",
  "serde_json",
@@ -1179,11 +1179,11 @@ version = "3.6.0"
 dependencies = [
  "anyhow",
  "clap",
- "contract-interface",
  "ed25519-dalek",
  "mpc-contract",
  "mpc-node",
  "near-account-id 2.5.0",
+ "near-mpc-contract-interface",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "serde",
@@ -1468,21 +1468,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "bounded-collections"
-version = "0.0.1"
-dependencies = [
- "assert_matches",
- "borsh",
- "derive_more 2.1.1",
- "hex",
- "rstest",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1816,11 +1801,11 @@ dependencies = [
  "anyhow",
  "blstrs",
  "clap",
- "contract-interface",
  "derive_more 2.1.1",
  "elliptic-curve",
  "hex",
  "hkdf",
+ "near-mpc-contract-interface",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
@@ -2019,25 +2004,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
-]
-
-[[package]]
-name = "contract-interface"
-version = "0.0.1"
-dependencies = [
- "borsh",
- "bounded-collections",
- "derive_more 2.1.1",
- "hex",
- "insta",
- "mpc-crypto-types",
- "rstest",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "serde_repr",
- "serde_with",
- "sha2",
 ]
 
 [[package]]
@@ -3449,7 +3415,6 @@ name = "foreign-chain-inspector"
 version = "3.6.0"
 dependencies = [
  "assert_matches",
- "contract-interface",
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
@@ -3457,6 +3422,7 @@ dependencies = [
  "httpmock",
  "jsonrpsee",
  "mpc-primitives",
+ "near-mpc-contract-interface",
  "rstest",
  "serde",
  "serde_json",
@@ -5434,10 +5400,8 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "borsh",
- "bounded-collections",
  "cargo-near-build",
  "contract-history",
- "contract-interface",
  "curve25519-dalek",
  "derive_more 2.1.1",
  "digest 0.10.7",
@@ -5453,7 +5417,10 @@ dependencies = [
  "mpc-primitives",
  "near-abi",
  "near-account-id 2.5.0",
+ "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
  "near-mpc-sdk",
+ "near-mpc-signature-verifier",
  "near-sdk",
  "near-workspaces",
  "rand 0.8.5",
@@ -5466,34 +5433,11 @@ dependencies = [
  "sha2",
  "sha3",
  "signature",
- "signature-verifier",
  "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",
  "tokio",
  "zstd",
-]
-
-[[package]]
-name = "mpc-crypto-types"
-version = "0.0.1"
-dependencies = [
- "assert_matches",
- "blstrs",
- "borsh",
- "bs58 0.5.1",
- "curve25519-dalek",
- "derive_more 2.1.1",
- "ed25519-dalek",
- "group",
- "k256",
- "near-sdk",
- "rand 0.8.5",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "serde_with",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -5504,7 +5448,6 @@ dependencies = [
  "borsh",
  "bs58 0.5.1",
  "clap",
- "contract-interface",
  "ed25519-dalek",
  "flume",
  "futures",
@@ -5514,6 +5457,7 @@ dependencies = [
  "near-crypto 0.28.0",
  "near-jsonrpc-client 0.15.1",
  "near-jsonrpc-primitives 0.28.0",
+ "near-mpc-contract-interface",
  "near-primitives 0.28.0",
  "near-sdk",
  "node-types",
@@ -5539,12 +5483,10 @@ dependencies = [
  "backon",
  "base64 0.22.1",
  "borsh",
- "bounded-collections",
  "bs58 0.5.1",
  "built",
  "bytes",
  "clap",
- "contract-interface",
  "derive_more 2.1.1",
  "ed25519-dalek",
  "either",
@@ -5570,6 +5512,8 @@ dependencies = [
  "near-crypto 2.10.7",
  "near-indexer",
  "near-indexer-primitives",
+ "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
  "near-o11y",
  "near-sdk",
  "near-time 2.10.7",
@@ -6434,15 +6378,84 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-mpc-bounded-collections"
+version = "0.0.1"
+dependencies = [
+ "assert_matches",
+ "borsh",
+ "derive_more 2.1.1",
+ "hex",
+ "rstest",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "near-mpc-contract-interface"
+version = "0.0.1"
+dependencies = [
+ "borsh",
+ "derive_more 2.1.1",
+ "hex",
+ "insta",
+ "near-mpc-bounded-collections",
+ "near-mpc-crypto-types",
+ "rstest",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "serde_with",
+ "sha2",
+]
+
+[[package]]
+name = "near-mpc-crypto-types"
+version = "0.0.1"
+dependencies = [
+ "assert_matches",
+ "blstrs",
+ "borsh",
+ "bs58 0.5.1",
+ "curve25519-dalek",
+ "derive_more 2.1.1",
+ "ed25519-dalek",
+ "group",
+ "k256",
+ "near-sdk",
+ "rand 0.8.5",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "near-mpc-sdk"
 version = "0.0.1"
 dependencies = [
  "assert_matches",
  "borsh",
- "bounded-collections",
- "contract-interface",
  "derive_more 2.1.1",
- "signature-verifier",
+ "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
+ "near-mpc-signature-verifier",
+]
+
+[[package]]
+name = "near-mpc-signature-verifier"
+version = "0.0.1"
+dependencies = [
+ "assert_matches",
+ "ed25519-dalek",
+ "k256",
+ "near-mpc-contract-interface",
+ "near-sdk",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
 ]
 
 [[package]]
@@ -7426,7 +7439,7 @@ name = "node-types"
 version = "3.6.0"
 dependencies = [
  "mpc-attestation",
- "mpc-crypto-types",
+ "near-mpc-crypto-types",
  "rand_chacha 0.3.1",
  "serde",
  "serde_json",
@@ -10176,19 +10189,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "signature-verifier"
-version = "0.0.1"
-dependencies = [
- "assert_matches",
- "contract-interface",
- "ed25519-dalek",
- "k256",
- "near-sdk",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
-]
-
-[[package]]
 name = "simd-adler32"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10695,10 +10695,10 @@ dependencies = [
  "assert_matches",
  "blstrs",
  "borsh",
- "contract-interface",
  "elliptic-curve",
  "getrandom 0.2.17",
  "hex",
+ "near-mpc-contract-interface",
  "near-sdk",
  "serde",
  "sha2",
@@ -10708,10 +10708,10 @@ dependencies = [
 name = "test-utils"
 version = "3.6.0"
 dependencies = [
- "contract-interface",
  "hex",
  "mpc-attestation",
  "mpc-primitives",
+ "near-mpc-contract-interface",
  "near-sdk",
  "serde_json",
  "sha2",

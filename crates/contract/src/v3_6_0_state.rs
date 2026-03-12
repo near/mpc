@@ -8,7 +8,7 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, store::LookupMap};
 
 use crate::{

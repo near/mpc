@@ -3,7 +3,7 @@ use rand::rngs::OsRng;
 use k256::elliptic_curve::{Field, Group};
 use threshold_signatures::confidential_key_derivation as ckd;
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 use crate::{primitives::thresholds::ThresholdParameters, state::ProtocolContractState};
 

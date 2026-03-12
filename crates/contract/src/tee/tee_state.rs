@@ -151,8 +151,8 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         // Convert TLS public key
-        let tls_public_key: contract_interface::types::Ed25519PublicKey =
-            contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
+        let tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey =
+            near_mpc_contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
                 .map_err(|_| AttestationSubmissionError::InvalidTlsKey)?;
 
         // Convert account public key if available
@@ -163,9 +163,9 @@ impl TeeState {
         //
         // TODO(#823): Remove this fallback once all MPC nodes are required
         //             to run inside a TEE and provide a valid account_public_key.
-        let account_public_key: Option<contract_interface::types::Ed25519PublicKey> =
+        let account_public_key: Option<near_mpc_contract_interface::types::Ed25519PublicKey> =
             match node_id.account_public_key.as_ref() {
-                Some(pk) => contract_interface::types::Ed25519PublicKey::try_from(pk).ok(),
+                Some(pk) => near_mpc_contract_interface::types::Ed25519PublicKey::try_from(pk).ok(),
                 None => None,
             };
 

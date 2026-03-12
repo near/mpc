@@ -14,7 +14,6 @@ use crate::sandbox::{
     },
 };
 use assert_matches::assert_matches;
-use contract_interface::{method_names, types as dtos};
 use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
@@ -24,6 +23,7 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
 };
+use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;
