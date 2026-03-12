@@ -35,10 +35,10 @@ impl IsSyncing for NearClientActorHandle {
             )
             .await
             .map_err(|err| NearClientError::AsyncSendError {
-                source: Arc::new(err),
+                message: err.to_string(),
             })?
             .map_err(|err| NearClientError::ResponseError {
-                source: Arc::new(err),
+                message: err.to_string(),
             })?;
         Ok(status.sync_info.syncing)
     }

@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{IsSyncing, QueryViewFunction};
@@ -132,11 +131,11 @@ impl<T: IsSyncing + QueryViewFunction> ViewRaw for T {
         self.query_view_function(contract_id, method_name, args)
             .await
             .map_err(|err| ChainGatewayError::ViewClient {
-                op: ChainGatewayOp::ViewCall {
+                op: ChainGatewayOp::ViewQuery {
                     account_id: contract_id.to_string(),
                     method_name: method_name.to_string(),
                 },
-                source: Arc::new(err),
+                message: err.to_string(),
             })
     }
 }
@@ -167,16 +166,16 @@ impl<T: ViewRaw> ViewMethod for T {
     {
         let args: Vec<u8> =
             serde_json::to_vec(args).map_err(|err| ChainGatewayError::Serialization {
-                op: ChainGatewayOp::ViewCall {
+                op: ChainGatewayOp::ViewQuery {
                     account_id: contract_id.to_string(),
                     method_name: method_name.to_string(),
                 },
-                source: Arc::new(err),
+                message: err.to_string(),
             })?;
         let res = self.view_raw(&contract_id, method_name, &args).await?;
         let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
             ChainGatewayError::Deserialization {
-                source: Arc::new(err),
+                message: err.to_string(),
             }
         })?;
 
@@ -274,21 +273,16 @@ mod tests {
             .await
             .unwrap_err();
 
-        match err {
-            ChainGatewayError::ViewClient { op, source } => {
-                let ChainGatewayOp::ViewCall {
-                    account_id,
-                    method_name: mn,
-                } = op;
-                assert_eq!(account_id, call.contract_id.to_string());
-                assert_eq!(mn, call.method_name);
-                assert_eq!(
-                    source.downcast_ref::<MockError>(),
-                    Some(&MockError::SyncError)
-                );
+        assert_eq!(
+            err,
+            ChainGatewayError::ViewClient {
+                op: ChainGatewayOp::ViewQuery {
+                    account_id: call.contract_id.to_string(),
+                    method_name: call.method_name,
+                },
+                message: MockError::SyncError.to_string(),
             }
-            other => panic!("expected ViewClient, got: {other:?}"),
-        }
+        );
     }
 
     #[tokio::test(start_paused = true)]

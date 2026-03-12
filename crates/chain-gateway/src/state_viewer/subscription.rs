@@ -123,6 +123,7 @@ mod tests {
 
         assert_matches!(
             sub.latest().unwrap_err(),
+            // todo: probably we should assert more here?
             ChainGatewayError::ViewClient { .. }
         );
     }

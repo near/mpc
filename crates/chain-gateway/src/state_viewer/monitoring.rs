@@ -103,7 +103,7 @@ fn modify(
 ) -> bool {
     let value_changed = match (&to_modify, &update_value) {
         (Ok(prev), Ok(current)) => prev.value != current.value,
-        (Err(prev_err), Err(curr_err)) => prev_err.to_string() != curr_err.to_string(),
+        (Err(prev_err), Err(curr_err)) => prev_err != curr_err,
         _ => true,
     };
     if value_changed {
@@ -114,8 +114,6 @@ fn modify(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::{
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{Call, MockChainState, MockError},
@@ -180,7 +178,7 @@ mod tests {
         assert_eq!(changed, expected_changed, "case: {name}");
         match (to_modify, expected) {
             (Err(to_modify), Err(expected)) => {
-                assert_eq!(to_modify.to_string(), expected.to_string(), "case: {name}")
+                assert_eq!(to_modify, expected, "case: {name}")
             }
             (Ok(to_modify), Ok(expected)) => assert_eq!(to_modify, expected, "case: {name}"),
             (a, b) => panic!("case: {name}, mismatch: {a:?}, expected: {b:?}"),
@@ -254,7 +252,7 @@ mod tests {
         let expected = spec_to_observed(expected, call.clone());
         match (found, expected) {
             (Ok(g), Ok(e)) => assert_eq!(g, e, "case: {name}"),
-            (Err(g), Err(e)) => assert_eq!(g.to_string(), e.to_string(), "case: {name}"),
+            (Err(g), Err(e)) => assert_eq!(g, e, "case: {name}"),
             (a, b) => panic!("case: {name}, mismatch: got {a:?}, expected {b:?}"),
         }
 
@@ -297,7 +295,7 @@ mod tests {
         let expected = spec_to_observed(init_spec, call);
         match (found, expected) {
             (Ok(g), Ok(e)) => assert_eq!(g, e, "case: {name}"),
-            (Err(g), Err(e)) => assert_eq!(g.to_string(), e.to_string(), "case: {name}"),
+            (Err(g), Err(e)) => assert_eq!(g, e, "case: {name}"),
             (a, b) => panic!("case: {name}, mismatch: got {a:?}, expected {b:?}"),
         }
     }
@@ -354,7 +352,7 @@ mod tests {
         let expected = spec_to_observed(expected, call);
         match (found, expected) {
             (Ok(g), Ok(e)) => assert_eq!(g, e, "case: {name}"),
-            (Err(g), Err(e)) => assert_eq!(g.to_string(), e.to_string(), "case: {name}"),
+            (Err(g), Err(e)) => assert_eq!(g, e, "case: {name}"),
             (a, b) => panic!("case: {name}, mismatch: got {a:?}, expected {b:?}"),
         }
 
@@ -445,11 +443,11 @@ mod tests {
 
         // Initial channel value matches what view_raw would return (wrapping errors)
         let init_channel = mock_response.map_err(|err| ChainGatewayError::ViewClient {
-            op: ChainGatewayOp::ViewCall {
+            op: ChainGatewayOp::ViewQuery {
                 account_id: call.contract_id.to_string(),
                 method_name: call.method_name.to_string(),
             },
-            source: Arc::new(err),
+            message: err.to_string(),
         });
 
         let (sender, receiver) = tokio::sync::watch::channel(init_channel);
@@ -484,11 +482,11 @@ mod tests {
                 value: vec![b],
             }),
             Err(err) => Err(ChainGatewayError::ViewClient {
-                op: ChainGatewayOp::ViewCall {
+                op: ChainGatewayOp::ViewQuery {
                     account_id: call.contract_id.to_string(),
                     method_name: call.method_name,
                 },
-                source: Arc::new(err),
+                message: err.to_string(),
             }),
         }
     }

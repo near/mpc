@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use derive_more::{From, Into};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -26,7 +24,7 @@ impl ObservedState<Vec<u8>> {
     ) -> Result<ObservedState<Res>, ChainGatewayError> {
         let value = serde_json::from_slice::<Res>(&self.value).map_err(|err| {
             ChainGatewayError::Deserialization {
-                source: Arc::new(err),
+                message: err.to_string(),
             }
         })?;
         Ok(ObservedState {

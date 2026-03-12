@@ -4,9 +4,7 @@ use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
 
 use crate::{
-    errors::{
-        NearViewClientError, NearViewClientErrorKind, UnexpectedResponseError, ViewClientQuery,
-    },
+    errors::{NearViewClientError, NearViewClientQuery},
     primitives::QueryViewFunction,
     types::ObservedState,
 };
@@ -52,22 +50,20 @@ impl QueryViewFunction for NearViewClientActorHandle {
 
         let send_result = self.view_client.send_async(query).await;
 
-        let response_result = send_result.map_err(|err| NearViewClientError {
-            query: ViewClientQuery::ViewMethod {
+        let response_result = send_result.map_err(|err| NearViewClientError::AsyncSendError {
+            query: NearViewClientQuery::ViewMethod {
                 contract_id: contract_id.clone(),
                 method_name: method_name.to_string(),
             },
-            kind: NearViewClientErrorKind::SendError,
-            source: Arc::new(err),
+            message: err.to_string(),
         })?;
 
-        let response = response_result.map_err(|err| NearViewClientError {
-            query: ViewClientQuery::ViewMethod {
+        let response = response_result.map_err(|err| NearViewClientError::ResponseError {
+            query: NearViewClientQuery::ViewMethod {
                 contract_id: contract_id.clone(),
                 method_name: method_name.to_string(),
             },
-            kind: NearViewClientErrorKind::ResponseError,
-            source: Arc::new(err),
+            message: err.to_string(),
         })?;
 
         match response.kind {
@@ -77,14 +73,29 @@ impl QueryViewFunction for NearViewClientActorHandle {
                     value: call_result.result,
                 })
             }
-            other => Err(NearViewClientError {
-                query: ViewClientQuery::ViewMethod {
-                    contract_id: contract_id.clone(),
-                    method_name: method_name.to_string(),
-                },
-                kind: NearViewClientErrorKind::UnexpectedResponse,
-                source: Arc::new(UnexpectedResponseError(format!("{:?}", other))),
-            }),
+            other => {
+                let variant = match &other {
+                    near_indexer_primitives::views::QueryResponseKind::ViewAccount(_) => {
+                        "ViewAccount"
+                    }
+                    near_indexer_primitives::views::QueryResponseKind::ViewCode(_) => "ViewCode",
+                    near_indexer_primitives::views::QueryResponseKind::ViewState(_) => "ViewState",
+                    near_indexer_primitives::views::QueryResponseKind::CallResult(_) => {
+                        unreachable!()
+                    }
+                    near_indexer_primitives::views::QueryResponseKind::AccessKey(_) => "AccessKey",
+                    near_indexer_primitives::views::QueryResponseKind::AccessKeyList(_) => {
+                        "AccessKeyList"
+                    }
+                };
+                Err(NearViewClientError::UnexpectedResponseError {
+                    query: NearViewClientQuery::ViewMethod {
+                        contract_id: contract_id.clone(),
+                        method_name: method_name.to_string(),
+                    },
+                    message: format!("expected CallResult, got {variant}"),
+                })
+            }
         }
     }
 }
