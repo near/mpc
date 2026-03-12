@@ -649,11 +649,17 @@ async fn incoming_connection_handler(
 
     let result: anyhow::Result<()> = async {
         loop {
-            let payload_bytes = framed_tls_stream_reader
+            let payload_bytes = match framed_tls_stream_reader
                 .next()
                 .timeout(MESSAGE_READ_TIMEOUT_DURATION)
                 .await?
-                .ok_or(anyhow!("infallible, tls stream is unending"))??;
+            {
+                Some(result) => result?,
+                None => {
+                    // Stream ended cleanly (peer closed connection).
+                    return Ok(());
+                }
+            };
 
             let total_message_size_bytes =
                 FRAME_HEADER_SIZE_BYTES as u64 + payload_bytes.len() as u64;
@@ -730,10 +736,16 @@ async fn incoming_connection_handler(
 /// to the application — either a complete frame arrives or the read fails.
 /// A missing close_notify is therefore indistinguishable from a normal
 /// connection drop that the protocol already tolerates.
+///
+/// We check for both `UnexpectedEof` kind and the rustls-specific error
+/// message to avoid accidentally suppressing unrelated EOF errors from
+/// other I/O layers (e.g. LengthDelimitedCodec truncated frame headers).
 fn is_tls_close_notify_error(err: &anyhow::Error) -> bool {
     for cause in err.chain() {
         if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
-            if io_err.kind() == std::io::ErrorKind::UnexpectedEof {
+            if io_err.kind() == std::io::ErrorKind::UnexpectedEof
+                && io_err.to_string().contains("close_notify")
+            {
                 return true;
             }
         }
