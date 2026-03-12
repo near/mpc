@@ -4,11 +4,13 @@ use near_account_id::AccountId;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
+use tokio::sync::Notify;
 
 #[derive(Clone)]
 pub struct MockChainState {
     sync_response: Arc<Mutex<Result<bool, MockError>>>,
     query_view_function_submitter_state: Arc<Mutex<MockQueryViewFunctionState>>,
+    read_notify: Arc<Notify>,
 }
 
 pub struct MockQueryViewFunctionState {
@@ -40,23 +42,9 @@ impl MockChainState {
 
     /// Wait for the next query_view_function call (polls submitted.len() every 10ms).
     pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
-        tokio::time::timeout(max_wait_duration, async {
-            let baseline = {
-                let inner = self.query_view_function_submitter_state.lock().unwrap();
-                inner.submitted.len()
-            };
-            loop {
-                {
-                    let inner = self.query_view_function_submitter_state.lock().unwrap();
-                    if inner.submitted.len() > baseline {
-                        return;
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .map_err(|_| MockError::Timeout)
+        tokio::time::timeout(max_wait_duration, self.read_notify.notified())
+            .await
+            .map_err(|_| MockError::Timeout)
     }
 
     /// Returns a snapshot of all recorded view function calls.
@@ -105,6 +93,7 @@ impl MockChainStateBuilder {
                 response: self.query_view_function_response,
                 submitted: Vec::new(),
             })),
+            read_notify: Arc::new(Notify::new()),
         }
     }
 }
@@ -130,7 +119,10 @@ impl QueryViewFunction for MockChainState {
             method_name: method_name.to_string(),
             args: args.to_vec(),
         });
-        inner.response.clone()
+        let response = inner.response.clone();
+        drop(inner);
+        self.read_notify.notify_waiters();
+        response
     }
 }
 
