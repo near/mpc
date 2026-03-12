@@ -13,6 +13,8 @@ let
       hash,
       cargoHash,
       postPatch ? null,
+      nativeBuildInputs ? [ ],
+      buildInputs ? [ ],
     }:
     rustPlatform.buildRustPackage (
       {
@@ -20,7 +22,7 @@ let
         src = fetchCrate {
           inherit pname version hash;
         };
-        inherit cargoHash;
+        inherit cargoHash nativeBuildInputs buildInputs;
         doCheck = false;
       }
       // lib.optionalAttrs (postPatch != null) {
@@ -76,6 +78,22 @@ in
     version = "0.37.24";
     hash = "sha256-POMi8k8vLL3ZMWmGkSBg3BWSO6d8A4xoDawWDZXHpmk=";
     cargoHash = "sha256-ml/OW4S4fIMLmm7vVPgsXB7CigDYORGFpN3jZRp1f8c=";
+  })
+
+  (buildTool {
+    pname = "cargo-release";
+    version = "1.1.1";
+    hash = "sha256-zy+8ayLX0gBxT8MUk2UIexPrCJiqWQfh5Qmu6/Vhjh4=";
+    cargoHash = "sha256-jqs1b6edoR1OgileF0T9LNw1QtxALn3Nz+QUF3R8epg=";
+    nativeBuildInputs = [ pkgs.perl pkgs.pkg-config ];
+    buildInputs = [ pkgs.openssl ];
+  })
+
+  (buildTool {
+    pname = "cargo-workspaces";
+    version = "0.4.2";
+    hash = "sha256-/h7v5Wq7YsNMVzLHw3QQmcknbjARpI7HFPAUGX72wZ0=";
+    cargoHash = "sha256-eaTLKQdz8Kyee7Bhub/OBueteeQ8jY36g4DgqctrToY=";
   })
 
   (buildTool {
