@@ -1,5 +1,5 @@
 ---
-source: src/ecdsa/mod.rs
+source: crates/threshold-signatures/src/ecdsa.rs
 expression: result
 ---
 [
