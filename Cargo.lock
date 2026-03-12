@@ -5451,7 +5451,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-crypto-types"
-version = "3.6.0"
+version = "0.0.1"
 dependencies = [
  "assert_matches",
  "blstrs",
