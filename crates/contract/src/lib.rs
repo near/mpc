@@ -51,6 +51,7 @@ use errors::{
 use k256::elliptic_curve::PrimeField;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
+use tee::proposal::LauncherHashVotes;
 use near_sdk::{
     env, log, near,
     store::{IterableMap, LookupMap},
@@ -1720,6 +1721,11 @@ impl MpcContract {
 
     pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash> {
         self.tee_state.get_allowed_launcher_hashes()
+    }
+
+    /// Returns the current launcher hash votes, showing each participant's vote.
+    pub fn launcher_hash_votes(&self) -> &LauncherHashVotes {
+        &self.tee_state.launcher_votes
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {

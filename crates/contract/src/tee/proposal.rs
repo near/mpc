@@ -93,10 +93,13 @@ impl LauncherHashVotes {
 
     /// Counts the total number of participants who have voted for the given action.
     fn count_votes(&self, action: &LauncherVoteAction) -> u64 {
-        self.vote_by_account
-            .values()
-            .filter(|a| *a == action)
-            .count() as u64
+        u64::try_from(
+            self.vote_by_account
+                .values()
+                .filter(|a| *a == action)
+                .count(),
+        )
+        .expect("participant count should not overflow u64")
     }
 
     /// Clears all launcher votes.
