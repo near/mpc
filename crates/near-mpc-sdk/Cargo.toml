@@ -1,6 +1,6 @@
 [package]
-version = "0.0.1"
 name = "near-mpc-sdk"
+version = "0.0.1"
 edition.workspace = true
 license.workspace = true
 
