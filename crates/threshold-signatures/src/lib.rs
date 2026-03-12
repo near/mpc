@@ -35,6 +35,7 @@ use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::Protocol;
 pub use crate::thresholds::{MaxMalicious, ReconstructionLowerBound};
 use rand_core::CryptoRngCore;
+use std::fmt;
 use std::marker::Send;
 
 use frost_core::serialization::SerializableScalar;
@@ -45,13 +46,22 @@ use serde::{Deserialize, Serialize};
 pub type Scalar<C> = frost_core::Scalar<C>;
 pub type Element<C> = frost_core::Element<C>;
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, ZeroizeOnDrop)]
+#[derive(Clone, Deserialize, Serialize, Eq, PartialEq, ZeroizeOnDrop)]
 #[serde(bound = "C: Ciphersuite")]
 /// Generic type of key pairs
 pub struct KeygenOutput<C: Ciphersuite> {
     pub private_share: SigningShare<C>,
     #[zeroize[skip]]
     pub public_key: VerifyingKey<C>,
+}
+
+impl<C: Ciphersuite> fmt::Debug for KeygenOutput<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeygenOutput")
+            .field("private_share", &"<redacted>")
+            .field("public_key", &self.public_key)
+            .finish()
+    }
 }
 
 /// This is a necessary element to be able to derive different keys

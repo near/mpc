@@ -9,6 +9,8 @@ pub(crate) mod echo_broadcast;
 pub(crate) mod helpers;
 pub(crate) mod internal;
 
+use std::fmt;
+
 use crate::errors::{MessageError, ProtocolError};
 use crate::participants::Participant;
 
@@ -26,7 +28,7 @@ pub type MessageData = Vec<u8>;
 /// This action can consist of sending a message, doing nothing, etc.
 ///
 /// Eventually, the participant returns a value, ending the protocol.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Action<T> {
     /// Don't do anything.
     Wait,
@@ -41,6 +43,24 @@ pub enum Action<T> {
     SendPrivate(Participant, MessageData),
     /// End the protocol by returning a value.
     Return(T),
+}
+
+impl<T> fmt::Debug for Action<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Wait => write!(f, "Action::Wait"),
+            Self::SendMany(data) => f
+                .debug_tuple("Action::SendMany")
+                .field(&format_args!("[{} bytes]", data.len()))
+                .finish(),
+            Self::SendPrivate(participant, data) => f
+                .debug_tuple("Action::SendPrivate")
+                .field(participant)
+                .field(&format_args!("[{} bytes]", data.len()))
+                .finish(),
+            Self::Return(_) => write!(f, "Action::Return(<redacted>)"),
+        }
+    }
 }
 
 /// A trait for protocols.
