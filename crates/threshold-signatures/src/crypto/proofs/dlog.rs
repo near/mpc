@@ -10,6 +10,7 @@ use crate::{
     Ciphersuite, Element, Scalar,
 };
 use frost_core::{serialization::SerializableScalar, Group};
+use subtle::ConstantTimeEq;
 
 use super::strobe_transcript::Transcript;
 
@@ -84,7 +85,10 @@ pub fn verify<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
     proof: &Proof<C>,
-) -> Result<bool, ProtocolError> {
+) -> Result<bool, ProtocolError>
+where
+    Scalar<C>: ConstantTimeEq,
+{
     transcript.message(NEAR_DLOG_STATEMENT_LABEL, &statement.encode()?);
 
     let big_k = C::Group::generator() * proof.s.0 - *statement.public * proof.e.0;
@@ -97,7 +101,7 @@ pub fn verify<C: Ciphersuite>(
     let mut rng = transcript.challenge_then_build_rng(NEAR_DLOG_CHALLENGE_LABEL);
     let e = frost_core::random_nonzero::<C, TranscriptRng>(&mut rng);
 
-    Ok(e == proof.e.0)
+    Ok(bool::from(e.ct_eq(&proof.e.0)))
 }
 
 #[cfg(test)]

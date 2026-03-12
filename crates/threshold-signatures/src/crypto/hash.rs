@@ -6,8 +6,15 @@ use subtle::{Choice, ConstantTimeEq};
 use super::constants::{HASH_LEN, NEAR_HASH_LABEL};
 
 /// The output of a generic hash function.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct HashOutput([u8; HASH_LEN]);
+
+impl PartialEq for HashOutput {
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
+    }
+}
+impl Eq for HashOutput {}
 
 impl AsRef<[u8]> for HashOutput {
     fn as_ref(&self) -> &[u8] {

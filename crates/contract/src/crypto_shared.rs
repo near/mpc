@@ -1,7 +1,7 @@
 pub mod kdf;
 pub mod types;
 
-pub use kdf::{derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak};
+pub use kdf::{derive_key_secp256k1, derive_tweak};
 pub use types::{ed25519_types, k256_types, CKDResponse};
 
 // Our wasm runtime doesn't support good synchronous entropy.

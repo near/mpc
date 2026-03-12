@@ -3602,16 +3602,6 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
-        "Tweak2": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
-        },
         "UpdateHash": {
           "description": "An update hash",
           "oneOf": [
@@ -3719,8 +3709,7 @@ expression: abi
           "required": [
             "domain_id",
             "payload_version",
-            "request",
-            "tweak"
+            "request"
           ],
           "properties": {
             "domain_id": {
@@ -3733,24 +3722,17 @@ expression: abi
             },
             "request": {
               "$ref": "#/definitions/ForeignChainRpcRequest"
-            },
-            "tweak": {
-              "$ref": "#/definitions/Tweak2"
             }
           }
         },
         "VerifyForeignTransactionRequestArgs": {
           "type": "object",
           "required": [
-            "derivation_path",
             "domain_id",
             "payload_version",
             "request"
           ],
           "properties": {
-            "derivation_path": {
-              "type": "string"
-            },
             "domain_id": {
               "$ref": "#/definitions/DomainId2"
             },

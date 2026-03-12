@@ -59,6 +59,10 @@ localnet/tee/scripts/deploy-tee-localnet.sh
 ### Required / Common Defaults
 
 ```bash
+export HOST_PROFILE=alice
+#export HOST_PROFILE=bob
+
+
 # Mode
 export MODE=localnet
 

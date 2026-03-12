@@ -66,7 +66,7 @@ attestation-cli [OPTIONS]
 
 ```bash
 attestation-cli \
-  --url http://<node-host>:3000/public_data \
+  --url http://<node-host>:8080/public_data \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml
 ```
@@ -76,7 +76,7 @@ attestation-cli \
 First save the node's response:
 
 ```bash
-curl -o public_data.json http://<node-host>:3000/public_data
+curl -o public_data.json http://<node-host>:8080/public_data
 ```
 
 Then verify offline:
@@ -92,7 +92,7 @@ attestation-cli \
 
 ```bash
 attestation-cli \
-  --url http://<node-host>:3000/public_data \
+  --url http://<node-host>:8080/public_data \
   --allowed-image-hash abc123...def \
   --allowed-image-hash 789012...345 \
   --launcher-compose-file launcher-compose.yaml
