@@ -135,6 +135,7 @@ pub(crate) struct AllowedDockerImageHashes {
 
 impl AllowedDockerImageHashes {
     /// Creates from a list of proposals (for migration).
+    /// TODO(#2434): remove after v3.6.0 migration is deployed
     pub fn from_proposals(proposals: Vec<AllowedMpcDockerImage>) -> Self {
         Self {
             allowed_tee_proposals: proposals,
@@ -284,8 +285,12 @@ impl AllowedLauncherImages {
     }
 
     /// Removes a launcher image hash and all its associated compose hashes.
-    /// Returns `false` if the launcher hash was not found.
+    /// Returns `false` if the launcher hash was not found or if removal would leave the list empty.
     pub fn remove(&mut self, launcher_hash: &LauncherImageHash) -> bool {
+        let would_remain = self.entries.iter().filter(|e| &e.launcher_hash != launcher_hash).count();
+        if would_remain == 0 {
+            return false;
+        }
         let len_before = self.entries.len();
         self.entries.retain(|e| &e.launcher_hash != launcher_hash);
         self.entries.len() < len_before
@@ -319,6 +324,7 @@ impl AllowedLauncherImages {
     }
 
     /// Creates from a list of entries (for migration).
+    /// TODO(#2434): remove after v3.6.0 migration is deployed
     pub fn from_entries(entries: Vec<AllowedLauncherImage>) -> Self {
         Self { entries }
     }

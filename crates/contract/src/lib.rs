@@ -4656,18 +4656,21 @@ mod tests {
         let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
         let participant_list = participants.participants();
         let launcher_hash = make_launcher_hash(0xCC);
+        let launcher_hash_2 = make_launcher_hash(0xDD);
 
-        // First, add the launcher hash (all 4 vote to add)
-        for (account_id, _, _) in participant_list {
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build());
-            contract
-                .vote_add_launcher_hash(launcher_hash.clone())
-                .expect("add vote should succeed");
+        // Add two launcher hashes so removal of one doesn't hit the "last entry" guard
+        for hash in [&launcher_hash, &launcher_hash_2] {
+            for (account_id, _, _) in participant_list {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build());
+                contract
+                    .vote_add_launcher_hash(hash.clone())
+                    .expect("add vote should succeed");
+            }
         }
-        assert_eq!(contract.allowed_launcher_image_hashes().len(), 1);
+        assert_eq!(contract.allowed_launcher_image_hashes().len(), 2);
 
         // Now vote to remove — first 3 votes (not all 4) should NOT remove
         for (account_id, _, _) in &participant_list[0..3] {
@@ -4681,7 +4684,7 @@ mod tests {
         }
         assert_eq!(
             contract.allowed_launcher_image_hashes().len(),
-            1,
+            2,
             "launcher hash should not be removed before unanimity"
         );
 
@@ -4695,9 +4698,45 @@ mod tests {
             .vote_remove_launcher_hash(launcher_hash.clone())
             .expect("remove vote should succeed");
 
-        assert!(
-            contract.allowed_launcher_image_hashes().is_empty(),
+        assert_eq!(
+            contract.allowed_launcher_image_hashes().len(),
+            1,
             "launcher hash should be removed after unanimity"
+        );
+    }
+
+    #[test]
+    fn test_cannot_remove_last_launcher_hash() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xCC);
+
+        // Add a single launcher hash
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("add vote should succeed");
+        }
+        assert_eq!(contract.allowed_launcher_image_hashes().len(), 1);
+
+        // All 4 vote to remove — should still not remove because it's the last one
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_remove_launcher_hash(launcher_hash.clone())
+                .expect("remove vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_launcher_image_hashes().len(),
+            1,
+            "last launcher hash should not be removable"
         );
     }
 

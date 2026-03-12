@@ -1,3 +1,5 @@
+//! TODO(#2434): remove this entire module after v3.6.0 migration is deployed
+//!
 //! ## Overview
 //! This module stores the previous contract state—the one you want to migrate from.
 //! The goal is to describe the data layout _exactly_ as it existed before.
