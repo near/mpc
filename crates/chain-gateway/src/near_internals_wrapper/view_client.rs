@@ -13,12 +13,12 @@ use crate::{
 
 /// Arc-wrapper around near-internal ViewClientActor
 #[derive(Clone)]
-pub(crate) struct ViewClientWrapper {
+pub(crate) struct NearViewClientActorHandle {
     view_client:
         Arc<near_async::multithread::MultithreadRuntimeHandle<near_client::ViewClientActorInner>>,
 }
 
-impl ViewClientWrapper {
+impl NearViewClientActorHandle {
     pub(crate) fn new(
         view_client: near_async::multithread::MultithreadRuntimeHandle<
             near_client::ViewClientActorInner,
@@ -30,7 +30,7 @@ impl ViewClientWrapper {
     }
 }
 
-impl QueryViewFunction for ViewClientWrapper {
+impl QueryViewFunction for NearViewClientActorHandle {
     type Error = NearViewClientError;
     /// calls view method contract_id::method_name(args) and returns the result
     async fn query_view_function(

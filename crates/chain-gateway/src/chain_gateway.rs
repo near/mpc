@@ -1,16 +1,16 @@
 use near_account_id::AccountId;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearViewClientError};
-use crate::near_internals_wrapper::{ClientWrapper, ViewClientWrapper};
+use crate::near_internals_wrapper::{NearClientActorHandle, NearViewClientActorHandle};
 use crate::primitives::{IsSyncing, QueryViewFunction};
 use crate::types::ObservedState;
 
 #[derive(Clone)]
 pub struct ChainGateway {
     /// For querying blockchain state.
-    view_client: ViewClientWrapper,
+    view_client: NearViewClientActorHandle,
     /// For querying blockchain sync status.
-    client: ClientWrapper,
+    client: NearClientActorHandle,
 }
 
 impl IsSyncing for ChainGateway {
@@ -48,8 +48,8 @@ pub async fn start(config: near_indexer::IndexerConfig) -> Result<ChainGateway, 
             msg: err.to_string(),
         })?;
 
-    let view_client = ViewClientWrapper::new(near_node.view_client);
-    let client = ClientWrapper::new(near_node.client);
+    let view_client = NearViewClientActorHandle::new(near_node.view_client);
+    let client = NearClientActorHandle::new(near_node.client);
 
     Ok(ChainGateway {
         view_client,
