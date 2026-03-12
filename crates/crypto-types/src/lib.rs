@@ -1,5 +1,3 @@
-#![deny(clippy::mod_module_files)]
-
 pub mod conversions;
 pub mod crypto;
 pub mod primitives;
