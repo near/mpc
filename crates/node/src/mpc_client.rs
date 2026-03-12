@@ -425,23 +425,6 @@ where
                                         "Incorrect protocol for domain: {:?}",
                                         signature_attempt.request.domain.clone()
                                     )),
-                                    Some(Curve::V2Secp256k1) => {
-                                        let (signature, public_key) = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.robust_ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response = ChainSignatureRespondArgs::new_ecdsa(
-                                            &signature_attempt.request,
-                                            &signature,
-                                            &public_key,
-                                        )?;
-
-                                        Ok(response)
-                                    }
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
                                         signature_attempt.request.domain.clone()
@@ -524,7 +507,6 @@ where
                                         Ok(response)
                                     }
                                     Some(Curve::Secp256k1)
-                                    | Some(Curve::V2Secp256k1)
                                     | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
@@ -616,7 +598,6 @@ where
                                         Ok(response)
                                     }
                                     Some(Curve::Bls12381)
-                                    | Some(Curve::V2Secp256k1)
                                     | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()

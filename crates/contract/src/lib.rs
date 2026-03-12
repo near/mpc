@@ -254,8 +254,8 @@ impl MpcContract {
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        match domain_config.curve {
-            Curve::Secp256k1 | Curve::V2Secp256k1 => {
+        match domain_config.key_config.curve {
+            Curve::Secp256k1 => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
@@ -2064,7 +2064,7 @@ mod tests {
         NUM_CURVES,
     };
     use crate::primitives::{
-        domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId},
+        domain::{infer_key_config_from_curve, infer_purpose_from_curve, Curve, DomainConfig, DomainId},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2170,7 +2170,7 @@ mod tests {
         rng: &mut impl CryptoRngCore,
     ) -> (dtos::PublicKey, SharedSecretKey) {
         match domain_curve {
-            Curve::Secp256k1 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 => {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
@@ -2207,7 +2207,7 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            curve,
+            key_config: infer_key_config_from_curve(curve),
             purpose,
         }];
         let epoch_id = EpochId::new(0);
@@ -4065,7 +4065,7 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            curve: Curve::Secp256k1,
+            key_config: infer_key_config_from_curve(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         }];
         let (pk, _) = make_public_key_for_domain(Curve::Secp256k1, &mut OsRng);

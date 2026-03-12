@@ -1,4 +1,7 @@
-use super::domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainRegistry};
+use super::domain::{
+    infer_key_config_from_curve, infer_purpose_from_curve, Curve, DomainConfig, DomainId,
+    DomainRegistry,
+};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -11,11 +14,10 @@ use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
-const ALL_CURVES: [Curve; 4] = [
+const ALL_CURVES: [Curve; 3] = [
     Curve::Secp256k1,
     Curve::Edwards25519,
     Curve::Bls12381,
-    Curve::V2Secp256k1,
 ];
 pub const NUM_CURVES: usize = ALL_CURVES.len();
 
@@ -26,7 +28,7 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
         let curve = ALL_CURVES[i % ALL_CURVES.len()];
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
-            curve,
+            key_config: infer_key_config_from_curve(curve),
             purpose: infer_purpose_from_curve(curve),
         });
     }
@@ -40,7 +42,7 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
         let curve = ALL_CURVES[i % ALL_CURVES.len()];
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
-            curve,
+            key_config: infer_key_config_from_curve(curve),
             purpose: infer_purpose_from_curve(curve),
         });
     }

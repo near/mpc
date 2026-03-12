@@ -29,7 +29,7 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
             output.push_str(&format!("  Epoch: {}\n", state.generating_key.epoch_id()));
             output.push_str("  Domains:\n");
             for (i, domain) in state.domains.domains().iter().enumerate() {
-                output.push_str(&format!("    Domain {}: {:?}, ", domain.id, domain.curve));
+                output.push_str(&format!("    Domain {}: {:?}, ", domain.id, domain.key_config.curve));
                 #[allow(clippy::comparison_chain)]
                 if i < state.generated_keys.len() {
                     output.push_str(&format!(
@@ -73,7 +73,7 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
             {
                 output.push_str(&format!(
                     "    Domain {}: {:?}, key from attempt {}\n",
-                    domain.id, domain.curve, key.attempt
+                    domain.id, domain.key_config.curve, key.attempt
                 ));
             }
             output.push_str("  Parameters:\n");
@@ -96,7 +96,7 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
             {
                 output.push_str(&format!(
                     "    Domain {}: {:?}, original key from attempt {}, ",
-                    domain.id, domain.curve, state.previous_running_state.keyset.domains[i].attempt
+                    domain.id, domain.key_config.curve, state.previous_running_state.keyset.domains[i].attempt
                 ));
 
                 #[allow(clippy::comparison_chain)]

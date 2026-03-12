@@ -17,7 +17,9 @@ use crate::tracking::AutoAbortTask;
 use contract_interface::types::Ed25519PublicKey;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
-use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
+use mpc_contract::primitives::domain::{
+    infer_key_config_from_curve, Curve, DomainConfig, DomainId, DomainPurpose,
+};
 use mpc_contract::state::ProtocolContractState;
 use near_time::Clock;
 use rand::rngs::OsRng;
@@ -103,7 +105,7 @@ async fn test_onboarding() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
+        key_config: infer_key_config_from_curve(Curve::Secp256k1),
         purpose: DomainPurpose::Sign,
     };
 

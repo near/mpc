@@ -53,8 +53,8 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             let mut eddsa_calls_by_domain = BTreeMap::new();
             let mut ckd_calls_by_domain = BTreeMap::new();
             for (domain, prot_calls) in args.calls_by_domain {
-                match domain.curve {
-                    Curve::Secp256k1 | Curve::V2Secp256k1 => {
+                match domain.key_config.curve {
+                    Curve::Secp256k1 => {
                         ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                     Curve::Edwards25519 => {
@@ -90,7 +90,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     request: SignRequestArgs {
                         domain_id: Some(args.domain_config.id),
                         path: "".to_string(),
-                        payload_v2: Some(make_payload(args.domain_config.curve)),
+                        payload_v2: Some(make_payload(args.domain_config.key_config.curve)),
                         ..Default::default()
                     },
                 })
@@ -167,7 +167,7 @@ struct ParallelSignArgsV2 {
 
 fn make_payload(curve: Curve) -> Payload {
     match curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
+        Curve::Secp256k1 => {
             Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
         }
         Curve::Edwards25519 => {

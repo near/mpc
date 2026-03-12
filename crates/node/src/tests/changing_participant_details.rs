@@ -7,7 +7,9 @@ use crate::tests::{
 };
 use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
+use mpc_contract::primitives::domain::{
+    infer_key_config_from_curve, Curve, DomainConfig, DomainId, DomainPurpose,
+};
 use mpc_contract::state::ProtocolContractState;
 use near_time::Clock;
 
@@ -48,7 +50,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
+        key_config: infer_key_config_from_curve(Curve::Secp256k1),
         purpose: DomainPurpose::Sign,
     };
 

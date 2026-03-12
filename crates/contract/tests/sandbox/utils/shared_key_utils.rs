@@ -59,7 +59,7 @@ pub fn new_secp256k1() -> (dtos::PublicKey, ts_ecdsa::KeygenOutput) {
 
 pub fn make_key_for_domain(domain_curve: Curve) -> (dtos::PublicKey, SharedSecretKey) {
     match domain_curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
+        Curve::Secp256k1 => {
             let (pk, sk) = new_secp256k1();
             (pk, SharedSecretKey::Secp256k1(sk))
         }
