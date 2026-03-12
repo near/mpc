@@ -720,11 +720,16 @@ async fn incoming_connection_handler(
     result
 }
 
-
 /// Checks whether an error is caused by the peer closing the TLS connection
 /// without sending a close_notify alert. This is expected in P2P networks
 /// where connections are frequently torn down (task aborts, reconnections,
 /// process restarts) and the peer may not get a chance to send close_notify.
+///
+/// TLS close_notify exists to prevent truncation attacks, but the
+/// length-delimited framing layer ensures partial messages are never delivered
+/// to the application — either a complete frame arrives or the read fails.
+/// A missing close_notify is therefore indistinguishable from a normal
+/// connection drop that the protocol already tolerates.
 fn is_tls_close_notify_error(err: &anyhow::Error) -> bool {
     for cause in err.chain() {
         if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
