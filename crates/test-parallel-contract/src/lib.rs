@@ -1,11 +1,11 @@
-use contract_interface::method_names;
 use elliptic_curve::group::Group;
+use near_mpc_contract_interface::method_names;
 use near_sdk::serde::Serialize;
 use near_sdk::{env, near, serde_json, AccountId, Gas, NearToken, Promise};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
-use contract_interface::types::Bls12381G1PublicKey;
+use near_mpc_contract_interface::types::Bls12381G1PublicKey;
 // TODO(#1057): all these types should come from mpc_contract
 
 #[derive(Serialize)]

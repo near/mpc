@@ -29,10 +29,10 @@ futures-lite.workspace = true
 hex.workspace = true
 hkdf.workspace = true
 k256 = { workspace = true, features = [
-  "sha256",
-  "ecdsa",
-  "serde",
-  "hash2curve",
+    "sha256",
+    "ecdsa",
+    "serde",
+    "hash2curve",
 ] }
 keccak.workspace = true
 rand = { workspace = true, optional = true }

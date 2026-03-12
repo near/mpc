@@ -3,7 +3,7 @@
 use crate::sandbox::common::{init_env, SandboxTestSetup};
 use crate::sandbox::utils::consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN};
 use assert_matches::assert_matches;
-use contract_interface::method_names::{
+use near_mpc_contract_interface::method_names::{
     GET_FOREIGN_CHAIN_POLICY_PROPOSALS, VOTE_FOREIGN_CHAIN_POLICY,
 };
 use serde_json::json;

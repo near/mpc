@@ -1,0 +1,34 @@
+[package]
+name = "chain-gateway"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[features]
+test-utils = []
+
+[dependencies]
+derive_more = { workspace = true }
+near-account-id = { workspace = true }
+near-async = { workspace = true }
+near-client = { workspace = true }
+near-indexer = { workspace = true }
+near-indexer-primitives = { workspace = true }
+near-o11y = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+rstest = { workspace = true }
+tempfile = { workspace = true }
+wat = { workspace = true }
+
+[lints]
+workspace = true
