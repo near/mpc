@@ -1309,6 +1309,17 @@ near contract call-function as-read-only \
   now
 ```
 
+You can check the current voting status to see who has voted:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  launcher_hash_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
 ### Deploy new CVM and migrate key shares
 
 After the new launcher hash is approved, deploy a new CVM with the updated launcher image and migrate key shares from the old node. Both old and new launcher hashes are accepted by the contract during the migration period.
