@@ -61,6 +61,50 @@ async fn test_subscription_receives_initial_value() {
     assert_eq!(res.value, TEST_STRING);
 }
 
+async fn setup_chain_gateway() -> (
+    chain_gateway::chain_gateway::ChainGateway,
+    tempfile::TempDir,
+) {
+    let dir = tempfile::tempdir().unwrap();
+
+    near_indexer::indexer_init_configs(
+        &dir.path().to_path_buf(),
+        near_indexer::InitConfigArgs {
+            chain_id: Some("localnet".to_string()),
+            account_id: Some("test.near".to_string()),
+            test_seed: Some("test.near".to_string()),
+            num_shards: 1,
+            fast: true,
+            genesis: None,
+            download_genesis: false,
+            download_genesis_url: None,
+            download_records_url: None,
+            download_config: None,
+            download_config_url: None,
+            boot_nodes: None,
+            max_gas_burnt_view: None,
+        },
+    )
+    .expect("indexer_init_configs should succeed");
+
+    inject_test_contract(dir.path(), TEST_CONTRACT_ACCOUNT);
+    randomize_config_ports(dir.path());
+
+    let indexer_config = near_indexer::IndexerConfig {
+        home_dir: dir.path().to_path_buf(),
+        sync_mode: near_indexer::SyncModeEnum::LatestSynced,
+        await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
+        finality: Finality::Final,
+        validate_genesis: true,
+    };
+
+    let gw = chain_gateway::chain_gateway::start(indexer_config)
+        .await
+        .expect("chain_gateway::start should succeed");
+
+    (gw, dir)
+}
+
 // TODO(#2343): Once we have transactions, add a method that changes the contract state. Then verify that
 // the viewer sees it correctly
 
@@ -166,48 +210,4 @@ fn randomize_config_ports(home_dir: &Path) {
 
     let updated = serde_json::to_string_pretty(&config).expect("serialize config.json");
     std::fs::write(&config_path, updated).expect("write config.json");
-}
-
-async fn setup_chain_gateway() -> (
-    chain_gateway::chain_gateway::ChainGateway,
-    tempfile::TempDir,
-) {
-    let dir = tempfile::tempdir().unwrap();
-
-    near_indexer::indexer_init_configs(
-        &dir.path().to_path_buf(),
-        near_indexer::InitConfigArgs {
-            chain_id: Some("localnet".to_string()),
-            account_id: Some("test.near".to_string()),
-            test_seed: Some("test.near".to_string()),
-            num_shards: 1,
-            fast: true,
-            genesis: None,
-            download_genesis: false,
-            download_genesis_url: None,
-            download_records_url: None,
-            download_config: None,
-            download_config_url: None,
-            boot_nodes: None,
-            max_gas_burnt_view: None,
-        },
-    )
-    .expect("indexer_init_configs should succeed");
-
-    inject_test_contract(dir.path(), TEST_CONTRACT_ACCOUNT);
-    randomize_config_ports(dir.path());
-
-    let indexer_config = near_indexer::IndexerConfig {
-        home_dir: dir.path().to_path_buf(),
-        sync_mode: near_indexer::SyncModeEnum::LatestSynced,
-        await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
-        finality: Finality::Final,
-        validate_genesis: true,
-    };
-
-    let gw = chain_gateway::chain_gateway::start(indexer_config)
-        .await
-        .expect("chain_gateway::start should succeed");
-
-    (gw, dir)
 }
