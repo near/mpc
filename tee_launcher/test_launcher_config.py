@@ -119,6 +119,7 @@ def test_config_overrides_duplicate_keys():
 
 # test valid and invalid host entries and port mappings
 
+
 def test_valid_port_mapping():
     assert is_valid_port_mapping("11780:11780")
     assert not is_valid_port_mapping("65536:11780")
