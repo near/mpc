@@ -121,7 +121,7 @@ async fn run() -> Result<(), LauncherError> {
 
     let mut mpc_binary_config_file = NamedTempFile::new().expect("file creation works");
     mpc_binary_config_file
-        .write(dstack_config.mpc_config_content.as_bytes())
+        .write_all(dstack_config.mpc_config_content.as_bytes())
         .expect("writing to file works");
 
     launch_mpc_container(
