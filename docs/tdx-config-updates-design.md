@@ -2,7 +2,7 @@
 
 **Status:** WIP / Design
 **Issue:** #2420
-**Authors:** TBD
+**Authors:** Claude + Mårten
 **Date:** 2026-03-13
 
 ## Problem Statement
