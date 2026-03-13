@@ -533,13 +533,6 @@ def extend_rtmr3(platform: Platform, valid_hash: str) -> None:
     bare = get_bare_digest(valid_hash)
     logging.info(f"Extending RTMR3 with validated hash: {bare}")
 
-    # GetQuote first
-    proc = curl_unix_socket_post(
-        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
-    )
-    if proc.returncode:
-        raise RuntimeError("GetQuote failed before extending RTMR3")
-
     payload_json = json.dumps({"event": "mpc-image-digest", "payload": bare})
 
     proc = curl_unix_socket_post(

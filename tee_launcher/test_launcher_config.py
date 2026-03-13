@@ -567,20 +567,6 @@ def test_extend_rtmr3_tee_requires_socket(monkeypatch, base_env):
         launcher.extend_rtmr3(launcher.Platform.TEE, "sha256:" + "b" * 64)
 
 
-def test_extend_rtmr3_tee_getquote_fail(monkeypatch, base_env):
-    monkeypatch.setattr(launcher, "is_unix_socket", lambda p: True)
-
-    def fake_curl(endpoint, payload, capture_output=False):
-        # Fail only GetQuote
-        if endpoint == "GetQuote":
-            return DummyProc(returncode=7)
-        return DummyProc(returncode=0)
-
-    monkeypatch.setattr(launcher, "curl_unix_socket_post", fake_curl)
-    with pytest.raises(RuntimeError, match="GetQuote failed"):
-        launcher.extend_rtmr3(launcher.Platform.TEE, "sha256:" + "b" * 64)
-
-
 def test_extend_rtmr3_tee_emitevent_fail(monkeypatch, base_env):
     monkeypatch.setattr(launcher, "is_unix_socket", lambda p: True)
 
