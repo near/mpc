@@ -13,17 +13,17 @@ integration-test = []
 
 [dependencies]
 backon = { workspace = true }
-near-mpc-bounded-collections = { workspace = true }
 clap = { workspace = true }
 dstack-sdk = { workspace = true }
 launcher-interface = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-toml = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true, features = ["serde"] }
