@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use launcher_interface::types::DockerSha256Digest;
 use url::Host;
 
-use bounded_collections::NonEmptyVec;
 use clap::{Parser, ValueEnum};
+use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 
 /// CLI arguments parsed from environment variables via clap.

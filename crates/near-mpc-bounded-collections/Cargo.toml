@@ -1,0 +1,28 @@
+[package]
+name = "near-mpc-bounded-collections"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bounded collection types with compile-time size limits"
+
+[features]
+abi = ["borsh/unstable__schema", "schemars"]
+
+[dependencies]
+borsh = { workspace = true }
+derive_more = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+rstest = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

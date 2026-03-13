@@ -1,7 +1,5 @@
-use bounded_collections::NonEmptyVec;
 use derive_more::From;
 use itertools::Itertools;
-use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
@@ -22,7 +20,7 @@ use mockall::automock;
 pub trait AllowedImageHashesStorage {
     fn set(
         &mut self,
-        approved_hashes: NonEmptyVec<MpcDockerImageHash>,
+        approved_hashes: &[MpcDockerImageHash],
     ) -> impl Future<Output = Result<(), io::Error>> + Send;
 }
 
@@ -31,25 +29,33 @@ pub struct AllowedImageHashesFile {
     file_path: PathBuf,
 }
 
+// important: must stay aligned with the launcher implementation in:
+// mpc/tee_launcher/launcher.py
+const JSON_KEY_APPROVED_HASHES: &str = "approved_hashes";
+
 impl AllowedImageHashesStorage for AllowedImageHashesFile {
-    async fn set(
-        &mut self,
-        approved_hashes: NonEmptyVec<MpcDockerImageHash>,
-    ) -> Result<(), io::Error> {
+    async fn set(&mut self, approved_hashes: &[MpcDockerImageHash]) -> Result<(), io::Error> {
         tracing::info!(
             ?self.file_path,
             len = approved_hashes.len(),
             "Writing approved MPC image hashes to disk (JSON format)."
         );
 
-        let approved_hashes = ApprovedHashes {
-            approved_hashes: approved_hashes.mapped(DockerSha256Digest::from),
-        };
+        let hash_strings: Vec<String> = approved_hashes
+            .iter()
+            .map(|h| format!("sha256:{}", h.as_hex()))
+            .collect();
 
-        let json = serde_json::to_string_pretty(&approved_hashes)
-            .expect("previous json! macro would also panic. figure out what to return");
+        let json = serde_json::json!({
+            JSON_KEY_APPROVED_HASHES: hash_strings
+        });
 
-        tracing::debug!(?approved_hashes, "writing approved hashes to disk");
+        tracing::debug!(
+            %JSON_KEY_APPROVED_HASHES,
+            approved = ?hash_strings,
+            json = %json.to_string(),
+            "approved image hashes JSON that will be written to disk"
+        );
 
         let tmp_path = self.file_path.with_extension("tmp");
         // Write to a temporary file first.
@@ -175,13 +181,13 @@ where
 
         let allowed_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
-        let Ok(allowed_hashes) = NonEmptyVec::from_vec(allowed_hashes) else {
-            tracing::warn!("indexer provided an empty list of allowed image hashes.");
+        if allowed_hashes.is_empty() {
+            tracing::warn!("Indexer provided an empty list of allowed image hashes.");
             return Ok(());
-        };
+        }
 
         // Write all hashes, newest-first (as provided by contract)
-        self.image_hash_storage.set(allowed_hashes.clone()).await?;
+        self.image_hash_storage.set(&allowed_hashes).await?;
 
         let running_image_is_not_allowed = !allowed_hashes.iter().contains(&self.current_image);
 
@@ -226,12 +232,10 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_allowed_image_hash_list_is_written() {
-        let allowed_images: NonEmptyVec<_> =
-            NonEmptyVec::from_vec(vec![image_hash_1(), image_hash_2(), image_hash_3()]).unwrap();
-
-        for current_hash in allowed_images.iter().take(2) {
+        let allowed_images = vec![image_hash_1(), image_hash_2(), image_hash_3()];
+        for current_hash in &allowed_images[..2] {
             let cancellation_token = CancellationToken::new();
-            let (sender, receiver) = watch::channel(allowed_images.clone().to_vec());
+            let (sender, receiver) = watch::channel(allowed_images.clone());
             let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
             let write_is_called = Arc::new(Notify::new());
@@ -323,7 +327,6 @@ mod tests {
         let allowed_image = image_hash_2();
 
         let allowed_list = vec![allowed_image.clone()];
-        let expected_non_empty = NonEmptyVec::from_vec(allowed_list.clone()).unwrap();
 
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = watch::channel(allowed_list.clone());
@@ -337,7 +340,7 @@ mod tests {
             storage_mock
                 .expect_set()
                 .once()
-                .with(predicate::eq(expected_non_empty.clone()))
+                .with(predicate::eq(allowed_list.clone()))
                 .returning(move |_| {
                     write_is_called.notify_one();
                     Box::pin(async { Ok(()) })
@@ -387,7 +390,7 @@ mod tests {
 
         let mut storage_mock = MockAllowedImageHashesStorage::new();
         {
-            let expected = NonEmptyVec::from_vec(allowed_images.clone()).unwrap();
+            let expected = allowed_images.clone();
 
             storage_mock
                 .expect_set()
@@ -440,7 +443,7 @@ mod tests {
         // Mock storage expecting exactly the full list
         let mut storage_mock = MockAllowedImageHashesStorage::new();
         {
-            let expected = NonEmptyVec::from_vec(full_list.clone()).unwrap();
+            let expected = full_list.clone();
             let write_is_called = write_is_called.clone();
 
             storage_mock
@@ -504,5 +507,12 @@ mod tests {
             Err(TryRecvError::Empty),
             "Shutdown should NOT be sent when list is empty"
         );
+    }
+
+    #[test]
+    fn test_json_key_matches_launcher() {
+        // important: must stay aligned with the launcher implementation in:
+        // mpc/tee_launcher/launcher.py
+        assert_eq!(JSON_KEY_APPROVED_HASHES, "approved_hashes");
     }
 }

@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 use attestation::{
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
-    measurements::ExpectedMeasurements,
     measurements::Measurements,
     report_data::ReportData,
 };
@@ -10,6 +9,7 @@ use attestation::{
 use include_measurements::include_measurements;
 
 pub use attestation::attestation::{DstackAttestation, VerificationError};
+pub use attestation::measurements::ExpectedMeasurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -23,14 +23,13 @@ use crate::alloc::string::ToString;
 // TODO(#1639): extract timestamp from certificate itself
 pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Mock(MockAttestation),
 }
 
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -114,6 +113,16 @@ impl VerifiedAttestation {
     }
 }
 
+/// Returns the default compiled-in TCB measurements (prod + dev).
+pub fn default_measurements() -> &'static [ExpectedMeasurements] {
+    static MEASUREMENTS: [ExpectedMeasurements; 2] = [
+        include_measurements!("assets/tcb_info.json"),
+        // TODO(#1433): Security - remove dev measurements from production builds after testing is complete
+        include_measurements!("assets/tcb_info_dev.json"),
+    ];
+    &MEASUREMENTS
+}
+
 impl Attestation {
     pub fn verify(
         &self,
@@ -121,6 +130,7 @@ impl Attestation {
         current_timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<VerifiedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
@@ -165,16 +175,10 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                let accepted_measurements = [
-                    include_measurements!("assets/tcb_info.json"),
-                    // TODO(#1433): Security - remove dev measurements from production builds after testing is complete
-                    include_measurements!("assets/tcb_info_dev.json"),
-                ];
-
                 dstack_attestation.verify(
                     expected_report_data,
                     current_timestamp_seconds,
-                    &accepted_measurements,
+                    accepted_measurements,
                 )?;
 
                 // TODO(#1639): extract timestamp from certificate itself

@@ -13,7 +13,7 @@ integration-test = []
 
 [dependencies]
 backon = { workspace = true }
-bounded-collections = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 clap = { workspace = true }
 dstack-sdk = { workspace = true }
 launcher-interface = { workspace = true }

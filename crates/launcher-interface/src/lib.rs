@@ -10,7 +10,7 @@ pub mod types {
     /// JSON structure for the approved hashes file written by the MPC node, and read by the launcher.
     #[derive(Debug, Serialize, Deserialize)]
     pub struct ApprovedHashes {
-        pub approved_hashes: bounded_collections::NonEmptyVec<DockerSha256Digest>,
+        pub approved_hashes: near_mpc_bounded_collections::NonEmptyVec<DockerSha256Digest>,
     }
 
     impl ApprovedHashes {
@@ -165,8 +165,10 @@ mod tests {
     #[test]
     fn serialize_approved_hashes_file() {
         let file = ApprovedHashes {
-            approved_hashes: bounded_collections::NonEmptyVec::from_vec(vec![sample_digest()])
-                .unwrap(),
+            approved_hashes: near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![
+                sample_digest(),
+            ])
+            .unwrap(),
         };
         let json = serde_json::to_value(&file).unwrap();
         insta::assert_json_snapshot!("approved_hashes_file", json);

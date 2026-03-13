@@ -449,8 +449,8 @@ mod tests {
     use std::path::Path;
 
     use assert_matches::assert_matches;
-    use bounded_collections::NonEmptyVec;
     use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
+    use near_mpc_bounded_collections::NonEmptyVec;
 
     use crate::constants::*;
     use crate::docker_run_args;
@@ -774,7 +774,8 @@ mod integration_tests {
 
     fn test_launcher_config() -> LauncherConfig {
         LauncherConfig {
-            image_tags: bounded_collections::NonEmptyVec::from_vec(vec![TEST_TAG.into()]).unwrap(),
+            image_tags: near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![TEST_TAG.into()])
+                .unwrap(),
             image_name: TEST_IMAGE_NAME.into(),
             registry: TEST_REGISTRY.into(),
             rpc_request_timeout_secs: 10,

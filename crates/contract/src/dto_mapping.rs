@@ -1,10 +1,9 @@
 //! This module provides convenience methods to map contract interface types
-//! from [`contract_interface::types`] to internal types.
+//! from [`near_mpc_contract_interface::types`] to internal types.
 //!
 //! These types are mapped with the [IntoContractType] trait. We can not use [`From`]
 //! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
-use contract_interface::types as dtos;
 use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation, VerifiedAttestation},
@@ -12,12 +11,12 @@ use mpc_attestation::{
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
 
 use crate::{
     config::Config,
     crypto_shared::types::PublicKeyExtended,
-    derive_foreign_tx_tweak,
     errors::{ConversionError, Error},
     primitives::{
         domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
@@ -378,8 +377,8 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
     }
 }
 
-impl From<contract_interface::types::InitConfig> for Config {
-    fn from(config_ext: contract_interface::types::InitConfig) -> Self {
+impl From<near_mpc_contract_interface::types::InitConfig> for Config {
+    fn from(config_ext: near_mpc_contract_interface::types::InitConfig) -> Self {
         let mut config = super::Config::default();
 
         if let Some(v) = config_ext.key_event_timeout_blocks {
@@ -420,9 +419,9 @@ impl From<contract_interface::types::InitConfig> for Config {
     }
 }
 
-impl From<&Config> for contract_interface::types::Config {
+impl From<&Config> for near_mpc_contract_interface::types::Config {
     fn from(value: &Config) -> Self {
-        contract_interface::types::Config {
+        near_mpc_contract_interface::types::Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
             contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
@@ -444,8 +443,8 @@ impl From<&Config> for contract_interface::types::Config {
     }
 }
 
-impl From<contract_interface::types::Config> for Config {
-    fn from(value: contract_interface::types::Config) -> Self {
+impl From<near_mpc_contract_interface::types::Config> for Config {
+    fn from(value: near_mpc_contract_interface::types::Config) -> Self {
         Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
@@ -764,12 +763,9 @@ impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
 
 pub fn args_into_verify_foreign_tx_request(
     args: dtos::VerifyForeignTransactionRequestArgs,
-    predecessor_id: &AccountId,
 ) -> dtos::VerifyForeignTransactionRequest {
-    let tweak = derive_foreign_tx_tweak(predecessor_id, &args.derivation_path);
     dtos::VerifyForeignTransactionRequest {
         domain_id: args.domain_id,
-        tweak,
         request: args.request,
         payload_version: args.payload_version,
     }
