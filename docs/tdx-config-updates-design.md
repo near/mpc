@@ -294,8 +294,6 @@ fi
 # ... existing start.sh logic for legacy path ...
 ```
 
-This is backwards-compatible: nodes without a TOML file continue using the legacy path.
-
 **Part 3: Operator workflow**
 
 The operator creates a TOML config file locally (using `mpc-config.template.toml` as a starting point), base64-encodes it, and includes it in `user-config.conf`:
@@ -384,23 +382,17 @@ Both approaches work today. The inline approach is simpler and avoids the env-va
 
 #### Launcher Volume Mount Change
 
-Currently the launcher mounts `shared-volume:/mnt/shared:ro` (read-only). For the launcher to write `mpc-config.toml`, this needs to change to `:rw`.
-
-**Important:** This change means updating the `launcher_docker_compose.yaml`, which is **measured** and affects attestation. This is a one-time change that needs to be voted in by all operators. After this change, the TOML mechanism works without further compose changes.
-
-Note: the launcher exits after starting the MPC container and does not run persistently, so rw access to the shared volume does not introduce a persistent tampering risk.
+Currently the launcher mounts `shared-volume:/mnt/shared:ro` (read-only). For the launcher to write `mpc-config.toml`, this needs to change to `:rw` in `launcher_docker_compose.yaml`. Since no nodes are running in TDX today, this is a straightforward change with no migration concerns.
 
 #### Pros
 - **Uses an already-implemented, tested code path.** `start-with-config-file` is used by all pytests and localnet. It's not new code.
 - **Natively supports `foreign_chains`.** The TOML `StartConfig` includes `ConfigFile` which has `foreign_chains`. No overlay merging, no YAML hacks.
 - **Single source of truth.** One TOML file contains the entire config. No split between env vars, `config.yaml`, and overlay files.
 - **Aligns with the deprecation direction.** The old `start` CLI command is already marked `TODO(#2334): deprecate this`. This moves TDX to the intended future path.
-- **Backwards-compatible.** The `start.sh` change is a conditional branch: TOML file present → new path, absent → legacy path.
 - **Operator has full control.** Any config field can be set, not just a predefined set of env vars.
 - **Template already exists.** `docs/localnet/mpc-config.template.toml` provides a working starting point.
 
 #### Cons
-- Requires a one-time launcher compose update (measured, needs voting) for the shared-volume rw mount
 - Base64 encoding in `user-config.conf` is not very ergonomic for large configs
 - Operator must provide the full config, not just overrides (but the template makes this straightforward)
 - Secrets (`secret_store_key_hex`) end up in the TOML file on the shared volume (encrypted at rest by the CVM, but visible to processes inside the CVM -- same security model as the current `config.yaml` + env vars)
@@ -519,7 +511,7 @@ Add an HTTP endpoint to the MPC node's existing web server (port 8080) for recei
 
 **Launcher changes:**
 - Add `MPC_CONFIG_TOML_BASE64` support: decode and write to `/mnt/shared/mpc-config.toml`
-- Change `shared-volume` mount from `:ro` to `:rw` in `launcher_docker_compose.yaml` (requires voting)
+- Change `shared-volume` mount from `:ro` to `:rw` in `launcher_docker_compose.yaml`
 - When TOML config is present, skip passing most `--env` flags (they're in the TOML). Still pass `NEAR_BOOT_NODES` for near node init.
 
 **Operator workflow:**
@@ -545,14 +537,10 @@ Add an HTTP endpoint to the MPC node's existing web server (port 8080) for recei
 
 ### Open Questions
 
-1. **Launcher compose voting timeline.** Changing `shared-volume:/mnt/shared:ro` to `:rw` requires a compose update and voting round. Can this be bundled with the next planned launcher upgrade?
+1. **Near node initialization.** `start.sh` currently handles Near node initialization (`mpc-node init`, genesis download, `config.json` updates). The TOML path only covers MPC node config, not Near node setup. We should keep this part of `start.sh` for now and eventually fold it into the TOML path or a separate init command.
 
-2. **Near node initialization.** `start.sh` currently handles Near node initialization (`mpc-node init`, genesis download, `config.json` updates). The TOML path only covers MPC node config, not Near node setup. We should keep this part of `start.sh` for now and eventually fold it into the TOML path or a separate init command.
+2. **Secret placement.** The TOML config will contain `secret_store_key_hex` on the shared volume. This is encrypted at rest by the CVM, but it means the secret is in a file rather than a transient env var. Is this acceptable? (Note: the current architecture already has `MPC_SECRET_STORE_KEY` as a Docker env var, which is visible in `docker inspect` and persists in the container metadata -- arguably the TOML file is no worse.)
 
-3. **Secret placement.** The TOML config will contain `secret_store_key_hex` on the shared volume. This is encrypted at rest by the CVM, but it means the secret is in a file rather than a transient env var. Is this acceptable? (Note: the current architecture already has `MPC_SECRET_STORE_KEY` as a Docker env var, which is visible in `docker inspect` and persists in the container metadata -- arguably the TOML file is no worse.)
+3. **Base64 ergonomics.** For large configs, base64 encoding in `user-config.conf` is unwieldy. A future improvement could support direct file placement via dstack APIs, or a reference to a file path instead of inline base64.
 
-4. **Base64 ergonomics.** For large configs, base64 encoding in `user-config.conf` is unwieldy. A future improvement could support direct file placement via dstack APIs, or a reference to a file path instead of inline base64.
-
-5. **Re-voting on config change.** When `foreign_chains` config changes at runtime, the node should automatically call `vote_foreign_chain_policy` with the new policy. This needs rate limiting to avoid vote spam if the operator is iterating on config.
-
-6. **Migration path for existing deployments.** Nodes already deployed with the legacy `start.sh` path can be migrated by adding `MPC_CONFIG_TOML_BASE64` to their `user-config.conf` and restarting. The TOML config takes precedence, and the legacy `config.yaml` is no longer read.
+4. **Re-voting on config change.** When `foreign_chains` config changes at runtime, the node should automatically call `vote_foreign_chain_policy` with the new policy. This needs rate limiting to avoid vote spam if the operator is iterating on config.
