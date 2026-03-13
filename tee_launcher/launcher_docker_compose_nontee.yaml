@@ -1,6 +1,6 @@
 services:
   launcher:
-    image: nearone/mpc-launcher@sha256:30fc7c1655d76c6eb3bd7403a67b3a285c9ecd663cfb5e564c258accfe1a3242
+    image: nearone/mpc-launcher@sha256:84c7537a2f84d3477eac2e5ef3ba0765b5d688f86096947eea4744ce25b27054
     container_name: "${LAUNCHER_IMAGE_NAME}"
 
     environment:
