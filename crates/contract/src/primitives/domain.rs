@@ -136,12 +136,38 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 
 /// Describes the configuration of a domain: the domain ID, key configuration, and purpose.
 #[near(serializers=[borsh, json])]
-#[serde(from = "DomainConfigCompat")]
+#[serde(from = "DomainConfigCompat", into = "DomainConfigSer")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
     pub key_config: KeyConfig,
     pub purpose: DomainPurpose,
+}
+
+/// Serialization helper for [`DomainConfig`].
+///
+/// Emits a `scheme` field (the curve name) alongside `key_config` so that
+/// older contracts that only understand `{ scheme: "Secp256k1" }` can still
+/// parse the JSON.  Newer contracts use [`DomainConfigCompat`] which prefers
+/// `key_config` when present.
+#[derive(serde::Serialize)]
+struct DomainConfigSer {
+    id: DomainId,
+    /// Backward-compat: older contracts read this field.
+    scheme: Curve,
+    key_config: KeyConfig,
+    purpose: DomainPurpose,
+}
+
+impl From<DomainConfig> for DomainConfigSer {
+    fn from(d: DomainConfig) -> Self {
+        Self {
+            id: d.id,
+            scheme: d.key_config.curve,
+            key_config: d.key_config,
+            purpose: d.purpose,
+        }
+    }
 }
 
 /// JSON-only compatibility helper:
