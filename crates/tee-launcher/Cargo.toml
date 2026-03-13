@@ -1,0 +1,35 @@
+[package]
+name = "tee-launcher"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[[bin]]
+name = "tee-launcher"
+path = "src/main.rs"
+
+[features]
+integration-test = []
+
+[dependencies]
+backon = { workspace = true }
+clap = { workspace = true }
+dstack-sdk = { workspace = true }
+launcher-interface = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+
+[lints]
+workspace = true

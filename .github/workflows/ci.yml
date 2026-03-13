@@ -64,7 +64,7 @@ jobs:
 
   docker-launcher-build-and-verify:
     name: "Build MPC Launcher Docker image and verify"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2404-x64-8x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -75,10 +75,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install skopeo
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y skopeo
+          sudo apt-get install -y skopeo liblzma-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
 
       - name: Build launcher docker image and verify its hash
         shell: bash

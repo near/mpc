@@ -117,6 +117,8 @@ get_image_hash() {
 }
 
 if $USE_LAUNCHER; then
+    cargo build -p tee-launcher --release --locked
+    launcher_binary_hash=$(sha256sum target/release/tee-launcher | cut -d' ' -f1)
     build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER
     launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
 fi
@@ -182,5 +184,6 @@ if $USE_NODE_GCP; then
     echo "node gcp docker image hash: $node_gcp_image_hash"
 fi
 if $USE_LAUNCHER; then
+    echo "launcher binary hash: $launcher_binary_hash"
     echo "launcher docker image hash: $launcher_image_hash"
 fi
