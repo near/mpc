@@ -125,7 +125,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             res,
-            ChainGatewayError::ViewError {
+            ChainGatewayError::FetchFinalBlock {
                 op: ChainGatewayOp::SubmitFunctionCallTransaction {
                     receiver_id: call.receiver_id.to_string(),
                     method_name: call.method_name

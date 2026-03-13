@@ -175,10 +175,6 @@ impl<T: ViewRaw> ViewMethod for T {
         let res = self.view_raw(&contract_id, method_name, &args).await?;
         let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
             ChainGatewayError::Deserialization {
-                op: ChainGatewayOp::ViewQuery {
-                    account_id: contract_id.to_string(),
-                    method_name: method_name.to_string(),
-                },
                 message: err.to_string(),
             }
         })?;
@@ -379,19 +375,9 @@ mod tests {
         let contract_id: AccountId = "a.testnet".parse().unwrap();
         let method_name: String = "m".into();
         let err = viewer
-            .view_method::<NoArgs, String>(contract_id.clone(), &method_name, &NoArgs {})
+            .view_method::<NoArgs, String>(contract_id, &method_name, &NoArgs {})
             .await
             .unwrap_err();
-        assert_eq!(
-            err,
-            ChainGatewayError::Deserialization {
-                op: ChainGatewayOp::ViewQuery {
-                    account_id: contract_id.to_string(),
-                    method_name
-                },
-                message: "".to_string()
-            }
-        );
 
         assert_matches!(err, ChainGatewayError::Deserialization { .. });
     }
@@ -439,16 +425,7 @@ mod tests {
 
             sub.latest().unwrap_err()
         };
-        assert_eq!(
-            err,
-            ChainGatewayError::Deserialization {
-                op: ChainGatewayOp::ViewQuery {
-                    account_id: contract_id.to_string(),
-                    method_name
-                },
-                message: "".to_string()
-            }
-        );
+        assert_matches!(err, ChainGatewayError::Deserialization { .. });
     }
 
     #[tokio::test(start_paused = true)]

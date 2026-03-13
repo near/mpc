@@ -101,8 +101,8 @@ pub enum ChainGatewayError {
     #[error("serialization error while {op}: {message}")]
     Serialization { op: ChainGatewayOp, message: String },
 
-    #[error("deserialization error while {op}: {message}")]
-    Deserialization { op: ChainGatewayOp, message: String },
+    #[error("deserialization error: {message}")]
+    Deserialization { message: String },
 
     #[error("failed to fetch latest final block while doing {op}: {message}")]
     FetchFinalBlock { op: ChainGatewayOp, message: String },

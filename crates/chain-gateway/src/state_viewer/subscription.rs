@@ -78,7 +78,7 @@ mod tests {
     use near_account_id::AccountId;
 
     use super::ContractMethodSubscription;
-    use crate::errors::{ChainGatewayError, ChainGatewayOp};
+    use crate::errors::ChainGatewayError;
     use crate::mock::{MockChainState, MockError};
     use crate::state_viewer::WatchContractState;
     use crate::state_viewer::monitoring::POLL_INTERVAL;
@@ -158,16 +158,7 @@ mod tests {
         .await;
 
         let err = sub.latest().unwrap_err();
-        assert_eq!(
-            err,
-            ChainGatewayError::Deserialization {
-                op: ChainGatewayOp::ViewQuery {
-                    account_id: contract_id.to_string(),
-                    method_name
-                },
-                message: "".to_string()
-            }
-        );
+        assert_matches!(err, ChainGatewayError::Deserialization { .. });
     }
 
     #[tokio::test(start_paused = true)]

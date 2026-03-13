@@ -40,6 +40,7 @@ impl ObservedState<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use serde::Deserialize;
 
     use crate::{
@@ -73,8 +74,7 @@ mod tests {
         };
 
         let err = observed.deserialize::<Num>().unwrap_err();
-
-        assert!(matches!(err, ChainGatewayError::Deserialization { .. }));
+        assert_matches!(err, ChainGatewayError::Deserialization { .. });
     }
 
     #[test]
