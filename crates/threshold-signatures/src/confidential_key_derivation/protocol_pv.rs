@@ -2,8 +2,8 @@ use crate::confidential_key_derivation::ciphersuite::{
     check_valid_point_g1, check_valid_point_g2, multi_miller_loop, BLS12381SHA256,
 };
 use crate::confidential_key_derivation::{
-    hash_app_id_with_pk, AppId, AppPublicKeyPV, CKDOutput, CKDOutputOption, ElementG1, ElementG2,
-    KeygenOutput, Scalar, VerifyingKey,
+    hash_app_id_with_pk, AppId, CKDOutput, CKDOutputOption, ElementG1, ElementG2, KeygenOutput,
+    PublicVerificationKey, Scalar, VerifyingKey,
 };
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
@@ -23,7 +23,7 @@ fn do_ckd_participant(
     me: Participant,
     key_pair: &KeygenOutput,
     app_id: &AppId,
-    app_pk: &AppPublicKeyPV,
+    app_pk: &PublicVerificationKey,
     rng: &mut impl CryptoRngCore,
 ) -> Result<CKDOutputOption, ProtocolError> {
     // H(pk || app_id) when H is a random oracle
@@ -42,7 +42,7 @@ async fn do_ckd_coordinator(
     me: Participant,
     key_pair: &KeygenOutput,
     app_id: &AppId,
-    app_pk: &AppPublicKeyPV,
+    app_pk: &PublicVerificationKey,
     rng: &mut impl CryptoRngCore,
 ) -> Result<CKDOutputOption, ProtocolError> {
     // H(pk || app_id) when H is a random oracle
@@ -90,7 +90,7 @@ pub fn ckd(
     me: Participant,
     key_pair: KeygenOutput,
     app_id: impl Into<AppId>,
-    app_pk: AppPublicKeyPV,
+    app_pk: PublicVerificationKey,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = CKDOutputOption>, InitializationError> {
     // not enough participants
@@ -153,7 +153,7 @@ async fn run_ckd_protocol(
     participants: ParticipantList,
     key_pair: KeygenOutput,
     app_id: AppId,
-    app_pk: AppPublicKeyPV,
+    app_pk: PublicVerificationKey,
     mut rng: impl CryptoRngCore,
 ) -> Result<CKDOutputOption, ProtocolError> {
     if me == coordinator {
@@ -186,7 +186,7 @@ fn compute_signature_share(
     me: Participant,
     key_pair: &KeygenOutput,
     hash_point: &ElementG1,
-    app_pk: &AppPublicKeyPV,
+    app_pk: &PublicVerificationKey,
     rng: &mut impl CryptoRngCore,
 ) -> Result<(ElementG1, ElementG1), ProtocolError> {
     // Ensures the value is zeroized on drop
@@ -217,7 +217,7 @@ fn compute_signature_share(
 /// Check that `e(big_c, g2) = e(big_y, app_pk2) . e(hash_point, public_key)`
 fn aggregated_output_check(
     output: &CKDOutput,
-    app_pk: &AppPublicKeyPV,
+    app_pk: &PublicVerificationKey,
     public_key: &VerifyingKey,
     hash_point: &ElementG1,
 ) -> bool {
@@ -232,7 +232,7 @@ fn aggregated_output_check(
 }
 
 /// Check that `e(app_pk1, g2) = e(g1, app_pk2)`
-fn app_public_key_check(app_pk: &AppPublicKeyPV) -> bool {
+fn app_public_key_check(app_pk: &PublicVerificationKey) -> bool {
     if !check_valid_point_g1(app_pk.pk1.into()) || !check_valid_point_g2(app_pk.pk2.into()) {
         return false;
     }
@@ -246,11 +246,11 @@ fn app_public_key_check(app_pk: &AppPublicKeyPV) -> bool {
 mod test {
     use super::*;
     use super::{CKD_MAX_INCOMING_COORDINATOR_ENTRIES, CKD_MAX_INCOMING_PARTICIPANT_ENTRIES};
-    use crate::confidential_key_derivation::{hash_app_id_with_pk, ElementG2};
+    use crate::confidential_key_derivation::hash_app_id_with_pk;
     use crate::test_utils::{
         assert_buffer_capacity, check_one_coordinator_output, expected_buffer_by_role,
-        generate_participants, generate_test_keys, make_keygen_output, run_protocol, GenProtocol,
-        MockCryptoRng,
+        generate_ckd_app_package, generate_participants, generate_test_keys, make_keygen_output,
+        run_protocol, GenProtocol, MockCryptoRng,
     };
     use rand::{seq::SliceRandom as _, RngCore, SeedableRng};
     use rstest::rstest;
@@ -259,12 +259,7 @@ mod test {
     fn test_ckd() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
 
-        let app_id = AppId::try_from(b"Near App").unwrap();
-        let app_sk = Scalar::random(&mut rng);
-        let app_pk = AppPublicKeyPV::new(
-            ElementG1::generator() * app_sk,
-            ElementG2::generator() * app_sk,
-        );
+        let (app_id, app_sk, app_pk) = generate_ckd_app_package(&mut rng);
 
         let participants = generate_participants(3);
         let coordinator = *participants
@@ -318,12 +313,7 @@ mod test {
     fn test_ckd_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
         // Given
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let app_id = AppId::try_from(b"Near App").unwrap();
-        let app_sk = Scalar::random(&mut rng);
-        let app_pk = AppPublicKeyPV::new(
-            ElementG1::generator() * app_sk,
-            ElementG2::generator() * app_sk,
-        );
+        let (app_id, _, app_pk) = generate_ckd_app_package(&mut rng);
 
         let participants = generate_participants(num_participants);
         let coordinator = participants[0];

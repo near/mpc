@@ -9,7 +9,7 @@ use threshold_signatures::{
         ciphersuite::{verify_signature, Field as _, G1Projective, Group as _},
         ckd_pv,
         protocol::ckd,
-        AppId, AppPublicKeyPV, CKDOutputOption,
+        AppId, CKDOutputOption, PublicVerificationKey,
     },
     participants::Participant,
 };
@@ -101,7 +101,7 @@ fn test_ckd_pv() {
     // Create the app necessary items
     let app_id = AppId::try_from(b"Near App").unwrap();
     let app_sk = Scalar::random(&mut rng);
-    let app_pk = AppPublicKeyPV::new(
+    let app_pk = PublicVerificationKey::new(
         G1Projective::generator() * app_sk,
         G2Projective::generator() * app_sk,
     );

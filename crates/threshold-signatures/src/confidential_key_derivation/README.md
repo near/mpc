@@ -11,6 +11,7 @@ For a detailed description of the protocol, see the [full specification](../../d
 ### `ciphersuite.rs`
 
 Defines the `BLS12381SHA256` ciphersuite:
+
 - DKG keys live in **G2**
 - CKD output (BLS signatures) live in **G1**
 - Hash-to-curve uses `ExpandMsgXmd` (RFC 9380) with context string `"NEAR-BLS12381-G2-SHA256-v1"`
@@ -18,6 +19,7 @@ Defines the `BLS12381SHA256` ciphersuite:
 ### `protocol.rs`
 
 The `ckd()` protocol function -- a **single-round** protocol:
+
 - Participants compute their blinded contribution and send it privately to the coordinator
 - The coordinator aggregates and returns `CKDOutput`
 - Non-coordinator participants return `None`
@@ -25,7 +27,8 @@ The `ckd()` protocol function -- a **single-round** protocol:
 ### `protocol_pv.rs`
 
 A variant of the CKD protocol with **public verifiability** (`ckd_pv()`):
-- The app public key is a pair `(a·G1, a·G2)` (type `AppPublicKeyPV`) instead of a single point
+
+- The app public key is a pair `(a·G1, a·G2)` (type `PublicVerificationKey`) instead of a single point
 - Nodes verify the app public key consistency
 - The coordinator verifies the aggregated output
 
@@ -41,7 +44,7 @@ BLS scalar wrapper utilities for `hash_to_field` compatibility.
 
 - **`CKDOutput`** -- contains `(Y, C)` (the blinding point and encrypted signature). Provides `unmask(secret_scalar)` to recover the BLS signature.
 - **`CKDOutputOption`** -- `Option<CKDOutput>`, since only the coordinator receives output
-- **`AppPublicKeyPV`** -- app public key for the publicly verifiable variant: `(pk1: G1, pk2: G2)` where both encode the same secret scalar
+- **`PublicVerificationKey`** -- app public key for the publicly verifiable variant: `(pk1: G1, pk2: G2)` where both encode the same secret scalar
 - **`hash_app_id_with_pk(pk, app_id)`** -- hash-to-curve on BLS12-381 G1
 
 ## DKG

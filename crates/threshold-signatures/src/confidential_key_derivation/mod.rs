@@ -62,7 +62,7 @@ pub type PublicKey = ElementG1;
 pub type Signature = ElementG1;
 
 #[derive(Debug, Clone, Deserialize, Serialize, derive_more::Constructor)]
-pub struct AppPublicKeyPV {
+pub struct PublicVerificationKey {
     pk1: ElementG1,
     pk2: ElementG2,
 }
