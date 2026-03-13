@@ -23,6 +23,7 @@ members = [
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
+    "crates/test-chain-gateway-contract",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-utils",
