@@ -10,8 +10,11 @@ use crate::{
     migration_service::types::MigrationInfo,
 };
 
-use self::stats::IndexerStats;
 use anyhow::Context;
+use chain_gateway::ChainGateway;
+use mpc_contract::primitives::signature::YieldIndex;
+use mpc_contract::state::ProtocolContractState;
+use serde::Deserialize;
 use handler::ChainBlockUpdate;
 use mpc_contract::tee::{
     proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
@@ -19,10 +22,9 @@ use mpc_contract::tee::{
 };
 use near_account_id::AccountId;
 use near_async::{
-    messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
+    messaging::CanSendAsync, multithread::MultithreadRuntimeHandle,
 };
-use near_client::{client_actor::ClientActorInner, RpcHandler, Status, ViewClientActorInner};
-use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_client::ViewClientActorInner;
 use near_indexer_primitives::{
     types::{BlockReference, Finality},
     views::{BlockView, QueryRequest, QueryResponseKind},
@@ -41,6 +43,7 @@ use types::ChainSendTransactionRequest;
 
 pub mod configs;
 pub(crate) mod contract_state_viewer;
+pub(crate) use contract_state_viewer::MpcContractStateViewer;
 pub mod handler;
 pub mod migrations;
 pub mod participants;

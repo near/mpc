@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::StreamContractState;
-use chain_gateway::state_viewer::SubscribeContractState;
+use chain_gateway::state_viewer::SubscribeToContractMethod;
+use chain_gateway::state_viewer::WatchContractState;
 use chain_gateway::types::ObservedState;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
@@ -62,9 +62,9 @@ pub async fn monitor_migrations(
     tokio::spawn(async move {
         let mut subscription = contract_state_viewer
             .mpc_contract_viewer
-            .subscribe::<ContractMigrationInfo>(
+            .subscribe_to_contract_method::<ContractMigrationInfo>(
                 contract_state_viewer.mpc_contract_id.clone(),
-                contract_interface::method_names::MIGRATION_INFO,
+                near_mpc_contract_interface::method_names::MIGRATION_INFO,
             )
             .await;
 

@@ -7,7 +7,7 @@ use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use chain_gateway::start_with_streamer;
+use chain_gateway::ChainGateway;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::types::ObservedState;
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -89,7 +89,7 @@ pub fn spawn_real_indexer(
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
         indexer_tokio_runtime.block_on(async {
             let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
-            let (chain_gateway, stream) = start_with_streamer(near_indexer_config)
+            let (chain_gateway, stream) = ChainGateway::start_with_streamer(near_indexer_config)
                 .await
                 .expect("indexer startup must succeed");
 
@@ -145,17 +145,17 @@ pub fn spawn_real_indexer(
 
             mpc_contract_state_viewer.spawn_subscriber(
                 allowed_docker_images_sender,
-                contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+                near_mpc_contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES,
             );
 
             mpc_contract_state_viewer.spawn_subscriber(
                 allowed_launcher_compose_sender,
-                contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
+                near_mpc_contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
             );
 
             mpc_contract_state_viewer.spawn_subscriber(
                 tee_accounts_sender,
-                contract_interface::method_names::GET_TEE_ACCOUNTS,
+                near_mpc_contract_interface::method_names::GET_TEE_ACCOUNTS,
             );
 
             //  let contract_state_receiver = mpc_contract_state_viewer.monitor_contract_state(protocol_state_sender).await;

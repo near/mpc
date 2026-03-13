@@ -1,6 +1,6 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
 use chain_gateway::types::ObservedState;
-use contract_interface::types::{
+use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
@@ -119,9 +119,9 @@ impl OneNodeTestConfig {
                     debug_request_sender.clone(),
                     self.config.web_ui,
                     static_web_data(&self.secrets, None),
+                    self.config.clone(),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
-                    self.config.clone(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);

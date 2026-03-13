@@ -2,7 +2,7 @@ use crate::indexer::types::{
     ChainCKDRequest, ChainSignatureRequest, ChainVerifyForeignTransactionRequest,
 };
 use anyhow::Context;
-use chain_gateway::state_viewer::{StreamContractState, SubscribeContractState, ViewMethod};
+use chain_gateway::state_viewer::{SubscribeToContractMethod, ViewMethod, WatchContractState};
 use chain_gateway::types::NoArgs;
 use chain_gateway::ChainGateway;
 use mpc_contract::primitives::signature::YieldIndex;
@@ -46,7 +46,7 @@ impl MpcContractStateViewer {
     {
         let mut subscription = self
             .mpc_contract_viewer
-            .subscribe::<T>(self.mpc_contract_id.clone(), &method_name)
+            .subscribe_to_contract_method::<T>(self.mpc_contract_id.clone(), &method_name)
             .await;
 
         loop {
@@ -94,9 +94,9 @@ impl MpcContractStateViewer {
         };
         let call_result = self
             .mpc_contract_viewer
-            .view(
+            .view_method(
                 self.mpc_contract_id.clone(),
-                contract_interface::method_names::GET_PENDING_REQUEST,
+                near_mpc_contract_interface::method_names::GET_PENDING_REQUEST,
                 &args,
             )
             .await
@@ -113,9 +113,9 @@ impl MpcContractStateViewer {
 
         let call_result = self
             .mpc_contract_viewer
-            .view(
+            .view_method(
                 self.mpc_contract_id.clone(),
-                contract_interface::method_names::GET_PENDING_CKD_REQUEST,
+                near_mpc_contract_interface::method_names::GET_PENDING_CKD_REQUEST,
                 &args,
             )
             .await
@@ -134,9 +134,9 @@ impl MpcContractStateViewer {
 
         let call_result = self
             .mpc_contract_viewer
-            .view(
+            .view_method(
                 self.mpc_contract_id.clone(),
-                contract_interface::method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
+                near_mpc_contract_interface::method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
                 &args,
             )
             .await
@@ -147,17 +147,17 @@ impl MpcContractStateViewer {
 
     pub(crate) async fn get_participant_attestation(
         &self,
-        participant_tls_public_key: &contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<Option<contract_interface::types::VerifiedAttestation>> {
+        participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
+    ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
         let args = GetAttestationArgs {
             tls_public_key: participant_tls_public_key,
         };
 
         let call_result = self
             .mpc_contract_viewer
-            .view(
+            .view_method(
                 self.mpc_contract_id.clone(),
-                contract_interface::method_names::GET_ATTESTATION,
+                near_mpc_contract_interface::method_names::GET_ATTESTATION,
                 &args,
             )
             .await
@@ -168,12 +168,12 @@ impl MpcContractStateViewer {
 
     pub(crate) async fn get_foreign_chain_policy(
         &self,
-    ) -> anyhow::Result<contract_interface::types::ForeignChainPolicy> {
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainPolicy> {
         let call_result = self
             .mpc_contract_viewer
-            .view(
+            .view_method(
                 self.mpc_contract_id.clone(),
-                contract_interface::method_names::GET_FOREIGN_CHAIN_POLICY,
+                near_mpc_contract_interface::method_names::GET_FOREIGN_CHAIN_POLICY,
                 &NoArgs {},
             )
             .await?;
@@ -183,12 +183,12 @@ impl MpcContractStateViewer {
 
     pub(crate) async fn get_foreign_chain_policy_proposals(
         &self,
-    ) -> anyhow::Result<contract_interface::types::ForeignChainPolicyVotes> {
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainPolicyVotes> {
         let call_result = self
             .mpc_contract_viewer
-            .view(
+            .view_method(
                 self.mpc_contract_id.clone(),
-                contract_interface::method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS,
+                near_mpc_contract_interface::method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS,
                 &NoArgs {},
             )
             .await?;

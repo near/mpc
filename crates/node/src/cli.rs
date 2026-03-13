@@ -1,19 +1,50 @@
 use crate::{
     config::{
-        load_config_file, ConfigFile, GcpStartConfig, SecretsStartConfig, StartConfig,
-        TeeAuthorityStartConfig, TeeStartConfig,
+        generate_and_write_backup_encryption_key_to_disk, load_config_file, ConfigFile,
+        GcpStartConfig, PersistentSecrets, RespondConfig, SecretsConfig, SecretsStartConfig,
+        StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
+    },
+    coordinator::Coordinator,
+    db::SecretDB,
+    indexer::{
+        migrations::ContractMigrationInfo, real::spawn_real_indexer, tx_sender::TransactionSender,
+        IndexerAPI, ReadForeignChainPolicy,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
+        GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage,
     },
-    run::run_mpc_node,
+    migration_service::spawn_recovery_server_and_run_onboarding,
+    profiler,
+    run::{run_mpc_node, ATTESTATION_RESUBMISSION_INTERVAL},
+    tee::{
+        monitor_allowed_image_hashes,
+        remote_attestation::{monitor_attestation_removal, periodic_attestation_submission},
+        AllowedImageHashesFile,
+    },
+    tracking::{self, start_root_task},
+    web::{start_web_server, static_web_data, DebugRequest},
 };
+use anyhow::{anyhow, Context};
+use chain_gateway::types::ObservedState;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
+use mpc_attestation::report_data::ReportDataV1;
+use mpc_contract::state::ProtocolContractState;
+use mpc_contract::tee::proposal::MpcDockerImageHash;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_time::Clock;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
+use std::sync::{Arc, Mutex, OnceLock};
+use tee_authority::tee_authority::{
+    TeeAuthority, DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
+};
+use tokio::sync::{broadcast, mpsc, oneshot, watch, RwLock};
+use tokio_util::sync::CancellationToken;
+use tracing::info;
 use url::Url;
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
@@ -252,7 +283,17 @@ impl StartCmd {
         )?;
 
         // Generate attestation
-        let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
+        let tee_authority_config = match self.tee_authority.clone() {
+            CliTeeAuthorityConfig::Local => TeeAuthorityStartConfig::Local,
+            CliTeeAuthorityConfig::Dstack {
+                dstack_endpoint,
+                quote_upload_url,
+            } => TeeAuthorityStartConfig::Dstack {
+                dstack_endpoint,
+                quote_upload_url: quote_upload_url.to_string(),
+            },
+        };
+        let tee_authority = tee_authority_config.into_tee_authority()?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
         let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
@@ -286,6 +327,7 @@ impl StartCmd {
                 debug_request_sender.clone(),
                 config.web_ui,
                 static_web_data(&secrets, Some(attestation)),
+                config.clone(),
                 protocol_state_receiver,
                 migration_state_receiver,
             ))

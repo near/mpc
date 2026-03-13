@@ -4,8 +4,8 @@ use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
 use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::state_viewer::StreamContractState;
-use chain_gateway::state_viewer::SubscribeContractState;
+use chain_gateway::state_viewer::SubscribeToContractMethod;
+use chain_gateway::state_viewer::WatchContractState;
 use chain_gateway::types::ObservedState;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::{
@@ -297,9 +297,9 @@ async fn monitor_contract_state_task(
 ) {
     let mut subscription = mpc_contract
         .mpc_contract_viewer
-        .subscribe::<ProtocolContractState>(
+        .subscribe_to_contract_method::<ProtocolContractState>(
             mpc_contract.mpc_contract_id.clone(),
-            contract_interface::method_names::STATE,
+            near_mpc_contract_interface::method_names::STATE,
         )
         .await;
 

@@ -5,14 +5,6 @@ use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
 use chain_gateway::stats::IndexerStats;
-use contract_interface::method_names::{
-    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
-};
-use contract_interface::types as dtos;
-use contract_interface::types::VerifyForeignTransactionRequest;
-use contract_interface::types::VerifyForeignTransactionRequestArgs;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
