@@ -1,8 +1,6 @@
 # TEE Context
 
-The TEE Context is a shared crate for the TEE attestation lifecycle. It polls governance contract state (allowed image hashes) and exposes methods for attestation submission and verification — so that each service gets these capabilities without reimplementing contract interactions. Each service is responsible for its own attestation scheduling (when to submit, when to call `verify_tee`). The MPC node already implements these operations today; they will be extracted into a standalone crate reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, Backup Service) use the TEE Context directly.
-
-[mpc-context]: indexer-design.md
+The TEE Context is a shared crate for the TEE attestation lifecycle. It polls governance contract state (allowed image hashes) and exposes methods for attestation submission and verification — so that each service gets these capabilities without reimplementing contract interactions. Each service is responsible for its own attestation scheduling (when to submit, when to call `verify_tee`). The MPC node already implements these operations today; they will be extracted into a standalone crate reusable by all services. In the MPC node, the MPC Context depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, Backup Service) use the TEE Context directly.
 
 ## Interface
 
@@ -62,7 +60,7 @@ Each service passes its governance contract address to `TeeContext::new()`. All 
 
 ### Usage: MPC Node
 
-The MPC node wraps the TEE Context inside the [MPC Context][mpc-context]. It manages its own attestation lifecycle — periodic submission, removal monitoring, and `verify_tee` scheduling:
+The MPC node wraps the TEE Context inside the MPC Context. It manages its own attestation lifecycle — periodic submission, removal monitoring, and `verify_tee` scheduling:
 
 ```rust
 let tee_ctx = TeeContext::new(chain_gateway, node_identity, governance_contract).await?;
