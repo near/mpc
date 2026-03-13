@@ -11,6 +11,7 @@
 pub mod app_id;
 pub mod ciphersuite;
 pub mod protocol;
+mod protocol_pv;
 mod scalar_wrapper;
 #[cfg(test)]
 mod test;
@@ -27,18 +28,16 @@ pub type ElementG2 = blstrs::G2Projective;
 pub type KeygenOutput = crate::KeygenOutput<BLS12381SHA256>;
 pub type SigningShare = crate::SigningShare<BLS12381SHA256>;
 
+pub use protocol_pv::ckd as ckd_pv;
+
 /// The output of the confidential key derivation protocol when run by the coordinator
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, derive_more::Constructor)]
 pub struct CKDOutput {
     big_y: ElementG1,
     big_c: ElementG1,
 }
 
 impl CKDOutput {
-    pub fn new(big_y: ElementG1, big_c: ElementG1) -> Self {
-        Self { big_y, big_c }
-    }
-
     /// Outputs `big_y`
     pub fn big_y(&self) -> ElementG1 {
         self.big_y
@@ -61,6 +60,12 @@ pub type CKDOutputOption = Option<CKDOutput>;
 pub type VerifyingKey = crate::VerifyingKey<BLS12381SHA256>;
 pub type PublicKey = ElementG1;
 pub type Signature = ElementG1;
+
+#[derive(Debug, Clone, Deserialize, Serialize, derive_more::Constructor)]
+pub struct PublicVerificationKey {
+    pk1: ElementG1,
+    pk2: ElementG2,
+}
 
 /// Hashes the app id and the public key as of
 /// H(pk || `app_id`) where H is a random oracle
