@@ -71,25 +71,7 @@ pub struct LauncherConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DockerLaunchFlags {
-    pub extra_hosts: ExtraHosts,
     pub port_mappings: PortMappings,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ExtraHosts {
-    hosts: Vec<HostEntry>,
-}
-
-impl ExtraHosts {
-    /// Returns `["--add-host", "h1:ip1", "--add-host", "h2:ip2", ...]`.
-    pub fn docker_args(&self) -> Vec<String> {
-        self.hosts
-            .iter()
-            .flat_map(|HostEntry { hostname, ip }| {
-                ["--add-host".into(), format!("{hostname}:{ip}")]
-            })
-            .collect()
-    }
 }
 
 /// A `--add-host` entry: `hostname:IPv4`.
@@ -221,35 +203,6 @@ mod tests {
     // --- docker_args output format ---
 
     #[test]
-    fn extra_hosts_docker_args_format() {
-        // given
-        let hosts = ExtraHosts {
-            hosts: vec![HostEntry {
-                hostname: url::Host::Domain("node.local".into()),
-                ip: Ipv4Addr::new(192, 168, 1, 1),
-            }],
-        };
-
-        // when
-        let args = hosts.docker_args();
-
-        // then
-        assert_eq!(args, vec!["--add-host", "node.local:192.168.1.1"]);
-    }
-
-    #[test]
-    fn empty_extra_hosts_produces_no_docker_args() {
-        // given
-        let hosts = ExtraHosts { hosts: vec![] };
-
-        // when
-        let args = hosts.docker_args();
-
-        // then
-        assert!(args.is_empty());
-    }
-
-    #[test]
     fn port_mappings_docker_args_format() {
         // given
         let mappings = PortMappings {
@@ -282,7 +235,6 @@ mod tests {
                 "mpc_hash_override": null
             },
             "docker_command_config": {
-                "extra_hosts": {"hosts": [{"hostname": {"Domain": "node1"}, "ip": "192.168.1.1"}]},
                 "port_mappings": {"ports": [{"src": 11780, "dst": 11780}]}
             },
             "mpc_config_file": "/tapp/mpc-config.json"
@@ -312,7 +264,6 @@ mod tests {
                 "mpc_hash_override": null
             },
             "docker_command_config": {
-                "extra_hosts": {"hosts": []},
                 "port_mappings": {"ports": []}
             }
         });

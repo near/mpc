@@ -378,7 +378,6 @@ fn docker_run_args(
         format!("{host_path}:{MPC_CONFIG_CONTAINER_PATH}:ro"),
     ]);
 
-    cmd.extend(docker_flags.extra_hosts.docker_args());
     cmd.extend(docker_flags.port_mappings.docker_args());
 
     // Container run configuration
@@ -481,15 +480,13 @@ mod tests {
 
     fn empty_docker_flags() -> DockerLaunchFlags {
         serde_json::from_value(serde_json::json!({
-            "extra_hosts": {"hosts": []},
             "port_mappings": {"ports": []}
         }))
         .unwrap()
     }
 
-    fn docker_flags_with_host_and_port() -> DockerLaunchFlags {
+    fn docker_flags_with_port() -> DockerLaunchFlags {
         serde_json::from_value(serde_json::json!({
-            "extra_hosts": {"hosts": [{"hostname": {"Domain": "node1"}, "ip": "192.168.1.1"}]},
             "port_mappings": {"ports": [{"src": 11780, "dst": 11780}]}
         }))
         .unwrap()
@@ -625,9 +622,9 @@ mod tests {
     }
 
     #[test]
-    fn includes_ports_and_extra_hosts() {
+    fn includes_ports() {
         // given
-        let flags = docker_flags_with_host_and_port();
+        let flags = docker_flags_with_port();
         let digest = sample_digest();
 
         // when
@@ -640,7 +637,6 @@ mod tests {
 
         // then
         let joined = args.join(" ");
-        assert!(joined.contains("--add-host node1:192.168.1.1"));
         assert!(joined.contains("-p 11780:11780"));
     }
 
