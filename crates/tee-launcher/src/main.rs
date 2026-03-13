@@ -53,17 +53,16 @@ async fn run() -> Result<(), LauncherError> {
 
     tracing::info!(platform = ?args.platform, "starting launcher");
 
-    // Load dstack user config
-    let config_file = std::fs::OpenOptions::new()
-        .read(true)
-        .open(DSTACK_USER_CONFIG_FILE)
-        .map_err(|source| LauncherError::FileRead {
+    // Load dstack user config (TOML)
+    let config_contents = std::fs::read_to_string(DSTACK_USER_CONFIG_FILE).map_err(|source| {
+        LauncherError::FileRead {
             path: DSTACK_USER_CONFIG_FILE.to_string(),
             source,
-        })?;
+        }
+    })?;
 
     let dstack_config: Config =
-        serde_json::from_reader(config_file).map_err(|source| LauncherError::JsonParse {
+        toml::from_str(&config_contents).map_err(|source| LauncherError::TomlParse {
             path: DSTACK_USER_CONFIG_FILE.to_string(),
             source,
         })?;
@@ -120,11 +119,14 @@ async fn run() -> Result<(), LauncherError> {
     }
 
     let mpc_binary_config_path = std::path::Path::new("/tmp/mpc-config");
-    std::fs::write(mpc_binary_config_path, dstack_config.mpc_config_content.as_bytes())
-        .map_err(|source| LauncherError::FileWrite {
+    let mpc_config_toml = toml::to_string(&dstack_config.mpc_config)
+        .expect("re-serializing a toml::Table always succeeds");
+    std::fs::write(mpc_binary_config_path, mpc_config_toml.as_bytes()).map_err(|source| {
+        LauncherError::FileWrite {
             path: mpc_binary_config_path.display().to_string(),
             source,
-        })?;
+        }
+    })?;
 
     launch_mpc_container(
         args.platform,
@@ -394,8 +396,7 @@ fn render_compose_file(
 
     tracing::info!(compose = %rendered, "rendered docker-compose file");
 
-    let mut file =
-        tempfile::NamedTempFile::new().map_err(|source| LauncherError::TempFileCreate(source))?;
+    let mut file = tempfile::NamedTempFile::new().map_err(LauncherError::TempFileCreate)?;
     file.write_all(rendered.as_bytes())
         .map_err(|source| LauncherError::FileWrite {
             path: file.path().display().to_string(),

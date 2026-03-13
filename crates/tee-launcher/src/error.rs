@@ -48,6 +48,12 @@ pub enum LauncherError {
         source: serde_json::Error,
     },
 
+    #[error("Failed to parse {path}: {source}")]
+    TomlParse {
+        path: String,
+        source: toml::de::Error,
+    },
+
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
 

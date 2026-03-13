@@ -44,10 +44,11 @@ pub enum Platform {
 pub struct Config {
     pub launcher_config: LauncherConfig,
     pub docker_command_config: DockerLaunchFlags,
-    /// Inline MPC node config content (opaque to the launcher).
-    /// Written to a temporary file on disk, mounted into the container,
-    /// and passed via `start-with-config-file <path>` to the MPC binary.
-    pub mpc_config_content: String,
+    /// Opaque MPC node configuration table.
+    /// The launcher does not interpret these fields — they are re-serialized
+    /// to a TOML string, written to a file on disk, and mounted into the
+    /// container for the MPC binary to consume via `start-with-config-file`.
+    pub mpc_config: toml::Table,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,57 +214,86 @@ mod tests {
         assert_eq!(value, "11780:11780");
     }
 
-    // --- Config full deserialization ---
+    // --- Config full deserialization (TOML) ---
 
     #[test]
-    fn config_deserializes_valid_json() {
+    fn config_deserializes_valid_toml() {
         // given
-        let json = serde_json::json!({
-            "launcher_config": {
-                "image_tags": ["tag1"],
-                "image_name": "nearone/mpc-node",
-                "registry": "registry.hub.docker.com",
-                "rpc_request_timeout_secs": 10,
-                "rpc_request_interval_secs": 1,
-                "rpc_max_attempts": 20,
-                "mpc_hash_override": null
-            },
-            "docker_command_config": {
-                "port_mappings": {"ports": [{"src": 11780, "dst": 11780}]}
-            },
-            "mpc_config_file": "[some_config = true]"
-        });
+        let toml_str = r#"
+[launcher_config]
+image_tags = ["tag1"]
+image_name = "nearone/mpc-node"
+registry = "registry.hub.docker.com"
+rpc_request_timeout_secs = 10
+rpc_request_interval_secs = 1
+rpc_max_attempts = 20
+
+[docker_command_config.port_mappings]
+ports = [{ src = 11780, dst = 11780 }]
+
+[mpc_config]
+home_dir = "/data"
+some_opaque_field = true
+"#;
 
         // when
-        let result = serde_json::from_value::<Config>(json);
+        let result = toml::from_str::<Config>(toml_str);
 
         // then
         assert_matches!(result, Ok(config) => {
             assert_eq!(config.launcher_config.image_name, "nearone/mpc-node");
-            assert_eq!(config.mpc_config_content, "[some_config = true]");
+            assert_eq!(config.mpc_config["home_dir"].as_str(), Some("/data"));
+            assert_eq!(config.mpc_config["some_opaque_field"].as_bool(), Some(true));
         });
     }
 
     #[test]
+    fn config_mpc_config_round_trips_to_toml_string() {
+        // given
+        let toml_str = r#"
+[launcher_config]
+image_tags = ["tag1"]
+image_name = "nearone/mpc-node"
+registry = "registry.hub.docker.com"
+rpc_request_timeout_secs = 10
+rpc_request_interval_secs = 1
+rpc_max_attempts = 20
+
+[docker_command_config.port_mappings]
+ports = [{ src = 11780, dst = 11780 }]
+
+[mpc_config]
+home_dir = "/data"
+arbitrary_key = "arbitrary_value"
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+
+        // when — re-serialize the opaque table (what the launcher writes to disk)
+        let serialized = toml::to_string(&config.mpc_config).unwrap();
+
+        // then
+        assert!(serialized.contains("home_dir"));
+        assert!(serialized.contains("arbitrary_key"));
+    }
+
+    #[test]
     fn config_rejects_missing_required_field() {
-        // given - mpc_config_file is missing
-        let json = serde_json::json!({
-            "launcher_config": {
-                "image_tags": ["tag1"],
-                "image_name": "nearone/mpc-node",
-                "registry": "registry.hub.docker.com",
-                "rpc_request_timeout_secs": 10,
-                "rpc_request_interval_secs": 1,
-                "rpc_max_attempts": 20,
-                "mpc_hash_override": null
-            },
-            "docker_command_config": {
-                "port_mappings": {"ports": []}
-            }
-        });
+        // given - mpc_config is missing
+        let toml_str = r#"
+[launcher_config]
+image_tags = ["tag1"]
+image_name = "nearone/mpc-node"
+registry = "registry.hub.docker.com"
+rpc_request_timeout_secs = 10
+rpc_request_interval_secs = 1
+rpc_max_attempts = 20
+
+[docker_command_config.port_mappings]
+ports = []
+"#;
 
         // when
-        let result = serde_json::from_value::<Config>(json);
+        let result = toml::from_str::<Config>(toml_str);
 
         // then
         assert_matches!(result, Err(_));
