@@ -44,9 +44,55 @@ This template has **no `foreign_chains` section**. There is no mechanism to inje
 
 - **No config updates of any kind.** Even non-foreign-chain config changes (e.g., adjusting triple/presignature concurrency, changing boot nodes) require stopping the CVM, updating `user-config.conf`, and restarting -- which causes downtime.
 
+### Recent Development: `start-with-config-file` (TOML)
+
+Commit `78d3e767` ("feat: allow configuration files for full config of the mpc node", PR #2332) introduced a new `start-with-config-file` CLI command that reads the **entire** node configuration from a single TOML file:
+
+```
+mpc-node start-with-config-file /path/to/mpc-config.toml
+```
+
+The `StartConfig` TOML struct includes all configuration in one file:
+
+```toml
+home_dir = "/data"
+
+[secrets]
+secret_store_key_hex = "..."
+
+[tee]
+image_hash = "..."
+latest_allowed_hash_file = "/mnt/shared/image-digest.bin"
+[tee.authority]
+type = "dstack"
+dstack_endpoint = "/var/run/dstack.sock"
+
+[node]
+my_near_account_id = "my-account.testnet"
+# ... all node config fields ...
+
+[node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+[node.foreign_chains.bitcoin.providers.public]
+api_variant = "esplora"
+rpc_url = "https://blockstream.info/api"
+[node.foreign_chains.bitcoin.providers.public.auth]
+kind = "none"
+```
+
+Key facts about this feature:
+- **All pytests already use this path** -- tests write `start_config.toml` and launch via `start-with-config-file`
+- **A TOML template exists** at `docs/localnet/mpc-config.template.toml` with `foreign_chains` included
+- **The old `start` command is marked for deprecation** (`cli.rs:226`: `TODO(#2334): deprecate this`)
+- **`StartConfig::from_toml_file()` validates the config** including `foreign_chains`
+- **The `node` section is a `ConfigFile`** -- the exact same struct used by `config.yaml`, so feature parity is guaranteed
+
+This feature **fundamentally changes the design space**: instead of working around the limitations of `start.sh` with overlay hacks, we can switch TDX deployments to the TOML path and get `foreign_chains` support natively.
+
 ## Current Architecture in Detail
 
-### Deployment Flow
+### Deployment Flow (Current -- `start.sh` Path)
 
 ```
 Operator writes user-config.conf (flat KEY=VALUE)
@@ -171,9 +217,9 @@ This is all flat key-value. No structured data can pass through.
 | Guest OS / dstack | MRTD, RTMR0-2 | No |
 | `user-config.conf` | **Not measured** | Yes |
 | `/mnt/shared/` contents | **Not measured** (encrypted at rest) | Yes |
-| `config.yaml` | **Not measured** (inside encrypted CVM disk) | Yes (if we can get data in) |
+| `config.yaml` / TOML | **Not measured** (inside encrypted CVM disk) | Yes (if we can get data in) |
 
-Key insight: **`config.yaml` lives on the encrypted CVM disk and is not individually measured.** The attestation verifies that the correct *code* is running, not the *config data*. So updating config does not break attestation -- the challenge is purely mechanical: getting structured config data into the running node.
+Key insight: **Config files live on the encrypted CVM disk and are not individually measured.** The attestation verifies that the correct *code* is running, not the *config data*. So updating config does not break attestation -- the challenge is purely mechanical: getting structured config data into the running node.
 
 ### The Existing Dynamic Update Pattern
 
@@ -188,29 +234,194 @@ This works well for data that originates from the contract. For operator-specifi
 
 ## Proposed Solutions
 
-### Option A: Extend start.sh + Shared Volume Config File (Recommended)
+### Option A: Switch to TOML Config Path with Launcher-Generated Config (Recommended)
 
-Solve both the "initial delivery" and "runtime update" problems by:
-1. Extending `start.sh` to support a config overlay file
-2. Having the node watch that file for changes
+Switch TDX deployments from the legacy `start.sh` + `config.yaml` path to the new `start-with-config-file` TOML path. The launcher generates the TOML config file from operator-provided data and writes it to the shared volume.
 
 #### Design
 
-**Part 1: Initial config delivery via `start.sh`**
+**Part 1: Launcher generates TOML config**
+
+The launcher already reads `user-config.conf` and builds a `docker run` command. Instead of passing individual `--env` flags, the launcher would:
+
+1. Read config from `user-config.conf` (existing flat key-value vars) **and** a base64-encoded TOML config
+2. Write a complete `mpc-config.toml` to `/mnt/shared/mpc-config.toml`
+3. Launch the MPC container with a modified entrypoint that uses `start-with-config-file`
+
+```python
+# In launcher.py:
+CONFIG_TOML_BASE64_KEY = "MPC_CONFIG_TOML_BASE64"
+
+def write_config_toml(dstack_config: dict, image_hash: str, platform: Platform):
+    """Generate mpc-config.toml on the shared volume."""
+    config_b64 = dstack_config.get(CONFIG_TOML_BASE64_KEY)
+    if not config_b64:
+        return  # Fall back to legacy start.sh path
+
+    import base64
+    config_toml = base64.b64decode(config_b64).decode("utf-8")
+
+    # Write atomically
+    tmp_path = "/mnt/shared/mpc-config.toml.tmp"
+    final_path = "/mnt/shared/mpc-config.toml"
+    with open(tmp_path, "w") as f:
+        f.write(config_toml)
+    os.rename(tmp_path, final_path)
+```
+
+**Part 2: Modified start.sh (or new entrypoint)**
+
+Modify `start.sh` to detect the TOML config and use it instead of generating `config.yaml`:
+
+```bash
+# At the top of start.sh:
+MPC_CONFIG_TOML="/mnt/shared/mpc-config.toml"
+
+if [ -f "$MPC_CONFIG_TOML" ]; then
+    echo "Found TOML config at $MPC_CONFIG_TOML, using start-with-config-file"
+
+    # Still need to initialize the near node (genesis, config.json)
+    if [ ! -r "$NEAR_NODE_CONFIG_FILE" ]; then
+        initialize_near_node "$MPC_HOME_DIR"
+    fi
+    update_near_node_config
+
+    echo "Starting mpc node with TOML config..."
+    /app/mpc-node start-with-config-file "$MPC_CONFIG_TOML"
+    exit $?
+fi
+
+# ... existing start.sh logic for legacy path ...
+```
+
+This is backwards-compatible: nodes without a TOML file continue using the legacy path.
+
+**Part 3: Operator workflow**
+
+The operator creates a TOML config file locally (using `mpc-config.template.toml` as a starting point), base64-encodes it, and includes it in `user-config.conf`:
+
+```bash
+# 1. Create config from template (or manually)
+envsubst < docs/localnet/mpc-config.template.toml > mpc-config.toml
+# Edit to add foreign_chains, adjust settings, etc.
+
+# 2. Base64-encode and add to user-config.conf
+MPC_CONFIG_TOML_BASE64=$(base64 -w0 < mpc-config.toml)
+
+# 3. user-config.conf now contains:
+cat > user-config.conf << EOF
+MPC_IMAGE_NAME=nearone/mpc-node
+MPC_IMAGE_TAGS=latest
+MPC_REGISTRY=registry.hub.docker.com
+MPC_CONFIG_TOML_BASE64=$MPC_CONFIG_TOML_BASE64
+PORTS=8080:8080,3030:3030,80:80,24567:24567
+EOF
+
+# 4. Deploy or update
+vmm-cli.py update-user-config <vm-id> user-config.conf
+```
+
+To update config (e.g., add a new foreign chain), the operator edits the TOML file, re-encodes, and updates `user-config.conf`. With a CVM restart, the node picks up the new config.
+
+**Part 4: Runtime config hot-reload (future phase)**
+
+Add a file watcher to the MPC node that monitors `/mnt/shared/mpc-config.toml` for changes:
+
+```rust
+// New: crates/node/src/config/watcher.rs
+pub async fn watch_config_file(
+    config_path: PathBuf,
+    foreign_chains_sender: watch::Sender<ForeignChainsConfig>,
+    cancellation_token: CancellationToken,
+) -> Result<(), ConfigWatchError> {
+    loop {
+        select! {
+            _ = cancellation_token.cancelled() => break Ok(()),
+            _ = wait_for_file_change(&config_path) => {
+                match StartConfig::from_toml_file(&config_path) {
+                    Ok(new_config) => {
+                        // Only hot-reload safe fields
+                        foreign_chains_sender.send_replace(new_config.node.foreign_chains);
+                        tracing::info!("Config reloaded successfully");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Invalid config file, keeping current config: {e}");
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+To trigger a hot-reload, the operator updates `user-config.conf` with a new `MPC_CONFIG_TOML_BASE64`, then restarts just the launcher (not the CVM). The launcher writes the new TOML file to the shared volume, and the node's file watcher picks it up.
+
+**Part 5: API key delivery**
+
+API keys can be handled in two ways:
+
+**Inline in TOML (simplest):**
+```toml
+[node.foreign_chains.ethereum.providers.alchemy.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+[node.foreign_chains.ethereum.providers.alchemy.auth.token]
+val = "my-api-key-here"
+```
+
+The key is embedded in the TOML config on the encrypted CVM disk. It's delivered via the base64-encoded config in `user-config.conf`.
+
+**Via env var reference:**
+```toml
+[node.foreign_chains.ethereum.providers.alchemy.auth.token]
+env = "MPC_ALCHEMY_API_KEY"
+```
+
+The API key is passed as a separate env var in `user-config.conf` (`MPC_ALCHEMY_API_KEY=...`), which the launcher passes through to the container. The TOML config references it by name.
+
+Both approaches work today. The inline approach is simpler and avoids the env-var-is-fixed-at-container-start limitation for hot-reload scenarios.
+
+#### Launcher Volume Mount Change
+
+Currently the launcher mounts `shared-volume:/mnt/shared:ro` (read-only). For the launcher to write `mpc-config.toml`, this needs to change to `:rw`.
+
+**Important:** This change means updating the `launcher_docker_compose.yaml`, which is **measured** and affects attestation. This is a one-time change that needs to be voted in by all operators. After this change, the TOML mechanism works without further compose changes.
+
+Note: the launcher exits after starting the MPC container and does not run persistently, so rw access to the shared volume does not introduce a persistent tampering risk.
+
+#### Pros
+- **Uses an already-implemented, tested code path.** `start-with-config-file` is used by all pytests and localnet. It's not new code.
+- **Natively supports `foreign_chains`.** The TOML `StartConfig` includes `ConfigFile` which has `foreign_chains`. No overlay merging, no YAML hacks.
+- **Single source of truth.** One TOML file contains the entire config. No split between env vars, `config.yaml`, and overlay files.
+- **Aligns with the deprecation direction.** The old `start` CLI command is already marked `TODO(#2334): deprecate this`. This moves TDX to the intended future path.
+- **Backwards-compatible.** The `start.sh` change is a conditional branch: TOML file present → new path, absent → legacy path.
+- **Operator has full control.** Any config field can be set, not just a predefined set of env vars.
+- **Template already exists.** `docs/localnet/mpc-config.template.toml` provides a working starting point.
+
+#### Cons
+- Requires a one-time launcher compose update (measured, needs voting) for the shared-volume rw mount
+- Base64 encoding in `user-config.conf` is not very ergonomic for large configs
+- Operator must provide the full config, not just overrides (but the template makes this straightforward)
+- Secrets (`secret_store_key_hex`) end up in the TOML file on the shared volume (encrypted at rest by the CVM, but visible to processes inside the CVM -- same security model as the current `config.yaml` + env vars)
+
+---
+
+### Option B: Extend start.sh with YAML Config Overlay
+
+Instead of switching to the TOML path, extend the existing `start.sh` to merge an overlay file into the generated `config.yaml`.
+
+#### Design
 
 Modify `start.sh` to merge an optional config overlay file into `config.yaml` after generating the base template:
 
 ```bash
-# In start.sh, after initialize_mpc_config / update_mpc_config:
 MPC_CONFIG_OVERLAY="/mnt/shared/config-overlay.yaml"
 if [ -f "$MPC_CONFIG_OVERLAY" ]; then
-    echo "Merging config overlay from $MPC_CONFIG_OVERLAY"
-    # Use python3 (already available in the image) to deep-merge YAML
     python3 -c "
-import yaml, sys
+import yaml
 base = yaml.safe_load(open('$MPC_NODE_CONFIG_FILE'))
 overlay = yaml.safe_load(open('$MPC_CONFIG_OVERLAY'))
-# Deep merge: overlay wins for conflicting keys
 def merge(b, o):
     for k, v in o.items():
         if k in b and isinstance(b[k], dict) and isinstance(v, dict):
@@ -223,219 +434,16 @@ yaml.dump(base, open('$MPC_NODE_CONFIG_FILE', 'w'), default_flow_style=False)
 fi
 ```
 
-The operator places `config-overlay.yaml` on the shared volume via an update to `user-config.conf` or a direct file write. Example overlay:
-
-```yaml
-foreign_chains:
-  bitcoin:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        api_variant: esplora
-        rpc_url: "https://blockstream.info/api"
-        auth:
-          kind: none
-  ethereum:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      alchemy:
-        api_variant: alchemy
-        rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
-        auth:
-          kind: header
-          name: Authorization
-          scheme: Bearer
-          token:
-            env: ALCHEMY_API_KEY
-```
-
-**Part 2: Delivery mechanism for the overlay file**
-
-The overlay file lives on `/mnt/shared/`, which is a Docker volume shared between the launcher container and the MPC node container. We need a way to write to it:
-
-**Option A1: Launcher writes overlay from user-config.conf**
-
-Add a convention: any line in `user-config.conf` starting with `CONFIG_OVERLAY_BASE64=` contains a base64-encoded YAML overlay. The launcher decodes it and writes it to `/mnt/shared/config-overlay.yaml`.
-
-```python
-# In launcher.py, before launching the MPC container:
-overlay_b64 = dstack_config.get("CONFIG_OVERLAY_BASE64")
-if overlay_b64:
-    import base64
-    overlay_yaml = base64.b64decode(overlay_b64).decode("utf-8")
-    with open("/mnt/shared/config-overlay.yaml", "w") as f:
-        f.write(overlay_yaml)
-```
-
-Operator workflow:
-```bash
-# Encode the overlay
-CONFIG_OVERLAY_BASE64=$(base64 -w0 < my-foreign-chains.yaml)
-# Add to user-config.conf
-echo "CONFIG_OVERLAY_BASE64=$CONFIG_OVERLAY_BASE64" >> user-config.conf
-# Update the CVM config (requires launcher to mount shared-volume as rw)
-vmm-cli.py update-user-config <vm-id> user-config.conf
-```
-
-**Option A2: Direct file write via dstack's file injection**
-
-If dstack supports writing files to CVM volumes directly (e.g., via the VMM API), the operator could write the overlay file without going through the launcher. This needs investigation into dstack capabilities.
-
-**Part 3: Runtime config reload in the MPC node**
-
-Add a file watcher to the MPC node that monitors the overlay file for changes:
-
-```rust
-// New: crates/node/src/config/watcher.rs
-// Watches /mnt/shared/config-overlay.yaml for changes
-// On change: re-reads, validates, and updates ForeignChainsConfig via watch channel
-pub async fn watch_config_overlay(
-    overlay_path: PathBuf,
-    home_dir: PathBuf,
-    foreign_chains_sender: watch::Sender<ForeignChainsConfig>,
-    cancellation_token: CancellationToken,
-) -> Result<(), ConfigWatchError> {
-    loop {
-        select! {
-            _ = cancellation_token.cancelled() => break Ok(()),
-            _ = wait_for_file_change(&overlay_path) => {
-                match load_and_validate_overlay(&overlay_path) {
-                    Ok(overlay) => {
-                        // Merge overlay into config.yaml on disk
-                        merge_into_config_file(&home_dir, &overlay)?;
-                        // Update in-memory config
-                        foreign_chains_sender.send_replace(overlay.foreign_chains);
-                    }
-                    Err(e) => {
-                        tracing::warn!("Invalid config overlay, keeping current config: {e}");
-                    }
-                }
-            }
-        }
-    }
-}
-```
-
-Consumers in the coordinator and signature providers would receive updates via `watch::Receiver<ForeignChainsConfig>`, similar to how the image hash watcher works.
-
-**Part 4: API key delivery**
-
-API keys present a special challenge because they are secrets. Two sub-options:
-
-**A-keys-1: Env vars via user-config.conf (simple, current model)**
-
-API keys are passed as env vars in `user-config.conf` (e.g., `MPC_ALCHEMY_API_KEY=...`). The launcher passes them through as `MPC_*` env vars. The `foreign_chains` config references them via `TokenConfig::Env { env: "MPC_ALCHEMY_API_KEY" }`.
-
-Limitation: changing API keys requires CVM restart (env vars are fixed at container start). But API key rotation is infrequent enough that this may be acceptable initially.
-
-**A-keys-2: Secrets file on shared volume (supports hot-reload)**
-
-Write API keys to a file on `/mnt/shared/secrets.env`:
-```
-ALCHEMY_API_KEY=abc123
-QUICKNODE_API_KEY=xyz789
-```
-
-Modify `TokenConfig::Env` resolution in `auth.rs` to check this file first:
-```rust
-impl TokenConfig {
-    pub fn resolve(&self) -> Result<String, AuthError> {
-        match self {
-            TokenConfig::Val { val } => Ok(val.clone()),
-            TokenConfig::Env { env } => {
-                // Check secrets file first, then process env
-                if let Some(val) = read_secrets_file("/mnt/shared/secrets.env", env)? {
-                    Ok(val)
-                } else {
-                    std::env::var(env).map_err(|_| AuthError::MissingEnvVar(env.clone()))
-                }
-            }
-        }
-    }
-}
-```
-
-The secrets file is re-read on each token resolution (at signing time), so key rotations take effect without restart.
-
-#### Launcher Volume Mount Change
-
-Currently the launcher mounts `shared-volume:/mnt/shared:ro` (read-only). For the launcher to write `config-overlay.yaml` to it, this needs to change to `:rw`. The MPC node container already mounts it as `rw`.
-
-**Important:** This change means updating the `launcher_docker_compose.yaml`, which is **measured** and affects attestation. This is a one-time change that needs to be voted in by all operators. After this change, the overlay mechanism works without further compose changes.
-
-Alternatively, the launcher could write the overlay before starting the MPC container, which works with the current read-only mount since Docker volumes are shared at the storage level regardless of mount flags -- but this is fragile and should be verified.
-
 #### Pros
-- Solves both initial delivery and runtime updates
-- Minimal changes to existing architecture
-- `start.sh` changes are small and backwards-compatible (overlay is optional)
-- Follows the existing `/mnt/shared/` pattern
-- Config overlay is human-readable YAML
-- API keys can be delivered via existing env var passthrough (phase 1) or secrets file (phase 2)
+- Operators only need to provide the delta (e.g., just `foreign_chains`), not the full config
+- Smaller base64 payload in `user-config.conf`
 
 #### Cons
-- Requires a one-time launcher compose update (measured, needs voting)
-- Base64 encoding in `user-config.conf` is not very ergonomic for large configs
-- The overlay merge in `start.sh` requires `pyyaml` (need to verify it's in the image; `python3` is available but the yaml module may not be)
-- Hot-reload requires node code changes (file watcher, watch channels)
-
----
-
-### Option B: `StartWithConfigFile` with TOML Config on Shared Volume
-
-The node already supports a `StartWithConfigFile` command that reads the entire config from a TOML file (see `cli.rs:CliCommand::StartWithConfigFile` and `start.rs:StartConfig::from_toml_file`). Instead of modifying `start.sh`, we could switch TDX deployments to use this path.
-
-#### Design
-
-1. **Replace `start.sh` with a new entrypoint** that reads config from `/mnt/shared/mpc-config.toml`
-2. **The launcher writes this TOML file** from a base64-encoded config in `user-config.conf`
-3. **Config includes everything**: node settings, TEE settings, secrets config, and `foreign_chains`
-4. **Hot-reload**: same file watcher approach as Option A, but watching the TOML file
-
-Example `mpc-config.toml`:
-```toml
-home_dir = "/data"
-
-[secrets]
-secret_store_key_hex = "..."
-
-[tee]
-[tee.authority]
-type = "dstack"
-dstack_endpoint = "/var/run/dstack.sock"
-
-[node]
-my_near_account_id = "my-account.testnet"
-near_responder_account_id = "my-account.testnet"
-number_of_responder_keys = 50
-web_ui = "0.0.0.0:8080"
-# ... other fields ...
-
-[node.foreign_chains.bitcoin]
-timeout_sec = 30
-max_retries = 3
-[node.foreign_chains.bitcoin.providers.public]
-api_variant = "esplora"
-rpc_url = "https://blockstream.info/api"
-[node.foreign_chains.bitcoin.providers.public.auth]
-kind = "none"
-```
-
-#### Pros
-- Uses an existing, already-implemented code path (`StartWithConfigFile`)
-- Cleaner than YAML overlay merging -- single source of truth
-- TOML is well-supported in the Rust ecosystem
-- No `start.sh` modifications needed (replace it entirely)
-- Full config is in one place
-
-#### Cons
-- **Breaking change**: requires new entrypoint, new Docker image, or at least a new `start.sh`
-- Operator must provide the full config, not just overrides
-- Secrets (like `secret_store_key_hex`) end up in the config file on the shared volume
-- Still needs the base64-in-user-config or direct file injection mechanism
-- Hot-reload still needs the same file watcher work
+- **Builds on the legacy path** that is being deprecated (`TODO(#2334)`)
+- Requires `pyyaml` in the Docker image (not currently installed)
+- YAML deep-merge is fragile and error-prone
+- Two config formats to maintain (YAML for overlay, env vars for the rest)
+- Still limited by what `start.sh` generates -- the overlay can add fields but can't cleanly modify nested structures generated by the template
 
 ---
 
@@ -446,8 +454,6 @@ Store the `foreign_chains` configuration on the contract and have nodes read it 
 #### Design
 
 The existing `vote_foreign_chain_policy` mechanism already stores chain/provider URLs on-chain. Extend it to store the full provider config (including `api_variant`, timeouts, retries) so nodes can reconstruct their `foreign_chains` config from contract state.
-
-API keys still need a local mechanism since they cannot go on-chain. But the chain definitions, provider URLs, and API variants could all come from the contract.
 
 #### Pros
 - Consensus built-in: all operators agree on config
@@ -489,57 +495,64 @@ Add an HTTP endpoint to the MPC node's existing web server (port 8080) for recei
 
 ## Recommendation
 
-**Option A (Extend start.sh + Shared Volume Config Overlay)** is recommended for the following reasons:
+**Option A (Switch to TOML Config Path)** is the clear recommendation.
 
 ### Rationale
 
-1. **Solves the immediate blocker.** The `config-overlay.yaml` on `/mnt/shared/` gives us a way to deliver `foreign_chains` config to TDX nodes, unblocking testnet migration.
+1. **The code already exists.** `start-with-config-file` is implemented, tested (all pytests use it), and validated. We are not writing new config-parsing code -- we are routing TDX deployments to an existing, battle-tested code path.
 
-2. **Minimal blast radius.** Changes are additive: `start.sh` gets a small merge step, the launcher gets an optional base64 decode step. Existing deployments without an overlay file continue to work identically.
+2. **Aligns with the codebase direction.** The old `start` command is explicitly marked for deprecation (`TODO(#2334)`). Option B (YAML overlay) would invest in extending a path that we intend to remove.
 
-3. **Follows proven patterns.** The `/mnt/shared/` volume and the file-watcher pattern (`allowed_image_hashes_watcher`) are already battle-tested in this codebase.
+3. **Solves the full problem, not just foreign chains.** With TOML config, operators have full control over all configuration fields. This eliminates the entire class of "I need to change X but start.sh doesn't support it" problems.
 
-4. **Separation of concerns is preserved.** The contract handles consensus (which chains/URLs are accepted via `vote_foreign_chain_policy`), while the local overlay handles operator-specific details (auth config, API keys, provider preferences, timeouts).
+4. **No new dependencies or fragile merge logic.** Option B requires `pyyaml` and YAML deep-merge. Option A uses `toml` deserialization that's already in the binary.
 
-5. **Incremental delivery.** Phase 1 (initial delivery) unblocks TDX migration immediately. Phase 2 (hot-reload) and Phase 3 (ergonomic tooling) can follow independently.
+5. **Single source of truth.** One TOML file replaces the split between env vars, `config.yaml`, and potential overlays. This is easier to reason about, debug, and version-control.
 
 ### Proposed Implementation Plan
 
-#### Phase 0: Unblock TDX Migration (Minimal)
-- Modify `start.sh` to merge `config-overlay.yaml` from `/mnt/shared/` if present
-- Add `pyyaml` to the node Docker image (or use a simpler JSON merge if yaml is unavailable)
-- Operator manually writes overlay file to the shared volume
-- API keys passed via env vars in `user-config.conf` (existing mechanism)
-- **No launcher changes, no node code changes, no compose changes**
+#### Phase 1: TOML Config Delivery (Unblocks TDX Migration)
 
-#### Phase 1: Launcher Config Overlay Support
-- Add `CONFIG_OVERLAY_BASE64` support to the launcher
-- Launcher decodes and writes `/mnt/shared/config-overlay.yaml`
-- Update `launcher_docker_compose.yaml` to mount shared-volume as rw (requires voting)
-- Document operator workflow for `user-config.conf`-based config updates
+**start.sh changes:**
+- Add a conditional at the top: if `/mnt/shared/mpc-config.toml` exists, skip the legacy config generation and run `mpc-node start-with-config-file /mnt/shared/mpc-config.toml` instead
+- Keep the Near node initialization (`initialize_near_node`, `update_near_node_config`) since the TOML path doesn't handle that
 
-#### Phase 2: Runtime Config Reload
-- Add config file watcher in the MPC node for `/mnt/shared/config-overlay.yaml`
-- Implement `watch::channel`-based config propagation for `ForeignChainsConfig`
-- Update coordinator to re-vote `foreign_chain_policy` on config change
-- Add secrets file support (`/mnt/shared/secrets.env`) for hot-reloadable API keys
+**Launcher changes:**
+- Add `MPC_CONFIG_TOML_BASE64` support: decode and write to `/mnt/shared/mpc-config.toml`
+- Change `shared-volume` mount from `:ro` to `:rw` in `launcher_docker_compose.yaml` (requires voting)
+- When TOML config is present, skip passing most `--env` flags (they're in the TOML). Still pass `NEAR_BOOT_NODES` for near node init.
 
-#### Phase 3: Operator Tooling & Ergonomics
-- Add a helper script to generate overlay files from a more ergonomic format
-- Update `deploy-launcher.sh` and `deploy-launcher-guide.md`
-- Update `running-an-mpc-node-in-tdx-external-guide.md` with foreign chain config instructions
-- Consider switching to the `StartWithConfigFile` TOML path long-term (Option B) for cleaner architecture
+**Operator workflow:**
+- Create TOML config from template, including `foreign_chains`
+- Base64-encode, add to `user-config.conf`
+- Deploy/update CVM
+
+**What this unblocks:** TDX nodes with `foreign_chains` config, testnet migration, arbitrary config customization.
+
+#### Phase 2: Runtime Config Hot-Reload
+
+- Add file watcher on `/mnt/shared/mpc-config.toml` in the MPC node
+- `watch::channel`-based propagation of `ForeignChainsConfig` changes to coordinator and providers
+- Coordinator re-votes `foreign_chain_policy` when config changes (with rate limiting)
+- Operator updates config via `vmm-cli.py update-user-config` → launcher rewrites TOML → node picks up change
+
+#### Phase 3: Ergonomics and Tooling
+
+- Create a CLI tool or script to generate TOML configs from a simpler input format
+- Support partial config updates (tool merges changes into existing TOML)
+- Update operator guides (`running-an-mpc-node-in-tdx-external-guide.md`, `deploy-launcher-guide.md`)
+- Consider moving Near node init into the TOML path to fully eliminate `start.sh`
 
 ### Open Questions
 
-1. **Is `pyyaml` available in the node Docker image?** The image is based on `debian:bookworm-slim` with `python3` installed, but not necessarily `pyyaml`. If not, we could use a JSON-based overlay instead, or add the dependency. Alternatively, the merge logic could be implemented in a small Rust helper or directly in the node binary (e.g., `mpc-node merge-config --overlay /mnt/shared/config-overlay.yaml`).
+1. **Launcher compose voting timeline.** Changing `shared-volume:/mnt/shared:ro` to `:rw` requires a compose update and voting round. Can this be bundled with the next planned launcher upgrade?
 
-2. **Launcher compose rw mount timing.** Changing `shared-volume:/mnt/shared:ro` to `rw` in the launcher compose requires a voting round. Can this be bundled with the next launcher image upgrade, or does it need to happen independently? Note: The launcher currently exits after starting the MPC container, so even with rw access, there's no persistent process that could tamper with the shared volume.
+2. **Near node initialization.** `start.sh` currently handles Near node initialization (`mpc-node init`, genesis download, `config.json` updates). The TOML path only covers MPC node config, not Near node setup. We should keep this part of `start.sh` for now and eventually fold it into the TOML path or a separate init command.
 
-3. **What happens if the overlay file is invalid?** `start.sh` should fail loudly (exit 1) if the overlay YAML is malformed, preventing the node from starting with a broken config. The runtime watcher should log a warning and keep the current config.
+3. **Secret placement.** The TOML config will contain `secret_store_key_hex` on the shared volume. This is encrypted at rest by the CVM, but it means the secret is in a file rather than a transient env var. Is this acceptable? (Note: the current architecture already has `MPC_SECRET_STORE_KEY` as a Docker env var, which is visible in `docker inspect` and persists in the container metadata -- arguably the TOML file is no worse.)
 
-4. **Should the overlay support all config fields or just `foreign_chains`?** Starting with `foreign_chains` only is simpler and safer. But operators may also want to tune `triple.concurrency`, `presignature.desired_presignatures_to_buffer`, etc. A full overlay merge is more flexible at the cost of complexity.
+4. **Base64 ergonomics.** For large configs, base64 encoding in `user-config.conf` is unwieldy. A future improvement could support direct file placement via dstack APIs, or a reference to a file path instead of inline base64.
 
 5. **Re-voting on config change.** When `foreign_chains` config changes at runtime, the node should automatically call `vote_foreign_chain_policy` with the new policy. This needs rate limiting to avoid vote spam if the operator is iterating on config.
 
-6. **How to deliver the overlay file in Phase 0 (before launcher support)?** The operator could SSH into the TDX host, use `vmm-cli.py` to access the VM, and write the file directly to the shared volume. This is manual but unblocks us immediately. Exact steps need documentation.
+6. **Migration path for existing deployments.** Nodes already deployed with the legacy `start.sh` path can be migrated by adding `MPC_CONFIG_TOML_BASE64` to their `user-config.conf` and restarting. The TOML config takes precedence, and the legacy `config.yaml` is no longer read.
