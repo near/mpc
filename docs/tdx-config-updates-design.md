@@ -342,7 +342,6 @@ Both approaches work today. The inline approach is simpler and avoids the env-va
 - Base64 encoding in `user-config.conf` is not very ergonomic for large configs
 - Operator must provide the full config, not just overrides (but the template makes this straightforward)
 - Secrets (`secret_store_key_hex`) end up in the TOML file on disk (encrypted at rest by the CVM -- same security model as the current `config.yaml` + env vars)
-- The 1024-byte per-value limit in the launcher may need to be raised for large TOML configs
 
 ---
 
@@ -418,7 +417,7 @@ Add an HTTP endpoint to the MPC node's existing web server (port 8080) for recei
 - Keep the Near node initialization (`initialize_near_node`, `update_near_node_config`) since the TOML path doesn't handle that
 
 **Launcher changes:**
-- Raise the 1024-byte per-value limit (or exempt `MPC_CONFIG_TOML_BASE64` from it), since a base64-encoded TOML config will exceed this
+- Raise the per-value size limit for `MPC_CONFIG_TOML_BASE64` (currently 1024 bytes, our own guardrail in `launcher.py`)
 
 **Operator workflow:**
 - Create TOML config from template, including `foreign_chains`
@@ -440,10 +439,3 @@ Add an HTTP endpoint to the MPC node's existing web server (port 8080) for recei
 - Update operator guides (`running-an-mpc-node-in-tdx-external-guide.md`, `deploy-launcher-guide.md`)
 - Consider moving Near node init into the TOML path to fully eliminate `start.sh`
 
-### Open Questions
-
-1. **Near node initialization.** `start.sh` currently handles Near node initialization (`mpc-node init`, genesis download, `config.json` updates). The TOML path only covers MPC node config, not Near node setup. We should keep this part of `start.sh` for now and eventually fold it into the TOML path or a separate init command.
-
-2. **Launcher env var size limit.** The launcher enforces a 1024-byte per-value limit and 32KB total limit. A base64-encoded TOML config with `foreign_chains` will likely exceed 1024 bytes. We need to either raise this limit for `MPC_CONFIG_TOML_BASE64` or remove the per-value cap entirely (the total payload cap is sufficient protection).
-
-3. **Re-voting on config change.** When `foreign_chains` config changes at runtime, the node should automatically call `vote_foreign_chain_policy` with the new policy. This needs rate limiting to avoid vote spam if the operator is iterating on config.
