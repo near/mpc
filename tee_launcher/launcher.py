@@ -192,21 +192,6 @@ def is_safe_env_value(value: str) -> bool:
     return True
 
 
-def is_valid_ip(ip: str) -> bool:
-    try:
-        ipaddress.ip_address(ip)
-        return True
-    except ValueError:
-        return False
-
-
-def is_valid_host_entry(entry: str) -> bool:
-    if not HOST_ENTRY_RE.match(entry):
-        return False
-    host, ip = entry.split(":")
-    return is_valid_ip(ip)
-
-
 def is_valid_port_mapping(entry: str) -> bool:
     match = PORT_MAPPING_RE.match(entry)
     if not match:
@@ -221,18 +206,6 @@ def is_non_empty_and_cleaned(val: str) -> bool:
     if not val.strip():
         return False
     return val.strip() == val
-
-
-def is_safe_host_entry(entry: str) -> bool:
-    """
-    Ensure that host entry does not contain unsafe characters,
-    does not start with '--' or '-', and does not include LD_PRELOAD.
-    """
-    if INVALID_HOST_ENTRY_PATTERN.search(entry):
-        return False
-    if "LD_PRELOAD" in entry:
-        return False
-    return True
 
 
 def is_safe_port_mapping(mapping: str) -> bool:

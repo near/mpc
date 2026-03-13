@@ -15,7 +15,6 @@ from tee_launcher.launcher import (
     validate_image_hash,
     parse_env_lines,
     build_docker_cmd,
-    is_valid_host_entry,
     is_valid_port_mapping,
     Platform,
     is_safe_env_value,
@@ -119,13 +118,6 @@ def test_config_overrides_duplicate_keys():
 
 
 # test valid and invalid host entries and port mappings
-
-
-def test_valid_host_entry():
-    assert is_valid_host_entry("node.local:192.168.1.1")
-    assert not is_valid_host_entry("node.local:not-an-ip")
-    assert not is_valid_host_entry("--env LD_PRELOAD=hack.so")
-
 
 def test_valid_port_mapping():
     assert is_valid_port_mapping("11780:11780")
