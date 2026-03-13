@@ -78,7 +78,7 @@ mod tests {
     use near_account_id::AccountId;
 
     use super::ContractMethodSubscription;
-    use crate::errors::ChainGatewayError;
+    use crate::errors::{ChainGatewayError, ChainGatewayOp};
     use crate::mock::{MockChainState, MockError};
     use crate::state_viewer::WatchContractState;
     use crate::state_viewer::monitoring::POLL_INTERVAL;
@@ -127,7 +127,7 @@ mod tests {
 
         assert_eq!(
             sub.latest().unwrap_err(),
-            ChainGatewayError::ViewClient {
+            ChainGatewayError::ViewError {
                 op: crate::errors::ChainGatewayOp::ViewQuery {
                     account_id: account_id.to_string(),
                     method_name
@@ -147,17 +147,26 @@ mod tests {
             }))
             .build();
 
+        let contract_id: AccountId = "test.testnet".parse().unwrap();
+        let method_name: String = "get_value".into();
         let mut sub = ContractMethodSubscription::<String>::new(
             viewer,
-            "test.testnet".parse().unwrap(),
-            "get_value",
+            contract_id.clone(),
+            &method_name,
             b"{}".to_vec(),
         )
         .await;
 
-        assert_matches!(
-            sub.latest().unwrap_err(),
-            ChainGatewayError::Deserialization { .. }
+        let err = sub.latest().unwrap_err();
+        assert_eq!(
+            err,
+            ChainGatewayError::Deserialization {
+                op: ChainGatewayOp::ViewQuery {
+                    account_id: contract_id.to_string(),
+                    method_name
+                },
+                message: "".to_string()
+            }
         );
     }
 

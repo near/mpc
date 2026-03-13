@@ -16,7 +16,7 @@ pub struct ChainGateway {
     view_client: NearViewClientActorHandle,
     /// For querying blockchain sync status.
     client: NearClientActorHandle,
-    /// For sending txs to the chain.
+    /// For sending transactions to the blockchain.
     rpc_handler: NearRpcActorHandle,
 }
 
@@ -37,6 +37,27 @@ impl QueryViewFunction for ChainGateway {
     ) -> Result<ObservedState, Self::Error> {
         self.view_client
             .query_view_function(contract_id, method_name, args)
+            .await
+    }
+}
+
+impl FetchLatestFinalBlockInfo for ChainGateway {
+    type Error = NearViewClientError;
+    async fn fetch_latest_final_block_info(
+        &self,
+    ) -> Result<crate::types::LatestFinalBlockInfo, Self::Error> {
+        self.view_client.fetch_latest_final_block_info().await
+    }
+}
+
+impl SubmitSignedTransaction for ChainGateway {
+    type Error = NearRpcError;
+    async fn submit_signed_transaction(
+        &self,
+        transaction: SignedTransaction,
+    ) -> Result<(), Self::Error> {
+        self.rpc_handler
+            .submit_signed_transaction(transaction)
             .await
     }
 }
@@ -67,26 +88,5 @@ impl ChainGateway {
             client,
             rpc_handler,
         })
-    }
-}
-
-impl FetchLatestFinalBlockInfo for ChainGateway {
-    type Error = NearViewClientError;
-    async fn fetch_latest_final_block_info(
-        &self,
-    ) -> Result<crate::types::LatestFinalBlockInfo, Self::Error> {
-        self.view_client.fetch_latest_final_block_info().await
-    }
-}
-
-impl SubmitSignedTransaction for ChainGateway {
-    type Error = NearRpcError;
-    async fn submit_signed_transaction(
-        &self,
-        transaction: SignedTransaction,
-    ) -> Result<(), Self::Error> {
-        self.rpc_handler
-            .submit_signed_transaction(transaction)
-            .await
     }
 }

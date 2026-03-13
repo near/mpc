@@ -3,7 +3,7 @@ use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::Gas;
 use std::sync::Arc;
 
-use crate::errors::ChainGatewayError;
+use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 
 use super::TransactionSigner;
@@ -33,12 +33,21 @@ where
     ) -> Result<CryptoHash, ChainGatewayError> {
         let info = self.fetch_latest_final_block_info().await.map_err(|err| {
             ChainGatewayError::FetchFinalBlock {
+                op: ChainGatewayOp::SubmitFunctionCallTransaction {
+                    receiver_id: receiver_id.to_string(),
+                    method_name: method_name.clone(),
+                },
                 message: err.to_string(),
             }
         })?;
 
-        let transaction =
-            signer.create_and_sign_function_call_tx(receiver_id, method_name, args, gas, info);
+        let transaction = signer.create_and_sign_function_call_tx(
+            receiver_id.clone(),
+            method_name.clone(),
+            args,
+            gas,
+            info,
+        );
 
         let tx_hash = transaction.get_hash();
 
@@ -50,7 +59,11 @@ where
         );
         self.submit_signed_transaction(transaction)
             .await
-            .map_err(|err| ChainGatewayError::SubmitTransaction {
+            .map_err(|err| ChainGatewayError::SubmitSignedTransaction {
+                op: ChainGatewayOp::SubmitFunctionCallTransaction {
+                    receiver_id: receiver_id.to_string(),
+                    method_name,
+                },
                 message: err.to_string(),
             })?;
         Ok(tx_hash)
@@ -103,16 +116,20 @@ mod tests {
         let res = mock_chain_state
             .submit_function_call_tx(
                 signer,
-                call.receiver_id,
-                call.method_name,
-                call.args,
+                call.receiver_id.clone(),
+                call.method_name.clone(),
+                call.args.clone(),
                 call.gas,
             )
             .await
             .unwrap_err();
         assert_eq!(
             res,
-            ChainGatewayError::FetchFinalBlock {
+            ChainGatewayError::ViewError {
+                op: ChainGatewayOp::SubmitFunctionCallTransaction {
+                    receiver_id: call.receiver_id.to_string(),
+                    method_name: call.method_name
+                },
                 message: expected_source.to_string()
             }
         );
@@ -196,7 +213,11 @@ mod tests {
         // Then
         assert_eq!(
             res,
-            ChainGatewayError::SubmitTransaction {
+            ChainGatewayError::SubmitSignedTransaction {
+                op: ChainGatewayOp::SubmitFunctionCallTransaction {
+                    receiver_id: call.receiver_id.to_string(),
+                    method_name: call.method_name
+                },
                 message: expected_source.to_string()
             }
         );

@@ -2,20 +2,20 @@ use std::fmt;
 
 use near_account_id::AccountId;
 
-#[derive(Debug, thiserror::Error)]
-pub enum NearRpcError {
-    #[error("failed to submit transaction: {message}")]
-    SubmitTransaction { message: String },
-    #[error("received invalid response: {response}")]
-    ResponseError { response: String },
-}
-
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum NearClientError {
     #[error("near client failed to send async: {message}")]
     AsyncSendError { message: String },
     #[error("near client response error: {message}")]
     ResponseError { message: String },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum NearRpcError {
+    #[error("failed to submit transaction: {message}")]
+    SubmitTransaction { message: String },
+    #[error("received invalid response: {response}")]
+    ResponseError { response: String },
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -49,7 +49,7 @@ pub enum NearViewClientQuery {
 impl fmt::Display for NearViewClientQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::LatestFinalBlock => write!(f, "latest final block query"),
+            Self::LatestFinalBlock => write!(f, "query latest final block"),
             Self::ViewMethod {
                 contract_id,
                 method_name,
@@ -60,6 +60,11 @@ impl fmt::Display for NearViewClientQuery {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChainGatewayOp {
+    SubmitFunctionCallTransaction {
+        receiver_id: String,
+        method_name: String,
+        // should we add more? signer_id?
+    },
     ViewQuery {
         account_id: String,
         method_name: String,
@@ -69,6 +74,12 @@ pub enum ChainGatewayOp {
 impl std::fmt::Display for ChainGatewayOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ChainGatewayOp::SubmitFunctionCallTransaction {
+                receiver_id,
+                method_name,
+            } => {
+                write!(f, "submiting function call {}.{}", receiver_id, method_name)
+            }
             ChainGatewayOp::ViewQuery {
                 account_id,
                 method_name,
@@ -85,22 +96,19 @@ pub enum ChainGatewayError {
     MonitoringClosed,
 
     #[error("view client error while {op}: {message}")]
-    ViewClient { op: ChainGatewayOp, message: String },
+    ViewError { op: ChainGatewayOp, message: String },
 
-    #[error("serialization error {op}: {message}")]
+    #[error("serialization error while {op}: {message}")]
     Serialization { op: ChainGatewayOp, message: String },
 
-    #[error("deserialization error: {message}")]
-    Deserialization { message: String },
+    #[error("deserialization error while {op}: {message}")]
+    Deserialization { op: ChainGatewayOp, message: String },
 
-    #[error("rpc client error")]
-    RpcClient { message: String },
+    #[error("failed to fetch latest final block while doing {op}: {message}")]
+    FetchFinalBlock { op: ChainGatewayOp, message: String },
 
-    #[error("failed to fetch latest final block")]
-    FetchFinalBlock { message: String },
-
-    #[error("failed to submit signed transaction")]
-    SubmitTransaction { message: String },
+    #[error("failed to submit signed transaction while {op}: {message}")]
+    SubmitSignedTransaction { op: ChainGatewayOp, message: String },
 
     #[error("failure loading config with {msg}")]
     FailureLoadingConfig { msg: String },
