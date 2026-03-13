@@ -191,13 +191,13 @@ Since this is not a validator node, we can remove `validator_key.json`
 rm ~/.near/mpc-frodo/validator_key.json
 ```
 
-Next we'll create a JSON configuration file for Frodo's MPC node using the
-shared template at `docs/localnet/mpc-config.template.json`. This single file
+Next we'll create a TOML configuration file for Frodo's MPC node using the
+shared template at `docs/localnet/mpc-config.template.toml`. This single file
 contains all settings (secrets, TEE config, and node parameters):
 
 ```shell
 env MPC_NODE_ID=mpc-frodo NEAR_ACCOUNT_ID=frodo.test.near WEB_UI_PORT=8081 MIGRATION_WEB_UI_PORT=8079 PPROF_PORT=34001 \
-  envsubst < docs/localnet/mpc-config.template.json > ~/.near/mpc-frodo/mpc-config.json
+  envsubst < docs/localnet/mpc-config.template.toml > ~/.near/mpc-frodo/mpc-config.toml
 ```
 
 ### Initialize Sam's node
@@ -222,19 +222,19 @@ rm ~/.near/mpc-sam/validator_key.json
 
 ```shell
 env MPC_NODE_ID=mpc-sam NEAR_ACCOUNT_ID=sam.test.near WEB_UI_PORT=8082 MIGRATION_WEB_UI_PORT=8078 PPROF_PORT=34002 \
-  envsubst < docs/localnet/mpc-config.template.json > ~/.near/mpc-sam/mpc-config.json
+  envsubst < docs/localnet/mpc-config.template.toml > ~/.near/mpc-sam/mpc-config.toml
 ```
 
 ### Run the MPC binary
 
-In two separate shells run the MPC binary for Frodo and Sam using their JSON config files:
+In two separate shells run the MPC binary for Frodo and Sam using their TOML config files:
 
 ```shell
-RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.json
+RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.toml
 ```
 
 ```shell
-RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-frodo/mpc-config.json
+RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-frodo/mpc-config.toml
 ```
 
 Notes:
