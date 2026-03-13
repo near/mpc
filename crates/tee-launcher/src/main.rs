@@ -1,5 +1,3 @@
-// A rewrite of launcher.py
-
 use std::io::Write;
 use std::process::Command;
 use std::{collections::VecDeque, time::Duration};
