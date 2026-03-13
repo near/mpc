@@ -188,7 +188,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     exit_reason
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
     start_config: StartConfig,
     home_dir: PathBuf,

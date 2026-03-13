@@ -242,6 +242,7 @@ time = "0.3.41"
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"
+allow_attributes = "warn"
 mod_module_files = "deny"
 
 [workspace.lints.rustdoc]

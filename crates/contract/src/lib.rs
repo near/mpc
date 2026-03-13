@@ -2118,7 +2118,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use std::{
         collections::{BTreeMap, HashSet},
@@ -2195,7 +2195,7 @@ mod tests {
     }
 
     #[derive(Debug)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub enum SharedSecretKey {
         Secp256k1(k256::Scalar),
         Ed25519(curve25519_dalek::Scalar),

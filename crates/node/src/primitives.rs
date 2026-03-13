@@ -264,7 +264,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     fn mpc_message_kind_debug__should_redact_computation_payload() {
         // given
         let secret_data = b"SECRET_SHARE_DATA_THAT_MUST_NOT_LEAK".to_vec();
@@ -292,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     fn mpc_message_kind_debug__should_show_chunk_count_and_total_bytes() {
         // given
         let kind = MpcMessageKind::Computation(vec![vec![0u8; 100], vec![0u8; 200], vec![0u8; 50]]);
@@ -314,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     fn mpc_message_kind_debug__should_show_non_sensitive_variants_normally() {
         // given
         let start = MpcMessageKind::Start(MpcStartMessage {
@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     fn mpc_peer_message_debug__should_redact_computation_payload() {
         // given
         let secret_data = b"PRIVATE_KEY_SHARE_MATERIAL".to_vec();
