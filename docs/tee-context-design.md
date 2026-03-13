@@ -1,6 +1,6 @@
 # TEE Context
 
-The TEE Context is a shared crate for the TEE attestation lifecycle. It polls governance contract state (allowed image hashes, foreign chain policy) and exposes methods for attestation submission and verification — so that each service gets these capabilities without reimplementing contract interactions. Each service is responsible for its own attestation scheduling (when to submit, when to call `verify_tee`). The MPC node already implements these operations today; they will be extracted into a standalone crate reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, Backup Service) use the TEE Context directly.
+The TEE Context is a shared crate for the TEE attestation lifecycle. It polls governance contract state (allowed image hashes) and exposes methods for attestation submission and verification — so that each service gets these capabilities without reimplementing contract interactions. Each service is responsible for its own attestation scheduling (when to submit, when to call `verify_tee`). The MPC node already implements these operations today; they will be extracted into a standalone crate reusable by all services. In the MPC node, the [MPC Context][mpc-context] depends on the TEE Context for attestation and adds MPC-specific orchestration on top. Other services (Archive Signer, Backup Service) use the TEE Context directly.
 
 [mpc-context]: indexer-design.md
 
@@ -40,14 +40,6 @@ impl TeeContext {
     /// Delegates to StreamContractState::changed().
     pub async fn allowed_tee_hashes_changed(&self) -> Result<(), Error>;
 
-    /// Returns the latest foreign chain policy.
-    /// Delegates to StreamContractState::latest().
-    pub fn foreign_chain_policy(&self) -> Result<ForeignChainPolicy, Error>;
-
-    /// Resolves when the foreign chain policy changes.
-    /// Delegates to StreamContractState::changed().
-    pub async fn foreign_chain_policy_changed(&self) -> Result<(), Error>;
-
     /// Submits an attestation to the governance contract via
     /// submit_participant_info(). The caller is responsible for generating
     /// the attestation quote (via tee-authority) and deciding when to submit.
@@ -60,7 +52,7 @@ impl TeeContext {
 }
 ```
 
-The read methods (`allowed_tee_hashes`, `foreign_chain_policy`) and their `_changed()` counterparts delegate to the Chain Gateway, which handles background polling internally. The TEE Context does not write to disk — persistence is the caller's responsibility.
+The read methods (`allowed_tee_hashes`) and their `_changed()` counterparts delegate to the Chain Gateway, which handles background polling internally. The TEE Context does not write to disk — persistence is the caller's responsibility.
 
 Each service passes its governance contract address to `TeeContext::new()`. All governance contracts expose the same attestation-related methods (see [Attestation Methods][tee-context-methods]) since they share [`TeeState`][tee-state]. Voting methods vary per contract.
 
