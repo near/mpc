@@ -5,11 +5,10 @@ use near_sdk::{Gas, NearToken};
 
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
-pub const ALL_CURVES: &[Curve; 4] = &[
+pub const ALL_CURVES: &[Curve; 3] = &[
     Curve::Secp256k1,
     Curve::Edwards25519,
     Curve::Bls12381,
-    Curve::V2Secp256k1,
 ];
 
 /* --- Gas constants --- */

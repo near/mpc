@@ -33,6 +33,22 @@ impl Display for DomainId {
     }
 }
 
+/// Specifies what protocol the nodes need to run for a domain.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Protocol {
+    OtBasedEcdsa,
+    Frost,
+    ConfidentialKeyDerivation,
+    DamgardEtAl,
+}
+
+impl Default for Protocol {
+    fn default() -> Self {
+        Self::OtBasedEcdsa
+    }
+}
+
 /// Elliptic curve used by a domain.
 /// More curves may be added in the future. When adding new curves, both Borsh
 /// *and* JSON serialization must be kept compatible.
@@ -43,13 +59,36 @@ pub enum Curve {
     #[serde(rename = "Ed25519")]
     Edwards25519,
     Bls12381,
-    V2Secp256k1, // Robust ECDSA
 }
 
 impl Default for Curve {
     fn default() -> Self {
         Self::Secp256k1
     }
+}
+
+/// Number of shares required to reconstruct the secret key for a domain.
+/// For legacy domains this matches the global threshold; new domains can set it independently.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReconstructionThreshold(pub u64);
+
+impl ReconstructionThreshold {
+    pub fn new(val: u64) -> Self {
+        Self(val)
+    }
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+/// Specifies the key configuration for a domain: protocol, curve, and reconstruction threshold.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyConfig {
+    pub protocol: Protocol,
+    pub curve: Curve,
+    pub reconstruction_threshold: ReconstructionThreshold,
 }
 
 /// Infer a default purpose from the curve.
@@ -61,48 +100,107 @@ pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
     }
 }
 
+/// Infer the protocol from a curve for **legacy domains only**.
+///
+/// This mapping is only valid for domains that existed before the `Protocol` field
+/// was introduced. It is NOT a general-purpose mapping: e.g. both `OtBasedEcdsa`
+/// and `DamgardEtAl` use `Secp256k1`, but only `OtBasedEcdsa` was ever deployed.
+pub fn infer_legacy_protocol_from_curve(curve: Curve) -> Protocol {
+    match curve {
+        Curve::Secp256k1 => Protocol::OtBasedEcdsa,
+        Curve::Edwards25519 => Protocol::Frost,
+        Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
+    }
+}
+
+/// Build a `KeyConfig` from just a curve, inferring the protocol from legacy rules.
+/// `reconstruction_threshold` defaults to 0 (must be set by the caller/migration).
+pub fn infer_key_config_from_curve(curve: Curve) -> KeyConfig {
+    KeyConfig {
+        protocol: infer_legacy_protocol_from_curve(curve),
+        curve,
+        reconstruction_threshold: ReconstructionThreshold::default(),
+    }
+}
+
 /// Returns whether the given curve is valid for the given purpose.
 pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool {
     matches!(
         (purpose, curve),
         (DomainPurpose::Sign, Curve::Secp256k1)
-            | (DomainPurpose::Sign, Curve::V2Secp256k1)
             | (DomainPurpose::Sign, Curve::Edwards25519)
             | (DomainPurpose::ForeignTx, Curve::Secp256k1)
             | (DomainPurpose::CKD, Curve::Bls12381)
     )
 }
 
-/// Describes the configuration of a domain: the domain ID and the curve it uses.
+/// Describes the configuration of a domain: the domain ID, key configuration, and purpose.
 #[near(serializers=[borsh, json])]
-#[serde(from = "DomainConfigCompat")]
+#[serde(from = "DomainConfigCompat", into = "DomainConfigSer")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
-    #[serde(rename = "scheme")]
-    pub curve: Curve,
+    pub key_config: KeyConfig,
     pub purpose: DomainPurpose,
 }
 
+/// Serialization helper for [`DomainConfig`].
+///
+/// Emits a `scheme` field (the curve name) alongside `key_config` so that
+/// older contracts that only understand `{ scheme: "Secp256k1" }` can still
+/// parse the JSON.  Newer contracts use [`DomainConfigCompat`] which prefers
+/// `key_config` when present.
+#[derive(serde::Serialize)]
+struct DomainConfigSer {
+    id: DomainId,
+    /// Backward-compat: older contracts read this field.
+    scheme: Curve,
+    key_config: KeyConfig,
+    purpose: DomainPurpose,
+}
+
+impl From<DomainConfig> for DomainConfigSer {
+    fn from(d: DomainConfig) -> Self {
+        Self {
+            id: d.id,
+            scheme: d.key_config.curve,
+            key_config: d.key_config,
+            purpose: d.purpose,
+        }
+    }
+}
+
 /// JSON-only compatibility helper:
-/// old 3.4.x state omitted `purpose`, so we infer it from `curve` when absent.
+/// - Old 3.4.x format: `{ id, scheme: "Secp256k1" }` (no `purpose`, no `key_config`)
+/// - Previous format:  `{ id, scheme: "Secp256k1", purpose: "Sign" }` (no `key_config`)
+/// - New format:       `{ id, key_config: { protocol, curve, reconstruction_threshold }, purpose }`
 #[derive(serde::Deserialize)]
 struct DomainConfigCompat {
     id: DomainId,
+    /// New format: full key configuration.
+    key_config: Option<KeyConfig>,
+    /// Old format fallback: bare curve (field was called "scheme" in older JSON).
     #[serde(alias = "scheme")]
-    curve: Curve,
+    curve: Option<Curve>,
     #[serde(default)]
     purpose: Option<DomainPurpose>,
 }
 
 impl From<DomainConfigCompat> for DomainConfig {
     fn from(value: DomainConfigCompat) -> Self {
+        let key_config = value.key_config.unwrap_or_else(|| {
+            let curve = value
+                .curve
+                .expect("DomainConfig JSON must contain either `key_config` or `curve`/`scheme`");
+            infer_key_config_from_curve(curve)
+        });
+        let purpose = value
+            .purpose
+            .unwrap_or_else(|| infer_purpose_from_curve(key_config.curve));
         Self {
             id: value.id,
-            curve: value.curve,
-            purpose: value
-                .purpose
-                .unwrap_or_else(|| infer_purpose_from_curve(value.curve)),
+            key_config,
+            purpose,
         }
     }
 }
@@ -125,16 +223,23 @@ impl DomainRegistry {
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
     pub fn new_single_ecdsa_key_from_legacy() -> Self {
         let mut registry = Self::default();
-        registry.add_domain(Curve::Secp256k1, DomainPurpose::Sign);
+        registry.add_domain(
+            KeyConfig {
+                protocol: Protocol::OtBasedEcdsa,
+                curve: Curve::Secp256k1,
+                reconstruction_threshold: ReconstructionThreshold::default(),
+            },
+            DomainPurpose::Sign,
+        );
         registry
     }
 
-    /// Add a single domain with the given protocol and purpose, returning the DomainId of the
-    /// added domain.
-    fn add_domain(&mut self, curve: Curve, purpose: DomainPurpose) -> DomainId {
+    /// Add a single domain with the given key configuration and purpose, returning the DomainId
+    /// of the added domain.
+    fn add_domain(&mut self, key_config: KeyConfig, purpose: DomainPurpose) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
-            curve,
+            key_config,
             purpose,
         };
         self.next_domain_id += 1;
@@ -148,7 +253,7 @@ impl DomainRegistry {
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
-            let new_domain_id = new_registry.add_domain(domain.curve, domain.purpose);
+            let new_domain_id = new_registry.add_domain(domain.key_config, domain.purpose);
             if new_domain_id != domain.id {
                 return Err(DomainError::NewDomainIdsNotContiguous {
                     expected_id: new_domain_id,
@@ -181,7 +286,7 @@ impl DomainRegistry {
         self.domains
             .iter()
             .rev()
-            .find(|domain| domain.curve == curve)
+            .find(|domain| domain.key_config.curve == curve)
             .map(|domain| domain.id)
     }
 
@@ -267,8 +372,9 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        infer_purpose_from_curve, is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig,
-        DomainId, DomainPurpose, DomainRegistry, Participants,
+        infer_key_config_from_curve, infer_purpose_from_curve, is_valid_curve_for_purpose,
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
+        KeyConfig, Participants, Protocol, ReconstructionThreshold,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{gen_participant, gen_participants};
@@ -276,33 +382,33 @@ pub mod tests {
     use near_sdk::testing_env;
     use rstest::rstest;
 
+    fn make_domain(id: u64, curve: Curve, purpose: DomainPurpose) -> DomainConfig {
+        DomainConfig {
+            id: DomainId(id),
+            key_config: infer_key_config_from_curve(curve),
+            purpose,
+        }
+    }
+
     #[test]
     fn test_add_domains() {
         let registry = DomainRegistry::default();
         let domains1 = vec![
-            DomainConfig {
-                id: DomainId(0),
-                curve: Curve::Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(1),
-                curve: Curve::Edwards25519,
-                purpose: DomainPurpose::Sign,
-            },
+            make_domain(0, Curve::Secp256k1, DomainPurpose::Sign),
+            make_domain(1, Curve::Edwards25519, DomainPurpose::Sign),
         ];
         let new_registry = registry.add_domains(domains1.clone()).unwrap();
         assert_eq!(new_registry.domains, domains1);
 
         let domains2 = vec![
-            DomainConfig {
-                id: DomainId(2),
-                curve: Curve::Bls12381,
-                purpose: DomainPurpose::CKD,
-            },
+            make_domain(2, Curve::Bls12381, DomainPurpose::CKD),
             DomainConfig {
                 id: DomainId(3),
-                curve: Curve::V2Secp256k1,
+                key_config: KeyConfig {
+                    protocol: Protocol::DamgardEtAl,
+                    curve: Curve::Secp256k1,
+                    reconstruction_threshold: ReconstructionThreshold::default(),
+                },
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -311,25 +417,13 @@ pub mod tests {
         assert_eq!(&new_registry.domains[2..4], &domains2);
 
         // This fails because the domain ID does not start from next_domain_id.
-        let domains3 = vec![DomainConfig {
-            id: DomainId(5),
-            curve: Curve::Secp256k1,
-            purpose: DomainPurpose::Sign,
-        }];
+        let domains3 = vec![make_domain(5, Curve::Secp256k1, DomainPurpose::Sign)];
         let _ = new_registry.add_domains(domains3).unwrap_err();
 
         // This fails because the domain IDs are not sorted.
         let domains4 = vec![
-            DomainConfig {
-                id: DomainId(5),
-                curve: Curve::Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(4),
-                curve: Curve::Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
+            make_domain(5, Curve::Secp256k1, DomainPurpose::Sign),
+            make_domain(4, Curve::Secp256k1, DomainPurpose::Sign),
         ];
         let _ = new_registry.add_domains(domains4).unwrap_err();
     }
@@ -337,24 +431,16 @@ pub mod tests {
     #[test]
     fn test_retain_domains() {
         let expected = vec![
-            DomainConfig {
-                id: DomainId(0),
-                curve: Curve::Secp256k1,
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(2),
-                curve: Curve::Edwards25519,
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(3),
-                curve: Curve::Bls12381,
-                purpose: DomainPurpose::CKD,
-            },
+            make_domain(0, Curve::Secp256k1, DomainPurpose::Sign),
+            make_domain(2, Curve::Edwards25519, DomainPurpose::Sign),
+            make_domain(3, Curve::Bls12381, DomainPurpose::CKD),
             DomainConfig {
                 id: DomainId(4),
-                curve: Curve::V2Secp256k1,
+                key_config: KeyConfig {
+                    protocol: Protocol::DamgardEtAl,
+                    curve: Curve::Secp256k1,
+                    reconstruction_threshold: ReconstructionThreshold::default(),
+                },
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -376,21 +462,9 @@ pub mod tests {
     fn test_most_recent_domain_for_curve() {
         let registry = DomainRegistry::from_raw_validated(
             vec![
-                DomainConfig {
-                    id: DomainId(0),
-                    curve: Curve::Secp256k1,
-                    purpose: DomainPurpose::Sign,
-                },
-                DomainConfig {
-                    id: DomainId(2),
-                    curve: Curve::Edwards25519,
-                    purpose: DomainPurpose::Sign,
-                },
-                DomainConfig {
-                    id: DomainId(3),
-                    curve: Curve::Secp256k1,
-                    purpose: DomainPurpose::Sign,
-                },
+                make_domain(0, Curve::Secp256k1, DomainPurpose::Sign),
+                make_domain(2, Curve::Edwards25519, DomainPurpose::Sign),
+                make_domain(3, Curve::Secp256k1, DomainPurpose::Sign),
             ],
             6,
         )
@@ -407,17 +481,15 @@ pub mod tests {
 
     #[test]
     fn test_serialization_format() {
-        let domain_config = DomainConfig {
-            id: DomainId(3),
-            curve: Curve::Secp256k1,
-            purpose: DomainPurpose::Sign,
-        };
+        let domain_config = make_domain(3, Curve::Secp256k1, DomainPurpose::Sign);
         let json = serde_json::to_string(&domain_config).unwrap();
-        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#);
+        let expected = r#"{"id":3,"scheme":"Secp256k1","key_config":{"protocol":"OtBasedEcdsa","curve":"Secp256k1","reconstruction_threshold":0},"purpose":"Sign"}"#;
+        assert_eq!(json, expected);
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
-        assert_eq!(domain_config.curve, Curve::Secp256k1);
+        assert_eq!(domain_config.key_config.curve, Curve::Secp256k1);
+        assert_eq!(domain_config.key_config.protocol, Protocol::OtBasedEcdsa);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
     }
 
@@ -434,21 +506,20 @@ pub mod tests {
         Curve::Secp256k1,
         DomainPurpose::Sign
     )]
-    fn test_deserialization_without_purpose(
+    fn test_deserialization_without_key_config(
         #[case] json: &str,
         #[case] expected_curve: Curve,
         #[case] expected_purpose: DomainPurpose,
     ) {
-        // Simulates JSON from a 3.4.1 contract that lacks the `purpose` field.
+        // Simulates JSON from older contracts that lack the `key_config` field.
         let config: DomainConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.curve, expected_curve);
+        assert_eq!(config.key_config.curve, expected_curve);
         assert_eq!(config.purpose, expected_purpose);
     }
 
     #[rstest]
     #[case(Curve::Secp256k1, DomainPurpose::Sign)]
     #[case(Curve::Edwards25519, DomainPurpose::Sign)]
-    #[case(Curve::V2Secp256k1, DomainPurpose::Sign)]
     #[case(Curve::Bls12381, DomainPurpose::CKD)]
     fn test_infer_purpose_from_curve(#[case] curve: Curve, #[case] expected: DomainPurpose) {
         assert_eq!(infer_purpose_from_curve(curve), expected);
@@ -457,7 +528,6 @@ pub mod tests {
     #[rstest]
     // Valid combinations
     #[case(DomainPurpose::Sign, Curve::Secp256k1, true)]
-    #[case(DomainPurpose::Sign, Curve::V2Secp256k1, true)]
     #[case(DomainPurpose::Sign, Curve::Edwards25519, true)]
     #[case(DomainPurpose::ForeignTx, Curve::Secp256k1, true)]
     #[case(DomainPurpose::CKD, Curve::Bls12381, true)]
@@ -465,7 +535,6 @@ pub mod tests {
     #[case(DomainPurpose::Sign, Curve::Bls12381, false)]
     #[case(DomainPurpose::ForeignTx, Curve::Edwards25519, false)]
     #[case(DomainPurpose::ForeignTx, Curve::Bls12381, false)]
-    #[case(DomainPurpose::ForeignTx, Curve::V2Secp256k1, false)]
     #[case(DomainPurpose::CKD, Curve::Secp256k1, false)]
     fn test_valid_curve_purpose_combinations(
         #[case] purpose: DomainPurpose,
@@ -494,11 +563,7 @@ pub mod tests {
     }
 
     fn sample_proposal() -> Vec<DomainConfig> {
-        vec![DomainConfig {
-            id: DomainId(0),
-            curve: Curve::Secp256k1,
-            purpose: DomainPurpose::Sign,
-        }]
+        vec![make_domain(0, Curve::Secp256k1, DomainPurpose::Sign)]
     }
 
     #[test]
@@ -572,16 +637,8 @@ pub mod tests {
     fn test_get_remaining_votes_preserves_different_proposals() {
         // Given
         let (participants, auth_ids) = setup_participants(3);
-        let proposal_a = vec![DomainConfig {
-            id: DomainId(0),
-            curve: Curve::Secp256k1,
-            purpose: DomainPurpose::Sign,
-        }];
-        let proposal_b = vec![DomainConfig {
-            id: DomainId(0),
-            curve: Curve::Edwards25519,
-            purpose: DomainPurpose::Sign,
-        }];
+        let proposal_a = vec![make_domain(0, Curve::Secp256k1, DomainPurpose::Sign)];
+        let proposal_b = vec![make_domain(0, Curve::Edwards25519, DomainPurpose::Sign)];
         let mut votes = AddDomainsVotes::default();
         votes.vote(proposal_a.clone(), &auth_ids[0]);
         votes.vote(proposal_b.clone(), &auth_ids[1]);

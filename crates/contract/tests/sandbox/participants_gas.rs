@@ -17,7 +17,7 @@ use crate::sandbox::{
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
+        domain::{infer_key_config_from_curve, Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
     },
 };
@@ -273,7 +273,7 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let domain_id = DomainId(0);
         let domain = DomainConfig {
             id: domain_id,
-            curve: Curve::Secp256k1,
+            key_config: infer_key_config_from_curve(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();

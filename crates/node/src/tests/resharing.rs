@@ -7,7 +7,8 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{
-    infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainPurpose,
+    infer_key_config_from_curve, infer_purpose_from_curve, Curve, DomainConfig, DomainId,
+    DomainPurpose,
 };
 use near_time::Clock;
 use rstest::rstest;
@@ -23,7 +24,6 @@ use super::DEFAULT_BLOCK_TIME;
 #[case(1, Curve::Edwards25519, 3)]
 #[case(2, Curve::Bls12381, 3)]
 // TODO(#1946): re-enable once it is no longer flaky
-// #[case(3, Curve::V2Secp256k1, 5)]
 async fn test_key_resharing_simple(
     #[case] case: u16,
     #[case] curve: Curve,
@@ -50,7 +50,7 @@ async fn test_key_resharing_simple(
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve,
+        key_config: infer_key_config_from_curve(curve),
         purpose: infer_purpose_from_curve(curve),
     };
 
@@ -76,8 +76,8 @@ async fn test_key_resharing_simple(
         .expect("must not exceed timeout");
 
     // Sanity check.
-    match domain.curve {
-        Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+    match domain.key_config.curve {
+        Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -120,8 +120,8 @@ async fn test_key_resharing_simple(
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    match domain.curve {
-        Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+    match domain.key_config.curve {
+        Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -172,7 +172,7 @@ async fn test_key_resharing_multistage() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
+        key_config: infer_key_config_from_curve(Curve::Secp256k1),
         purpose: DomainPurpose::Sign,
     };
 
@@ -377,7 +377,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
+        key_config: infer_key_config_from_curve(Curve::Secp256k1),
         purpose: DomainPurpose::Sign,
     };
 

@@ -2,7 +2,7 @@ use contract_interface::types::{Attestation, InitConfig, MockAttestation, Protoc
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
+        domain::{infer_key_config_from_curve, Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
         test_utils::{bogus_ed25519_near_public_key, gen_participants},
@@ -101,7 +101,7 @@ impl TestSetupBuilder {
 
         let domains = vec![DomainConfig {
             id: DomainId::default(),
-            curve: Curve::Secp256k1,
+            key_config: infer_key_config_from_curve(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         }];
 
@@ -148,7 +148,7 @@ impl TestSetupBuilder {
                         .contract
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
-                            curve: Curve::Edwards25519,
+                            key_config: infer_key_config_from_curve(Curve::Edwards25519),
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();

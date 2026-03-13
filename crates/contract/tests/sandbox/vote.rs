@@ -19,7 +19,7 @@ use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainPurpose},
+        domain::{infer_key_config_from_curve, infer_purpose_from_curve, Curve, DomainConfig, DomainPurpose},
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -48,7 +48,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         &mpc_signer_accounts,
         &[DomainConfig {
             id: domain_id.into(),
-            curve,
+            key_config: infer_key_config_from_curve(curve),
             purpose: DomainPurpose::Sign,
         }],
     )
@@ -150,7 +150,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             &mpc_signer_accounts,
             &[DomainConfig {
                 id: next_domain_id.into(),
-                curve: *curve,
+                key_config: infer_key_config_from_curve(*curve),
                 purpose: infer_purpose_from_curve(*curve),
             }],
         )

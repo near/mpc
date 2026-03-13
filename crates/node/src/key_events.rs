@@ -17,7 +17,7 @@ use crate::{
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
     providers::{
-        CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
+        CKDProvider, EcdsaSignatureProvider, SignatureProvider,
     },
 };
 use contract_interface::types as dtos;
@@ -58,7 +58,7 @@ pub async fn keygen_computation_inner(
         key_id
     );
 
-    let (keyshare, public_key) = match domain.curve {
+    let (keyshare, public_key) = match domain.key_config.curve {
         Curve::Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
@@ -66,14 +66,6 @@ pub async fn keygen_computation_inner(
                 keyshare.public_key.to_element().to_affine(),
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
-        }
-        Curve::V2Secp256k1 => {
-            let keyshare =
-                RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
-                keyshare.public_key.to_element().to_affine(),
-            )?);
-            (KeyshareData::V2Secp256k1(keyshare), public_key)
         }
         Curve::Edwards25519 => {
             let keyshare =
@@ -210,7 +202,7 @@ async fn resharing_computation_inner(
 
     let public_key = dtos::PublicKey::from(previous_public_key.clone());
 
-    let keyshare_data = match (public_key, domain.curve) {
+    let keyshare_data = match (public_key, domain.key_config.curve) {
         (contract_interface::types::PublicKey::Secp256k1(inner_public_key), Curve::Secp256k1) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
@@ -229,25 +221,6 @@ async fn resharing_computation_inner(
             )
             .await?;
             KeyshareData::Secp256k1(res)
-        }
-        (contract_interface::types::PublicKey::Secp256k1(inner_public_key), Curve::V2Secp256k1) => {
-            let pk = k256::PublicKey::try_from(&inner_public_key)?;
-            let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
-            let my_share = existing_keyshare
-                .map(|keyshare| match keyshare.data {
-                    KeyshareData::V2Secp256k1(data) => Ok(data.private_share),
-                    _ => Err(anyhow::anyhow!("Expected ecdsa keyshare!")),
-                })
-                .transpose()?;
-            let res = RobustEcdsaSignatureProvider::run_key_resharing_client(
-                args.new_threshold,
-                my_share,
-                public_key,
-                &args.old_participants,
-                channel,
-            )
-            .await?;
-            KeyshareData::V2Secp256k1(res)
         }
         (contract_interface::types::PublicKey::Ed25519(inner_public_key), Curve::Edwards25519) => {
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
@@ -712,7 +685,9 @@ mod tests {
     use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
-    use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
+    use mpc_contract::primitives::domain::{
+        infer_key_config_from_curve, Curve, DomainConfig, DomainId, DomainPurpose,
+    };
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -871,7 +846,7 @@ mod tests {
             id: key_event_id,
             domain: DomainConfig {
                 id: key_event_id.domain_id,
-                curve: Curve::Secp256k1,
+                key_config: infer_key_config_from_curve(Curve::Secp256k1),
                 purpose: DomainPurpose::Sign,
             },
             started,

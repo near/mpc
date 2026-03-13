@@ -19,7 +19,6 @@ use crate::types::SignatureId;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
-pub use robust_ecdsa::RobustEcdsaSignatureProvider;
 use std::sync::Arc;
 use threshold_signatures::ReconstructionLowerBound;
 

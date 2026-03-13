@@ -23,7 +23,6 @@ pub enum KeyshareData {
     Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
     Ed25519(threshold_signatures::frost::eddsa::KeygenOutput),
     Bls12381(threshold_signatures::confidential_key_derivation::KeygenOutput),
-    V2Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
@@ -45,9 +44,6 @@ impl Keyshare {
             KeyshareData::Bls12381(data) => Ok(PublicKey::Bls12381(Bls12381G2PublicKey::from(
                 &data.public_key.to_element(),
             ))),
-            KeyshareData::V2Secp256k1(data) => Ok(PublicKey::Secp256k1(
-                Secp256k1PublicKey::try_from(data.public_key.to_element().to_affine())?,
-            )),
         }
     }
 

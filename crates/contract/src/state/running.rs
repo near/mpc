@@ -167,10 +167,12 @@ impl RunningContractState {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
         for domain in &domains {
-            if !crate::primitives::domain::is_valid_curve_for_purpose(domain.purpose, domain.curve)
-            {
+            if !crate::primitives::domain::is_valid_curve_for_purpose(
+                domain.purpose,
+                domain.key_config.curve,
+            ) {
                 return Err(DomainError::InvalidCurvePurposeCombination {
-                    curve: domain.curve,
+                    curve: domain.key_config.curve,
                     purpose: domain.purpose,
                 }
                 .into());
@@ -209,7 +211,7 @@ pub mod running_tests {
     use rstest::rstest;
 
     use crate::primitives::domain::{
-        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
+        infer_key_config_from_curve, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
     };
     use crate::primitives::test_utils::{gen_threshold_params, NUM_CURVES};
     use crate::state::key_event::tests::Environment;
@@ -362,7 +364,7 @@ pub mod running_tests {
 
         let invalid_domain = vec![DomainConfig {
             id: DomainId(next_id),
-            curve,
+            key_config: infer_key_config_from_curve(curve),
             purpose,
         }];
 

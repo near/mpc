@@ -272,8 +272,8 @@ pub async fn request_signature_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    let payload = match domain.curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
+    let payload = match domain.key_config.curve {
+        Curve::Secp256k1 => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
@@ -354,7 +354,7 @@ pub async fn request_ckd_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.curve,
+        domain.key_config.curve,
         Curve::Bls12381,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
@@ -440,7 +440,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.curve,
+        domain.key_config.curve,
         Curve::Secp256k1,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );

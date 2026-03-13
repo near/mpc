@@ -13,7 +13,7 @@ use dtos::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainPurpose},
+        domain::{infer_key_config_from_curve, infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         test_utils::bogus_ed25519_near_public_key,
@@ -213,14 +213,14 @@ pub async fn init_with_candidates(
                     public_key: key.clone(),
                     config: DomainConfig {
                         id: domain_id,
-                        curve,
+                        key_config: infer_key_config_from_curve(curve),
                         purpose,
                     },
                 });
                 (
                     DomainConfig {
                         id: domain_id,
-                        curve,
+                        key_config: infer_key_config_from_curve(curve),
                         purpose,
                     },
                     KeyForDomain {
@@ -462,7 +462,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         start_keygen_instance(contract, accounts, key_event_id)
             .await
             .unwrap();
-        let (public_key, shared_secret_key) = make_key_for_domain(domain.curve);
+        let (public_key, shared_secret_key) = make_key_for_domain(domain.key_config.curve);
 
         domain_keys.push(DomainKey {
             domain_config: domain.clone(),
@@ -529,17 +529,17 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            curve: Curve::Edwards25519,
+            key_config: infer_key_config_from_curve(Curve::Edwards25519),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
-            curve: Curve::Secp256k1,
+            key_config: infer_key_config_from_curve(Curve::Secp256k1),
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
-            curve: Curve::Edwards25519,
+            key_config: infer_key_config_from_curve(Curve::Edwards25519),
             purpose: DomainPurpose::Sign,
         },
     ];

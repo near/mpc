@@ -1673,8 +1673,7 @@ expression: abi
           "enum": [
             "Secp256k1",
             "Ed25519",
-            "Bls12381",
-            "V2Secp256k1"
+            "Bls12381"
           ]
         },
         "DestinationNodeInfo": {
@@ -1694,22 +1693,22 @@ expression: abi
           }
         },
         "DomainConfig": {
-          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.",
+          "description": "Describes the configuration of a domain: the domain ID, key configuration, and purpose.",
           "type": "object",
           "required": [
             "id",
-            "purpose",
-            "scheme"
+            "key_config",
+            "purpose"
           ],
           "properties": {
             "id": {
               "$ref": "#/definitions/DomainId"
             },
+            "key_config": {
+              "$ref": "#/definitions/KeyConfig"
+            },
             "purpose": {
               "$ref": "#/definitions/DomainPurpose"
-            },
-            "scheme": {
-              "$ref": "#/definitions/Curve"
             }
           }
         },
@@ -2209,6 +2208,26 @@ expression: abi
             "scalar": {
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            }
+          }
+        },
+        "KeyConfig": {
+          "description": "Specifies the key configuration for a domain: protocol, curve, and reconstruction threshold.",
+          "type": "object",
+          "required": [
+            "curve",
+            "protocol",
+            "reconstruction_threshold"
+          ],
+          "properties": {
+            "curve": {
+              "$ref": "#/definitions/Curve"
+            },
+            "protocol": {
+              "$ref": "#/definitions/Protocol"
+            },
+            "reconstruction_threshold": {
+              "$ref": "#/definitions/ReconstructionThreshold"
             }
           }
         },
@@ -2758,6 +2777,16 @@ expression: abi
             }
           }
         },
+        "Protocol": {
+          "description": "Specifies what protocol the nodes need to run for a domain.",
+          "type": "string",
+          "enum": [
+            "OtBasedEcdsa",
+            "Frost",
+            "ConfidentialKeyDerivation",
+            "DamgardEtAl"
+          ]
+        },
         "ProtocolContractState": {
           "description": "The main protocol contract state enum.",
           "oneOf": [
@@ -3006,6 +3035,12 @@ expression: abi
             }
           ]
         },
+        "ReconstructionThreshold": {
+          "description": "Number of shares required to reconstruct the secret key for a domain. For legacy domains this matches the global threshold; new domains can set it independently.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "ResharingContractState": {
           "description": "State when the contract is resharing keys to new participants.",
           "type": "object",
@@ -3222,22 +3257,11 @@ expression: abi
         },
         "SignatureScheme": {
           "description": "Supported signature schemes.",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Secp256k1",
-                "Ed25519",
-                "Bls12381"
-              ]
-            },
-            {
-              "description": "Robust ECDSA variant.",
-              "type": "string",
-              "enum": [
-                "V2Secp256k1"
-              ]
-            }
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Ed25519",
+            "Bls12381"
           ]
         },
         "SolanaExtractor": {

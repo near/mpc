@@ -281,14 +281,14 @@ impl RunLoadtestCmd {
             let domain_config = contract_state
                 .get_domain_config(DomainId(domain_id))
                 .expect("require valid domain id");
-            match domain_config.curve {
+            match domain_config.key_config.curve {
                 Curve::Bls12381 => {
                     ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,
                     })
                 }
-                Curve::Edwards25519 | Curve::Secp256k1 | Curve::V2Secp256k1 => {
+                Curve::Edwards25519 | Curve::Secp256k1 => {
                     ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,
