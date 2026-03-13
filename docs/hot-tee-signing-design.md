@@ -19,7 +19,7 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 - **Monitor the HOT governance contract** for allowed Docker image hashes and launcher compose hashes.
 
 [key-import]: #key-import-process
-[block-event-subscriber]: indexer-design.md#block-event-subscriber
+[block-event-subscriber]: chain-gateway-design.md#block-event-subscriber
 [hot-mpc]: https://github.com/near/hot-mpc
 [mpc-client]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/mpc_client.rs
 [validation-verify]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143
@@ -83,11 +83,11 @@ class RPC ext;
 The Archive Signer is built on three reusable layers from this repository. For the shared boot, attestation, governance, and upgrade patterns, see [TEE Lifecycle][tee-lifecycle].
 
 - **[Embedded Indexer Node](#embedded-indexer-node)** — runs a full `near-indexer` (including `neard`) inside the CVM for trustless NEAR chain access.
-- **[Chain Gateway][indexer-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
+- **[Chain Gateway][chain-gateway-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
 - **[TEE Context][tee-context]** — sits on top of the Chain Gateway; provides the contract interface for the [attestation lifecycle][tee-lifecycle].
 
 [tee-lifecycle]: tee-lifecycle.md
-[indexer-design]: indexer-design.md
+[chain-gateway-design]: chain-gateway-design.md
 
 ### Crate Dependencies
 

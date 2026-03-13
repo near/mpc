@@ -1,8 +1,8 @@
 //! This module provides convenience methods to map internal node types
-//! into contract interface types from the [`contract_interface::types`] module.
+//! into contract interface types from the [`near_mpc_contract_interface::types`] module.
 //!
 //! Crypto type conversions (e.g. `k256`, `ed25519-dalek`, `blstrs`, `near-sdk`)
-//! have been moved to `contract-interface` as standard `From`/`TryFrom` impls.
+//! have been moved to `near-mpc-contract-interface` as standard `From`/`TryFrom` impls.
 //! This module retains attestation conversions where the orphan rule applies.
 
 use mpc_attestation::{
@@ -11,37 +11,43 @@ use mpc_attestation::{
     tcb_info::{EventLog, TcbInfo},
 };
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 pub(crate) trait IntoContractInterfaceType<InterfaceType> {
     fn into_contract_interface_type(self) -> InterfaceType;
 }
 
-impl IntoContractInterfaceType<contract_interface::types::Attestation> for Attestation {
-    fn into_contract_interface_type(self) -> contract_interface::types::Attestation {
+impl IntoContractInterfaceType<near_mpc_contract_interface::types::Attestation> for Attestation {
+    fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::Attestation {
         match self {
             Attestation::Dstack(dstack_attestation) => {
-                contract_interface::types::Attestation::Dstack(
+                near_mpc_contract_interface::types::Attestation::Dstack(
                     dstack_attestation.into_contract_interface_type(),
                 )
             }
-            Attestation::Mock(mock_attestation) => contract_interface::types::Attestation::Mock(
-                mock_attestation.into_contract_interface_type(),
-            ),
+            Attestation::Mock(mock_attestation) => {
+                near_mpc_contract_interface::types::Attestation::Mock(
+                    mock_attestation.into_contract_interface_type(),
+                )
+            }
         }
     }
 }
 
-impl IntoContractInterfaceType<contract_interface::types::MockAttestation> for MockAttestation {
-    fn into_contract_interface_type(self) -> contract_interface::types::MockAttestation {
+impl IntoContractInterfaceType<near_mpc_contract_interface::types::MockAttestation>
+    for MockAttestation
+{
+    fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::MockAttestation {
         match self {
-            MockAttestation::Valid => contract_interface::types::MockAttestation::Valid,
-            MockAttestation::Invalid => contract_interface::types::MockAttestation::Invalid,
+            MockAttestation::Valid => near_mpc_contract_interface::types::MockAttestation::Valid,
+            MockAttestation::Invalid => {
+                near_mpc_contract_interface::types::MockAttestation::Invalid
+            }
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
-            } => contract_interface::types::MockAttestation::WithConstraints {
+            } => near_mpc_contract_interface::types::MockAttestation::WithConstraints {
                 mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
                 launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
                 expiry_timestamp_seconds,
@@ -50,15 +56,17 @@ impl IntoContractInterfaceType<contract_interface::types::MockAttestation> for M
     }
 }
 
-impl IntoContractInterfaceType<contract_interface::types::DstackAttestation> for DstackAttestation {
-    fn into_contract_interface_type(self) -> contract_interface::types::DstackAttestation {
+impl IntoContractInterfaceType<near_mpc_contract_interface::types::DstackAttestation>
+    for DstackAttestation
+{
+    fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::DstackAttestation {
         let DstackAttestation {
             quote,
             collateral,
             tcb_info,
         } = self;
 
-        contract_interface::types::DstackAttestation {
+        near_mpc_contract_interface::types::DstackAttestation {
             quote: quote.into(),
             collateral: collateral.into_contract_interface_type(),
             tcb_info: tcb_info.into_contract_interface_type(),
@@ -66,8 +74,8 @@ impl IntoContractInterfaceType<contract_interface::types::DstackAttestation> for
     }
 }
 
-impl IntoContractInterfaceType<contract_interface::types::Collateral> for Collateral {
-    fn into_contract_interface_type(self) -> contract_interface::types::Collateral {
+impl IntoContractInterfaceType<near_mpc_contract_interface::types::Collateral> for Collateral {
+    fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::Collateral {
         // Collateral is a newtype wrapper around QuoteCollateralV3
         let QuoteCollateralV3 {
             pck_crl_issuer_chain,
@@ -82,7 +90,7 @@ impl IntoContractInterfaceType<contract_interface::types::Collateral> for Collat
             pck_certificate_chain,
         } = self.into();
 
-        contract_interface::types::Collateral {
+        near_mpc_contract_interface::types::Collateral {
             pck_crl_issuer_chain,
             root_ca_crl,
             pck_crl,
@@ -97,8 +105,8 @@ impl IntoContractInterfaceType<contract_interface::types::Collateral> for Collat
     }
 }
 
-impl IntoContractInterfaceType<contract_interface::types::TcbInfo> for TcbInfo {
-    fn into_contract_interface_type(self) -> contract_interface::types::TcbInfo {
+impl IntoContractInterfaceType<near_mpc_contract_interface::types::TcbInfo> for TcbInfo {
+    fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::TcbInfo {
         let TcbInfo {
             mrtd,
             rtmr0,
@@ -132,8 +140,8 @@ impl IntoContractInterfaceType<contract_interface::types::TcbInfo> for TcbInfo {
     }
 }
 
-impl IntoContractInterfaceType<contract_interface::types::EventLog> for EventLog {
-    fn into_contract_interface_type(self) -> contract_interface::types::EventLog {
+impl IntoContractInterfaceType<near_mpc_contract_interface::types::EventLog> for EventLog {
+    fn into_contract_interface_type(self) -> near_mpc_contract_interface::types::EventLog {
         let EventLog {
             imr,
             event_type,
@@ -142,7 +150,7 @@ impl IntoContractInterfaceType<contract_interface::types::EventLog> for EventLog
             event_payload,
         } = self;
 
-        contract_interface::types::EventLog {
+        near_mpc_contract_interface::types::EventLog {
             imr,
             event_type,
             digest: digest.into(),

@@ -13,8 +13,6 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::method_names;
-use contract_interface::types as dtos;
 use mpc_contract::{
     primitives::{
         domain::SignatureScheme, participants::Participants, thresholds::ThresholdParameters,
@@ -22,6 +20,8 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types as dtos;
 use near_workspaces::Account;
 use serde_json::json;
 use sha2::Digest;

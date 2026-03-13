@@ -23,6 +23,15 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo fmt -- --check
 ```
 
+### Updating Snapshots
+```bash
+# We use cargo insta for snapshot testing (.snap files)
+cargo nextest run --cargo-profile=test-release <test_name>  # Run failing test to generate .snap.new
+cargo insta review                                          # Interactively review pending snapshots
+cargo insta accept                                          # Accept all pending snapshots
+# Commit updated .snap files alongside code changes
+```
+
 ### System Tests (pytest)
 ```bash
 cd pytest

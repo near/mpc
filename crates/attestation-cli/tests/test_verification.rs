@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use attestation_cli::cli::Cli;
 use attestation_cli::verify;
 use mpc_attestation::attestation::Attestation;
-use mpc_crypto_types::Ed25519PublicKey;
+use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use test_utils::attestation::{
     TEST_LAUNCHER_IMAGE_COMPOSE_STRING, TEST_MPC_IMAGE_DIGEST_HEX, VALID_ATTESTATION_TIMESTAMP,

@@ -1,11 +1,11 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
-use contract_interface::types::{
+use mpc_contract::primitives::key_state::Keyset;
+use mpc_contract::state::ProtocolContractState;
+use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
 };
-use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -432,7 +432,7 @@ pub async fn request_ckd_and_await_response(
 /// Request a verify foreign tx from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
 // TODO: remove this when tests are added for this functionality
-#[allow(unused)]
+#[expect(unused)]
 pub async fn request_verify_foreign_tx_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,

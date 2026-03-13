@@ -132,7 +132,7 @@ impl TryInto<RpcAuthentication> for AuthConfig {
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
