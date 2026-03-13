@@ -136,7 +136,6 @@ DENIED_CONTAINER_ENV_KEYS = {
 # RUST_BACKTRACE=1
 # RUST_LOG=info
 # MPC_RESPONDER_ID=responder-xyz
-# EXTRA_HOSTS=host1:192.168.0.1,host2:192.168.0.2
 # PORTS=11780:11780,2200:2200
 
 # Define an allow-list of permitted environment variables that will be passed to MPC container.
@@ -489,7 +488,15 @@ def validate_image_hash(
         # Pull
         proc = run(["docker", "pull", name_and_digest], capture_output=True)
         if proc.returncode != 0:
-            logging.error(f"docker pull failed for {image_digest}")
+            logging.error(
+                f"docker pull failed for {image_digest} using {name_and_digest}"
+            )
+            logging.error(
+                f"stdout:\n{proc.stdout}",
+            )
+            logging.error(
+                f"stderr:\n{proc.stderr}",
+            )
             return False
 
         # Verify digest
@@ -815,17 +822,6 @@ def build_docker_cmd(
 
         if key in ALLOWED_LAUNCHER_ENV_VARS:
             # launcher-only env vars: never pass to container
-            continue
-
-        if key == "EXTRA_HOSTS":
-            for host_entry in value.split(","):
-                clean_host = host_entry.strip()
-                if is_safe_host_entry(clean_host) and is_valid_host_entry(clean_host):
-                    docker_cmd += ["--add-host", clean_host]
-                else:
-                    logging.warning(
-                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean_host}"
-                    )
             continue
 
         if key == "PORTS":
