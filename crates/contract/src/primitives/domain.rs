@@ -483,7 +483,7 @@ pub mod tests {
     fn test_serialization_format() {
         let domain_config = make_domain(3, Curve::Secp256k1, DomainPurpose::Sign);
         let json = serde_json::to_string(&domain_config).unwrap();
-        let expected = r#"{"id":3,"key_config":{"protocol":"OtBasedEcdsa","curve":"Secp256k1","reconstruction_threshold":0},"purpose":"Sign"}"#;
+        let expected = r#"{"id":3,"scheme":"Secp256k1","key_config":{"protocol":"OtBasedEcdsa","curve":"Secp256k1","reconstruction_threshold":0},"purpose":"Sign"}"#;
         assert_eq!(json, expected);
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
