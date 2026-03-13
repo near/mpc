@@ -1,6 +1,5 @@
 use std::net::Ipv4Addr;
 use std::num::NonZeroU16;
-use std::path::PathBuf;
 
 use launcher_interface::types::DockerSha256Digest;
 use url::Host;
@@ -45,10 +44,10 @@ pub enum Platform {
 pub struct Config {
     pub launcher_config: LauncherConfig,
     pub docker_command_config: DockerLaunchFlags,
-    /// Path to the MPC node JSON config file on the host.
-    /// This file is mounted into the container and passed via
-    /// `start-with-config-file <path>` to the MPC binary.
-    pub mpc_config_file: PathBuf,
+    /// Inline MPC node config content (opaque to the launcher).
+    /// Written to a temporary file on disk, mounted into the container,
+    /// and passed via `start-with-config-file <path>` to the MPC binary.
+    pub mpc_config_content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,8 +87,8 @@ pub struct PortMappings {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PortMapping {
-    src: NonZeroU16,
-    dst: NonZeroU16,
+    pub(crate) src: NonZeroU16,
+    pub(crate) dst: NonZeroU16,
 }
 
 impl PortMapping {
@@ -232,7 +231,7 @@ mod tests {
             "docker_command_config": {
                 "port_mappings": {"ports": [{"src": 11780, "dst": 11780}]}
             },
-            "mpc_config_file": "/tapp/mpc-config.json"
+            "mpc_config_file": "[some_config = true]"
         });
 
         // when
@@ -241,7 +240,7 @@ mod tests {
         // then
         assert_matches!(result, Ok(config) => {
             assert_eq!(config.launcher_config.image_name, "nearone/mpc-node");
-            assert_eq!(config.mpc_config_file, PathBuf::from("/tapp/mpc-config.json"));
+            assert_eq!(config.mpc_config_content, "[some_config = true]");
         });
     }
 

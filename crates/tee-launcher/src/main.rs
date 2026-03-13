@@ -13,6 +13,7 @@ use constants::*;
 use docker_types::*;
 use error::*;
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
+use tempfile::NamedTempFile;
 use types::*;
 use url::Url;
 
@@ -120,10 +121,15 @@ async fn run() -> Result<(), LauncherError> {
             .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
     }
 
+    let mut mpc_binary_config_file = NamedTempFile::new().expect("file creation works");
+    mpc_binary_config_file
+        .write(dstack_config.mpc_config_content.as_bytes())
+        .expect("writing to file works");
+
     launch_mpc_container(
         args.platform,
         &image_hash,
-        &dstack_config.mpc_config_file,
+        mpc_binary_config_file.path(),
         &dstack_config.docker_command_config,
     )?;
 
@@ -371,7 +377,7 @@ fn render_compose_file(
         .port_mappings
         .ports
         .iter()
-        .map(|p| p.docker_compose_value())
+        .map(PortMapping::docker_compose_value)
         .collect();
     let ports_json = serde_json::to_string(&ports).expect("port list is serializable");
 
@@ -407,8 +413,7 @@ fn launch_mpc_container(
 ) -> Result<(), LauncherError> {
     tracing::info!("Launching MPC node with validated hash: {valid_hash}",);
 
-    let compose_file =
-        render_compose_file(platform, mpc_config_file, docker_flags, valid_hash)?;
+    let compose_file = render_compose_file(platform, mpc_config_file, docker_flags, valid_hash)?;
     let compose_path = compose_file.path().display().to_string();
 
     // Remove any existing container from a previous run (by name, independent of compose file)
