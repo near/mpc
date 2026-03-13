@@ -234,23 +234,29 @@ This works well for data that originates from the contract. For operator-specifi
 
 ## Proposed Solutions
 
-### Option A: Switch to TOML Config Path with Launcher-Generated Config (Recommended)
+### Option A: Switch to TOML Config Path (Recommended)
 
-Switch TDX deployments from the legacy `start.sh` + `config.yaml` path to the new `start-with-config-file` TOML path. The launcher generates the TOML config file from operator-provided data and writes it to the shared volume.
+Switch TDX deployments from the legacy `start.sh` + `config.yaml` path to the new `start-with-config-file` TOML path. The TOML config is delivered via `user-config.conf` (the only file delivery mechanism dstack provides) as a base64-encoded env var, and `start.sh` decodes it.
+
+#### Dstack constraint
+
+Dstack only allows operators to deliver a single `user_config` file (flat KEY=VALUE format) to the CVM via `vmm-cli.py update-user-config`. There is no mechanism to place arbitrary files in `/tapp/`. This means structured config must be embedded within `user-config.conf`.
 
 #### Design
 
-**Part 1: Operator places TOML config in `/tapp/`**
+**Part 1: Config delivery via `user-config.conf`**
 
-The `/tapp/` directory is a dstack-managed directory where operators can place files. It is already mounted read-only into both the launcher container and the MPC node container (`/tapp:/tapp:ro`). The operator places a complete `mpc-config.toml` alongside `user-config.conf` in this directory.
+The operator base64-encodes a TOML config file and includes it as `MPC_CONFIG_TOML_BASE64` in `user-config.conf`. The launcher passes this through as an env var (it matches the `MPC_*` pattern). `start.sh` decodes it and writes the TOML file to the persistent `/data` volume.
 
 **Part 2: Modified start.sh**
 
-Modify `start.sh` to detect the TOML config and use it instead of generating `config.yaml`:
-
 ```bash
-# At the top of start.sh:
-MPC_CONFIG_TOML="/tapp/mpc-config.toml"
+MPC_CONFIG_TOML="$MPC_HOME_DIR/mpc-config.toml"
+
+if [ -n "$MPC_CONFIG_TOML_BASE64" ]; then
+    echo "Decoding TOML config from MPC_CONFIG_TOML_BASE64"
+    echo "$MPC_CONFIG_TOML_BASE64" | base64 -d > "$MPC_CONFIG_TOML"
+fi
 
 if [ -f "$MPC_CONFIG_TOML" ]; then
     echo "Found TOML config at $MPC_CONFIG_TOML, using start-with-config-file"
@@ -269,55 +275,34 @@ fi
 # ... existing start.sh logic for legacy path ...
 ```
 
+Note: the TOML is decoded and overwritten on every boot, so config changes in `user-config.conf` take effect on CVM restart.
+
 **Part 3: Operator workflow**
 
-The operator creates a TOML config file locally (using `mpc-config.template.toml` as a starting point) and places it in the dstack app directory:
-
 ```bash
-# 1. Create config from template (or manually)
+# 1. Create config from template
 envsubst < docs/localnet/mpc-config.template.toml > mpc-config.toml
 # Edit to add foreign_chains, adjust settings, etc.
 
-# 2. Place in the dstack app directory alongside user-config.conf
-# The file will be available at /tapp/mpc-config.toml inside the CVM
+# 2. Base64-encode and add to user-config.conf
+MPC_CONFIG_TOML_BASE64=$(base64 -w0 < mpc-config.toml)
+
+# 3. user-config.conf:
+cat > user-config.conf << EOF
+MPC_IMAGE_NAME=nearone/mpc-node
+MPC_IMAGE_TAGS=latest
+MPC_REGISTRY=registry.hub.docker.com
+MPC_CONFIG_TOML_BASE64=$MPC_CONFIG_TOML_BASE64
+PORTS=8080:8080,3030:3030,80:80,24567:24567
+EOF
+
+# 4. Deploy or update
+vmm-cli.py update-user-config <vm-id> user-config.conf
 ```
 
-To update config (e.g., add a new foreign chain), the operator edits the TOML file and restarts the CVM. The node picks up the new config on boot.
+To update config, the operator edits the TOML file, re-encodes, updates `user-config.conf`, and restarts the CVM.
 
-**Part 4: Runtime config hot-reload (future phase)**
-
-Add a file watcher to the MPC node that monitors `/tapp/mpc-config.toml` for changes:
-
-```rust
-// New: crates/node/src/config/watcher.rs
-pub async fn watch_config_file(
-    config_path: PathBuf,
-    foreign_chains_sender: watch::Sender<ForeignChainsConfig>,
-    cancellation_token: CancellationToken,
-) -> Result<(), ConfigWatchError> {
-    loop {
-        select! {
-            _ = cancellation_token.cancelled() => break Ok(()),
-            _ = wait_for_file_change(&config_path) => {
-                match StartConfig::from_toml_file(&config_path) {
-                    Ok(new_config) => {
-                        // Only hot-reload safe fields
-                        foreign_chains_sender.send_replace(new_config.node.foreign_chains);
-                        tracing::info!("Config reloaded successfully");
-                    }
-                    Err(e) => {
-                        tracing::warn!("Invalid config file, keeping current config: {e}");
-                    }
-                }
-            }
-        }
-    }
-}
-```
-
-The operator updates the TOML file in the dstack app directory and restarts the CVM (or, once hot-reload is implemented, the node picks up the change automatically).
-
-**Part 5: API key delivery**
+**Part 4: API key delivery**
 
 API keys can be handled in two ways:
 
@@ -350,53 +335,17 @@ Both approaches work today. The inline approach is simpler and avoids the env-va
 - **Aligns with the deprecation direction.** The old `start` CLI command is already marked `TODO(#2334): deprecate this`. This moves TDX to the intended future path.
 - **Operator has full control.** Any config field can be set, not just a predefined set of env vars.
 - **Template already exists.** `docs/localnet/mpc-config.template.toml` provides a working starting point.
+- **No launcher changes required.** Only `start.sh` needs modification; the launcher already passes `MPC_*` env vars through.
 
 #### Cons
+- Base64 encoding in `user-config.conf` is not very ergonomic for large configs
 - Operator must provide the full config, not just overrides (but the template makes this straightforward)
-- Secrets (`secret_store_key_hex`) end up in the TOML file in `/tapp/` (encrypted at rest by the CVM, but visible to processes inside the CVM -- same security model as the current `config.yaml` + env vars)
+- Secrets (`secret_store_key_hex`) end up in the TOML file on disk (encrypted at rest by the CVM -- same security model as the current `config.yaml` + env vars)
+- The 1024-byte per-value limit in the launcher may need to be raised for large TOML configs
 
 ---
 
-### Option B: Extend start.sh with YAML Config Overlay
-
-Instead of switching to the TOML path, extend the existing `start.sh` to merge an overlay file into the generated `config.yaml`.
-
-#### Design
-
-Modify `start.sh` to merge an optional config overlay file into `config.yaml` after generating the base template:
-
-```bash
-MPC_CONFIG_OVERLAY="/mnt/shared/config-overlay.yaml"
-if [ -f "$MPC_CONFIG_OVERLAY" ]; then
-    python3 -c "
-import yaml
-base = yaml.safe_load(open('$MPC_NODE_CONFIG_FILE'))
-overlay = yaml.safe_load(open('$MPC_CONFIG_OVERLAY'))
-def merge(b, o):
-    for k, v in o.items():
-        if k in b and isinstance(b[k], dict) and isinstance(v, dict):
-            merge(b[k], v)
-        else:
-            b[k] = v
-merge(base, overlay)
-yaml.dump(base, open('$MPC_NODE_CONFIG_FILE', 'w'), default_flow_style=False)
-"
-fi
-```
-
-#### Pros
-- Operators only need to provide the delta (e.g., just `foreign_chains`), not the full config
-
-#### Cons
-- **Builds on the legacy path** that is being deprecated (`TODO(#2334)`)
-- Requires `pyyaml` in the Docker image (not currently installed)
-- YAML deep-merge is fragile and error-prone
-- Two config formats to maintain (YAML for overlay, env vars for the rest)
-- Still limited by what `start.sh` generates -- the overlay can add fields but can't cleanly modify nested structures generated by the template
-
----
-
-### Option C: Contract-Driven Configuration
+### Option B: Contract-Driven Configuration
 
 Store the `foreign_chains` configuration on the contract and have nodes read it via the indexer.
 
@@ -418,7 +367,7 @@ The existing `vote_foreign_chain_policy` mechanism already stores chain/provider
 
 ---
 
-### Option D: Node HTTP API for Config Updates
+### Option C: Node HTTP API for Config Updates
 
 Add an HTTP endpoint to the MPC node's existing web server (port 8080) for receiving config updates.
 
@@ -450,32 +399,36 @@ Add an HTTP endpoint to the MPC node's existing web server (port 8080) for recei
 
 1. **The code already exists.** `start-with-config-file` is implemented, tested (all pytests use it), and validated. We are not writing new config-parsing code -- we are routing TDX deployments to an existing, battle-tested code path.
 
-2. **Aligns with the codebase direction.** The old `start` command is explicitly marked for deprecation (`TODO(#2334)`). Option B (YAML overlay) would invest in extending a path that we intend to remove.
+2. **Aligns with the codebase direction.** The old `start` command is explicitly marked for deprecation (`TODO(#2334)`).
 
 3. **Solves the full problem, not just foreign chains.** With TOML config, operators have full control over all configuration fields. This eliminates the entire class of "I need to change X but start.sh doesn't support it" problems.
 
-4. **No new dependencies or fragile merge logic.** Option B requires `pyyaml` and YAML deep-merge. Option A uses `toml` deserialization that's already in the binary.
+4. **No new dependencies or fragile merge logic.** Uses `toml` deserialization that's already in the binary.
 
-5. **Single source of truth.** One TOML file replaces the split between env vars, `config.yaml`, and potential overlays. This is easier to reason about, debug, and version-control.
+5. **Single source of truth.** One TOML file replaces the split between env vars and `config.yaml`. Easier to reason about, debug, and version-control.
 
 ### Proposed Implementation Plan
 
 #### Phase 1: TOML Config Delivery (Unblocks TDX Migration)
 
 **start.sh changes:**
-- Add a conditional at the top: if `/tapp/mpc-config.toml` exists, skip the legacy config generation and run `mpc-node start-with-config-file /tapp/mpc-config.toml` instead
+- If `MPC_CONFIG_TOML_BASE64` env var is set, decode it and write to `$MPC_HOME_DIR/mpc-config.toml`
+- If `mpc-config.toml` exists, skip the legacy config generation and run `mpc-node start-with-config-file` instead
 - Keep the Near node initialization (`initialize_near_node`, `update_near_node_config`) since the TOML path doesn't handle that
+
+**Launcher changes:**
+- Raise the 1024-byte per-value limit (or exempt `MPC_CONFIG_TOML_BASE64` from it), since a base64-encoded TOML config will exceed this
 
 **Operator workflow:**
 - Create TOML config from template, including `foreign_chains`
-- Place `mpc-config.toml` in the dstack app directory
+- Base64-encode and add as `MPC_CONFIG_TOML_BASE64` in `user-config.conf`
 - Deploy/update CVM
 
 **What this unblocks:** TDX nodes with `foreign_chains` config, testnet migration, arbitrary config customization.
 
 #### Phase 2: Runtime Config Hot-Reload
 
-- Add file watcher on `/tapp/mpc-config.toml` in the MPC node
+- Add file watcher on `$MPC_HOME_DIR/mpc-config.toml` in the MPC node
 - `watch::channel`-based propagation of `ForeignChainsConfig` changes to coordinator and providers
 - Coordinator re-votes `foreign_chain_policy` when config changes (with rate limiting)
 
@@ -490,6 +443,6 @@ Add an HTTP endpoint to the MPC node's existing web server (port 8080) for recei
 
 1. **Near node initialization.** `start.sh` currently handles Near node initialization (`mpc-node init`, genesis download, `config.json` updates). The TOML path only covers MPC node config, not Near node setup. We should keep this part of `start.sh` for now and eventually fold it into the TOML path or a separate init command.
 
-2. **Secret placement.** The TOML config will contain `secret_store_key_hex` in `/tapp/`. This is encrypted at rest by the CVM, but it means the secret is in a file rather than a transient env var. Is this acceptable? (Note: the current architecture already has `MPC_SECRET_STORE_KEY` as a Docker env var, which is visible in `docker inspect` and persists in the container metadata -- arguably the TOML file is no worse.)
+2. **Launcher env var size limit.** The launcher enforces a 1024-byte per-value limit and 32KB total limit. A base64-encoded TOML config with `foreign_chains` will likely exceed 1024 bytes. We need to either raise this limit for `MPC_CONFIG_TOML_BASE64` or remove the per-value cap entirely (the total payload cap is sufficient protection).
 
 3. **Re-voting on config change.** When `foreign_chains` config changes at runtime, the node should automatically call `vote_foreign_chain_policy` with the new policy. This needs rate limiting to avoid vote spam if the operator is iterating on config.
