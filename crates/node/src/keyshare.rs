@@ -129,17 +129,17 @@ impl KeyshareStorage {
         let permanent = self.permanent.load().await?;
         let epoch_id = key_id_to_generate.epoch_id;
         let num_permanent_keys_same_epoch = if let Some(permanent) = permanent {
-            if permanent.epoch_id == epoch_id {
+            if permanent.epoch_id() == epoch_id {
                 Self::verify_existing_keyshares_are_prefix_of_keyset(
-                    &permanent.keyshares,
+                    permanent.keyshares(),
                     epoch_id,
                     already_generated_keys,
                 )?;
-                permanent.keyshares.len()
-            } else if permanent.epoch_id.get() > epoch_id.get() {
+                permanent.keyshares().len()
+            } else if permanent.epoch_id().get() > epoch_id.get() {
                 anyhow::bail!(
                     "Permanent key storage has epoch ID {} which is newer than {}",
-                    permanent.epoch_id.get(),
+                    permanent.epoch_id().get(),
                     epoch_id.get()
                 );
             } else {
@@ -172,10 +172,10 @@ impl KeyshareStorage {
         let permanent = self.permanent.load().await?;
         let epoch_id = key_id_to_generate.epoch_id;
         if let Some(permanent) = permanent {
-            if permanent.epoch_id.get() >= epoch_id.get() {
+            if permanent.epoch_id().get() >= epoch_id.get() {
                 anyhow::bail!(
                     "Permanent key storage has epoch ID {} which is not older than {}",
-                    permanent.epoch_id.get(),
+                    permanent.epoch_id().get(),
                     epoch_id.get()
                 );
             }
@@ -192,8 +192,8 @@ impl KeyshareStorage {
     async fn _load_prefix_from_permanent(&self, keyset: &Keyset) -> anyhow::Result<Vec<Keyshare>> {
         let permanent = self.permanent.load().await?;
         let existing_keyshares = if let Some(permanent) = permanent {
-            if permanent.epoch_id == keyset.epoch_id {
-                permanent.keyshares
+            if permanent.epoch_id() == keyset.epoch_id {
+                permanent.into_keyshares()
             } else {
                 Vec::new()
             }
@@ -1151,8 +1151,13 @@ pub mod tests {
             .await
             .unwrap();
 
-        let key_shares_permanent_storage =
-            storage.permanent.load().await.unwrap().unwrap().keyshares;
+        let key_shares_permanent_storage = storage
+            .permanent
+            .load()
+            .await
+            .unwrap()
+            .unwrap()
+            .into_keyshares();
         let key_share_in_temporary_storage = storage
             .temporary
             .load_keyshare(key_1.key_id)
@@ -1176,8 +1181,13 @@ pub mod tests {
             .await
             .expect_err("Reordered keyset should not be found");
 
-        let final_key_shares_permanent_storage =
-            storage.permanent.load().await.unwrap().unwrap().keyshares;
+        let final_key_shares_permanent_storage = storage
+            .permanent
+            .load()
+            .await
+            .unwrap()
+            .unwrap()
+            .into_keyshares();
         let final_key_share_in_temporary_storage = storage
             .temporary
             .load_keyshare(key_1.key_id)
