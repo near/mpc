@@ -61,9 +61,9 @@ impl fmt::Display for NearViewClientQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChainGatewayOp {
     SubmitFunctionCallTransaction {
+        signer: String,
         receiver_id: String,
         method_name: String,
-        // should we add more? signer_id?
     },
     ViewQuery {
         account_id: String,
@@ -75,10 +75,15 @@ impl std::fmt::Display for ChainGatewayOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChainGatewayOp::SubmitFunctionCallTransaction {
+                signer,
                 receiver_id,
                 method_name,
             } => {
-                write!(f, "submiting function call {}.{}", receiver_id, method_name)
+                write!(
+                    f,
+                    "submiting function call {}.{} signed by {}",
+                    receiver_id, method_name, signer
+                )
             }
             ChainGatewayOp::ViewQuery {
                 account_id,
@@ -92,27 +97,27 @@ impl std::fmt::Display for ChainGatewayOp {
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ChainGatewayError {
-    #[error("monitoring task closed")]
-    MonitoringClosed,
-
-    #[error("view client error while {op}: {message}")]
-    ViewError { op: ChainGatewayOp, message: String },
-
-    #[error("serialization error while {op}: {message}")]
-    Serialization { op: ChainGatewayOp, message: String },
-
     #[error("deserialization error: {message}")]
     Deserialization { message: String },
-
-    #[error("failed to fetch latest final block while doing {op}: {message}")]
-    FetchFinalBlock { op: ChainGatewayOp, message: String },
-
-    #[error("failed to submit signed transaction while {op}: {message}")]
-    SubmitSignedTransaction { op: ChainGatewayOp, message: String },
 
     #[error("failure loading config with {msg}")]
     FailureLoadingConfig { msg: String },
 
+    #[error("failed to fetch latest final block while {op}: {message}")]
+    FetchFinalBlock { op: ChainGatewayOp, message: String },
+
+    #[error("monitoring task closed")]
+    MonitoringClosed,
+
     #[error("starting neard node failed with {msg}")]
     StartupFailed { msg: String },
+
+    #[error("serialization error while {op}: {message}")]
+    Serialization { op: ChainGatewayOp, message: String },
+
+    #[error("failed to submit signed transaction while {op}: {message}")]
+    SubmitSignedTransaction { op: ChainGatewayOp, message: String },
+
+    #[error("view client error while {op}: {message}")]
+    ViewError { op: ChainGatewayOp, message: String },
 }

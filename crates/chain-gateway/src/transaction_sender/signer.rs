@@ -75,39 +75,47 @@ impl TransactionSigner {
     pub fn public_key(&self) -> VerifyingKey {
         self.signing_key.verifying_key()
     }
-}
 
-#[cfg(test)]
-pub(super) fn test_signer<R>(rng: &mut R) -> TransactionSigner
-where
-    R: rand::RngCore,
-{
-    let mut bytes = [0u8; 32];
-    rng.fill_bytes(&mut bytes);
-    let signing_key = SigningKey::from_bytes(&bytes);
-    TransactionSigner::from_key("test.near".parse().unwrap(), signing_key)
+    pub fn account_id(&self) -> &AccountId {
+        &self.account_id
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use ed25519_dalek::SigningKey;
+    use near_account_id::AccountId;
+    use near_indexer::near_primitives::{account::AccessKey, transaction::Transaction};
+    use near_indexer_primitives::types::Gas;
     use rand::{SeedableRng, rngs::StdRng};
 
-    use super::*;
+    use crate::{
+        transaction_sender::{TransactionSigner, test_utils::signer_from_rng},
+        types::LatestFinalBlockInfo,
+    };
 
     const TEST_GAS: Gas = Gas::from_gas(300_000_000_000_000);
 
     #[test]
-    fn public_key_derives_from_signing_key() {
+    fn test_public_key_derives_from_signing_key() {
+        // Given: a signer derived from an account id
+        let account_id: AccountId = "test.near".parse().unwrap();
         let signing_key = SigningKey::from_bytes(&[1u8; 32]);
-        let signer = TransactionSigner::from_key("test.near".parse().unwrap(), signing_key.clone());
+        let signer = TransactionSigner::from_key(account_id.clone(), signing_key.clone());
+        // Then: expect the public key to dervie from the signing key
         assert_eq!(signer.public_key(), signing_key.verifying_key());
+        // additonal sanity check
+        assert_eq!(signer.account_id(), &account_id);
     }
 
     #[test]
-    fn nonce_starts_at_block_height_minimum() {
+    fn test_nonce_starts_at_block_height_minimum() {
+        // Given: a signer
         let mut rng = StdRng::seed_from_u64(42);
-        let signer = test_signer(&mut rng);
+        let signer = signer_from_rng(&mut rng);
+        // When: for any given block height
         for height in [100, 101, 200, 2000, 5000] {
+            // Then: expect the nonce to match the minimum required value
             let expected = AccessKey::ACCESS_KEY_NONCE_RANGE_MULTIPLIER * height;
             assert_eq!(signer.make_nonce(height), expected);
             // subsequent nonce requests shouldn't matter if we jump block height
@@ -116,24 +124,26 @@ mod tests {
     }
 
     #[test]
-    fn nonce_increments_monotonically() {
+    fn test_nonce_increments_monotonically() {
+        // Given: a signer
         let mut rng = StdRng::seed_from_u64(42);
-        let signer = test_signer(&mut rng);
+        let signer = signer_from_rng(&mut rng);
         let height = 100;
+        // When: generating consecutive nonces for the same block height
         let first = signer.make_nonce(height);
         let second = signer.make_nonce(height);
         let third = signer.make_nonce(height);
+        // Then: expect nonces to be striclty increasing
         assert_eq!(second, first + 1);
         assert_eq!(third, first + 2);
     }
 
     #[test]
-    fn create_and_sign_builds_correct_and_valid_transaction() {
-        // Given
+    fn test_create_and_sign_returs_valid_transaction() {
+        // Given: a signer
         const SEED: u64 = 40393;
-        let signer = test_signer(&mut StdRng::seed_from_u64(SEED));
-        let signer_clone = test_signer(&mut StdRng::seed_from_u64(SEED));
-
+        let signer = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
+        let signer_clone = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
         let args = b"test args".to_vec();
         let gas = TEST_GAS;
@@ -143,7 +153,7 @@ mod tests {
             value: near_indexer_primitives::CryptoHash::hash_bytes(b"test_bytes"),
         };
 
-        // When
+        // When: it signs a transaction
         let signed_tx = signer.create_and_sign_function_call_tx(
             receiver_id.clone(),
             method_name.clone(),
@@ -152,7 +162,7 @@ mod tests {
             info.clone(),
         );
 
-        // Then
+        // Then: expect the signed transaction to be valid
         let tx = match &signed_tx.transaction {
             Transaction::V0(tx) => tx,
             _ => panic!("expected Transaction::V0"),
@@ -187,13 +197,13 @@ mod tests {
     }
 
     #[test]
-    fn signer_is_deterministic() {
-        // Given: Two signers with same state
+    fn test_signer_is_deterministic() {
+        // Given: two signers with same state
         const SEED: u64 = 40393;
-        let signer = test_signer(&mut StdRng::seed_from_u64(SEED));
-        let signer_clone = test_signer(&mut StdRng::seed_from_u64(SEED));
+        let signer = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
+        let signer_clone = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
 
-        // When: Signing the same transaction
+        // When: the two signers sign the same transaction
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
         let args = b"test args".to_vec();
         let gas = TEST_GAS;
@@ -203,6 +213,7 @@ mod tests {
             value: near_indexer_primitives::CryptoHash::hash_bytes(b"test_bytes"),
         };
 
+        // Then: expect the signed transactions to be an exact match
         let signed_tx = signer.create_and_sign_function_call_tx(
             receiver_id.clone(),
             method_name.clone(),

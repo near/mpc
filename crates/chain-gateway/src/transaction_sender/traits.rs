@@ -5,8 +5,7 @@ use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
-
-use super::TransactionSigner;
+use crate::transaction_sender::TransactionSigner;
 
 pub trait FunctionCallSubmitter {
     fn submit_function_call_tx(
@@ -34,6 +33,7 @@ where
         let info = self.fetch_latest_final_block_info().await.map_err(|err| {
             ChainGatewayError::FetchFinalBlock {
                 op: ChainGatewayOp::SubmitFunctionCallTransaction {
+                    signer: signer.account_id().to_string(),
                     receiver_id: receiver_id.to_string(),
                     method_name: method_name.clone(),
                 },
@@ -57,10 +57,12 @@ where
             nonce = transaction.transaction.nonce(),
             "sending transaction",
         );
+
         self.submit_signed_transaction(transaction)
             .await
             .map_err(|err| ChainGatewayError::SubmitSignedTransaction {
                 op: ChainGatewayOp::SubmitFunctionCallTransaction {
+                    signer: signer.account_id().to_string(),
                     receiver_id: receiver_id.to_string(),
                     method_name,
                 },
@@ -74,7 +76,7 @@ where
 mod tests {
     use crate::{
         mock::{MockChainStateBuilder, MockError},
-        transaction_sender::signer::test_signer,
+        transaction_sender::test_utils::signer_from_rng,
         types::LatestFinalBlockInfo,
     };
 
@@ -90,10 +92,16 @@ mod tests {
         gas: Gas,
     }
 
-    fn test_call() -> TransactionCall {
-        let receiver_id: AccountId = "receiver.near".parse().unwrap();
-        let method_name = "do_something".to_string();
-        let args = b"test args".to_vec();
+    fn generate_test_call<R>(rng: &mut R) -> TransactionCall
+    where
+        R: rand::Rng,
+    {
+        let suffix: u32 = rng.r#gen();
+        let receiver_id: AccountId = format!("receiver{suffix}.near").parse().unwrap();
+        let suffix: u32 = rng.r#gen();
+        let method_name = format!("do_something_{suffix}");
+        let mut args = vec![0u8; 16];
+        rng.fill(&mut args[..]);
         let gas = Gas::from_u64(300);
         TransactionCall {
             receiver_id,
@@ -111,11 +119,11 @@ mod tests {
         let mock_chain_state = MockChainStateBuilder::new()
             .with_latest_block(Err(expected_source.clone()))
             .build();
-        let call = test_call();
-        let signer = Arc::new(test_signer(&mut rng));
+        let call = generate_test_call(&mut rng);
+        let signer = Arc::new(signer_from_rng(&mut rng));
         let res = mock_chain_state
             .submit_function_call_tx(
-                signer,
+                signer.clone(),
                 call.receiver_id.clone(),
                 call.method_name.clone(),
                 call.args.clone(),
@@ -127,6 +135,7 @@ mod tests {
             res,
             ChainGatewayError::FetchFinalBlock {
                 op: ChainGatewayOp::SubmitFunctionCallTransaction {
+                    signer: signer.account_id().to_string(),
                     receiver_id: call.receiver_id.to_string(),
                     method_name: call.method_name
                 },
@@ -141,9 +150,10 @@ mod tests {
     async fn test_submit_function_call_tx_submits_correct_transaction() {
         // Given
         const SEED: u64 = 42;
-        let call = test_call();
-        let signer = Arc::new(test_signer(&mut StdRng::seed_from_u64(SEED)));
-        let signer_clone = Arc::new(test_signer(&mut StdRng::seed_from_u64(SEED)));
+        let mut rng = StdRng::seed_from_u64(SEED);
+        let call = generate_test_call(&mut rng);
+        let signer = Arc::new(signer_from_rng(&mut rng.clone()));
+        let signer_clone = Arc::new(signer_from_rng(&mut rng));
 
         let info = LatestFinalBlockInfo {
             observed_at: 13290.into(),
@@ -185,8 +195,9 @@ mod tests {
     async fn test_submit_function_call_tx_submits_propagates_rpc_error() {
         // Given
         const SEED: u64 = 42;
-        let call = test_call();
-        let signer = Arc::new(test_signer(&mut StdRng::seed_from_u64(SEED)));
+        let mut rng = StdRng::seed_from_u64(SEED);
+        let call = generate_test_call(&mut rng);
+        let signer = Arc::new(signer_from_rng(&mut StdRng::seed_from_u64(SEED)));
 
         let info = LatestFinalBlockInfo {
             observed_at: 13290.into(),
@@ -201,7 +212,7 @@ mod tests {
         // When
         let res = mock_chain_state
             .submit_function_call_tx(
-                signer,
+                signer.clone(),
                 call.receiver_id.clone(),
                 call.method_name.clone(),
                 call.args.clone(),
@@ -215,6 +226,7 @@ mod tests {
             res,
             ChainGatewayError::SubmitSignedTransaction {
                 op: ChainGatewayOp::SubmitFunctionCallTransaction {
+                    signer: signer.account_id().to_string(),
                     receiver_id: call.receiver_id.to_string(),
                     method_name: call.method_name
                 },
