@@ -184,7 +184,7 @@ contract.
     > **Publicly verifiable variant:** Verifies that $es$ is a valid
     > encryption of a signature with respect to the MPC network public key
     > $`\texttt{pk}`$, i.e.
-    > $`e(C, G_2) = e(Y, A_2) \cdot e\bigl(H(\texttt{pk},\, \texttt{app\_id}),\; \texttt{pk}\bigr)`$
+    > $`e(C, G_2) = e\bigl(H(\texttt{pk},\, \texttt{app\_id}),\; \texttt{pk}\bigr) \cdot e(Y, A_2)`$
     - sends $`\texttt{es}`$ to *app* on-chain
 - *app* obtains $`\texttt{es} = (Y, C)`$ and computes the BLS signature
   $`\texttt{sig} \gets C + (- a) \cdot  Y`$ and checks its correctness with
