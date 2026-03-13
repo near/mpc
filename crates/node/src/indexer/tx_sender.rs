@@ -155,7 +155,7 @@ async fn submit_tx(
     let tx_hash = transaction.get_hash();
     tracing::info!(
         target = "mpc",
-        "sending tx {:?} with ak={:?} nonce={}",
+        "sending tx {:?} with ak={:?} nonce={:?}",
         tx_hash,
         tx_signer.public_key(),
         transaction.transaction.nonce(),
