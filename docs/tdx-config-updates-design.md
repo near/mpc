@@ -1,9 +1,10 @@
 # Dynamic Configuration Updates in TDX Deployments
 
-**Status:** WIP / Design
-**Issue:** #2420
-**Authors:** Claude + Mårten
-**Date:** 2026-03-13
+## Purpose
+This is a mostly claude-generated document used to outline how we can implement support for MPC configuration updates
+in our TDX deployments.
+
+It's intended as a temporary design document and should be removed once we implement the feature.
 
 ## Problem Statement
 
