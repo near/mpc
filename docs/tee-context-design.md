@@ -62,7 +62,7 @@ impl TeeContext {
 
 The read methods (`allowed_tee_hashes`, `foreign_chain_policy`) and their `_changed()` counterparts delegate to the Chain Gateway, which handles background polling internally. The TEE Context does not write to disk — persistence is the caller's responsibility.
 
-Each service passes its governance contract to `TeeContext::new()`. All governance contracts expose the same attestation-related methods (see [Attestation Methods][tee-context-methods]) since they share [`TeeState`][tee-state]. Voting methods vary per contract.
+Each service passes its governance contract address to `TeeContext::new()`. All governance contracts expose the same attestation-related methods (see [Attestation Methods][tee-context-methods]) since they share [`TeeState`][tee-state]. Voting methods vary per contract.
 
 [tee-context-methods]: tee-lifecycle.md#attestation-methods
 
