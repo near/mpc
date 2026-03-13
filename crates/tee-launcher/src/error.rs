@@ -33,6 +33,15 @@ pub enum LauncherError {
         source: std::io::Error,
     },
 
+    #[error("Failed to write {path}: {source}")]
+    FileWrite {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[error("Failed to create temp file: {0}")]
+    TempFileCreate(std::io::Error),
+
     #[error("Failed to parse {path}: {source}")]
     JsonParse {
         path: String,

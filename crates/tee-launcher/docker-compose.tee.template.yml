@@ -1,0 +1,20 @@
+services:
+  mpc-node:
+    image: "{{IMAGE}}"
+    container_name: "{{CONTAINER_NAME}}"
+    security_opt:
+      - no-new-privileges:true
+    ports: {{PORTS}}
+    environment:
+      - "DSTACK_ENDPOINT={{DSTACK_UNIX_SOCKET}}"
+    volumes:
+      - "{{MPC_CONFIG_HOST_PATH}}:{{MPC_CONFIG_CONTAINER_PATH}}:ro"
+      - /tapp:/tapp:ro
+      - shared-volume:/mnt/shared
+      - mpc-data:/data
+      - "{{DSTACK_UNIX_SOCKET}}:{{DSTACK_UNIX_SOCKET}}"
+    command: ["start-with-config-file", "{{MPC_CONFIG_CONTAINER_PATH}}"]
+
+volumes:
+  shared-volume:
+  mpc-data:

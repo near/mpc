@@ -1,5 +1,6 @@
 // A rewrite of launcher.py
 
+use std::io::Write;
 use std::process::Command;
 use std::{collections::VecDeque, time::Duration};
 
@@ -19,6 +20,9 @@ mod constants;
 mod docker_types;
 mod error;
 mod types;
+
+const COMPOSE_TEMPLATE: &str = include_str!("../docker-compose.template.yml");
+const COMPOSE_TEE_TEMPLATE: &str = include_str!("../docker-compose.tee.template.yml");
 
 const DOCKER_AUTH_ACCEPT_HEADER_VALUE: HeaderValue =
     HeaderValue::from_static("application/vnd.docker.distribution.manifest.v2+json");
@@ -352,57 +356,47 @@ async fn validate_image_hash(
     Ok(())
 }
 
-fn docker_run_args(
+fn render_compose_file(
     platform: Platform,
     mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
     image_digest: &DockerSha256Digest,
-) -> Vec<String> {
-    let mut cmd: Vec<String> = vec![];
+) -> Result<tempfile::NamedTempFile, LauncherError> {
+    let template = match platform {
+        Platform::Tee => COMPOSE_TEE_TEMPLATE,
+        Platform::NonTee => COMPOSE_TEMPLATE,
+    };
 
-    if platform == Platform::Tee {
-        cmd.extend([
-            "--env".into(),
-            format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"),
-        ]);
-        cmd.extend([
-            "-v".into(),
-            format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}"),
-        ]);
-    }
+    let ports: Vec<String> = docker_flags
+        .port_mappings
+        .ports
+        .iter()
+        .map(|p| p.docker_compose_value())
+        .collect();
+    let ports_json = serde_json::to_string(&ports).expect("port list is serializable");
 
-    // Mount the MPC config file into the container (read-only)
-    let host_path = mpc_config_file.display();
-    cmd.extend([
-        "-v".into(),
-        format!("{host_path}:{MPC_CONFIG_CONTAINER_PATH}:ro"),
-    ]);
+    let rendered = template
+        .replace("{{IMAGE}}", &image_digest.to_string())
+        .replace("{{CONTAINER_NAME}}", MPC_CONTAINER_NAME)
+        .replace(
+            "{{MPC_CONFIG_HOST_PATH}}",
+            &mpc_config_file.display().to_string(),
+        )
+        .replace("{{MPC_CONFIG_CONTAINER_PATH}}", MPC_CONFIG_CONTAINER_PATH)
+        .replace("{{DSTACK_UNIX_SOCKET}}", DSTACK_UNIX_SOCKET)
+        .replace("{{PORTS}}", &ports_json);
 
-    cmd.extend(docker_flags.port_mappings.docker_args());
+    tracing::info!(compose = %rendered, "rendered docker-compose file");
 
-    // Container run configuration
-    cmd.extend([
-        "--security-opt".into(),
-        "no-new-privileges:true".into(),
-        "-v".into(),
-        "/tapp:/tapp:ro".into(),
-        "-v".into(),
-        "shared-volume:/mnt/shared".into(),
-        "-v".into(),
-        "mpc-data:/data".into(),
-        "--name".into(),
-        MPC_CONTAINER_NAME.into(),
-        "--detach".into(),
-        image_digest.to_string(),
-        // Command for the MPC binary: read config from file
-        "start-with-config-file".into(),
-        MPC_CONFIG_CONTAINER_PATH.into(),
-    ]);
+    let mut file =
+        tempfile::NamedTempFile::new().map_err(|source| LauncherError::TempFileCreate(source))?;
+    file.write_all(rendered.as_bytes())
+        .map_err(|source| LauncherError::FileWrite {
+            path: file.path().display().to_string(),
+            source,
+        })?;
 
-    let docker_command_string = cmd.join(" ");
-    tracing::info!(?docker_command_string, "docker cmd");
-
-    cmd
+    Ok(file)
 }
 
 fn launch_mpc_container(
@@ -413,16 +407,17 @@ fn launch_mpc_container(
 ) -> Result<(), LauncherError> {
     tracing::info!("Launching MPC node with validated hash: {valid_hash}",);
 
-    // shutdown container if one is already running
+    let compose_file =
+        render_compose_file(platform, mpc_config_file, docker_flags, valid_hash)?;
+    let compose_path = compose_file.path().display().to_string();
+
+    // Remove any existing container from a previous run (by name, independent of compose file)
     let _ = Command::new("docker")
         .args(["rm", "-f", MPC_CONTAINER_NAME])
         .output();
 
-    let docker_run_args = docker_run_args(platform, mpc_config_file, docker_flags, valid_hash);
-
     let run_output = Command::new("docker")
-        .arg("run")
-        .args(&docker_run_args)
+        .args(["compose", "-f", &compose_path, "up", "-d"])
         .output()
         .map_err(|inner| LauncherError::DockerRunFailed {
             image_hash: valid_hash.clone(),
@@ -432,7 +427,7 @@ fn launch_mpc_container(
     if !run_output.status.success() {
         let stderr = String::from_utf8_lossy(&run_output.stderr);
         let stdout = String::from_utf8_lossy(&run_output.stdout);
-        tracing::error!(%stderr, %stdout, "docker run failed");
+        tracing::error!(%stderr, %stdout, "docker compose up failed");
         return Err(LauncherError::DockerRunFailedExitStatus {
             image_hash: valid_hash.clone(),
             output: stderr.into_owned(),
@@ -452,12 +447,22 @@ mod tests {
     use near_mpc_bounded_collections::NonEmptyVec;
 
     use crate::constants::*;
-    use crate::docker_run_args;
     use crate::error::LauncherError;
+    use crate::render_compose_file;
     use crate::select_image_hash;
     use crate::types::*;
 
     const SAMPLE_CONFIG_PATH: &str = "/tapp/mpc-config.json";
+
+    fn render(
+        platform: Platform,
+        config_path: &str,
+        flags: &DockerLaunchFlags,
+        digest: &DockerSha256Digest,
+    ) -> String {
+        let file = render_compose_file(platform, Path::new(config_path), flags, digest).unwrap();
+        std::fs::read_to_string(file.path()).unwrap()
+    }
 
     fn digest(hex_char: char) -> DockerSha256Digest {
         format!(
@@ -493,43 +498,31 @@ mod tests {
     }
 
     #[test]
-    fn tee_mode_includes_dstack_mount() {
+    fn tee_mode_includes_dstack_env_and_volume() {
         // given
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(
-            Platform::Tee,
-            Path::new(SAMPLE_CONFIG_PATH),
-            &flags,
-            &digest,
-        );
+        let rendered = render(Platform::Tee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
         // then
-        let joined = args.join(" ");
-        assert!(joined.contains(&format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}")));
-        assert!(joined.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
+        assert!(rendered.contains(&format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}")));
+        assert!(rendered.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
     }
 
     #[test]
-    fn nontee_mode_excludes_dstack_mount() {
+    fn nontee_mode_excludes_dstack() {
         // given
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(
-            Platform::NonTee,
-            Path::new(SAMPLE_CONFIG_PATH),
-            &flags,
-            &digest,
-        );
+        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
         // then
-        let joined = args.join(" ");
-        assert!(!joined.contains("DSTACK_ENDPOINT="));
-        assert!(!joined.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
+        assert!(!rendered.contains("DSTACK_ENDPOINT"));
+        assert!(!rendered.contains(DSTACK_UNIX_SOCKET));
     }
 
     #[test]
@@ -539,21 +532,14 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(
-            Platform::NonTee,
-            Path::new(SAMPLE_CONFIG_PATH),
-            &flags,
-            &digest,
-        );
+        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
         // then
-        let joined = args.join(" ");
-        assert!(joined.contains("--security-opt no-new-privileges:true"));
-        assert!(joined.contains("/tapp:/tapp:ro"));
-        assert!(joined.contains("shared-volume:/mnt/shared"));
-        assert!(joined.contains("mpc-data:/data"));
-        assert!(joined.contains(&format!("--name {MPC_CONTAINER_NAME}")));
-        assert!(joined.contains("--detach"));
+        assert!(rendered.contains("no-new-privileges:true"));
+        assert!(rendered.contains("/tapp:/tapp:ro"));
+        assert!(rendered.contains("shared-volume:/mnt/shared"));
+        assert!(rendered.contains("mpc-data:/data"));
+        assert!(rendered.contains(&format!("container_name: \"{MPC_CONTAINER_NAME}\"")));
     }
 
     #[test]
@@ -563,16 +549,10 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(
-            Platform::NonTee,
-            Path::new(SAMPLE_CONFIG_PATH),
-            &flags,
-            &digest,
-        );
+        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
         // then
-        let joined = args.join(" ");
-        assert!(joined.contains(&format!(
+        assert!(rendered.contains(&format!(
             "{SAMPLE_CONFIG_PATH}:{MPC_CONFIG_CONTAINER_PATH}:ro"
         )));
     }
@@ -584,41 +564,24 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(
-            Platform::NonTee,
-            Path::new(SAMPLE_CONFIG_PATH),
-            &flags,
-            &digest,
-        );
+        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
         // then
-        let joined = args.join(" ");
-        assert!(joined.contains(&format!(
-            "start-with-config-file {MPC_CONFIG_CONTAINER_PATH}"
-        )));
+        assert!(rendered.contains("start-with-config-file"));
+        assert!(rendered.contains(MPC_CONFIG_CONTAINER_PATH));
     }
 
     #[test]
-    fn image_digest_appears_before_command() {
+    fn image_is_set() {
         // given
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(
-            Platform::NonTee,
-            Path::new(SAMPLE_CONFIG_PATH),
-            &flags,
-            &digest,
-        );
+        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
-        // then - image digest should appear before "start-with-config-file"
-        let digest_pos = args.iter().position(|a| a == &digest.to_string()).unwrap();
-        let cmd_pos = args
-            .iter()
-            .position(|a| a == "start-with-config-file")
-            .unwrap();
-        assert!(digest_pos < cmd_pos);
+        // then
+        assert!(rendered.contains(&format!("image: \"{digest}\"")));
     }
 
     #[test]
@@ -628,42 +591,23 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(
-            Platform::NonTee,
-            Path::new(SAMPLE_CONFIG_PATH),
-            &flags,
-            &digest,
-        );
+        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
         // then
-        let joined = args.join(" ");
-        assert!(joined.contains("-p 11780:11780"));
+        assert!(rendered.contains("11780:11780"));
     }
 
     #[test]
-    fn no_env_vars_forwarded_for_mpc_config() {
+    fn no_env_section_in_nontee_mode() {
         // given
         let flags = empty_docker_flags();
         let digest = sample_digest();
 
         // when
-        let args = docker_run_args(
-            Platform::NonTee,
-            Path::new(SAMPLE_CONFIG_PATH),
-            &flags,
-            &digest,
-        );
+        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
-        // then - no MPC_* env vars should be present (only DSTACK_ENDPOINT in TEE mode)
-        let env_args: Vec<&String> = args
-            .windows(2)
-            .filter(|w| w[0] == "--env")
-            .map(|w| &w[1])
-            .collect();
-        assert!(
-            env_args.is_empty(),
-            "expected no --env args in non-TEE mode, got: {env_args:?}"
-        );
+        // then
+        assert!(!rendered.contains("environment:"));
     }
 
     // --- select_image_hash ---

@@ -82,7 +82,7 @@ pub struct HostEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PortMappings {
+pub struct PortMappings {
     pub ports: Vec<PortMapping>,
 }
 
@@ -92,13 +92,10 @@ pub struct PortMapping {
     dst: NonZeroU16,
 }
 
-impl PortMappings {
-    /// Returns `["-p", "src1:dst1", "-p", "src2:dst2", ...]`.
-    pub fn docker_args(&self) -> Vec<String> {
-        self.ports
-            .iter()
-            .flat_map(|PortMapping { src, dst }| ["-p".into(), format!("{src}:{dst}")])
-            .collect()
+impl PortMapping {
+    /// Returns e.g. `"11780:11780"` for use in docker-compose port lists.
+    pub fn docker_compose_value(&self) -> String {
+        format!("{}:{}", self.src, self.dst)
     }
 }
 
@@ -200,23 +197,21 @@ mod tests {
         assert_matches!(result, Err(_));
     }
 
-    // --- docker_args output format ---
+    // --- docker_compose_value output format ---
 
     #[test]
-    fn port_mappings_docker_args_format() {
+    fn port_mapping_docker_compose_value() {
         // given
-        let mappings = PortMappings {
-            ports: vec![PortMapping {
-                src: NonZeroU16::new(11780).unwrap(),
-                dst: NonZeroU16::new(11780).unwrap(),
-            }],
+        let mapping = PortMapping {
+            src: NonZeroU16::new(11780).unwrap(),
+            dst: NonZeroU16::new(11780).unwrap(),
         };
 
         // when
-        let args = mappings.docker_args();
+        let value = mapping.docker_compose_value();
 
         // then
-        assert_eq!(args, vec!["-p", "11780:11780"]);
+        assert_eq!(value, "11780:11780");
     }
 
     // --- Config full deserialization ---
