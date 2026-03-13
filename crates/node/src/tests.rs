@@ -1,12 +1,11 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
-use chain_gateway::types::ObservedState;
+use mpc_contract::primitives::key_state::Keyset;
+use mpc_contract::state::ProtocolContractState;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
 };
-use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -24,7 +23,6 @@ use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
 };
-use crate::indexer::migrations::ContractMigrationInfo;
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
@@ -105,23 +103,16 @@ impl OneNodeTestConfig {
                 let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
                 let (_, dummy_protocol_state_receiver) =
-                    watch::channel(Ok(ObservedState::<ProtocolContractState> {
-                        observed_at: 0.into(),
-                        value: ProtocolContractState::NotInitialized,
-                    }));
-                let (_, dummy_migration_state_receiver) =
-                    watch::channel(Ok(ObservedState::<ContractMigrationInfo> {
-                        observed_at: 0.into(),
-                        value: BTreeMap::new(),
-                    }));
+                    watch::channel(ProtocolContractState::NotInitialized);
+                let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui,
                     static_web_data(&self.secrets, None),
-                    self.config.clone(),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
+                    self.config.clone(),
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);

@@ -5490,7 +5490,6 @@ dependencies = [
  "bs58 0.5.1",
  "built",
  "bytes",
- "chain-gateway",
  "clap",
  "derive_more 2.1.1",
  "ed25519-dalek",

@@ -1,8 +1,7 @@
 use crate::{
     config::{
-        load_config_file, ConfigFile,
-        GcpStartConfig, SecretsStartConfig,
-        StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
+        load_config_file, ConfigFile, GcpStartConfig, SecretsStartConfig, StartConfig,
+        TeeAuthorityStartConfig, TeeStartConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
@@ -14,9 +13,7 @@ use crate::{
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use std::path::PathBuf;
-use tee_authority::tee_authority::{
-    DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
-};
+use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
 use url::Url;
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
@@ -218,7 +215,6 @@ pub struct ExportKeyshareCmd {
     #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
     pub local_encryption_key_hex: String,
 }
-
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {

@@ -1,10 +1,10 @@
+use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::requests::recent_blocks_tracker::BlockViewLite;
 use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
-use chain_gateway::stats::IndexerStats;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
@@ -98,7 +98,6 @@ pub struct ChainBlockUpdate {
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
 }
 
-// todo: clean this up
 #[cfg(feature = "network-hardship-simulation")]
 pub(crate) async fn listen_blocks(
     stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,

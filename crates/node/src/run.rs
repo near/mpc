@@ -1,4 +1,3 @@
-use crate::indexer::migrations::ContractMigrationInfo;
 use crate::{
     config::{
         generate_and_write_backup_encryption_key_to_disk, ConfigFile, PersistentSecrets,
@@ -16,14 +15,13 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use chain_gateway::errors::ChainGatewayError;
-use chain_gateway::types::ObservedState;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
@@ -92,25 +90,19 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
     let root_task_handle = Arc::new(OnceLock::new());
 
-    // todo: fixme
     let (protocol_state_sender, protocol_state_receiver) =
-        watch::channel::<Result<ObservedState<ProtocolContractState>, ChainGatewayError>>(Err(
-            ChainGatewayError::MonitoringClosed,
-        ));
+        watch::channel(ProtocolContractState::NotInitialized);
 
-    let (migration_state_sender, migration_state_receiver) =
-        watch::channel::<Result<ObservedState<ContractMigrationInfo>, ChainGatewayError>>(Err(
-            ChainGatewayError::MonitoringClosed,
-        ));
+    let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
     let web_server = root_runtime
         .block_on(start_web_server(
             root_task_handle.clone(),
             debug_request_sender.clone(),
             node_config.web_ui,
             static_web_data(&secrets, Some(attestation)),
-            config.node.clone(),
             protocol_state_receiver,
             migration_state_receiver,
+            config.node.clone(),
         ))
         .context("Failed to create web server.")?;
 
