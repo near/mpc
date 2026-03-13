@@ -23,39 +23,37 @@ impl<T> FunctionCallSubmitter for T
 where
     T: FetchLatestFinalBlockInfo + SubmitSignedTransaction,
 {
-    fn submit_function_call_tx(
+    async fn submit_function_call_tx(
         &self,
         signer: Arc<TransactionSigner>,
         receiver_id: AccountId,
         method_name: String,
         args: Vec<u8>,
         gas: Gas,
-    ) -> impl Future<Output = Result<CryptoHash, ChainGatewayError>> + Send {
-        async move {
-            let info = self.fetch_latest_final_block_info().await.map_err(|err| {
-                ChainGatewayError::FetchFinalBlock {
-                    message: err.to_string(),
-                }
+    ) -> Result<CryptoHash, ChainGatewayError> {
+        let info = self.fetch_latest_final_block_info().await.map_err(|err| {
+            ChainGatewayError::FetchFinalBlock {
+                message: err.to_string(),
+            }
+        })?;
+
+        let transaction =
+            signer.create_and_sign_function_call_tx(receiver_id, method_name, args, gas, info);
+
+        let tx_hash = transaction.get_hash();
+
+        tracing::info!(
+            tx_hash = ?tx_hash,
+            public_key = ?signer.public_key(),
+            nonce = transaction.transaction.nonce(),
+            "sending transaction",
+        );
+        self.submit_signed_transaction(transaction)
+            .await
+            .map_err(|err| ChainGatewayError::SubmitTransaction {
+                message: err.to_string(),
             })?;
-
-            let transaction =
-                signer.create_and_sign_function_call_tx(receiver_id, method_name, args, gas, info);
-
-            let tx_hash = transaction.get_hash();
-
-            tracing::info!(
-                tx_hash = ?tx_hash,
-                public_key = ?signer.public_key(),
-                nonce = transaction.transaction.nonce(),
-                "sending transaction",
-            );
-            self.submit_signed_transaction(transaction)
-                .await
-                .map_err(|err| ChainGatewayError::SubmitTransaction {
-                    message: err.to_string(),
-                })?;
-            Ok(tx_hash)
-        }
+        Ok(tx_hash)
     }
 }
 

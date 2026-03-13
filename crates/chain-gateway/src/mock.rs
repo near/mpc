@@ -165,11 +165,9 @@ impl QueryViewFunction for MockChainState {
 
 impl FetchLatestFinalBlockInfo for MockChainState {
     type Error = MockError;
-    fn fetch_latest_final_block_info(
+    async fn fetch_latest_final_block_info(
         &self,
-    ) -> impl Future<Output = Result<LatestFinalBlockInfo, Self::Error>> + Send {
-        async move { self.latest_final_block.lock().unwrap().clone() }
-    }
+    ) -> Result<LatestFinalBlockInfo, Self::Error> { self.latest_final_block.lock().unwrap().clone() }
 }
 
 impl SubmitSignedTransaction for MockChainState {

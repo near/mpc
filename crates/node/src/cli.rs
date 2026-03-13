@@ -257,7 +257,7 @@ impl StartCmd {
         let _tokio_enter_guard = root_runtime.enter();
 
         // Load configuration and initialize persistent secrets
-        let home_dir = PathBuf::from(self.home_dir.clone());
+        let home_dir = self.home_dir.clone();
         let config = load_config_file(&home_dir)?;
         let persistent_secrets = PersistentSecrets::generate_or_get_existing(
             &home_dir,

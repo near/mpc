@@ -19,8 +19,7 @@ impl IndexerStats {
     }
 }
 
-// todo: take a RwLock instead
-pub async fn indexer_logger(
+pub(crate) async fn indexer_logger(
     stats: Arc<Mutex<IndexerStats>>,
     info_fetcher: impl FetchLatestFinalBlockInfo,
 ) {

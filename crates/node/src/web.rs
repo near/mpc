@@ -15,7 +15,6 @@ use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::types::ObservedState;
-use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
