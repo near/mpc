@@ -11,7 +11,6 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     primitives::{
         domain::SignatureScheme, participants::Participants,
@@ -19,6 +18,7 @@ use mpc_contract::{
     },
     tee::tee_state::NodeId,
 };
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///

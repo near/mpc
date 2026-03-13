@@ -1,5 +1,5 @@
 use mpc_attestation::attestation::Attestation;
-use mpc_crypto_types::Ed25519PublicKey;
+use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -17,7 +17,7 @@ pub struct StaticWebData {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_crypto_types::ed25519_dalek::SigningKey;
+    use near_mpc_crypto_types::ed25519_dalek::SigningKey;
     use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
 
     fn gen_ed25519_public_key(seed: u64) -> Ed25519PublicKey {
