@@ -11,7 +11,6 @@ import time
 import traceback
 from dataclasses import dataclass
 import re
-import ipaddress
 import json
 from typing import NamedTuple
 
