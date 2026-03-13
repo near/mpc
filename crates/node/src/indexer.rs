@@ -1,40 +1,14 @@
-use crate::{
-    indexer::{
-        migrations::ContractMigrationInfo,
-        types::{
-            ChainCKDRequest, ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
-            ChainGetPendingVerifyForeignTxRequestArgs, ChainSignatureRequest,
-            ChainVerifyForeignTransactionRequest, GetAttestationArgs,
-        },
-    },
-    migration_service::types::MigrationInfo,
-};
+use crate::migration_service::types::MigrationInfo;
 
-use anyhow::Context;
 use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
-use mpc_contract::primitives::signature::YieldIndex;
-use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::{
     proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
     tee_state::NodeId,
 };
 use near_account_id::AccountId;
-use near_async::{messaging::CanSendAsync, multithread::MultithreadRuntimeHandle};
-use near_client::ViewClientActorInner;
-use near_indexer_primitives::{
-    types::{BlockReference, Finality},
-    views::{BlockView, QueryRequest, QueryResponseKind},
-};
-use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
-    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
-    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
-    STATE,
-};
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
-use serde::Deserialize;
 use std::{future::Future, sync::Arc};
 use tokio::sync::{mpsc, watch};
 use types::ChainSendTransactionRequest;
