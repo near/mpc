@@ -11,7 +11,7 @@ use constants::*;
 use docker_types::*;
 use error::*;
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
-use tempfile::NamedTempFile;
+
 use types::*;
 use url::Url;
 
@@ -119,15 +119,17 @@ async fn run() -> Result<(), LauncherError> {
             .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
     }
 
-    let mut mpc_binary_config_file = NamedTempFile::new().expect("file creation works");
-    mpc_binary_config_file
-        .write_all(dstack_config.mpc_config_content.as_bytes())
-        .expect("writing to file works");
+    let mpc_binary_config_path = std::path::Path::new("/tmp/mpc-config");
+    std::fs::write(mpc_binary_config_path, dstack_config.mpc_config_content.as_bytes())
+        .map_err(|source| LauncherError::FileWrite {
+            path: mpc_binary_config_path.display().to_string(),
+            source,
+        })?;
 
     launch_mpc_container(
         args.platform,
         &image_hash,
-        mpc_binary_config_file.path(),
+        mpc_binary_config_path,
         &dstack_config.docker_command_config,
     )?;
 
