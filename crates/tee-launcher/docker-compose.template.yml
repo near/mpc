@@ -13,4 +13,6 @@ services:
 
 volumes:
   shared-volume:
+    name: shared-volume
   mpc-data:
+    name: mpc-data
