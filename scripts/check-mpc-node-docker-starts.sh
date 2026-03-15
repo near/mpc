@@ -64,7 +64,7 @@ echo "Container started: $CONTAINER_ID"
 # Check if container is actually running
 sleep 60
 if [ -z "$(docker ps --filter "id=$CONTAINER_ID" --format "{{.ID}}")" ]; then
-  docker logs "$CONTAINER_ID" 2>&1 | head -50
+  docker logs "$CONTAINER_ID" 2>&1
   echo "❌ Container cannot initialize/start properly"
   exit 1
 fi
