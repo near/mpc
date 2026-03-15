@@ -119,7 +119,7 @@ async fn run() -> Result<(), LauncherError> {
             .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
     }
 
-    let mpc_binary_config_path = std::path::Path::new("/tmp/mpc-config");
+    let mpc_binary_config_path = std::path::Path::new(MPC_CONFIG_SHARED_PATH);
     let mpc_config_toml = toml::to_string(&dstack_config.mpc_config)
         .expect("re-serializing a toml::Table always succeeds");
     std::fs::write(mpc_binary_config_path, mpc_config_toml.as_bytes()).map_err(|source| {
@@ -133,7 +133,6 @@ async fn run() -> Result<(), LauncherError> {
         args.platform,
         &manifest_digest,
         &dstack_config.launcher_config.image_name,
-        mpc_binary_config_path,
         &dstack_config.docker_command_config,
     )?;
 
@@ -402,7 +401,6 @@ async fn validate_image_hash(
 
 fn render_compose_file(
     platform: Platform,
-    mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
     image_name: &str,
     manifest_digest: &DockerSha256Digest,
@@ -424,11 +422,7 @@ fn render_compose_file(
         .replace("{{IMAGE_NAME}}", image_name)
         .replace("{{IMAGE}}", &manifest_digest.to_string())
         .replace("{{CONTAINER_NAME}}", MPC_CONTAINER_NAME)
-        .replace(
-            "{{MPC_CONFIG_HOST_PATH}}",
-            &mpc_config_file.display().to_string(),
-        )
-        .replace("{{MPC_CONFIG_CONTAINER_PATH}}", MPC_CONFIG_CONTAINER_PATH)
+        .replace("{{MPC_CONFIG_SHARED_PATH}}", MPC_CONFIG_SHARED_PATH)
         .replace("{{DSTACK_UNIX_SOCKET}}", DSTACK_UNIX_SOCKET)
         .replace("{{PORTS}}", &ports_json);
 
@@ -448,14 +442,12 @@ fn launch_mpc_container(
     platform: Platform,
     manifest_digest: &DockerSha256Digest,
     image_name: &str,
-    mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
 ) -> Result<(), LauncherError> {
     tracing::info!(?manifest_digest, "launching MPC node");
 
     let compose_file = render_compose_file(
         platform,
-        mpc_config_file,
         docker_flags,
         image_name,
         manifest_digest,
@@ -491,8 +483,6 @@ fn launch_mpc_container(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use assert_matches::assert_matches;
     use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
     use near_mpc_bounded_collections::NonEmptyVec;
@@ -503,19 +493,15 @@ mod tests {
     use crate::select_image_hash;
     use crate::types::*;
 
-    const SAMPLE_CONFIG_PATH: &str = "/tapp/mpc-config.json";
-
     const SAMPLE_IMAGE_NAME: &str = "nearone/mpc-node";
 
     fn render(
         platform: Platform,
-        config_path: &str,
         flags: &DockerLaunchFlags,
         digest: &DockerSha256Digest,
     ) -> String {
         let file = render_compose_file(
             platform,
-            Path::new(config_path),
             flags,
             SAMPLE_IMAGE_NAME,
             digest,
@@ -564,7 +550,7 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::Tee, SAMPLE_CONFIG_PATH, &flags, &digest);
+        let rendered = render(Platform::Tee, &flags, &digest);
 
         // then
         assert!(rendered.contains(&format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}")));
@@ -578,7 +564,7 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
+        let rendered = render(Platform::NonTee, &flags, &digest);
 
         // then
         assert!(!rendered.contains("DSTACK_ENDPOINT"));
@@ -592,7 +578,7 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
+        let rendered = render(Platform::NonTee, &flags, &digest);
 
         // then
         assert!(rendered.contains("no-new-privileges:true"));
@@ -609,12 +595,10 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
+        let rendered = render(Platform::NonTee, &flags, &digest);
 
-        // then
-        assert!(rendered.contains(&format!(
-            "{SAMPLE_CONFIG_PATH}:{MPC_CONFIG_CONTAINER_PATH}:ro"
-        )));
+        // then — config is on the shared volume, referenced in the command
+        assert!(rendered.contains(MPC_CONFIG_SHARED_PATH));
     }
 
     #[test]
@@ -624,11 +608,11 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
+        let rendered = render(Platform::NonTee, &flags, &digest);
 
         // then
         assert!(rendered.contains("/app/mpc-node"));
-        assert!(rendered.contains(MPC_CONFIG_CONTAINER_PATH));
+        assert!(rendered.contains(MPC_CONFIG_SHARED_PATH));
     }
 
     #[test]
@@ -638,7 +622,7 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
+        let rendered = render(Platform::NonTee, &flags, &digest);
 
         // then
         assert!(rendered.contains(&format!("image: \"{SAMPLE_IMAGE_NAME}@{digest}\"")));
@@ -651,7 +635,7 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
+        let rendered = render(Platform::NonTee, &flags, &digest);
 
         // then
         assert!(rendered.contains("11780:11780"));
@@ -664,7 +648,7 @@ mod tests {
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
+        let rendered = render(Platform::NonTee, &flags, &digest);
 
         // then
         assert!(!rendered.contains("environment:"));

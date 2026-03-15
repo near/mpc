@@ -6,11 +6,10 @@ services:
       - no-new-privileges:true
     ports: {{PORTS}}
     volumes:
-      - "{{MPC_CONFIG_HOST_PATH}}:{{MPC_CONFIG_CONTAINER_PATH}}:ro"
       - /tapp:/tapp:ro
       - shared-volume:/mnt/shared
       - mpc-data:/data
-    command: ["/app/mpc-node", "start-with-config-file", "{{MPC_CONFIG_CONTAINER_PATH}}"]
+    command: ["/app/mpc-node", "start-with-config-file", "{{MPC_CONFIG_SHARED_PATH}}"]
 
 volumes:
   shared-volume:
