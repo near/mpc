@@ -3,4 +3,4 @@ image = "docker.io/rust:1.86-slim-bookworm"
 
 [packages]
 system = "debian"
-dependencies = ["make", "git", "libssl-dev", "pkg-config", "clang", "musl-tools"]
+dependencies = ["make", "git", "libssl-dev", "pkg-config", "clang"]
