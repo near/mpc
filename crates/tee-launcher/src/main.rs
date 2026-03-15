@@ -176,7 +176,7 @@ fn select_image_hash(
 async fn get_manifest_digest(
     config: &LauncherConfig,
     expected_image_digest: &DockerSha256Digest,
-) -> Result<String, LauncherError> {
+) -> Result<DockerSha256Digest, LauncherError> {
     let mut tags: VecDeque<String> = config.image_tags.iter().cloned().collect();
 
     // We need an authorization token to fetch manifests.
@@ -295,7 +295,12 @@ async fn get_manifest_digest(
                     continue;
                 };
 
-                return Ok(content_digest);
+                return content_digest.parse().map_err(|_| {
+                    LauncherError::RegistryResponseParse(format!(
+                        "failed to parse manifest digest: {}",
+                        content_digest
+                    ))
+                });
             }
         }
     }
@@ -363,7 +368,7 @@ async fn validate_image_hash(
         );
     }
 
-    Ok(pulled_digest)
+    Ok(manifest_digest)
 }
 
 fn render_compose_file(
