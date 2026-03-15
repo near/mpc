@@ -1,4 +1,4 @@
-use super::domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainRegistry};
+use super::domain::{Curve, DomainConfig, DomainId, DomainRegistry};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
