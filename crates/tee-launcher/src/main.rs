@@ -274,7 +274,16 @@ async fn get_manifest_digest(
 
         match manifest {
             ManifestResponse::ImageIndex { manifests } => {
-                // Multi-platform manifest; scan for amd64/linux
+                let platform_digests: Vec<_> = manifests
+                    .iter()
+                    .filter(|m| m.platform.architecture == AMD64 && m.platform.os == LINUX)
+                    .map(|m| m.digest.as_str())
+                    .collect();
+                tracing::info!(
+                    ?tag,
+                    ?platform_digests,
+                    "received multi-platform image index, queuing amd64/linux manifests"
+                );
                 manifests
                     .into_iter()
                     .filter(|manifest| {
@@ -284,6 +293,12 @@ async fn get_manifest_digest(
             }
             ManifestResponse::DockerV2 { config } | ManifestResponse::OciManifest { config } => {
                 if config.digest != *expected_image_digest {
+                    tracing::warn!(
+                        ?tag,
+                        actual_config_digest = %config.digest,
+                        expected_config_digest = %expected_image_digest,
+                        "config digest mismatch, skipping tag"
+                    );
                     continue;
                 }
 
@@ -292,9 +307,18 @@ async fn get_manifest_digest(
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_string())
                 else {
+                    tracing::warn!(
+                        ?tag,
+                        "manifest matched but Docker-Content-Digest header missing, skipping"
+                    );
                     continue;
                 };
 
+                tracing::info!(
+                    ?tag,
+                    %content_digest,
+                    "config digest matched, resolved manifest digest"
+                );
                 return content_digest.parse().map_err(|_| {
                     LauncherError::RegistryResponseParse(format!(
                         "failed to parse manifest digest: {}",
@@ -305,6 +329,11 @@ async fn get_manifest_digest(
         }
     }
 
+    tracing::error!(
+        ?expected_image_digest,
+        tags = ?config.image_tags,
+        "no tag produced a manifest with matching config digest"
+    );
     Err(LauncherError::ImageHashNotFoundAmongTags)
 }
 
