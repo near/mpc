@@ -6,7 +6,7 @@ services:
     environment:
       - PLATFORM=NONTEE
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:e7d1df7453b9bb9e89969f02a0ae59c3c2743cd895963e97a8e7666defbf4dab # latest main with config file support
+      - DEFAULT_IMAGE_DIGEST=sha256:689ad0f37a5a9db75eeb93cb15ad4bb507883412f891a4fd19448ada575c8237 # config digest for nearone/mpc-node:main-6ee90e0
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
