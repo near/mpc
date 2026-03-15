@@ -105,11 +105,7 @@ impl VerifiedAttestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                // Empty list means no on-chain measurements configured yet (fresh contract);
-                // the contract's get_accepted_measurements() falls back to hardcoded defaults
-                // before calling re_verify, so an empty list here should not reject.
-                if !allowed_measurements.is_empty() && !allowed_measurements.contains(measurements)
-                {
+                if !allowed_measurements.contains(measurements) {
                     return Err(VerificationError::Custom(
                         "The attestation's measurements are no longer in the allowed set"
                             .to_string(),
