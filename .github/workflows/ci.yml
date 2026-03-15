@@ -47,7 +47,7 @@ jobs:
 
   launcher-nontee-check:
     name: "MPC Launcher non-tee check"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2404-x64-8x # was OOMing with 2x
     timeout-minutes: 60
     permissions:
       contents: read
