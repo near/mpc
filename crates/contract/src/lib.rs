@@ -2133,7 +2133,7 @@ mod tests {
         NUM_CURVES,
     };
     use crate::primitives::{
-        domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId},
+        domain::{Curve, DomainConfig, DomainId},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2148,7 +2148,7 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use crate::{
         errors::{ErrorKind, NodeMigrationError},
-        primitives::test_utils::infer_purpose_from_scheme,
+        primitives::test_utils::infer_purpose_from_curve,
     };
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
