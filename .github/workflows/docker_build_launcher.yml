@@ -23,10 +23,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y skopeo liblzma-dev
+          sudo apt-get install -y skopeo liblzma-dev podman
+
+      - name: Install repro-env
+        run: |
+          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
+          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
+          sudo install -m755 repro-env -t /usr/bin
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1

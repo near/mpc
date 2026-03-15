@@ -2,7 +2,7 @@
 # Script to reproducibly the docker images for the node and launcher
 #
 # Requirements: docker, docker-buildx, jq, git, find, touch
-# Extra requirements if using --node: repro-env, podman
+# Extra requirements if using --node or --launcher: repro-env, podman
 #
 # Usage:
 #   ./deployment/build-images.sh [--node] [--launcher] [--push]
