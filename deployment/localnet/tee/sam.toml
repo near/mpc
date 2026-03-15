@@ -1,5 +1,5 @@
 [launcher_config]
-image_tags = ["main-260e88b"]
+image_tags = ["2262-port-node-launcher-to-rust-v2-140ba52"]
 image_name = "nearone/mpc-node"
 registry = "registry.hub.docker.com"
 rpc_request_timeout_secs = 10
