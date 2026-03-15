@@ -1,5 +1,10 @@
 home_dir = "$HOME/.near/$MPC_NODE_ID"
 
+[near_init]
+chain_id = "mpc-localnet"
+boot_nodes = ""
+genesis_path = "/app/localnet-genesis.json"
+
 [secrets]
 secret_store_key_hex = "11111111111111111111111111111111"
 

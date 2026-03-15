@@ -17,6 +17,10 @@ ports = [
 [mpc_config]
 home_dir = "/data"
 
+[mpc_config.near_init]
+chain_id = "testnet"
+boot_nodes = ""
+
 [mpc_config.secrets]
 secret_store_key_hex = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
