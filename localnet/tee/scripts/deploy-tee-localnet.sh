@@ -144,10 +144,24 @@ MODE="${MODE:-testnet}"  # testnet|localnet
 # templates live here (UPDATED for move to localnet/tee/scripts)
 ENV_TPL="$REPO_ROOT/localnet/tee/scripts/node.env.tpl"
 if [ "$MODE" = "localnet" ]; then
-  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/node.conf.localnet.tpl"
+  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/node.conf.localnet.toml.tpl"
 else
   CONF_TPL="$REPO_ROOT/localnet/tee/scripts/node.conf.tpl"
 fi
+
+# Convert comma-separated "src:dst" port string to TOML inline table array entries.
+# E.g. "8080:8080,24566:24566" -> "    { src = 8080, dst = 8080 },\n    { src = 24566, dst = 24566 },"
+ports_to_toml() {
+  local ports="$1" result=""
+  IFS=',' read -ra pairs <<< "$ports"
+  for pair in "${pairs[@]}"; do
+    local src="${pair%%:*}"
+    local dst="${pair##*:}"
+    result+="    { src = $src, dst = $dst },
+"
+  done
+  echo -n "$result"
+}
 
 WORKDIR="/tmp/$USER/mpc_testnet_scale/$MPC_NETWORK_NAME"
 mkdir -p "$WORKDIR"
@@ -713,7 +727,7 @@ render_node_files_range() {
 
     local env_out conf_out
     env_out="$WORKDIR/node${i}.env"
-    conf_out="$WORKDIR/node${i}.conf"
+    conf_out="$WORKDIR/node${i}.toml"
 
     export APP_NAME="$app_name"
     export VMM_RPC
@@ -749,6 +763,8 @@ render_node_files_range() {
     export MPC_SECRET_STORE_KEY="$(printf '%032x' "$i")"
     export MPC_CONTRACT_ID="$MPC_CONTRACT_ACCOUNT"
     export PORTS="8080:8080,24566:24566,${future_port}:${future_port}"
+    export PORTS_TOML
+    PORTS_TOML="$(ports_to_toml "$PORTS")"
     export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566"
 
     envsubst <"$ENV_TPL" >"$env_out"
