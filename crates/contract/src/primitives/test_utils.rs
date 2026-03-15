@@ -1,4 +1,4 @@
-use super::domain::{Curve, DomainConfig, DomainId, DomainRegistry};
+use super::domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainRegistry};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -8,7 +8,6 @@ use crate::{
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::DomainPurpose;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
@@ -147,11 +146,5 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }
 
-/// Infer a default purpose from the curve.
-/// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
-    }
-}
+// Re-export for convenience
+pub use super::domain::infer_purpose_from_curve;
