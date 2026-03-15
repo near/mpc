@@ -10,7 +10,7 @@ services:
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./user-config.conf:/tapp/user_config:ro
+      - ./user-config.toml:/tapp/user_config:ro
       - shared-volume:/mnt/shared
       - mpc-data:/data
 
