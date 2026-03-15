@@ -10,7 +10,7 @@ services:
       - /tapp:/tapp:ro
       - shared-volume:/mnt/shared
       - mpc-data:/data
-    command: ["start-with-config-file", "{{MPC_CONFIG_CONTAINER_PATH}}"]
+    command: ["/app/mpc-node", "start-with-config-file", "{{MPC_CONFIG_CONTAINER_PATH}}"]
 
 volumes:
   shared-volume:

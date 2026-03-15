@@ -627,7 +627,7 @@ mod tests {
         let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
         // then
-        assert!(rendered.contains("start-with-config-file"));
+        assert!(rendered.contains("/app/mpc-node"));
         assert!(rendered.contains(MPC_CONFIG_CONTAINER_PATH));
     }
 
