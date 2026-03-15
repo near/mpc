@@ -1,5 +1,6 @@
 use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
+use attestation::measurements::{ExpectedMeasurements, Measurements};
 use mpc_attestation::attestation::{
     Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS, MockAttestation, VerifiedAttestation,
     default_measurements,
@@ -160,5 +161,52 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
         result,
         Err(VerificationError::Custom(msg))
             if msg.contains("not in the allowed hashes list")
+    );
+}
+
+#[test]
+fn validated_dstack_attestation_fails_reverification_with_removed_measurements() {
+    let attestation = mock_dstack_attestation();
+    let tls_key = p2p_tls_key();
+    let account_key = account_key();
+    let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
+    let creation_time = VALID_ATTESTATION_TIMESTAMP;
+
+    let allowed_mpc_hashes = [image_digest()];
+    let allowed_launcher_hashes = [launcher_compose_digest()];
+
+    // 1. Initial verify succeeds with default measurements
+    let validated = attestation
+        .verify(
+            report_data.into(),
+            creation_time,
+            &allowed_mpc_hashes,
+            &allowed_launcher_hashes,
+            default_measurements(),
+        )
+        .expect("Initial verification should succeed");
+
+    // 2. Re-verify fails when the measurement set no longer contains the attested measurements
+    let different_measurements = [ExpectedMeasurements {
+        rtmrs: Measurements {
+            mrtd: [0xAA; 48],
+            rtmr0: [0xBB; 48],
+            rtmr1: [0xCC; 48],
+            rtmr2: [0xDD; 48],
+        },
+        key_provider_event_digest: [0xEE; 48],
+    }];
+
+    let result = validated.re_verify(
+        creation_time,
+        &allowed_mpc_hashes,
+        &allowed_launcher_hashes,
+        &different_measurements,
+    );
+
+    assert_matches!(
+        result,
+        Err(VerificationError::Custom(msg))
+            if msg.contains("no longer in the allowed set")
     );
 }
