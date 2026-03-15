@@ -79,6 +79,7 @@ pub fn verify_at_timestamp(
             mpc_image_hash,
             launcher_compose_hash,
             expiry_timestamp_seconds,
+            measurements: _,
         }) => Ok(VerificationResult {
             mpc_image_hash,
             launcher_compose_hash,

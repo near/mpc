@@ -117,12 +117,15 @@ impl DstackAttestation {
     /// - accepted_measurements: set of accepted RTMRs and key-provider event digest.
     ///   If any element in the set is valid, the function accepts the attestation as
     ///   valid.
+    ///
+    /// Returns the matched `ExpectedMeasurements` on success so it can be stored
+    /// for re-verification when allowed measurements change.
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<(), VerificationError> {
+    ) -> Result<ExpectedMeasurements, VerificationError> {
         let verification_result =
             dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
@@ -249,13 +252,13 @@ impl DstackAttestation {
     }
 
     /// Try to verify static RTMRs and key_provider_digest against multiple expected measurement sets.
-    /// Returns `Ok(())` if any set matches; otherwise, returns a WrongHash error.
+    /// Returns the matched `ExpectedMeasurements` on success; otherwise, returns a WrongHash error.
     fn verify_any_measurements(
         &self,
         report_data: &dcap_qvl::quote::TDReport10,
         tcb_info: &TcbInfo,
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<(), VerificationError> {
+    ) -> Result<ExpectedMeasurements, VerificationError> {
         for expected in accepted_measurements {
             if self
                 .verify_static_rtmrs(report_data, tcb_info, expected)
@@ -264,7 +267,7 @@ impl DstackAttestation {
                     .verify_key_provider_digest(tcb_info, &expected.key_provider_event_digest)
                     .is_ok()
             {
-                return Ok(()); // found a valid match
+                return Ok(*expected); // found a valid match
             }
         }
 

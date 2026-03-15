@@ -66,6 +66,7 @@ fn validated_dstack_attestation_can_be_reverified() {
         timestamp_s + DEFAULT_EXPIRATION_DURATION_SECONDS,
         &allowed_mpc_hashes,
         &allowed_launcher_hashes,
+        default_measurements(),
     );
 
     // then
@@ -98,6 +99,7 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
         timestamp_s + DEFAULT_EXPIRATION_DURATION_SECONDS + 1,
         &allowed_mpc_hashes,
         &allowed_launcher_hashes,
+        default_measurements(),
     );
 
     // then
@@ -119,7 +121,7 @@ fn validated_mock_attestation_passes_reverification() {
         .expect("Initial verification failed");
 
     // Mock should generally pass re-verify
-    assert_matches!(validated.re_verify(100, &[], &[]), Ok(()));
+    assert_matches!(validated.re_verify(100, &[], &[], &[]), Ok(()));
 }
 
 #[test]
@@ -151,6 +153,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
         creation_time,
         &new_allowed_mpc_docker_image_hashes,
         &allowed_launcher_hashes,
+        default_measurements(),
     );
 
     assert_matches!(

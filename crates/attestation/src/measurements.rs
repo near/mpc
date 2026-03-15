@@ -1,4 +1,6 @@
 use alloc::string::String;
+#[cfg(feature = "abi")]
+use alloc::string::ToString;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
@@ -11,7 +13,10 @@ use serde_with::{Bytes, serde_as};
 /// - <https://docs.phala.network/phala-cloud/tees-attestation-and-zero-trust-security/attestation#runtime-measurement-fields>
 /// - <https://arxiv.org/pdf/2303.15540> (Section 9.1)
 #[serde_as]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize, BorshSerialize,
+)]
+#[cfg_attr(feature = "abi", derive(borsh::BorshSchema))]
 pub struct Measurements {
     /// MRTD (Measurement of Root of Trust for Data) - identifies the virtual firmware.
     #[serde_as(as = "Bytes")]
@@ -30,7 +35,10 @@ pub struct Measurements {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "abi", derive(borsh::BorshSchema))]
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,

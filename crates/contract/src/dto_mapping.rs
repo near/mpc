@@ -208,12 +208,20 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
                 dtos::VerifiedAttestation::Mock(mock_attestation.into_dto_type())
             }
             VerifiedAttestation::Dstack(validated_dstack_attestation) => {
+                let m = &validated_dstack_attestation.measurements;
                 dtos::VerifiedAttestation::Dstack(dtos::VerifiedDstackAttestation {
                     mpc_image_hash: validated_dstack_attestation.mpc_image_hash.into(),
                     launcher_compose_hash: validated_dstack_attestation
                         .launcher_compose_hash
                         .into(),
                     expiry_timestamp_seconds: validated_dstack_attestation.expiry_timestamp_seconds,
+                    measurements: dtos::VerifiedMeasurements {
+                        mrtd: m.rtmrs.mrtd,
+                        rtmr0: m.rtmrs.rtmr0,
+                        rtmr1: m.rtmrs.rtmr1,
+                        rtmr2: m.rtmrs.rtmr2,
+                        key_provider_event_digest: m.key_provider_event_digest,
+                    },
                 })
             }
         }

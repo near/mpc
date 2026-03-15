@@ -3,7 +3,7 @@ pub mod method_names;
 pub mod types {
     pub use attestation::{
         AppCompose, Attestation, Collateral, DstackAttestation, EventLog, MockAttestation, TcbInfo,
-        VerifiedAttestation, VerifiedDstackAttestation,
+        VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;

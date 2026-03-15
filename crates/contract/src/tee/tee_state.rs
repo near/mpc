@@ -218,6 +218,7 @@ impl TeeState {
         let allowed_mpc_docker_image_hashes =
             self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
         let allowed_launcher_compose_hashes = self.get_allowed_launcher_compose_hashes();
+        let allowed_measurements = self.get_accepted_measurements();
 
         let participant_attestation = self.stored_attestations.get(&node_id.tls_public_key);
         let Some(participant_attestation) = participant_attestation else {
@@ -230,6 +231,7 @@ impl TeeState {
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
             &allowed_launcher_compose_hashes,
+            &allowed_measurements,
         ) {
             Ok(()) => TeeQuoteStatus::Valid,
             Err(err) => TeeQuoteStatus::Invalid(err.to_string()),
