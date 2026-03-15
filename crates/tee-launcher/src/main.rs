@@ -131,6 +131,7 @@ async fn run() -> Result<(), LauncherError> {
     launch_mpc_container(
         args.platform,
         &image_hash,
+        &dstack_config.launcher_config.image_name,
         mpc_binary_config_path,
         &dstack_config.docker_command_config,
     )?;
@@ -368,6 +369,7 @@ fn render_compose_file(
     platform: Platform,
     mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
+    image_name: &str,
     image_digest: &DockerSha256Digest,
 ) -> Result<tempfile::NamedTempFile, LauncherError> {
     let template = match platform {
@@ -384,6 +386,7 @@ fn render_compose_file(
     let ports_json = serde_json::to_string(&ports).expect("port list is serializable");
 
     let rendered = template
+        .replace("{{IMAGE_NAME}}", image_name)
         .replace("{{IMAGE}}", &image_digest.to_string())
         .replace("{{CONTAINER_NAME}}", MPC_CONTAINER_NAME)
         .replace(
@@ -409,12 +412,14 @@ fn render_compose_file(
 fn launch_mpc_container(
     platform: Platform,
     valid_hash: &DockerSha256Digest,
+    image_name: &str,
     mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
 ) -> Result<(), LauncherError> {
     tracing::info!("Launching MPC node with validated hash: {valid_hash}",);
 
-    let compose_file = render_compose_file(platform, mpc_config_file, docker_flags, valid_hash)?;
+    let compose_file =
+        render_compose_file(platform, mpc_config_file, docker_flags, image_name, valid_hash)?;
     let compose_path = compose_file.path().display().to_string();
 
     // Remove any existing container from a previous run (by name, independent of compose file)
@@ -460,13 +465,22 @@ mod tests {
 
     const SAMPLE_CONFIG_PATH: &str = "/tapp/mpc-config.json";
 
+    const SAMPLE_IMAGE_NAME: &str = "nearone/mpc-node";
+
     fn render(
         platform: Platform,
         config_path: &str,
         flags: &DockerLaunchFlags,
         digest: &DockerSha256Digest,
     ) -> String {
-        let file = render_compose_file(platform, Path::new(config_path), flags, digest).unwrap();
+        let file = render_compose_file(
+            platform,
+            Path::new(config_path),
+            flags,
+            SAMPLE_IMAGE_NAME,
+            digest,
+        )
+        .unwrap();
         std::fs::read_to_string(file.path()).unwrap()
     }
 
@@ -587,7 +601,7 @@ mod tests {
         let rendered = render(Platform::NonTee, SAMPLE_CONFIG_PATH, &flags, &digest);
 
         // then
-        assert!(rendered.contains(&format!("image: \"{digest}\"")));
+        assert!(rendered.contains(&format!("image: \"{SAMPLE_IMAGE_NAME}@{digest}\"")));
     }
 
     #[test]
