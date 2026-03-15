@@ -100,7 +100,8 @@ async fn run() -> Result<(), LauncherError> {
         dstack_config.launcher_config.mpc_hash_override.as_ref(),
     )?;
 
-    let () = validate_image_hash(&dstack_config.launcher_config, image_hash.clone()).await?;
+    let manifest_digest =
+        validate_image_hash(&dstack_config.launcher_config, image_hash.clone()).await?;
 
     let should_extend_rtmr_3 = args.platform == Platform::Tee;
 
@@ -130,7 +131,7 @@ async fn run() -> Result<(), LauncherError> {
 
     launch_mpc_container(
         args.platform,
-        &image_hash,
+        &manifest_digest,
         &dstack_config.launcher_config.image_name,
         mpc_binary_config_path,
         &dstack_config.docker_command_config,
@@ -307,7 +308,7 @@ async fn get_manifest_digest(
 async fn validate_image_hash(
     launcher_config: &LauncherConfig,
     image_hash: DockerSha256Digest,
-) -> Result<(), ImageDigestValidationFailed> {
+) -> Result<DockerSha256Digest, ImageDigestValidationFailed> {
     let manifest_digest = get_manifest_digest(launcher_config, &image_hash)
         .await
         .map_err(|e| ImageDigestValidationFailed::ManifestDigestLookupFailed(e.to_string()))?;
@@ -362,7 +363,7 @@ async fn validate_image_hash(
         );
     }
 
-    Ok(())
+    Ok(pulled_digest)
 }
 
 fn render_compose_file(
@@ -370,7 +371,7 @@ fn render_compose_file(
     mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
     image_name: &str,
-    image_digest: &DockerSha256Digest,
+    manifest_digest: &DockerSha256Digest,
 ) -> Result<tempfile::NamedTempFile, LauncherError> {
     let template = match platform {
         Platform::Tee => COMPOSE_TEE_TEMPLATE,
@@ -387,7 +388,7 @@ fn render_compose_file(
 
     let rendered = template
         .replace("{{IMAGE_NAME}}", image_name)
-        .replace("{{IMAGE}}", &image_digest.to_string())
+        .replace("{{IMAGE}}", &manifest_digest.to_string())
         .replace("{{CONTAINER_NAME}}", MPC_CONTAINER_NAME)
         .replace(
             "{{MPC_CONFIG_HOST_PATH}}",
@@ -411,15 +412,20 @@ fn render_compose_file(
 
 fn launch_mpc_container(
     platform: Platform,
-    valid_hash: &DockerSha256Digest,
+    manifest_digest: &DockerSha256Digest,
     image_name: &str,
     mpc_config_file: &std::path::Path,
     docker_flags: &DockerLaunchFlags,
 ) -> Result<(), LauncherError> {
-    tracing::info!("Launching MPC node with validated hash: {valid_hash}",);
+    tracing::info!(?manifest_digest, "launching MPC node");
 
-    let compose_file =
-        render_compose_file(platform, mpc_config_file, docker_flags, image_name, valid_hash)?;
+    let compose_file = render_compose_file(
+        platform,
+        mpc_config_file,
+        docker_flags,
+        image_name,
+        manifest_digest,
+    )?;
     let compose_path = compose_file.path().display().to_string();
 
     // Remove any existing container from a previous run (by name, independent of compose file)
@@ -431,7 +437,7 @@ fn launch_mpc_container(
         .args(["compose", "-f", &compose_path, "up", "-d"])
         .output()
         .map_err(|inner| LauncherError::DockerRunFailed {
-            image_hash: valid_hash.clone(),
+            image_hash: manifest_digest.clone(),
             inner,
         })?;
 
@@ -440,7 +446,7 @@ fn launch_mpc_container(
         let stdout = String::from_utf8_lossy(&run_output.stdout);
         tracing::error!(%stderr, %stdout, "docker compose up failed");
         return Err(LauncherError::DockerRunFailedExitStatus {
-            image_hash: valid_hash.clone(),
+            image_hash: manifest_digest.clone(),
             output: stderr.into_owned(),
         });
     }
