@@ -6,7 +6,7 @@ services:
     environment:
       - PLATFORM=NONTEE
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:952e056156102f614db979a812ec10ed98187a206533ffc1740008768e889c15 # config digest for nearone/mpc-node:2262-port-node-launcher-to-rust-v2-140ba52
+      - DEFAULT_IMAGE_DIGEST=sha256:ab42ed7ec5aa743668abd3d9606ac7f556cb1f2c57b963d29bacd573d20a924a # config digest for nearone/mpc-node:2262-port-node-launcher-to-rust-v2-140ba52
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
