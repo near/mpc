@@ -61,7 +61,7 @@ require_cmds() {
 
 require_cmds docker jq git find touch
 
-if $USE_NODE; then
+if $USE_NODE || $USE_LAUNCHER; then
     require_cmds repro-env podman
 fi
 
@@ -117,8 +117,8 @@ get_image_hash() {
 }
 
 if $USE_LAUNCHER; then
-    cargo build -p tee-launcher --release --locked
-    launcher_binary_hash=$(sha256sum target/release/tee-launcher | cut -d' ' -f1)
+    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- sh -c "rustup target add x86_64-unknown-linux-musl && cargo build -p tee-launcher --profile reproducible --locked --target x86_64-unknown-linux-musl"
+    launcher_binary_hash=$(sha256sum target/x86_64-unknown-linux-musl/reproducible/tee-launcher | cut -d' ' -f1)
     build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER
     launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
 fi
