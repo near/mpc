@@ -17,15 +17,11 @@ use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConf
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_contract::primitives::test_utils::infer_purpose_from_scheme;
+use mpc_contract::primitives::test_utils::infer_purpose_from_curve;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     primitives::{
-<<<<<<< HEAD
-        domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId},
-=======
-        domain::{DomainConfig, DomainId, SignatureScheme},
->>>>>>> main
+        domain::{Curve, DomainConfig, DomainId},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},

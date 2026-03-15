@@ -18,7 +18,9 @@ use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{Curve, DomainConfig, DomainPurpose}, test_utils::infer_purpose_from_curve, thresholds::{Threshold, ThresholdParameters}
+        domain::{Curve, DomainConfig, DomainPurpose},
+        test_utils::infer_purpose_from_curve,
+        thresholds::{Threshold, ThresholdParameters},
     },
 };
 use near_mpc_contract_interface::{method_names, types as dtos};

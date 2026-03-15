@@ -257,8 +257,8 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig,
-        DomainId, DomainPurpose, DomainRegistry, Participants,
+        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
+        DomainRegistry, Participants,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
