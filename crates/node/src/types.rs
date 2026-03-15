@@ -7,7 +7,7 @@ use mpc_contract::primitives::{
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 pub enum RequestType {
     Signature,

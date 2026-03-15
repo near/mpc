@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
-use contract_interface::method_names;
-use contract_interface::types::{
+use mpc_contract::tee::tee_state::NodeId;
+use mpc_primitives::hash::{LauncherImageHash, MpcDockerImageHash};
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{
     Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
 };
-use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::MpcDockerImageHash;
 use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
@@ -107,6 +107,20 @@ pub async fn vote_for_hash(
     let result = account
         .call(contract.id(), method_names::VOTE_CODE_HASH)
         .args_json(serde_json::json!({"code_hash": image_hash}))
+        .transact()
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
+
+pub async fn vote_add_launcher_hash(
+    account: &Account,
+    contract: &Contract,
+    launcher_hash: &LauncherImageHash,
+) -> anyhow::Result<()> {
+    let result = account
+        .call(contract.id(), method_names::VOTE_ADD_LAUNCHER_HASH)
+        .args_json(serde_json::json!({"launcher_hash": launcher_hash}))
         .transact()
         .await?;
     all_receipts_successful(result)?;

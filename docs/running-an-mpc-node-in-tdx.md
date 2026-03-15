@@ -189,10 +189,6 @@ several providers to choose from, such as
             - IMAGE_HASH=$IMAGE_HASH
             - LATEST_ALLOWED_HASH_FILE=/mnt/shared/image-digest.bin
 
-         extra_hosts:
-            - "$MPC_NODE_0"
-            - "$MPC_NODE_1"
-
    volumes:
       mpc-data:
       shared-volume:

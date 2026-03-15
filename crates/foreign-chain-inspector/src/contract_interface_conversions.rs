@@ -1,5 +1,5 @@
-use contract_interface::types as dtos;
 use foreign_chain_rpc_interfaces::evm::Log;
+use near_mpc_contract_interface::types as dtos;
 
 use crate::BlockConfirmations;
 use crate::EthereumFinality;

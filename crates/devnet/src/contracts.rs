@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 
-use contract_interface::{
-    method_names,
-    types::{EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES},
-};
 use mpc_contract::primitives::{
     ckd::CKDRequestArgs,
     domain::{Curve, DomainConfig},
     signature::{Bytes, Payload, SignRequestArgs},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::{
+    method_names,
+    types::{EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES},
+};
 use near_primitives::action::Action;
 use rand::RngCore;
 use serde::Serialize;

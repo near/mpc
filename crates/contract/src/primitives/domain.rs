@@ -1,12 +1,13 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
+use crate::primitives::test_utils::infer_purpose_from_curve;
 use derive_more::{Deref, From};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-pub use contract_interface::types::DomainPurpose;
+pub use near_mpc_contract_interface::types::DomainPurpose;
 
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
@@ -51,15 +52,6 @@ impl Default for Curve {
     }
 }
 
-/// Infer a default purpose from the curve.
-/// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
-    }
-}
-
 /// Returns whether the given curve is valid for the given purpose.
 pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool {
     matches!(
@@ -74,7 +66,6 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 
 /// Describes the configuration of a domain: the domain ID and the curve it uses.
 #[near(serializers=[borsh, json])]
-#[serde(from = "DomainConfigCompat")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
@@ -266,11 +257,13 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        infer_purpose_from_curve, is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig,
+        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig,
         DomainId, DomainPurpose, DomainRegistry, Participants,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
-    use crate::primitives::test_utils::{gen_participant, gen_participants};
+    use crate::primitives::test_utils::{
+        gen_participant, gen_participants, infer_purpose_from_curve,
+    };
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;

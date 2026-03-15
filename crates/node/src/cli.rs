@@ -1,26 +1,18 @@
 use crate::{
     config::{
-        load_config_file, BlockArgs, CKDConfig, ConfigFile, ForeignChainsConfig, GcpStartConfig,
-        IndexerConfig, KeygenConfig, PersistentSecrets, PresignatureConfig, SecretsStartConfig,
-        SignatureConfig, StartConfig, SyncMode, TeeAuthorityStartConfig, TeeStartConfig,
-        TripleConfig,
+        load_config_file, ConfigFile, GcpStartConfig, SecretsStartConfig, StartConfig,
+        TeeAuthorityStartConfig, TeeStartConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
     },
-    p2p::testing::{generate_test_p2p_configs, PortSeed},
     run::run_mpc_node,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
-use near_account_id::AccountId;
-use near_indexer_primitives::types::Finality;
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
-};
+use std::path::PathBuf;
 use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
 use url::Url;
 #[derive(Parser, Debug)]
@@ -60,15 +52,16 @@ pub enum CliCommand {
     ExportKeyshare(ExportKeyshareCmd),
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
+    #[cfg(feature = "test-utils")]
     GenerateTestConfigs {
         #[arg(long)]
         output_dir: String,
         #[arg(long, value_delimiter = ',', required = true)]
         /// Near signer account for each participant
-        participants: Vec<AccountId>,
+        participants: Vec<near_account_id::AccountId>,
         /// Near responder account for each participant. Refer to `indexer/real.rs` for more details.
         #[arg(long, value_delimiter = ',')]
-        responders: Vec<AccountId>,
+        responders: Vec<near_account_id::AccountId>,
         #[arg(long)]
         threshold: usize,
         #[arg(long, default_value = "65536")]
@@ -269,6 +262,7 @@ impl Cli {
             }
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,
             CliCommand::ExportKeyshare(cmd) => cmd.run().await,
+            #[cfg(feature = "test-utils")]
             CliCommand::GenerateTestConfigs {
                 ref output_dir,
                 ref participants,
@@ -283,7 +277,7 @@ impl Cli {
                     participants.len() == responders.len(),
                     "Number of participants must match number of responders"
                 );
-                run_generate_test_configs(
+                testing::run_generate_test_configs(
                     output_dir,
                     participants.clone(),
                     responders.clone(),
@@ -393,127 +387,147 @@ impl ExportKeyshareCmd {
         })
     }
 }
-fn duplicate_migrating_accounts(
-    mut accounts: Vec<AccountId>,
-    migrating_nodes: &[usize],
-) -> anyhow::Result<Vec<AccountId>> {
-    for migrating_node_idx in migrating_nodes {
-        let migrating_node_account: AccountId = accounts
-            .get(*migrating_node_idx)
-            .ok_or_else(|| {
-                anyhow::anyhow!("index {} out of bounds for accounts", migrating_node_idx)
-            })?
-            .clone();
 
-        accounts.push(migrating_node_account);
-    }
-    Ok(accounts)
-}
+#[cfg(feature = "test-utils")]
+mod testing {
+    use std::{
+        net::{Ipv4Addr, SocketAddr},
+        path::PathBuf,
+    };
 
-#[allow(clippy::too_many_arguments)]
-fn run_generate_test_configs(
-    output_dir: &str,
-    participants: Vec<AccountId>,
-    responders: Vec<AccountId>,
-    threshold: usize,
-    desired_triples_to_buffer: usize,
-    desired_presignatures_to_buffer: usize,
-    desired_responder_keys_per_participant: usize,
-    migrating_nodes: &[usize],
-) -> anyhow::Result<()> {
-    let participants = duplicate_migrating_accounts(participants, migrating_nodes)?;
-    let responders = duplicate_migrating_accounts(responders, migrating_nodes)?;
+    use crate::{
+        config::{
+            BlockArgs, CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig,
+            PersistentSecrets, PresignatureConfig, SignatureConfig, SyncMode, TripleConfig,
+        },
+        p2p::testing::{generate_test_p2p_configs, PortSeed},
+    };
+    use near_indexer_primitives::types::Finality;
+    use near_sdk::AccountId;
 
-    let p2p_key_pairs = participants
-        .iter()
-        .enumerate()
-        .map(|(idx, _account_id)| {
-            let subdir = PathBuf::from(output_dir).join(idx.to_string());
-            PersistentSecrets::generate_or_get_existing(
-                &subdir,
-                desired_responder_keys_per_participant,
-            )
-            .map(|secret| secret.p2p_private_key)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let configs = generate_test_p2p_configs(
-        &participants,
-        threshold,
-        PortSeed::CLI_FOR_PYTEST,
-        Some(p2p_key_pairs),
-    )?;
-    let participants_config = configs[0].0.participants.clone();
-    for (i, (_config, _p2p_private_key)) in configs.into_iter().enumerate() {
-        let subdir = format!("{}/{}", output_dir, i);
-        std::fs::create_dir_all(&subdir)?;
-        let file_config = create_file_config(
-            &participants[i],
-            &responders[i],
-            i,
-            desired_triples_to_buffer,
-            desired_presignatures_to_buffer,
-        );
-        std::fs::write(
-            format!("{}/mpc_node_config.json", subdir),
-            serde_json::to_string_pretty(&file_config)?,
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) fn run_generate_test_configs(
+        output_dir: &str,
+        participants: Vec<AccountId>,
+        responders: Vec<AccountId>,
+        threshold: usize,
+        desired_triples_to_buffer: usize,
+        desired_presignatures_to_buffer: usize,
+        desired_responder_keys_per_participant: usize,
+        migrating_nodes: &[usize],
+    ) -> anyhow::Result<()> {
+        let participants = duplicate_migrating_accounts(participants, migrating_nodes)?;
+        let responders = duplicate_migrating_accounts(responders, migrating_nodes)?;
+
+        let p2p_key_pairs = participants
+            .iter()
+            .enumerate()
+            .map(|(idx, _account_id)| {
+                let subdir = PathBuf::from(output_dir).join(idx.to_string());
+                PersistentSecrets::generate_or_get_existing(
+                    &subdir,
+                    desired_responder_keys_per_participant,
+                )
+                .map(|secret| secret.p2p_private_key)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let configs = generate_test_p2p_configs(
+            &participants,
+            threshold,
+            PortSeed::CLI_FOR_PYTEST,
+            Some(p2p_key_pairs),
         )?;
+        let participants_config = configs[0].0.participants.clone();
+        for (i, (_config, _p2p_private_key)) in configs.into_iter().enumerate() {
+            let subdir = format!("{}/{}", output_dir, i);
+            std::fs::create_dir_all(&subdir)?;
+            let file_config = create_file_config(
+                &participants[i],
+                &responders[i],
+                i,
+                desired_triples_to_buffer,
+                desired_presignatures_to_buffer,
+            );
+            std::fs::write(
+                format!("{}/mpc_node_config.json", subdir),
+                serde_json::to_string_pretty(&file_config)?,
+            )?;
+        }
+        std::fs::write(
+            format!("{}/participants.json", output_dir),
+            serde_json::to_string(&participants_config)?,
+        )?;
+        Ok(())
     }
-    std::fs::write(
-        format!("{}/participants.json", output_dir),
-        serde_json::to_string(&participants_config)?,
-    )?;
-    Ok(())
+
+    fn duplicate_migrating_accounts(
+        mut accounts: Vec<AccountId>,
+        migrating_nodes: &[usize],
+    ) -> anyhow::Result<Vec<AccountId>> {
+        for migrating_node_idx in migrating_nodes {
+            let migrating_node_account: AccountId = accounts
+                .get(*migrating_node_idx)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("index {} out of bounds for accounts", migrating_node_idx)
+                })?
+                .clone();
+
+            accounts.push(migrating_node_account);
+        }
+        Ok(accounts)
+    }
+
+    fn create_file_config(
+        participant: &AccountId,
+        responder: &AccountId,
+        index: usize,
+        desired_triples_to_buffer: usize,
+        desired_presignatures_to_buffer: usize,
+    ) -> ConfigFile {
+        ConfigFile {
+            my_near_account_id: participant.clone(),
+            near_responder_account_id: responder.clone(),
+            number_of_responder_keys: 1,
+            web_ui: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.web_port(index),
+            ),
+            migration_web_ui: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
+            ),
+            pprof_bind_address: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),
+            ),
+            indexer: IndexerConfig {
+                validate_genesis: true,
+                sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
+                concurrency: 1.try_into().unwrap(),
+                mpc_contract_id: "test0".parse().unwrap(),
+                finality: Finality::None,
+                port_override: None,
+            },
+            triple: TripleConfig {
+                concurrency: 2,
+                desired_triples_to_buffer,
+                timeout_sec: 60,
+                parallel_triple_generation_stagger_time_sec: 1,
+            },
+            presignature: PresignatureConfig {
+                concurrency: 2,
+                desired_presignatures_to_buffer,
+                timeout_sec: 60,
+            },
+            signature: SignatureConfig { timeout_sec: 60 },
+            ckd: CKDConfig { timeout_sec: 60 },
+            keygen: KeygenConfig { timeout_sec: 60 },
+            foreign_chains: ForeignChainsConfig::default(),
+            cores: Some(4),
+        }
+    }
 }
 
-fn create_file_config(
-    participant: &AccountId,
-    responder: &AccountId,
-    index: usize,
-    desired_triples_to_buffer: usize,
-    desired_presignatures_to_buffer: usize,
-) -> ConfigFile {
-    ConfigFile {
-        my_near_account_id: participant.clone(),
-        near_responder_account_id: responder.clone(),
-        number_of_responder_keys: 1,
-        web_ui: SocketAddr::new(
-            Ipv4Addr::LOCALHOST.into(),
-            PortSeed::CLI_FOR_PYTEST.web_port(index),
-        ),
-        migration_web_ui: SocketAddr::new(
-            Ipv4Addr::LOCALHOST.into(),
-            PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
-        ),
-        pprof_bind_address: SocketAddr::new(
-            Ipv4Addr::LOCALHOST.into(),
-            PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),
-        ),
-        indexer: IndexerConfig {
-            validate_genesis: true,
-            sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
-            concurrency: 1.try_into().unwrap(),
-            mpc_contract_id: "test0".parse().unwrap(),
-            finality: Finality::None,
-            port_override: None,
-        },
-        triple: TripleConfig {
-            concurrency: 2,
-            desired_triples_to_buffer,
-            timeout_sec: 60,
-            parallel_triple_generation_stagger_time_sec: 1,
-        },
-        presignature: PresignatureConfig {
-            concurrency: 2,
-            desired_presignatures_to_buffer,
-            timeout_sec: 60,
-        },
-        signature: SignatureConfig { timeout_sec: 60 },
-        ckd: CKDConfig { timeout_sec: 60 },
-        keygen: KeygenConfig { timeout_sec: 60 },
-        foreign_chains: ForeignChainsConfig::default(),
-        cores: Some(4),
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;

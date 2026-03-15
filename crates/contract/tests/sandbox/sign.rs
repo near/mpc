@@ -9,7 +9,6 @@ use crate::sandbox::{
     },
 };
 use anyhow::Context;
-use contract_interface::method_names;
 use mpc_contract::{
     errors,
     primitives::{
@@ -19,6 +18,7 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
 use std::time::Duration;

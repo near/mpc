@@ -63,7 +63,7 @@ impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
 where
     ForeignChainPolicyReader: ReadForeignChainPolicy + 'static,
 {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         client: Arc<MeshNetworkClient>,

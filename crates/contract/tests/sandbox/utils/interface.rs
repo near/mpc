@@ -1,11 +1,11 @@
 // These are temporary conversions to avoid breaking the contract API.
 // Once we complete the migration from near_sdk::PublicKey they should not be
 // needed anymore
-use contract_interface::types::{self as dtos};
 use mpc_contract::primitives::{
     domain::Curve,
     participants::{ParticipantInfo, Participants},
 };
+use near_mpc_contract_interface::types::{self as dtos};
 
 pub trait IntoInterfaceType<InterfaceType> {
     fn into_interface_type(self) -> InterfaceType;
