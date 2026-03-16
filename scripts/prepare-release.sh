@@ -60,17 +60,6 @@ require_cmds() {
 
 require_cmds git-cliff cargo-about cargo-insta
 
-# git-cliff needs a GitHub token to avoid API rate limits when resolving PR links.
-if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-    if command -v gh &>/dev/null && gh auth status &>/dev/null; then
-        echo "==> GITHUB_TOKEN not set, obtaining from 'gh auth token'."
-        export GITHUB_TOKEN=$(gh auth token)
-    else
-        echo "WARNING: GITHUB_TOKEN is not set and 'gh' CLI is not authenticated."
-        echo "         PR links in the changelog may be missing. Fix: export GITHUB_TOKEN=<token> or 'gh auth login'."
-    fi
-fi
-
 echo "==> Preparing release v${VERSION}"
 
 BRANCH="release/v${VERSION}"
@@ -104,8 +93,7 @@ git push -u "$REMOTE" "$BRANCH"
 # --- Generate changelog ---
 
 # Branch must be pushed first so git-cliff can resolve PR links.
-echo "==> Generating changelog..."
-git-cliff -t "$VERSION" > CHANGELOG.md
+"${REPO_ROOT}/scripts/generate-changelog.sh" "$VERSION"
 
 # --- Bump workspace version in Cargo.toml ---
 
