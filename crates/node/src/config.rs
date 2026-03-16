@@ -15,7 +15,7 @@ use std::{
 
 mod start;
 pub use start::{
-    ChainId, GcpStartConfig, NearInitConfig, SecretsStartConfig, StartConfig,
+    ChainId, DownloadConfigType, GcpStartConfig, NearInitConfig, SecretsStartConfig, StartConfig,
     TeeAuthorityStartConfig, TeeStartConfig,
 };
 

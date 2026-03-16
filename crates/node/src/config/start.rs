@@ -65,7 +65,7 @@ impl NearInitConfig {
         let is_localnet = self.chain_id.is_localnet();
         let genesis_arg = self.genesis_path.as_deref().and_then(Path::to_str);
         let chain_id_arg = self.chain_id.to_init_arg();
-        let boot_nodes = self.boot_nodes.as_ref().map(String::as_str);
+        let boot_nodes = self.boot_nodes.as_deref();
         let download_config = self.download_config.clone().map(Into::into);
 
         near_indexer::init_configs(
