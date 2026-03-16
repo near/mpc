@@ -298,17 +298,16 @@ impl OutgoingConnection {
 
                 // Peer closing without close_notify is normal in P2P networks (task aborts,
                 // reconnections, process restarts). Treat it as a clean close, not an error.
-                let result = match &result {
-                    Err(err) if is_tls_close_notify_error(err) => {
+                if let Err(err) = &result {
+                    if is_tls_close_notify_error(err) {
                         tracing::debug!(
                             err = %err,
                             peer_id = %peer_id,
                             "peer closed connection without TLS close_notify"
                         );
-                        Ok(())
+                        return Ok(());
                     }
-                    _ => result,
-                };
+                }
 
                 // Send TLS close_notify before dropping the connection so
                 // the peer does not see an unexpected EOF.
@@ -726,17 +725,16 @@ async fn incoming_connection_handler(
 
     // Peer closing without close_notify is normal in P2P networks (task aborts,
     // reconnections, process restarts). Treat it as a clean close, not an error.
-    let result = match &result {
-        Err(err) if is_tls_close_notify_error(err) => {
+    if let Err(err) = &result {
+        if is_tls_close_notify_error(err) {
             tracing::debug!(
                 err = %err,
                 peer_id = %peer_id,
                 "peer closed connection without TLS close_notify"
             );
-            Ok(())
+            return Ok(());
         }
-        _ => result,
-    };
+    }
 
     // Send TLS close_notify before dropping the connection so
     // the peer does not see an unexpected EOF.
