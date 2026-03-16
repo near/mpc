@@ -42,7 +42,9 @@ impl SubmitSignedTransaction for NearRpcActorHandle {
         })?;
 
         match response {
-            // We're not a validator, so we should always be routing the transaction.
+            // This is an observer, not a validator node.
+            // All this node can do is make sure that our transaction request is routed.
+            // Anything other than RequestRouted is an unexpected response.
             near_client::ProcessTxResponse::RequestRouted => Ok(()),
             _ => Err(NearRpcError::ResponseError {
                 response: format!("{:?}", response),
