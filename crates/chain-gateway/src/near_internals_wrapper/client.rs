@@ -7,12 +7,12 @@ use crate::{errors::NearClientError, primitives::IsSyncing};
 /// Arc-wrapper around near-internal struct
 #[derive(Clone)]
 pub(crate) struct NearClientActorHandle {
-    client: Arc<near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActorInner>>,
+    client: Arc<near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActor>>,
 }
 
 impl NearClientActorHandle {
     pub(crate) fn new(
-        client: near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActorInner>,
+        client: near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActor>,
     ) -> Self {
         Self {
             client: Arc::new(client),

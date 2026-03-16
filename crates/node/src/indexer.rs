@@ -25,7 +25,7 @@ use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
-use near_client::{client_actor::ClientActorInner, RpcHandler, Status, ViewClientActorInner};
+use near_client::{client_actor::ClientActor, RpcHandlerActor, Status, ViewClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
     types::{BlockReference, Finality},
@@ -75,9 +75,9 @@ pub(crate) struct IndexerState {
 
 impl IndexerState {
     pub fn new(
-        view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
-        client: TokioRuntimeHandle<ClientActorInner>,
-        rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
+        view_client: MultithreadRuntimeHandle<ViewClientActor>,
+        client: TokioRuntimeHandle<ClientActor>,
+        rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
@@ -92,7 +92,7 @@ impl IndexerState {
 
 #[derive(Clone)]
 struct IndexerViewClient {
-    view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
+    view_client: MultithreadRuntimeHandle<ViewClientActor>,
 }
 
 // TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
@@ -407,7 +407,7 @@ impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
 
 #[derive(Clone)]
 struct IndexerClient {
-    client: TokioRuntimeHandle<ClientActorInner>,
+    client: TokioRuntimeHandle<ClientActor>,
 }
 
 const INTERVAL: Duration = Duration::from_millis(500);
@@ -441,7 +441,7 @@ impl IndexerClient {
 
 // #[derive(Debug)]
 struct IndexerRpcHandler {
-    rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
+    rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
 }
 
 impl IndexerRpcHandler {
