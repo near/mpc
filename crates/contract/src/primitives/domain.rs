@@ -66,6 +66,7 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 /// Describes the configuration of a domain: the domain ID and the curve it uses.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[serde(from = "DomainConfigCompat")]
 pub struct DomainConfig {
     pub id: DomainId,
     #[serde(rename = "scheme")]
