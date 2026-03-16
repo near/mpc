@@ -17,13 +17,13 @@ pub struct TeeNodeIdentity {
     pub account_public_key: Ed25519PublicKey,
 }
 
-/// The background task spawned by `new()` owns the `ContractMethodSubscription`
-/// (not `Clone` — holds `JoinHandle`) and sends updates via a `watch` channel.
+/// The background task spawned by `new()` owns the `watch::Sender` and the
+/// `ContractMethodSubscription` (not `Clone` — holds `JoinHandle`).
 #[derive(Clone)]
 pub struct TeeContext {
     node_identity: TeeNodeIdentity,
     governance_contract: AccountId,
-    allowed_hashes_tx: watch::Sender<AllowedTeeHashes>,
+    allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
     transaction_sender: TransactionSender,
 }
 
@@ -50,24 +50,21 @@ impl TeeContext {
 
         // First value is already available after construction.
         let initial = subscription.latest()?.value;
-        let (allowed_hashes_tx, _) = watch::channel(initial);
+        let (allowed_hashes_tx, allowed_hashes_rx) = watch::channel(initial);
 
-        // Background task: owns the subscription, sends updates.
-        tokio::spawn({
-            let allowed_hashes_tx = allowed_hashes_tx.clone();
-            async move {
-                loop {
-                    subscription.changed().await?;
-                    let new_hashes = subscription.latest()?.value;
-                    allowed_hashes_tx.send_replace(new_hashes);
-                }
+        // Background task: owns the Sender and the subscription.
+        tokio::spawn(async move {
+            loop {
+                subscription.changed().await?;
+                let new_hashes = subscription.latest()?.value;
+                allowed_hashes_tx.send_replace(new_hashes);
             }
         });
 
         Ok(Self {
             node_identity,
             governance_contract,
-            allowed_hashes_tx,
+            allowed_hashes_rx,
             transaction_sender,
         })
     }
