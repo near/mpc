@@ -1,4 +1,4 @@
-use contract_interface::types::Bls12381G2PublicKey;
+use near_mpc_contract_interface::types::Bls12381G2PublicKey;
 
 use crate::types::DomainId;
 

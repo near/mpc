@@ -54,7 +54,7 @@ impl TransactionSigner {
 
         let verifying_key = self.signing_key.verifying_key();
         let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
-        #[allow(clippy::disallowed_methods)]
+        #[expect(clippy::disallowed_methods)]
         let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
 
         let transaction = Transaction::V0(TransactionV0 {

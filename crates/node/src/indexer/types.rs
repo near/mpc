@@ -1,13 +1,5 @@
 use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
-use contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
-    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
-    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
-};
-use contract_interface::types::{
-    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
-};
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -22,6 +14,14 @@ use mpc_contract::{
     },
 };
 use near_indexer_primitives::types::Gas;
+use near_mpc_contract_interface::method_names::{
+    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
+    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
+    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
+};
+use near_mpc_contract_interface::types::{
+    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
+};
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -86,12 +86,12 @@ impl ChainCKDRequest {
 }
 
 pub type ChainVerifyForeignTransactionRequest =
-    contract_interface::types::VerifyForeignTransactionRequest;
+    near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 
-pub type ChainSignatureResponse = contract_interface::types::SignatureResponse;
+pub type ChainSignatureResponse = near_mpc_contract_interface::types::SignatureResponse;
 pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
 pub type ChainVerifyForeignTransactionResponse =
-    contract_interface::types::VerifyForeignTransactionResponse;
+    near_mpc_contract_interface::types::VerifyForeignTransactionResponse;
 
 use mpc_contract::primitives::signature::Payload;
 
@@ -163,7 +163,7 @@ pub struct ChainGetPendingVerifyForeignTxRequestArgs {
 
 #[derive(Serialize, Debug)]
 pub struct GetAttestationArgs<'a> {
-    pub tls_public_key: &'a contract_interface::types::Ed25519PublicKey,
+    pub tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
 }
 
 #[derive(Serialize, Debug)]
@@ -199,8 +199,8 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
-    pub proposed_participant_attestation: contract_interface::types::Attestation,
-    pub tls_public_key: contract_interface::types::Ed25519PublicKey,
+    pub proposed_participant_attestation: near_mpc_contract_interface::types::Attestation,
+    pub tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey,
 }
 
 #[derive(Serialize, Debug)]

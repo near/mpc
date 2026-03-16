@@ -7,16 +7,16 @@ mod temporary;
 pub mod test_utils;
 
 use anyhow::Context;
-use contract_interface::types::{
-    Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
-};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
+use near_mpc_contract_interface::types::{
+    Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
+};
 use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {

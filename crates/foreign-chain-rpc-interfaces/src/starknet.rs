@@ -96,7 +96,7 @@ where
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::{
         GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,

@@ -15,10 +15,10 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use contract_interface::types::Ed25519PublicKey;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::{
     collections::BTreeMap,
@@ -188,7 +188,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     exit_reason
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
     start_config: StartConfig,
     home_dir: PathBuf,
