@@ -17,24 +17,74 @@ pub struct TeeNodeIdentity {
     pub account_public_key: Ed25519PublicKey,
 }
 
+/// Uses `Notify` + `Mutex` so the public API stays `&self` and TeeContext is `Clone`.
+/// The non-cloneable `ContractMethodSubscription` (holds `JoinHandle`) lives inside
+/// a background task spawned by `new()`.
+#[derive(Clone)]
+pub struct TeeContext {
+    node_identity: TeeNodeIdentity,
+    governance_contract: AccountId,
+    allowed_hashes: Arc<Mutex<AllowedTeeHashes>>,
+    hashes_notify: Arc<Notify>,
+    transaction_sender: TransactionSender,
+}
+
 impl TeeContext {
-    /// Subscribes to the governance contract's view methods via
-    /// StreamContractState and waits for the first successful poll before
-    /// returning. After construction, allowed_tee_hashes() is guaranteed
-    /// to return data.
+    /// Creates a new `TeeContext`. Spawns a background task that owns the
+    /// `ContractMethodSubscription`, polls the governance contract, updates
+    /// the `Mutex`, and calls `Notify::notify_waiters()`. Waits for the first
+    /// successful poll before returning.
     pub async fn new(
-        chain_gateway: ChainGateway,
+        viewer: impl ViewRaw,
         node_identity: TeeNodeIdentity,
         // e.g. v1.signer (MPC node) or the HOT governance contract (Archive Signer).
         governance_contract: AccountId,
-    ) -> Result<Self, Error>;
+        transaction_sender: TransactionSender,
+    ) -> Result<Self, Error> {
+        // `ContractMethodSubscription` is not `Clone` (holds `JoinHandle`),
+        // so it stays inside the background task.
+        let mut subscription = ContractMethodSubscription::<AllowedTeeHashes>::new(
+            viewer,
+            governance_contract.clone(),
+            "allowed_docker_image_hashes",
+            b"{}".to_vec(),
+        ).await;
+
+        // First value is already available after construction.
+        let initial = subscription.latest()?.value;
+
+        let allowed_hashes = Arc::new(Mutex::new(initial));
+        let hashes_notify = Arc::new(Notify::new());
+
+        // Background task: owns the subscription, updates shared state.
+        tokio::spawn({
+            let allowed_hashes = allowed_hashes.clone();
+            let hashes_notify = hashes_notify.clone();
+            async move {
+                loop {
+                    subscription.changed().await?;
+                    let new_hashes = subscription.latest()?.value;
+                    *allowed_hashes.lock().await = new_hashes;
+                    hashes_notify.notify_waiters();
+                }
+            }
+        });
+
+        Ok(Self {
+            node_identity,
+            governance_contract,
+            allowed_hashes,
+            hashes_notify,
+            transaction_sender,
+        })
+    }
 
     /// Returns the latest allowed TEE hashes.
-    /// Delegates to StreamContractState::latest().
+    /// Locks the internal `Mutex` and clones the value.
     pub fn allowed_tee_hashes(&self) -> Result<AllowedTeeHashes, Error>;
 
     /// Resolves when the allowed TEE hashes change.
-    /// Delegates to StreamContractState::changed().
+    /// Awaits `Notify::notified()`.
     pub async fn allowed_tee_hashes_changed(&self) -> Result<(), Error>;
 
     /// Submits an attestation to the governance contract via
