@@ -14,7 +14,6 @@ pub struct AllowedTeeHashes {
 /// Identity of this node within the TEE network.
 pub struct TeeNodeIdentity {
     pub node_account_id: AccountId,
-    pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
 }
 
@@ -39,8 +38,10 @@ impl TeeContext {
     pub async fn allowed_tee_hashes_changed(&self) -> Result<(), Error>;
 
     /// Submits an attestation to the governance contract via
-    /// submit_participant_info(). The caller is responsible for generating
-    /// the attestation quote (via tee-authority) and deciding when to submit.
+    /// submit_participant_info(). The caller builds its own ReportData
+    /// (e.g. the MPC node includes its TLS public key, the Archive Signer
+    /// does not) and generates the attestation quote via tee-authority.
+    /// TeeContext just submits it.
     pub async fn submit_attestation(&self, attestation: Attestation) -> Result<(), Error>;
 
     /// Calls verify_tee() on the governance contract, triggering on-chain
@@ -51,6 +52,8 @@ impl TeeContext {
 ```
 
 The read methods (`allowed_tee_hashes`) and their `_changed()` counterparts delegate to the Chain Gateway, which handles background polling internally. The TEE Context does not write to disk — persistence is the caller's responsibility.
+
+`ReportData` is versioned per service — each service defines what goes into its attestation quote. For example, the MPC node includes its TLS public key in `ReportData` (needed for P2P connections), while the Archive Signer does not. This keeps services decoupled: changes to the MPC node's `ReportData` format do not require changes in other services.
 
 Each service passes its governance contract address to `TeeContext::new()`. All governance contracts expose the same attestation-related methods (see [Attestation Methods][tee-context-methods]) since they share [`TeeState`][tee-state]. Voting methods vary per contract.
 
