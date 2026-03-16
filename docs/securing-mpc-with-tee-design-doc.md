@@ -137,7 +137,7 @@ The exposed endpoints are:
 
 ## **Launcher** Pattern
 
-We are using modified version of the **Launcher Pattern** described below in order to allow secure upgrades of the MPC node. See also [TEE Lifecycle: CVM Boot Sequence](tee-lifecycle.md#cvm-boot-sequence-launcher-pattern) for the generalized description.
+We are using modified version of the **Launcher Pattern** described below in order to allow secure upgrades of the MPC node. See also [TEE Lifecycle: Boot](tee-lifecycle.md#boot) for the generalized description.
 
 ![](attachments/system_design_dtx_with_steps.png)
 
@@ -445,7 +445,7 @@ For more information see Phala's attestation web page: <https://docs.phala.com/p
 
 ## Attestation verification on the contract:
 
-See also [TEE Lifecycle: On-Chain Verification](tee-lifecycle.md#on-chain-verification) for the generalized verification steps.
+See also [TEE Lifecycle: Attestation](tee-lifecycle.md#attestation) for the generalized verification steps.
 
 Review Dstack [RMTR calculation and attestation](https://github.com/Dstack-TEE/dstack/blob/6b77340cf530b4532c5815039a74bb3a60302378/attestation.md) for more information
 
@@ -562,7 +562,7 @@ This may change in the future (see dstack update section).
 
 # MPC Node Upgradability
 
-See also [TEE Lifecycle: Application Upgrade](tee-lifecycle.md#application-upgrade) for the generalized upgrade pattern.
+See also [TEE Lifecycle: Upgrade](tee-lifecycle.md#upgrade) for the generalized upgrade pattern.
 
 ## Bootstrapping
 
