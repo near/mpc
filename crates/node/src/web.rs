@@ -496,7 +496,7 @@ pub async fn start_web_server(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::config::SyncMode;

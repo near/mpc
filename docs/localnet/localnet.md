@@ -164,77 +164,42 @@ export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" |
 
 Now we're ready to initialize the nodes.
 
-### Initialize Frodo's node
+### Configure Frodo's node
 
-This commands creates a directory with some initial config for Frodo's node.
-
-```shell
-mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24566"
-```
-
-However, currently the command creates an invalid genesis file.
-We need to copy the genesis file from `mpc-localnet`.
+Create a TOML configuration file for Frodo's MPC node using the shared template
+at `docs/localnet/mpc-config.template.toml`. This single file contains all
+settings (secrets, TEE config, NEAR init, and node parameters). Each node needs
+unique ports for RPC, indexer, web UI, migration, and pprof.
 
 ```shell
-cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-frodo/genesis.json
-```
-
-Now we must set unique ports for Frodo's RPC interface and indexer. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
-
-```shell
-RPC_PORT=3031 INDEXER_PORT=24568 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-frodo/config.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/config.json
-```
-
-Since this is not a validator node, we can remove `validator_key.json`
-
-```shell
-rm ~/.near/mpc-frodo/validator_key.json
-```
-
-Next we'll create a TOML configuration file for Frodo's MPC node using the
-shared template at `docs/localnet/mpc-config.template.toml`. This single file
-contains all settings (secrets, TEE config, and node parameters):
-
-```shell
-env MPC_NODE_ID=mpc-frodo NEAR_ACCOUNT_ID=frodo.test.near WEB_UI_PORT=8081 MIGRATION_WEB_UI_PORT=8079 PPROF_PORT=34001 \
+mkdir -p ~/.near/mpc-frodo
+env MPC_NODE_ID=mpc-frodo NEAR_ACCOUNT_ID=frodo.test.near NEAR_BOOT_NODES="$NODE_PUBKEY@0.0.0.0:24566" RPC_PORT=3031 INDEXER_PORT=24568 WEB_UI_PORT=8081 MIGRATION_WEB_UI_PORT=8079 PPROF_PORT=34001 \
   envsubst < docs/localnet/mpc-config.template.toml > ~/.near/mpc-frodo/mpc-config.toml
 ```
 
-### Initialize Sam's node
+### Configure Sam's node
 
-Now we can do the same steps for Sam.
-
-```shell
-mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24566"
-```
+Now we can do the same for Sam.
 
 ```shell
-cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-sam/genesis.json
-```
-
-```shell
-RPC_PORT=3032 INDEXER_PORT=24569 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-sam/config.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/config.json
-```
-
-```shell
-rm ~/.near/mpc-sam/validator_key.json
-```
-
-```shell
-env MPC_NODE_ID=mpc-sam NEAR_ACCOUNT_ID=sam.test.near WEB_UI_PORT=8082 MIGRATION_WEB_UI_PORT=8078 PPROF_PORT=34002 \
+mkdir -p ~/.near/mpc-sam
+env MPC_NODE_ID=mpc-sam NEAR_ACCOUNT_ID=sam.test.near NEAR_BOOT_NODES="$NODE_PUBKEY@0.0.0.0:24566" RPC_PORT=3032 INDEXER_PORT=24569 WEB_UI_PORT=8082 MIGRATION_WEB_UI_PORT=8078 PPROF_PORT=34002 \
   envsubst < docs/localnet/mpc-config.template.toml > ~/.near/mpc-sam/mpc-config.toml
 ```
 
 ### Run the MPC binary
 
-In two separate shells run the MPC binary for Frodo and Sam using their TOML config files:
+On first start, each node will automatically initialize and configure its NEAR
+data directory using the `[near_init]` settings in the TOML config.
 
-```shell
-RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.toml
-```
+In two separate shells run the MPC binary for Frodo and Sam:
 
 ```shell
 RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-frodo/mpc-config.toml
+```
+
+```shell
+RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.toml
 ```
 
 Notes:

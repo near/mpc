@@ -320,7 +320,7 @@ where
     /// Entry point to handle the Running state of the contract.
     /// In this state, we generate triples and presignatures, and listen to
     /// signature requests and submit signature responses.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn run_mpc(
         clock: Clock,
         secret_db: Arc<SecretDB>,
@@ -643,7 +643,7 @@ where
     }
 
     /// Entry point to handle the Resharing state of the contract.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn run_key_resharing(
         config_file: &ConfigFile,
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
@@ -959,7 +959,7 @@ fn make_initializing_stop_fn(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::Coordinator;
     use crate::indexer::fake::FakeForeignChainPolicyReader;

@@ -14,7 +14,7 @@ pub struct StaticWebData {
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use near_mpc_crypto_types::ed25519_dalek::SigningKey;

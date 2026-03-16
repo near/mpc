@@ -163,7 +163,7 @@ pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::config::ConfigFile;
 

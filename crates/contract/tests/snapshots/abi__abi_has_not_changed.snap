@@ -57,6 +57,26 @@ expression: abi
         }
       },
       {
+        "name": "allowed_launcher_image_hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
+        }
+      },
+      {
         "name": "clean_tee_status",
         "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
         "kind": "call",
@@ -80,6 +100,17 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
+          }
+        }
+      },
+      {
+        "name": "code_hash_votes",
+        "doc": " Returns the current code hash votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/CodeHashesVotes"
           }
         }
       },
@@ -431,6 +462,17 @@ expression: abi
             "type": "integer",
             "format": "uint32",
             "minimum": 0.0
+          }
+        }
+      },
+      {
+        "name": "launcher_hash_votes",
+        "doc": " Returns the current launcher hash votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/LauncherHashVotes"
           }
         }
       },
@@ -1139,6 +1181,35 @@ expression: abi
         }
       },
       {
+        "name": "vote_add_launcher_hash",
+        "doc": " Vote to add a new launcher image hash to the allowed set. Requires threshold votes.\n When the threshold is reached, compose hashes are automatically derived for all\n currently allowed MPC image hashes.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_cancel_keygen",
         "doc": " Casts a vote to cancel key generation. Any keys that have already been generated\n are kept and we transition into Running state; remaining domains are permanently deleted.\n Deleted domain IDs cannot be reused again in future calls to vote_add_domains.\n\n A next_domain_id that matches that in the state's domains struct must be passed in. This is\n to prevent stale requests from accidentally cancelling a future key generation state.",
         "kind": "call",
@@ -1268,6 +1339,35 @@ expression: abi
               "name": "public_key",
               "type_schema": {
                 "$ref": "#/definitions/PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_launcher_hash",
+        "doc": " Vote to remove a launcher image hash from the allowed set. Requires ALL participants\n to vote for removal, since this invalidates attestations of nodes running that launcher.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
               }
             }
           ]
@@ -1528,6 +1628,28 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
+        },
+        "CodeHashesVotes": {
+          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          }
         },
         "Collateral": {
           "type": "object",
@@ -2390,6 +2512,64 @@ expression: abi
               "$ref": "#/definitions/EpochId2"
             }
           }
+        },
+        "LauncherHashVotes": {
+          "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
+          "type": "object",
+          "required": [
+            "vote_by_account"
+          ],
+          "properties": {
+            "vote_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/LauncherVoteAction"
+              }
+            }
+          }
+        },
+        "LauncherVoteAction": {
+          "description": "The action a participant is voting for on a launcher image hash.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Add"
+              ],
+              "properties": {
+                "Add": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Remove"
+              ],
+              "properties": {
+                "Remove": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "Metrics": {
           "type": "object",

@@ -3,6 +3,9 @@ name = "near-mpc-contract-interface"
 version = "0.0.1"
 license = { workspace = true }
 edition = { workspace = true }
+repository.workspace = true
+description = "Request and response types for the NEAR MPC signer contract"
+readme = "README.md"
 
 [features]
 abi = [
