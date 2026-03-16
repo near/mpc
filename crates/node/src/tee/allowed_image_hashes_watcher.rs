@@ -6,8 +6,6 @@ use near_mpc_bounded_collections::NonEmptyVec;
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
 use tokio::{
-    fs::OpenOptions,
-    io::AsyncWriteExt,
     select,
     sync::{
         mpsc::{self, error::TrySendError},
@@ -46,9 +44,6 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             approved_hashes: approved_hashes.mapped(DockerSha256Digest::from),
         };
 
-        let json = serde_json::to_string_pretty(&approved_hashes)
-            .expect("previous json! macro would also panic. figure out what to return");
-
         tracing::debug!(?approved_hashes, "writing approved hashes to disk");
 
         let tmp_path = self.file_path.with_extension("tmp");
@@ -56,15 +51,17 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
         // This prevents corruption of the final file if the node crashes or power is lost mid-write.
         // Only once the temp file is fully written do we atomically rename() it into place.
         {
-            let mut file = OpenOptions::new()
-                .truncate(true)
-                .create(true)
-                .write(true)
-                .open(&tmp_path)
-                .await?;
+            let tmp_path = tmp_path.clone();
 
-            file.write_all(json.to_string().as_bytes()).await?;
-            file.flush().await?;
+            tokio::task::spawn_blocking(move || {
+                let file = std::fs::File::create(&tmp_path)?;
+                serde_json::to_writer_pretty(&file, &approved_hashes)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+                file.sync_all()
+            })
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "writing to disk task failed"))??;
         }
         // Atomic replace: POSIX rename() ensures that either the old file or the new file exists.
         // The final file is never left in a partially-written state.
