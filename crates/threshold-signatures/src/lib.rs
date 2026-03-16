@@ -1,3 +1,37 @@
+/// Implements [`Debug`] for types containing secret cryptographic material,
+/// ensuring secrets are never leaked through debug output.
+///
+/// # Fully redacted
+/// When all fields are secret, outputs `TypeName(<redacted>)`:
+/// ```ignore
+/// impl_secret_debug!(ScalarWrapper);
+/// ```
+///
+/// # Partially redacted
+/// When some fields are public, shows public fields and redacts secret ones:
+/// ```ignore
+/// impl_secret_debug!(PresignOutput { show: [big_r], redact: [k, sigma] });
+/// ```
+macro_rules! impl_secret_debug {
+    ($name:ident) => {
+        impl ::core::fmt::Debug for $name {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                write!(f, concat!(stringify!($name), "(<redacted>)"))
+            }
+        }
+    };
+    ($name:ident { show: [$($show:ident),* $(,)?], redact: [$($redact:ident),* $(,)?] }) => {
+        impl ::core::fmt::Debug for $name {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                f.debug_struct(stringify!($name))
+                    $(.field(stringify!($show), &self.$show))*
+                    $(.field(stringify!($redact), &"<redacted>"))*
+                    .finish()
+            }
+        }
+    };
+}
+
 mod crypto;
 pub mod participants;
 

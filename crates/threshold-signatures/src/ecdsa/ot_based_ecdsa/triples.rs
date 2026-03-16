@@ -76,12 +76,4 @@ pub struct TripleShare {
     pub c: Scalar,
 }
 
-impl std::fmt::Debug for TripleShare {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TripleShare")
-            .field("a", &"<redacted>")
-            .field("b", &"<redacted>")
-            .field("c", &"<redacted>")
-            .finish()
-    }
-}
+impl_secret_debug!(TripleShare { show: [], redact: [a, b, c] });

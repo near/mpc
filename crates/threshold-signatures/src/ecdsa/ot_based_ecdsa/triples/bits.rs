@@ -18,11 +18,7 @@ pub const SEC_PARAM_8: usize = SECURITY_PARAMETER.div_ceil(8);
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
 pub struct BitVector([u64; SEC_PARAM_64]);
 
-impl std::fmt::Debug for BitVector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BitVector(<redacted>)")
-    }
-}
+impl_secret_debug!(BitVector);
 
 impl BitVector {
     pub fn zero() -> Self {
@@ -165,11 +161,7 @@ impl_op_ex!(!|u: &BitVector| -> BitVector { u.not() });
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct DoubleBitVector([u64; Self::SIZE]);
 
-impl std::fmt::Debug for DoubleBitVector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DoubleBitVector(<redacted>)")
-    }
-}
+impl_secret_debug!(DoubleBitVector);
 
 impl DoubleBitVector {
     const SIZE: usize = 2 * SEC_PARAM_64;
@@ -307,11 +299,7 @@ pub struct SquareBitMatrix {
     pub matrix: BitMatrix,
 }
 
-impl std::fmt::Debug for SquareBitMatrix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SquareBitMatrix(<redacted>)")
-    }
-}
+impl_secret_debug!(SquareBitMatrix);
 
 impl TryFrom<BitMatrix> for SquareBitMatrix {
     type Error = ();
@@ -367,11 +355,7 @@ impl SquareBitMatrix {
 #[derive(Clone)]
 pub struct ChoiceVector(Vec<BitVector>);
 
-impl std::fmt::Debug for ChoiceVector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ChoiceVector(<redacted>)")
-    }
-}
+impl_secret_debug!(ChoiceVector);
 
 impl ChoiceVector {
     /// Generate a random vector with a certain number of bits.

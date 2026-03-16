@@ -49,15 +49,7 @@ pub struct PresignOutput {
     pub sigma: Scalar,
 }
 
-impl std::fmt::Debug for PresignOutput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PresignOutput")
-            .field("big_r", &self.big_r)
-            .field("k", &"<redacted>")
-            .field("sigma", &"<redacted>")
-            .finish()
-    }
-}
+impl_secret_debug!(PresignOutput { show: [big_r], redact: [k, sigma] });
 
 impl ConstantTimeEq for PresignOutput {
     fn ct_eq(&self, other: &Self) -> Choice {
@@ -86,15 +78,7 @@ pub struct RerandomizedPresignOutput {
     pub sigma: Scalar,
 }
 
-impl std::fmt::Debug for RerandomizedPresignOutput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RerandomizedPresignOutput")
-            .field("big_r", &self.big_r)
-            .field("k", &"<redacted>")
-            .field("sigma", &"<redacted>")
-            .finish()
-    }
-}
+impl_secret_debug!(RerandomizedPresignOutput { show: [big_r], redact: [k, sigma] });
 
 impl RerandomizedPresignOutput {
     pub fn rerandomize_presign(
