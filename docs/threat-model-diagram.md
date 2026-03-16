@@ -180,10 +180,11 @@ sequenceDiagram
         participant MIG as Migration Service CVM
     end
 
-    Note over OP: Step 1 — Key Setup
-    OP ->> OP: Generate TLS_keypair
+    Note over OP,MIG: Step 1 — Key Setup
+    MIG ->> MIG: Generate TLS_keypair<br/>(private key NEVER leaves CVM)
     OP ->> OP: Generate AES_signing_keypair
-    OP ->> BC: Register TLS_pubkey + AES_signing_pubkey
+    MIG ->> BC: Register TLS_pubkey
+    OP ->> BC: Register AES_signing_pubkey
 
     Note over NODE,MIG: CVM-internal key generation
     NODE ->> NODE: Generate AES_wrapping_keypair<br/>(private key NEVER leaves CVM)
