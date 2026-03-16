@@ -18,30 +18,20 @@ implementation progresses.
 The Python E2E tests use `MpcCluster` → `MpcNode` → `LocalNode` (from nearcore) to
 orchestrate real processes. We replace this with a Rust equivalent:
 
-```
-┌─────────────────────────────────────────────────┐
-│                  MpcCluster                      │
-│  Orchestrates the full test environment:         │
-│  - NEAR blockchain (via RPC)                     │
-│  - N MpcNode instances (real mpc-node binaries)  │
-│  - Contract deployment + initialization          │
-│  - Signature/CKD request submission              │
-├─────────────────────────────────────────────────┤
-│                   MpcNode                        │
-│  Wraps a single mpc-node OS process:             │
-│  - Start/stop/kill/restart                       │
-│  - Config file generation (TOML)                 │
-│  - Metrics scraping (HTTP /metrics)              │
-│  - RocksDB management (wipe data dir)            │
-├─────────────────────────────────────────────────┤
-│              NearBlockchain                       │
-│  RPC client for any NEAR network:                │
-│  - Account creation + key management             │
-│  - Contract deployment                           │
-│  - Transaction submission + polling              │
-│  - View method calls (contract state)            │
-│  Same code → localhost:3030 or testnet RPC       │
-└─────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Cluster[MpcCluster] -->|owns N instances| Node[MpcNode]
+    Cluster -->|uses| Blockchain[NearBlockchain]
+
+    Node --- N1(Start/stop/kill/restart)
+    Node --- N2(Config file generation - TOML)
+    Node --- N3(Metrics scraping - HTTP /metrics)
+    Node --- N4(RocksDB management)
+
+    Blockchain --- B1(Account creation + key management)
+    Blockchain --- B2(Contract deployment)
+    Blockchain --- B3(Transaction submission + polling)
+    Blockchain --- B4(View method calls)
 ```
 
 ### Key design decisions
@@ -65,7 +55,10 @@ orchestrate real processes. We replace this with a Rust equivalent:
 
 3. **Support for mixed node versions.** `MpcNode` takes a `binary_path` parameter,
    allowing tests to run clusters with different `mpc-node` versions for compatibility
-   testing.
+   testing. An auto-generated `mpc_binary_versions` file tracks the history of
+   releases, and a resolver function fetches the requested binary version on demand
+   (abstracting away the storage backend — git LFS, S3, etc.). Tests simply request
+   a version from the history file and get a local binary path back.
 
 4. **Crate location.** The E2E infrastructure lives in `crates/e2e-tests/` as a
    separate crate with `#[cfg(test)]` tests. It depends on `mpc-contract` (for
@@ -89,8 +82,9 @@ use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::net::SocketAddr;
 
-/// Manages a single mpc-node OS process for E2E testing.
-pub struct MpcNode {
+/// All configuration and state needed to start an mpc-node process.
+/// Represents a node that is NOT running. Can wipe DB, modify config, etc.
+pub struct MpcNodeSetup {
     /// Path to the mpc-node binary.
     binary_path: PathBuf,
     /// Working directory containing config, RocksDB data, and keys.
@@ -103,18 +97,25 @@ pub struct MpcNode {
     p2p_address: SocketAddr,
     /// Address for the migration service.
     migration_address: SocketAddr,
-    /// The running mpc-node child process, if any.
-    process: Option<Child>,
     /// Node configuration that will be written to disk as TOML.
     config: MpcNodeConfig,
+}
+
+/// Handle to a running mpc-node OS process. Always represents a live process.
+/// Obtained by calling `MpcNodeSetup::start()`.
+pub struct MpcNode {
+    /// The setup that was used to start this node (returned on kill).
+    setup: MpcNodeSetup,
+    /// The running child process.
+    process: Child,
 }
 ```
 
 ### API
 
 ```rust
-impl MpcNode {
-    /// Creates a new MpcNode but does NOT start it.
+impl MpcNodeSetup {
+    /// Creates a new node setup.
     pub fn new(
         binary_path: PathBuf,
         home_dir: PathBuf,
@@ -122,33 +123,28 @@ impl MpcNode {
         config: MpcNodeConfig,
     ) -> Self;
 
-    /// Writes the TOML config file and spawns the mpc-node binary.
-    /// Equivalent of Python MpcNode.run().
-    pub fn start(&mut self) -> anyhow::Result<()>;
+    /// Deletes RocksDB files (.sst, MANIFEST, etc.) from the data directory.
+    /// Safe to call because the node is not running.
+    pub fn wipe_db(&self) -> anyhow::Result<()>;
 
+    /// Writes the TOML config file and spawns the mpc-node binary.
+    /// Consumes self, returning an MpcNode handle to the running process.
+    pub fn start(self) -> anyhow::Result<MpcNode>;
+}
+
+impl MpcNode {
     /// Sends SIGTERM (gentle=true) or SIGKILL (gentle=false) to the process.
-    /// Equivalent of Python MpcNode.kill(gentle).
-    pub fn kill(&mut self, gentle: bool) -> anyhow::Result<()>;
+    /// Consumes self, returning the MpcNodeSetup for potential restart.
+    pub fn kill(self, gentle: bool) -> anyhow::Result<MpcNodeSetup>;
 
     /// Kill then start. New process, same config and data directory.
-    /// Equivalent of Python MpcNode.restart().
-    pub fn restart(&mut self, gentle: bool) -> anyhow::Result<()>;
-
-    /// Returns true if the child process is still running.
-    pub fn is_running(&mut self) -> bool;
-
-    /// Deletes RocksDB files (.sst, MANIFEST, etc.) from the data directory.
-    /// Node must be stopped first.
-    /// Equivalent of Python MpcNode.reset_mpc_data().
-    pub fn wipe_db(&self) -> anyhow::Result<()>;
+    pub fn restart(self, gentle: bool) -> anyhow::Result<MpcNode>;
 
     /// Scrapes the node's /metrics HTTP endpoint and returns the value of
     /// the named metric, parsed as i64.
-    /// Equivalent of Python MpcNode.get_int_metric_value(metric).
     pub async fn get_metric(&self, name: &str) -> anyhow::Result<Option<i64>>;
 
     /// Scrapes /metrics and returns all label→value pairs for a multi-label metric.
-    /// Equivalent of Python MpcNode.get_peers_block_height_metric_value().
     pub async fn get_metric_labels(
         &self,
         name: &str,
@@ -164,11 +160,9 @@ impl MpcNode {
 
     /// Writes a flag file that controls block ingestion. Requires the
     /// network-hardship-simulation feature on the mpc-node binary.
-    /// Equivalent of Python MpcNode.set_block_ingestion(value).
     pub fn set_block_ingestion(&self, active: bool) -> anyhow::Result<()>;
 
     /// Creates a marker file in temporary_keys/ to reserve a key event attempt.
-    /// Equivalent of Python MpcNode.reserve_key_event_attempt().
     pub fn reserve_key_event_attempt(
         &self,
         epoch_id: u64,
@@ -226,15 +220,21 @@ Replaces the Python nearcore layer (`cluster.py`, `transaction.py`, `key.py`,
 use near_api::*;
 
 /// RPC client for any NEAR network (sandbox or testnet).
-/// All blockchain interaction goes through here — same code regardless of
-/// whether the RPC endpoint is localhost:3030 or rpc.testnet.near.org.
+/// Pure blockchain interaction — no contract-specific state.
 pub struct NearBlockchain {
     /// The RPC URL (e.g. "http://localhost:3030" or "https://rpc.testnet.near.org").
     rpc_url: String,
     /// RPC client for sending transactions and queries.
     client: near_api::JsonRpcClient,
+}
+
+/// Handle to a deployed MPC signer contract. Wraps a NearBlockchain reference
+/// and adds the contract account ID and signer for contract management.
+pub struct DeployedContract<'a> {
+    /// The underlying blockchain client.
+    blockchain: &'a NearBlockchain,
     /// The deployed MPC signer contract account ID.
-    contract_id: Option<AccountId>,
+    contract_id: AccountId,
     /// Signer for the account that deploys and manages the contract.
     signer: near_api::Signer,
 }
@@ -245,14 +245,15 @@ pub struct NearBlockchain {
 ```rust
 impl NearBlockchain {
     /// Connects to a NEAR RPC endpoint.
-    pub async fn connect(rpc_url: &str, signer: Signer) -> anyhow::Result<Self>;
+    pub async fn connect(rpc_url: &str) -> anyhow::Result<Self>;
 
-    /// Deploys the MPC contract WASM and returns the contract account ID.
+    /// Deploys the MPC contract WASM and returns a DeployedContract handle.
     pub async fn deploy_contract(
-        &mut self,
+        &self,
+        signer: Signer,
         account_id: &AccountId,
         wasm: &[u8],
-    ) -> anyhow::Result<AccountId>;
+    ) -> anyhow::Result<DeployedContract<'_>>;
 
     /// Calls a contract method as a transaction (state-changing).
     pub async fn call(
@@ -273,18 +274,43 @@ impl NearBlockchain {
         args: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value>;
 
-    /// Creates a new NEAR account (sub-account of the signer).
+    /// Creates a new NEAR account (sub-account of the given signer).
     pub async fn create_account(
         &self,
+        signer: &Signer,
         name: &str,
         balance: NearToken,
     ) -> anyhow::Result<(AccountId, Signer)>;
 
-    /// Returns the contract account ID, if deployed.
-    pub fn contract_id(&self) -> Option<&AccountId>;
-
     /// Returns the RPC URL. Used to configure mpc-node's indexer.
     pub fn rpc_url(&self) -> &str;
+}
+
+impl<'a> DeployedContract<'a> {
+    /// Returns the contract account ID.
+    pub fn contract_id(&self) -> &AccountId;
+
+    /// Returns the underlying blockchain client.
+    pub fn blockchain(&self) -> &NearBlockchain;
+
+    /// Calls a method on this contract as a transaction.
+    pub async fn call(
+        &self,
+        method: &str,
+        args: serde_json::Value,
+        gas: Gas,
+        deposit: NearToken,
+    ) -> anyhow::Result<FinalExecutionOutcomeView>;
+
+    /// Calls a view method on this contract.
+    pub async fn view(
+        &self,
+        method: &str,
+        args: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value>;
+
+    /// Queries the contract's state() view method and parses it.
+    pub async fn state(&self) -> anyhow::Result<ProtocolContractState>;
 }
 ```
 
@@ -316,16 +342,22 @@ Equivalent of Python's `MpcCluster` class.
 ### Struct
 
 ```rust
-/// A running MPC test cluster with a blockchain and N mpc-node processes.
+/// A node that is either running or stopped (killed).
+pub enum MpcNodeState {
+    Running(MpcNode),
+    Stopped(MpcNodeSetup),
+}
+
+/// A running MPC test cluster with a deployed contract and N mpc-node processes.
 pub struct MpcCluster {
-    /// RPC client for the NEAR blockchain.
+    /// The underlying blockchain RPC client.
     pub blockchain: NearBlockchain,
-    /// The MPC node processes.
-    pub nodes: Vec<MpcNode>,
-    /// Signers corresponding to each node's NEAR account.
-    pub node_signers: Vec<(AccountId, Signer)>,
-    /// Account + signer used for submitting signature/CKD requests.
-    pub user_account: (AccountId, Signer),
+    /// Handle to the deployed MPC signer contract.
+    pub contract: DeployedContract,
+    /// The MPC nodes, each either running or stopped.
+    pub nodes: Vec<MpcNodeState>,
+    /// Accounts used for submitting signature/CKD requests.
+    pub user_accounts: HashMap<AccountId, Signer>,
 }
 ```
 
@@ -388,12 +420,12 @@ impl MpcCluster {
     // --- Contract operations ---
 
     /// Queries the contract's state() view method and parses it.
-    pub async fn get_contract_state(&self) -> anyhow::Result<ContractState>;
+    pub async fn get_contract_state(&self) -> anyhow::Result<ProtocolContractState>;
 
     /// Polls contract state until it matches the predicate or timeout.
     pub async fn wait_for_state(
         &self,
-        predicate: impl Fn(&ContractState) -> bool,
+        predicate: impl Fn(&ProtocolContractState) -> bool,
         timeout: Duration,
     ) -> anyhow::Result<()>;
 
