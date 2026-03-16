@@ -25,7 +25,6 @@ either = { workspace = true }
 flume = { workspace = true }
 foreign-chain-inspector = { workspace = true }
 futures = { workspace = true }
-launcher-interface = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
@@ -33,6 +32,7 @@ humantime = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
+launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true }
 mpc-contract = { workspace = true }
