@@ -1,5 +1,5 @@
 ---
-source: crates/launcher-interface/src/lib.rs
+source: crates/launcher-interface/src/types.rs
 expression: digest.to_string()
 ---
 sha256:abababababababababababababababababababababababababababababababab
