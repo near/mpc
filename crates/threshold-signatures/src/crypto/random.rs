@@ -1,12 +1,12 @@
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConstantTimeEq};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::ZeroizeOnDrop;
 
 use super::constants::RANDOMIZER_LEN;
 
 /// Represents the randomizer used to make a commit hiding.
-#[derive(Clone, Debug, Serialize, Deserialize, derive_more::AsRef, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Debug, Serialize, Deserialize, derive_more::AsRef, ZeroizeOnDrop)]
 pub struct Randomness([u8; RANDOMIZER_LEN]);
 
 impl ConstantTimeEq for Randomness {

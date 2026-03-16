@@ -98,7 +98,7 @@ impl Transcript {
     }
 }
 
-#[derive(Zeroize, ZeroizeOnDrop)]
+#[derive(ZeroizeOnDrop)]
 pub struct TranscriptRng {
     strobe: Strobe128,
 }
