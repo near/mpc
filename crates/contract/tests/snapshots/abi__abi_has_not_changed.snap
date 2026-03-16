@@ -3969,6 +3969,7 @@ expression: abi
           "required": [
             "expiry_timestamp_seconds",
             "launcher_compose_hash",
+            "measurements",
             "mpc_image_hash"
           ],
           "properties": {
@@ -3983,8 +3984,48 @@ expression: abi
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
+            "measurements": {
+              "description": "The OS measurements that were verified during initial attestation.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/VerifiedMeasurements"
+                }
+              ]
+            },
             "mpc_image_hash": {
               "description": "The digest of the MPC image running.",
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            }
+          }
+        },
+        "VerifiedMeasurements": {
+          "type": "object",
+          "required": [
+            "key_provider_event_digest",
+            "mrtd",
+            "rtmr0",
+            "rtmr1",
+            "rtmr2"
+          ],
+          "properties": {
+            "key_provider_event_digest": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "mrtd": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr0": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr1": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr2": {
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
