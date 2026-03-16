@@ -3,6 +3,11 @@ name = "chain-gateway"
 version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
+autotests = false
+
+[[test]]
+name = "test"
+path = "tests/test.rs"
 
 [features]
 test-utils = []
@@ -27,9 +32,13 @@ tracing = { workspace = true }
 [dev-dependencies]
 assert_matches = { workspace = true }
 base64 = { workspace = true }
+chain-gateway = { path = ".", features = ["test-utils"] }
+chain-gateway-test-contract = { workspace = true }
+fs2 = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
+near-sdk = { workspace = true }
 wat = { workspace = true }
 
 [lints]
