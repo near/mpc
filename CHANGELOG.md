@@ -5,6 +5,97 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.7.0] - 2026-03-16
+
+### 🚀 Features
+
+- [#2329](https://github.com/near/mpc/pull/2329)(@anodar): Serve mpc-node configuration over debug endpoint (#2329)
+
+- [#2211](https://github.com/near/mpc/pull/2211)(@barakeinav1): Add standalone attestation-cli for independent TEE verification (#2211)
+
+- [#2332](https://github.com/near/mpc/pull/2332)(@DSharifi): Allow configuration files for full config of the mpc node (#2332)
+
+- [#2378](https://github.com/near/mpc/pull/2378)(@DSharifi): [**breaking**] Remove derivation paths from foreign chain validation requests (#2378)
+
+- [#2344](https://github.com/near/mpc/pull/2344)(@kevindeforth): Chain gateway state viewer (#2344)
+
+- [#2343](https://github.com/near/mpc/pull/2343)(@barakeinav1): Vote on launcher image hash (#2343)
+
+- [#2392](https://github.com/near/mpc/pull/2392)(@gilcu3): Ckd with public verifiability in ts crate (#2392)
+
+- [#2455](https://github.com/near/mpc/pull/2455)(@DSharifi): *(node)* Start with config file option also initializes neard (#2455)
+
+- [#2460](https://github.com/near/mpc/pull/2460)(@SimonRastikian): Viewing method for code hash votes and testings (#2460)
+
+
+### 🐛 Bug Fixes
+
+- [#2346](https://github.com/near/mpc/pull/2346)(@SimonRastikian): Using ct-eq ensures security (#2346)
+
+- [#2386](https://github.com/near/mpc/pull/2386)(@gilcu3): Do not crash when vectors received are smaller than expected (#2386)
+
+
+### 🚜 Refactor
+
+- [#2318](https://github.com/near/mpc/pull/2318)(@anodar): Retry read calls in localnet script (#2318)
+
+- [#2410](https://github.com/near/mpc/pull/2410)(@gilcu3): Feature gate mod testing in p2p.rs (#2410)
+
+
+### 📚 Documentation
+
+- [#2214](https://github.com/near/mpc/pull/2214)(@gilcu3): Added asset generation doc (#2214)
+
+- [#2371](https://github.com/near/mpc/pull/2371)(@barakeinav1): Add attestation verification step to operator guide (#2371)
+
+- [#2397](https://github.com/near/mpc/pull/2397)(@barakeinav1): Fix operator guide access key section (#2397)
+
+- [#2414](https://github.com/near/mpc/pull/2414)(@barakeinav1): Update to latest dstack configuration (#2414)
+
+- [#2408](https://github.com/near/mpc/pull/2408)(@gilcu3): Add cargo insta instructions to contributing guidelines (#2408)
+
+- [#2324](https://github.com/near/mpc/pull/2324)(@pbeza): Restructure TEE lifecycle and extract TEE Context design doc (#2324)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#2325](https://github.com/near/mpc/pull/2325)(@barakeinav1): Rename shadowed variable in verify_event_log_rtmr3 (#2325)
+
+- [#2319](https://github.com/near/mpc/pull/2319)(@gilcu3): Added borsch schema snapshot test (#2319)
+
+- [#2338](https://github.com/near/mpc/pull/2338)(@gilcu3): Replace ed25519_dalek::VerifyingKey with Ed25519PublicKey in node-types crate (#2338)
+
+- [#2352](https://github.com/near/mpc/pull/2352)(@pbeza): Add security section to PR review prompt (#2352)
+
+- [#2384](https://github.com/near/mpc/pull/2384)(@gilcu3): Update migrations after 3.6.0 release, remove infer domain purpose helpers (#2384)
+
+- [#2372](https://github.com/near/mpc/pull/2372)(@dependabot[bot]): Bump the rust-minor-and-patch group with 3 updates (#2372)
+
+- [#2389](https://github.com/near/mpc/pull/2389)(@gilcu3): Try all nearcore branches to have a better chance of getting the binary (#2389)
+
+- [#2394](https://github.com/near/mpc/pull/2394)(@barakeinav1): Update TEE localnet deploy script and documentation (#2394)
+
+- [#2405](https://github.com/near/mpc/pull/2405)(@gilcu3): Tiny follow up to contract cleanup in #2384 (#2405)
+
+- [#2412](https://github.com/near/mpc/pull/2412)(@gilcu3): Add all features to rust tests in ci (#2412)
+
+- [#2406](https://github.com/near/mpc/pull/2406)(@gilcu3): Remove usage of deprecated near_bindgen (#2406)
+
+- [#2421](https://github.com/near/mpc/pull/2421)(@gilcu3): Ensure we do not block ci on external services tests (#2421)
+
+- [#2306](https://github.com/near/mpc/pull/2306)(@DSharifi): Prepare workspace crates for publishing by setting version to 0.0.1 (#2306)
+
+- [#2429](https://github.com/near/mpc/pull/2429)(@DSharifi): Add `near-mpc-` prefix for crates that will be published (#2429)
+
+- [#2432](https://github.com/near/mpc/pull/2432)(@DSharifi): Add missing fields to publish all external crates (#2432)
+
+- [#2426](https://github.com/near/mpc/pull/2426)(@DSharifi): Use cargo lint section for clippy lint rules (#2426)
+
+- [#2436](https://github.com/near/mpc/pull/2436)(@DSharifi): Disallow allow attributes, and remove unexpected allows (#2436)
+
+- [#2438](https://github.com/near/mpc/pull/2438)(@gilcu3): Remove EXTRA_HOST usage in launcher (#2438)
+
+
 ## [3.6.0] - 2026-03-05
 
 ### 🚀 Features
@@ -18,6 +109,36 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2218](https://github.com/near/mpc/pull/2218)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for bitcoin (#2218)
 
 - [#2222](https://github.com/near/mpc/pull/2222)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for abstract (#2222)
+
+- (@0xsecaas): Optimize Lagrange coefficient computation (#41)
+
+- (@gilcu3): Add test coverage in ci (#66)
+
+- (@0xsecaas): *(ckd)* Improve AppId type safety and optimize with Arc (#64)
+
+- (@gilcu3): Implement CKD using blstrs (#101)
+
+- (@gilcu3): Enable lints, fix issues found, left a couple of exceptions (#121)
+
+- (@gilcu3): Add hash_to_field following bls12_381 crate (#115)
+
+- (@SimonRastikian): Test robustness (#113)
+
+- (@gilcu3): Remove OsRng usage in ot based ecdsa triples multiplicationrs (#142)
+
+- (@gilcu3): Enable wasm compilation (#149)
+
+- (@gilcu3): Provide test-utils functions (#187)
+
+- (@gilcu3): Remove the need of Copy or Clone for rngs (#228)
+
+- (@gilcu3): Added uniform threshold lower bound 2 in keygen and reshare + tests (#220)
+
+- (@SimonRastikian): Add strongly typed threshold for all schemes (#311)
+
+- (@gilcu3): Added benchmarks for ckd (#337)
+
+- (@SimonRastikian): Added support for eddsa with presign (#327)
 
 - [#2224](https://github.com/near/mpc/pull/2224)(@DSharifi): *(sdk)* The SDK can build foreign chain requests for starknet (#2224)
 
@@ -35,6 +156,72 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 
 ### 🐛 Bug Fixes
+
+- (@kevindeforth): Toolchain needs to be nightly (#20)
+
+- (@gilcu3): Add serialization for KeygenOutput (#75)
+
+- (@0xsecaas): *(test)* Consider debug errors (#79)
+
+- (@0xsecaas): *(security)* Use constant-time cryptographic operations to mitigate side-channel attacks (#80)
+
+- (@gilcu3): Broken main (#90)
+
+- (@gilcu3): No more missing-panics-doc (#124)
+
+- (@gilcu3): Cast-possible-truncation lint (#125)
+
+- (@SimonRastikian): No panic in participants index (#117)
+
+- (@gilcu3): Follow up 101 (#130)
+
+- (@0xsecaas): Use usize::midpoint to compute echo threshold safely (#132)
+
+- (@gilcu3): Clippy panic-in-result-fn lint (#143)
+
+- (@gilcu3): Use types for fat channel messages (#151)
+
+- (@gilcu3): Minor security issues (#154)
+
+- (@gilcu3): Remove unsafe code (#172)
+
+- (@gilcu3): Correct location of issue template (#174)
+
+- (@gilcu3): Add proper checks in BLS signature verification (#179)
+
+- (@gilcu3): PolynomialCommitment serialization (#205)
+
+- (@gilcu3): Make max allocation size strictly correct in generate_polynomial (#206)
+
+- (@0xsecaas): Local node crash via malformed AppId (#183)
+
+- (@gilcu3): Add notice about caller timeouts requirements, fix minor issues in README (#208)
+
+- (@gilcu3): Old_threshold misnomer in do_reshare (#219)
+
+- (@gilcu3): Use org token (#230)
+
+- (@gilcu3): Get CI unstuck (#236)
+
+- (@gilcu3): Zeroize issue in eddsa (#262)
+
+- (@gilcu3): Reduce index slicing usage, removed from polynomial and participants (#264)
+
+- (@gilcu3): Update deps and remove unneeded ones (#270)
+
+- (@gilcu3): Remove indexing-slicing exception from robust-ecdsa (#282)
+
+- (@gilcu3): CI failure in main caused by dependabot (#292)
+
+- (@gilcu3): Inconsistent interpolation bounds between implementation and reference (#295)
+
+- (@gilcu3): Enforcing split-view attacks are not possible (#319)
+
+- (@gilcu3): Expand_transpose hasher implementation (#331)
+
+- (@gilcu3): Added check-use-in-fn step (#360)
+
+- (@gilcu3): Minor tweaks to let CI pass after the merge
 
 - [#2237](https://github.com/near/mpc/pull/2237)(@gilcu3): Update wasmtime to avoid vulnerability in CVE-2026-27204 (#2237)
 
@@ -55,12 +242,58 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2195](https://github.com/near/mpc/pull/2195)(@gilcu3): Make sure nix includes all needed tools (#2195)
 
+- (@cronokirby): Presigning
+
+- (@cronokirby): Presigning
+
+- (@cronokirby): Presigning
+
+- (@cronokirby): MTA protocol description
+
+- (@cronokirby): Triple implementation
+
+- (@cronokirby): More general channel abstraction
+
+- (@cronokirby): Need to use buffer of messages for each header.
+
+- (@cronokirby): Define bit operations
+
+- (@cronokirby): Implement batch random OT
+
+- (@cronokirby): Correlated OT
+
+- (@cronokirby): Correlated OT extension test
+
+- (@cronokirby): Random OT Extension
+
+- (@cronokirby): Random OT Extension
+
+- (@cronokirby): Progress on random ot extension
+
+- (@cronokirby): Implement Random OT Extension
+
+- (@cronokirby): Network bench examples
+
+- (@cronokirby): Network bench examples
+
+- (@cronokirby): Network bench examples
+
+- (@cronokirby): Network bench examples
+
+- (@0xsecaas): Polynomial generation can panic or create a constant polynomial when called with a large degree (#163)
+
 - [#2200](https://github.com/near/mpc/pull/2200)(@SimonRastikian): Automate MPC release process (#2200)
 
 - [#2291](https://github.com/near/mpc/pull/2291)(@anodar): Clang version in Nix flake for Darwin (#2291)
 
 
 ### 🚜 Refactor
+
+- (@0xsecaas): *(#49)* Make InitializationError more specific (#52)
+
+- (@0xsecaas): *(constants)* Centralize constants #30 (#65)
+
+- (@SimonRastikian): RedJubJub and EdDSA improving code quality (#324)
 
 - [#2279](https://github.com/near/mpc/pull/2279)(@anodar): Use strong threshold types in signature provider layer (#2279)
 
@@ -75,6 +308,14 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 ### 📚 Documentation
 
+- (@gilcu3): Added doc for confidential key derivation (#17)
+
+- (@gilcu3): Make app_id auth and security assumptions more explicit (#96)
+
+- (@Aditya2274): Clarify Robust ECDSA and update acknowledgements (#304)
+
+- (@netrome): Document split-view attack (#317)
+
 - [#2251](https://github.com/near/mpc/pull/2251)(@gilcu3): Rework the mpc readme (#2251)
 
 - [#2270](https://github.com/near/mpc/pull/2270)(@barakeinav1): CVM upgrade mechanism with launcher and OS measurement voting (#2270)
@@ -87,11 +328,96 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2276](https://github.com/near/mpc/pull/2276)(@SimonRastikian): Split eddsa benchmarks (#2276)
 
 
+### 🧪 Testing
+
+- (@gilcu3): Add coverage for resharing (#266)
+
+- (@gilcu3): Fix bug in eddsa test where randomness was not generated properly (#326)
+
+- (@gilcu3): Use  choose instead of gen_range when appropriate (#346)
+
+
 ### ⚙️ Miscellaneous Tasks
 
 - [#2212](https://github.com/near/mpc/pull/2212)(@pbeza): Rename docs and scripts to kebab-case, add file naming CI check (#2212)
 
 - [#2169](https://github.com/near/mpc/pull/2169)(@pbeza): Add `check-use-in-fn.py` CI script (#2169)
+
+- (@netrome): Replace Cait-Sith specific content with minimal README
+
+- (@gilcu3): Added fmt, clippy, nextest to github ci (#10)
+
+- (@gilcu3): Rename crate cait-sith -> threshold-signatures (#3)
+
+- (@gilcu3): Update outdated dependencies and remove unused (#13)
+
+- (@gilcu3): Upd slab to fix security issue (#35)
+
+- (@kevindeforth): Use thiserror crate (#24)
+
+- (@gilcu3): Align versions (#44)
+
+- (@gilcu3): Homogenizes rmp_serde errors (#45)
+
+- (@gilcu3): Bump frost deps (#55)
+
+- (@gilcu3): Run CI on push on main (#67)
+
+- (@0xsecaas): Ensure code quality before commits with automated checks (#70)
+
+- (@gilcu3): Add log dlog unit tests (#72)
+
+- (@gilcu3): Add tests to compute_lagrange_coefficient (#73)
+
+- (@gilcu3): Add rng as parameter to facilitate reproducible tests (#78)
+
+- (@0xsecaas): *(tests)* Add edge cases for protocol (#85)
+
+- (@gilcu3): Refactor dkg tests (#111)
+
+- (@gilcu3): Add integration test for robust_ecdsa and eddsa (#127)
+
+- (@gilcu3): Fix clippy issues, make test functions avoid using Result return (#141)
+
+- (@gilcu3): Enable unwrap-used lint (#144)
+
+- (@0xsecaas): Reducing code redundancy when receiving elements (#129)
+
+- (@gilcu3): Improve re-randomization docs and tests (#156)
+
+- (@netrome): Use pinned version of nextest in CI (#171)
+
+- (@netrome): Add issue template from MPC repo (#169)
+
+- (@gilcu3): Pinned versions in CI and added zizmor (#198)
+
+- (@gilcu3): Add action to add issues to project automatically (#209)
+
+- (@0xsecaas): Add cargo deny check (#212)
+
+- (@gilcu3): Document that threshold should stay the same during refresh (#223)
+
+- (@gilcu3): Added deterministic tests (#225)
+
+- (@gilcu3): *(security)* Zeroize secret values after use (#237)
+
+- (@gilcu3): Make indexing-slicing rule local (#260)
+
+- (@gilcu3): Fix cargo deny (#267)
+
+- (@gilcu3): Reduce code duplication in run_protocol (#265)
+
+- (@gilcu3): Remove indexing slicing exception from the network layer (#275)
+
+- (@gilcu3): Use derive-more to avoid a few implementations (#280)
+
+- (@gilcu3): Refactor frost/eddsa/redjubjub folders (#308)
+
+- (@SimonRastikian): Domain separator increment is done less manually (#334)
+
+- (@gilcu3): *(test)* Use better pattern for rng generation (#345)
+
+- (@gilcu3): Make checks aligned with mpc repo (#359)
 
 - [#2227](https://github.com/near/mpc/pull/2227)(@gilcu3): Add ts crate to the workspace (#2227)
 
@@ -112,6 +438,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2312](https://github.com/near/mpc/pull/2312)(@gilcu3): Build docker workflows cancelling each other (#2312)
 
 - [#2314](https://github.com/near/mpc/pull/2314)(@gilcu3): Update nearcore to 2.10.7 (#2314)
+
+- [#2321](https://github.com/near/mpc/pull/2321)(@netrome): Update changelog, licenses and bump crate versions for 3.6.0 (#2321)
 
 
 ## [3.5.1] - 2026-02-20
