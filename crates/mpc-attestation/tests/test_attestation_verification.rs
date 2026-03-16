@@ -207,6 +207,6 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
     assert_matches!(
         result,
         Err(VerificationError::Custom(msg))
-            if msg.contains("no longer in the allowed set")
+            if msg.contains("not in the allowed set")
     );
 }

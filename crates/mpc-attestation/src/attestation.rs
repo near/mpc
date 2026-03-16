@@ -105,12 +105,7 @@ impl VerifiedAttestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                if !allowed_measurements.contains(measurements) {
-                    return Err(VerificationError::Custom(
-                        "The attestation's measurements are no longer in the allowed set"
-                            .to_string(),
-                    ));
-                }
+                verify_measurements(measurements, allowed_measurements)?;
 
                 Ok(())
             }
@@ -256,6 +251,25 @@ fn verify_launcher_compose_hash(
             "MPC launcher compose hash {:?} is not in the allowed hashes list",
             launcher_compose_hash
         )));
+    }
+
+    Ok(())
+}
+
+fn verify_measurements(
+    measurements: &ExpectedMeasurements,
+    allowed_measurements: &[ExpectedMeasurements],
+) -> Result<(), VerificationError> {
+    if allowed_measurements.is_empty() {
+        return Err(VerificationError::Custom(
+            "the allowed measurements list is empty".to_string(),
+        ));
+    }
+
+    if !allowed_measurements.contains(measurements) {
+        return Err(VerificationError::Custom(
+            "the attestation's measurements are not in the allowed set".to_string(),
+        ));
     }
 
     Ok(())
