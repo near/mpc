@@ -13,13 +13,13 @@ use axum::extract::State;
 use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
-use contract_interface::types::Ed25519PublicKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
@@ -457,7 +457,7 @@ pub async fn start_web_server(
     static_web_data: StaticWebData,
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
-    config: &ConfigFile,
+    config: ConfigFile,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
 
@@ -479,7 +479,7 @@ pub async fn start_web_server(
             protocol_state_receiver,
             migration_state_receiver,
             static_web_data,
-            node_config: NodeConfigResponse::from(config.clone()),
+            node_config: NodeConfigResponse::from(config),
         });
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;
@@ -496,13 +496,13 @@ pub async fn start_web_server(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::config::SyncMode;
     use crate::config::{AuthConfig, TokenConfig};
-    use bounded_collections::NonEmptyBTreeMap;
     use near_indexer_primitives::types::Finality;
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
 

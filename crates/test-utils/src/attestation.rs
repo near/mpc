@@ -60,7 +60,7 @@ pub fn account_key() -> [u8; 32] {
 
 fn parse_key(key_file: &str) -> [u8; 32] {
     *key_file
-        .parse::<contract_interface::types::Ed25519PublicKey>()
+        .parse::<near_mpc_contract_interface::types::Ed25519PublicKey>()
         .expect("File contains a valid public key")
         .as_bytes()
 }
@@ -85,16 +85,16 @@ pub fn mock_dstack_attestation() -> Attestation {
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }
 
-pub fn mock_dto_dstack_attestation() -> contract_interface::types::Attestation {
+pub fn mock_dto_dstack_attestation() -> near_mpc_contract_interface::types::Attestation {
     let quote = quote().into();
     let collateral_json_string = include_str!("../assets/collateral.json");
     let collateral = serde_json::from_str(collateral_json_string).unwrap();
 
-    let tcb_info: contract_interface::types::TcbInfo =
+    let tcb_info: near_mpc_contract_interface::types::TcbInfo =
         serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
-    contract_interface::types::Attestation::Dstack(
-        contract_interface::types::DstackAttestation::new(quote, collateral, tcb_info),
+    near_mpc_contract_interface::types::Attestation::Dstack(
+        near_mpc_contract_interface::types::DstackAttestation::new(quote, collateral, tcb_info),
     )
 }
 

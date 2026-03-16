@@ -13,8 +13,15 @@ use super::random::Randomness;
 /// This commit is both binding, in that it can't be opened to a different
 /// value than the one committed, and hiding, in that it hides the value
 /// committed inside (perfectly).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Commitment([u8; COMMIT_LEN]);
+
+impl PartialEq for Commitment {
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
+    }
+}
+impl Eq for Commitment {}
 
 impl Commitment {
     /// Computes the commitment using a randomizer as follows

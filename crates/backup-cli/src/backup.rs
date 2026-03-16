@@ -1,6 +1,6 @@
-use contract_interface::types as contract_types;
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as contract_types;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
 use tokio::fs::File;
