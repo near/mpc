@@ -7,7 +7,7 @@ The TEE Context is a shared crate for the TEE attestation lifecycle. It polls go
 ```rust
 /// Allowed TEE hashes fetched from the governance contract.
 pub struct AllowedTeeHashes {
-    pub allowed_docker_image_hashes: Vec<MpcDockerImageHash>,
+    pub allowed_docker_image_hashes: Vec<DockerImageHash>,
     pub allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
 }
 
