@@ -228,7 +228,7 @@ impl OutgoingConnection {
             &format!("TLS connection to {}", target_participant_id),
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
-                let mut sent_bytes: u64 = 0;
+                let mut sent_bytes: usize = 0;
                 let peer_id_string = peer_id.to_string();
 
                 let result: anyhow::Result<()> = async {
@@ -256,8 +256,7 @@ impl OutgoingConnection {
                                     }
                                 }
 
-
-                                let total_message_size_bytes = u64::try_from(FRAME_HEADER_SIZE_BYTES + payload_size)?;
+                                let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES + payload_size;
 
                                 let metric_labels = [
                                     peer_id_string.as_str(),
@@ -269,8 +268,7 @@ impl OutgoingConnection {
                                     .with_label_values(&metric_labels)
                                     .observe(total_message_size_bytes as f64);
 
-                                sent_bytes = sent_bytes.checked_add(total_message_size_bytes)
-                                    .context("sent_bytes overflow")?;
+                                sent_bytes = sent_bytes.saturating_add(total_message_size_bytes);
                                 tracking::set_progress(&format!("sent {} bytes", sent_bytes));
                             }
                             _ = futures::StreamExt::next(&mut framed_tls_stream) => {
@@ -643,7 +641,7 @@ async fn incoming_connection_handler(
         return Ok(());
     }
 
-    let mut received_bytes: u64 = 0;
+    let mut received_bytes: usize = 0;
     let mut framed_tls_stream_reader = configure_framed_stream(tls_stream);
 
     let peer_id_string = peer_id.to_string();
@@ -662,8 +660,7 @@ async fn incoming_connection_handler(
                 }
             };
 
-            let total_message_size_bytes =
-                u64::try_from(FRAME_HEADER_SIZE_BYTES + payload_bytes.len())?;
+            let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES + payload_bytes.len();
 
             let packet =
                 Packet::try_from_slice(&payload_bytes).context("Failed to deserialize packet")?;
@@ -694,9 +691,7 @@ async fn incoming_connection_handler(
                 .with_label_values(&metric_labels)
                 .observe(total_message_size_bytes as f64);
 
-            received_bytes = received_bytes
-                .checked_add(total_message_size_bytes)
-                .context("received_bytes overflow")?;
+            received_bytes = received_bytes.saturating_add(total_message_size_bytes);
             tracking::set_progress(&format!(
                 "Received {} bytes from {}",
                 received_bytes, peer_id
