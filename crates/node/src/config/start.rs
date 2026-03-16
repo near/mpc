@@ -35,18 +35,18 @@ pub struct StartConfig {
 pub struct NearInitConfig {
     pub chain_id: ChainId,
     /// Comma-separated NEAR boot nodes.
-    pub boot_nodes: Option<String>,
+    pub boot_nodes: String,
     /// Path to a local genesis file. When set the genesis is copied from this
     /// path instead of being downloaded. Typically used for localnet.
     pub genesis_path: Option<PathBuf>,
     /// Whether to download the NEAR config file. Defaults to `true` for
     /// non-localnet chains when not specified.
-    pub download_config: Option<DownloadConfigType>,
+    pub download_config: Option<bool>,
     /// Custom URL to download the NEAR config file from.
     pub download_config_url: Option<String>,
     /// Whether to download the NEAR genesis file. Defaults to `true` for
     /// non-localnet chains when not specified.
-    pub download_genesis: bool,
+    pub download_genesis: Option<bool>,
     /// Custom URL to download the genesis file from.
     pub download_genesis_url: Option<String>,
     /// Custom URL to download the genesis records from.
@@ -63,10 +63,24 @@ impl NearInitConfig {
     /// Runs `near_indexer::init_configs` to create the NEAR data directory.
     pub fn run_init(&self, home_dir: &Path) -> anyhow::Result<()> {
         let is_localnet = self.chain_id.is_localnet();
+
         let genesis_arg = self.genesis_path.as_deref().and_then(Path::to_str);
+
+        let should_download_genesis = self.download_genesis.unwrap_or(!is_localnet);
+        let should_download_config = self.download_config.unwrap_or(!is_localnet);
+
+        let download_config_type = if should_download_config {
+            Some(near_config_utils::DownloadConfigType::RPC)
+        } else {
+            None
+        };
+
         let chain_id_arg = self.chain_id.to_init_arg();
-        let boot_nodes = self.boot_nodes.as_ref().map(String::as_str);
-        let download_config = self.download_config.clone().map(Into::into);
+        let boot_nodes_arg = if self.boot_nodes.is_empty() {
+            None
+        } else {
+            Some(self.boot_nodes.as_str())
+        };
 
         near_indexer::init_configs(
             home_dir,
@@ -76,12 +90,12 @@ impl NearInitConfig {
             1,
             false,
             genesis_arg,
-            self.download_genesis,
+            should_download_genesis,
             self.download_genesis_url.as_deref(),
             self.download_genesis_records_url.as_deref(),
-            download_config,
+            download_config_type,
             self.download_config_url.as_deref(),
-            boot_nodes,
+            boot_nodes_arg,
             None,
             None,
         )
@@ -212,6 +226,14 @@ impl StartConfig {
     }
 
     /// Ensures the NEAR node data directory is initialized.
+    ///
+    /// When `near_init` is `Some` and `home_dir/config.json` does not yet
+    /// exist, this runs the equivalent of `mpc-node init` followed by the
+    /// config-patching that `start.sh` performs (tracked shards, state sync,
+    /// etc.).  If `config.json` already exists the method is a no-op.
+    ///
+    /// When `near_init` is `None` (legacy `start` command) this is always a
+    /// no-op — `start.sh` is expected to have handled initialization.
     pub fn ensure_near_initialized(&self) -> anyhow::Result<()> {
         let Some(near_init) = &self.near_init else {
             return Ok(());
@@ -310,23 +332,5 @@ impl std::fmt::Display for ChainId {
 impl ChainId {
     fn to_init_arg(&self) -> Option<String> {
         Some(self.to_string())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DownloadConfigType {
-    Validator,
-    RPC,
-    Archival,
-}
-
-impl From<DownloadConfigType> for near_config_utils::DownloadConfigType {
-    fn from(value: DownloadConfigType) -> Self {
-        match value {
-            DownloadConfigType::Validator => near_config_utils::DownloadConfigType::Validator,
-            DownloadConfigType::RPC => near_config_utils::DownloadConfigType::RPC,
-            DownloadConfigType::Archival => near_config_utils::DownloadConfigType::Archival,
-        }
     }
 }
