@@ -1,0 +1,5 @@
+---
+source: crates/launcher-interface/src/lib.rs
+expression: json
+---
+"sha256:abababababababababababababababababababababababababababababababab"

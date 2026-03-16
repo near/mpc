@@ -25,6 +25,7 @@ either = { workspace = true }
 flume = { workspace = true }
 foreign-chain-inspector = { workspace = true }
 futures = { workspace = true }
+launcher-interface = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
