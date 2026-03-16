@@ -1,5 +1,4 @@
-use ed25519_dalek::{SigningKey, VerifyingKey};
-use k256::ecdsa::signature::Signer;
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use near_account_id::AccountId;
 use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::near_primitives::transaction::{
@@ -25,7 +24,7 @@ impl TransactionSigner {
         }
     }
 
-    /// Atomically increments the nonce and returns the previous value
+    /// Atomically increments the nonce and returns the new value
     fn make_nonce(&self, last_known_block_height: u64) -> u64 {
         // We need a block height of 18 trillion to overflow here. This is unlikely to cause an
         // issue in our lifetimes.
@@ -105,9 +104,9 @@ mod tests {
         let account_id: AccountId = "test.near".parse().unwrap();
         let signing_key = SigningKey::from_bytes(&[1u8; 32]);
         let signer = TransactionSigner::from_key(account_id.clone(), signing_key.clone());
-        // Then: expect the public key to dervie from the signing key
+        // Then: expect the public key to derive from the signing key
         assert_eq!(signer.public_key(), signing_key.verifying_key());
-        // additonal sanity check
+        // additional sanity check
         assert_eq!(signer.account_id(), &account_id);
     }
 
@@ -136,13 +135,13 @@ mod tests {
         let first = signer.make_nonce(height);
         let second = signer.make_nonce(height);
         let third = signer.make_nonce(height);
-        // Then: expect nonces to be striclty increasing
+        // Then: expect nonces to be strictly increasing
         assert_eq!(second, first + 1);
         assert_eq!(third, first + 2);
     }
 
     #[test]
-    fn test_create_and_sign_returs_valid_transaction() {
+    fn test_create_and_sign_returns_valid_transaction() {
         // Given: a signer
         const SEED: u64 = 40393;
         let signer = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
@@ -185,7 +184,7 @@ mod tests {
             other => panic!("expected FunctionCall action, got {other:?}"),
         }
 
-        // additonally, assert the signature is valid
+        // additonnally, assert the signature is valid
         let tx_hash = signed_tx.get_hash();
         match &signed_tx.signature {
             near_crypto::Signature::ED25519(sig) => {

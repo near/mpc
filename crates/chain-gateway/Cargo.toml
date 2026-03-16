@@ -10,7 +10,6 @@ test-utils = []
 [dependencies]
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
-k256 = { workspace = true }
 near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
