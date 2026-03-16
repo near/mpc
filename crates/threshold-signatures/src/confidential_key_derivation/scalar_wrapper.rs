@@ -6,8 +6,14 @@ use elliptic_curve::Field;
 use std::sync::atomic;
 use zeroize::Zeroize;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone)]
 pub struct ScalarWrapper(pub(crate) blstrs::Scalar);
+
+impl std::fmt::Debug for ScalarWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ScalarWrapper(<redacted>)")
+    }
+}
 
 impl Zeroize for ScalarWrapper {
     /// Implementation based on the zeroize crate, which guarantees the value

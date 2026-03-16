@@ -69,9 +69,19 @@ pub struct TriplePub {
 /// This consists of shares of each individual part.
 ///
 /// i.e. we have a share of a, b, and c such that a * b = c.
-#[derive(Clone, Debug, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct TripleShare {
     pub a: Scalar,
     pub b: Scalar,
     pub c: Scalar,
+}
+
+impl std::fmt::Debug for TripleShare {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TripleShare")
+            .field("a", &"<redacted>")
+            .field("b", &"<redacted>")
+            .field("c", &"<redacted>")
+            .finish()
+    }
 }

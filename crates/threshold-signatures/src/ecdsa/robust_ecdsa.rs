@@ -24,7 +24,7 @@ pub struct PresignArguments {
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
 /// independently of the message
-#[derive(Debug, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct PresignOutput {
     /// The public nonce commitment.
     #[zeroize(skip)]
@@ -35,6 +35,18 @@ pub struct PresignOutput {
     pub e: Scalar,
     pub alpha: Scalar,
     pub beta: Scalar,
+}
+
+impl std::fmt::Debug for PresignOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PresignOutput")
+            .field("big_r", &self.big_r)
+            .field("c", &"<redacted>")
+            .field("e", &"<redacted>")
+            .field("alpha", &"<redacted>")
+            .field("beta", &"<redacted>")
+            .finish()
+    }
 }
 
 impl ConstantTimeEq for PresignOutput {
@@ -57,7 +69,7 @@ impl Eq for PresignOutput {}
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
 /// independently of the message
-#[derive(Debug, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct RerandomizedPresignOutput {
     /// The rerandomized public nonce commitment.
     #[zeroize(skip)]
@@ -67,6 +79,17 @@ pub struct RerandomizedPresignOutput {
     e: Scalar,
     alpha: Scalar,
     beta: Scalar,
+}
+
+impl std::fmt::Debug for RerandomizedPresignOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RerandomizedPresignOutput")
+            .field("big_r", &self.big_r)
+            .field("e", &"<redacted>")
+            .field("alpha", &"<redacted>")
+            .field("beta", &"<redacted>")
+            .finish()
+    }
 }
 
 impl RerandomizedPresignOutput {
