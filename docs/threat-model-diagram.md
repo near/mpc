@@ -2,8 +2,14 @@
 
 This document provides threat model diagrams for the MPC-in-TEE system and AES transport key provisioning flow. For full details see:
 - [TEE Design Doc](securing-mpc-with-tee-design-doc.md)
-- [AES Transport Key Provisioning](secure-aes-transport-key-provisioning-cvm.md)
 - [TDX Deployment Guide](running-an-mpc-node-in-tdx-external-guide.md)
+- [Migration Service](https://github.com/near/mpc/blob/main/docs/migration-service.md) — defines the full migration flow and the role of the AES key
+
+## Summary
+
+MPC nodes run inside Intel TDX Confidential VMs (CVMs) to protect cryptographic key shares from the untrusted host OS. The system relies on three trust anchors: TDX hardware isolation, NEAR blockchain for on-chain coordination and attestation verification, and operator authorization for governance actions. During keyshare migration between nodes, an AES transport key provides a defense-in-depth encryption layer on top of TLS, ensuring that no single point of failure can expose key material. This document covers the system architecture, trust boundaries, the AES transport key provisioning flow, a threat-to-mitigation matrix, and three concrete protocol proposals for establishing the AES transport key.
+
+> **Note:** This document is a work in progress and under active architecture evaluation. Three concrete protocol proposals are presented below (sections 2, 6, and 7), but the decision on which one to adopt has not been made yet.
 
 ---
 
@@ -155,6 +161,20 @@ graph TB
 | Triples / presignatures | Encrypted disk | TDX CVM memory encryption |
 | AES transport key | Sealed in CVM | TDX CVM memory encryption |
 | Operator keys | Operator-managed (out of scope) | Operator-managed |
+
+---
+
+## Defense-in-Depth: Why the AES Transport Key Matters
+
+The AES transport key provides defense-in-depth protection during keyshare migration. Without it, a single point of failure during migration could expose keyshares. With it, an attacker must compromise **two independent layers** — the original protection mechanism (e.g., TLS, contract validation) **and** the AES transport key provisioning flow.
+
+### Example Threat Scenarios
+
+**TLS Compromise** — If TLS encryption is broken or misconfigured during key migration, keyshares would be directly exposed. With AES transport encryption, the keyshares remain protected unless the AES key is also independently compromised.
+
+**Operator Key Compromise + Malicious Migration Service** — If the operator's NEAR account private key is leaked, an attacker could register a malicious migration service. Even with TEE protection, if the attacker controls the physical machine hosting the migration service, they may attempt to attack the TEE. The AES transport key adds a second independent failure requirement — the attacker must also obtain the AES key.
+
+**Contract Bug Allowing Malicious TLS Key Registration** — If a bug in the migration contract allows arbitrary registration of a malicious migration service TLS key, an attacker could redirect migration traffic to a malicious endpoint. With AES transport encryption, the malicious service still cannot decrypt keyshares unless it also receives a valid operator-provisioned AES key.
 
 ---
 
