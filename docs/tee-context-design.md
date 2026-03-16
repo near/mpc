@@ -61,9 +61,12 @@ Each service passes its governance contract address to `TeeContext::new()`. All 
 
 [tee-state]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/tee_state.rs#L92
 
-### Usage: MPC Node
+### Usage
 
-The MPC node uses the TEE Context alongside the (future) MPC Context as sibling components. It manages its own attestation lifecycle — periodic submission, removal monitoring, and `verify_tee` scheduling:
+Every TEE service follows the same pattern: start the TEE Context, spawn a watcher loop to write hashes to disk for the [Launcher][launcher-pattern], and periodically re-submit attestations.
+
+[archive-signer]: hot-tee-signing-design.md
+[launcher-pattern]: securing-mpc-with-tee-design-doc.md#launcher-pattern
 
 ```rust
 let tee_ctx = TeeContext::new(chain_gateway, node_identity, governance_contract).await?;
@@ -91,33 +94,4 @@ tokio::spawn({
         }
     }
 });
-```
-
-### Usage: Archive Signer
-
-The [Archive Signer][archive-signer] uses the TEE Context directly:
-
-[archive-signer]: hot-tee-signing-design.md
-
-```rust
-let tee_ctx = TeeContext::new(chain_gateway, node_identity, governance_contract).await?;
-
-// Write hashes to disk for the Launcher whenever they change.
-// Same pattern as the MPC node — the Launcher reads these on (re)start.
-tokio::spawn({
-    let tee_ctx = tee_ctx.clone();
-    async move {
-        loop {
-            tee_ctx.allowed_tee_hashes_changed().await?;
-            let hashes = tee_ctx.allowed_tee_hashes()?;
-            write_hashes_to_disk(&hashes.allowed_docker_image_hashes).await?;
-        }
-    }
-});
-
-// Submit initial attestation, then schedule periodic re-submission.
-let quote = tee_authority.generate_quote(&report_data)?;
-tee_ctx.submit_attestation(quote).await?;
-
-start_http_server(tee_ctx).await?;
 ```
