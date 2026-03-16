@@ -275,7 +275,6 @@ impl StartConfig {
         let mut config: serde_json::Value =
             serde_json::from_str(&raw).context("failed to parse NEAR config.json")?;
 
-        // store.load_mem_tries_for_tracked_shards = true
         config["store"]["load_mem_tries_for_tracked_shards"] = serde_json::Value::Bool(true);
 
         let is_localnet = near_init.chain_id == LOCALNET_CHAIN_ID;
