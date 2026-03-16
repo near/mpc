@@ -4894,8 +4894,7 @@ mod tests {
     fn test_code_hash_votes_view() {
         let num_participants = 4;
         let threshold = 3;
-        let (mut contract, participants, _) =
-            setup_tee_test_contract(num_participants, threshold);
+        let (mut contract, participants, _) = setup_tee_test_contract(num_participants, threshold);
         let participant_list = participants.participants();
         let code_hash = MpcDockerImageHash::from([0xAB; 32]);
 
