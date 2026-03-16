@@ -445,6 +445,8 @@ In the following senarios, two trust assumptions are made;
 
 *Note: The Scenario with a broken CVM is void. In fact, if we assume the CVM is broken, this means that the adversary can access the secret key. It is thus impossible to defend against such a senario, meaning, preventing key leakage. Basically, there is nothing to defend against.*
 
+*Note: When assuming a malicious contract, we never assume a fully malicious blockchain for all existent functionalities. The functionality that we assume remain intact (unbroken) show_operator_pk and TEE_attestestation.*
+
 1. Baseline — all trusted components honest. No need for special AES transport key -- a basic TLS between the CVMs works. The TLS keys are stored in the smart contract.
 2. Operator compromised — attacker has operator credentials.
 Similarly to (1) a basic TLS between the CVMs works. The TLS keys are stored in the smart contract.
