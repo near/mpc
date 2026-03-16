@@ -35,6 +35,7 @@ members = [
 version = "3.6.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/near/mpc"
 
 [workspace.dependencies]
 #workspace members
@@ -48,11 +49,11 @@ mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
-near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections" }
-near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface" }
-near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types" }
-near-mpc-sdk = { path = "crates/near-mpc-sdk" }
-near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier" }
+near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
+near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface", version = "0.0.1" }
+near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types", version = "0.0.1" }
+near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
+near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
@@ -147,6 +148,7 @@ near-sdk = { version = "5.24.1", features = [
 ] }
 near-workspaces = { version = "0.22.1" }
 num_enum = { version = "0.7.5", features = ["complex-expressions"] }
+pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
     "cpp",
     "flamegraph",
@@ -241,6 +243,8 @@ time = "0.3.41"
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"
+allow_attributes = "warn"
+mod_module_files = "deny"
 
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"

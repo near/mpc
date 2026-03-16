@@ -715,7 +715,7 @@ impl KeyEventLeaderClient for Arc<MeshNetworkClient> {
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
@@ -731,7 +731,7 @@ mod tests {
     #[rstest::rstest]
     #[tokio::test(start_paused = true)]
     #[timeout(Duration::from_millis(100))]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     async fn resharing_leader__should_retry_after_timeout_if_computation_is_not_started() {
         // Given
         // Simulate the expired/idle contract state: started=false but ID already

@@ -432,7 +432,7 @@ pub async fn request_ckd_and_await_response(
 /// Request a verify foreign tx from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
 // TODO: remove this when tests are added for this functionality
-#[allow(unused)]
+#[expect(unused)]
 pub async fn request_verify_foreign_tx_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,

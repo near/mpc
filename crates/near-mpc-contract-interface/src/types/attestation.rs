@@ -7,7 +7,7 @@ use serde_with::{hex::Hex, serde_as};
 
 type Sha256Digest = [u8; 32];
 
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 #[derive(
     Clone,
     Debug,

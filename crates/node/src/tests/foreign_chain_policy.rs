@@ -9,7 +9,7 @@ use std::time::Duration;
 
 #[tokio::test]
 #[test_log::test]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() {
     // Given
     const THRESHOLD: usize = 2;
