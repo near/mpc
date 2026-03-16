@@ -1770,8 +1770,11 @@ version = "3.7.0"
 dependencies = [
  "assert_matches",
  "base64 0.22.1",
+ "chain-gateway",
+ "chain-gateway-test-contract",
  "derive_more 2.1.1",
  "ed25519-dalek",
+ "fs2",
  "near-account-id 2.5.0",
  "near-async",
  "near-client",
@@ -1779,6 +1782,7 @@ dependencies = [
  "near-indexer",
  "near-indexer-primitives",
  "near-o11y",
+ "near-sdk",
  "rand 0.8.5",
  "rstest",
  "serde",
@@ -1789,6 +1793,14 @@ dependencies = [
  "tokio-util",
  "tracing",
  "wat",
+]
+
+[[package]]
+name = "chain-gateway-test-contract"
+version = "3.7.0"
+dependencies = [
+ "borsh",
+ "near-sdk",
 ]
 
 [[package]]

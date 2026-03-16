@@ -1,0 +1,18 @@
+[package]
+name = "chain-gateway-test-contract"
+version = { workspace = true }
+license = { workspace = true }
+edition = "2021"
+
+[package.metadata.cargo-shear]
+ignored = ["borsh"]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+borsh = { workspace = true }
+near-sdk = { workspace = true }
+
+[lints]
+workspace = true

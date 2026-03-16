@@ -6,6 +6,7 @@ members = [
     "crates/attestation-cli",
     "crates/backup-cli",
     "crates/chain-gateway",
+    "crates/chain-gateway-test-contract",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
@@ -44,6 +45,7 @@ repository = "https://github.com/near/mpc"
 #workspace members
 attestation = { path = "crates/attestation" }
 chain-gateway = { path = "crates/chain-gateway" }
+chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
