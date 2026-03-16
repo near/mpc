@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        load_config_file, ConfigFile, GcpStartConfig, SecretsStartConfig, StartConfig,
-        TeeAuthorityStartConfig, TeeStartConfig,
+        load_config_file, ConfigFile, GcpStartConfig, NearInitConfig, SecretsStartConfig,
+        StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
@@ -143,6 +143,7 @@ impl StartCmd {
                 secret_store_key_hex: self.secret_store_key_hex,
                 backup_encryption_key_hex: self.backup_encryption_key_hex,
             },
+            near_init: None,
             tee: TeeStartConfig {
                 authority: match self.tee_authority {
                     CliTeeAuthorityConfig::Local => TeeAuthorityStartConfig::Local,
@@ -188,6 +189,22 @@ pub struct InitConfigArgs {
     #[arg(long)]
     pub boot_nodes: Option<String>,
 }
+
+impl InitConfigArgs {
+    pub fn into_near_init_config(self) -> NearInitConfig {
+        NearInitConfig {
+            chain_id: self.chain_id.unwrap_or_default(),
+            boot_nodes: self.boot_nodes.unwrap_or_default(),
+            genesis_path: self.genesis.map(PathBuf::from),
+            download_config: Some(self.download_config),
+            download_config_url: self.download_config_url,
+            download_genesis: Some(self.download_genesis),
+            download_genesis_url: self.download_genesis_url,
+            download_genesis_records_url: self.download_genesis_records_url,
+        }
+    }
+}
+
 #[derive(Args, Debug)]
 pub struct ImportKeyshareCmd {
     /// Path to home directory
@@ -220,6 +237,7 @@ impl Cli {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
                 let node_configuration = StartConfig::from_toml_file(&config_path)?;
+                node_configuration.ensure_near_initialized()?;
                 run_mpc_node(node_configuration).await
             }
             // TODO(#2334): deprecate this
@@ -231,34 +249,9 @@ impl Cli {
                 run_mpc_node(node_configuration).await
             }
             CliCommand::Init(config) => {
-                let (download_config_type, download_config_url) = if config.download_config {
-                    (
-                        Some(near_config_utils::DownloadConfigType::RPC),
-                        config.download_config_url.as_ref().map(AsRef::as_ref),
-                    )
-                } else {
-                    (None, None)
-                };
-                near_indexer::init_configs(
-                    &config.dir,
-                    config.chain_id,
-                    None,
-                    None,
-                    1,
-                    false,
-                    config.genesis.as_ref().map(AsRef::as_ref),
-                    config.download_genesis,
-                    config.download_genesis_url.as_ref().map(AsRef::as_ref),
-                    config
-                        .download_genesis_records_url
-                        .as_ref()
-                        .map(AsRef::as_ref),
-                    download_config_type,
-                    download_config_url,
-                    config.boot_nodes.as_ref().map(AsRef::as_ref),
-                    None,
-                    None,
-                )
+                let dir = config.dir.clone();
+                let near_init = config.into_near_init_config();
+                near_init.run_init(&dir)
             }
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,
             CliCommand::ExportKeyshare(cmd) => cmd.run().await,
