@@ -202,14 +202,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.1" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.1" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.1" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.1" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.1" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.1" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.1" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.1" }
+# pinned to revision, since 2.11.0-rc.1 tag has a regression, see Zulip thread;
+# https://near.zulipchat.com/#narrow/channel/533300-releases.2F2.2E11/topic/mpc.20startup.20crash.20when.20syncing.20from.20genesis/with/579755520
+near-async = { git = "https://github.com/near/nearcore", rev = "96100bbf3b5de7eed46cab7bfe446e5002e19c11" }
+near-client = { git = "https://github.com/near/nearcore", rev = "96100bbf3b5de7eed46cab7bfe446e5002e19c11" }
+near-config-utils = { git = "https://github.com/near/nearcore", rev = "96100bbf3b5de7eed46cab7bfe446e5002e19c11" }
+near-crypto = { git = "https://github.com/near/nearcore", rev = "96100bbf3b5de7eed46cab7bfe446e5002e19c11" }
+near-indexer = { git = "https://github.com/near/nearcore", rev = "96100bbf3b5de7eed46cab7bfe446e5002e19c11" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", rev = "96100bbf3b5de7eed46cab7bfe446e5002e19c11" }
+near-o11y = { git = "https://github.com/near/nearcore", rev = "96100bbf3b5de7eed46cab7bfe446e5002e19c11" }
+near-time = { git = "https://github.com/near/nearcore", rev = "96100bbf3b5de7eed46cab7bfe446e5002e19c11" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
