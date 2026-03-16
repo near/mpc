@@ -49,7 +49,10 @@ pub struct PresignOutput {
     pub sigma: Scalar,
 }
 
-impl_secret_debug!(PresignOutput { show: [big_r], redact: [k, sigma] });
+impl_secret_debug!(PresignOutput {
+    show: [big_r],
+    redact: [k, sigma]
+});
 
 impl ConstantTimeEq for PresignOutput {
     fn ct_eq(&self, other: &Self) -> Choice {
@@ -78,7 +81,10 @@ pub struct RerandomizedPresignOutput {
     pub sigma: Scalar,
 }
 
-impl_secret_debug!(RerandomizedPresignOutput { show: [big_r], redact: [k, sigma] });
+impl_secret_debug!(RerandomizedPresignOutput {
+    show: [big_r],
+    redact: [k, sigma]
+});
 
 impl RerandomizedPresignOutput {
     pub fn rerandomize_presign(

@@ -76,4 +76,7 @@ pub struct TripleShare {
     pub c: Scalar,
 }
 
-impl_secret_debug!(TripleShare { show: [], redact: [a, b, c] });
+impl_secret_debug!(TripleShare {
+    show: [],
+    redact: [a, b, c]
+});
