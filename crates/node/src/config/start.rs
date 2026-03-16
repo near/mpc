@@ -8,8 +8,6 @@ use tee_authority::tee_authority::{
 };
 use url::Url;
 
-const LOCALNET_CHAIN_ID: &str = "mpc-localnet";
-
 /// Configuration for starting the MPC node. This is the canonical type used
 /// by the run logic. Both `StartCmd` (CLI flags) and `StartWithConfigFileCmd`
 /// (TOML file) convert into this type.
@@ -35,8 +33,7 @@ pub struct StartConfig {
 /// genesis and config files are bootstrapped when they don't yet exist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NearInitConfig {
-    /// NEAR chain / network ID (e.g. "mainnet", "testnet", "mpc-localnet").
-    pub chain_id: String,
+    pub chain_id: ChainId,
     /// Comma-separated NEAR boot nodes.
     pub boot_nodes: String,
     /// Path to a local genesis file. When set the genesis is copied from this
@@ -65,7 +62,7 @@ pub struct NearInitConfig {
 impl NearInitConfig {
     /// Runs `near_indexer::init_configs` to create the NEAR data directory.
     pub fn run_init(&self, home_dir: &Path) -> anyhow::Result<()> {
-        let is_localnet = self.chain_id == LOCALNET_CHAIN_ID;
+        let is_localnet = self.chain_id.is_localnet();
 
         let genesis_arg = self.genesis_path.as_deref().and_then(Path::to_str);
 
@@ -78,11 +75,7 @@ impl NearInitConfig {
             None
         };
 
-        let chain_id_arg = if self.chain_id.is_empty() {
-            None
-        } else {
-            Some(self.chain_id.clone())
-        };
+        let chain_id_arg = self.chain_id.to_init_arg();
         let boot_nodes_arg = if self.boot_nodes.is_empty() {
             None
         } else {
@@ -277,7 +270,7 @@ impl StartConfig {
 
         config["store"]["load_mem_tries_for_tracked_shards"] = serde_json::Value::Bool(true);
 
-        let is_localnet = near_init.chain_id == LOCALNET_CHAIN_ID;
+        let is_localnet = near_init.chain_id.is_localnet();
         if is_localnet {
             config["state_sync_enabled"] = serde_json::Value::Bool(false);
         } else {
@@ -304,5 +297,40 @@ impl StartConfig {
 
         tracing::info!("NEAR node config.json patched successfully");
         Ok(())
+    }
+}
+
+/// NEAR chain / network identifier.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChainId {
+    Mainnet,
+    Testnet,
+    #[serde(rename = "mpc-localnet")]
+    Localnet,
+    #[serde(untagged)]
+    Custom(String),
+}
+
+impl ChainId {
+    pub fn is_localnet(&self) -> bool {
+        *self == ChainId::Localnet
+    }
+}
+
+impl std::fmt::Display for ChainId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChainId::Mainnet => f.write_str("mainnet"),
+            ChainId::Testnet => f.write_str("testnet"),
+            ChainId::Localnet => f.write_str("mpc-localnet"),
+            ChainId::Custom(s) => f.write_str(s),
+        }
+    }
+}
+
+impl ChainId {
+    fn to_init_arg(&self) -> Option<String> {
+        Some(self.to_string())
     }
 }

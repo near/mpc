@@ -1,6 +1,6 @@
 use crate::{
     config::{
-        load_config_file, ConfigFile, GcpStartConfig, NearInitConfig, SecretsStartConfig,
+        load_config_file, ChainId, ConfigFile, GcpStartConfig, NearInitConfig, SecretsStartConfig,
         StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
     },
     keyshare::{
@@ -193,7 +193,13 @@ pub struct InitConfigArgs {
 impl InitConfigArgs {
     pub fn into_near_init_config(self) -> NearInitConfig {
         NearInitConfig {
-            chain_id: self.chain_id.unwrap_or_default(),
+            chain_id: match self.chain_id.as_deref() {
+                Some("mainnet") => ChainId::Mainnet,
+                Some("testnet") => ChainId::Testnet,
+                Some("mpc-localnet") => ChainId::Localnet,
+                Some(other) => ChainId::Custom(other.to_string()),
+                None => ChainId::Custom(String::new()),
+            },
             boot_nodes: self.boot_nodes.unwrap_or_default(),
             genesis_path: self.genesis.map(PathBuf::from),
             download_config: Some(self.download_config),
