@@ -17,23 +17,21 @@ pub struct TeeNodeIdentity {
     pub account_public_key: Ed25519PublicKey,
 }
 
-/// Uses `Notify` + `Mutex` so the public API stays `&self` and TeeContext is `Clone`.
-/// The non-cloneable `ContractMethodSubscription` (holds `JoinHandle`) lives inside
-/// a background task spawned by `new()`.
+/// The background task spawned by `new()` owns the `ContractMethodSubscription`
+/// (not `Clone` — holds `JoinHandle`) and sends updates via a `watch` channel.
 #[derive(Clone)]
 pub struct TeeContext {
     node_identity: TeeNodeIdentity,
     governance_contract: AccountId,
-    allowed_hashes: Arc<Mutex<AllowedTeeHashes>>,
-    hashes_notify: Arc<Notify>,
+    allowed_hashes_tx: watch::Sender<AllowedTeeHashes>,
     transaction_sender: TransactionSender,
 }
 
 impl TeeContext {
     /// Creates a new `TeeContext`. Spawns a background task that owns the
-    /// `ContractMethodSubscription`, polls the governance contract, updates
-    /// the `Mutex`, and calls `Notify::notify_waiters()`. Waits for the first
-    /// successful poll before returning.
+    /// `ContractMethodSubscription`, polls the governance contract, and
+    /// sends updates via a `watch` channel. Waits for the first successful
+    /// poll before returning.
     pub async fn new(
         viewer: impl ViewRaw,
         node_identity: TeeNodeIdentity,
@@ -52,20 +50,16 @@ impl TeeContext {
 
         // First value is already available after construction.
         let initial = subscription.latest()?.value;
+        let (allowed_hashes_tx, _) = watch::channel(initial);
 
-        let allowed_hashes = Arc::new(Mutex::new(initial));
-        let hashes_notify = Arc::new(Notify::new());
-
-        // Background task: owns the subscription, updates shared state.
+        // Background task: owns the subscription, sends updates.
         tokio::spawn({
-            let allowed_hashes = allowed_hashes.clone();
-            let hashes_notify = hashes_notify.clone();
+            let allowed_hashes_tx = allowed_hashes_tx.clone();
             async move {
                 loop {
                     subscription.changed().await?;
                     let new_hashes = subscription.latest()?.value;
-                    *allowed_hashes.lock().await = new_hashes;
-                    hashes_notify.notify_waiters();
+                    allowed_hashes_tx.send_replace(new_hashes);
                 }
             }
         });
@@ -73,19 +67,14 @@ impl TeeContext {
         Ok(Self {
             node_identity,
             governance_contract,
-            allowed_hashes,
-            hashes_notify,
+            allowed_hashes_tx,
             transaction_sender,
         })
     }
 
-    /// Returns the latest allowed TEE hashes.
-    /// Locks the internal `Mutex` and clones the value.
-    pub fn allowed_tee_hashes(&self) -> Result<AllowedTeeHashes, Error>;
-
-    /// Resolves when the allowed TEE hashes change.
-    /// Awaits `Notify::notified()`.
-    pub async fn allowed_tee_hashes_changed(&self) -> Result<(), Error>;
+    /// Returns a `watch::Receiver` for the allowed TEE hashes.
+    /// Use `.borrow()` to read the latest value, `.changed()` to wait for updates.
+    pub fn watch_allowed_tee_hashes(&self) -> watch::Receiver<AllowedTeeHashes>;
 
     /// Submits an attestation to the governance contract via
     /// submit_participant_info(). The caller builds its own ReportData
@@ -101,7 +90,7 @@ impl TeeContext {
 }
 ```
 
-The read methods (`allowed_tee_hashes`) and their `_changed()` counterparts delegate to the Chain Gateway, which handles background polling internally. The TEE Context does not write to disk — persistence is the caller's responsibility.
+Callers subscribe to allowed hashes via `watch_allowed_tee_hashes()`, which returns a `watch::Receiver`. The background task polls the Chain Gateway and pushes updates through the channel. The TEE Context does not write to disk — persistence is the caller's responsibility.
 
 `ReportData` is versioned per service — each service defines what goes into its attestation quote. For example, the MPC node includes its TLS public key in `ReportData` (needed for P2P connections), while the Archive Signer does not. This keeps services decoupled: changes to the MPC node's `ReportData` format do not require changes in other services.
 
@@ -119,17 +108,15 @@ Every TEE service follows the same pattern: start the TEE Context, spawn a watch
 [launcher-pattern]: securing-mpc-with-tee-design-doc.md#launcher-pattern
 
 ```rust
-let tee_ctx = TeeContext::new(chain_gateway, node_identity, governance_contract).await?;
+let tee_ctx = TeeContext::new(viewer, node_identity, governance_contract, transaction_sender).await?;
 
 // Write hashes to disk for the Launcher whenever they change.
-tokio::spawn({
-    let tee_ctx = tee_ctx.clone();
-    async move {
-        loop {
-            tee_ctx.allowed_tee_hashes_changed().await?;
-            let hashes = tee_ctx.allowed_tee_hashes()?;
-            write_hashes_to_disk(&hashes.allowed_docker_image_hashes).await?;
-        }
+let mut hashes_rx = tee_ctx.watch_allowed_tee_hashes();
+tokio::spawn(async move {
+    loop {
+        hashes_rx.changed().await?;
+        let hashes = hashes_rx.borrow().clone();
+        write_hashes_to_disk(&hashes.allowed_docker_image_hashes).await?;
     }
 });
 
