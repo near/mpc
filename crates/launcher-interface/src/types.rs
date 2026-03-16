@@ -17,7 +17,7 @@ impl ApprovedHashes {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::From, derive_more::Deref)]
 pub struct DockerSha256Digest(MpcDockerImageHash);
 
 impl fmt::Display for DockerSha256Digest {
@@ -32,12 +32,6 @@ pub enum DockerDigestParseError {
     MissingPrefix,
     #[error(transparent)]
     InvalidHash(#[from] mpc_primitives::hash::Hash32ParseError),
-}
-
-impl DockerSha256Digest {
-    pub fn as_raw_hex(&self) -> String {
-        self.0.as_hex()
-    }
 }
 
 impl FromStr for DockerSha256Digest {
