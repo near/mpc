@@ -22,7 +22,7 @@ pub use participants::ParticipantList;
 pub use crypto::polynomials::{
     batch_compute_lagrange_coefficients, batch_invert, compute_lagrange_coefficient,
 };
-use zeroize::ZeroizeOnDrop;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 mod dkg;
 pub mod protocol;
@@ -45,7 +45,7 @@ use serde::{Deserialize, Serialize};
 pub type Scalar<C> = frost_core::Scalar<C>;
 pub type Element<C> = frost_core::Element<C>;
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, ZeroizeOnDrop)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Zeroize, ZeroizeOnDrop)]
 #[serde(bound = "C: Ciphersuite")]
 /// Generic type of key pairs
 pub struct KeygenOutput<C: Ciphersuite> {
