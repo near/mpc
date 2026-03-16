@@ -443,6 +443,8 @@ In the following senarios, two trust assumptions are made;
 | TLS connection between CVMs | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
 | **Protocol Needed** | **(1)** | **(2)** | **(3)** | **(4)** | **(5)** | **(6)** | **(7)** |
 
+*Note: The Scenario with a broken CVM is void. In fact, if we assume the CVM is broken, this means that the adversary can access the secret key. It is thus impossible to defend against such a senario, meaning, preventing key leakage. Basically, there is nothing to defend against.*
+
 1. Baseline — all trusted components honest. No need for special AES transport key -- a basic TLS between the CVMs works. The TLS keys are stored in the smart contract.
 2. Operator compromised — attacker has operator credentials.
 Similarly to (1) a basic TLS between the CVMs works. The TLS keys are stored in the smart contract.
