@@ -15,8 +15,14 @@ pub const SEC_PARAM_8: usize = SECURITY_PARAMETER.div_ceil(8);
 ///
 /// This vector will have the size of our security parameter, which is useful
 /// for most of our OT extension protocols.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
 pub struct BitVector([u64; SEC_PARAM_64]);
+
+impl std::fmt::Debug for BitVector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BitVector(<redacted>)")
+    }
+}
 
 impl BitVector {
     pub fn zero() -> Self {
@@ -155,9 +161,15 @@ impl_op_ex!(!|u: &BitVector| -> BitVector { u.not() });
 /// A `BitVector` of double the size.
 ///
 /// This is useful because it's quicker to avoid reducing the result of GF multiplication.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct DoubleBitVector([u64; Self::SIZE]);
+
+impl std::fmt::Debug for DoubleBitVector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DoubleBitVector(<redacted>)")
+    }
+}
 
 impl DoubleBitVector {
     const SIZE: usize = 2 * SEC_PARAM_64;
@@ -208,9 +220,15 @@ impl_op_ex!(^= |u: &mut DoubleBitVector, v: &DoubleBitVector| { u.xor_mut(v) });
 /// rows.
 ///
 /// This is a fundamental object used for our OT extension protocol.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct BitMatrix(Vec<BitVector>);
+
+impl std::fmt::Debug for BitMatrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BitMatrix(<redacted>, height={})", self.0.len())
+    }
+}
 
 impl BitMatrix {
     /// Create a random matrix of a certain chunk size.
@@ -283,10 +301,16 @@ impl FromIterator<BitVector> for BitMatrix {
 impl_op_ex!(^ |u: &BitMatrix, v: &BitMatrix| -> BitMatrix { u.xor(v) });
 impl_op_ex!(^= |u: &mut BitMatrix, v: &BitMatrix| { u.xor_mut(v) });
 impl_op_ex!(&|u: &BitMatrix, v: &BitVector| -> BitMatrix { u.and_vec(v) });
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct SquareBitMatrix {
     pub matrix: BitMatrix,
+}
+
+impl std::fmt::Debug for SquareBitMatrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SquareBitMatrix(<redacted>)")
+    }
 }
 
 impl TryFrom<BitMatrix> for SquareBitMatrix {
@@ -340,8 +364,14 @@ impl SquareBitMatrix {
 /// A choice vector holds an arbitrary number of choice bits.
 ///
 /// This vector must always be non-empty.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ChoiceVector(Vec<BitVector>);
+
+impl std::fmt::Debug for ChoiceVector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ChoiceVector(<redacted>)")
+    }
+}
 
 impl ChoiceVector {
     /// Generate a random vector with a certain number of bits.
