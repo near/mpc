@@ -125,6 +125,12 @@ sequenceDiagram
         APP ->> APP: Generate fresh attestation quote
         APP ->> SC: submit_participant_info(attestation, tls_pk)
     end
+
+    loop Watcher
+        APP ->> SC: Poll allowed_docker_image_hashes()
+        APP ->> APP: Write hashes to disk
+        Note over LA: Launcher reads updated hashes on next restart
+    end
 ```
 
 Individual services may add steps between "Start application container" and the image hash check — for example, the Archive Signer performs [key import][key-import] on first boot.

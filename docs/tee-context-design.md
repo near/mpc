@@ -98,10 +98,19 @@ The [Archive Signer][archive-signer] uses the TEE Context directly. Since `new()
 
 ```rust
 let tee_ctx = TeeContext::new(chain_gateway, node_identity, governance_contract).await?;
-let hashes = tee_ctx.allowed_tee_hashes()?;
-if !hashes.allowed_docker_image_hashes.contains(&current_image) {
-    bail!("image not approved");
-}
+
+// Write hashes to disk for the Launcher whenever they change.
+// Same pattern as the MPC node — the Launcher reads these on (re)start.
+tokio::spawn({
+    let tee_ctx = tee_ctx.clone();
+    async move {
+        loop {
+            tee_ctx.allowed_tee_hashes_changed().await?;
+            let hashes = tee_ctx.allowed_tee_hashes()?;
+            write_hashes_to_disk(&hashes.allowed_docker_image_hashes).await?;
+        }
+    }
+});
 
 // Submit initial attestation, then schedule periodic re-submission.
 let quote = tee_authority.generate_quote(&report_data)?;
