@@ -452,7 +452,7 @@ Similarly to (1) a basic TLS between the CVMs works. The TLS keys are stored in 
 4. TLS compromised — If only the TLS is compromised/misconfigured, it would be sufficient to double layer the TLS communication of the CVMs with another similar secure communication channel such as Noise. The keys can be stored in the smart contract.
 5. Both the Smart contract is compromised and the TLS channel is misconfigured -- Barak's proposal should do the job.
 6. Both the operator is malicious and the TLS channel is misconfigured. The solution of (4) should apply well.
-7. Both the smart contract is compromised and the operator is malicious: This is an extreme case which we cannot allow as this would break the MPC assumption. -- Might need a more detailed argument
+7. The smart contract is compromised, the operator is malicious, and the TLS communication is faulty: This is an extreme case which we cannot allow as this would break the MPC assumption. -- We agreed that this senario essentially is equivalent to a Diffie Hellmann key exchange but without any external trusted leverage. To our knowledge, this is not possible to solve.
 
 **Last Scenario**: Knowing that Scenario 7 is not possible, we should build a protocol that defends for both "worst-case" scenarios Scenario 5 + Scenario 6. In this regard, Simon claims that his proposal should be enough. Left to study in depth his proposal.
 
