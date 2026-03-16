@@ -104,6 +104,17 @@ expression: abi
         }
       },
       {
+        "name": "code_hash_votes",
+        "doc": " Returns the current code hash votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/CodeHashesVotes"
+          }
+        }
+      },
+      {
         "name": "conclude_node_migration",
         "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a `Running` state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - `InvalidState::ProtocolStateNotRunning`: if protocol is not in `Running` state\n - `InvalidState::NotParticipant`: if caller is not a current participant\n - `NodeMigrationError::KeysetMismatch`: if provided keyset does not match the expected keyset\n - `NodeMigrationError::MigrationNotFound`: if no migration record exists for the caller\n - `NodeMigrationError::AccountPublicKeyMismatch`: if caller’s public key does not match the expected destination node\n - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid",
         "kind": "call",
@@ -1617,6 +1628,28 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
+        },
+        "CodeHashesVotes": {
+          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          }
         },
         "Collateral": {
           "type": "object",

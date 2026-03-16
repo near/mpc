@@ -62,7 +62,7 @@ use primitives::{
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
-use tee::proposal::LauncherHashVotes;
+use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
@@ -1725,6 +1725,11 @@ impl MpcContract {
     /// Returns the current launcher hash votes, showing each participant's vote.
     pub fn launcher_hash_votes(&self) -> LauncherHashVotes {
         self.tee_state.launcher_votes.clone()
+    }
+
+    /// Returns the current code hash votes, showing each participant's vote.
+    pub fn code_hash_votes(&self) -> CodeHashesVotes {
+        self.tee_state.votes.clone()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
@@ -4879,6 +4884,37 @@ mod tests {
             contract.launcher_hash_votes().vote_by_account.is_empty(),
             "votes should be cleared after threshold reached"
         );
+    }
+
+    /// Tests the `code_hash_votes()` view method:
+    /// 1. Starts empty
+    /// 2. After each vote, reflects the correct participant and hash
+    /// 3. After threshold is reached, votes are cleared
+    #[test]
+    fn test_code_hash_votes_view() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let code_hash = MpcDockerImageHash::from([0xAB; 32]);
+
+        assert!(contract.code_hash_votes().proposal_by_account.is_empty());
+
+        for (i, (account, _, _)) in participant_list[..3].iter().enumerate() {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account.clone())
+                .predecessor_account_id(account.clone())
+                .build());
+            contract
+                .vote_code_hash(code_hash.clone())
+                .expect("vote should succeed");
+
+            let votes = &contract.code_hash_votes().proposal_by_account;
+            if i < 2 {
+                assert_eq!(votes.len(), i + 1);
+                assert!(votes.values().all(|v| *v == code_hash));
+            } else {
+                assert!(votes.is_empty(), "votes should be cleared after threshold reached");
+            }
+        }
     }
 
     #[test]
