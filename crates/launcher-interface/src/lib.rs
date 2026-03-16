@@ -7,7 +7,6 @@ pub mod types {
     use mpc_primitives::hash::MpcDockerImageHash;
     use serde::{Deserialize, Serialize};
 
-    /// JSON structure for the approved hashes file written by the MPC node, and read by the launcher.
     #[derive(Debug, Serialize, Deserialize)]
     pub struct ApprovedHashes {
         pub approved_hashes: near_mpc_bounded_collections::NonEmptyVec<DockerSha256Digest>,
