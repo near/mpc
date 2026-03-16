@@ -256,7 +256,13 @@ impl OutgoingConnection {
                                     }
                                 }
 
-                                let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES + payload_size;
+                                let total_message_size_bytes = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_size) {
+                                    Some(size) => size,
+                                    None => {
+                                        tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({payload_size})");
+                                        usize::MAX
+                                    }
+                                };
 
                                 let metric_labels = [
                                     peer_id_string.as_str(),
@@ -268,7 +274,13 @@ impl OutgoingConnection {
                                     .with_label_values(&metric_labels)
                                     .observe(total_message_size_bytes as f64);
 
-                                sent_bytes = sent_bytes.saturating_add(total_message_size_bytes);
+                                sent_bytes = match sent_bytes.checked_add(total_message_size_bytes) {
+                                    Some(size) => size,
+                                    None => {
+                                        tracing::error!("sent_bytes overflow: {sent_bytes} + {total_message_size_bytes}");
+                                        usize::MAX
+                                    }
+                                };
                                 tracking::set_progress(&format!("sent {} bytes", sent_bytes));
                             }
                             _ = futures::StreamExt::next(&mut framed_tls_stream) => {
@@ -660,7 +672,13 @@ async fn incoming_connection_handler(
                 }
             };
 
-            let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES + payload_bytes.len();
+            let total_message_size_bytes = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_bytes.len()) {
+                Some(size) => size,
+                None => {
+                    tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({})", payload_bytes.len());
+                    usize::MAX
+                }
+            };
 
             let packet =
                 Packet::try_from_slice(&payload_bytes).context("Failed to deserialize packet")?;
@@ -691,7 +709,13 @@ async fn incoming_connection_handler(
                 .with_label_values(&metric_labels)
                 .observe(total_message_size_bytes as f64);
 
-            received_bytes = received_bytes.saturating_add(total_message_size_bytes);
+            received_bytes = match received_bytes.checked_add(total_message_size_bytes) {
+                Some(size) => size,
+                None => {
+                    tracing::error!("received_bytes overflow: {received_bytes} + {total_message_size_bytes}");
+                    usize::MAX
+                }
+            };
             tracking::set_progress(&format!(
                 "Received {} bytes from {}",
                 received_bytes, peer_id
