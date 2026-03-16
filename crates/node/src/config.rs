@@ -15,7 +15,8 @@ use std::{
 
 mod start;
 pub use start::{
-    GcpStartConfig, SecretsStartConfig, StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
+    ChainId, DownloadConfigType, GcpStartConfig, NearInitConfig, SecretsStartConfig, StartConfig,
+    TeeAuthorityStartConfig, TeeStartConfig,
 };
 
 mod foreign_chains;
