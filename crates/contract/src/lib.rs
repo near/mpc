@@ -4912,7 +4912,10 @@ mod tests {
                 assert_eq!(votes.len(), i + 1);
                 assert!(votes.values().all(|v| *v == code_hash));
             } else {
-                assert!(votes.is_empty(), "votes should be cleared after threshold reached");
+                assert!(
+                    votes.is_empty(),
+                    "votes should be cleared after threshold reached"
+                );
             }
         }
     }
