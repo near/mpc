@@ -228,7 +228,7 @@ impl OutgoingConnection {
             &format!("TLS connection to {}", target_participant_id),
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
-                let mut sent_bytes: usize = 0;
+                let mut sent_bytes: u64 = 0;
                 let peer_id_string = peer_id.to_string();
 
                 let result: anyhow::Result<()> = async {
@@ -256,11 +256,17 @@ impl OutgoingConnection {
                                     }
                                 }
 
-                                let total_message_size_bytes = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_size) {
-                                    Some(size) => size,
+                                let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_size) {
+                                    Some(size) => match size.try_into() {
+                                        Ok(size) => size,
+                                        Err(_) => {
+                                            tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
+                                            u64::MAX
+                                        }
+                                    },
                                     None => {
                                         tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({payload_size})");
-                                        usize::MAX
+                                        u64::MAX
                                     }
                                 };
 
@@ -278,7 +284,7 @@ impl OutgoingConnection {
                                     Some(size) => size,
                                     None => {
                                         tracing::error!("sent_bytes overflow: {sent_bytes} + {total_message_size_bytes}");
-                                        usize::MAX
+                                        u64::MAX
                                     }
                                 };
                                 tracking::set_progress(&format!("sent {} bytes", sent_bytes));
@@ -652,7 +658,7 @@ async fn incoming_connection_handler(
         return Ok(());
     }
 
-    let mut received_bytes: usize = 0;
+    let mut received_bytes: u64 = 0;
     let mut framed_tls_stream_reader = configure_framed_stream(tls_stream);
 
     let peer_id_string = peer_id.to_string();
@@ -671,11 +677,17 @@ async fn incoming_connection_handler(
                 }
             };
 
-            let total_message_size_bytes = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_bytes.len()) {
-                Some(size) => size,
+            let total_message_size_bytes: u64 = match FRAME_HEADER_SIZE_BYTES.checked_add(payload_bytes.len()) {
+                Some(size) => match size.try_into() {
+                    Ok(size) => size,
+                    Err(_) => {
+                        tracing::error!("total_message_size_bytes usize->u64 overflow: {size}");
+                        u64::MAX
+                    }
+                },
                 None => {
                     tracing::error!("total_message_size_bytes overflow: FRAME_HEADER_SIZE_BYTES({FRAME_HEADER_SIZE_BYTES}) + payload_size({})", payload_bytes.len());
-                    usize::MAX
+                    u64::MAX
                 }
             };
 
@@ -712,7 +724,7 @@ async fn incoming_connection_handler(
                 Some(size) => size,
                 None => {
                     tracing::error!("received_bytes overflow: {received_bytes} + {total_message_size_bytes}");
-                    usize::MAX
+                    u64::MAX
                 }
             };
             tracking::set_progress(&format!(
