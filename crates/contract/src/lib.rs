@@ -4892,13 +4892,16 @@ mod tests {
     /// 3. After threshold is reached, votes are cleared
     #[test]
     fn test_code_hash_votes_view() {
-        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let num_participants = 4;
+        let threshold = 3;
+        let (mut contract, participants, _) =
+            setup_tee_test_contract(num_participants, threshold);
         let participant_list = participants.participants();
         let code_hash = MpcDockerImageHash::from([0xAB; 32]);
 
         assert!(contract.code_hash_votes().proposal_by_account.is_empty());
 
-        for (i, (account, _, _)) in participant_list[..3].iter().enumerate() {
+        for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(account.clone())
                 .predecessor_account_id(account.clone())
@@ -4908,7 +4911,7 @@ mod tests {
                 .expect("vote should succeed");
 
             let votes = &contract.code_hash_votes().proposal_by_account;
-            if i < 2 {
+            if i < (threshold - 1) as usize {
                 assert_eq!(votes.len(), i + 1);
                 assert!(votes.values().all(|v| *v == code_hash));
             } else {
