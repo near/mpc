@@ -359,11 +359,11 @@ An alternative AES transport key establishment protocol that eliminates direct o
 ### Protocol
 
 1. **TLS key registration** — Both the migration CVM and the node CVM post their TLS public keys on the blockchain.
-2. **Operator authorization** — Either CVM communicates with the operator, who returns a signature (`Signature_operator`) authorizing the start of communication.
-3. **Seed generation** — The migration CVM picks a random value `rand` and computes `AES-GCM-seed = H(Signature_operator, rand)`. Mixing the operator signature into the hash ensures the seed cannot be produced without prior operator authorization.
+2. **Operator authorization** — Either CVM communicates with the operator, who returns a signature (`sig_operator`) authorizing the start of communication.
+3. **Seed generation** — The migration CVM picks a random value `rand` and computes `AES-GCM-seed = H(sig_operator, rand)`. Mixing the operator signature into the hash ensures the seed cannot be produced without prior operator authorization.
 4. **On-chain broadcast** — The migration CVM posts the following on the blockchain:
-   - `ct = Enc_{pk_node}(Signature_operator || AES-GCM-seed || rand)` — the seed material encrypted to the operator's public key so that only authorized CVMs (who can obtain decryption via the operator) can recover it.
-5. **Node-side verification & derivation** — The node CVM reads the ciphertext from the blockchain, confirms `ct` coming from the migration CVM, decrypts it, verifies `Signature_operator`, checks that `AES-GCM-seed == H(Signature_operator, rand)`.
+   - `ct = Enc_{pk_node}(sig_operator || AES-GCM-seed || rand)` — the seed material encrypted to the node's public key so that only authorized node CVM can recover it.
+5. **Node-side verification & derivation** — The node CVM reads the ciphertext from the blockchain, confirms `ct` coming from the migration CVM, decrypts it, verifies `sig_operator`, checks that `AES-GCM-seed == H(sig_operator, rand)`.
 6. **Shared key** — Both CVMs independently derive the AES-GCM key from `AES-GCM-seed`. From this point they can use AES-GCM encrypted communication over TLS (defense-in-depth).
 
 ```mermaid
@@ -390,14 +390,14 @@ sequenceDiagram
     Note over OP,NODE: Step 2 — Operator Authorization
     MIG ->> OP: Request authorization (with attestation + pk_cvm)
     OP ->> OP: Verify CVM attestation
-    OP -->> MIG: Signature_operator (authorizes communication)
+    OP -->> MIG: sig_operator (authorizes communication)
 
     Note over MIG: Step 3 — Seed Generation
     MIG ->> MIG: Pick random rand
-    MIG ->> MIG: Compute AES-GCM-seed = H(Signature_operator, rand)
+    MIG ->> MIG: Compute AES-GCM-seed = H(sig_operator, rand)
 
     Note over MIG,BC: Step 4 — On-Chain Broadcast
-    MIG ->> MIG: Encrypt: ct = Enc_{pk_node}(Signature_operator || AES-GCM-seed || rand)
+    MIG ->> MIG: Encrypt: ct = Enc_{pk_node}(sig_operator || AES-GCM-seed || rand)
     Note right of MIG: KEM-DEM paradigm can be used
     MIG ->> BC: Post ct
 
@@ -405,8 +405,8 @@ sequenceDiagram
     NODE ->> BC: Read ct
     BC -->> NODE: ct
     NODE ->> NODE: Decrypt ct with operator key
-    NODE ->> NODE: Verify(Signature_operator, pk_operator)
-    NODE ->> NODE: Verify AES-GCM-seed == H(Signature_operator, rand)
+    NODE ->> NODE: Verify(sig_operator, pk_operator)
+    NODE ->> NODE: Verify AES-GCM-seed == H(sig_operator, rand)
 
     Note over MIG,NODE: Step 6 — Shared Key Established
     MIG ->> MIG: Derive AES-GCM key from AES-GCM-seed
@@ -418,7 +418,7 @@ sequenceDiagram
 
 | Property | How It's Achieved |
 |----------|-------------------|
-| **Operator authorization required** | AES-GCM-seed is derived from `H(Signature_operator, rand)` — cannot be produced without a valid operator signature |
+| **Operator authorization required** | AES-GCM-seed is derived from `H(sig_operator, rand)` — cannot be produced without a valid operator signature |
 | **Confidentiality vs Host** | Seed material is encrypted to `pk_operator`; host and on-chain observers see only ciphertext |
 | **Migration CVM authenticity** | Ciphertext is signed by the migration CVM; node CVM verifies before decryption |
 | **No direct key provisioning** | Operator never handles the AES key itself — only authorizes its creation via a signature |
@@ -466,19 +466,19 @@ Simon's protocol as described in section 6 is vulnerable when the smart contract
 
 **Attack 1 — pk_node substitution.** In Simon's protocol, the migration CVM reads `pk_node` from the smart contract and encrypts the seed material to it. If the smart contract is compromised, the adversary can register a fake `pk_node` (one they hold the private key for). The migration CVM has no way to distinguish the fake key from the real one — it encrypts to the adversary's key. The adversary decrypts and learns the seed. This attack is only possible because the operator is not checking the attestation from the node, which would make supplying a fake `pk_node` impossible.
 
-**Attack 2 — Ciphertext forgery.** The operator's authorization signature `Signature_operator` is sent over the network and is visible to the adversary (for example, by using the compromised host). Since the smart contract is also compromised, the adversary can:
-1. Observe `Signature_operator` on the network
-2. Pick their own random value `rand'` and compute `seed' = H(Signature_operator, rand')`
-3. Construct a valid ciphertext `ct' = Enc(pk_node, Signature_operator || seed' || rand')` — they know the real `pk_node` since it's public
+**Attack 2 — Ciphertext forgery.** The operator's authorization signature `sig_operator` is sent over the network and is visible to the adversary (for example, by using the compromised host). Since the smart contract is also compromised, the adversary can:
+1. Observe `sig_operator` on the network
+2. Pick their own random value `rand'` and compute `seed' = H(sig_operator, rand')`
+3. Construct a valid ciphertext `ct' = Enc(pk_node, sig_operator || seed' || rand')` — they know the real `pk_node` since it's public
 4. Post `ct'` on the compromised smart contract, replacing the real ciphertext
 
-The node reads `ct'`, decrypts, and all verification checks pass: the operator signature is genuine, and `seed' == H(Signature_operator, rand')` holds. The node accepts `seed'` as the AES-GCM-seed — but the adversary knows it too.
+The node reads `ct'`, decrypts, and all verification checks pass: the operator signature is genuine, and `seed' == H(sig_operator, rand')` holds. The node accepts `seed'` as the AES-GCM-seed — but the adversary knows it too.
 
-Note that the hash-mixing step `H(Signature_operator, rand)` does not help here. It was intended to bind the seed to the operator's authorization, but since `Signature_operator` is publicly visible, any adversary who sees it can compute the hash with their own random value.
+Note that the hash-mixing step `H(sig_operator, rand)` does not help here. It was intended to bind the seed to the operator's authorization, but since `sig_operator` is publicly visible, any adversary who sees it can compute the hash with their own random value.
 
 ### Key simplifications vs Simon's proposal
 
-- **No hash-mixing**: `AES-GCM-seed = H(Signature_operator, rand)` adds no security because `Signature_operator` is visible on the network. The AES key is simply a fresh random value generated by the migration CVM.
+- **No hash-mixing**: `AES-GCM-seed = H(sig_operator, rand)` adds no security because `sig_operator` is visible on the network. The AES key is simply a fresh random value generated by the migration CVM.
 - **No on-chain ciphertext broadcast as a separate concept**: The ciphertext can be delivered via any channel — it's encrypted and signed, so the delivery channel doesn't matter.
 - **No separate seed/key distinction**: One fresh random value serves as the AES key directly.
 
