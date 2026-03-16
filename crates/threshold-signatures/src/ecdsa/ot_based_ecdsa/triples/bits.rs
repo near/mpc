@@ -216,7 +216,11 @@ impl_op_ex!(^= |u: &mut DoubleBitVector, v: &DoubleBitVector| { u.xor_mut(v) });
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct BitMatrix(Vec<BitVector>);
 
-impl_secret_debug!(BitMatrix, |self| "BitMatrix(<redacted>, height={})", self.0.len());
+impl_secret_debug!(
+    BitMatrix,
+    |self| "BitMatrix(<redacted>, height={})",
+    self.0.len()
+);
 
 impl BitMatrix {
     /// Create a random matrix of a certain chunk size.
