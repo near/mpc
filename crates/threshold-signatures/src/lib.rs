@@ -12,6 +12,18 @@
 /// ```ignore
 /// impl_secret_debug!(PresignOutput { show: [big_r], redact: [k, sigma] });
 /// ```
+///
+/// # Generic types
+/// Wrap bounds in braces to avoid macro ambiguity with `>`:
+/// ```ignore
+/// impl_secret_debug!({C: Ciphersuite} KeygenOutput<C> { show: [public_key], redact: [private_share] });
+/// ```
+///
+/// # Custom format with metadata
+/// When non-secret metadata should be included alongside the redaction:
+/// ```ignore
+/// impl_secret_debug!(BitMatrix, |self| "BitMatrix(<redacted>, height={})", self.0.len());
+/// ```
 macro_rules! impl_secret_debug {
     ($name:ident) => {
         impl ::core::fmt::Debug for $name {
@@ -27,6 +39,23 @@ macro_rules! impl_secret_debug {
                     $(.field(stringify!($show), &self.$show))*
                     $(.field(stringify!($redact), &"<redacted>"))*
                     .finish()
+            }
+        }
+    };
+    ({ $($impl_generics:tt)* } $name:ident < $($type_param:ident),+ > { show: [$($show:ident),* $(,)?], redact: [$($redact:ident),* $(,)?] }) => {
+        impl< $($impl_generics)* > ::core::fmt::Debug for $name< $($type_param),+ > {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                f.debug_struct(stringify!($name))
+                    $(.field(stringify!($show), &self.$show))*
+                    $(.field(stringify!($redact), &"<redacted>"))*
+                    .finish()
+            }
+        }
+    };
+    ($name:ident, |$self:ident| $fmt:literal $(, $arg:expr)*) => {
+        impl ::core::fmt::Debug for $name {
+            fn fmt(&$self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                write!(f, $fmt $(, $arg)*)
             }
         }
     };
@@ -69,7 +98,6 @@ use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::Protocol;
 pub use crate::thresholds::{MaxMalicious, ReconstructionLowerBound};
 use rand_core::CryptoRngCore;
-use std::fmt;
 use std::marker::Send;
 
 use frost_core::serialization::SerializableScalar;
@@ -89,14 +117,7 @@ pub struct KeygenOutput<C: Ciphersuite> {
     pub public_key: VerifyingKey<C>,
 }
 
-impl<C: Ciphersuite> fmt::Debug for KeygenOutput<C> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("KeygenOutput")
-            .field("private_share", &"<redacted>")
-            .field("public_key", &self.public_key)
-            .finish()
-    }
-}
+impl_secret_debug!({C: Ciphersuite} KeygenOutput<C> { show: [public_key], redact: [private_share] });
 
 /// This is a necessary element to be able to derive different keys
 /// from signing shares.

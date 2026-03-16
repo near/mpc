@@ -40,14 +40,7 @@ pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
     pub commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>>,
 }
 
-impl<C: Ciphersuite + Send + 'static> std::fmt::Debug for PresignOutput<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PresignOutput")
-            .field("nonces", &"<redacted>")
-            .field("commitments_map", &self.commitments_map)
-            .finish()
-    }
-}
+impl_secret_debug!({C: Ciphersuite + Send + 'static} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
 
 /// Maximum incoming buffer entries for the FROST presign protocol.
 pub(crate) const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
