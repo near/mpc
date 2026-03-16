@@ -201,6 +201,8 @@ impl InitConfigArgs {
             download_genesis: Some(self.download_genesis),
             download_genesis_url: self.download_genesis_url,
             download_genesis_records_url: self.download_genesis_records_url,
+            rpc_addr: None,
+            network_addr: None,
         }
     }
 }

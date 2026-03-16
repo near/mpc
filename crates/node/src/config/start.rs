@@ -54,6 +54,12 @@ pub struct NearInitConfig {
     pub download_genesis_url: Option<String>,
     /// Custom URL to download the genesis records from.
     pub download_genesis_records_url: Option<String>,
+    /// Override the NEAR node RPC listen address (e.g. "0.0.0.0:3031").
+    /// Useful when running multiple nodes on the same machine.
+    pub rpc_addr: Option<String>,
+    /// Override the NEAR node network (indexer) listen address (e.g. "0.0.0.0:24568").
+    /// Useful when running multiple nodes on the same machine.
+    pub network_addr: Option<String>,
 }
 
 impl NearInitConfig {
@@ -250,7 +256,7 @@ impl StartConfig {
         near_init.run_init(&self.home_dir)?;
 
         // Patch the NEAR node config the same way start.sh does.
-        Self::patch_near_config(&near_config_path, &near_init.chain_id, &self.node)?;
+        Self::patch_near_config(&near_config_path, near_init, &self.node)?;
 
         Ok(())
     }
@@ -259,7 +265,7 @@ impl StartConfig {
     /// behaviour of `update_near_node_config()` in `start.sh`.
     fn patch_near_config(
         config_path: &Path,
-        chain_id: &str,
+        near_init: &NearInitConfig,
         node_config: &ConfigFile,
     ) -> anyhow::Result<()> {
         let raw = std::fs::read_to_string(config_path)
@@ -272,7 +278,7 @@ impl StartConfig {
         // store.load_mem_tries_for_tracked_shards = true
         config["store"]["load_mem_tries_for_tracked_shards"] = serde_json::Value::Bool(true);
 
-        let is_localnet = chain_id == "mpc-localnet";
+        let is_localnet = near_init.chain_id == LOCALNET_CHAIN_ID;
         if is_localnet {
             config["state_sync_enabled"] = serde_json::Value::Bool(false);
         } else {
@@ -283,6 +289,14 @@ impl StartConfig {
         // Track the shard that hosts the MPC contract.
         let contract_id = node_config.indexer.mpc_contract_id.to_string();
         config["tracked_shards_config"] = serde_json::json!({ "Accounts": [contract_id] });
+
+        // Override listen addresses when running multiple nodes on one machine.
+        if let Some(rpc_addr) = &near_init.rpc_addr {
+            config["rpc"]["addr"] = serde_json::Value::String(rpc_addr.clone());
+        }
+        if let Some(network_addr) = &near_init.network_addr {
+            config["network"]["addr"] = serde_json::Value::String(network_addr.clone());
+        }
 
         let patched = serde_json::to_string_pretty(&config)
             .context("failed to re-serialize NEAR config.json")?;
