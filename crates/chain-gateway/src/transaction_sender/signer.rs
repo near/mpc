@@ -26,12 +26,16 @@ impl TransactionSigner {
 
     /// Atomically increments the nonce and returns the new value
     fn make_nonce(&self, last_known_block_height: u64) -> u64 {
-        // We need a block height of 18 trillion to overflow here. This is unlikely to cause an
-        // issue in our lifetimes.
-        let min_nonce = AccessKey::ACCESS_KEY_NONCE_RANGE_MULTIPLIER * last_known_block_height;
-        // since we own `nonce`, it's fine to unwrap here
-        let mut nonce = self.nonce.lock().unwrap();
-        let new_nonce = std::cmp::max(min_nonce, *nonce + 1);
+        let min_nonce = AccessKey::ACCESS_KEY_NONCE_RANGE_MULTIPLIER
+            .checked_mul(last_known_block_height)
+            .expect("we don't expect to exceed a block height of 18 trillion");
+        let mut nonce = self.nonce.lock().expect("require non-posioned mutex");
+        let new_nonce = std::cmp::max(
+            min_nonce,
+            (*nonce)
+                .checked_add(1)
+                .expect("nonce should be much lower than U64::MAX"),
+        );
         *nonce = new_nonce;
         new_nonce
     }
