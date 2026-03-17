@@ -1729,7 +1729,7 @@ dependencies = [
  "near-account-id 2.5.0",
  "near-async",
  "near-client",
- "near-crypto 2.10.7",
+ "near-crypto 2.11.0-rc.2",
  "near-indexer",
  "near-indexer-primitives",
  "near-o11y",

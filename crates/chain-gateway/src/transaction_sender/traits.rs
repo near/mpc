@@ -53,7 +53,7 @@ where
         tracing::info!(
             tx_hash = ?tx_hash,
             public_key = ?signer.public_key(),
-            nonce = transaction.transaction.nonce(),
+            nonce = ?transaction.transaction.nonce(),
             "sending transaction",
         );
 

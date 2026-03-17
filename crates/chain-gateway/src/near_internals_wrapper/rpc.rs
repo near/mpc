@@ -5,12 +5,15 @@ use crate::{errors::NearRpcError, primitives::SubmitSignedTransaction};
 /// Arc-Wrapper around near-internal handler struct
 #[derive(Clone)]
 pub(crate) struct NearRpcActorHandle {
-    rpc_handler: Arc<near_async::multithread::MultithreadRuntimeHandle<near_client::RpcHandler>>,
+    rpc_handler:
+        Arc<near_async::multithread::MultithreadRuntimeHandle<near_client::RpcHandlerActor>>,
 }
 
 impl NearRpcActorHandle {
     pub(crate) fn new(
-        rpc_handler: near_async::multithread::MultithreadRuntimeHandle<near_client::RpcHandler>,
+        rpc_handler: near_async::multithread::MultithreadRuntimeHandle<
+            near_client::RpcHandlerActor,
+        >,
     ) -> Self {
         Self {
             rpc_handler: Arc::new(rpc_handler),
