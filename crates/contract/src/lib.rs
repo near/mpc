@@ -1540,11 +1540,13 @@ impl MpcContract {
 
     /// Returns the current OS measurement votes, showing each participant's vote.
     pub fn os_measurement_votes(&self) -> MeasurementVotes {
+        log!("os_measurement_votes");
         self.tee_state.measurement_votes.clone()
     }
 
     /// Returns all currently allowed OS measurements.
     pub fn allowed_os_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+        log!("allowed_os_measurements");
         self.tee_state.get_allowed_measurements()
     }
 
