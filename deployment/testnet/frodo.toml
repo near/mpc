@@ -20,6 +20,8 @@ home_dir = "/data"
 [mpc_config.near_init]
 chain_id = "testnet"
 boot_nodes = ""
+download_genesis = true
+download_config = "rpc"
 
 [mpc_config.secrets]
 secret_store_key_hex = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -31,10 +33,11 @@ type = "local"
 [mpc_config.node]
 my_near_account_id = "$FRODO_ACCOUNT"
 near_responder_account_id = "$FRODO_ACCOUNT"
-number_of_responder_keys = 1
+number_of_responder_keys = 50
 web_ui = "0.0.0.0:8080"
 migration_web_ui = "0.0.0.0:8078"
-cores = 4
+pprof_bind_address = "0.0.0.0:34001"
+cores = 12
 
 [mpc_config.node.indexer]
 validate_genesis = false
@@ -42,16 +45,17 @@ sync_mode = "Latest"
 concurrency = 1
 mpc_contract_id = "$MPC_CONTRACT_ACCOUNT"
 finality = "optimistic"
+port_override = 80
 
 [mpc_config.node.triple]
 concurrency = 2
-desired_triples_to_buffer = 128
+desired_triples_to_buffer = 1000000
 timeout_sec = 60
 parallel_triple_generation_stagger_time_sec = 1
 
 [mpc_config.node.presignature]
-concurrency = 4
-desired_presignatures_to_buffer = 64
+concurrency = 16
+desired_presignatures_to_buffer = 8192
 timeout_sec = 60
 
 [mpc_config.node.signature]
