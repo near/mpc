@@ -6,10 +6,10 @@ rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 port_mappings = [
-    { src = 8080, dst = 8080 },
-    { src = 3030, dst = 3030 },
-    { src = 80, dst = 80 },
-    { src = 24567, dst = 24567 },
+    { host =8080, container =8080 },
+    { host =3030, container =3030 },
+    { host =80, container =80 },
+    { host =24567, container =24567 },
 ]
 
 [mpc_config]

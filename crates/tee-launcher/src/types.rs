@@ -78,14 +78,14 @@ pub(crate) struct HostEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PortMapping {
-    pub(crate) src: NonZeroU16,
-    pub(crate) dst: NonZeroU16,
+    pub(crate) host: NonZeroU16,
+    pub(crate) container: NonZeroU16,
 }
 
 impl PortMapping {
     /// Returns e.g. `"11780:11780"` for use in docker-compose port lists.
     pub(crate) fn docker_compose_value(&self) -> String {
-        format!("{}:{}", self.src, self.dst)
+        format!("{}:{}", self.host, self.container)
     }
 }
 
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn port_mapping_valid_deserialization() {
         // given
-        let json = serde_json::json!({"src": 11780, "dst": 11780});
+        let json = serde_json::json!({"host": 11780, "container": 11780});
 
         // when
         let result = serde_json::from_value::<PortMapping>(json);
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn port_mapping_rejects_zero_port() {
         // given
-        let json = serde_json::json!({"src": 0, "dst": 11780});
+        let json = serde_json::json!({"host": 0, "container": 11780});
 
         // when
         let result = serde_json::from_value::<PortMapping>(json);
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn port_mapping_rejects_out_of_range_port() {
         // given
-        let json = serde_json::json!({"src": 65536, "dst": 11780});
+        let json = serde_json::json!({"host": 65536, "container": 11780});
 
         // when
         let result = serde_json::from_value::<PortMapping>(json);
@@ -193,8 +193,8 @@ mod tests {
     fn port_mapping_docker_compose_value() {
         // given
         let mapping = PortMapping {
-            src: NonZeroU16::new(11780).unwrap(),
-            dst: NonZeroU16::new(11780).unwrap(),
+            host: NonZeroU16::new(11780).unwrap(),
+            container: NonZeroU16::new(11780).unwrap(),
         };
 
         // when
@@ -218,7 +218,7 @@ rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 
-port_mappings = [{ src = 11780, dst = 11780 }]
+port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_config]
 home_dir = "/data"
@@ -248,7 +248,7 @@ rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 
-port_mappings = [{ src = 11780, dst = 11780 }]
+port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_config]
 home_dir = "/data"

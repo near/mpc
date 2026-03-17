@@ -522,8 +522,8 @@ mod tests {
 
     fn port_mappings_with_port() -> Vec<PortMapping> {
         vec![PortMapping {
-            src: NonZeroU16::new(11780).unwrap(),
-            dst: NonZeroU16::new(11780).unwrap(),
+            host: NonZeroU16::new(11780).unwrap(),
+            container: NonZeroU16::new(11780).unwrap(),
         }]
     }
 

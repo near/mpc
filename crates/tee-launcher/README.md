@@ -38,8 +38,8 @@ rpc_max_attempts = 20
 # Optional: force selection of a specific digest (must be in approved list)
 # mpc_hash_override = "sha256:abcd..."
 port_mappings = [
-  { src = 11780, dst = 11780 },
-  { src = 2200, dst = 2200 },
+  { host = 11780, container = 11780 },
+  { host = 2200, container = 2200 },
 ]
 
 # Opaque MPC node configuration.
@@ -62,7 +62,7 @@ port_mappings = [
 | `rpc_max_attempts` | `20` | Maximum registry API retry attempts |
 | `mpc_hash_override` | (none) | Optional: force a specific `sha256:` digest (must appear in approved list) |
 
-| `port_mappings` | `[]` | Port mappings forwarded to the MPC container (`{ src, dst }` pairs) |
+| `port_mappings` | `[]` | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 
 ### `[mpc_config]`
 
