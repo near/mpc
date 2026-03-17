@@ -127,7 +127,7 @@ mod tests {
 
         assert_eq!(
             sub.latest().unwrap_err(),
-            ChainGatewayError::ViewClient {
+            ChainGatewayError::ViewError {
                 op: crate::errors::ChainGatewayOp::ViewQuery {
                     account_id: account_id.to_string(),
                     method_name
@@ -147,18 +147,18 @@ mod tests {
             }))
             .build();
 
+        let contract_id: AccountId = "test.testnet".parse().unwrap();
+        let method_name: String = "get_value".into();
         let mut sub = ContractMethodSubscription::<String>::new(
             viewer,
-            "test.testnet".parse().unwrap(),
-            "get_value",
+            contract_id.clone(),
+            &method_name,
             b"{}".to_vec(),
         )
         .await;
 
-        assert_matches!(
-            sub.latest().unwrap_err(),
-            ChainGatewayError::Deserialization { .. }
-        );
+        let err = sub.latest().unwrap_err();
+        assert_matches!(err, ChainGatewayError::Deserialization { .. });
     }
 
     #[tokio::test(start_paused = true)]

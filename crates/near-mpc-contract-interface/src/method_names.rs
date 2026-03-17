@@ -74,4 +74,5 @@ pub const ALLOWED_DOCKER_IMAGE_HASHES: &str = "allowed_docker_image_hashes";
 pub const ALLOWED_LAUNCHER_COMPOSE_HASHES: &str = "allowed_launcher_compose_hashes";
 pub const ALLOWED_LAUNCHER_IMAGE_HASHES: &str = "allowed_launcher_image_hashes";
 pub const LAUNCHER_HASH_VOTES: &str = "launcher_hash_votes";
+pub const CODE_HASH_VOTES: &str = "code_hash_votes";
 pub const MIGRATION_INFO: &str = "migration_info";
