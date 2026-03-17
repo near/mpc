@@ -442,7 +442,7 @@ mod tests {
             .build();
 
         // Initial channel value matches what view_raw would return (wrapping errors)
-        let init_channel = mock_response.map_err(|err| ChainGatewayError::ViewClient {
+        let init_channel = mock_response.map_err(|err| ChainGatewayError::ViewError {
             op: ChainGatewayOp::ViewQuery {
                 account_id: call.contract_id.to_string(),
                 method_name: call.method_name.to_string(),
@@ -481,7 +481,7 @@ mod tests {
                 observed_at: at.into(),
                 value: vec![b],
             }),
-            Err(err) => Err(ChainGatewayError::ViewClient {
+            Err(err) => Err(ChainGatewayError::ViewError {
                 op: ChainGatewayOp::ViewQuery {
                     account_id: call.contract_id.to_string(),
                     method_name: call.method_name,
