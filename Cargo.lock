@@ -4985,7 +4985,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-interface"
-version = "3.6.0"
+version = "3.7.0"
 dependencies = [
  "assert_matches",
  "derive_more 2.1.1",
