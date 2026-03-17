@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 /// CLI arguments parsed from environment variables via clap.
 #[derive(Parser, Debug)]
 #[command(name = "tee-launcher")]
-pub struct CliArgs {
+pub(crate) struct CliArgs {
     /// Platform mode: TEE or NONTEE
     #[arg(long, env = "PLATFORM")]
-    pub platform: Platform,
+    pub(crate) platform: Platform,
 
     #[arg(long, env = "DOCKER_CONTENT_TRUST")]
     // ensure that `docker_content_trust` is enabled.
@@ -22,7 +22,7 @@ pub struct CliArgs {
 
     /// Fallback image digest when the approved-hashes file is absent
     #[arg(long, env = "DEFAULT_IMAGE_DIGEST")]
-    pub default_image_digest: DockerSha256Digest,
+    pub(crate) default_image_digest: DockerSha256Digest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -32,7 +32,7 @@ enum DockerContentTrust {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum Platform {
+pub(crate) enum Platform {
     #[value(name = "TEE")]
     Tee,
     #[value(name = "NONTEE")]
@@ -41,60 +41,60 @@ pub enum Platform {
 
 /// Typed representation of the dstack user config file (`/tapp/user_config`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
-    pub launcher_config: LauncherConfig,
-    pub docker_command_config: DockerLaunchFlags,
+pub(crate) struct Config {
+    pub(crate) launcher_config: LauncherConfig,
+    pub(crate) docker_command_config: DockerLaunchFlags,
     /// Opaque MPC node configuration table.
     /// The launcher does not interpret these fields — they are re-serialized
     /// to a TOML string, written to a file on disk, and mounted into the
     /// container for the MPC binary to consume via `start-with-config-file`.
-    pub mpc_config: toml::Table,
+    pub(crate) mpc_config: toml::Table,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LauncherConfig {
+pub(crate) struct LauncherConfig {
     /// Docker image tags to search (from `MPC_IMAGE_TAGS`, comma-separated).
-    pub image_tags: NonEmptyVec<String>,
+    pub(crate) image_tags: NonEmptyVec<String>,
     /// Docker image name (from `MPC_IMAGE_NAME`).
-    pub image_name: String,
+    pub(crate) image_name: String,
     /// Docker registry (from `MPC_REGISTRY`).
-    pub registry: String,
+    pub(crate) registry: String,
     /// Per-request timeout for registry RPC calls (from `RPC_REQUEST_TIMEOUT_SECS`).
-    pub rpc_request_timeout_secs: u64,
+    pub(crate) rpc_request_timeout_secs: u64,
     /// Delay between registry RPC retries (from `RPC_REQUEST_INTERVAL_SECS`).
-    pub rpc_request_interval_secs: u64,
+    pub(crate) rpc_request_interval_secs: u64,
     /// Maximum registry RPC attempts (from `RPC_MAX_ATTEMPTS`).
-    pub rpc_max_attempts: u32,
+    pub(crate) rpc_max_attempts: u32,
     /// Optional hash override that bypasses registry lookup (from `MPC_HASH_OVERRIDE`).
-    pub mpc_hash_override: Option<DockerSha256Digest>,
+    pub(crate) mpc_hash_override: Option<DockerSha256Digest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DockerLaunchFlags {
-    pub port_mappings: PortMappings,
+pub(crate) struct DockerLaunchFlags {
+    pub(crate) port_mappings: PortMappings,
 }
 
 /// A `--add-host` entry: `hostname:IPv4`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HostEntry {
-    pub hostname: Host<String>,
-    pub ip: Ipv4Addr,
+pub(crate) struct HostEntry {
+    pub(crate) hostname: Host<String>,
+    pub(crate) ip: Ipv4Addr,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PortMappings {
-    pub ports: Vec<PortMapping>,
+pub(crate) struct PortMappings {
+    pub(crate) ports: Vec<PortMapping>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PortMapping {
+pub(crate) struct PortMapping {
     pub(crate) src: NonZeroU16,
     pub(crate) dst: NonZeroU16,
 }
 
 impl PortMapping {
     /// Returns e.g. `"11780:11780"` for use in docker-compose port lists.
-    pub fn docker_compose_value(&self) -> String {
+    pub(crate) fn docker_compose_value(&self) -> String {
         format!("{}:{}", self.src, self.dst)
     }
 }

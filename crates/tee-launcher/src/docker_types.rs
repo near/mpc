@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 /// Partial response <https://auth.docker.io/token>
 #[derive(Debug, Deserialize, Serialize)]
-pub struct DockerTokenResponse {
-    pub token: String,
+pub(crate) struct DockerTokenResponse {
+    pub(crate) token: String,
 }
 
 /// Response from `GET /v2/{name}/manifests/{reference}`.
@@ -14,7 +14,7 @@ pub struct DockerTokenResponse {
 /// - Docker V2 / OCI manifest → single-platform manifest with a config digest
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "mediaType")]
-pub enum ManifestResponse {
+pub(crate) enum ManifestResponse {
     /// Multi-platform manifest (OCI image index).
     #[serde(rename = "application/vnd.oci.image.index.v1+json")]
     ImageIndex { manifests: Vec<ManifestEntry> },
@@ -29,20 +29,20 @@ pub enum ManifestResponse {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ManifestEntry {
-    pub digest: String,
-    pub platform: ManifestPlatform,
+pub(crate) struct ManifestEntry {
+    pub(crate) digest: String,
+    pub(crate) platform: ManifestPlatform,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ManifestPlatform {
-    pub architecture: String,
-    pub os: String,
+pub(crate) struct ManifestPlatform {
+    pub(crate) architecture: String,
+    pub(crate) os: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ManifestConfig {
-    pub digest: DockerSha256Digest,
+pub(crate) struct ManifestConfig {
+    pub(crate) digest: DockerSha256Digest,
 }
 
 #[cfg(test)]
