@@ -134,14 +134,6 @@ pub(crate) struct AllowedDockerImageHashes {
 }
 
 impl AllowedDockerImageHashes {
-    /// Creates from a list of proposals (for migration).
-    /// TODO(#2434): remove after v3.6.0 migration is deployed
-    pub fn from_proposals(proposals: Vec<AllowedMpcDockerImage>) -> Self {
-        Self {
-            allowed_tee_proposals: proposals,
-        }
-    }
-
     /// Checks if a Docker image hash is still valid (not expired).
     fn valid_entries(&self, tee_upgrade_deadline_duration: Duration) -> Vec<AllowedMpcDockerImage> {
         let current_time = Timestamp::now();
@@ -325,12 +317,6 @@ impl AllowedLauncherImages {
             .iter()
             .map(|e| e.launcher_hash.clone())
             .collect()
-    }
-
-    /// Creates from a list of entries (for migration).
-    /// TODO(#2434): remove after v3.6.0 migration is deployed
-    pub fn from_entries(entries: Vec<AllowedLauncherImage>) -> Self {
-        Self { entries }
     }
 }
 
