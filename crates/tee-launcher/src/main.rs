@@ -336,7 +336,7 @@ async fn get_manifest_digest(
 }
 
 /// Returns if the given image digest is valid (pull + manifest + digest match).
-///    Does NOT extend RTMR3 and does NOT run the container.
+/// Does NOT extend RTMR3 and does NOT run the container.
 async fn validate_image_hash(
     launcher_config: &LauncherConfig,
     image_hash: DockerSha256Digest,
