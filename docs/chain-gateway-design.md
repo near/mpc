@@ -483,6 +483,7 @@ pub trait QueryViewFunction: Send + Sync + 'static {
 pub trait IsSyncing: Send + Sync + 'static {
     /// Returns whether the node is currently syncing.
     async fn is_syncing(&self) -> Result<bool, Error>;
+}
 ```
 
 
