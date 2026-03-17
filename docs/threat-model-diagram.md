@@ -34,7 +34,7 @@ graph TB
     %% ───────────────────────────────────────────────
     subgraph OPERATOR["Operator Secure Environment (Trusted)"]
         direction TB
-        OP_KEYS["Operator Keys:<br/>- NEAR account key (operator key)<br/>- TLS keypair<br/>- AES_signing keypair"]
+        OP_KEYS["Operator Keys:<br/>- NEAR account key (operator key)<br/>- AES_signing keypair"]
         AES_GEN["AES Transport Key Generation<br/>(256-bit transport_AES_key)"]
     end
 
@@ -404,7 +404,7 @@ sequenceDiagram
     Note over NODE: Step 5 — Verification & Derivation
     NODE ->> BC: Read ct
     BC -->> NODE: ct
-    NODE ->> NODE: Decrypt ct with operator key
+    NODE ->> NODE: Decrypt ct with sk_node
     NODE ->> NODE: Verify(sig_operator, pk_operator)
     NODE ->> NODE: Verify AES-GCM-seed == H(sig_operator, rand)
 
@@ -419,7 +419,7 @@ sequenceDiagram
 | Property | How It's Achieved |
 |----------|-------------------|
 | **Operator authorization required** | AES-GCM-seed is derived from `H(sig_operator, rand)` — cannot be produced without a valid operator signature |
-| **Confidentiality vs Host** | Seed material is encrypted to `pk_operator`; host and on-chain observers see only ciphertext |
+| **Confidentiality vs Host** | Seed material is encrypted to `pk_node`; host and on-chain observers see only ciphertext |
 | **Migration CVM authenticity** | Ciphertext is signed by the migration CVM; node CVM verifies before decryption |
 | **No direct key provisioning** | Operator never handles the AES key itself — only authorizes its creation via a signature |
 | **On-chain availability** | Encrypted seed is posted on the blockchain, allowing any authorized node CVM to derive the key without a direct channel to the migration CVM |
