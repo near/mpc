@@ -61,7 +61,7 @@ If any of these ports are already in use on your system, you will need to update
 
 The most important ports are the Frodo/Sam TLS ports: 13001 / 13002.
 These appear in the following files:
-- frodo/sam.conf
+- frodo/sam.toml
 - frodo/sam.env
 - init_tee.json
 
@@ -72,8 +72,8 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [docker-compose.yml](../../tee_launcher/launcher_docker_compose.yaml)
-* [frodo.conf](../../deployment/localnet/tee/frodo.conf) / [sam.conf](../../deployment/localnet/tee/sam.conf) 
+* [docker-compose.yml](../../deployment/cvm-deployment/launcher_docker_compose.yaml)
+* [frodo.toml](../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../deployment/localnet/tee/sam.toml) 
 * [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
 
@@ -105,9 +105,9 @@ Define the machine's external IP once
 export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 ```
 
-#### Environment File (`frodo/sam.conf`, `frodo/sam.env`) )
+#### Environment File (`frodo/sam.toml`, `frodo/sam.env`) )
 
-Update Sam/Frodo.conf fields: 
+Update Sam/Frodo.toml fields: 
 
 
 ```env
@@ -127,7 +127,7 @@ $Docker inspect nearone/mpc-node:main_3.0.3 | grep "Id"
 
 You can start the nodes **manually** as described in the Operator Guide, or you can start them using the `deploy-launcher.sh` script as shown below.
 
-Once all paths and configuration files (`*.env` and `*.conf`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
+Once all paths and configuration files (`*.env` and `*.toml`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
 
 #### 1. Move into the `tee_launcher` Directory
 
@@ -153,11 +153,11 @@ export BASE_PATH="dstask base path"
 
 #### 4. Replace ${MACHINE_IP} inside the config files
 ```bash
-envsubst '${MACHINE_IP}' < deployment/localnet/tee/frodo.conf > "/tmp/$USER/frodo.conf"
+envsubst '${MACHINE_IP}' < deployment/localnet/tee/frodo.toml > "/tmp/$USER/frodo.toml"
 ```
 
 ```bash
-envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.conf > "/tmp/$USER/sam.conf"
+envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.toml > "/tmp/$USER/sam.toml"
 ```
 
 #### 5. Start the Frodo MPC Node
