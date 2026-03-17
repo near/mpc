@@ -113,7 +113,7 @@ async fn run() -> Result<(), LauncherError> {
             .emit_event(
                 MPC_IMAGE_HASH_EVENT.to_string(),
                 // TODO: mpc binary has to go back from back hex as well. Just send the raw bytes as payload.
-                image_hash.as_raw_hex().as_bytes().to_vec(),
+                image_hash.as_hex().as_bytes().to_vec(),
             )
             .await
             .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
@@ -446,12 +446,7 @@ fn launch_mpc_container(
 ) -> Result<(), LauncherError> {
     tracing::info!(?manifest_digest, "launching MPC node");
 
-    let compose_file = render_compose_file(
-        platform,
-        docker_flags,
-        image_name,
-        manifest_digest,
-    )?;
+    let compose_file = render_compose_file(platform, docker_flags, image_name, manifest_digest)?;
     let compose_path = compose_file.path().display().to_string();
 
     // Remove any existing container from a previous run (by name, independent of compose file)
@@ -500,13 +495,7 @@ mod tests {
         flags: &DockerLaunchFlags,
         digest: &DockerSha256Digest,
     ) -> String {
-        let file = render_compose_file(
-            platform,
-            flags,
-            SAMPLE_IMAGE_NAME,
-            digest,
-        )
-        .unwrap();
+        let file = render_compose_file(platform, flags, SAMPLE_IMAGE_NAME, digest).unwrap();
         std::fs::read_to_string(file.path()).unwrap()
     }
 

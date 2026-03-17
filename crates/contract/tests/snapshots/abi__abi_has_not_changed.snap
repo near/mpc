@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.6.0",
+    "version": "3.7.0",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -100,6 +100,17 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
+          }
+        }
+      },
+      {
+        "name": "code_hash_votes",
+        "doc": " Returns the current code hash votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/CodeHashesVotes"
           }
         }
       },
@@ -1617,6 +1628,28 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
+        },
+        "CodeHashesVotes": {
+          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          }
         },
         "Collateral": {
           "type": "object",

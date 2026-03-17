@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        load_config_file, ConfigFile, GcpStartConfig, NearInitConfig, SecretsStartConfig,
-        StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
+        load_config_file, ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
+        SecretsStartConfig, StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
@@ -193,14 +193,30 @@ pub struct InitConfigArgs {
 impl InitConfigArgs {
     pub fn into_near_init_config(self) -> NearInitConfig {
         NearInitConfig {
-            chain_id: self.chain_id.unwrap_or_default(),
-            boot_nodes: self.boot_nodes.unwrap_or_default(),
+            chain_id: match self.chain_id.as_deref() {
+                Some("mainnet") => ChainId::Mainnet,
+                Some("testnet") => ChainId::Testnet,
+                Some("mpc-localnet") => ChainId::Localnet,
+                Some(other) => ChainId::Custom(other.to_string()),
+                None => ChainId::Custom(String::new()),
+            },
+            boot_nodes: self.boot_nodes,
             genesis_path: self.genesis.map(PathBuf::from),
-            download_config: Some(self.download_config),
-            download_config_url: self.download_config_url,
-            download_genesis: Some(self.download_genesis),
+            download_config: if self.download_config {
+                Some(DownloadConfigType::RPC)
+            } else {
+                None
+            },
+            download_config_url: if self.download_config {
+                self.download_config_url
+            } else {
+                None
+            },
+            download_genesis: self.download_genesis,
             download_genesis_url: self.download_genesis_url,
             download_genesis_records_url: self.download_genesis_records_url,
+            rpc_addr: None,
+            network_addr: None,
         }
     }
 }

@@ -1,0 +1,5 @@
+---
+source: crates/launcher-interface/src/types.rs
+expression: "serde_json::to_value(&deserialized).unwrap()"
+---
+"sha256:abababababababababababababababababababababababababababababababab"

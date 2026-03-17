@@ -19,13 +19,11 @@ pub struct StartConfig {
     /// TEE authority and image hash monitoring settings.
     pub tee: TeeStartConfig,
     /// GCP keyshare storage settings. Optional — omit if not using GCP.
-    #[serde(default)]
     pub gcp: Option<GcpStartConfig>,
     /// NEAR node initialization settings. Required for `start-with-config-file`
     /// so the node can self-initialize when `config.json` is absent.
     /// When using the legacy `start` command (behind `start.sh`), this is
     /// `None` because `start.sh` already ran `mpc-node init`.
-    #[serde(default)]
     pub near_init: Option<NearInitConfig>,
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
@@ -35,59 +33,40 @@ pub struct StartConfig {
 /// genesis and config files are bootstrapped when they don't yet exist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NearInitConfig {
-    /// NEAR chain / network ID (e.g. "mainnet", "testnet", "mpc-localnet").
-    pub chain_id: String,
+    pub chain_id: ChainId,
     /// Comma-separated NEAR boot nodes.
-    pub boot_nodes: String,
+    pub boot_nodes: Option<String>,
     /// Path to a local genesis file. When set the genesis is copied from this
     /// path instead of being downloaded. Typically used for localnet.
-    #[serde(default)]
     pub genesis_path: Option<PathBuf>,
     /// Whether to download the NEAR config file. Defaults to `true` for
     /// non-localnet chains when not specified.
-    #[serde(default)]
-    pub download_config: Option<bool>,
+    pub download_config: Option<DownloadConfigType>,
     /// Custom URL to download the NEAR config file from.
-    #[serde(default)]
     pub download_config_url: Option<String>,
     /// Whether to download the NEAR genesis file. Defaults to `true` for
     /// non-localnet chains when not specified.
-    #[serde(default)]
-    pub download_genesis: Option<bool>,
+    pub download_genesis: bool,
     /// Custom URL to download the genesis file from.
-    #[serde(default)]
     pub download_genesis_url: Option<String>,
     /// Custom URL to download the genesis records from.
-    #[serde(default)]
     pub download_genesis_records_url: Option<String>,
+    /// Override the NEAR node RPC listen address (e.g. "0.0.0.0:3031").
+    /// Useful when running multiple nodes on the same machine.
+    pub rpc_addr: Option<String>,
+    /// Override the NEAR node network (indexer) listen address (e.g. "0.0.0.0:24568").
+    /// Useful when running multiple nodes on the same machine.
+    pub network_addr: Option<String>,
 }
 
 impl NearInitConfig {
     /// Runs `near_indexer::init_configs` to create the NEAR data directory.
     pub fn run_init(&self, home_dir: &Path) -> anyhow::Result<()> {
-        let is_localnet = self.chain_id == "mpc-localnet";
-
+        let is_localnet = self.chain_id.is_localnet();
         let genesis_arg = self.genesis_path.as_deref().and_then(Path::to_str);
-
-        let should_download_genesis = self.download_genesis.unwrap_or(!is_localnet);
-        let should_download_config = self.download_config.unwrap_or(!is_localnet);
-
-        let download_config_type = if should_download_config {
-            Some(near_config_utils::DownloadConfigType::RPC)
-        } else {
-            None
-        };
-
-        let chain_id_arg = if self.chain_id.is_empty() {
-            None
-        } else {
-            Some(self.chain_id.clone())
-        };
-        let boot_nodes_arg = if self.boot_nodes.is_empty() {
-            None
-        } else {
-            Some(self.boot_nodes.as_str())
-        };
+        let chain_id_arg = self.chain_id.to_init_arg();
+        let boot_nodes = self.boot_nodes.as_deref();
+        let download_config = self.download_config.clone().map(Into::into);
 
         near_indexer::init_configs(
             home_dir,
@@ -97,14 +76,14 @@ impl NearInitConfig {
             1,
             false,
             genesis_arg,
-            should_download_genesis,
+            self.download_genesis,
             self.download_genesis_url.as_deref(),
             self.download_genesis_records_url.as_deref(),
-            download_config_type,
+            download_config,
             self.download_config_url.as_deref(),
-            boot_nodes_arg,
-            None, // max_gas_burnt_view
-            None, // state_sync_bucket
+            boot_nodes,
+            None,
+            None,
         )
         .context("failed to initialize NEAR node")?;
 
@@ -233,14 +212,6 @@ impl StartConfig {
     }
 
     /// Ensures the NEAR node data directory is initialized.
-    ///
-    /// When `near_init` is `Some` and `home_dir/config.json` does not yet
-    /// exist, this runs the equivalent of `mpc-node init` followed by the
-    /// config-patching that `start.sh` performs (tracked shards, state sync,
-    /// etc.).  If `config.json` already exists the method is a no-op.
-    ///
-    /// When `near_init` is `None` (legacy `start` command) this is always a
-    /// no-op — `start.sh` is expected to have handled initialization.
     pub fn ensure_near_initialized(&self) -> anyhow::Result<()> {
         let Some(near_init) = &self.near_init else {
             return Ok(());
@@ -256,7 +227,7 @@ impl StartConfig {
         near_init.run_init(&self.home_dir)?;
 
         // Patch the NEAR node config the same way start.sh does.
-        Self::patch_near_config(&near_config_path, &near_init.chain_id, &self.node)?;
+        Self::patch_near_config(&near_config_path, near_init, &self.node)?;
 
         Ok(())
     }
@@ -265,18 +236,19 @@ impl StartConfig {
     /// behaviour of `update_near_node_config()` in `start.sh`.
     fn patch_near_config(
         config_path: &Path,
-        chain_id: &str,
+        near_init: &NearInitConfig,
         node_config: &ConfigFile,
     ) -> anyhow::Result<()> {
         let raw = std::fs::read_to_string(config_path)
             .with_context(|| format!("failed to read {}", config_path.display()))?;
+
+        // TODO(#2453): Deserialize into the `near_core::Config` type (currently not exported)
         let mut config: serde_json::Value =
             serde_json::from_str(&raw).context("failed to parse NEAR config.json")?;
 
-        // store.load_mem_tries_for_tracked_shards = true
         config["store"]["load_mem_tries_for_tracked_shards"] = serde_json::Value::Bool(true);
 
-        let is_localnet = chain_id == "mpc-localnet";
+        let is_localnet = near_init.chain_id.is_localnet();
         if is_localnet {
             config["state_sync_enabled"] = serde_json::Value::Bool(false);
         } else {
@@ -288,6 +260,14 @@ impl StartConfig {
         let contract_id = node_config.indexer.mpc_contract_id.to_string();
         config["tracked_shards_config"] = serde_json::json!({ "Accounts": [contract_id] });
 
+        // Override listen addresses when running multiple nodes on one machine.
+        if let Some(rpc_addr) = &near_init.rpc_addr {
+            config["rpc"]["addr"] = serde_json::Value::String(rpc_addr.clone());
+        }
+        if let Some(network_addr) = &near_init.network_addr {
+            config["network"]["addr"] = serde_json::Value::String(network_addr.clone());
+        }
+
         let patched = serde_json::to_string_pretty(&config)
             .context("failed to re-serialize NEAR config.json")?;
         std::fs::write(config_path, patched)
@@ -295,5 +275,58 @@ impl StartConfig {
 
         tracing::info!("NEAR node config.json patched successfully");
         Ok(())
+    }
+}
+
+/// NEAR chain / network identifier.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChainId {
+    Mainnet,
+    Testnet,
+    #[serde(rename = "mpc-localnet")]
+    Localnet,
+    #[serde(untagged)]
+    Custom(String),
+}
+
+impl ChainId {
+    pub fn is_localnet(&self) -> bool {
+        *self == ChainId::Localnet
+    }
+}
+
+impl std::fmt::Display for ChainId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChainId::Mainnet => f.write_str("mainnet"),
+            ChainId::Testnet => f.write_str("testnet"),
+            ChainId::Localnet => f.write_str("mpc-localnet"),
+            ChainId::Custom(s) => f.write_str(s),
+        }
+    }
+}
+
+impl ChainId {
+    fn to_init_arg(&self) -> Option<String> {
+        Some(self.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadConfigType {
+    Validator,
+    RPC,
+    Archival,
+}
+
+impl From<DownloadConfigType> for near_config_utils::DownloadConfigType {
+    fn from(value: DownloadConfigType) -> Self {
+        match value {
+            DownloadConfigType::Validator => near_config_utils::DownloadConfigType::Validator,
+            DownloadConfigType::RPC => near_config_utils::DownloadConfigType::RPC,
+            DownloadConfigType::Archival => near_config_utils::DownloadConfigType::Archival,
+        }
     }
 }
