@@ -178,9 +178,17 @@ The AES transport key provides defense-in-depth protection during keyshare migra
 
 ---
 
-## 2. AES Transport Key Provisioning Flow
+## 2. AES Transport Key Provisioning Flow (Barak's Proposal)
 
 This diagram shows the step-by-step provisioning of the AES transport key, with trust boundaries and security checks.
+
+### Protocol
+
+1. **Key setup** — The migration service CVM generates a TLS keypair (private key never leaves the CVM) and registers the TLS public key on-chain. The operator generates an AES_signing keypair and registers the AES_signing public key on-chain. Both the node CVM and migration service CVM generate AES_wrapping keypairs internally (private keys never leave the CVM).
+2. **Retrieve wrapping keys (attested)** — The operator retrieves the AES_wrapping public key from each CVM via attested local endpoints. The operator verifies that each public key is bound to a genuine CVM attestation.
+3. **Generate & encrypt AES transport key** — The operator generates a 256-bit transport_AES_key, encrypts it to each CVM's wrapping public key, and signs each ciphertext with the AES_signing key.
+4. **Local provisioning** — The operator delivers the encrypted+signed blobs locally to the node and migration service. Provisioning MUST be performed locally on the machine running the CVM, ensuring the operator has physical control.
+5. **Verification & sealing** — Each CVM verifies the operator's signature, confirms the AES_signing public key is registered on-chain, decrypts the transport_AES_key with its wrapping private key, and seals the key for reuse.
 
 ```mermaid
 sequenceDiagram
