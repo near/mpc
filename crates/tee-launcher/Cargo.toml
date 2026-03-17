@@ -10,7 +10,7 @@ name = "tee-launcher"
 path = "src/main.rs"
 
 [features]
-integration-test = []
+external-services-tests = []
 
 [dependencies]
 backon = { workspace = true }

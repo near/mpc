@@ -172,33 +172,39 @@ fn select_image_hash(
 
 /// Provides the URLs needed to interact with a container registry.
 trait RegistryInfo {
-    fn token_url(&self, image_name: &str) -> String;
-    fn manifest_url(&self, image_name: &str, tag: &str) -> Result<Url, LauncherError>;
+    fn token_url(&self) -> String;
+    fn manifest_url(&self, tag: &str) -> Result<Url, LauncherError>;
 }
 
 /// Production registry info for Docker Hub.
 struct DockerRegistry {
     registry_base_url: String,
+    image_name: String,
 }
 
 impl DockerRegistry {
     fn new(config: &LauncherConfig) -> Self {
         Self {
             registry_base_url: format!("https://{}", config.registry),
+            image_name: config.image_name.clone(),
         }
     }
 }
 
 impl RegistryInfo for DockerRegistry {
     // TODO(#2479): if we use a different registry, we need a different auth-endpoint
-    fn token_url(&self, image_name: &str) -> String {
+    fn token_url(&self) -> String {
         format!(
-            "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{image_name}:pull",
+            "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull",
+            self.image_name,
         )
     }
 
-    fn manifest_url(&self, image_name: &str, tag: &str) -> Result<Url, LauncherError> {
-        let url_string = format!("{}/v2/{image_name}/manifests/{tag}", self.registry_base_url);
+    fn manifest_url(&self, tag: &str) -> Result<Url, LauncherError> {
+        let url_string = format!(
+            "{}/v2/{}/manifests/{tag}",
+            self.registry_base_url, self.image_name
+        );
 
         url_string
             .parse()
@@ -216,7 +222,7 @@ async fn get_manifest_digest(
     let reqwest_client = reqwest::Client::new();
 
     // We need an authorization token to fetch manifests.
-    let token_url = registry.token_url(&config.image_name);
+    let token_url = registry.token_url();
 
     let token_request_response = reqwest_client
         .get(token_url)
@@ -237,7 +243,7 @@ async fn get_manifest_digest(
         .map_err(|e| LauncherError::RegistryAuthFailed(e.to_string()))?;
 
     while let Some(tag) = tags.pop_front() {
-        let manifest_url = registry.manifest_url(&config.image_name, &tag)?;
+        let manifest_url = registry.manifest_url(&tag)?;
 
         let authorization_value: HeaderValue = format!("Bearer {}", token_response.token)
             .parse()
@@ -505,13 +511,13 @@ mod tests {
     use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
     use near_mpc_bounded_collections::NonEmptyVec;
 
+    use crate::RegistryInfo;
     use crate::constants::*;
     use crate::error::LauncherError;
     use crate::get_manifest_digest;
     use crate::render_compose_file;
     use crate::select_image_hash;
     use crate::types::*;
-    use crate::RegistryInfo;
 
     const SAMPLE_IMAGE_NAME: &str = "nearone/mpc-node";
 
@@ -545,19 +551,16 @@ mod tests {
 
     struct MockRegistry {
         base_url: String,
+        image_name: String,
     }
 
     impl RegistryInfo for MockRegistry {
-        fn token_url(&self, _image_name: &str) -> String {
+        fn token_url(&self) -> String {
             format!("{}/token", self.base_url)
         }
 
-        fn manifest_url(
-            &self,
-            image_name: &str,
-            tag: &str,
-        ) -> Result<url::Url, crate::error::LauncherError> {
-            let raw = format!("{}/v2/{image_name}/manifests/{tag}", self.base_url);
+        fn manifest_url(&self, tag: &str) -> Result<url::Url, crate::error::LauncherError> {
+            let raw = format!("{}/v2/{}/manifests/{tag}", self.base_url, self.image_name);
             raw.parse()
                 .map_err(|_| crate::error::LauncherError::InvalidManifestUrl(raw))
         }
@@ -580,6 +583,7 @@ mod tests {
     fn mock_registry(server: &MockServer) -> MockRegistry {
         MockRegistry {
             base_url: server.base_url(),
+            image_name: "test/image".into(),
         }
     }
 
@@ -793,8 +797,6 @@ mod tests {
         assert!(json.get("approved_hashes").is_some());
     }
 
-    // --- get_manifest_digest (mocked registry) ---
-
     #[tokio::test]
     async fn get_manifest_digest_resolves_docker_v2() {
         // given
@@ -816,7 +818,7 @@ mod tests {
         server.mock(|when, then| {
             when.method(GET).path("/v2/test/image/manifests/v1.0");
             then.status(200)
-                .header("Docker-Content-Digest", &manifest_digest.to_string())
+                .header("Docker-Content-Digest", manifest_digest.to_string())
                 .json_body(manifest_body);
         });
 
@@ -869,7 +871,7 @@ mod tests {
             when.method(GET)
                 .path(format!("/v2/test/image/manifests/{amd64_ref}"));
             then.status(200)
-                .header("Docker-Content-Digest", &manifest_digest.to_string())
+                .header("Docker-Content-Digest", manifest_digest.to_string())
                 .json_body(serde_json::json!({
                     "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
                     "config": { "digest": expected_image_digest.to_string() }
@@ -975,7 +977,7 @@ mod tests {
 
 /// Integration tests requiring network access and Docker Hub.
 /// Run with: cargo test -p tee-launcher --features integration-test
-#[cfg(all(test, feature = "integration-test"))]
+#[cfg(all(test, feature = "external-services-tests"))]
 mod integration_tests {
     use super::*;
     use assert_matches::assert_matches;
