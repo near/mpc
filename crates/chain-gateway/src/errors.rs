@@ -2,7 +2,7 @@ use std::fmt;
 
 use near_account_id::AccountId;
 
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum NearClientError {
     #[error("near client failed to send async: {message}")]
     AsyncSendError { message: String },
@@ -10,7 +10,7 @@ pub enum NearClientError {
     ResponseError { message: String },
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum NearRpcError {
     #[error("failed to submit transaction: {message}")]
     SubmitTransaction { message: String },
@@ -18,7 +18,7 @@ pub enum NearRpcError {
     ResponseError { response: String },
 }
 
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum NearViewClientError {
     #[error("near view client failed to send async for {query}: {message}")]
     AsyncSendError {
@@ -37,7 +37,7 @@ pub enum NearViewClientError {
     },
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NearViewClientQuery {
     LatestFinalBlock,
     ViewMethod {
@@ -58,7 +58,7 @@ impl fmt::Display for NearViewClientQuery {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChainGatewayOp {
     SubmitFunctionCallTransaction {
         signer: String,
