@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
 use mpc_contract::primitives::{
-    ckd::CKDRequestArgs,
     domain::{DomainConfig, SignatureScheme},
     signature::{Bytes, Payload, SignRequestArgs},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::{
     method_names,
-    types::{EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES},
+    types::{
+        CKDRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    },
 };
 use near_primitives::action::Action;
 use rand::RngCore;
@@ -122,7 +123,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                 &serde_json::to_vec(&CKDArgs {
                     request: CKDRequestArgs {
                         derivation_path: "".to_string(),
-                        domain_id: args.domain_config.id,
+                        domain_id: args.domain_config.id.into(),
                         app_public_key: mpc_contract::utils::random_app_public_key(),
                     },
                 })

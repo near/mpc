@@ -1599,7 +1599,7 @@ expression: abi
               "type": "string"
             },
             "domain_id": {
-              "$ref": "#/definitions/DomainId"
+              "$ref": "#/definitions/DomainId2"
             }
           }
         },
