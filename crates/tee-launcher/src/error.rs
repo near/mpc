@@ -76,10 +76,10 @@ pub(crate) enum ImageDigestValidationFailed {
     #[error("docker inspect failed for {0}")]
     DockerInspectFailed(String),
     #[error(
-        "pulled image has mismatching digest. pulled: {pulled_digest}, expected: {expected_digest}"
+        "pulled image has mismatching image ID. pulled: {pulled_image_id}, expected: {expected_image_id}"
     )]
     PulledImageHasMismatchedDigest {
-        expected_digest: DockerSha256Digest,
-        pulled_digest: DockerSha256Digest,
+        expected_image_id: DockerSha256Digest,
+        pulled_image_id: DockerSha256Digest,
     },
 }

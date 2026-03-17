@@ -390,7 +390,9 @@ async fn validate_image_hash(
         ));
     }
 
-    // Verify digest
+    // Verify that the pulled image ID matches the expected config digest.
+    // `docker inspect .ID` returns the image ID, which equals the config digest
+    // (i.e. the sha256 of the image config blob).
     let inspect = Command::new("docker")
         .args([
             "image",
@@ -409,17 +411,17 @@ async fn validate_image_hash(
         ));
     }
 
-    let pulled_digest = String::from_utf8_lossy(&inspect.stdout)
+    let pulled_image_id: DockerSha256Digest = String::from_utf8_lossy(&inspect.stdout)
         .trim()
         .to_string()
         .parse()
         .expect("is valid digest");
 
-    if pulled_digest != image_hash {
+    if pulled_image_id != image_hash {
         return Err(
             ImageDigestValidationFailed::PulledImageHasMismatchedDigest {
-                pulled_digest,
-                expected_digest: image_hash,
+                pulled_image_id,
+                expected_image_id: image_hash,
             },
         );
     }
