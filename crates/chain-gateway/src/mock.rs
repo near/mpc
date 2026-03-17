@@ -184,9 +184,9 @@ impl SubmitSignedTransaction for MockChainState {
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum MockError {
-    #[error("Failed to sync")]
+    #[error("failed to sync")]
     SyncError,
-    #[error("Failed to fetch latest final block")]
+    #[error("failed to fetch latest final block")]
     LatestFinalBlockError,
     #[error("mock field not initialized")]
     NotInitialized,

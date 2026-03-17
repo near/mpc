@@ -146,7 +146,7 @@ mod tests {
             }
         );
         // ensure the transaction was not submitted
-        assert!(mock_chain_state.signed_transactions().await.is_empty());
+        assert_eq!(mock_chain_state.signed_transactions().await, vec![]);
     }
 
     #[tokio::test]
