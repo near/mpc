@@ -69,6 +69,7 @@ async fn run() -> Result<(), LauncherError> {
 
     let approved_hashes_file = std::fs::OpenOptions::new()
         .read(true)
+        .write(false)
         .open(IMAGE_DIGEST_FILE)
         .map_err(|source| LauncherError::FileRead {
             path: IMAGE_DIGEST_FILE.to_string(),
