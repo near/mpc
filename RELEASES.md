@@ -36,6 +36,16 @@ We follow [Semantic Versioning (SemVer)](https://semver.org/) with the following
 - **Full Backward Compatibility**: No breaking changes allowed.
 - **Bug Fixes Only**: Only bug fixes and security patches.
 
+## Automated Release Script
+
+We also have a script that automates the local steps (changelog, version bump, snapshot update, license regeneration) described below. You can find it at [`scripts/prepare-release.sh`](https://github.com/near/mpc/blob/main/scripts/prepare-release.sh). Run it with the desired version:
+
+```sh
+./scripts/prepare-release.sh 3.1.0
+```
+
+The remaining steps (creating the tag, release artifacts, and GitHub release) still need to be done manually.
+
 ## How to make a release
 
 In practice when making a release, you need to do the following things:
