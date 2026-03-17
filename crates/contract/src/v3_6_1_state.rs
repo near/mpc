@@ -110,7 +110,10 @@ mod tests {
 
     #[test]
     fn test_migration_seeds_measurements_from_defaults() {
+        // given
         let defaults = mpc_attestation::attestation::default_measurements();
+
+        // when
         let allowed = AllowedMeasurements::from_entries(
             defaults
                 .iter()
@@ -119,9 +122,9 @@ mod tests {
                 .collect(),
         );
 
+        // then
         assert_eq!(allowed.entries().len(), defaults.len());
 
-        // Verify roundtrip: contract measurements convert back to attestation measurements
         let roundtripped = allowed.to_attestation_measurements();
         for (original, converted) in defaults.iter().zip(roundtripped.iter()) {
             assert_eq!(original.rtmrs.mrtd, converted.rtmrs.mrtd);
