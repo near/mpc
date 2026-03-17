@@ -7,7 +7,7 @@ use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::transaction_sender::TransactionSigner;
 
-pub trait FunctionCallSubmitter {
+pub trait SubmitFunctionCall {
     fn submit_function_call_tx(
         &self,
         signer: Arc<TransactionSigner>,
@@ -18,7 +18,7 @@ pub trait FunctionCallSubmitter {
     ) -> impl Future<Output = Result<CryptoHash, ChainGatewayError>> + Send;
 }
 
-impl<T> FunctionCallSubmitter for T
+impl<T> SubmitFunctionCall for T
 where
     T: FetchLatestFinalBlockInfo + SubmitSignedTransaction,
 {

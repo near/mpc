@@ -6,4 +6,4 @@ mod test_utils;
 
 pub use signer::TransactionSigner;
 
-pub use traits::FunctionCallSubmitter;
+pub use traits::SubmitFunctionCall;
