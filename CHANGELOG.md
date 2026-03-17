@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
-## [3.7.0] - 2026-03-16
+## [3.7.0] - 2026-03-17
 
 ### 🚀 Features
 
@@ -96,6 +96,10 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2438](https://github.com/near/mpc/pull/2438)(@gilcu3): Remove EXTRA_HOST usage in launcher (#2438)
 
 - [#2425](https://github.com/near/mpc/pull/2425)(@gilcu3): Upgrade to a patched nearcore 2.11.0-rc.1 (#2425)
+
+- [#2468](https://github.com/near/mpc/pull/2468)(@DSharifi): Bump nearcore to 2.11.0-rc.2 (#2468)
+
+- [#2465](https://github.com/near/mpc/pull/2465)(@dependabot[bot]): Bump the rust-minor-and-patch group with 3 updates (#2465)
 
 
 ## [3.6.0] - 2026-03-05
