@@ -14,13 +14,13 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct NearViewClientActorHandle {
     view_client:
-        Arc<near_async::multithread::MultithreadRuntimeHandle<near_client::ViewClientActorInner>>,
+        Arc<near_async::multithread::MultithreadRuntimeHandle<near_client::ViewClientActor>>,
 }
 
 impl NearViewClientActorHandle {
     pub(crate) fn new(
         view_client: near_async::multithread::MultithreadRuntimeHandle<
-            near_client::ViewClientActorInner,
+            near_client::ViewClientActor,
         >,
     ) -> Self {
         Self {
@@ -79,6 +79,7 @@ impl QueryViewFunction for NearViewClientActorHandle {
             near_indexer_primitives::views::QueryResponseKind::ViewState(_) => "ViewState",
             near_indexer_primitives::views::QueryResponseKind::AccessKey(_) => "AccessKey",
             near_indexer_primitives::views::QueryResponseKind::AccessKeyList(_) => "AccessKeyList",
+            near_indexer_primitives::views::QueryResponseKind::GasKeyNonces(_) => "GasKeyNonces",
         };
 
         Err(NearViewClientError::UnexpectedResponseError {
