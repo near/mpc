@@ -112,8 +112,7 @@ async fn run() -> Result<(), LauncherError> {
         dstack_client
             .emit_event(
                 MPC_IMAGE_HASH_EVENT.to_string(),
-                // TODO: mpc binary has to go back from back hex as well. Just send the raw bytes as payload.
-                image_hash.as_hex().as_bytes().to_vec(),
+                image_hash.as_ref().to_vec(),
             )
             .await
             .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))?;
@@ -179,7 +178,7 @@ async fn get_manifest_digest(
     let mut tags: VecDeque<String> = config.image_tags.iter().cloned().collect();
 
     // We need an authorization token to fetch manifests.
-    // TODO: this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint
+    // TODO(#2479): this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint
     let token_url = format!(
         "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull",
         config.image_name
