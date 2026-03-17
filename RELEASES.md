@@ -14,7 +14,7 @@ The NEAR MPC project consists of two main components that are released together 
 Releases are created by making a release tag on the `main` branch, followed by the manual steps outlined in the
 [GitHub release documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository#creating-a-release).
 
-Before creating the tag, make sure to update the version number in the workspace `Cargo.toml` file.
+Before creating the tag, make sure to update the version number in all relevant `Cargo.toml` files.
 
 ### 2. Use dedicated branches for patch releases
 The exception to the rule above is when we backport critical fixes.
@@ -35,6 +35,11 @@ We follow [Semantic Versioning (SemVer)](https://semver.org/) with the following
 #### Patch Version Bumps (X.Y.Z → X.Y.Z+1)
 - **Full Backward Compatibility**: No breaking changes allowed.
 - **Bug Fixes Only**: Only bug fixes and security patches.
+
+### 4. Rebase `mainnet-release` and `testnet-release` branches
+In addition to the version-tags, we have branches to mark the current releases running on `mainnet` and `testnet`: `mainnet-release` and `testnet-release`. Whenever we upgrade `mainnet` or `testnet`, we must set the `mainnet-release` and `testnet-release` branches to point to the release tag we intend to run in these environments.
+
+Note: When patching `mainnet` and `testnet` we should not merge new commits into the `mainnet-release` or `testnet-release` branches. Instead, we should create a SemVer patch-release with the appropriate tag first, and then rebase the `mainnet-release` or `testnet-release` tags on top of this version.
 
 ## How to make a release
 
