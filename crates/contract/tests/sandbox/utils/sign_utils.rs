@@ -12,7 +12,7 @@ use mpc_contract::{
     crypto_shared::{derive_tweak, kdf::derive_app_id, CKDResponse},
     errors,
     primitives::{
-        ckd::{CKDRequest, CKDRequestArgs},
+        ckd::CKDRequest,
         domain::DomainId,
         signature::{Bytes, Payload, SignatureRequest, YieldIndex},
     },
@@ -22,7 +22,7 @@ use near_mpc_contract_interface::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     SIGN,
 };
-use near_mpc_contract_interface::types::{self as dtos};
+use near_mpc_contract_interface::types::{self as dtos, CKDRequestArgs};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{
@@ -228,7 +228,7 @@ impl CKDRequestTest {
         let args = CKDRequestArgs {
             derivation_path,
             app_public_key,
-            domain_id,
+            domain_id: domain_id.into(),
         };
 
         CKDRequestTest {

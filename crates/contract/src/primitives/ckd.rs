@@ -3,14 +3,6 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::near;
 
-#[derive(Clone, Debug)]
-#[near(serializers=[json])]
-pub struct CKDRequestArgs {
-    pub derivation_path: String,
-    pub app_public_key: dtos::Bls12381G1PublicKey,
-    pub domain_id: DomainId,
-}
-
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
 pub struct CKDRequest {
