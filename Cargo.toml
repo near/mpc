@@ -176,13 +176,13 @@ serial_test = "3.4.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
-socket2 = "0.6.2"
+socket2 = "0.6.3"
 subtle = "2.6.1"
 syn = "2.0"
 tempfile = "3.26.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
-tokio = { version = "1.41.0", features = ["full", "test-util"] }
+tokio = { version = "1.50.0", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
