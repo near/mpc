@@ -977,8 +977,7 @@ mod tests {
     }
 }
 
-/// Integration tests requiring network access and Docker Hub.
-/// Run with: cargo test -p tee-launcher --features integration-test
+/// Tests requiring network access and Docker Hub.
 #[cfg(all(test, feature = "external-services-tests"))]
 mod integration_tests {
     use super::*;
@@ -1018,6 +1017,11 @@ mod integration_tests {
         assert!(result.is_ok(), "get_manifest_digest failed: {result:?}");
     }
 
+    // `validate_image_hash` compares the output of `docker inspect .ID` against
+    // the expected config digest. On native Linux, `.ID` returns the config digest
+    // (sha256 of the image config blob), but on macOS, Docker Desktop's containerd
+    // image store returns the manifest digest instead, causing a spurious mismatch.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn validate_image_hash_succeeds_for_known_image() {
         // given
