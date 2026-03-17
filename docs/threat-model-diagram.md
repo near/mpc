@@ -285,6 +285,30 @@ sequenceDiagram
 | T10 | Single key compromise (TLS or AES signing) | Key theft | Attacker -> Operator | Separation of duties: TLS key != AES signing key | Both keys compromised simultaneously |
 | T11 | Stale node running old binary | Operator neglect | Stale node -> Network | `verify_tee` kicks nodes after 7 days; resharing triggered | Below-threshold scenario pauses signing |
 | T12 | Malicious migration service | Rogue endpoint | Attacker -> Migration | Contract validates migration service registration + AES key needed | Contract bug + AES compromise |
+| T13 | Rogue CVM with confidentiality break | Attacker runs own TDX server with HW device that breaks CVM confidentiality; spins up rogue migration service with valid attestation | Attacker -> Node CVM | See analysis below (S2: local provisioning; S6/S7: **vulnerable**) | Attestation proves WHAT, not WHO |
+
+---
+
+### T13 — Rogue Migration Service with CVM Confidentiality Break
+
+**Attack:** An attacker has their own TDX-capable server equipped with a physical device that breaks CVM confidentiality (e.g., hardware probe, bus sniffer). They spin up a legitimate migration service CVM on that machine. The CVM produces valid attestation — real TDX hardware, correct code, correct RTMR measurements — making it indistinguishable from a genuine migration service via remote attestation. However, the attacker can extract all secrets from inside the CVM.
+
+The attacker's goal is to trick the legitimate MPC node into migrating its keyshare to this rogue migration service, then extract the AES transport key from the compromised CVM to decrypt it.
+
+**Root cause:** Attestation proves **WHAT** is running (correct code on real TDX hardware), but not **WHO** owns the physical machine. Without a physical identity check, protocols that rely solely on remote attestation are vulnerable.
+
+**Impact per proposal:**
+
+| Protocol | Physical identity check | Protected? | Why |
+|----------|:-:|:-:|-----|
+| **Barak (S2)** | Yes — local provisioning | **Yes** | The honest operator must physically provision the AES key on the machine. The operator won't go to the attacker's machine — they only provision to machines they own/control. Without the AES transport key, the rogue migration service can't decrypt the keyshare. |
+| **Simon (S6)** | No | **No** | The attacker's CVM contacts the operator with valid attestation. The operator cannot distinguish it from a legitimate migration service. If the operator authorizes it (`sig_operator`), the attacker's CVM generates the AES seed and the attacker extracts it via the confidentiality break. |
+| **Simplified (S7)** | No | **No** | Same issue. The operator verifies attestation from both CVMs and signs `<'auth', pk_mig, pk_node>`. The attacker's CVM presents valid attestation. If the operator endorses it, the attacker's CVM generates the AES key and the attacker extracts it. |
+
+**Possible mitigations for S6/S7:**
+- Add a local provisioning step (converges toward Barak's approach)
+- Require an operator-controlled secret injected locally before the migration CVM can participate
+- Include a machine-identity binding in the attestation that goes beyond software measurements
 
 ---
 
@@ -324,16 +348,25 @@ graph TD
     E --> E2["Steal AES_signing key"]
     E2 --> E2a["Can sign but still need<br/>wrapping pubkey from real CVM"]
 
+    ROOT --> F["Rogue CVM with<br/>Confidentiality Break (T13)"]
+    F --> F1["Attacker runs own TDX server<br/>+ HW device breaks CVM confidentiality"]
+    F1 --> F2["Spin up rogue migration service<br/>(valid attestation, attacker extracts secrets)"]
+    F2 --> F3["Trick operator into authorizing<br/>(attestation looks legitimate)"]
+    F3 --> F3a["S6/S7: VULNERABLE<br/>no physical identity check"]
+    F3 --> F3b["S2: BLOCKED<br/>local provisioning = physical identity check"]
+
     style ROOT fill:#ff6b6b,color:#fff
     style B2 fill:#ff6b6b22,stroke:#ff6b6b,stroke-width:2px
     style C3 fill:#51cf6622,stroke:#51cf66,stroke-width:2px
+    style F3a fill:#ff6b6b22,stroke:#ff6b6b,stroke-width:2px
+    style F3b fill:#51cf6622,stroke:#51cf66,stroke-width:2px
 ```
 
 ### Reading the Attack Tree
 
 - **Red node** = attacker goal (steal keyshare)
-- **Red-bordered node** = open/residual risk (disk rollback)
-- **Green-bordered node** = defense-in-depth success (requires multiple independent compromises)
+- **Red-bordered node** = open/residual risk (disk rollback, vulnerable protocol)
+- **Green-bordered node** = defense-in-depth success (attack blocked by mitigation)
 - Leaf nodes show where attack paths are **blocked** by specific mitigations
 
 ---
