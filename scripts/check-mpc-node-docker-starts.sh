@@ -21,7 +21,7 @@ done
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher-nontee}"
 
 if $USE_LAUNCHER; then
-  cd tee_launcher
+  cd ../deployment/cvm-deployment
   export LAUNCHER_IMAGE_NAME
   docker compose -f launcher_docker_compose_nontee.yaml up -d
   sleep 10
