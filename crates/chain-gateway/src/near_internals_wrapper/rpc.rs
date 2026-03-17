@@ -20,7 +20,7 @@ impl NearRpcActorHandle {
 
 impl SubmitSignedTransaction for NearRpcActorHandle {
     type Error = NearRpcError;
-    /// Submits a function call with the given method and serialized arguments.
+    /// Submits a signed transaction to the chain.
     async fn submit_signed_transaction(
         &self,
         transaction: near_indexer::near_primitives::transaction::SignedTransaction,
