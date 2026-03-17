@@ -5,9 +5,7 @@ registry = "registry.hub.docker.com"
 rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
-
-[docker_command_config.port_mappings]
-ports = [
+port_mappings = [
     { src = 8080, dst = 8080 },
     { src = 24567, dst = 24567 },
     { src = 13002, dst = 13002 },

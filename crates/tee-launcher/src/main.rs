@@ -61,7 +61,7 @@ async fn run() -> Result<(), LauncherError> {
         }
     })?;
 
-    let dstack_config: Config =
+    let config: Config =
         toml::from_str(&config_contents).map_err(|source| LauncherError::TomlParse {
             path: DSTACK_USER_CONFIG_FILE.to_string(),
             source,
@@ -97,11 +97,10 @@ async fn run() -> Result<(), LauncherError> {
     let image_hash = select_image_hash(
         approved_hashes_on_disk.as_ref(),
         &args.default_image_digest,
-        dstack_config.launcher_config.mpc_hash_override.as_ref(),
+        config.launcher_config.mpc_hash_override.as_ref(),
     )?;
 
-    let manifest_digest =
-        validate_image_hash(&dstack_config.launcher_config, image_hash.clone()).await?;
+    let manifest_digest = validate_image_hash(&config.launcher_config, image_hash.clone()).await?;
 
     let should_extend_rtmr_3 = args.platform == Platform::Tee;
 
@@ -119,8 +118,8 @@ async fn run() -> Result<(), LauncherError> {
     }
 
     let mpc_binary_config_path = std::path::Path::new(MPC_CONFIG_SHARED_PATH);
-    let mpc_config_toml = toml::to_string(&dstack_config.mpc_config)
-        .expect("re-serializing a toml::Table always succeeds");
+    let mpc_config_toml =
+        toml::to_string(&config.mpc_config).expect("re-serializing a toml::Table always succeeds");
     std::fs::write(mpc_binary_config_path, mpc_config_toml.as_bytes()).map_err(|source| {
         LauncherError::FileWrite {
             path: mpc_binary_config_path.display().to_string(),
@@ -131,8 +130,8 @@ async fn run() -> Result<(), LauncherError> {
     launch_mpc_container(
         args.platform,
         &manifest_digest,
-        &dstack_config.launcher_config.image_name,
-        &dstack_config.docker_command_config,
+        &config.launcher_config.image_name,
+        &config.launcher_config.port_mappings,
     )?;
 
     Ok(())
@@ -400,7 +399,7 @@ async fn validate_image_hash(
 
 fn render_compose_file(
     platform: Platform,
-    docker_flags: &DockerLaunchFlags,
+    port_mappings: &[PortMapping],
     image_name: &str,
     manifest_digest: &DockerSha256Digest,
 ) -> Result<tempfile::NamedTempFile, LauncherError> {
@@ -409,9 +408,7 @@ fn render_compose_file(
         Platform::NonTee => COMPOSE_TEMPLATE,
     };
 
-    let ports: Vec<String> = docker_flags
-        .port_mappings
-        .ports
+    let ports: Vec<String> = port_mappings
         .iter()
         .map(PortMapping::docker_compose_value)
         .collect();
@@ -441,11 +438,11 @@ fn launch_mpc_container(
     platform: Platform,
     manifest_digest: &DockerSha256Digest,
     image_name: &str,
-    docker_flags: &DockerLaunchFlags,
+    port_mappings: &[PortMapping],
 ) -> Result<(), LauncherError> {
     tracing::info!(?manifest_digest, "launching MPC node");
 
-    let compose_file = render_compose_file(platform, docker_flags, image_name, manifest_digest)?;
+    let compose_file = render_compose_file(platform, port_mappings, image_name, manifest_digest)?;
     let compose_path = compose_file.path().display().to_string();
 
     // Remove any existing container from a previous run (by name, independent of compose file)
@@ -477,6 +474,8 @@ fn launch_mpc_container(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU16;
+
     use assert_matches::assert_matches;
     use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
     use near_mpc_bounded_collections::NonEmptyVec;
@@ -491,10 +490,10 @@ mod tests {
 
     fn render(
         platform: Platform,
-        flags: &DockerLaunchFlags,
+        port_mappings: &[PortMapping],
         digest: &DockerSha256Digest,
     ) -> String {
-        let file = render_compose_file(platform, flags, SAMPLE_IMAGE_NAME, digest).unwrap();
+        let file = render_compose_file(platform, port_mappings, SAMPLE_IMAGE_NAME, digest).unwrap();
         std::fs::read_to_string(file.path()).unwrap()
     }
 
@@ -517,28 +516,25 @@ mod tests {
         }
     }
 
-    fn empty_docker_flags() -> DockerLaunchFlags {
-        serde_json::from_value(serde_json::json!({
-            "port_mappings": {"ports": []}
-        }))
-        .unwrap()
+    fn empty_port_mappings() -> Vec<PortMapping> {
+        vec![]
     }
 
-    fn docker_flags_with_port() -> DockerLaunchFlags {
-        serde_json::from_value(serde_json::json!({
-            "port_mappings": {"ports": [{"src": 11780, "dst": 11780}]}
-        }))
-        .unwrap()
+    fn port_mappings_with_port() -> Vec<PortMapping> {
+        vec![PortMapping {
+            src: NonZeroU16::new(11780).unwrap(),
+            dst: NonZeroU16::new(11780).unwrap(),
+        }]
     }
 
     #[test]
     fn tee_mode_includes_dstack_env_and_volume() {
         // given
-        let flags = empty_docker_flags();
+        let port_mappings = empty_port_mappings();
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::Tee, &flags, &digest);
+        let rendered = render(Platform::Tee, &port_mappings, &digest);
 
         // then
         assert!(rendered.contains(&format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}")));
@@ -548,11 +544,11 @@ mod tests {
     #[test]
     fn nontee_mode_excludes_dstack() {
         // given
-        let flags = empty_docker_flags();
+        let port_mappings = empty_port_mappings();
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, &flags, &digest);
+        let rendered = render(Platform::NonTee, &port_mappings, &digest);
 
         // then
         assert!(!rendered.contains("DSTACK_ENDPOINT"));
@@ -562,11 +558,11 @@ mod tests {
     #[test]
     fn includes_security_opts_and_required_volumes() {
         // given
-        let flags = empty_docker_flags();
+        let port_mappings = empty_port_mappings();
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, &flags, &digest);
+        let rendered = render(Platform::NonTee, &port_mappings, &digest);
 
         // then
         assert!(rendered.contains("no-new-privileges:true"));
@@ -579,11 +575,11 @@ mod tests {
     #[test]
     fn mounts_config_file_read_only() {
         // given
-        let flags = empty_docker_flags();
+        let port_mappings = empty_port_mappings();
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, &flags, &digest);
+        let rendered = render(Platform::NonTee, &port_mappings, &digest);
 
         // then — config is on the shared volume, referenced in the command
         assert!(rendered.contains(MPC_CONFIG_SHARED_PATH));
@@ -592,11 +588,11 @@ mod tests {
     #[test]
     fn includes_start_with_config_file_command() {
         // given
-        let flags = empty_docker_flags();
+        let port_mappings = empty_port_mappings();
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, &flags, &digest);
+        let rendered = render(Platform::NonTee, &port_mappings, &digest);
 
         // then
         assert!(rendered.contains("/app/mpc-node"));
@@ -606,11 +602,11 @@ mod tests {
     #[test]
     fn image_is_set() {
         // given
-        let flags = empty_docker_flags();
+        let port_mappings = empty_port_mappings();
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, &flags, &digest);
+        let rendered = render(Platform::NonTee, &port_mappings, &digest);
 
         // then
         assert!(rendered.contains(&format!("image: \"{SAMPLE_IMAGE_NAME}@{digest}\"")));
@@ -619,11 +615,11 @@ mod tests {
     #[test]
     fn includes_ports() {
         // given
-        let flags = docker_flags_with_port();
+        let port_mappings = port_mappings_with_port();
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, &flags, &digest);
+        let rendered = render(Platform::NonTee, &port_mappings, &digest);
 
         // then
         assert!(rendered.contains("11780:11780"));
@@ -632,11 +628,11 @@ mod tests {
     #[test]
     fn no_env_section_in_nontee_mode() {
         // given
-        let flags = empty_docker_flags();
+        let port_mappings = empty_port_mappings();
         let digest = sample_digest();
 
         // when
-        let rendered = render(Platform::NonTee, &flags, &digest);
+        let rendered = render(Platform::NonTee, &port_mappings, &digest);
 
         // then
         assert!(!rendered.contains("environment:"));
@@ -754,6 +750,7 @@ mod integration_tests {
             rpc_request_interval_secs: 1,
             rpc_max_attempts: 20,
             mpc_hash_override: None,
+            port_mappings: vec![],
         }
     }
 

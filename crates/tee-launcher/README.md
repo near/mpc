@@ -37,9 +37,7 @@ rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 # Optional: force selection of a specific digest (must be in approved list)
 # mpc_hash_override = "sha256:abcd..."
-
-[docker_command_config.port_mappings]
-ports = [
+port_mappings = [
   { src = 11780, dst = 11780 },
   { src = 2200, dst = 2200 },
 ]
@@ -64,9 +62,7 @@ ports = [
 | `rpc_max_attempts` | `20` | Maximum registry API retry attempts |
 | `mpc_hash_override` | (none) | Optional: force a specific `sha256:` digest (must appear in approved list) |
 
-### `[docker_command_config.port_mappings]`
-
-Port mappings forwarded to the MPC container.
+| `port_mappings` | `[]` | Port mappings forwarded to the MPC container (`{ src, dst }` pairs) |
 
 ### `[mpc_config]`
 

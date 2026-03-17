@@ -43,7 +43,6 @@ pub(crate) enum Platform {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Config {
     pub(crate) launcher_config: LauncherConfig,
-    pub(crate) docker_command_config: DockerLaunchFlags,
     /// Opaque MPC node configuration table.
     /// The launcher does not interpret these fields — they are re-serialized
     /// to a TOML string, written to a file on disk, and mounted into the
@@ -67,11 +66,7 @@ pub(crate) struct LauncherConfig {
     pub(crate) rpc_max_attempts: u32,
     /// Optional hash override that bypasses registry lookup (from `MPC_HASH_OVERRIDE`).
     pub(crate) mpc_hash_override: Option<DockerSha256Digest>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct DockerLaunchFlags {
-    pub(crate) port_mappings: PortMappings,
+    pub(crate) port_mappings: Vec<PortMapping>,
 }
 
 /// A `--add-host` entry: `hostname:IPv4`.
@@ -79,11 +74,6 @@ pub(crate) struct DockerLaunchFlags {
 pub(crate) struct HostEntry {
     pub(crate) hostname: Host<String>,
     pub(crate) ip: Ipv4Addr,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PortMappings {
-    pub(crate) ports: Vec<PortMapping>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -228,8 +218,7 @@ rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 
-[docker_command_config.port_mappings]
-ports = [{ src = 11780, dst = 11780 }]
+port_mappings = [{ src = 11780, dst = 11780 }]
 
 [mpc_config]
 home_dir = "/data"
@@ -259,8 +248,7 @@ rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 
-[docker_command_config.port_mappings]
-ports = [{ src = 11780, dst = 11780 }]
+port_mappings = [{ src = 11780, dst = 11780 }]
 
 [mpc_config]
 home_dir = "/data"
@@ -288,8 +276,7 @@ rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 
-[docker_command_config.port_mappings]
-ports = []
+port_mappings = []
 "#;
 
         // when
