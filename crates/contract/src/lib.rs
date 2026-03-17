@@ -64,7 +64,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
-use tee::proposal::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
+use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
@@ -2270,7 +2270,8 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction, Sha384Digest};
+    use crate::tee::measurements::Sha384Digest;
+    use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
     use crate::{
         errors::{ErrorKind, NodeMigrationError},

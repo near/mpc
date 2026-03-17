@@ -1,9 +1,11 @@
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
+    tee::measurements::{
+        AllowedMeasurements, ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
+    },
     tee::proposal::{
-        AllowedDockerImageHashes, AllowedLauncherImages, AllowedMeasurements,
-        AllowedMpcDockerImage, CodeHashesVotes, ContractExpectedMeasurements, LauncherHashVotes,
-        LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, MpcDockerImageHash,
+        AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage, CodeHashesVotes,
+        LauncherHashVotes, LauncherVoteAction, MpcDockerImageHash,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};

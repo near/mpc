@@ -23,9 +23,9 @@ use crate::{
     },
     state::ProtocolContractState,
     tee::{
+        measurements::{AllowedMeasurements, ContractExpectedMeasurements},
         proposal::{
-            AllowedDockerImageHashes, AllowedLauncherImages, AllowedMeasurements, CodeHashesVotes,
-            ContractExpectedMeasurements, LauncherHashVotes,
+            AllowedDockerImageHashes, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
         },
         tee_state::NodeAttestation,
     },
