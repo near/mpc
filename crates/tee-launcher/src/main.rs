@@ -170,20 +170,53 @@ fn select_image_hash(
     Ok(selected)
 }
 
+/// Provides the URLs needed to interact with a container registry.
+trait RegistryInfo {
+    fn token_url(&self, image_name: &str) -> String;
+    fn manifest_url(&self, image_name: &str, tag: &str) -> Result<Url, LauncherError>;
+}
+
+/// Production registry info for Docker Hub.
+struct DockerRegistry {
+    registry_base_url: String,
+}
+
+impl DockerRegistry {
+    fn new(config: &LauncherConfig) -> Self {
+        Self {
+            registry_base_url: format!("https://{}", config.registry),
+        }
+    }
+}
+
+impl RegistryInfo for DockerRegistry {
+    // TODO(#2479): if we use a different registry, we need a different auth-endpoint
+    fn token_url(&self, image_name: &str) -> String {
+        format!(
+            "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{image_name}:pull",
+        )
+    }
+
+    fn manifest_url(&self, image_name: &str, tag: &str) -> Result<Url, LauncherError> {
+        let url_string = format!("{}/v2/{image_name}/manifests/{tag}", self.registry_base_url);
+
+        url_string
+            .parse()
+            .map_err(|_| LauncherError::InvalidManifestUrl(url_string))
+    }
+}
+
 async fn get_manifest_digest(
+    registry: &dyn RegistryInfo,
     config: &LauncherConfig,
     expected_image_digest: &DockerSha256Digest,
 ) -> Result<DockerSha256Digest, LauncherError> {
     let mut tags: VecDeque<String> = config.image_tags.iter().cloned().collect();
 
-    // We need an authorization token to fetch manifests.
-    // TODO(#2479): this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint
-    let token_url = format!(
-        "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull",
-        config.image_name
-    );
-
     let reqwest_client = reqwest::Client::new();
+
+    // We need an authorization token to fetch manifests.
+    let token_url = registry.token_url(&config.image_name);
 
     let token_request_response = reqwest_client
         .get(token_url)
@@ -204,17 +237,7 @@ async fn get_manifest_digest(
         .map_err(|e| LauncherError::RegistryAuthFailed(e.to_string()))?;
 
     while let Some(tag) = tags.pop_front() {
-        let manifest_url: Url = format!(
-            "https://{}/v2/{}/manifests/{tag}",
-            config.registry, config.image_name
-        )
-        .parse()
-        .map_err(|_| {
-            LauncherError::InvalidManifestUrl(format!(
-                "https://{}/v2/{}/manifests/{tag}",
-                config.registry, config.image_name
-            ))
-        })?;
+        let manifest_url = registry.manifest_url(&config.image_name, &tag)?;
 
         let authorization_value: HeaderValue = format!("Bearer {}", token_response.token)
             .parse()
@@ -340,7 +363,8 @@ async fn validate_image_hash(
     launcher_config: &LauncherConfig,
     image_hash: DockerSha256Digest,
 ) -> Result<DockerSha256Digest, ImageDigestValidationFailed> {
-    let manifest_digest = get_manifest_digest(launcher_config, &image_hash)
+    let registry = DockerRegistry::new(launcher_config);
+    let manifest_digest = get_manifest_digest(&registry, launcher_config, &image_hash)
         .await
         .map_err(|e| ImageDigestValidationFailed::ManifestDigestLookupFailed(e.to_string()))?;
     let image_name = &launcher_config.image_name;
@@ -477,14 +501,17 @@ mod tests {
     use std::num::NonZeroU16;
 
     use assert_matches::assert_matches;
+    use httpmock::prelude::*;
     use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
     use near_mpc_bounded_collections::NonEmptyVec;
 
     use crate::constants::*;
     use crate::error::LauncherError;
+    use crate::get_manifest_digest;
     use crate::render_compose_file;
     use crate::select_image_hash;
     use crate::types::*;
+    use crate::RegistryInfo;
 
     const SAMPLE_IMAGE_NAME: &str = "nearone/mpc-node";
 
@@ -513,6 +540,46 @@ mod tests {
     fn approved_file(hashes: Vec<DockerSha256Digest>) -> ApprovedHashes {
         ApprovedHashes {
             approved_hashes: NonEmptyVec::from_vec(hashes).unwrap(),
+        }
+    }
+
+    struct MockRegistry {
+        base_url: String,
+    }
+
+    impl RegistryInfo for MockRegistry {
+        fn token_url(&self, _image_name: &str) -> String {
+            format!("{}/token", self.base_url)
+        }
+
+        fn manifest_url(
+            &self,
+            image_name: &str,
+            tag: &str,
+        ) -> Result<url::Url, crate::error::LauncherError> {
+            let raw = format!("{}/v2/{image_name}/manifests/{tag}", self.base_url);
+            raw.parse()
+                .map_err(|_| crate::error::LauncherError::InvalidManifestUrl(raw))
+        }
+    }
+
+    fn mock_launcher_config(tag: &str) -> LauncherConfig {
+        LauncherConfig {
+            image_tags: near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![tag.into()])
+                .unwrap(),
+            image_name: "test/image".into(),
+            registry: "unused".into(),
+            rpc_request_timeout_secs: 5,
+            rpc_request_interval_secs: 1,
+            rpc_max_attempts: 1,
+            mpc_hash_override: None,
+            port_mappings: vec![],
+        }
+    }
+
+    fn mock_registry(server: &MockServer) -> MockRegistry {
+        MockRegistry {
+            base_url: server.base_url(),
         }
     }
 
@@ -725,6 +792,185 @@ mod tests {
         // then
         assert!(json.get("approved_hashes").is_some());
     }
+
+    // --- get_manifest_digest (mocked registry) ---
+
+    #[tokio::test]
+    async fn get_manifest_digest_resolves_docker_v2() {
+        // given
+        let server = MockServer::start();
+        let expected_image_digest = sample_digest();
+        let manifest_digest = digest('b');
+
+        server.mock(|when, then| {
+            when.method(GET).path("/token");
+            then.status(200)
+                .json_body(serde_json::json!({ "token": "test-token" }));
+        });
+
+        let manifest_body = serde_json::json!({
+            "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+            "config": { "digest": expected_image_digest.to_string() }
+        });
+
+        server.mock(|when, then| {
+            when.method(GET).path("/v2/test/image/manifests/v1.0");
+            then.status(200)
+                .header("Docker-Content-Digest", &manifest_digest.to_string())
+                .json_body(manifest_body);
+        });
+
+        let registry = mock_registry(&server);
+        let config = mock_launcher_config("v1.0");
+
+        // when
+        let result = get_manifest_digest(&registry, &config, &expected_image_digest).await;
+
+        // then
+        assert_matches!(result, Ok(d) => {
+            assert_eq!(d, manifest_digest);
+        });
+    }
+
+    #[tokio::test]
+    async fn get_manifest_digest_follows_image_index_to_amd64_manifest() {
+        // given
+        let server = MockServer::start();
+        let expected_image_digest = sample_digest();
+        let manifest_digest = digest('c');
+        let amd64_ref = "sha256:amd64ref";
+
+        server.mock(|when, then| {
+            when.method(GET).path("/token");
+            then.status(200)
+                .json_body(serde_json::json!({ "token": "test-token" }));
+        });
+
+        // First request: image index pointing to amd64 manifest
+        server.mock(|when, then| {
+            when.method(GET).path("/v2/test/image/manifests/latest");
+            then.status(200).json_body(serde_json::json!({
+                "mediaType": "application/vnd.oci.image.index.v1+json",
+                "manifests": [
+                    {
+                        "digest": amd64_ref,
+                        "platform": { "architecture": "amd64", "os": "linux" }
+                    },
+                    {
+                        "digest": "sha256:armref",
+                        "platform": { "architecture": "arm64", "os": "linux" }
+                    }
+                ]
+            }));
+        });
+
+        // Second request: the resolved amd64 manifest
+        server.mock(|when, then| {
+            when.method(GET)
+                .path(format!("/v2/test/image/manifests/{amd64_ref}"));
+            then.status(200)
+                .header("Docker-Content-Digest", &manifest_digest.to_string())
+                .json_body(serde_json::json!({
+                    "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+                    "config": { "digest": expected_image_digest.to_string() }
+                }));
+        });
+
+        let registry = mock_registry(&server);
+        let config = mock_launcher_config("latest");
+
+        // when
+        let result = get_manifest_digest(&registry, &config, &expected_image_digest).await;
+
+        // then
+        assert_matches!(result, Ok(d) => {
+            assert_eq!(d, manifest_digest);
+        });
+    }
+
+    #[tokio::test]
+    async fn get_manifest_digest_skips_mismatched_config_digest() {
+        // given
+        let server = MockServer::start();
+        let expected_image_digest = sample_digest();
+        let wrong_digest = digest('f');
+
+        server.mock(|when, then| {
+            when.method(GET).path("/token");
+            then.status(200)
+                .json_body(serde_json::json!({ "token": "test-token" }));
+        });
+
+        server.mock(|when, then| {
+            when.method(GET).path("/v2/test/image/manifests/v1.0");
+            then.status(200)
+                .header("Docker-Content-Digest", "sha256:doesntmatter")
+                .json_body(serde_json::json!({
+                    "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+                    "config": { "digest": wrong_digest.to_string() }
+                }));
+        });
+
+        let registry = mock_registry(&server);
+        let config = mock_launcher_config("v1.0");
+
+        // when
+        let result = get_manifest_digest(&registry, &config, &expected_image_digest).await;
+
+        // then
+        assert_matches!(result, Err(LauncherError::ImageHashNotFoundAmongTags));
+    }
+
+    #[tokio::test]
+    async fn get_manifest_digest_errors_on_auth_failure() {
+        // given
+        let server = MockServer::start();
+
+        server.mock(|when, then| {
+            when.method(GET).path("/token");
+            then.status(403);
+        });
+
+        let registry = mock_registry(&server);
+        let config = mock_launcher_config("v1.0");
+
+        // when
+        let result = get_manifest_digest(&registry, &config, &sample_digest()).await;
+
+        // then
+        assert_matches!(result, Err(LauncherError::RegistryAuthFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn get_manifest_digest_missing_content_digest_header_skips_tag() {
+        // given
+        let server = MockServer::start();
+        let expected_image_digest = sample_digest();
+
+        server.mock(|when, then| {
+            when.method(GET).path("/token");
+            then.status(200)
+                .json_body(serde_json::json!({ "token": "test-token" }));
+        });
+
+        // Manifest matches but no Docker-Content-Digest header
+        server.mock(|when, then| {
+            when.method(GET).path("/v2/test/image/manifests/v1.0");
+            then.status(200).json_body(serde_json::json!({
+                "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+                "config": { "digest": expected_image_digest.to_string() }
+            }));
+        });
+
+        let registry = mock_registry(&server);
+        let config = mock_launcher_config("v1.0");
+
+        // when
+        let result = get_manifest_digest(&registry, &config, &expected_image_digest).await;
+
+        // then - tag is skipped, no more tags → error
+        assert_matches!(result, Err(LauncherError::ImageHashNotFoundAmongTags));
+    }
 }
 
 /// Integration tests requiring network access and Docker Hub.
@@ -761,7 +1007,8 @@ mod integration_tests {
         let expected_digest: DockerSha256Digest = TEST_DIGEST.parse().unwrap();
 
         // when
-        let result = get_manifest_digest(&config, &expected_digest).await;
+        let registry = DockerRegistry::new(&config);
+        let result = get_manifest_digest(&registry, &config, &expected_digest).await;
 
         // then
         assert!(result.is_ok(), "get_manifest_digest failed: {result:?}");
