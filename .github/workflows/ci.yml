@@ -255,37 +255,6 @@ jobs:
           # `neard` is already downloaded in the step, `download-neard`, above
           pytest -m "not ci_excluded" -s -x --skip-nearcore-build
 
-  tee-launcher-tests:
-    name: "TEE Launcher: pytests"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.11"
-
-      - name: Setup virtualenv
-        run: |
-          python3 -m venv tee_launcher/venv
-          source tee_launcher/venv/bin/activate
-          cd tee_launcher 
-          pip install -r requirements.txt
-
-      - name: Run pytest
-        run: |
-          source tee_launcher/venv/bin/activate
-          cd tee_launcher 
-          PYTHONPATH=. pytest -vsx
-
   fast-ci-checks:
     name: "Fast CI checks"
     runs-on: warp-ubuntu-2404-x64-8x
