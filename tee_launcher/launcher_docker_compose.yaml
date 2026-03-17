@@ -2,14 +2,14 @@ version: '3.8'
 
 services:
   launcher:
-    image: nearone/mpc-launcher@sha256:85a4fa6d1eec05e8f43dba17d3f4368f89719a2a06b9e2051d84813c3f651068
+    image: nearone/mpc-launcher@sha256:5973f1b0510f580ec1cada64310a430f4d7a380a69e57493b055bbb9cdd6ae63
 
     container_name: launcher
 
     environment:
       - PLATFORM=TEE
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:ab42ed7ec5aa743668abd3d9606ac7f556cb1f2c57b963d29bacd573d20a924a
+      - DEFAULT_IMAGE_DIGEST=sha256:a9a874255739ab610513a570e8af9daf4f0a774781a0e13120d9b09c4106ce65 # 3.7.0
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
