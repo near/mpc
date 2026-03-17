@@ -1,7 +1,6 @@
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::Gas;
-use std::sync::Arc;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
@@ -10,7 +9,7 @@ use crate::transaction_sender::TransactionSigner;
 pub trait SubmitFunctionCall {
     fn submit_function_call_tx(
         &self,
-        signer: Arc<TransactionSigner>,
+        signer: &TransactionSigner,
         receiver_id: AccountId,
         method_name: String,
         args: Vec<u8>,
@@ -24,7 +23,7 @@ where
 {
     async fn submit_function_call_tx(
         &self,
-        signer: Arc<TransactionSigner>,
+        signer: &TransactionSigner,
         receiver_id: AccountId,
         method_name: String,
         args: Vec<u8>,
@@ -75,14 +74,16 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
+        errors::{ChainGatewayError, ChainGatewayOp},
         mock::{MockChainStateBuilder, MockError},
-        transaction_sender::test_utils::signer_from_rng,
+        transaction_sender::{SubmitFunctionCall, test_utils::signer_from_rng},
         types::LatestFinalBlockInfo,
     };
 
-    use super::*;
+    use near_account_id::AccountId;
     use near_indexer::near_primitives::serialize::dec_format::DecType;
 
+    use near_indexer_primitives::types::Gas;
     use rand::{SeedableRng, rngs::StdRng};
 
     struct TransactionCall {
@@ -120,10 +121,10 @@ mod tests {
             .with_latest_block(Err(expected_source.clone()))
             .build();
         let call = generate_test_call(&mut rng);
-        let signer = Arc::new(signer_from_rng(&mut rng));
+        let signer = signer_from_rng(&mut rng);
         let res = mock_chain_state
             .submit_function_call_tx(
-                signer.clone(),
+                &signer,
                 call.receiver_id.clone(),
                 call.method_name.clone(),
                 call.args.clone(),
@@ -152,8 +153,8 @@ mod tests {
         const SEED: u64 = 42;
         let mut rng = StdRng::seed_from_u64(SEED);
         let call = generate_test_call(&mut rng);
-        let signer = Arc::new(signer_from_rng(&mut rng.clone()));
-        let signer_clone = Arc::new(signer_from_rng(&mut rng));
+        let signer = signer_from_rng(&mut rng.clone());
+        let signer_clone = signer_from_rng(&mut rng);
 
         let info = LatestFinalBlockInfo {
             observed_at: 13290.into(),
@@ -167,7 +168,7 @@ mod tests {
         // When
         let res = mock_chain_state
             .submit_function_call_tx(
-                signer,
+                &signer,
                 call.receiver_id.clone(),
                 call.method_name.clone(),
                 call.args.clone(),
@@ -197,7 +198,7 @@ mod tests {
         const SEED: u64 = 42;
         let mut rng = StdRng::seed_from_u64(SEED);
         let call = generate_test_call(&mut rng);
-        let signer = Arc::new(signer_from_rng(&mut StdRng::seed_from_u64(SEED)));
+        let signer = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
 
         let info = LatestFinalBlockInfo {
             observed_at: 13290.into(),
@@ -212,7 +213,7 @@ mod tests {
         // When
         let res = mock_chain_state
             .submit_function_call_tx(
-                signer.clone(),
+                &signer,
                 call.receiver_id.clone(),
                 call.method_name.clone(),
                 call.args.clone(),
