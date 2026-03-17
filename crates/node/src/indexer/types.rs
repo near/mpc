@@ -375,7 +375,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
         Ok(ChainVerifyForeignTransactionRespondArgs {
             request: VerifyForeignTransactionRequest {
                 request: request.request,
-                domain_id: request.domain_id.0.into(),
+                domain_id: request.domain_id.into(),
                 payload_version: request.payload_version,
             },
             response: VerifyForeignTransactionResponse {

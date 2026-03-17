@@ -11,7 +11,7 @@ pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
-pub mod v3_6_0_state;
+pub mod v3_7_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -23,10 +23,7 @@ use crate::{
     crypto_shared::types::CKDResponse,
     dto_mapping::{args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType},
     errors::{Error, RequestError},
-    primitives::{
-        ckd::{CKDRequest, CKDRequestArgs},
-        domain::AddDomainsVotes,
-    },
+    primitives::{ckd::CKDRequest, domain::AddDomainsVotes},
     state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
@@ -43,11 +40,11 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
+use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
@@ -409,10 +406,11 @@ impl MpcContract {
             Ok(domains) => domains,
             Err(err) => env::panic_str(&err.to_string()),
         };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else {
+        let domain_id = request.domain_id.into();
+        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id,
+                    provided: domain_id,
                 }
                 .to_string(),
             );
@@ -475,7 +473,7 @@ impl MpcContract {
         let account_id = env::predecessor_account_id();
         let request = CKDRequest::new(
             request.app_public_key,
-            request.domain_id,
+            domain_id,
             &account_id,
             &request.derivation_path,
         );
@@ -521,11 +519,10 @@ impl MpcContract {
             Ok(domains) => domains,
             Err(err) => env::panic_str(&err.to_string()),
         };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.0.into())
-        else {
+        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.into()) else {
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id.0.into(),
+                    provided: request.domain_id.into(),
                 }
                 .to_string(),
             );
@@ -1676,11 +1673,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_6_0_state::MpcContract>() {
+        match try_state_read::<v3_7_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.6.0 state: {:?}", err);
+                log!("failed to deserialize state into v3.7.0 state: {:?}", err);
             }
         };
 
@@ -2473,11 +2470,11 @@ mod tests {
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
-            domain_id: DomainId::default(),
+            domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            request.domain_id,
+            request.domain_id.into(),
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2514,11 +2511,11 @@ mod tests {
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
-            domain_id: DomainId::default(),
+            domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            request.domain_id,
+            request.domain_id.into(),
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2728,7 +2725,7 @@ mod tests {
 
         // When
         contract.request_app_private_key(CKDRequestArgs {
-            domain_id: DomainId::default(),
+            domain_id: dtos::DomainId::default(),
             derivation_path: "test".to_string(),
             app_public_key: dtos::Bls12381G1PublicKey::from([0u8; 48]),
         });
@@ -2992,11 +2989,11 @@ mod tests {
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
-            domain_id: DomainId::default(),
+            domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key.clone(),
-            request.domain_id,
+            request.domain_id.into(),
             &context.predecessor_account_id.clone(),
             &request.derivation_path,
         );

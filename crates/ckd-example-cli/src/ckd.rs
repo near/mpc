@@ -8,13 +8,10 @@ use sha3::{Digest, Sha3_256};
 use std::io::{self, Write as _};
 
 use near_mpc_contract_interface::types::{
-    AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CkdAppId,
+    AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CKDRequestArgs, CkdAppId,
 };
 
-use crate::{
-    cli::Args,
-    types::{CKDArgs, CKDRequestArgs, CKDResponse},
-};
+use crate::{cli::Args, types::CKDResponse};
 
 const BLS12381G1_PUBLIC_KEY_SIZE: usize = 48;
 const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
@@ -25,16 +22,15 @@ pub fn run(args: Args) -> Result<()> {
     let app_id = derive_app_id(&account_id, &args.derivation_path);
 
     let (ephemeral_private_key, ephemeral_public_key) = generate_ephemeral_key(&mut OsRng);
-
-    let ckd_params = CKDRequestArgs::new(CKDArgs::new(
-        args.derivation_path,
-        ephemeral_public_key,
-        args.domain_id,
-    ));
+    let ckd_params = CKDRequestArgs {
+        derivation_path: args.derivation_path,
+        app_public_key: ephemeral_public_key,
+        domain_id: args.domain_id,
+    };
     let function_name = near_mpc_contract_interface::method_names::REQUEST_APP_PRIVATE_KEY;
     println!("Call the function {function_name} with parameters:");
 
-    let ckd_params_json = serde_json::to_string(&ckd_params)?;
+    let ckd_params_json = serde_json::to_string(&serde_json::json!({"request": ckd_params}))?;
     println!("{ckd_params_json}");
 
     let example_ckd_response = "{\"big_c\": \"bls12381g1:...\",\"big_y\": \"bls12381g1:...\"}";
