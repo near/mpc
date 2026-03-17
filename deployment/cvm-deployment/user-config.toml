@@ -6,10 +6,15 @@ rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 port_mappings = [
-    { host =8080, container =8080 },
-    { host =3030, container =3030 },
-    { host =80, container =80 },
-    { host =24567, container =24567 },
+    # debug/metrics endpoint
+    { host = 8080, container = 8080 },
+    { host = 3030, container = 3030 },
+    # MPC - P2P
+    { host = 80, container = 80 },
+    # neard
+    { host = 24567, container = 24567 },
+    # migration
+    { host = 8079, container = 8079 },
 ]
 
 [mpc_config]
@@ -32,7 +37,7 @@ my_near_account_id = "mpc-3-barak-launch1-b654bfa0a52e.5035bf56abb0.testnet"
 near_responder_account_id = "mpc-3-barak-launch1-b654bfa0a52e.5035bf56abb0.testnet"
 number_of_responder_keys = 1
 web_ui = "0.0.0.0:8080"
-migration_web_ui = "0.0.0.0:8078"
+migration_web_ui = "0.0.0.0:8079"
 cores = 4
 
 [mpc_config.node.indexer]

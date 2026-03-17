@@ -20,8 +20,8 @@ mod docker_types;
 mod error;
 mod types;
 
-const COMPOSE_TEMPLATE: &str = include_str!("../docker-compose.template.yml");
-const COMPOSE_TEE_TEMPLATE: &str = include_str!("../docker-compose.tee.template.yml");
+const COMPOSE_TEMPLATE: &str = include_str!("../mpc-node-docker-compose.template.yml");
+const COMPOSE_TEE_TEMPLATE: &str = include_str!("../mpc-node-docker-compose.tee.template.yml");
 
 const DOCKER_AUTH_ACCEPT_HEADER_VALUE: HeaderValue =
     HeaderValue::from_static("application/vnd.docker.distribution.manifest.v2+json");
@@ -982,6 +982,11 @@ mod tests {
 mod integration_tests {
     use super::*;
     use assert_matches::assert_matches;
+
+    //     # Dockerfile
+    // FROM alpine@sha256:765942a4039992336de8dd5db680586e1a206607dd06170ff0a37267a9e01958
+    // CMD ["true"]
+    // TODO: Look into reusing this image, as its small and will be faster on  CI
 
     const TEST_DIGEST: &str =
         "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372";
