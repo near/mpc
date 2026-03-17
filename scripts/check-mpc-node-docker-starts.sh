@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 USE_LAUNCHER=false
 
 for arg in "$@"; do
@@ -21,7 +24,7 @@ done
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher-nontee}"
 
 if $USE_LAUNCHER; then
-  cd ../deployment/cvm-deployment
+  cd "$REPO_ROOT/deployment/cvm-deployment"
   export LAUNCHER_IMAGE_NAME
   docker compose -f launcher_docker_compose_nontee.yaml up -d
   sleep 10
@@ -36,6 +39,8 @@ else
   touch /tmp/image-digest.bin
   # Test container startup - fail if container can't start
   # Start container in background and check status after 60 seconds
+  #
+  # TODO: REMOVE ALL ENVS PASSED
   CONTAINER_ID=$(docker run -d \
     -v /tmp/:/data \
     -e MPC_HOME_DIR="/data" \
