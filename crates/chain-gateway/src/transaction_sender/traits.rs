@@ -76,7 +76,7 @@ mod tests {
     use crate::{
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{MockChainStateBuilder, MockError},
-        transaction_sender::{SubmitFunctionCall, test_utils::signer_from_rng},
+        transaction_sender::{SubmitFunctionCall, TransactionSigner},
         types::LatestFinalBlockInfo,
     };
 
@@ -121,7 +121,8 @@ mod tests {
             .with_latest_block(Err(expected_source.clone()))
             .build();
         let call = generate_test_call(&mut rng);
-        let signer = signer_from_rng(&mut rng);
+        let signer = TransactionSigner::from_rng(&mut rng);
+        // When
         let res = mock_chain_state
             .submit_function_call_tx(
                 &signer,
@@ -132,6 +133,7 @@ mod tests {
             )
             .await
             .unwrap_err();
+        // Then
         assert_eq!(
             res,
             ChainGatewayError::FetchFinalBlock {
@@ -153,8 +155,8 @@ mod tests {
         const SEED: u64 = 42;
         let mut rng = StdRng::seed_from_u64(SEED);
         let call = generate_test_call(&mut rng);
-        let signer = signer_from_rng(&mut rng.clone());
-        let signer_clone = signer_from_rng(&mut rng);
+        let signer = TransactionSigner::from_rng(&mut rng.clone());
+        let signer_clone = TransactionSigner::from_rng(&mut rng);
 
         let info = LatestFinalBlockInfo {
             observed_at: 13290.into(),
@@ -198,7 +200,7 @@ mod tests {
         const SEED: u64 = 42;
         let mut rng = StdRng::seed_from_u64(SEED);
         let call = generate_test_call(&mut rng);
-        let signer = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
+        let signer = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
 
         let info = LatestFinalBlockInfo {
             observed_at: 13290.into(),

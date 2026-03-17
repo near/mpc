@@ -91,10 +91,7 @@ mod tests {
     use near_indexer_primitives::types::Gas;
     use rand::{SeedableRng, rngs::StdRng};
 
-    use crate::{
-        transaction_sender::{TransactionSigner, test_utils::signer_from_rng},
-        types::LatestFinalBlockInfo,
-    };
+    use crate::{transaction_sender::TransactionSigner, types::LatestFinalBlockInfo};
 
     const TEST_GAS: Gas = Gas::from_gas(300_000_000_000_000);
 
@@ -114,7 +111,7 @@ mod tests {
     fn test_nonce_starts_at_block_height_minimum() {
         // Given: a signer
         let mut rng = StdRng::seed_from_u64(42);
-        let signer = signer_from_rng(&mut rng);
+        let signer = TransactionSigner::from_rng(&mut rng);
         // When: for any given block height
         for height in [100, 101, 200, 2000, 5000] {
             // Then: expect the nonce to match the minimum required value
@@ -129,7 +126,7 @@ mod tests {
     fn test_nonce_increments_monotonically() {
         // Given: a signer
         let mut rng = StdRng::seed_from_u64(42);
-        let signer = signer_from_rng(&mut rng);
+        let signer = TransactionSigner::from_rng(&mut rng);
         let height = 100;
         // When: generating consecutive nonces for the same block height
         let first = signer.make_nonce(height);
@@ -144,8 +141,8 @@ mod tests {
     fn test_create_and_sign_returns_valid_transaction() {
         // Given: a signer
         const SEED: u64 = 40393;
-        let signer = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
-        let signer_clone = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
+        let signer = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
+        let signer_clone = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
         let receiver_id: AccountId = "receiver.near".parse().unwrap();
         let args = b"test args".to_vec();
         let gas = TEST_GAS;
@@ -199,8 +196,8 @@ mod tests {
     fn test_signer_is_deterministic() {
         // Given: two signers with same state
         const SEED: u64 = 40393;
-        let signer = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
-        let signer_clone = signer_from_rng(&mut StdRng::seed_from_u64(SEED));
+        let signer = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
+        let signer_clone = TransactionSigner::from_rng(&mut StdRng::seed_from_u64(SEED));
 
         // When: the two signers sign the same transaction
         let receiver_id: AccountId = "receiver.near".parse().unwrap();

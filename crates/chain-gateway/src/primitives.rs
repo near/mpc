@@ -57,7 +57,7 @@ pub(crate) trait FetchLatestFinalBlockInfo: Send + Sync + 'static {
     ) -> impl Future<Output = Result<LatestFinalBlockInfo, Self::Error>> + Send;
 }
 
-/// note: this is the only trait that exposes NEAR internals, but it's only used by tests
+/// note: this is the only trait that exposes NEAR internals, but it's only used crate-internally
 pub(crate) trait SubmitSignedTransaction: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     fn submit_signed_transaction(
