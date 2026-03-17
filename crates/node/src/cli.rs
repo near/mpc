@@ -253,6 +253,12 @@ impl Cli {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
                 let node_configuration = StartConfig::from_toml_file(&config_path)?;
+                // TODO(#2334): make near_init field non optional
+                anyhow::ensure!(
+                    node_configuration.near_init.is_some(),
+                    "[near_init] table must be set"
+                );
+
                 node_configuration.ensure_near_initialized()?;
                 run_mpc_node(node_configuration).await
             }
