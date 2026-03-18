@@ -64,37 +64,7 @@ confirm everything is consistent.
 
 ---
 
-## 4) Vote for new OS measurements (if RTMRs or key-provider changed)
-
-If the launcher or dstack update changes the CVM's OS measurements (MRTD,
-RTMR0-2, or key-provider event digest), participants must vote to approve the
-new measurement set **before** nodes running the updated image can pass
-attestation:
-
-```bash
-near contract call-function as-transaction \
-  <signer-contract> \
-  vote_add_os_measurement \
-  json-args '{"measurement": {"mrtd": "<hex>", "rtmr0": "<hex>", "rtmr1": "<hex>", "rtmr2": "<hex>", "key_provider_event_digest": "<hex>"}}' \
-  prepaid-gas '100.0 Tgas' \
-  attached-deposit '0 NEAR' \
-  sign-as <your-account-id> \
-  network-config testnet \
-  sign-with-keychain \
-  send
-```
-
-A threshold of participants must vote for the same measurement set. Use
-`allowed_os_measurements` to verify the new set was accepted. The old
-measurement set can be removed via `vote_remove_os_measurement` (requires
-unanimity) once all nodes have upgraded.
-
-See the [operator guide](../docs/running-an-mpc-node-in-tdx-external-guide.md#os-measurement-voting)
-for full details.
-
----
-
-## 5) Update the test "measurements validity" timestamp
+## 4) Update the test "measurements validity" timestamp
 
 Tests often treat the stored measurements as valid only after a given timestamp
 (to avoid accepting stale measurements).
