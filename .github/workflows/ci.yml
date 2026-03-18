@@ -191,6 +191,17 @@ jobs:
             --manifest-path crates/contract/Cargo.toml \
             --out-dir target/wasm32-unknown-unknown/release-contract
 
+      - name: Build test-parallel-contract
+        run: |
+          cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
+          wasm-opt -Oz \
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm \
+            -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+
+      - name: Build backup-cli
+        run: |
+          cargo build -p backup-cli --release --locked
+
       - name: Download near core binary from S3
         id: download-neard
         continue-on-error: true
@@ -235,7 +246,9 @@ jobs:
           retention-days: 1
           path: |
             target/release/mpc-node
+            target/release/backup-cli
             target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
             libs/nearcore/target/release/neard
 
   mpc-pytests:
@@ -279,6 +292,7 @@ jobs:
       - name: Make binaries executable
         run: |
           chmod +x target/release/mpc-node
+          chmod +x target/release/backup-cli
           chmod +x libs/nearcore/target/release/neard
 
       - name: Setup python
@@ -299,7 +313,7 @@ jobs:
         run: |
           source pytest/venv/bin/activate
           cd pytest
-          pytest -m "not ci_excluded" -s -x --skip-nearcore-build --skip-mpc-node-build --skip-mpc-contract-build ${{ matrix.tests }}
+          pytest -m "not ci_excluded" -s -x --skip-nearcore-build --skip-mpc-node-build --skip-mpc-contract-build --skip-parallel-contract-build --skip-backup-cli-build ${{ matrix.tests }}
 
   tee-launcher-tests:
     name: "TEE Launcher: pytests"
