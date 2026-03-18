@@ -19,10 +19,11 @@ This guide describes how to set up a testnet MPC cluster, where each MPC node is
 4. Get account and TLS keys from each node.  
 5. Initialize the contract with node parameters (keys, accounts, IPs).  
 6. Workaround for port override issue.  
-7. Vote for MPC code hash on the contract.  
-8. MPC nodes attestation submission.  
-9. Add a domain to the contract.  
-10. Submit a signing request to the MPC cluster.  
+7. Vote for MPC code hash on the contract.
+8. Vote for launcher image hash on the contract.
+9. MPC nodes attestation submission.
+10. Add a domain to the contract.
+11. Submit a signing request to the MPC cluster.  
 
 ---
 
@@ -386,7 +387,43 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker
 
 ---
 
-## Step 8: Check Attestation Submission
+## Step 8: Vote Launcher Image Hash on Contract
+
+The launcher image hash must also be voted in for compose hashes to be derived and attestation to work.
+Extract it from the compose file:
+
+```bash
+export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' tee_launcher/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+```
+
+### Frodo votes
+
+```bash
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT vote_add_launcher_hash \
+  json-args "{\"launcher_hash\": \"$LAUNCHER_HASH\"}" prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' sign-as $FRODO_ACCOUNT \
+  network-config testnet sign-with-keychain send
+```
+
+### Sam votes
+
+```bash
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT vote_add_launcher_hash \
+  json-args "{\"launcher_hash\": \"$LAUNCHER_HASH\"}" prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' sign-as $SAM_ACCOUNT \
+  network-config testnet sign-with-keychain send
+```
+
+Check the launcher hashes:
+
+```bash
+near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT allowed_launcher_image_hashes \
+  json-args '{}' network-config testnet now
+```
+
+---
+
+## Step 9: Check Attestation Submission
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accounts \
@@ -400,7 +437,7 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accoun
 
 ---
 
-## Step 9: Add Domain to Contract
+## Step 10: Add Domain to Contract
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_add_domains \
@@ -423,7 +460,7 @@ If the contract is stuck in **Initializing**, this usually means the MPC nodes f
 
 ---
 
-## Step 10: Submit Signing Request
+## Step 11: Submit Signing Request
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  sign \
