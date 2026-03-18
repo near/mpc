@@ -39,7 +39,7 @@ pub struct LogConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum LogLevel {
     Trace,
     Debug,
@@ -49,6 +49,7 @@ pub enum LogLevel {
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LogFormat {
     /// Plaintext logs
     Plain,

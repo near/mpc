@@ -12,10 +12,14 @@ secret_store_key_hex = "11111111111111111111111111111111"
 
 [tee]
 image_hash = "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0"
-latest_allowed_hash_file = "/tmp/LATEST_ALLOWED_HASH_FILE.txt"
+latest_allowed_hash_file_path = "/tmp/LATEST_ALLOWED_HASH_FILE.txt"
 
 [tee.authority]
 type = "local"
+
+[log_config]
+log_format = "plain"
+log_level = "info"
 
 [node]
 my_near_account_id = "$NEAR_ACCOUNT_ID"
