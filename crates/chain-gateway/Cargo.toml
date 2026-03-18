@@ -5,10 +5,6 @@ license = { workspace = true }
 edition = { workspace = true }
 autotests = false
 
-[[test]]
-name = "test"
-path = "tests/test.rs"
-
 [features]
 test-utils = []
 
@@ -35,11 +31,15 @@ base64 = { workspace = true }
 chain-gateway = { path = ".", features = ["test-utils"] }
 chain-gateway-test-contract = { workspace = true }
 fs2 = { workspace = true }
+near-sdk = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
-near-sdk = { workspace = true }
 wat = { workspace = true }
+
+[[test]]
+name = "test"
+path = "tests/test.rs"
 
 [lints]
 workspace = true
