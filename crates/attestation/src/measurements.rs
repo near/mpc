@@ -1,5 +1,5 @@
 use alloc::string::String;
-#[cfg(feature = "abi")]
+#[cfg(feature = "borsh-schema")]
 use alloc::string::ToString;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ use serde_with::{Bytes, serde_as};
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize, BorshSerialize,
 )]
-#[cfg_attr(feature = "abi", derive(borsh::BorshSchema))]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct Measurements {
     /// MRTD (Measurement of Root of Trust for Data) - identifies the virtual firmware.
     #[serde_as(as = "Bytes")]
@@ -38,7 +38,7 @@ pub struct Measurements {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
-#[cfg_attr(feature = "abi", derive(borsh::BorshSchema))]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
