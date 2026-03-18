@@ -1,0 +1,20 @@
+[package]
+name = "tee-context"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+chain-gateway = { path = "../chain-gateway" }
+mpc-primitives = { path = "../primitives" }
+near-mpc-contract-interface = { path = "../near-mpc-contract-interface" }
+near-account-id = { workspace = true }
+near-indexer-primitives = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

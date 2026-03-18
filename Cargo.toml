@@ -24,6 +24,7 @@ members = [
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
+    "crates/tee-context",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-utils",
@@ -58,6 +59,7 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
 near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
+tee-context = { path = "crates/tee-context" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
 utilities = { path = "crates/utilities" }

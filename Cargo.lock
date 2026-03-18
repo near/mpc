@@ -10661,6 +10661,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tee-context"
+version = "3.7.0"
+dependencies = [
+ "chain-gateway",
+ "mpc-primitives",
+ "near-account-id 2.5.0",
+ "near-indexer-primitives",
+ "near-mpc-contract-interface",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
