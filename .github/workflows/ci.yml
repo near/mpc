@@ -312,14 +312,23 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Cache python virtualenv
+        id: venv-cache
+        uses: WarpBuilds/cache@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        with:
+          path: pytest/venv
+          key: pytest-venv-${{ hashFiles('pytest/requirements.txt', 'libs/nearcore/pytest/requirements.txt') }}
+
       - name: Setup virtualenv
         run: |
-          python3 -m venv pytest/venv
-          source pytest/venv/bin/activate
-          cd pytest
-          pip install -r requirements.txt
-          cd ../
-          git submodule foreach --recursive 'git reset --hard && git clean -fd'
+          if [ "${{ steps.venv-cache.outputs.cache-hit }}" != "true" ]; then
+            python3 -m venv pytest/venv
+            source pytest/venv/bin/activate
+            cd pytest
+            pip install -r requirements.txt
+            cd ../
+            git submodule foreach --recursive 'git reset --hard && git clean -fd'
+          fi
 
       - name: Run pytest
         run: |
