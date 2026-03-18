@@ -11,7 +11,13 @@ We use Dstack (from Phala) to orchestrate the environment and run the MPC contai
 ## Limitations and Restrictions
 
  **Important:**
-You cannot migrate an existing MPC node out of its CVM without data loss (for example: key share, P2P key). In addition, replacing or changing TDX-related hardware or dependencies (e.g., a CPU swap) may render the data unrecoverable.
+ 
+The CVM filesystem is encrypted with a hardware-bound key derived from SGX sealing, so copying the CVM or disk data to another machine will not work and may result in data loss, including loss of key shares and P2P identity keys.
+
+Platform-bound sealed data may also become unrecoverable if TDX-related hardware changes (for example, a CPU replacement).
+
+To move a node between hosts, follow the supported procedure described in the Node Migration section, which uses the backup-cli tool to securely transfer keyshares.
+
 
 ## Main difference between TEE and non TEE MPC nodes
 
@@ -578,9 +584,9 @@ RUST_LOG=mpc=debug,info
 
 NEAR_BOOT_NODES=$BOOT_NODES
 
+# telemertry,migration,debug,node-node,DSS
+PORTS=8080:8080,8079:8079,3030:3030,80:80,24567:24567
 
-# Port forwarding 
-PORTS=8080:8080,24567:24567,80:80
 
 ```
 
@@ -658,9 +664,10 @@ This creates a limitation when trying to run both **mainnet** and **testnet** no
 | Port   | Purpose                                                                 |
 |--------|-------------------------------------------------------------------------|
 | **80** | Node-to-node communication (port override convention)                   |
-| **24567** | Decentralized state sync                                               |
-| **8080** | Debug and telemetry collection, plus the new `getdata` endpoint         |
+| **24567** | Decentralized state sync                                             |
+| **8080** | Debug and telemetry collection, plus the new `/get_data` endpoint      |
 | **3030** | Debug and telemetry collection                                         |
+| **8079** | Migration port                    |
 
 ### Configuring and starting the MPC binary in a CVM
 
