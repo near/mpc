@@ -307,12 +307,6 @@ jobs:
             target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
             libs/nearcore/target/release/neard
 
-      - name: Make binaries executable
-        run: |
-          chmod +x target/release/mpc-node
-          chmod +x target/release/backup-cli
-          chmod +x libs/nearcore/target/release/neard
-
       - name: Setup python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
