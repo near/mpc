@@ -19,9 +19,10 @@ This guide describes how to set up a testnet MPC cluster, where each MPC node is
 4. Get account and TLS keys from each node.  
 5. Initialize the contract with node parameters (keys, accounts, IPs).  
 6. Workaround for port override issue.  
-7. Vote for MPC code hash on the contract.  
-8. MPC nodes attestation submission.  
-9. Add a domain to the contract.  
+7. Vote for MPC code hash on the contract.
+7b. Vote for launcher image hash on the contract.
+8. MPC nodes attestation submission.
+9. Add a domain to the contract.
 10. Submit a signing request to the MPC cluster.  
 
 ---
@@ -382,6 +383,42 @@ Check the hash:
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker_image_hashes \
   json-args '{}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' \
   sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
+```
+
+---
+
+## Step 7b: Vote Launcher Image Hash on Contract
+
+The launcher image hash must also be voted in for compose hashes to be derived and attestation to work.
+Extract it from the compose file:
+
+```bash
+export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' tee_launcher/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+```
+
+### Frodo votes
+
+```bash
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT vote_add_launcher_hash \
+  json-args "{\"launcher_hash\": \"$LAUNCHER_HASH\"}" prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' sign-as $FRODO_ACCOUNT \
+  network-config testnet sign-with-keychain send
+```
+
+### Sam votes
+
+```bash
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT vote_add_launcher_hash \
+  json-args "{\"launcher_hash\": \"$LAUNCHER_HASH\"}" prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' sign-as $SAM_ACCOUNT \
+  network-config testnet sign-with-keychain send
+```
+
+Check the launcher hashes:
+
+```bash
+near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT allowed_launcher_image_hashes \
+  json-args '{}' network-config testnet now
 ```
 
 ---

@@ -245,15 +245,19 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 | Method | Contract | Description |
 |--------|----------|-------------|
 | `vote_code_hash(code_hash)` | All | Vote for a new Docker image hash |
+| `vote_add_launcher_hash(launcher_hash)` | All | Vote for a new launcher image hash (threshold) |
+| `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity) |
 | `vote_foreign_chain_policy(policy)` | MPC, HOT | Vote on trusted RPC providers per chain |
 | `vote_new_parameters(...)` | MPC only | Vote for threshold and participant changes |
 | `vote_update_governors(...)` | HOT only | Vote to change the governor set |
 
-When `vote_code_hash()` reaches the vote threshold, the contract automatically derives the corresponding **launcher compose hash**:
+**Launcher compose hash derivation:** The contract derives compose hashes from the cross-product of allowed MPC image hashes and allowed launcher image hashes:
 
-1. A YAML template ([example: `launcher_docker_compose.yaml.template`][launcher-template]) contains a `{{DEFAULT_IMAGE_DIGEST_HASH}}` placeholder.
-2. The placeholder is replaced with the approved Docker image hash.
+1. A YAML template ([example: `launcher_docker_compose.yaml.template`][launcher-template]) contains `{{LAUNCHER_IMAGE_HASH}}` and `{{DEFAULT_IMAGE_DIGEST_HASH}}` placeholders.
+2. Both placeholders are replaced with the approved launcher and MPC image hashes respectively.
 3. The filled YAML is SHA256-hashed to produce the [`LauncherDockerComposeHash`][launcher-compose-hash].
+
+When `vote_code_hash()` reaches threshold, compose hashes are derived for the new MPC hash against all existing allowed launcher hashes. When `vote_add_launcher_hash()` reaches threshold, compose hashes are derived for the new launcher hash against all existing allowed MPC hashes.
 
 Each service has its own launcher compose template.
 
