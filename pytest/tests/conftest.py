@@ -60,6 +60,12 @@ def pytest_addoption(parser):
         default=False,
         help="Enable nearcore build",
     )
+    parser.addoption(
+        "--skip-mpc-contract-build",
+        action="store_true",
+        default=False,
+        help="Skip mpc-contract compilation (use pre-built artifact)",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -203,6 +209,10 @@ def compile_mpc_contract(request):
     This function compiles the mpc-contract and moves it to the `COMPILED_CONTRACT_DIRECTORY` directory.
     This ensures that the pytests will always use the current source code of the mpc-contract.
     """
+
+    skip_mpc_contract_build = request.config.getoption("--skip-mpc-contract-build")
+    if skip_mpc_contract_build:
+        return
 
     git_root_directory = git_root()
     non_reproducible = request.config.getoption("--non-reproducible")
