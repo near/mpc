@@ -536,7 +536,7 @@ The simplified protocol addresses both attacks with three mechanisms:
 | Mechanism | Blocks attack |
 |-----------|--------------|
 | **Operator reads from attestation, not SC** — CVM keys are bound to hardware attestation. The operator verifies attestation of both CVMs before endorsing their keys. SC compromise cannot poison the operator's view. | pk_node substitution (attack 1) |
-| **Operator endorses both pk_mig and pk_node** — `sign(<'auth', pk_mig, pk_node>, sk_op)`. MIG cross-checks `pk_node` from the signature against the SC. If the SC has been tampered with, the cross-check fails. | pk_node substitution (attack 1) |
+| **Operator endorses both pk_mig and pk_node** — `sign(<'auth', pk_mig, pk_node>, sk_op)`. Each CVM cross-checks the **other's** key from the signature against the SC. If the SC has been tampered with, the cross-check fails. | pk_node substitution (attack 1) |
 | **MIG signs the ciphertext** — `sign(ct, sk_mig)`. The node verifies MIG's signature using `pk_mig` from the operator's endorsement. Since `sk_mig` never leaves the CVM, the adversary cannot forge a ciphertext that passes this check. | ct forgery (attack 2) |
 
 To substitute `pk_node`, the adversary would need to compromise **both** the SC (to change the on-chain key) **and** the operator (to get a signature endorsing the fake key). To forge a ciphertext, the adversary would need `sk_mig`, which is protected by TDX hardware isolation.
@@ -549,9 +549,10 @@ To substitute `pk_node`, the adversary would need to compromise **both** the SC 
 
 ### Protocol
 
-1. **Operator authorization** — Both CVMs present attestation evidence and their public keys to the operator. The operator verifies both attestations and returns `Sig_op = sign(<'auth', pk_mig, pk_node>, sk_op)`.
-2. **Key generation & delivery** — The migration CVM verifies `Sig_op` (cross-checking `pk_node` from the signature against the SC), generates a fresh 256-bit AES key, encrypts it to `pk_node`, signs the ciphertext with `sk_mig`, and delivers `<Sig_op, ct, sig_mig>` — bundling the operator signature so the node can verify it.
-3. **Verification & decryption** — The node CVM verifies `Sig_op` (extracting `pk_mig`), verifies `sig_mig` against `pk_mig`, and decrypts the AES key.
+1. **Operator authorization** — Both CVMs present attestation evidence and their public keys to the operator. The operator verifies both attestations and sends `Sig_op = sign(<'auth', pk_mig, pk_node>, sk_op)` to **both** CVMs.
+2. **Cross-check** — Each CVM verifies `Sig_op` against `pk_operator` and cross-checks the **other** CVM's public key from the signature against the value on the SC. If the SC has been tampered with, the cross-check fails.
+3. **Key generation & delivery** — The migration CVM generates a fresh 256-bit AES key, encrypts it to `pk_node`, signs the ciphertext with `sk_mig`, and delivers `<ct, sig_mig>` to the node.
+4. **Verification & decryption** — The node CVM verifies `sig_mig` against `pk_mig` (extracted from `Sig_op` it already received), and decrypts the AES key.
 
 ```mermaid
 sequenceDiagram
@@ -579,21 +580,25 @@ sequenceDiagram
     NODE ->> OP: Present attestation + pk_node
     OP ->> OP: Verify both CVM attestations
     OP -->> MIG: Sig_op = sign(<'auth', pk_mig, pk_node>, sk_op)
+    OP -->> NODE: Sig_op = sign(<'auth', pk_mig, pk_node>, sk_op)
 
-    Note over MIG: Step 2 — Key Generation & Delivery
+    Note over MIG,NODE: Step 2 — Cross-Check
     MIG ->> MIG: Verify Sig_op against pk_operator
     MIG ->> MIG: Cross-check: pk_node in Sig_op == pk_node on SC
+    NODE ->> NODE: Verify Sig_op against pk_operator
+    NODE ->> NODE: Cross-check: pk_mig in Sig_op == pk_mig on SC
+
+    Note over MIG: Step 3 — Key Generation & Delivery
     MIG ->> MIG: Generate fresh 256-bit AES key
     MIG ->> MIG: ct = Enc(pk_node, aes_key)
     MIG ->> MIG: sig_mig = sign(ct, sk_mig)
-    MIG ->> BC: Post <Sig_op, ct, sig_mig>
-    Note right of MIG: Sig_op bundled so node can verify it.<br/>Host sees only ciphertext<br/>(cannot decrypt or forge sig_mig)
+    MIG ->> BC: Post <ct, sig_mig>
+    Note right of MIG: Host sees only ciphertext<br/>(cannot decrypt or forge sig_mig)
 
-    Note over NODE: Step 3 — Verification & Decryption
-    NODE ->> BC: Read <Sig_op, ct, sig_mig>
-    BC -->> NODE: <Sig_op, ct, sig_mig>
-    NODE ->> NODE: Verify Sig_op against pk_operator — extracts pk_mig
-    NODE ->> NODE: Verify sig_mig against pk_mig
+    Note over NODE: Step 4 — Verification & Decryption
+    NODE ->> BC: Read <ct, sig_mig>
+    BC -->> NODE: <ct, sig_mig>
+    NODE ->> NODE: Verify sig_mig against pk_mig (from Sig_op)
     NODE ->> NODE: Decrypt ct with sk_node → aes_key
 
     Note over MIG,NODE: AES Transport Key Established
@@ -606,7 +611,7 @@ sequenceDiagram
 |----------|-------------------|
 | **Key secrecy** | AES key encrypted to CVM-held pk_node; host sees only ciphertext |
 | **Agreement** | MIG signs ct — adversary cannot forge; node verifies both signatures |
-| **Operator authorization** | MIG verifies operator signature before generating key |
-| **Secrecy under SC compromise (scenario 5)** | Operator reads from attestation (not SC); cross-check catches fake pk_node; MIG's signature on ct prevents forgery |
+| **Operator authorization** | Both CVMs verify operator signature; MIG won't generate key without it, NODE won't accept key without it |
+| **Secrecy under SC compromise (scenario 5)** | Operator reads from attestation (not SC); both CVMs cross-check the other's key against Sig_op — catches fake pk_node or pk_mig; MIG's signature on ct prevents forgery |
 | **Secrecy under OP compromise (scenario 6)** | pk_node on honest SC is authentic; adversary lacks sk_node and sk_mig |
 | **Scenario 7 breaks (expected)** | Adversary controls both SC and operator — can substitute keys and forge signatures |
