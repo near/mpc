@@ -28,7 +28,7 @@ pub struct StartConfig {
     pub near_init: Option<NearInitConfig>,
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
-    pub log_config: LogConfig,
+    pub log: LogConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

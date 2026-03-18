@@ -41,7 +41,7 @@ use crate::tee::{
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
-    init_logging(&config.log_config);
+    init_logging(&config.log);
 
     let root_runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

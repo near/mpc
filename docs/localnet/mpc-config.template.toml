@@ -17,7 +17,7 @@ latest_allowed_hash_file = "/tmp/LATEST_ALLOWED_HASH_FILE.txt"
 [tee.authority]
 type = "local"
 
-[log_config]
+[log]
 log_format = "plain"
 log_level = "info"
 
