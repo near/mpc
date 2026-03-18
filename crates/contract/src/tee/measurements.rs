@@ -6,106 +6,6 @@ use std::collections::BTreeMap;
 
 use crate::primitives::key_state::AuthenticatedParticipantId;
 
-/// A 48-byte digest serialized as hex in JSON and raw bytes in borsh.
-#[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema, schemars::JsonSchema)
-)]
-#[serde(transparent)]
-pub struct Sha384Digest {
-    #[serde_as(as = "serde_with::hex::Hex")]
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        schemars(with = "String") // Schemars doesn't support arrays >32; actual JSON is a hex string.
-    )]
-    bytes: [u8; 48],
-}
-
-impl From<[u8; 48]> for Sha384Digest {
-    fn from(bytes: [u8; 48]) -> Self {
-        Self { bytes }
-    }
-}
-
-impl From<Sha384Digest> for [u8; 48] {
-    fn from(digest: Sha384Digest) -> Self {
-        digest.bytes
-    }
-}
-
-/// On-chain representation of expected TDX measurements.
-/// Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with
-/// contract-compatible serialization (hex strings in JSON, borsh for storage).
-#[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema, schemars::JsonSchema)
-)]
-pub struct ContractExpectedMeasurements {
-    pub mrtd: Sha384Digest,
-    pub rtmr0: Sha384Digest,
-    pub rtmr1: Sha384Digest,
-    pub rtmr2: Sha384Digest,
-    pub key_provider_event_digest: Sha384Digest,
-}
-
-impl From<ExpectedMeasurements> for ContractExpectedMeasurements {
-    fn from(m: ExpectedMeasurements) -> Self {
-        Self {
-            mrtd: Sha384Digest::from(m.rtmrs.mrtd),
-            rtmr0: Sha384Digest::from(m.rtmrs.rtmr0),
-            rtmr1: Sha384Digest::from(m.rtmrs.rtmr1),
-            rtmr2: Sha384Digest::from(m.rtmrs.rtmr2),
-            key_provider_event_digest: Sha384Digest::from(m.key_provider_event_digest),
-        }
-    }
-}
-
-impl From<ContractExpectedMeasurements> for ExpectedMeasurements {
-    fn from(m: ContractExpectedMeasurements) -> Self {
-        Self {
-            rtmrs: Measurements {
-                mrtd: m.mrtd.into(),
-                rtmr0: m.rtmr0.into(),
-                rtmr1: m.rtmr1.into(),
-                rtmr2: m.rtmr2.into(),
-            },
-            key_provider_event_digest: m.key_provider_event_digest.into(),
-        }
-    }
-}
-
-/// The action a participant is voting for on an OS measurement set.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MeasurementVoteAction {
-    Add(ContractExpectedMeasurements),
-    Remove(ContractExpectedMeasurements),
-}
-
 /// Tracks votes for adding or removing OS measurements.
 /// Each participant can have at most one active vote at a time.
 #[near(serializers=[borsh, json])]
@@ -149,6 +49,14 @@ impl MeasurementVotes {
     pub fn clear_votes(&mut self) {
         self.vote_by_account.clear();
     }
+}
+
+/// The action a participant is voting for on an OS measurement set.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MeasurementVoteAction {
+    Add(ContractExpectedMeasurements),
+    Remove(ContractExpectedMeasurements),
 }
 
 /// Collection of allowed OS measurements. Managed via voting (add requires threshold,
@@ -206,5 +114,97 @@ impl AllowedMeasurements {
     /// TODO(#2434): remove after migration is deployed
     pub fn from_entries(entries: Vec<ContractExpectedMeasurements>) -> Self {
         Self { entries }
+    }
+}
+
+/// On-chain representation of expected TDX measurements.
+/// Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with
+/// contract-compatible serialization (hex strings in JSON, borsh for storage).
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema, schemars::JsonSchema)
+)]
+pub struct ContractExpectedMeasurements {
+    pub mrtd: Sha384Digest,
+    pub rtmr0: Sha384Digest,
+    pub rtmr1: Sha384Digest,
+    pub rtmr2: Sha384Digest,
+    pub key_provider_event_digest: Sha384Digest,
+}
+
+impl From<ExpectedMeasurements> for ContractExpectedMeasurements {
+    fn from(m: ExpectedMeasurements) -> Self {
+        Self {
+            mrtd: Sha384Digest::from(m.rtmrs.mrtd),
+            rtmr0: Sha384Digest::from(m.rtmrs.rtmr0),
+            rtmr1: Sha384Digest::from(m.rtmrs.rtmr1),
+            rtmr2: Sha384Digest::from(m.rtmrs.rtmr2),
+            key_provider_event_digest: Sha384Digest::from(m.key_provider_event_digest),
+        }
+    }
+}
+
+impl From<ContractExpectedMeasurements> for ExpectedMeasurements {
+    fn from(m: ContractExpectedMeasurements) -> Self {
+        Self {
+            rtmrs: Measurements {
+                mrtd: m.mrtd.into(),
+                rtmr0: m.rtmr0.into(),
+                rtmr1: m.rtmr1.into(),
+                rtmr2: m.rtmr2.into(),
+            },
+            key_provider_event_digest: m.key_provider_event_digest.into(),
+        }
+    }
+}
+
+/// A 48-byte digest serialized as hex in JSON and raw bytes in borsh.
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema, schemars::JsonSchema)
+)]
+#[serde(transparent)]
+pub struct Sha384Digest {
+    #[serde_as(as = "serde_with::hex::Hex")]
+    #[cfg_attr(
+        all(feature = "abi", not(target_arch = "wasm32")),
+        schemars(with = "String") // Schemars doesn't support arrays >32; actual JSON is a hex string.
+    )]
+    bytes: [u8; 48],
+}
+
+impl From<[u8; 48]> for Sha384Digest {
+    fn from(bytes: [u8; 48]) -> Self {
+        Self { bytes }
+    }
+}
+
+impl From<Sha384Digest> for [u8; 48] {
+    fn from(digest: Sha384Digest) -> Self {
+        digest.bytes
     }
 }
