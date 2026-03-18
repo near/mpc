@@ -12,5 +12,6 @@ fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
 
     mpc_node::metrics::init_build_info_metric();
+    mpc_node::tracing::init_logging(cli.log_format);
     futures::executor::block_on(cli.run())
 }

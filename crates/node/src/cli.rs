@@ -1,8 +1,6 @@
 use crate::{
     config::{
-        load_config_file,
-        start::{LogConfig, LogFormat},
-        ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
+        load_config_file, ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
         SecretsStartConfig, StartConfig,
     },
     keyshare::{
@@ -12,27 +10,31 @@ use crate::{
     },
     run::run_mpc_node,
 };
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_primitives::hash::MpcDockerImageHash;
 use std::path::PathBuf;
-use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
-use url::Url;
 
 const DUMMY_ALLOWED_HASH: MpcDockerImageHash = MpcDockerImageHash::new([0; 32]);
 const ALLOWED_IMAGE_HASHES_FILE_PATH: &str = "/tmp/allowed_image_hashes.json";
-
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
 #[command(about = "MPC Node for Near Protocol")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
-    // TODO(#2334): can be removed when deprecating StartCmd as it's part of config file
     #[arg(long, value_enum, env("MPC_LOG_FORMAT"), default_value = "plain")]
     pub log_format: LogFormat,
     #[clap(subcommand)]
     pub command: CliCommand,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum LogFormat {
+    /// Plaintext logs
+    Plain,
+    /// JSON logs
+    Json,
 }
 
 #[derive(Subcommand, Debug)]
@@ -99,17 +101,6 @@ pub struct StartCmd {
     pub backup_encryption_key_hex: Option<String>,
 }
 
-#[derive(Subcommand, Debug, Clone)]
-pub enum CliTeeAuthorityConfig {
-    Local,
-    Dstack {
-        #[arg(long, env("DSTACK_ENDPOINT"), default_value = DEFAULT_DSTACK_ENDPOINT)]
-        dstack_endpoint: String,
-        #[arg(long, env("QUOTE_UPLOAD_URL"), default_value = DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL)]
-        quote_upload_url: Url,
-    },
-}
-
 #[derive(Args, Debug)]
 pub struct CliImageHashConfig {
     #[arg(
@@ -127,7 +118,7 @@ pub struct CliImageHashConfig {
 }
 
 impl StartCmd {
-    fn into_start_config(self, config: ConfigFile, log_format: LogFormat) -> StartConfig {
+    fn into_start_config(self, config: ConfigFile) -> StartConfig {
         let gcp = match (self.gcp_keyshare_secret_id, self.gcp_project_id) {
             (Some(keyshare_secret_id), Some(project_id)) => Some(GcpStartConfig {
                 keyshare_secret_id,
@@ -154,10 +145,6 @@ impl StartCmd {
                 latest_allowed_hash_file_path: ALLOWED_IMAGE_HASHES_FILE_PATH
                     .parse()
                     .expect("dummy allowed image hashes is valid path"),
-            },
-            log_config: LogConfig {
-                log_format,
-                log_level: None,
             },
         }
     }
@@ -252,12 +239,6 @@ impl Cli {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
                 let node_configuration = StartConfig::from_toml_file(&config_path)?;
-                // TODO(#2334): make near_init field non optional
-                anyhow::ensure!(
-                    node_configuration.near_init.is_some(),
-                    "[near_init] table must be set"
-                );
-
                 node_configuration.ensure_near_initialized()?;
                 run_mpc_node(node_configuration).await
             }
@@ -266,7 +247,7 @@ impl Cli {
                 let home_dir = std::path::Path::new(&start.home_dir);
                 let config_file = load_config_file(home_dir)?;
 
-                let node_configuration = start.into_start_config(config_file, self.log_format);
+                let node_configuration = start.into_start_config(config_file);
                 run_mpc_node(node_configuration).await
             }
             CliCommand::Init(config) => {

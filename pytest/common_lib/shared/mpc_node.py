@@ -154,7 +154,6 @@ class MpcNode(NearAccount):
                 "image_hash": DUMMY_MPC_IMAGE_HASH,
                 "latest_allowed_hash_file_path": "/tmp/latest_allowed_hash.txt",
             },
-            "log_config": {"log_format": "Plain", "log_level": "Debug"},
             "node": self.node_config,
         }
         config_path = str(pathlib.Path(self.home_dir) / "start_config.toml")
