@@ -6,9 +6,9 @@ use crate::{
         thresholds::{Threshold, ThresholdParameters},
     },
 };
-use contract_interface::types::DomainPurpose;
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::DomainPurpose;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
@@ -67,9 +67,9 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     }
 }
 
-pub fn bogus_ed25519_public_key() -> contract_interface::types::Ed25519PublicKey {
+pub fn bogus_ed25519_public_key() -> near_mpc_contract_interface::types::Ed25519PublicKey {
     let (_, compressed_edwards_point) = gen_random_edwards_point();
-    contract_interface::types::Ed25519PublicKey::from(compressed_edwards_point)
+    near_mpc_contract_interface::types::Ed25519PublicKey::from(compressed_edwards_point)
 }
 
 pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {

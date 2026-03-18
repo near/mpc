@@ -6,13 +6,25 @@ use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-pub use contract_interface::types::DomainPurpose;
+pub use near_mpc_contract_interface::types::DomainPurpose;
 
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Deref)]
 pub struct DomainId(pub u64);
+
+impl From<near_mpc_contract_interface::types::DomainId> for DomainId {
+    fn from(id: near_mpc_contract_interface::types::DomainId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<DomainId> for near_mpc_contract_interface::types::DomainId {
+    fn from(id: DomainId) -> Self {
+        Self(id.0)
+    }
+}
 
 impl Default for DomainId {
     fn default() -> Self {

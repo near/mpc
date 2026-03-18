@@ -12,7 +12,7 @@ use serde_with::serde_as;
 use serializable::SerializableEdwardsPoint;
 
 use crate::errors;
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

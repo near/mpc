@@ -1,9 +1,12 @@
-use crate::confidential_key_derivation::{hash_app_id_with_pk, ElementG1, Signature, VerifyingKey};
+use crate::confidential_key_derivation::{
+    hash_app_id_with_pk, ElementG1, ElementG2, Signature, VerifyingKey,
+};
 use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
 use crate::crypto::constants::NEAR_CKD_DOMAIN;
 use blstrs::{G1Affine, G2Affine};
 use elliptic_curve::group::prime::PrimeCurveAffine;
 use elliptic_curve::hash2curve::{hash_to_field, ExpandMsgXmd};
+use pairing::{MillerLoopResult as _, MultiMillerLoop as _};
 use rand_core::{CryptoRng, RngCore};
 use sha2::Sha256;
 
@@ -213,6 +216,14 @@ impl frost_core::Group for BLS12381G1Group {
     }
 }
 
+pub(crate) fn check_valid_point_g1(p: G1Affine) -> bool {
+    (p.is_on_curve() & p.is_torsion_free()).into()
+}
+
+pub(crate) fn check_valid_point_g2(p: G2Affine) -> bool {
+    (p.is_on_curve() & p.is_torsion_free()).into()
+}
+
 /// BLS signature verification
 /// following the standard in <https://www.ietf.org/archive/id/draft-irtf-cfrg-bls-signature-05.html#name-coreverify>
 pub fn verify_signature(
@@ -221,11 +232,11 @@ pub fn verify_signature(
     signature: &Signature,
 ) -> Result<(), frost_core::Error<BLS12381SHA256>> {
     let element1: G1Affine = signature.into();
-    if (!element1.is_on_curve() | !element1.is_torsion_free() | element1.is_identity()).into() {
+    if !check_valid_point_g1(element1) || element1.is_identity().into() {
         return Err(frost_core::Error::InvalidSignature);
     }
     let element2: G2Affine = verifying_key.to_element().into();
-    if (!element2.is_on_curve() | !element2.is_torsion_free() | element2.is_identity()).into() {
+    if !check_valid_point_g2(element2) || element2.is_identity().into() {
         return Err(frost_core::Error::MalformedVerifyingKey);
     }
 
@@ -259,6 +270,24 @@ fn hash_to_scalar(domain: &[&[u8]], msg: &[u8]) -> Scalar {
     )
     .expect("should never return error according to error cases described in ExpandMsgXmd");
     u[0].0
+}
+
+// Checks that e(a1, b1) . e(a2, b2) .. = 1
+pub(crate) fn multi_miller_loop(points: &[(ElementG1, ElementG2)]) -> bool {
+    let points: Vec<_> = points
+        .iter()
+        .map(|(a, b)| {
+            (
+                blstrs::G1Affine::from(a),
+                blstrs::G2Prepared::from(blstrs::G2Affine::from(b)),
+            )
+        })
+        .collect();
+    let refs: Vec<_> = points.iter().map(|(a, b)| (a, b)).collect();
+    blstrs::Bls12::multi_miller_loop(refs.as_slice())
+        .final_exponentiation()
+        .is_identity()
+        .into()
 }
 
 #[cfg(test)]

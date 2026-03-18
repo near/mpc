@@ -3,11 +3,6 @@ use super::shared_key_utils::{
     derive_secret_key_ed25519, derive_secret_key_secp256k1, generate_random_app_public_key,
     DomainKey, SharedSecretKey,
 };
-use contract_interface::method_names::{
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    SIGN,
-};
-use contract_interface::types::{self as dtos};
 use digest::{Digest, FixedOutput};
 use k256::{
     elliptic_curve::{Field as _, Group as _},
@@ -17,12 +12,17 @@ use mpc_contract::{
     crypto_shared::{derive_tweak, kdf::derive_app_id, CKDResponse},
     errors,
     primitives::{
-        ckd::{CKDRequest, CKDRequestArgs},
+        ckd::CKDRequest,
         domain::DomainId,
         signature::{Bytes, Payload, SignatureRequest, YieldIndex},
     },
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names::{
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
+    SIGN,
+};
+use near_mpc_contract_interface::types::{self as dtos, CKDRequestArgs};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{
@@ -228,7 +228,7 @@ impl CKDRequestTest {
         let args = CKDRequestArgs {
             derivation_path,
             app_public_key,
-            domain_id,
+            domain_id: domain_id.into(),
         };
 
         CKDRequestTest {

@@ -5,22 +5,24 @@ members = [
     "crates/attestation",
     "crates/attestation-cli",
     "crates/backup-cli",
-    "crates/bounded-collections",
+    "crates/chain-gateway",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
-    "crates/contract-interface",
-    "crates/crypto-types",
     "crates/devnet",
     "crates/foreign-chain-inspector",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
+    "crates/launcher-interface",
     "crates/mpc-attestation",
+    "crates/near-mpc-bounded-collections",
+    "crates/near-mpc-contract-interface",
+    "crates/near-mpc-crypto-types",
     "crates/near-mpc-sdk",
+    "crates/near-mpc-signature-verifier",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
-    "crates/signature-verifier",
     "crates/tee-authority",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
@@ -31,28 +33,30 @@ members = [
 ]
 
 [workspace.package]
-version = "3.6.0"
+version = "3.7.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/near/mpc"
 
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-bounded-collections = { path = "crates/bounded-collections" }
 contract-history = { path = "crates/contract-history" }
-contract-interface = { path = "crates/contract-interface" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
+launcher-interface = { path = "crates/launcher-interface" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
-mpc-crypto-types = { path = "crates/crypto-types" }
 mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
-near-mpc-sdk = { path = "crates/near-mpc-sdk" }
+near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
+near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface", version = "0.0.1" }
+near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types", version = "0.0.1" }
+near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
+near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
-signature-verifier = { path = "crates/signature-verifier" }
 tee-authority = { path = "crates/tee-authority" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
@@ -92,6 +96,7 @@ derive_more = { version = "2.1.1", features = [
     "deref",
     "display",
     "from",
+    "from_str",
     "into",
 ] }
 digest = "0.10.7"
@@ -146,6 +151,7 @@ near-sdk = { version = "5.24.1", features = [
 ] }
 near-workspaces = { version = "0.22.1" }
 num_enum = { version = "0.7.5", features = ["complex-expressions"] }
+pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
     "cpp",
     "flamegraph",
@@ -173,13 +179,13 @@ serial_test = "3.4.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
-socket2 = "0.6.2"
+socket2 = "0.6.3"
 subtle = "2.6.1"
 syn = "2.0"
 tempfile = "3.26.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
-tokio = { version = "1.41.0", features = ["full"] }
+tokio = { version = "1.50.0", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
@@ -195,19 +201,20 @@ tracing-subscriber = { version = "0.3.22", features = [
 ] }
 tracing-test = "0.2.6"
 url = "2"
+wat = "1"
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.7" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
@@ -239,6 +246,8 @@ time = "0.3.41"
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"
+allow_attributes = "warn"
+mod_module_files = "deny"
 
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"

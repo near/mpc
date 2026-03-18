@@ -19,7 +19,7 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 - **Monitor the HOT governance contract** for allowed Docker image hashes and launcher compose hashes.
 
 [key-import]: #key-import-process
-[block-event-subscriber]: indexer-design.md#block-event-subscriber
+[block-event-subscriber]: chain-gateway-design.md#block-event-subscriber
 [hot-mpc]: https://github.com/near/hot-mpc
 [mpc-client]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/mpc_client.rs
 [validation-verify]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143
@@ -80,15 +80,14 @@ class RPC ext;
 
 ### Shared Components
 
-The Archive Signer is built on three reusable layers from this repository (bottom-up):
+The Archive Signer is built on three reusable layers from this repository. For the shared boot, attestation, governance, and upgrade patterns, see [TEE Lifecycle][tee-lifecycle].
 
 - **[Embedded Indexer Node](#embedded-indexer-node)** — runs a full `near-indexer` (including `neard`) inside the CVM for trustless NEAR chain access.
-- **[Chain Gateway][indexer-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
-- **TEE Context** — sits on top of the Chain Gateway; manages the attestation lifecycle: polls allowed image hashes, periodically submits attestation quotes, and monitors for attestation removal. Depends on [`tee-authority`][tee-authority] (attestation generation) and [`mpc-attestation`][mpc-attestation] (on-chain verification).
+- **[Chain Gateway][chain-gateway-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
+- **[TEE Context][tee-context]** — sits on top of the Chain Gateway; provides the contract interface for the [attestation lifecycle][tee-lifecycle].
 
-[indexer-design]: indexer-design.md
-[tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
-[mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
+[tee-lifecycle]: tee-lifecycle.md
+[chain-gateway-design]: chain-gateway-design.md
 
 ### Crate Dependencies
 
@@ -218,9 +217,9 @@ If verification fails, the application logs the error and exits without starting
 
 ## TEE Context
 
-The TEE Context is described in the [TEE Lifecycle][tee-context] doc. It is a shared crate managing the attestation lifecycle — polling allowed hashes, periodic attestation submission, attestation removal monitoring, and polling foreign chain policy. The Archive Signer uses it directly, configured to talk to the HOT governance contract. The foreign chain policy task provides the active `ForeignChainPolicy` to the validation SDK so it knows which RPC providers to trust for each chain.
+The TEE Context is described in the [TEE Context design doc][tee-context]. It is a shared crate managing the attestation lifecycle — polling allowed hashes, periodic attestation submission, attestation removal monitoring, and polling foreign chain policy. The Archive Signer uses it directly, configured to talk to the HOT governance contract. The foreign chain policy task provides the active `ForeignChainPolicy` to the validation SDK so it knows which RPC providers to trust for each chain.
 
-[tee-context]: tee-lifecycle.md#tee-context
+[tee-context]: tee-context-design.md
 
 ## HTTP Signing API
 
@@ -409,7 +408,7 @@ The initial governor set and vote threshold are configured at contract deploymen
 
 Launcher compose hash derivation follows the standard mechanism described in [TEE Lifecycle: Launcher Compose Hash Derivation][tee-launcher-hash]. The HOT TEE governance contract uses its own launcher compose template, since the Archive Signer has a different Docker Compose configuration than the MPC node.
 
-[tee-launcher-hash]: tee-lifecycle.md#launcher-compose-hash-derivation
+[tee-launcher-hash]: tee-lifecycle.md#voting-methods
 
 ## Attestation Flow
 
@@ -417,7 +416,7 @@ Launcher compose hash derivation follows the standard mechanism described in [TE
 
 The generic CVM boot sequence is described in [TEE Lifecycle: CVM Boot Sequence][tee-boot-sequence]. The diagram below extends it with Archive Signer-specific key import steps.
 
-[tee-boot-sequence]: tee-lifecycle.md#cvm-boot-sequence-launcher-pattern
+[tee-boot-sequence]: tee-lifecycle.md#boot
 
 ```mermaid
 sequenceDiagram
@@ -479,7 +478,7 @@ Attestation generation and on-chain verification follow the standard TEE lifecyc
 
 Application upgrades follow the standard [Launcher pattern][tee-upgrade]: governors vote for a new Docker image hash, the running app detects the update, the operator restarts the CVM, and the new app reattests. See [TEE Lifecycle: Application Upgrade][tee-upgrade] for the full flow.
 
-[tee-upgrade]: tee-lifecycle.md#application-upgrade
+[tee-upgrade]: tee-lifecycle.md#upgrade
 
 ## Redundancy and Recovery
 

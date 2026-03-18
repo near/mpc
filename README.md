@@ -8,7 +8,7 @@ There are two main parts of the binary: NEAR indexer and MPC signing.
 
 ### NEAR Indexer
 
-The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [indexer design doc](docs/indexer-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
+The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [chain-gateway design doc](docs/chain-gateway-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
 
 ### MPC Signing
 
@@ -84,6 +84,45 @@ We use the following terminology when referring to tests:
 
 - **Unit and integration tests**: Run with `cargo nextest run --cargo-profile=test-release`
 - **System tests**: See the README in the `/pytest` directory.
+
+### Updating snapshots
+
+We use [`cargo insta`](https://insta.rs/) for snapshot testing to guard against
+unintended changes to ABIs, serialization formats, and deterministic outputs.
+
+If a snapshot test fails, it means the output has changed relative to the
+accepted `.snap` file. To resolve this:
+
+1. **Review the diff.** Run the failing test to see what changed:
+   ```bash
+   cargo nextest run --cargo-profile=test-release <test_name>
+   ```
+   This creates a `.snap.new` file next to the existing `.snap` file.
+
+2. **Accept or reject.** Use `cargo insta` to interactively review pending
+   snapshots:
+   ```bash
+   cargo insta review
+   ```
+   This walks you through each changed snapshot and lets you accept or reject it.
+
+   Alternatively, to accept all pending snapshots at once:
+   ```bash
+   cargo insta accept
+   ```
+
+3. **Commit the updated `.snap` files.** The updated snapshots should be
+   committed alongside your code changes.
+
+> **Important:** Snapshot tests exist to catch accidental breaking changes.
+> Before accepting a new snapshot, make sure the change is intentional and
+> won't break compatibility (e.g. with existing on-chain data or client
+> integrations).
+
+If you don't have `cargo insta` installed:
+```bash
+cargo install cargo-insta
+```
 
 ## Reproducible Builds
 

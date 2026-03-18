@@ -3,7 +3,7 @@ use rand::rngs::OsRng;
 use k256::elliptic_curve::{Field, Group};
 use threshold_signatures::confidential_key_derivation as ckd;
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 use crate::{primitives::thresholds::ThresholdParameters, state::ProtocolContractState};
 
@@ -30,7 +30,7 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
             output.push_str("  Domains:\n");
             for (i, domain) in state.domains.domains().iter().enumerate() {
                 output.push_str(&format!("    Domain {}: {:?}, ", domain.id, domain.scheme));
-                #[allow(clippy::comparison_chain)]
+                #[expect(clippy::comparison_chain)]
                 if i < state.generated_keys.len() {
                     output.push_str(&format!(
                         "key generated (attempt ID {})\n",
@@ -101,7 +101,7 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
                     state.previous_running_state.keyset.domains[i].attempt
                 ));
 
-                #[allow(clippy::comparison_chain)]
+                #[expect(clippy::comparison_chain)]
                 if i < state.reshared_keys.len() {
                     output.push_str(&format!(
                         "reshared (attempt ID {})\n",

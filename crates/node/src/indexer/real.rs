@@ -45,7 +45,7 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
 ///
 /// If an unrecoverable error occurs, the spawned indexer will terminate, and the provided [`oneshot::Sender`]
 /// will be used to propagate the error.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn spawn_real_indexer(
     home_dir: PathBuf,
     mpc_indexer_config: IndexerConfig,

@@ -5,15 +5,8 @@ use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
-use contract_interface::method_names::{
-    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
-};
-use contract_interface::types as dtos;
-use contract_interface::types::VerifyForeignTransactionRequestArgs;
 use futures::StreamExt;
-use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
+use mpc_contract::primitives::ckd::CKDRequest;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
 use near_account_id::AccountId;
@@ -22,6 +15,14 @@ use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_indexer_primitives::CryptoHash;
+use near_mpc_contract_interface::method_names::{
+    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
+};
+use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::CKDRequestArgs;
+use near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -393,7 +394,7 @@ fn try_get_ckd_args(
 
     let ckd_request = CKDRequest::new(
         ckd_args.request.app_public_key,
-        ckd_args.request.domain_id,
+        ckd_args.request.domain_id.into(),
         &receipt.predecessor_id,
         &ckd_args.request.derivation_path,
     );

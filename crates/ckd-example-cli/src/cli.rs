@@ -1,6 +1,4 @@
-use contract_interface::types::Bls12381G2PublicKey;
-
-use crate::types::DomainId;
+use near_mpc_contract_interface::types::{Bls12381G2PublicKey, DomainId};
 
 #[derive(clap::Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"))]

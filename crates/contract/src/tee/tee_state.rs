@@ -1,7 +1,8 @@
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     tee::proposal::{
-        AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
+        AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage, CodeHashesVotes,
+        LauncherHashVotes, LauncherVoteAction, MpcDockerImageHash,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -9,7 +10,7 @@ use mpc_attestation::{
     attestation::{self, Attestation, VerifiedAttestation},
     report_data::{ReportData, ReportDataV1},
 };
-use mpc_primitives::hash::LauncherDockerComposeHash;
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_account_id::AccountId;
 use near_sdk::{env, near};
 use std::{
@@ -98,8 +99,9 @@ pub(crate) struct NodeAttestation {
 )]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
-    pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+    pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: CodeHashesVotes,
+    pub(crate) launcher_votes: LauncherHashVotes,
     /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
     /// Attestations are stored for any valid participant that has submitted one, not
     /// just for the currently active participants.
@@ -151,8 +153,8 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         // Convert TLS public key
-        let tls_public_key: contract_interface::types::Ed25519PublicKey =
-            contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
+        let tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey =
+            near_mpc_contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
                 .map_err(|_| AttestationSubmissionError::InvalidTlsKey)?;
 
         // Convert account public key if available
@@ -163,9 +165,9 @@ impl TeeState {
         //
         // TODO(#823): Remove this fallback once all MPC nodes are required
         //             to run inside a TEE and provide a valid account_public_key.
-        let account_public_key: Option<contract_interface::types::Ed25519PublicKey> =
+        let account_public_key: Option<near_mpc_contract_interface::types::Ed25519PublicKey> =
             match node_id.account_public_key.as_ref() {
-                Some(pk) => contract_interface::types::Ed25519PublicKey::try_from(pk).ok(),
+                Some(pk) => near_mpc_contract_interface::types::Ed25519PublicKey::try_from(pk).ok(),
                 None => None,
             };
 
@@ -181,7 +183,7 @@ impl TeeState {
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
-            &self.allowed_launcher_compose_hashes,
+            &self.get_allowed_launcher_compose_hashes(),
             mpc_attestation::attestation::default_measurements(),
         )?;
 
@@ -209,7 +211,7 @@ impl TeeState {
     ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes =
             self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
-        let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
+        let allowed_launcher_compose_hashes = self.get_allowed_launcher_compose_hashes();
 
         let participant_attestation = self.stored_attestations.get(&node_id.tls_public_key);
         let Some(participant_attestation) = participant_attestation else {
@@ -221,7 +223,7 @@ impl TeeState {
         match participant_attestation.verified_attestation.re_verify(
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
-            allowed_launcher_compose_hashes,
+            &allowed_launcher_compose_hashes,
         ) {
             Ok(()) => TeeQuoteStatus::Valid,
             Err(err) => TeeQuoteStatus::Invalid(err.to_string()),
@@ -283,7 +285,7 @@ impl TeeState {
         code_hash: MpcDockerImageHash,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
-        self.votes.vote(code_hash.clone(), participant)
+        self.votes.vote(code_hash, participant)
     }
 
     pub fn get_allowed_mpc_docker_image_hashes(
@@ -310,11 +312,52 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
     ) {
         self.votes.clear_votes();
-        self.allowed_launcher_compose_hashes.push(
-            AllowedDockerImageHashes::get_docker_compose_hash(tee_proposal.clone()),
-        );
+        // Add compose hashes for the new MPC image across all allowed launcher images
+        self.allowed_launcher_images
+            .add_mpc_image_compose_hashes(&tee_proposal);
         self.allowed_docker_image_hashes
             .insert(tee_proposal, tee_upgrade_deadline_duration);
+    }
+
+    /// Returns all allowed launcher compose hashes (flattened from all allowed launcher images).
+    pub fn get_allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
+        self.allowed_launcher_images.all_compose_hashes()
+    }
+
+    /// Casts a vote for adding or removing a launcher image hash.
+    /// Returns the total number of votes for the same action.
+    pub fn vote_launcher(
+        &mut self,
+        action: LauncherVoteAction,
+        participant: &AuthenticatedParticipantId,
+    ) -> u64 {
+        self.launcher_votes.vote(action, participant)
+    }
+
+    /// Adds a new launcher image to the allowed set, computing compose hashes
+    /// for all currently allowed MPC images. Clears launcher votes.
+    pub fn add_launcher_image(
+        &mut self,
+        launcher_hash: LauncherImageHash,
+        tee_upgrade_deadline_duration: Duration,
+    ) -> bool {
+        self.launcher_votes.clear_votes();
+        let mpc_image_hashes = self
+            .allowed_docker_image_hashes
+            .get_image_hashes(tee_upgrade_deadline_duration);
+        self.allowed_launcher_images
+            .add(launcher_hash, &mpc_image_hashes)
+    }
+
+    /// Removes a launcher image from the allowed set. Clears launcher votes.
+    pub fn remove_launcher_image(&mut self, launcher_hash: &LauncherImageHash) -> bool {
+        self.launcher_votes.clear_votes();
+        self.allowed_launcher_images.remove(launcher_hash)
+    }
+
+    /// Returns all allowed launcher image hashes.
+    pub fn get_allowed_launcher_hashes(&self) -> Vec<LauncherImageHash> {
+        self.allowed_launcher_images.launcher_hashes()
     }
 
     /// Removes TEE information for nodes that are not in the provided participants list.

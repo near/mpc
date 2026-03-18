@@ -63,7 +63,7 @@ impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
 where
     ForeignChainPolicyReader: ReadForeignChainPolicy + 'static,
 {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         client: Arc<MeshNetworkClient>,
@@ -308,7 +308,7 @@ where
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
-                                domain_id: request.domain_id.0.into(),
+                                domain_id: request.domain_id.into(),
                                 entropy,
                                 payload_version: request.payload_version,
                                 request: request.request,
