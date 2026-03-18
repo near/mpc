@@ -80,6 +80,10 @@ pub enum VerificationError {
     },
     #[error("the mock attestation is invalid per definition")]
     InvalidMockAttestation,
+    #[error("the allowed measurements list is empty")]
+    EmptyMeasurementsList,
+    #[error("the attestation's measurements are not in the allowed set")]
+    MeasurementsNotAllowed,
     #[error("custom error: `{0}`")]
     Custom(String),
 }
@@ -118,8 +122,7 @@ impl DstackAttestation {
     ///   If any element in the set is valid, the function accepts the attestation as
     ///   valid.
     ///
-    /// Returns the matched `ExpectedMeasurements` on success so it can be stored
-    /// for re-verification when allowed measurements change.
+    /// On success, returns the matched measurements.
     pub fn verify(
         &self,
         expected_report_data: ReportData,

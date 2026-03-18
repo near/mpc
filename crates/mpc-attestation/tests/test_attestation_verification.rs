@@ -166,16 +166,15 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
 
 #[test]
 fn validated_dstack_attestation_fails_reverification_with_removed_measurements() {
+    // given
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
     let account_key = account_key();
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
     let creation_time = VALID_ATTESTATION_TIMESTAMP;
-
     let allowed_mpc_hashes = [image_digest()];
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
-    // 1. Initial verify succeeds with default measurements
     let validated = attestation
         .verify(
             report_data.into(),
@@ -186,7 +185,6 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
         )
         .expect("Initial verification should succeed");
 
-    // 2. Re-verify fails when the measurement set no longer contains the attested measurements
     let different_measurements = [ExpectedMeasurements {
         rtmrs: Measurements {
             mrtd: [0xAA; 48],
@@ -197,6 +195,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
         key_provider_event_digest: [0xEE; 48],
     }];
 
+    // when
     let result = validated.re_verify(
         creation_time,
         &allowed_mpc_hashes,
@@ -204,21 +203,21 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
         &different_measurements,
     );
 
+    // then
     assert_matches!(
         result,
-        Err(VerificationError::Custom(msg))
-            if msg.contains("not in the allowed set")
+        Err(VerificationError::MeasurementsNotAllowed)
     );
 }
 
 #[test]
 fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
+    // given
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
     let account_key = account_key();
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
     let creation_time = VALID_ATTESTATION_TIMESTAMP;
-
     let allowed_mpc_hashes = [image_digest()];
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
@@ -232,6 +231,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
         )
         .expect("Initial verification should succeed");
 
+    // when
     let result = validated.re_verify(
         creation_time,
         &allowed_mpc_hashes,
@@ -239,21 +239,21 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
         &[],
     );
 
+    // then
     assert_matches!(
         result,
-        Err(VerificationError::Custom(msg))
-            if msg.contains("allowed measurements list is empty")
+        Err(VerificationError::EmptyMeasurementsList)
     );
 }
 
 #[test]
 fn validated_dstack_attestation_passes_reverification_with_superset_measurements() {
+    // given
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
     let account_key = account_key();
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
     let creation_time = VALID_ATTESTATION_TIMESTAMP;
-
     let allowed_mpc_hashes = [image_digest()];
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
@@ -267,7 +267,6 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
         )
         .expect("Initial verification should succeed");
 
-    // Re-verify with original defaults plus an extra measurement — should still pass
     let extra_measurement = ExpectedMeasurements {
         rtmrs: Measurements {
             mrtd: [0xAA; 48],
@@ -280,6 +279,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
     let mut superset: Vec<ExpectedMeasurements> = default_measurements().to_vec();
     superset.push(extra_measurement);
 
+    // when
     let result = validated.re_verify(
         creation_time,
         &allowed_mpc_hashes,
@@ -287,5 +287,6 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
         &superset,
     );
 
+    // then
     assert_matches!(result, Ok(()));
 }

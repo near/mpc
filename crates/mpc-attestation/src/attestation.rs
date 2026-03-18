@@ -261,15 +261,11 @@ fn verify_measurements(
     allowed_measurements: &[ExpectedMeasurements],
 ) -> Result<(), VerificationError> {
     if allowed_measurements.is_empty() {
-        return Err(VerificationError::Custom(
-            "the allowed measurements list is empty".to_string(),
-        ));
+        return Err(VerificationError::EmptyMeasurementsList);
     }
 
     if !allowed_measurements.contains(measurements) {
-        return Err(VerificationError::Custom(
-            "the attestation's measurements are not in the allowed set".to_string(),
-        ));
+        return Err(VerificationError::MeasurementsNotAllowed);
     }
 
     Ok(())
