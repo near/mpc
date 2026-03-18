@@ -320,15 +320,14 @@ jobs:
           key: pytest-venv-${{ hashFiles('pytest/requirements.txt', 'libs/nearcore/pytest/requirements.txt') }}
 
       - name: Setup virtualenv
+        if: steps.venv-cache.outputs.cache-hit != 'true'
         run: |
-          if [ "${{ steps.venv-cache.outputs.cache-hit }}" != "true" ]; then
-            python3 -m venv pytest/venv
-            source pytest/venv/bin/activate
-            cd pytest
-            pip install -r requirements.txt
-            cd ../
-            git submodule foreach --recursive 'git reset --hard && git clean -fd'
-          fi
+          python3 -m venv pytest/venv
+          source pytest/venv/bin/activate
+          cd pytest
+          pip install -r requirements.txt
+          cd ../
+          git submodule foreach --recursive 'git reset --hard && git clean -fd'
 
       - name: Run pytest
         run: |
