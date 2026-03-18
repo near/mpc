@@ -31,7 +31,7 @@ from utils import MetricsTracker
 
 import requests
 
-DUMMY_MPC_IMAGE_HASH = "deadbeef" * 8
+DUMMY_MPC_IMAGE_HASH = "sha256:" + "deadbeef" * 8
 
 
 class MpcNode(NearAccount):
@@ -152,7 +152,7 @@ class MpcNode(NearAccount):
             "tee": {
                 "authority": {"type": "local"},
                 "image_hash": DUMMY_MPC_IMAGE_HASH,
-                "latest_allowed_hash_file": "latest_allowed_hash.txt",
+                "latest_allowed_hash_file_path": "/tmp/latest_allowed_hash.txt",
             },
             "log": {"format": "plain", "filter": "debug"},
             "node": self.node_config,

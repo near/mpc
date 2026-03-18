@@ -5568,6 +5568,7 @@ dependencies = [
  "mockall",
  "mpc-attestation",
  "mpc-contract",
+ "mpc-primitives",
  "mpc-tls",
  "near-account-id 2.5.0",
  "near-async",
