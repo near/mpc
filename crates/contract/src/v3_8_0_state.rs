@@ -1,4 +1,4 @@
-//! TODO(#2434): remove this entire module after v3.6.1 migration is deployed
+//! TODO(#2434): remove this entire module after v3.8.0 migration is deployed
 //!
 //! ## Overview
 //! This module stores the previous contract state—the one you want to migrate from.
