@@ -63,6 +63,9 @@ pub(crate) enum LauncherError {
     #[error("Invalid manifest URL: {0}")]
     InvalidManifestUrl(String),
 
+    #[error("User config contains reserved key [{0}] — remove it from mpc_node_config")]
+    ReservedConfigKey(String),
+
     #[error("The selected image failed digest validation: {0}")]
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),
 }

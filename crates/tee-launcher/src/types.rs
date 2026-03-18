@@ -220,7 +220,7 @@ rpc_max_attempts = 20
 
 port_mappings = [{ host = 11780, container = 11780 }]
 
-[mpc_config]
+[mpc_node_config]
 home_dir = "/data"
 some_opaque_field = true
 "#;
@@ -250,7 +250,7 @@ rpc_max_attempts = 20
 
 port_mappings = [{ host = 11780, container = 11780 }]
 
-[mpc_config]
+[mpc_node_config]
 home_dir = "/data"
 arbitrary_key = "arbitrary_value"
 "#;
