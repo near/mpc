@@ -24,9 +24,6 @@ download_genesis = false
 secret_store_key_hex = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 backup_encryption_key_hex = "0000000000000000000000000000000000000000000000000000000000000000"
 
-[mpc_config.tee.authority]
-type = "local"
-
 [mpc_config.node]
 my_near_account_id = "frodo.test.near"
 near_responder_account_id = "frodo.test.near"

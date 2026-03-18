@@ -1,10 +1,26 @@
-use std::fmt;
 use std::str::FromStr;
+use std::{fmt, path::PathBuf};
 
 use mpc_primitives::hash::MpcDockerImageHash;
 use serde::{Deserialize, Serialize};
 
 const SHA256_PREFIX: &str = "sha256:";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TeeAuthorityConfig {
+    Local,
+    Dstack {
+        dstack_endpoint: String,
+        // TODO(#2333): use URL type for this type
+        quote_upload_url: String,
+        /// Hex representation of the hash of the running image. Only required in TEE.
+        image_hash: DockerSha256Digest,
+        /// Path to the file where the node writes the latest allowed hash.
+        /// If not set, assumes running outside of TEE and skips image hash monitoring.
+        latest_allowed_hash_file_path: PathBuf,
+    },
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApprovedHashes {

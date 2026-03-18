@@ -53,6 +53,10 @@ impl<T> Hash32<T> {
     pub fn as_hex(&self) -> String {
         hex::encode(self.as_ref())
     }
+
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.bytes
+    }
 }
 
 #[derive(Error, Debug)]

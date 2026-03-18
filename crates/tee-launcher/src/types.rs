@@ -47,7 +47,7 @@ pub(crate) struct Config {
     /// The launcher does not interpret these fields — they are re-serialized
     /// to a TOML string, written to a file on disk, and mounted into the
     /// container for the MPC binary to consume via `start-with-config-file`.
-    pub(crate) mpc_config: toml::Table,
+    pub(crate) mpc_node_config: toml::Table,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,8 +231,8 @@ some_opaque_field = true
         // then
         assert_matches!(result, Ok(config) => {
             assert_eq!(config.launcher_config.image_name, "nearone/mpc-node");
-            assert_eq!(config.mpc_config["home_dir"].as_str(), Some("/data"));
-            assert_eq!(config.mpc_config["some_opaque_field"].as_bool(), Some(true));
+            assert_eq!(config.mpc_node_config["home_dir"].as_str(), Some("/data"));
+            assert_eq!(config.mpc_node_config["some_opaque_field"].as_bool(), Some(true));
         });
     }
 
@@ -257,7 +257,7 @@ arbitrary_key = "arbitrary_value"
         let config: Config = toml::from_str(toml_str).unwrap();
 
         // when — re-serialize the opaque table (what the launcher writes to disk)
-        let serialized = toml::to_string(&config.mpc_config).unwrap();
+        let serialized = toml::to_string(&config.mpc_node_config).unwrap();
 
         // then
         assert!(serialized.contains("home_dir"));

@@ -4,8 +4,8 @@ use std::{collections::VecDeque, time::Duration};
 
 use backon::{ExponentialBuilder, Retryable};
 use clap::Parser;
-use launcher_interface::MPC_IMAGE_HASH_EVENT;
-use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
+use launcher_interface::types::{ApprovedHashes, DockerSha256Digest, TeeAuthorityConfig};
+use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
 
 use constants::*;
 use docker_types::*;
@@ -119,8 +119,35 @@ async fn run() -> Result<(), LauncherError> {
     }
 
     let mpc_binary_config_path = std::path::Path::new(MPC_CONFIG_SHARED_PATH);
+
+    let mut mpc_node_config = config.mpc_node_config;
+
+    let tee_config = match args.platform {
+        Platform::Tee => TeeAuthorityConfig::Dstack {
+            dstack_endpoint: DSTACK_UNIX_SOCKET.to_string(),
+            quote_upload_url: DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL.to_string(),
+            image_hash: image_hash.clone(),
+            latest_allowed_hash_file_path: IMAGE_DIGEST_FILE
+                .parse()
+                .expect("image digest file has a valid path"),
+        },
+        Platform::NonTee => TeeAuthorityConfig::Local,
+    };
+
+    match mpc_node_config.entry("tee") {
+        toml::map::Entry::Vacant(vacant_entry) => {
+            let tee_config_serialized =
+                toml::Value::try_from(&tee_config).expect("TeeAuthorityConfig serializes to TOML");
+            vacant_entry.insert(tee_config_serialized);
+        }
+        toml::map::Entry::Occupied(_) => {
+            panic!("[tee] config table is not configurable by the user. please remove this field")
+        }
+    };
+
     let mpc_config_toml =
-        toml::to_string(&config.mpc_config).expect("re-serializing a toml::Table always succeeds");
+        toml::to_string(&mpc_node_config).expect("re-serializing a toml::Table always succeeds");
+
     std::fs::write(mpc_binary_config_path, mpc_config_toml.as_bytes()).map_err(|source| {
         LauncherError::FileWrite {
             path: mpc_binary_config_path.display().to_string(),

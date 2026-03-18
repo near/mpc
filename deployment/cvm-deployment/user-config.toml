@@ -29,9 +29,6 @@ download_config = "rpc"
 [mpc_config.secrets]
 secret_store_key_hex = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
-[mpc_config.tee.authority]
-type = "local"
-
 [mpc_config.node]
 my_near_account_id = "mpc-3-barak-launch1-b654bfa0a52e.5035bf56abb0.testnet"
 near_responder_account_id = "mpc-3-barak-launch1-b654bfa0a52e.5035bf56abb0.testnet"

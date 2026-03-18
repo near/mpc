@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        generate_and_write_backup_encryption_key_to_disk, ConfigFile, PersistentSecrets,
-        RespondConfig, SecretsConfig, StartConfig,
+        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _, ConfigFile,
+        PersistentSecrets, RespondConfig, SecretsConfig, StartConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -15,6 +15,7 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
+use launcher_interface::types::TeeAuthorityConfig;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
@@ -73,7 +74,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     )?;
 
     // Generate attestation
-    let tee_authority = config.tee.authority.clone().into_tee_authority()?;
+    let tee_authority = config.tee.clone().into_tee_authority()?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
@@ -125,20 +126,19 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
     let cancellation_token = CancellationToken::new();
 
-    let image_hash_watcher_handle = if let (Some(image_hash), Some(latest_allowed_hash_file)) =
-        (&config.tee.image_hash, &config.tee.latest_allowed_hash_file)
+    let image_hash_watcher_handle = if let TeeAuthorityConfig::Dstack {
+        image_hash,
+        latest_allowed_hash_file_path,
+        ..
+    } = &config.tee
     {
-        let current_image_hash_bytes: [u8; 32] = hex::decode(image_hash)
-            .expect("The currently running image is a hex string.")
-            .try_into()
-            .expect("The currently running image hash hex representation is 32 bytes.");
-
         let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
-        let image_hash_storage = AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
+        let image_hash_storage =
+            AllowedImageHashesFile::from(latest_allowed_hash_file_path.clone());
 
         Some(root_runtime.spawn(monitor_allowed_image_hashes(
             cancellation_token.child_token(),
-            MpcDockerImageHash::from(current_image_hash_bytes),
+            MpcDockerImageHash::from(image_hash.as_bytes()),
             allowed_hashes_in_contract,
             image_hash_storage,
             shutdown_signal_sender.clone(),

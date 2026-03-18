@@ -1,10 +1,10 @@
 use super::ConfigFile;
 use anyhow::Context;
+use launcher_interface::types::TeeAuthorityConfig;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tee_authority::tee_authority::{
-    DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
-    DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
+    DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority,
 };
 use url::Url;
 
@@ -17,7 +17,7 @@ pub struct StartConfig {
     /// Encryption keys and backup settings.
     pub secrets: SecretsStartConfig,
     /// TEE authority and image hash monitoring settings.
-    pub tee: TeeStartConfig,
+    pub tee: TeeAuthorityConfig,
     /// GCP keyshare storage settings. Optional — omit if not using GCP.
     pub gcp: Option<GcpStartConfig>,
     /// NEAR node initialization settings. Required for `start-with-config-file`
@@ -136,20 +136,6 @@ impl std::fmt::Debug for SecretsStartConfig {
     }
 }
 
-/// TEE-related configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TeeStartConfig {
-    /// TEE authority configuration.
-    pub authority: TeeAuthorityStartConfig,
-    /// Hex representation of the hash of the running image. Only required in TEE.
-    #[serde(default)]
-    pub image_hash: Option<String>,
-    /// Path to the file where the node writes the latest allowed hash.
-    /// If not set, assumes running outside of TEE and skips image hash monitoring.
-    #[serde(default)]
-    pub latest_allowed_hash_file: Option<PathBuf>,
-}
-
 /// GCP keyshare storage configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GcpStartConfig {
@@ -159,35 +145,18 @@ pub struct GcpStartConfig {
     pub project_id: String,
 }
 
-/// TEE authority configuration for deserialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum TeeAuthorityStartConfig {
-    Local,
-    Dstack {
-        #[serde(default = "default_dstack_endpoint")]
-        dstack_endpoint: String,
-        #[serde(default = "default_quote_upload_url")]
-        // TODO(#2333): use URL type for this type
-        quote_upload_url: String,
-    },
+pub trait TeeAuthorityImpl {
+    fn into_tee_authority(self) -> anyhow::Result<TeeAuthority>;
 }
 
-fn default_dstack_endpoint() -> String {
-    DEFAULT_DSTACK_ENDPOINT.to_string()
-}
-
-fn default_quote_upload_url() -> String {
-    DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL.to_string()
-}
-
-impl TeeAuthorityStartConfig {
-    pub fn into_tee_authority(self) -> anyhow::Result<TeeAuthority> {
+impl TeeAuthorityImpl for TeeAuthorityConfig {
+    fn into_tee_authority(self) -> anyhow::Result<TeeAuthority> {
         Ok(match self {
-            TeeAuthorityStartConfig::Local => LocalTeeAuthorityConfig::default().into(),
-            TeeAuthorityStartConfig::Dstack {
+            TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
+            TeeAuthorityConfig::Dstack {
                 dstack_endpoint,
                 quote_upload_url,
+                ..
             } => {
                 let url: Url = quote_upload_url
                     .parse()
