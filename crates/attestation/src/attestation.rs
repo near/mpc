@@ -252,7 +252,7 @@ impl DstackAttestation {
     }
 
     /// Try to verify static RTMRs and key_provider_digest against multiple expected measurement sets.
-    /// Returns the matched `ExpectedMeasurements` on success; otherwise, returns a WrongHash error.
+    /// On success, returns the matched measurements.
     fn verify_any_measurements(
         &self,
         report_data: &dcap_qvl::quote::TDReport10,
