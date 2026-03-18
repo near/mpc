@@ -10,6 +10,7 @@ members = [
     "crates/contract",
     "crates/contract-history",
     "crates/devnet",
+    "crates/e2e-tests",
     "crates/foreign-chain-inspector",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
@@ -96,6 +97,7 @@ derive_more = { version = "2.1.1", features = [
     "deref",
     "display",
     "from",
+    "from_str",
     "into",
 ] }
 digest = "0.10.7"
@@ -143,6 +145,7 @@ near-account-id = "2.5.0"
 near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.6"
 near-primitives = "0.34.6"
+near-sandbox = "0.3.5"
 near-sdk = { version = "5.24.1", features = [
     "legacy",
     "unit-testing",
