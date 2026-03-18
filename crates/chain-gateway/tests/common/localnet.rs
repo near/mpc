@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use super::contract::{Contract, compiled_test_contract_wasm, test_contract};
 
-#[derive(Clone)]
 pub struct Localnet {
     pub validator: LocalNode,
     pub observer: LocalNode,
@@ -48,7 +47,6 @@ pub(super) async fn setup_localnet(validator_home: PathBuf, observer_home: PathB
     }
 }
 
-#[derive(Clone)]
 pub struct LocalNode {
     pub home_dir: PathBuf,
     pub ports: PortsConfig,

@@ -11,9 +11,6 @@ pub(crate) struct NearClientActorHandle {
 }
 
 impl NearClientActorHandle {
-    pub fn stop(&self) {
-        self.client.stop();
-    }
     pub(crate) fn new(
         client: near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActor>,
     ) -> Self {
