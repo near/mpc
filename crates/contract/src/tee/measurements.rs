@@ -47,7 +47,7 @@ impl From<Sha384Digest> for [u8; 48] {
 }
 
 /// On-chain representation of expected TDX measurements.
-/// Mirrors [`mpc_attestation::measurements::ExpectedMeasurements`] with
+/// Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with
 /// contract-compatible serialization (hex strings in JSON, borsh for storage).
 #[serde_as]
 #[derive(
