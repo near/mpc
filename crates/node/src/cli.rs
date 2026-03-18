@@ -266,7 +266,7 @@ impl Cli {
                 let home_dir = std::path::Path::new(&start.home_dir);
                 let config_file = load_config_file(home_dir)?;
 
-                let node_configuration = start.into_start_config(config_file);
+                let node_configuration = start.into_start_config(config_file, self.log_format);
                 run_mpc_node(node_configuration).await
             }
             CliCommand::Init(config) => {
