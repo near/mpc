@@ -370,8 +370,9 @@ The [`TeeState`][tee-state] struct is reused from the MPC contract:
 ```rust
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
-    pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+    pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: CodeHashesVotes,
+    pub(crate) launcher_votes: LauncherHashVotes,
     pub(crate) stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
 }
 ```
@@ -395,12 +396,15 @@ The initial governor set and vote threshold are configured at contract deploymen
 |--------|------|--------|-------------|
 | `vote_code_hash(code_hash)` | Call | Governor | Vote for a new Docker image hash |
 | `vote_remove_code_hash(code_hash)` | Call | Governor | Vote to remove a Docker image hash before natural expiry |
+| `vote_add_launcher_hash(launcher_hash)` | Call | Governor | Vote for a new launcher image hash (threshold) |
+| `vote_remove_launcher_hash(launcher_hash)` | Call | Governor | Vote to remove a launcher image hash (unanimity) |
 | `vote_update_governors(governors, threshold)` | Call | Governor | Vote to change the governor set and/or vote threshold |
 | `vote_foreign_chain_policy(policy)` | Call | Governor | Vote on trusted RPC providers per chain |
 | `submit_participant_info(attestation, tls_public_key)` | Call | Archive Signer | Submit TEE attestation |
 | `verify_tee()` | Call | Anyone | Re-validate all stored attestations |
 | `allowed_docker_image_hashes()` | View | Archive Signer | Query approved image hashes |
-| `allowed_launcher_compose_hashes()` | View | Archive Signer | Query approved launcher hashes |
+| `allowed_launcher_image_hashes()` | View | Archive Signer | Query approved launcher image hashes |
+| `allowed_launcher_compose_hashes()` | View | Archive Signer | Query approved launcher compose hashes |
 | `get_tee_accounts()` | View | Anyone | Query nodes with valid attestations |
 | `get_foreign_chain_policy()` | View | Archive Signer | Query active foreign chain RPC configuration |
 

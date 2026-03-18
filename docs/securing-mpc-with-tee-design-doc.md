@@ -512,9 +512,9 @@ Check that the event log contains an entry `compose-hash` that matches one of th
 
 **Details**
 
-The Contract has a template of an approved (launcher)docker_compose file that was used to deploy the Launcher . An actual docker_compose file can defer by exactly 1 line each. The line start with `DEFAULT_IMAGE_DIGEST=sha256:….`
+The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with two placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash and `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash.
 
-Each time a new MPC docker image hash is voted, The contract creates a new launcher compose file (from the template) that has the new hash, and adds it to the list.  
+Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_code_hash`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.  
 A valid Docker compose file to start the MPC node might look like the following
 
 ```yaml
@@ -645,18 +645,18 @@ To support CVM upgrades, the contract must support governance over:
 
 ### Launcher Upgrade APIs
 
-Add the following contract methods:
+The following contract methods are implemented:
 
 ``` rust
 // requires a vote by a threshold of participants
-pub fn vote_add_new_launcher_image(
+pub fn vote_add_launcher_hash(
     &mut self,
-    launcher_hash: Sha256Hash
+    launcher_hash: LauncherImageHash
 ) -> Result<(), Error>
-// requires a vote by ALL of participants
-pub fn vote_remove_launcher_image(
+// requires a vote by ALL participants
+pub fn vote_remove_launcher_hash(
     &mut self,
-    launcher_hash: Sha256Hash
+    launcher_hash: LauncherImageHash
 ) -> Result<(), Error>
 ```
 
