@@ -12,7 +12,6 @@ pub struct TeeConfig {
     /// The hash of the running image.
     pub image_hash: DockerSha256Digest,
     /// Path to the file where the node writes the latest allowed hash.
-    /// If not set, assumes running outside of TEE and skips image hash monitoring.
     pub latest_allowed_hash_file_path: PathBuf,
 }
 
