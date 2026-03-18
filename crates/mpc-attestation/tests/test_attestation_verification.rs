@@ -204,10 +204,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
     );
 
     // then
-    assert_matches!(
-        result,
-        Err(VerificationError::MeasurementsNotAllowed)
-    );
+    assert_matches!(result, Err(VerificationError::MeasurementsNotAllowed));
 }
 
 #[test]
@@ -240,10 +237,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
     );
 
     // then
-    assert_matches!(
-        result,
-        Err(VerificationError::EmptyMeasurementsList)
-    );
+    assert_matches!(result, Err(VerificationError::EmptyMeasurementsList));
 }
 
 #[test]
