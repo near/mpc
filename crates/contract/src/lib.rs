@@ -751,20 +751,13 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
-        let PublicKeyExtended::Bls12381 { public_key } =
-            self.public_key_extended(request.domain_id)?
+        let PublicKeyExtended::Bls12381 {
+            public_key: dtos::PublicKey::Bls12381(public_key),
+        } = self.public_key_extended(request.domain_id)?
         else {
             env::panic_str(
                 &InvalidParameters::InvalidDomainId
-                    .message("Selected domain is not compatible with this function")
-                    .to_string(),
-            );
-        };
-
-        let dtos::PublicKey::Bls12381(public_key) = public_key else {
-            env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Selected domain is not compatible with this function")
+                    .message("Selected domain is not compatible with CKD")
                     .to_string(),
             );
         };
