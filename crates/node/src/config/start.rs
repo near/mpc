@@ -1,5 +1,6 @@
 use super::ConfigFile;
 use anyhow::Context;
+use clap::ValueEnum;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -27,6 +28,25 @@ pub struct StartConfig {
     pub near_init: Option<NearInitConfig>,
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
+    pub log: LogConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogConfig {
+    pub format: LogFormat,
+    /// Optional log filter directive (same syntax as `RUST_LOG`).
+    /// Examples: `"info"`, `"mpc_node=debug,info"`, `"mpc_node::indexer=trace,warn"`
+    /// Falls back to the `RUST_LOG` env var when not set.
+    pub filter: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogFormat {
+    /// Plaintext logs
+    Plain,
+    /// JSON logs
+    Json,
 }
 
 /// NEAR node initialization configuration. Controls how the NEAR node's

@@ -1039,7 +1039,6 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::LogFormat;
     use crate::config::MpcConfig;
     use crate::network::conn::ConnectionVersion;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
@@ -1048,7 +1047,6 @@ mod tests {
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
     use crate::providers::EcdsaTaskId;
-    use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
@@ -1057,8 +1055,8 @@ mod tests {
     use tokio::time::timeout;
 
     #[tokio::test]
+    #[test_log::test]
     async fn test_basic_tls_mesh_network() {
-        init_logging(LogFormat::Plain);
         let configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
@@ -1159,8 +1157,8 @@ mod tests {
     }
 
     #[tokio::test]
+    #[test_log::test]
     async fn test_wait_for_ready() {
-        init_logging(LogFormat::Plain);
         let mut configs = generate_test_p2p_configs(
             &[
                 "test0".parse().unwrap(),
@@ -1289,8 +1287,8 @@ mod tests {
     }
 
     #[tokio::test]
+    #[test_log::test]
     async fn test_receiver_does_not_accept_new_connection_if_connected() {
-        init_logging(LogFormat::Plain);
         let mut configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,

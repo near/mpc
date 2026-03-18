@@ -5460,6 +5460,7 @@ version = "3.7.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "blstrs",
  "borsh",
  "cargo-near-build",
  "contract-history",
@@ -5467,6 +5468,7 @@ dependencies = [
  "derive_more 2.1.1",
  "digest 0.10.7",
  "ecdsa",
+ "elliptic-curve",
  "fs2",
  "futures",
  "getrandom 0.2.17",
@@ -6453,6 +6455,7 @@ dependencies = [
 name = "near-mpc-contract-interface"
 version = "0.0.1"
 dependencies = [
+ "assert_matches",
  "borsh",
  "derive_more 2.1.1",
  "hex",

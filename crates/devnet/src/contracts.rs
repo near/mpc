@@ -8,7 +8,8 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        CKDRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+        CKDAppPublicKey, CKDRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
     },
 };
 use near_primitives::action::Action;
@@ -124,7 +125,9 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     request: CKDRequestArgs {
                         derivation_path: "".to_string(),
                         domain_id: args.domain_config.id.into(),
-                        app_public_key: mpc_contract::utils::random_app_public_key(),
+                        app_public_key: CKDAppPublicKey::AppPublicKey(
+                            mpc_contract::utils::random_app_public_key(),
+                        ),
                     },
                 })
                 .unwrap(),
