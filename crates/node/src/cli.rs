@@ -12,10 +12,15 @@ use crate::{
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
-use launcher_interface::types::TeeAuthorityConfig;
+use launcher_interface::types::{ImageConfig, TeeAuthorityConfig};
+use mpc_contract::tee::proposal::MpcDockerImageHash;
 use std::path::PathBuf;
 use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
 use url::Url;
+
+const DUMMY_ALLOWED_HASH: MpcDockerImageHash = MpcDockerImageHash::new([0; 32]);
+const ALLOWED_IMAGE_HASHES_FILE_PATH: &str = "/tmp/allowed_image_hashes.json";
+
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
 #[command(about = "MPC Node for Near Protocol")]
@@ -147,6 +152,14 @@ impl StartCmd {
             tee: TeeAuthorityConfig::Local,
             gcp,
             node: config,
+            // Use dummy values as we don't want a breaking change, and
+            // this start command will be deprecated in #2334
+            image_config: ImageConfig {
+                image_hash: DUMMY_ALLOWED_HASH.into(),
+                latest_allowed_hash_file_path: ALLOWED_IMAGE_HASHES_FILE_PATH
+                    .parse()
+                    .expect("dummy allowed image hashes is valid path"),
+            },
         }
     }
 }

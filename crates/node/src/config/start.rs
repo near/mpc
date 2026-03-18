@@ -1,6 +1,6 @@
 use super::ConfigFile;
 use anyhow::Context;
-use launcher_interface::types::TeeAuthorityConfig;
+use launcher_interface::types::{ImageConfig, TeeAuthorityConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tee_authority::tee_authority::{
@@ -18,6 +18,8 @@ pub struct StartConfig {
     pub secrets: SecretsStartConfig,
     /// TEE authority and image hash monitoring settings.
     pub tee: TeeAuthorityConfig,
+    /// Configuration of the image hash running and where to write allowed image hashes
+    pub image_config: ImageConfig,
     /// GCP keyshare storage settings. Optional — omit if not using GCP.
     pub gcp: Option<GcpStartConfig>,
     /// NEAR node initialization settings. Required for `start-with-config-file`

@@ -15,7 +15,6 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use launcher_interface::types::TeeAuthorityConfig;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
@@ -126,29 +125,17 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
     let cancellation_token = CancellationToken::new();
 
-    let image_hash_watcher_handle = if let TeeAuthorityConfig::Dstack {
-        image_hash,
-        latest_allowed_hash_file_path,
-        ..
-    } = &config.tee
-    {
-        let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
-        let image_hash_storage =
-            AllowedImageHashesFile::from(latest_allowed_hash_file_path.clone());
+    let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+    let image_hash_storage =
+        AllowedImageHashesFile::from(config.image_config.latest_allowed_hash_file_path.clone());
 
-        Some(root_runtime.spawn(monitor_allowed_image_hashes(
-            cancellation_token.child_token(),
-            MpcDockerImageHash::from(image_hash.as_bytes()),
-            allowed_hashes_in_contract,
-            image_hash_storage,
-            shutdown_signal_sender.clone(),
-        )))
-    } else {
-        tracing::info!(
-                    "image_hash and/or latest_allowed_hash_file not set, skipping TEE image hash monitoring"
-                );
-        None
-    };
+    let image_hash_watcher_handle = root_runtime.spawn(monitor_allowed_image_hashes(
+        cancellation_token.child_token(),
+        MpcDockerImageHash::from(config.image_config.image_hash.as_bytes()),
+        allowed_hashes_in_contract,
+        image_hash_storage,
+        shutdown_signal_sender.clone(),
+    ));
 
     let home_dir = config.home_dir.clone();
     let root_future = create_root_future(
@@ -179,11 +166,9 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     // Perform graceful shutdown
     cancellation_token.cancel();
 
-    if let Some(handle) = image_hash_watcher_handle {
-        info!("Waiting for image hash watcher to gracefully exit.");
-        let exit_result = handle.await;
-        info!(?exit_result, "Image hash watcher exited.");
-    }
+    info!("Waiting for image hash watcher to gracefully exit.");
+    let exit_result = image_hash_watcher_handle.await;
+    info!(?exit_result, "Image hash watcher exited.");
 
     exit_reason
 }

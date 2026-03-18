@@ -4,7 +4,9 @@ use std::{collections::VecDeque, time::Duration};
 
 use backon::{ExponentialBuilder, Retryable};
 use clap::Parser;
-use launcher_interface::types::{ApprovedHashes, DockerSha256Digest, TeeAuthorityConfig};
+use launcher_interface::types::{
+    ApprovedHashes, DockerSha256Digest, ImageConfig, TeeAuthorityConfig,
+};
 use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
 
 use constants::*;
@@ -126,12 +128,15 @@ async fn run() -> Result<(), LauncherError> {
         Platform::Tee => TeeAuthorityConfig::Dstack {
             dstack_endpoint: DSTACK_UNIX_SOCKET.to_string(),
             quote_upload_url: DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL.to_string(),
-            image_hash: image_hash.clone(),
-            latest_allowed_hash_file_path: IMAGE_DIGEST_FILE
-                .parse()
-                .expect("image digest file has a valid path"),
         },
         Platform::NonTee => TeeAuthorityConfig::Local,
+    };
+
+    let image_hash_config = ImageConfig {
+        image_hash: image_hash.clone(),
+        latest_allowed_hash_file_path: IMAGE_DIGEST_FILE
+            .parse()
+            .expect("image digest file has a valid path"),
     };
 
     match mpc_node_config.entry("tee") {
@@ -142,6 +147,19 @@ async fn run() -> Result<(), LauncherError> {
         }
         toml::map::Entry::Occupied(_) => {
             panic!("[tee] config table is not configurable by the user. please remove this field")
+        }
+    };
+
+    match mpc_node_config.entry("image_config") {
+        toml::map::Entry::Vacant(vacant_entry) => {
+            let tee_config_serialized =
+                toml::Value::try_from(&image_hash_config).expect("ImageConfig serializes to TOML");
+            vacant_entry.insert(tee_config_serialized);
+        }
+        toml::map::Entry::Occupied(_) => {
+            panic!(
+                "[ImageConfig] config table is not configurable by the user. please remove this field"
+            )
         }
     };
 
@@ -1009,6 +1027,7 @@ mod tests {
 #[cfg(all(test, feature = "external-services-tests"))]
 mod integration_tests {
     use super::*;
+    #[cfg(target_os = "linux")]
     use assert_matches::assert_matches;
 
     //     # Dockerfile

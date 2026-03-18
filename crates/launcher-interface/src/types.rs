@@ -14,12 +14,16 @@ pub enum TeeAuthorityConfig {
         dstack_endpoint: String,
         // TODO(#2333): use URL type for this type
         quote_upload_url: String,
-        /// Hex representation of the hash of the running image. Only required in TEE.
-        image_hash: DockerSha256Digest,
-        /// Path to the file where the node writes the latest allowed hash.
-        /// If not set, assumes running outside of TEE and skips image hash monitoring.
-        latest_allowed_hash_file_path: PathBuf,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageConfig {
+    /// Hex representation of the hash of the running image. Only required in TEE.
+    pub image_hash: DockerSha256Digest,
+    /// Path to the file where the node writes the latest allowed hash.
+    /// If not set, assumes running outside of TEE and skips image hash monitoring.
+    pub latest_allowed_hash_file_path: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
