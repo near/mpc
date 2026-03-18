@@ -1,4 +1,4 @@
-use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak, IntoInterfaceType};
+use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak};
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 #[cfg(target_arch = "wasm32")]
 use k256::EncodedPoint;
@@ -11,7 +11,7 @@ use near_account_id::AccountId;
 use near_sdk::env;
 use sha3::{Digest, Sha3_256};
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 // Constant prefix that ensures tweak derivation values are used specifically for
 // near-mpc-recovery with key derivation protocol vX.Y.Z.
@@ -30,16 +30,6 @@ pub fn derive_app_id(predecessor_id: &AccountId, derivation_path: &str) -> dtos:
     let hash: [u8; 32] =
         derive_from_path(APP_ID_DERIVATION_PREFIX, predecessor_id, derivation_path);
     hash.into()
-}
-
-// Constant prefix that ensures verify foreign tx derivation values are used specifically for
-// near-mpc with derivation protocol vX.Y.Z.
-const FOREIGN_TX_TWEAK_DERIVATION_PREFIX: &str =
-    "near-mpc-recovery v0.1.0 foreign-tx epsilon derivation:";
-
-pub fn derive_foreign_tx_tweak(predecessor_id: &AccountId, path: &str) -> dtos::Tweak {
-    let hash: [u8; 32] = derive_from_path(FOREIGN_TX_TWEAK_DERIVATION_PREFIX, predecessor_id, path);
-    dtos::Tweak::from(hash)
 }
 
 fn derive_from_path(derivation_prefix: &str, predecessor_id: &AccountId, path: &str) -> [u8; 32] {
@@ -69,11 +59,10 @@ pub fn derive_key_secp256k1(
         .into_option()
         .ok_or(TweakNotOnCurve)?;
 
-    Ok(
-        (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key)
-            .to_affine()
-            .into_dto_type(),
-    )
+    let derived = (<Secp256k1 as CurveArithmetic>::ProjectivePoint::GENERATOR * tweak + public_key)
+        .to_affine();
+    let pk = k256::PublicKey::try_from(derived).map_err(|_| TweakNotOnCurve)?;
+    Ok(dtos::Secp256k1PublicKey::from(&pk))
 }
 
 pub fn derive_public_key_edwards_point_ed25519(

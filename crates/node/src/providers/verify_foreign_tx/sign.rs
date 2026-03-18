@@ -20,9 +20,9 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use contract_interface::types as dtos;
 use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
 use near_indexer_primitives::CryptoHash;
+use near_mpc_contract_interface::types as dtos;
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -38,7 +38,7 @@ fn build_signature_request(
         id: request.id,
         receipt_id: request.receipt_id,
         payload: Payload::Ecdsa(payload_bytes),
-        tweak: Tweak::new(request.tweak.0),
+        tweak: Tweak::new([0u8; 32]),
         entropy: request.entropy,
         timestamp_nanosec: request.timestamp_nanosec,
         domain: request.domain_id,
@@ -75,7 +75,12 @@ where
             .context("my participant ID not found in participants list")?;
 
         let response_payload = self
-            .execute_foreign_chain_request(id, &foreign_tx_request.request, my_participant_index)
+            .execute_foreign_chain_request(
+                id,
+                &foreign_tx_request.request,
+                my_participant_index,
+                foreign_tx_request.payload_version,
+            )
             .await?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
@@ -109,7 +114,12 @@ where
             .context("my participant ID not found in participants list")?;
 
         let response_payload = self
-            .execute_foreign_chain_request(id, &foreign_tx_request.request, my_participant_index)
+            .execute_foreign_chain_request(
+                id,
+                &foreign_tx_request.request,
+                my_participant_index,
+                foreign_tx_request.payload_version,
+            )
             .await?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
@@ -124,6 +134,7 @@ where
         request_id: SignatureId,
         request: &dtos::ForeignChainRpcRequest,
         my_participant_index: usize,
+        payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
         validate_foreign_chain_policy(
             &self.config.foreign_chains,
@@ -270,12 +281,16 @@ where
             }
             _ => bail!("unsupported foreign chain request"),
         };
-        Ok(dtos::ForeignTxSignPayload::V1(
-            dtos::ForeignTxSignPayloadV1 {
-                request: request.clone(),
-                values,
-            },
-        ))
+        let payload = match payload_version {
+            dtos::ForeignTxPayloadVersion::V1 => {
+                dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
+                    request: request.clone(),
+                    values,
+                })
+            }
+            _ => bail!("unsupported payload_version"),
+        };
+        Ok(payload)
     }
 }
 
@@ -352,7 +367,7 @@ fn select_provider(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::config::{
@@ -360,7 +375,7 @@ mod tests {
     };
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
-    use bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use std::collections::BTreeMap;
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
@@ -372,7 +387,7 @@ mod tests {
     }
 
     fn bitcoin_foreign_chains_config() -> ForeignChainsConfig {
-        let providers = bounded_collections::NonEmptyBTreeMap::new(
+        let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
             "public".to_string(),
             BitcoinProviderConfig {
                 rpc_url: "https://blockstream.info/api".to_string(),

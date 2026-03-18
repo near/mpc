@@ -1,14 +1,5 @@
 use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
-use contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
-    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
-    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
-};
-use contract_interface::types::{
-    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
-};
-use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -23,6 +14,14 @@ use mpc_contract::{
     },
 };
 use near_indexer_primitives::types::Gas;
+use near_mpc_contract_interface::method_names::{
+    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
+    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
+    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
+};
+use near_mpc_contract_interface::types::{
+    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
+};
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -87,12 +86,12 @@ impl ChainCKDRequest {
 }
 
 pub type ChainVerifyForeignTransactionRequest =
-    contract_interface::types::VerifyForeignTransactionRequest;
+    near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 
-pub type ChainSignatureResponse = contract_interface::types::SignatureResponse;
+pub type ChainSignatureResponse = near_mpc_contract_interface::types::SignatureResponse;
 pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
 pub type ChainVerifyForeignTransactionResponse =
-    contract_interface::types::VerifyForeignTransactionResponse;
+    near_mpc_contract_interface::types::VerifyForeignTransactionResponse;
 
 use mpc_contract::primitives::signature::Payload;
 
@@ -106,17 +105,9 @@ fn k256_signature_response(
     if recovery_id > MAX_RECOVERY_ID {
         anyhow::bail!("Invalid Recovery Id: recovery id larger than 3.");
     }
-    let big_r_bytes: [u8; 33] = big_r
-        .to_encoded_point(true)
-        .as_bytes()
-        .try_into()
-        .context("infallible, compressed encoded point is 33 bytes")?;
-
-    let s_bytes: [u8; 32] = s.to_bytes().into();
-
     Ok(ChainSignatureResponse::Secp256k1(dtos::K256Signature {
-        big_r: big_r_bytes.into(),
-        s: s_bytes.into(),
+        big_r: dtos::K256AffinePoint::from(big_r),
+        s: dtos::K256Scalar::from(s),
         recovery_id,
     }))
 }
@@ -172,7 +163,7 @@ pub struct ChainGetPendingVerifyForeignTxRequestArgs {
 
 #[derive(Serialize, Debug)]
 pub struct GetAttestationArgs<'a> {
-    pub tls_public_key: &'a contract_interface::types::Ed25519PublicKey,
+    pub tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
 }
 
 #[derive(Serialize, Debug)]
@@ -208,8 +199,8 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
-    pub proposed_participant_attestation: contract_interface::types::Attestation,
-    pub tls_public_key: contract_interface::types::Ed25519PublicKey,
+    pub proposed_participant_attestation: near_mpc_contract_interface::types::Attestation,
+    pub tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey,
 }
 
 #[derive(Serialize, Debug)]
@@ -376,22 +367,15 @@ impl ChainVerifyForeignTransactionRespondArgs {
             payload_hash.as_ref(),
         )?;
 
-        // TODO: this code should be elsewhere
-        let mut r_bytes = [0u8; 33];
-        r_bytes.copy_from_slice(signature.big_r.to_encoded_point(true).as_bytes());
-        let mut s_bytes = [0u8; 32];
-        s_bytes.copy_from_slice(signature.s.to_bytes().as_ref());
-
         let dto_signature = dtos::K256Signature {
-            big_r: r_bytes.into(),
-            s: s_bytes.into(),
+            big_r: dtos::K256AffinePoint::from(signature.big_r),
+            s: dtos::K256Scalar::from(signature.s),
             recovery_id,
         };
         Ok(ChainVerifyForeignTransactionRespondArgs {
             request: VerifyForeignTransactionRequest {
                 request: request.request,
-                tweak: request.tweak,
-                domain_id: request.domain_id.0.into(),
+                domain_id: request.domain_id.into(),
                 payload_version: request.payload_version,
             },
             response: VerifyForeignTransactionResponse {

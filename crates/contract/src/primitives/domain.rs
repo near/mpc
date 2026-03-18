@@ -6,13 +6,25 @@ use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-pub use contract_interface::types::DomainPurpose;
+pub use near_mpc_contract_interface::types::DomainPurpose;
 
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Deref)]
 pub struct DomainId(pub u64);
+
+impl From<near_mpc_contract_interface::types::DomainId> for DomainId {
+    fn from(id: near_mpc_contract_interface::types::DomainId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<DomainId> for near_mpc_contract_interface::types::DomainId {
+    fn from(id: DomainId) -> Self {
+        Self(id.0)
+    }
+}
 
 impl Default for DomainId {
     fn default() -> Self {
@@ -51,15 +63,6 @@ impl Default for SignatureScheme {
     }
 }
 
-/// Infer a default purpose from the signature scheme.
-/// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
-    match scheme {
-        SignatureScheme::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
-    }
-}
-
 /// Returns whether the given scheme is valid for the given purpose.
 pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureScheme) -> bool {
     matches!(
@@ -74,34 +77,11 @@ pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureSche
 
 /// Describes the configuration of a domain: the domain ID and the protocol it uses.
 #[near(serializers=[borsh, json])]
-#[serde(from = "DomainConfigCompat")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
     pub purpose: DomainPurpose,
-}
-
-/// JSON-only compatibility helper:
-/// old 3.4.x state omitted `purpose`, so we infer it from `scheme` when absent.
-#[derive(serde::Deserialize)]
-struct DomainConfigCompat {
-    id: DomainId,
-    scheme: SignatureScheme,
-    #[serde(default)]
-    purpose: Option<DomainPurpose>,
-}
-
-impl From<DomainConfigCompat> for DomainConfig {
-    fn from(value: DomainConfigCompat) -> Self {
-        Self {
-            id: value.id,
-            scheme: value.scheme,
-            purpose: value
-                .purpose
-                .unwrap_or_else(|| infer_purpose_from_scheme(value.scheme)),
-        }
-    }
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -264,11 +244,13 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        infer_purpose_from_scheme, is_valid_scheme_for_purpose, AddDomainsVotes, DomainConfig,
-        DomainId, DomainPurpose, DomainRegistry, Participants, SignatureScheme,
+        is_valid_scheme_for_purpose, AddDomainsVotes, DomainConfig, DomainId, DomainPurpose,
+        DomainRegistry, Participants, SignatureScheme,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
-    use crate::primitives::test_utils::{gen_participant, gen_participants};
+    use crate::primitives::test_utils::{
+        gen_participant, gen_participants, infer_purpose_from_scheme,
+    };
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
@@ -416,28 +398,6 @@ pub mod tests {
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
-    }
-
-    #[rstest]
-    #[case(
-        r#"{"id":0,"scheme":"Secp256k1"}"#,
-        SignatureScheme::Secp256k1,
-        DomainPurpose::Sign
-    )]
-    #[case(
-        r#"{"id":1,"scheme":"Bls12381"}"#,
-        SignatureScheme::Bls12381,
-        DomainPurpose::CKD
-    )]
-    fn test_deserialization_without_purpose(
-        #[case] json: &str,
-        #[case] expected_scheme: SignatureScheme,
-        #[case] expected_purpose: DomainPurpose,
-    ) {
-        // Simulates JSON from a 3.4.1 contract that lacks the `purpose` field.
-        let config: DomainConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.scheme, expected_scheme);
-        assert_eq!(config.purpose, expected_purpose);
     }
 
     #[rstest]

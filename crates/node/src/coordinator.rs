@@ -30,15 +30,16 @@ use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
 use anyhow::Context;
-use contract_interface::types as dtos;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use mpc_contract::primitives::key_state::EpochId;
+use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use threshold_signatures::ReconstructionLowerBound;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -292,13 +293,15 @@ where
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
+        let threshold: usize = mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                mpc_config.participants.threshold as usize,
+                threshold,
             )
             .await?;
         } else {
@@ -307,7 +310,7 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                mpc_config.participants.threshold as usize,
+                threshold,
             )
             .await?;
         }
@@ -317,7 +320,7 @@ where
     /// Entry point to handle the Running state of the contract.
     /// In this state, we generate triples and presignatures, and listen to
     /// signature requests and submit signature responses.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn run_mpc(
         clock: Clock,
         secret_db: Arc<SecretDB>,
@@ -515,7 +518,7 @@ where
 
                 sender
                     .wait_for_ready(
-                        running_mpc_config.participants.threshold as usize,
+                        running_mpc_config.participants.threshold.try_into()?,
                         &running_participant_ids,
                     )
                     .await?;
@@ -640,7 +643,7 @@ where
     }
 
     /// Entry point to handle the Resharing state of the contract.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn run_key_resharing(
         config_file: &ConfigFile,
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
@@ -691,10 +694,11 @@ where
             None
         };
 
+        let new_threshold: usize = mpc_config.participants.threshold.try_into()?;
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: mpc_config.participants.threshold as usize,
+            new_threshold: ReconstructionLowerBound::from(new_threshold),
             old_participants: current_running_state.participants,
         });
 
@@ -955,12 +959,12 @@ fn make_initializing_stop_fn(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::Coordinator;
     use crate::indexer::fake::FakeForeignChainPolicyReader;
     use crate::tests::common::MockTransactionSender;
-    use contract_interface::types as dtos;
+    use near_mpc_contract_interface::types as dtos;
 
     #[test]
     fn is_supported_foreign_chain__supports_starknet() {

@@ -9,11 +9,11 @@ use crate::{
 };
 use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
-use contract_interface::types::Ed25519PublicKey;
 use mpc_attestation::{
     attestation::{Attestation, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
@@ -110,6 +110,7 @@ fn validate_remote_attestation(
             now,
             allowed_docker_image_hashes,
             allowed_launcher_compose_hashes,
+            mpc_attestation::attestation::default_measurements(),
         )
         .map(|_| ())
 }
@@ -183,7 +184,7 @@ fn is_node_in_contract_tee_accounts(
 ///
 /// This function watches TEE account changes in the contract and resubmits attestations when
 /// the node's TEE attestation is no longer available.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     node_account_id: AccountId,
     tee_authority: TeeAuthority,
@@ -194,23 +195,10 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
-    // TODO(#1246): we should unify these conversions, will not be needed after the issue is resolved
     let node_id = NodeId {
         account_id: node_account_id.clone(),
-        tls_public_key: near_sdk::PublicKey::from_parts(
-            near_sdk::CurveType::ED25519,
-            tls_public_key.as_bytes().to_vec(),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from TLS public key: {}", e))?,
-        account_public_key: Some(
-            near_sdk::PublicKey::from_parts(
-                near_sdk::CurveType::ED25519,
-                account_public_key.as_bytes().to_vec(),
-            )
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to create PublicKey from account public key: {}", e)
-            })?,
-        ),
+        tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
+        account_public_key: Some(near_sdk::PublicKey::from(account_public_key.clone())),
     };
 
     let initially_available =
@@ -376,24 +364,13 @@ mod tests {
         let (dummy_sender, _) = watch::channel(vec![]);
         let dummy_node_id = NodeId {
             account_id: "dummy.near".parse().unwrap(),
-            tls_public_key: near_sdk::PublicKey::from_parts(
-                near_sdk::CurveType::ED25519,
-                vec![0u8; 32],
-            )
-            .unwrap(),
-            account_public_key: Some(
-                near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, vec![0u8; 32])
-                    .unwrap(),
-            ),
+            tls_public_key: near_sdk::PublicKey::from(Ed25519PublicKey::from([0u8; 32])),
+            account_public_key: Some(near_sdk::PublicKey::from(Ed25519PublicKey::from([0u8; 32]))),
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_key = SigningKey::generate(&mut rng)
-            .verifying_key()
-            .into_contract_interface_type();
-        let account_key = SigningKey::generate(&mut rng)
-            .verifying_key()
-            .into_contract_interface_type();
+        let tls_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let account_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
         let (_, allowed_image_hashes_receiver) = watch::channel(vec![]);
         let (_, allowed_launcher_compose_hashes_receiver) = watch::channel(vec![]);
         let handle = tokio::spawn(periodic_attestation_submission(
@@ -415,28 +392,16 @@ mod tests {
     async fn test_tee_attestation_removal_detection() {
         let node_account_id: AccountId = "test_node.near".parse().unwrap();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_public_key = SigningKey::generate(&mut rng)
-            .verifying_key()
-            .into_contract_interface_type();
-        let account_public_key = SigningKey::generate(&mut rng)
-            .verifying_key()
-            .into_contract_interface_type();
+        let tls_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let account_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
 
         let node_id = NodeId {
             account_id: node_account_id.clone(),
-            tls_public_key: near_sdk::PublicKey::from_parts(
-                near_sdk::CurveType::ED25519,
-                tls_public_key.as_bytes().to_vec(),
-            )
-            .unwrap(),
-            account_public_key: Some(
-                near_sdk::PublicKey::from_parts(
-                    near_sdk::CurveType::ED25519,
-                    account_public_key.as_bytes().to_vec(),
-                )
-                .unwrap(),
-            ),
+            tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
+            account_public_key: Some(near_sdk::PublicKey::from(account_public_key.clone())),
         };
 
         // Create initial TEE accounts list including our node
@@ -526,12 +491,10 @@ mod tests {
     #[tokio::test]
     async fn test_validate_remote_attestation_valid() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_public_key = SigningKey::generate(&mut rng)
-            .verifying_key()
-            .into_contract_interface_type();
-        let account_public_key = SigningKey::generate(&mut rng)
-            .verifying_key()
-            .into_contract_interface_type();
+        let tls_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let account_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
         let report_data: ReportData =
             ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
@@ -554,12 +517,10 @@ mod tests {
     #[tokio::test]
     async fn test_validate_remote_attestation_invalid() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_public_key = SigningKey::generate(&mut rng)
-            .verifying_key()
-            .into_contract_interface_type();
-        let account_public_key = SigningKey::generate(&mut rng)
-            .verifying_key()
-            .into_contract_interface_type();
+        let tls_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let account_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::new(false));
         let report_data: ReportData =
             ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();

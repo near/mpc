@@ -384,7 +384,7 @@ mod test {
                 "Does not contain me".to_string(),
             ));
         }
-        let comms = Comms::new();
+        let comms = Comms::with_buffer_capacity(usize::MAX);
         let chan = comms.shared_channel();
         let fut = do_broadcast_consume(chan, participants, me, data);
 
@@ -480,7 +480,7 @@ mod test {
                 "Does not contain me".to_string(),
             ));
         }
-        let comms = Comms::new();
+        let comms = Comms::with_buffer_capacity(usize::MAX);
         let chan = comms.shared_channel();
 
         let fut = do_broadcast_dishonest_consume(chan, participants, me);

@@ -4,13 +4,14 @@ use anyhow::Context;
 use rand::rngs::OsRng;
 use tokio::time::timeout;
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use threshold_signatures::{
     confidential_key_derivation::{protocol::ckd, AppId, ElementG1, KeygenOutput, VerifyingKey},
     participants::Participant,
+    ReconstructionLowerBound,
 };
 
-use crate::{metrics, trait_extensions::convert_to_contract_dto::TryIntoNodeType};
+use crate::metrics;
 use crate::{
     network::{computation::MpcLeaderCentricComputation, NetworkTaskChannel},
     protocol::run_protocol,
@@ -25,7 +26,8 @@ impl CKDProvider {
     ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
-        let threshold = self.mpc_config.participants.threshold as usize;
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -36,7 +38,10 @@ impl CKDProvider {
 
         let participants = self
             .client
-            .select_random_active_participants_including_me(threshold, &running_participants)
+            .select_random_active_participants_including_me(
+                threshold.value(),
+                &running_participants,
+            )
             .context("Could not choose active participants for a ckd")?;
 
         let channel = self
@@ -141,7 +146,7 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
             channel.my_participant_id().into(),
             self.keygen_output,
             AppId::try_new(self.app_id.as_ref())?,
-            self.app_public_key.try_into_node_type()?,
+            ElementG1::try_from(&self.app_public_key)?,
             OsRng,
         )?;
 

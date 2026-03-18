@@ -30,7 +30,6 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
 use near_primitives::types::{BlockReference, FunctionArgs};
 use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
-use near_sdk::CurveType;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -180,7 +179,7 @@ impl OperatingAccessKey {
 
         let verifying_key = signing_key.verifying_key();
         let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
-        #[allow(clippy::disallowed_methods)]
+        #[expect(clippy::disallowed_methods)]
         let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
 
         let request = methods::send_tx::RpcSendTransactionRequest {
@@ -211,10 +210,9 @@ impl OperatingAccessKey {
         );
 
         let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
-        #[allow(clippy::disallowed_methods)]
+        #[expect(clippy::disallowed_methods)]
         let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
 
-        #[allow(clippy::disallowed_methods)]
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::from_actions(
                 self.next_nonce().await,
@@ -247,7 +245,7 @@ impl OperatingAccessKey {
     }
 
     /// Submits a transaction to the chain to mutably call a function on a contract.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_tx_to_call_function(
         &mut self,
         contract_id: &AccountId,
@@ -516,10 +514,8 @@ impl OperatingAccounts {
         let secret_key = SigningKey::generate(&mut OsRng);
 
         let verifying_key = secret_key.verifying_key();
-        let verifying_key_bytes = verifying_key.as_bytes().clone().to_vec();
-        #[allow(clippy::disallowed_methods)]
-        let near_sdk_public_key =
-            near_sdk::PublicKey::from_parts(CurveType::ED25519, verifying_key_bytes).unwrap();
+        let ed25519_pk = near_mpc_contract_interface::types::Ed25519PublicKey::from(&verifying_key);
+        let near_sdk_public_key = near_sdk::PublicKey::from(ed25519_pk);
 
         let mut data = std::collections::HashMap::new();
         data.insert("newAccountId", new_account_id.to_string());
@@ -605,7 +601,6 @@ impl OperatingAccounts {
             .unwrap()
     }
 
-    #[allow(dead_code)]
     pub fn account_mut(&mut self, account_id: &AccountId) -> &mut OperatingAccount {
         self.accounts.get_mut(account_id).unwrap()
     }

@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serializable::SerializableEdwardsPoint;
 
-use crate::{errors, IntoContractType, IntoInterfaceType};
-use contract_interface::types as dtos;
+use crate::errors;
+use near_mpc_contract_interface::types as dtos;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -85,11 +85,13 @@ impl TryFrom<PublicKeyExtended> for near_sdk::PublicKey {
 impl From<PublicKeyExtended> for dtos::PublicKey {
     fn from(public_key_extended: PublicKeyExtended) -> Self {
         match public_key_extended {
-            PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key.into_dto_type(),
+            PublicKeyExtended::Secp256k1 { near_public_key } => {
+                dtos::PublicKey::from(&near_public_key)
+            }
             PublicKeyExtended::Ed25519 {
                 near_public_key_compressed,
                 ..
-            } => near_public_key_compressed.into_dto_type(),
+            } => dtos::PublicKey::from(&near_public_key_compressed),
             PublicKeyExtended::Bls12381 { public_key } => public_key,
         }
     }
@@ -128,7 +130,7 @@ impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
     fn try_from(public_key: dtos::PublicKey) -> Result<Self, Self::Error> {
         let extended_key = match public_key {
             dtos::PublicKey::Ed25519(inner_public_key) => {
-                let near_public_key = inner_public_key.into_contract_type();
+                let near_public_key: near_sdk::PublicKey = inner_public_key.into();
                 let public_key_bytes: &[u8; 32] = near_public_key
                     .as_bytes()
                     .get(1..)
@@ -146,7 +148,7 @@ impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
                 }
             }
             dtos::PublicKey::Secp256k1(inner_public_key) => {
-                let near_public_key = inner_public_key.into_contract_type();
+                let near_public_key: near_sdk::PublicKey = inner_public_key.into();
                 Self::Secp256k1 { near_public_key }
             }
             dtos::PublicKey::Bls12381(inner_public_key) => Self::Bls12381 {

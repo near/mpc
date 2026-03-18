@@ -4,11 +4,10 @@ use crate::{
         sign::{sign_v1, sign_v2},
         KeygenOutput, PresignOutput, SignatureOption,
     },
-    test_utils::{generate_participants, run_protocol, GenOutput, GenProtocol, MockCryptoRng},
+    test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng},
     Participant, ReconstructionLowerBound,
 };
 
-use std::collections::BTreeMap;
 use std::error::Error;
 
 use frost_core::Scalar;
@@ -17,47 +16,6 @@ use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 
 type C = Ed25519Sha512;
-
-/// this is a centralized key generation
-pub fn build_key_packages_with_dealer(
-    max_signers: u16,
-    min_signers: u16,
-    rng: &mut impl CryptoRngCore,
-) -> GenOutput<C> {
-    let mut identifiers = Vec::with_capacity(max_signers.into());
-    for _ in 0..max_signers {
-        // from 1 to avoid assigning 0 to a ParticipantId
-        identifiers.push(Participant::from(rng.next_u32()));
-    }
-
-    let from_frost_identifiers = identifiers
-        .iter()
-        .map(|&x| (x.to_identifier().unwrap(), x))
-        .collect::<BTreeMap<_, _>>();
-
-    let identifiers_list = from_frost_identifiers.keys().copied().collect::<Vec<_>>();
-
-    let (shares, pubkey_package) = frost_ed25519::keys::generate_with_dealer(
-        max_signers,
-        min_signers,
-        frost_ed25519::keys::IdentifierList::Custom(identifiers_list.as_slice()),
-        rng,
-    )
-    .unwrap();
-
-    shares
-        .into_iter()
-        .map(|(id, share)| {
-            (
-                from_frost_identifiers[&id],
-                KeygenOutput {
-                    private_share: *share.signing_share(),
-                    public_key: *pubkey_package.verifying_key(),
-                },
-            )
-        })
-        .collect::<Vec<_>>()
-}
 
 pub fn run_sign_v1(
     participants: &[(Participant, KeygenOutput)],

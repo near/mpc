@@ -671,19 +671,25 @@ pub fn assert_reshare_keys_invariants<C: Ciphersuite>(
 #[cfg(test)]
 pub mod test {
 
-    use super::domain_separate_hash;
+    use super::{
+        assert_key_invariants, assert_reshare_keys_invariants, do_keygen, do_reshare,
+        domain_separate_hash,
+    };
     use crate::crypto::ciphersuite::Ciphersuite;
     use crate::crypto::hash::DomainSeparator;
     use crate::errors::InitializationError;
     use crate::participants::{Participant, ParticipantList};
+    use crate::test_utils::MockCryptoRng;
     use crate::test_utils::{
-        assert_public_key_invariant, generate_participants, run_keygen, run_refresh, run_reshare,
+        assert_buffer_capacity, assert_public_key_invariant, build_buffer_test,
+        generate_participants, run_and_assert_buffer_entries, run_keygen, run_refresh, run_reshare,
         GenOutput,
     };
-    use crate::{keygen, reshare};
+    use crate::{keygen, reshare, DKG_MAX_INCOMING_BUFFER_ENTRIES};
     use crate::{KeygenOutput, ReconstructionLowerBound};
     use frost_core::{Field, Group};
     use rand_core::{CryptoRngCore, SeedableRng};
+    use rstest::rstest;
 
     #[test]
     fn test_domain_separate_hash() {
@@ -855,5 +861,81 @@ pub mod test {
 
         // These threshold parameters should work correctly
         test_reshare::<C, _>(&participants, 2, 2, rng);
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    #[case(10, 4)]
+    fn test_keygen_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        // Given
+        let participants = generate_participants(num_participants);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
+        // When + Then
+        assert_buffer_capacity(
+            &participants,
+            &mut rng,
+            |comms, _p_list, p, rng_p| {
+                let participant_list = assert_key_invariants(&participants, p, threshold).unwrap();
+                do_keygen::<frost_ed25519::Ed25519Sha512>(
+                    comms.shared_channel(),
+                    participant_list,
+                    p,
+                    threshold,
+                    rng_p,
+                )
+            },
+            |_| DKG_MAX_INCOMING_BUFFER_ENTRIES,
+        );
+    }
+
+    #[rstest]
+    #[case(5, 2, 3)]
+    #[case(10, 4, 5)]
+    fn test_reshare_buffer_entries(
+        #[case] num_participants: usize,
+        #[case] old_threshold: usize,
+        #[case] new_threshold: usize,
+    ) {
+        type C = frost_ed25519::Ed25519Sha512;
+
+        // Given
+        let participants = generate_participants(num_participants);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let keygen_result = run_keygen::<C, MockCryptoRng>(&participants, old_threshold, &mut rng);
+        let old_public_key = keygen_result[0].1.public_key;
+
+        let mut new_participants = participants.clone();
+        new_participants.push(Participant::from(31u32));
+
+        let (protocols, comms_refs) =
+            build_buffer_test(&new_participants, &mut rng, |comms, _p_list, p, rng_p| {
+                let old_signing_key = keygen_result
+                    .iter()
+                    .find(|(kp, _)| *kp == p)
+                    .map(|(_, ko)| ko.private_share);
+                let (participant_list, old_participant_list) = assert_reshare_keys_invariants::<C>(
+                    &new_participants,
+                    p,
+                    new_threshold,
+                    old_signing_key,
+                    old_threshold,
+                    &participants,
+                )
+                .unwrap();
+                do_reshare::<C>(
+                    comms.shared_channel(),
+                    participant_list,
+                    p,
+                    new_threshold,
+                    old_signing_key,
+                    old_public_key,
+                    old_participant_list,
+                    rng_p,
+                )
+            });
+        // When + Then
+        run_and_assert_buffer_entries(protocols, &comms_refs, |_| DKG_MAX_INCOMING_BUFFER_ENTRIES);
     }
 }

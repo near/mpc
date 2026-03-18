@@ -89,8 +89,14 @@ pub enum ProtocolError {
     #[error("integer overflow")]
     IntegerOverflow,
 
+    #[error("expected vector of length {expected}, got {actual}")]
+    UnexpectedLength { expected: usize, actual: usize },
+
     #[error("deserialization failed: {0}")]
     DeserializationError(String),
+
+    #[error(transparent)]
+    Message(#[from] MessageError),
 
     // catch-all for foreign errors
     #[error("{0}")]
@@ -101,6 +107,17 @@ impl From<Box<dyn error::Error + Send + Sync>> for ProtocolError {
     fn from(err: Box<dyn error::Error + Send + Sync>) -> Self {
         Self::Other(err.to_string())
     }
+}
+
+/// An error returned when delivering a message to a protocol participant.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum MessageError {
+    #[error("incoming message buffer is full (capacity: {capacity})")]
+    BufferFull { capacity: usize },
+    #[error("message too short ({len} bytes, need at least {min})")]
+    TooShort { len: usize, min: usize },
+    #[error("message has an invalid header")]
+    InvalidHeader,
 }
 
 /// Represents an error which can happen when *initializing* a protocol.

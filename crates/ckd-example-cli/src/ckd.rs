@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Context as _, Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _, group::prime::PrimeCurveAffine as _};
 use hkdf::Hkdf;
@@ -7,12 +7,11 @@ use sha2::Sha256;
 use sha3::{Digest, Sha3_256};
 use std::io::{self, Write as _};
 
-use contract_interface::types::{AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CkdAppId};
-
-use crate::{
-    cli::Args,
-    types::{CKDArgs, CKDRequestArgs, CKDResponse},
+use near_mpc_contract_interface::types::{
+    AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CKDRequestArgs, CkdAppId,
 };
+
+use crate::{cli::Args, types::CKDResponse};
 
 const BLS12381G1_PUBLIC_KEY_SIZE: usize = 48;
 const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
@@ -23,16 +22,15 @@ pub fn run(args: Args) -> Result<()> {
     let app_id = derive_app_id(&account_id, &args.derivation_path);
 
     let (ephemeral_private_key, ephemeral_public_key) = generate_ephemeral_key(&mut OsRng);
-
-    let ckd_params = CKDRequestArgs::new(CKDArgs::new(
-        args.derivation_path,
-        ephemeral_public_key,
-        args.domain_id,
-    ));
-    let function_name = contract_interface::method_names::REQUEST_APP_PRIVATE_KEY;
+    let ckd_params = CKDRequestArgs {
+        derivation_path: args.derivation_path,
+        app_public_key: ephemeral_public_key,
+        domain_id: args.domain_id,
+    };
+    let function_name = near_mpc_contract_interface::method_names::REQUEST_APP_PRIVATE_KEY;
     println!("Call the function {function_name} with parameters:");
 
-    let ckd_params_json = serde_json::to_string(&ckd_params)?;
+    let ckd_params_json = serde_json::to_string(&serde_json::json!({"request": ckd_params}))?;
     println!("{ckd_params_json}");
 
     let example_ckd_response = "{\"big_c\": \"bls12381g1:...\",\"big_y\": \"bls12381g1:...\"}";
@@ -41,11 +39,11 @@ pub fn run(args: Args) -> Result<()> {
     let ckd_response = read_response()?;
 
     let secret = decrypt_secret_and_verify(
-        ckd_response.big_y,
-        ckd_response.big_c,
+        &ckd_response.big_y,
+        &ckd_response.big_c,
         ephemeral_private_key,
         app_id,
-        args.mpc_ckd_public_key,
+        &args.mpc_ckd_public_key,
     )?;
 
     let key = derive_strong_key(secret, b"")?;
@@ -73,7 +71,7 @@ fn read_response() -> Result<CKDResponse> {
 fn generate_ephemeral_key(rng: &mut impl CryptoRngCore) -> (Scalar, Bls12381G1PublicKey) {
     let x = blstrs::Scalar::random(rng);
     let big_x = blstrs::G1Projective::generator() * x;
-    (x, Bls12381G1PublicKey::from(big_x.to_compressed()))
+    (x, Bls12381G1PublicKey::from(&big_x))
 }
 
 pub fn verify(public_key: &G2Projective, app_id: &[u8], signature: &G1Projective) -> bool {
@@ -94,15 +92,15 @@ pub fn verify(public_key: &G2Projective, app_id: &[u8], signature: &G1Projective
 }
 
 fn decrypt_secret_and_verify(
-    big_y: Bls12381G1PublicKey,
-    big_c: Bls12381G1PublicKey,
+    big_y: &Bls12381G1PublicKey,
+    big_c: &Bls12381G1PublicKey,
     private_key: Scalar,
     app_id: CkdAppId,
-    mpc_public_key: Bls12381G2PublicKey,
+    mpc_public_key: &Bls12381G2PublicKey,
 ) -> Result<[u8; BLS12381G1_PUBLIC_KEY_SIZE]> {
-    let big_y = convert_to_blstrs_type_g1(big_y)?;
-    let big_c = convert_to_blstrs_type_g1(big_c)?;
-    let mpc_public_key = convert_to_blstrs_type_g2(mpc_public_key)?;
+    let big_y: G1Projective = big_y.try_into().context("invalid G1 point")?;
+    let big_c: G1Projective = big_c.try_into().context("invalid G1 point")?;
+    let mpc_public_key: G2Projective = mpc_public_key.try_into().context("invalid G2 point")?;
 
     // decrypt the secret
     let secret = big_c - big_y * private_key;
@@ -114,18 +112,6 @@ fn decrypt_secret_and_verify(
 
     // return the secret as bytes
     Ok(secret.to_compressed())
-}
-
-fn convert_to_blstrs_type_g1(a: Bls12381G1PublicKey) -> Result<G1Projective> {
-    G1Projective::from_compressed(a.as_bytes())
-        .into_option()
-        .ok_or(anyhow!("failed to convert"))
-}
-
-fn convert_to_blstrs_type_g2(a: Bls12381G2PublicKey) -> Result<G2Projective> {
-    G2Projective::from_compressed(a.as_bytes())
-        .into_option()
-        .ok_or(anyhow!("failed to convert"))
 }
 
 fn derive_strong_key(

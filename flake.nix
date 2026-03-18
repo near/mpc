@@ -103,20 +103,9 @@
           };
 
           envDarwin = lib.optionalAttrs stdenv.isDarwin {
-            # Force build scripts to use Nix wrappers (not host clang)
-            CC = "${stdenv.cc}/bin/cc";
-            CXX = "${stdenv.cc}/bin/c++";
-
-            # cc crate looks for these first on macOS
-            CC_aarch64_apple_darwin = "${stdenv.cc}/bin/cc";
-            CXX_aarch64_apple_darwin = "${stdenv.cc}/bin/c++";
-
-            AR = "${stdenv.cc.bintools}/bin/ar";
-            RANLIB = "${stdenv.cc.bintools}/bin/ranlib";
-
             # Cargo resolves its linker separately from CC — force it to use the
-            # SDK-aware wrapper so -lSystem (and other SDK libs) are found.
-            CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${stdenv.cc}/bin/cc";
+            # LLVM 19 clang so -lSystem (and other SDK libs) are found.
+            CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "${llvmPkgs.clang}/bin/clang";
           };
 
           dockerTools = with pkgs; [
@@ -206,6 +195,17 @@
             hardeningDisable = hardening;
 
             shellHook = ''
+              ${lib.optionalString stdenv.isDarwin ''
+                # Override CC/CXX to use LLVM 19 clang, matching Rust 1.86.0's
+                # bundled LLVM version. The default stdenv's clang 21 produces
+                # LLVM bitcode that Rust's LLVM 19 cannot read.
+                export CC="${llvmPkgs.clang}/bin/clang"
+                export CXX="${llvmPkgs.clang}/bin/clang++"
+                export CC_aarch64_apple_darwin="${llvmPkgs.clang}/bin/clang"
+                export CXX_aarch64_apple_darwin="${llvmPkgs.clang}/bin/clang++"
+                export AR="${llvmPkgs.llvm}/bin/llvm-ar"
+                export RANLIB="${llvmPkgs.llvm}/bin/llvm-ranlib"
+              ''}
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
             '';
           };

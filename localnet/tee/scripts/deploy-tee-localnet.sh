@@ -91,8 +91,23 @@ else
 fi
 
 ### Constants / defaults
-IP_PREFIX="51.68.219."
-IP_START_OCTET=1
+# Host profile: alice | bob
+HOST_PROFILE="${HOST_PROFILE:-bob}"
+
+case "$HOST_PROFILE" in
+  alice)
+    IP_PREFIX="51.68.219."
+    IP_START_OCTET=1
+    ;;
+  bob)
+    IP_PREFIX="5.196.36."
+    IP_START_OCTET=113
+    ;;
+  *)
+    err "Unknown HOST_PROFILE: $HOST_PROFILE (supported: alice | bob)"
+    exit 1
+    ;;
+esac
 
 # Optional per-node IP override (format: "5=5.196.36.113 6=5.196.36.114 ...")
 NODE_IP_OVERRIDES="${NODE_IP_OVERRIDES:-}"
@@ -264,9 +279,10 @@ phase_rank() {
     near_keys) echo 80 ;;
     near_init) echo 90 ;;
     near_vote_hash) echo 95 ;;
-    near_vote_domain) echo 96 ;;
-    near_vote_new_params) echo 97 ;;
-    near_vote_new_params_votes) echo 98 ;;
+    near_vote_launcher_hash) echo 96 ;;
+    near_vote_domain) echo 97 ;;
+    near_vote_new_params) echo 98 ;;
+    near_vote_new_params_votes) echo 99 ;;
 
     auto) echo 0 ;;
     *) err "Unknown phase name: $1"; exit 1 ;;
@@ -988,10 +1004,12 @@ PY
 ### =========================
 build_contract() {
   log "Building MPC contract"
-  cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
+  cargo near build non-reproducible-wasm --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked
   export MPC_CONTRACT_PATH="$(pwd)/target/near/mpc_contract/mpc_contract.wasm"
   [ -f "$MPC_CONTRACT_PATH" ] || { err "Contract wasm not found at $MPC_CONTRACT_PATH"; exit 1; }
   log "MPC_CONTRACT_PATH=$MPC_CONTRACT_PATH"
+  log "Contract size: $(stat -c '%s' "$MPC_CONTRACT_PATH") bytes"
+  log "Contract sha256: $(sha256sum "$MPC_CONTRACT_PATH" | awk '{print $1}')"
 }
 
 deploy_contract() {
@@ -1050,6 +1068,16 @@ extract_code_hash() {
   echo "$digest"
 }
 
+extract_launcher_hash() {
+  local digest
+  digest="$(grep -E 'nearone/mpc-launcher@sha256:' "$COMPOSE_YAML" | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')"
+  if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+    err "Could not extract launcher image hash from $COMPOSE_YAML"
+    exit 1
+  fi
+  echo "$digest"
+}
+
 vote_code_hash_threshold() {
   local threshold="$1"
   local code_hash="$2"
@@ -1064,6 +1092,23 @@ vote_code_hash_threshold() {
         attached-deposit '0 NEAR' sign-as "$acct" \
         network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
     near_sleep "vote_code_hash by $acct"
+  done
+}
+
+vote_add_launcher_hash_threshold() {
+  local threshold="$1"
+  local launcher_hash="$2"
+  log "Voting launcher hash with threshold=$threshold (LAUNCHER_HASH=$launcher_hash)"
+  for i in $(seq 0 $((threshold-1))); do
+    local acct
+    acct="$(node_account_for_i "$i")"
+    log "vote_add_launcher_hash as $acct"
+    near_tx_retry "vote_add_launcher_hash by $acct" \
+       near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_add_launcher_hash \
+        json-args "{\"launcher_hash\": \"$launcher_hash\"}" prepaid-gas '100.0 Tgas' \
+        attached-deposit '0 NEAR' sign-as "$acct" \
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
+    near_sleep "vote_add_launcher_hash by $acct"
   done
 }
 
@@ -1362,6 +1407,7 @@ near_phase_vote_new_parameters() {
 print_summary() {
   local threshold="$1"
   local code_hash="$2"
+  local launcher_hash="$3"
   echo
   echo "============================================================"
   log "Summary"
@@ -1378,6 +1424,7 @@ print_summary() {
   echo " MAX_NODES_TO_FUND   : $MAX_NODES_TO_FUND"
   echo " MPC_IMAGE_TAGS      : $MPC_IMAGE_TAGS"
   echo " CODE_HASH           : $code_hash"
+  echo " LAUNCHER_HASH       : $launcher_hash"
   echo " ADD_NODES           : $ADD_NODES"
   echo " NEW_TOTAL_N         : ${NEW_TOTAL_N:-<unset>}"
   echo " NEW_THRESHOLD_OVR   : ${NEW_THRESHOLD_OVERRIDE:-<unset>}"
@@ -1499,23 +1546,38 @@ main() {
     maybe_stop_after_phase near_vote_hash
   fi
 
+  if should_run_from_start near_vote_launcher_hash; then
+    pause_phase "NEAR: vote add launcher hash"
+    launcher_hash="$(extract_launcher_hash)"
+    log "LAUNCHER_HASH (no prefix): $launcher_hash"
+    vote_add_launcher_hash_threshold "$threshold" "$launcher_hash"
+    maybe_stop_after_phase near_vote_launcher_hash
+  fi
+
   if should_run_from_start near_vote_domain; then
     pause_phase "NEAR: vote add domain"
     vote_add_domains
     maybe_stop_after_phase near_vote_domain
   fi
 
-  if should_run_from_start near_vote_new_params; then
-    near_phase_vote_new_parameters
-    maybe_stop_after_phase near_vote_new_params
-  fi
-  if should_run_from_start near_vote_new_params_votes; then
-    near_phase_vote_new_params_votes_only
-    maybe_stop_after_phase near_vote_new_params_votes
+  # By default, a normal deployment ends after near_vote_domain.
+  # Only enter scaling phases if scaling was explicitly requested.
+  if [ "${ADD_NODES:-0}" != "0" ] || [ -n "${NEW_TOTAL_N:-}" ]; then
+    if should_run_from_start near_vote_new_params; then
+      near_phase_vote_new_parameters
+      maybe_stop_after_phase near_vote_new_params
+    fi
+    if should_run_from_start near_vote_new_params_votes; then
+      near_phase_vote_new_params_votes_only
+      maybe_stop_after_phase near_vote_new_params_votes
+    fi
+  else
+    log "No scaling requested (ADD_NODES=0, NEW_TOTAL_N unset); ending after near_vote_domain"
   fi
 
   code_hash="$(extract_code_hash || true)"
-  print_summary "$threshold" "${code_hash:-<unknown>}"
+  launcher_hash="$(extract_launcher_hash || true)"
+  print_summary "$threshold" "${code_hash:-<unknown>}" "${launcher_hash:-<unknown>}"
   log "✅ Done"
 }
 

@@ -6,14 +6,14 @@
 
 use crate::primitives::participants::ParticipantInfo;
 use crate::MpcContract;
-use contract_interface::types as dtos;
 use near_account_id::AccountId;
-use near_sdk::{near_bindgen, PublicKey};
+use near_mpc_contract_interface::types as dtos;
+use near_sdk::{near, PublicKey};
 
-// Import the generated extension trait from near_bindgen
+// Import the generated extension trait from near
 use crate::MpcContractExt;
 
-#[near_bindgen]
+#[near]
 impl MpcContract {
     /// Benchmark: Returns the number of participants.
     ///

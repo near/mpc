@@ -10,6 +10,9 @@ use crate::protocol::{
 
 type Secp256 = Secp256K1Sha256;
 
+/// Maximum incoming buffer entries for the OT-based ECDSA presign protocol.
+pub(crate) const OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 2;
+
 /// The presignature protocol.
 ///
 /// This is the first phase of performing a signature, in which we perform
@@ -56,7 +59,7 @@ pub fn presign(
         });
     }
 
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
     let fut = do_presign(ctx.shared_channel(), participants, me, args);
     Ok(make_protocol(ctx, fut))
 }
@@ -189,15 +192,14 @@ async fn do_presign(
 mod test {
     use super::*;
     use crate::{
-        ecdsa::{ot_based_ecdsa::triples::test::deal, KeygenOutput, Polynomial, ProjectivePoint},
-        test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng},
-    };
-    use frost_secp256k1::{
-        keys::{PublicKeyPackage, SigningShare},
-        VerifyingKey,
+        ecdsa::ot_based_ecdsa::triples::test::deal,
+        test_utils::{
+            generate_participants, generate_test_keys, make_keygen_output, run_protocol,
+            GenProtocol, MockCryptoRng,
+        },
     };
     use rand_core::SeedableRng;
-    use std::collections::BTreeMap;
+    use rstest::rstest;
 
     #[test]
     fn test_presign() {
@@ -205,9 +207,7 @@ mod test {
 
         let participants = generate_participants(4);
         let original_threshold: usize = 2;
-        let degree = original_threshold.checked_sub(1).unwrap();
-        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
-        let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
+        let (f, pk) = generate_test_keys(original_threshold - 1, &mut rng);
 
         let threshold = 2;
 
@@ -224,13 +224,7 @@ mod test {
             .zip(triple0_shares.into_iter())
             .zip(triple1_shares.into_iter())
         {
-            let private_share = f.eval_at_participant(*p).unwrap().0;
-            let verifying_key = VerifyingKey::new(big_x);
-            let public_key_package = PublicKeyPackage::new(BTreeMap::new(), verifying_key);
-            let keygen_out = KeygenOutput {
-                private_share: SigningShare::new(private_share),
-                public_key: *public_key_package.verifying_key(),
-            };
+            let keygen_out = make_keygen_output(&f, &pk, *p);
 
             let protocol = presign(
                 &participants[..3],
@@ -266,5 +260,55 @@ mod test {
         assert_eq!(sigma, k * f.eval_at_zero().unwrap().0);
 
         insta::assert_json_snapshot!(result);
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(4, 3)]
+    #[case(5, 3)]
+    fn test_presign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(num_participants);
+        let (f, pk) = generate_test_keys(threshold - 1, &mut rng);
+
+        let (triple0_pub, triple0_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
+            &mut rng,
+            &participants,
+            threshold.into(),
+        )
+        .unwrap();
+        let (triple1_pub, triple1_shares) = crate::ecdsa::ot_based_ecdsa::triples::test::deal(
+            &mut rng,
+            &participants,
+            threshold.into(),
+        )
+        .unwrap();
+
+        let triple0_map: std::collections::HashMap<_, _> =
+            participants.iter().copied().zip(triple0_shares).collect();
+        let triple1_map: std::collections::HashMap<_, _> =
+            participants.iter().copied().zip(triple1_shares).collect();
+
+        // When + Then
+        crate::test_utils::assert_buffer_capacity(
+            &participants,
+            &mut rng,
+            |comms, p_list, p, _rng_p| {
+                let keygen_out = make_keygen_output(&f, &pk, p);
+                do_presign(
+                    comms.shared_channel(),
+                    p_list,
+                    p,
+                    PresignArguments {
+                        triple0: (triple0_map[&p].clone(), triple0_pub.clone()),
+                        triple1: (triple1_map[&p].clone(), triple1_pub.clone()),
+                        keygen_out,
+                        threshold: threshold.into(),
+                    },
+                )
+            },
+            |_| OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES,
+        );
     }
 }

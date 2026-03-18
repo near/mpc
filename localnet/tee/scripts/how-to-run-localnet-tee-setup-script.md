@@ -16,6 +16,7 @@ The script automates the end‑to‑end setup of an MPC network on localnet:
 - Adds keys to node NEAR accounts
 - Initializes the MPC contract
 - Votes for the MPC Docker image hash
+- Votes for the launcher image hash
 - Votes to add signing domains (all nodes vote)
 - Leaves the network ready to process `sign` requests
 
@@ -59,6 +60,10 @@ localnet/tee/scripts/deploy-tee-localnet.sh
 ### Required / Common Defaults
 
 ```bash
+export HOST_PROFILE=alice
+#export HOST_PROFILE=bob
+
+
 # Mode
 export MODE=localnet
 
@@ -91,7 +96,7 @@ export FUNDER_PRIVATE_KEY=$(jq -r '.secret_key' ~/.near/mpc-localnet/validator_k
 ### Optional Control Variables
 
 ```bash
-export START_FROM_PHASE=render|deploy|init_args|near_keys|near_init|near_vote_hash|near_vote_domain
+export START_FROM_PHASE=render|deploy|init_args|near_keys|near_init|near_vote_hash|near_vote_launcher_hash|near_vote_domain
 export STOP_AFTER_PHASE=<phase>
 export RESUME=1
 export FORCE_REDEPLOY=1

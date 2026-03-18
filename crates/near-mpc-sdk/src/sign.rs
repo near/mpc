@@ -1,12 +1,12 @@
-pub use contract_interface::method_names::SIGN as SIGN_METHOD_NAME;
+pub use near_mpc_contract_interface::method_names::SIGN as SIGN_METHOD_NAME;
 // response types
-pub use contract_interface::types::{
+pub use near_mpc_contract_interface::types::{
     DomainId, Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature,
     SignatureResponse as SignatureRequestResponse,
 };
 
 // raw request arg type
-pub use contract_interface::types::{Payload, SignRequestArgs};
+pub use near_mpc_contract_interface::types::{Payload, SignRequestArgs};
 
 #[derive(Debug, Clone)]
 pub struct NotSet;
@@ -80,7 +80,7 @@ impl SignRequestBuilder<String, Payload, DomainId> {
 
 #[cfg(test)]
 mod test {
-    use bounded_collections::BoundedVec;
+    use near_mpc_bounded_collections::BoundedVec;
 
     use super::*;
 

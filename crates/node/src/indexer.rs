@@ -12,13 +12,6 @@ use crate::{
 
 use self::stats::IndexerStats;
 use anyhow::Context;
-use contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
-    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
-    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
-    STATE,
-};
-use contract_interface::types as dtos;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
@@ -32,12 +25,19 @@ use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
-use near_client::{client_actor::ClientActorInner, RpcHandler, Status, ViewClientActorInner};
+use near_client::{client_actor::ClientActor, RpcHandlerActor, Status, ViewClientActor};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
     types::{BlockReference, Finality},
     views::{BlockView, QueryRequest, QueryResponseKind},
 };
+use near_mpc_contract_interface::method_names::{
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
+    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
+    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
+    STATE,
+};
+use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
 use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};
@@ -75,9 +75,9 @@ pub(crate) struct IndexerState {
 
 impl IndexerState {
     pub fn new(
-        view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
-        client: TokioRuntimeHandle<ClientActorInner>,
-        rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
+        view_client: MultithreadRuntimeHandle<ViewClientActor>,
+        client: TokioRuntimeHandle<ClientActor>,
+        rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
@@ -92,7 +92,7 @@ impl IndexerState {
 
 #[derive(Clone)]
 struct IndexerViewClient {
-    view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
+    view_client: MultithreadRuntimeHandle<ViewClientActor>,
 }
 
 // TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
@@ -232,8 +232,8 @@ impl IndexerViewClient {
     pub(crate) async fn get_participant_attestation(
         &self,
         mpc_contract_id: &AccountId,
-        participant_tls_public_key: &contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<Option<contract_interface::types::VerifiedAttestation>> {
+        participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
+    ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
         let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
             tls_public_key: participant_tls_public_key,
         })
@@ -260,7 +260,7 @@ impl IndexerViewClient {
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
-                Option<contract_interface::types::VerifiedAttestation>,
+                Option<near_mpc_contract_interface::types::VerifiedAttestation>,
             >(&call_result.result)
             .context("failed to deserialize pending request response"),
             _ => {
@@ -407,7 +407,7 @@ impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
 
 #[derive(Clone)]
 struct IndexerClient {
-    client: TokioRuntimeHandle<ClientActorInner>,
+    client: TokioRuntimeHandle<ClientActor>,
 }
 
 const INTERVAL: Duration = Duration::from_millis(500);
@@ -441,7 +441,7 @@ impl IndexerClient {
 
 // #[derive(Debug)]
 struct IndexerRpcHandler {
-    rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
+    rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
 }
 
 impl IndexerRpcHandler {

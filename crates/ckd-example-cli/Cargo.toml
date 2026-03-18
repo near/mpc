@@ -8,11 +8,11 @@ edition = { workspace = true }
 anyhow = { workspace = true }
 blstrs = { workspace = true }
 clap = { workspace = true }
-contract-interface = { workspace = true }
 derive_more = { workspace = true, features = ["from_str", "constructor"] }
 elliptic-curve = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["blstrs"] }
 rand_core = { workspace = true, features = ["getrandom"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

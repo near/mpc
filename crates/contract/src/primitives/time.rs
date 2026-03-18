@@ -33,6 +33,30 @@ impl borsh::BorshSerialize for Timestamp {
     }
 }
 
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl borsh::BorshSchema for Timestamp {
+    fn declaration() -> borsh::schema::Declaration {
+        "Timestamp".to_string()
+    }
+
+    fn add_definitions_recursively(
+        definitions: &mut borsh::__private::maybestd::collections::BTreeMap<
+            borsh::schema::Declaration,
+            borsh::schema::Definition,
+        >,
+    ) {
+        <[u8; 8] as borsh::BorshSchema>::add_definitions_recursively(definitions);
+        definitions.insert(
+            Self::declaration(),
+            borsh::schema::Definition::Struct {
+                fields: borsh::schema::Fields::UnnamedFields(vec![
+                    <[u8; 8] as borsh::BorshSchema>::declaration(),
+                ]),
+            },
+        );
+    }
+}
+
 impl borsh::BorshDeserialize for Timestamp {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let mut duration_milliseconds_bytes: [u8; 8] = [0; 8];
