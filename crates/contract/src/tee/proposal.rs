@@ -344,7 +344,6 @@ pub fn get_docker_compose_hash(
     LauncherDockerComposeHash::from(hash_arr)
 }
 
-
 #[cfg(test)]
 mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env};

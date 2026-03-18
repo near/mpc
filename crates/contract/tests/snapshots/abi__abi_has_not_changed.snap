@@ -1902,7 +1902,7 @@ expression: abi
           }
         },
         "ContractExpectedMeasurements": {
-          "description": "On-chain representation of expected TDX measurements. Mirrors `mpc_attestation::measurements::ExpectedMeasurements` with contract-compatible serialization (hex strings in JSON, borsh for storage).",
+          "description": "On-chain representation of expected TDX measurements. Mirrors [`mpc_attestation::measurements::ExpectedMeasurements`] with contract-compatible serialization (hex strings in JSON, borsh for storage).",
           "type": "object",
           "required": [
             "key_provider_event_digest",

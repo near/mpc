@@ -63,8 +63,8 @@ use primitives::{
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
-use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
+use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
