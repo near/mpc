@@ -31,7 +31,7 @@ from utils import MetricsTracker
 
 import requests
 
-DUMMY_MPC_IMAGE_HASH = "deadbeef" * 8
+DUMMY_MPC_IMAGE_HASH = "sha256:" + "deadbeef" * 8
 
 
 class MpcNode(NearAccount):
