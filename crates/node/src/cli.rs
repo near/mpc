@@ -155,8 +155,8 @@ impl StartCmd {
             gcp,
             node: config,
             log: LogConfig {
-                log_format,
-                log_level: None,
+                format: log_format,
+                filter: None,
             },
         }
     }

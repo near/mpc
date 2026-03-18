@@ -18,8 +18,8 @@ latest_allowed_hash_file = "/tmp/LATEST_ALLOWED_HASH_FILE.txt"
 type = "local"
 
 [log]
-log_format = "plain"
-log_level = "info"
+format = "plain"
+filter = "info"
 
 [node]
 my_near_account_id = "$NEAR_ACCOUNT_ID"
