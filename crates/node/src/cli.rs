@@ -3,7 +3,7 @@ use crate::{
         load_config_file,
         start::{LogConfig, LogFormat},
         ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
-        SecretsStartConfig, StartConfig,
+        SecretsStartConfig, StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
@@ -14,21 +14,14 @@ use crate::{
 };
 use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
-use launcher_interface::types::{ImageConfig, TeeAuthorityConfig};
-use mpc_primitives::hash::MpcDockerImageHash;
 use std::path::PathBuf;
 use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
 use url::Url;
-
-const DUMMY_ALLOWED_HASH: MpcDockerImageHash = MpcDockerImageHash::new([0; 32]);
-const ALLOWED_IMAGE_HASHES_FILE_PATH: &str = "/tmp/allowed_image_hashes.json";
-
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
 #[command(about = "MPC Node for Near Protocol")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
-    // TODO(#2334): can be removed when deprecating StartCmd as it's part of config file
     #[arg(long, value_enum, env("MPC_LOG_FORMAT"), default_value = "plain")]
     pub log_format: LogFormat,
     #[clap(subcommand)]
@@ -91,6 +84,9 @@ pub struct StartCmd {
     pub gcp_keyshare_secret_id: Option<String>,
     #[arg(env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
+    /// TEE authority config
+    #[command(subcommand)]
+    pub tee_authority: CliTeeAuthorityConfig,
     /// TEE related configuration settings.
     #[command(flatten)]
     pub image_hash_config: CliImageHashConfig,
@@ -142,19 +138,22 @@ impl StartCmd {
                 backup_encryption_key_hex: self.backup_encryption_key_hex,
             },
             near_init: None,
-            // dstack and TEE is not supported with StartCmd, as it will be removed
-            // in #2334, and not used by the rust launcher.
-            tee: TeeAuthorityConfig::Local,
+            tee: TeeStartConfig {
+                authority: match self.tee_authority {
+                    CliTeeAuthorityConfig::Local => TeeAuthorityStartConfig::Local,
+                    CliTeeAuthorityConfig::Dstack {
+                        dstack_endpoint,
+                        quote_upload_url,
+                    } => TeeAuthorityStartConfig::Dstack {
+                        dstack_endpoint,
+                        quote_upload_url: quote_upload_url.to_string(),
+                    },
+                },
+                image_hash: self.image_hash_config.image_hash,
+                latest_allowed_hash_file: self.image_hash_config.latest_allowed_hash_file,
+            },
             gcp,
             node: config,
-            // Use dummy values as we don't want a breaking change, and
-            // this start command will be deprecated in #2334
-            image_config: ImageConfig {
-                image_hash: DUMMY_ALLOWED_HASH.into(),
-                latest_allowed_hash_file_path: ALLOWED_IMAGE_HASHES_FILE_PATH
-                    .parse()
-                    .expect("dummy allowed image hashes is valid path"),
-            },
             log_config: LogConfig {
                 log_format,
                 log_level: None,
@@ -252,12 +251,6 @@ impl Cli {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
                 let node_configuration = StartConfig::from_toml_file(&config_path)?;
-                // TODO(#2334): make near_init field non optional
-                anyhow::ensure!(
-                    node_configuration.near_init.is_some(),
-                    "[near_init] table must be set"
-                );
-
                 node_configuration.ensure_near_initialized()?;
                 run_mpc_node(node_configuration).await
             }

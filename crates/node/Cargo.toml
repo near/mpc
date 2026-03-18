@@ -51,7 +51,6 @@ near-mpc-contract-interface = { workspace = true, features = [
     "blstrs",
     "near",
 ] }
-mpc-primitives = { workspace = true }
 near-o11y = { workspace = true }
 near-sdk = { workspace = true }
 near-time = { workspace = true }

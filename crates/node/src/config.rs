@@ -16,6 +16,7 @@ use std::{
 pub(crate) mod start;
 pub use start::{
     ChainId, DownloadConfigType, GcpStartConfig, NearInitConfig, SecretsStartConfig, StartConfig,
+    TeeAuthorityStartConfig, TeeStartConfig,
 };
 
 mod foreign_chains;
