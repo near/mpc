@@ -9,7 +9,7 @@ const SHA256_PREFIX: &str = "sha256:";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeeConfig {
     pub authority: TeeAuthorityConfig,
-    ///The hash of the running image.
+    /// The hash of the running image.
     pub image_hash: DockerSha256Digest,
     /// Path to the file where the node writes the latest allowed hash.
     /// If not set, assumes running outside of TEE and skips image hash monitoring.
