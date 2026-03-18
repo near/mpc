@@ -130,11 +130,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
     let image_hash_storage =
-        AllowedImageHashesFile::from(config.image_config.latest_allowed_hash_file_path.clone());
+        AllowedImageHashesFile::from(config.tee.latest_allowed_hash_file_path.clone());
 
     let image_hash_watcher_handle = root_runtime.spawn(monitor_allowed_image_hashes(
         cancellation_token.child_token(),
-        MpcDockerImageHash::from(config.image_config.image_hash.as_bytes()),
+        MpcDockerImageHash::from(config.tee.image_hash.as_bytes()),
         allowed_hashes_in_contract,
         image_hash_storage,
         shutdown_signal_sender.clone(),

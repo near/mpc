@@ -7,6 +7,16 @@ use serde::{Deserialize, Serialize};
 const SHA256_PREFIX: &str = "sha256:";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeeConfig {
+    pub authority: TeeAuthorityConfig,
+    ///The hash of the running image.
+    pub image_hash: DockerSha256Digest,
+    /// Path to the file where the node writes the latest allowed hash.
+    /// If not set, assumes running outside of TEE and skips image hash monitoring.
+    pub latest_allowed_hash_file_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TeeAuthorityConfig {
     Local,
@@ -15,15 +25,6 @@ pub enum TeeAuthorityConfig {
         // TODO(#2333): use URL type for this type
         quote_upload_url: String,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImageConfig {
-    /// Hex representation of the hash of the running image. Only required in TEE.
-    pub image_hash: DockerSha256Digest,
-    /// Path to the file where the node writes the latest allowed hash.
-    /// If not set, assumes running outside of TEE and skips image hash monitoring.
-    pub latest_allowed_hash_file_path: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

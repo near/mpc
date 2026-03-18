@@ -14,7 +14,7 @@ use crate::{
 };
 use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
-use launcher_interface::types::{ImageConfig, TeeAuthorityConfig};
+use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_primitives::hash::MpcDockerImageHash;
 use std::path::PathBuf;
 use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
@@ -142,14 +142,14 @@ impl StartCmd {
                 backup_encryption_key_hex: self.backup_encryption_key_hex,
             },
             near_init: None,
-            // dstack and TEE is not supported with StartCmd, as it will be removed
-            // in #2334, and not used by the rust launcher.
-            tee: TeeAuthorityConfig::Local,
             gcp,
             node: config,
-            // Use dummy values as we don't want a breaking change, and
-            // this start command will be deprecated in #2334
-            image_config: ImageConfig {
+            // dstack and TEE is not supported with StartCmd, as it will be removed
+            // in #2334, and not used by the rust launcher.
+            tee: TeeConfig {
+                authority: TeeAuthorityConfig::Local,
+                // Use dummy values as we don't want a breaking change, and
+                // this start command will be deprecated in #2334
                 image_hash: DUMMY_ALLOWED_HASH.into(),
                 latest_allowed_hash_file_path: ALLOWED_IMAGE_HASHES_FILE_PATH
                     .parse()
