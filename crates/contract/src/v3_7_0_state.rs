@@ -14,21 +14,29 @@ use near_sdk::store::LookupMap;
 use crate::{
     node_migrations::NodeMigrations,
     primitives::{
-        ckd::CKDRequest,
+        domain::DomainId,
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
     Config, ForeignChainPolicyVotes, StaleData,
 };
 use near_mpc_contract_interface::types as dtos;
 
+#[derive(Debug, BorshSerialize, BorshDeserialize, Eq, Ord, PartialEq, PartialOrd)]
+pub struct OldCKDRequest {
+    pub app_public_key: dtos::Bls12381G1PublicKey,
+    pub app_id: dtos::CkdAppId,
+    pub domain_id: DomainId,
+}
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
-    pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    pending_ckd_requests: LookupMap<OldCKDRequest, YieldIndex>,
     pending_verify_foreign_tx_requests:
         LookupMap<dtos::VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
@@ -51,7 +59,9 @@ impl From<MpcContract> for crate::MpcContract {
         Self {
             protocol_state: value.protocol_state,
             pending_signature_requests: value.pending_signature_requests,
-            pending_ckd_requests: value.pending_ckd_requests,
+            // Unfortunately we cannot migrate the old pending_ckd_requests
+            // because LookupMap is not iterable
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
             foreign_chain_policy: value.foreign_chain_policy,

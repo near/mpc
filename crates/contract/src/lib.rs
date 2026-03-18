@@ -23,7 +23,10 @@ use crate::{
     crypto_shared::types::CKDResponse,
     dto_mapping::{args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType},
     errors::{Error, RequestError},
-    primitives::{ckd::CKDRequest, domain::AddDomainsVotes},
+    primitives::{
+        ckd::{app_public_key_check, ckd_output_check, CKDRequest},
+        domain::AddDomainsVotes,
+    },
     state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
@@ -393,6 +396,9 @@ impl MpcContract {
 
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each ckd request.
+    ///
+    /// Note: identity points are accepted in `AppPublicKeyPV` to support use cases
+    /// where the derived key is intentionally public (no encryption).
     #[handle_result]
     #[payable]
     pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
@@ -468,6 +474,15 @@ impl MpcContract {
 
         if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
+        match &request.app_public_key {
+            dtos::CKDAppPublicKey::AppPublicKey(_) => {}
+            dtos::CKDAppPublicKey::AppPublicKeyPV(pk) => {
+                if !app_public_key_check(pk) {
+                    env::panic_str("app public key check failed")
+                }
+            }
         }
 
         let account_id = env::predecessor_account_id();
@@ -735,6 +750,26 @@ impl MpcContract {
         }
 
         self.assert_caller_is_attested_participant_and_protocol_active();
+
+        let PublicKeyExtended::Bls12381 {
+            public_key: dtos::PublicKey::Bls12381(public_key),
+        } = self.public_key_extended(request.domain_id)?
+        else {
+            env::panic_str(
+                &InvalidParameters::InvalidDomainId
+                    .message("Selected domain is not compatible with CKD")
+                    .to_string(),
+            );
+        };
+
+        match &request.app_public_key {
+            dtos::CKDAppPublicKey::AppPublicKey(_) => {}
+            dtos::CKDAppPublicKey::AppPublicKeyPV(app_pk) => {
+                if !ckd_output_check(&request.app_id, &response, app_pk, &public_key) {
+                    env::panic_str("CKD output check failed");
+                }
+            }
+        }
 
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.pending_ckd_requests.remove(&request) {
@@ -1581,7 +1616,7 @@ impl MpcContract {
                 AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
             ),
@@ -1646,7 +1681,7 @@ impl MpcContract {
                 AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
             ),
@@ -2162,6 +2197,7 @@ mod tests {
     };
     use mpc_primitives::hash::{Hash32, Image};
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::{
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
         ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
@@ -2197,9 +2233,9 @@ mod tests {
     }
 
     #[derive(Debug)]
-    #[expect(dead_code)]
     pub enum SharedSecretKey {
         Secp256k1(k256::Scalar),
+        #[expect(dead_code)]
         Ed25519(curve25519_dalek::Scalar),
         Bls12381(ckd::Scalar),
     }
@@ -2239,6 +2275,34 @@ mod tests {
         let pk = dtos::Bls12381G2PublicKey::from(&public_key_element);
 
         (pk, scalar)
+    }
+
+    pub fn new_ckd_pv_app_pk(
+        rng: &mut impl CryptoRngCore,
+    ) -> (ckd::Scalar, dtos::CKDAppPublicKeyPV) {
+        let scalar = ckd::Scalar::random(rng);
+        let pk2 = ckd::ElementG2::generator() * scalar;
+        let pk1 = ckd::ElementG1::generator() * scalar;
+
+        let pk2 = dtos::Bls12381G2PublicKey::from(&pk2);
+        let pk1 = dtos::Bls12381G1PublicKey::from(&pk1);
+
+        (scalar, dtos::CKDAppPublicKeyPV { pk1, pk2 })
+    }
+
+    pub fn compute_ckd_pv_response(msk: &ckd::Scalar, request: &CKDRequest) -> CKDResponse {
+        let public_key = ckd::ElementG2::generator() * msk;
+        let public_key = ckd::VerifyingKey::new(public_key);
+        let app_pk = ckd::ElementG1::try_from(request.app_public_key.g1_public_key()).unwrap();
+        let big_s = ckd::hash_app_id_with_pk(&public_key, request.app_id.as_ref()) * msk;
+        let y = ckd::Scalar::random(OsRng);
+        let big_y = ckd::ElementG1::generator() * y;
+        let big_c = big_s + app_pk * y;
+
+        CKDResponse {
+            big_y: (&big_y).into(),
+            big_c: (&big_c).into(),
+        }
     }
 
     pub fn make_public_key_for_domain(
@@ -2469,11 +2533,11 @@ mod tests {
                 .unwrap();
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
-            app_public_key: app_public_key.clone(),
+            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
             domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
-            app_public_key,
+            CKDAppPublicKey::AppPublicKey(app_public_key),
             request.domain_id.into(),
             &context.predecessor_account_id,
             &request.derivation_path,
@@ -2501,6 +2565,101 @@ mod tests {
     }
 
     #[test]
+    fn respond_ckd_pv__should_succeed_when_response_is_valid_and_request_exists() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Bls12381, &mut rng);
+        let SharedSecretKey::Bls12381(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let (_, app_public_key) = new_ckd_pv_app_pk(&mut rng);
+        let app_public_key = CKDAppPublicKey::AppPublicKeyPV(app_public_key);
+        let derivation_path = "my derivation path".to_string();
+        let request = CKDRequestArgs {
+            derivation_path,
+            app_public_key: app_public_key.clone(),
+            domain_id: dtos::DomainId::default(),
+        };
+        let ckd_request = CKDRequest::new(
+            app_public_key,
+            request.domain_id.into(),
+            &context.predecessor_account_id,
+            &request.derivation_path,
+        );
+        contract.request_app_private_key(request);
+        contract.get_pending_ckd_request(&ckd_request).unwrap();
+
+        let response = compute_ckd_pv_response(&secret_key, &ckd_request);
+
+        with_active_participant_and_attested_context(&contract);
+
+        match contract.respond_ckd(ckd_request.clone(), response.clone()) {
+            Ok(_) => {
+                contract
+                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response))
+                    .detach();
+
+                assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
+            }
+            Err(_) => panic!("respond_ckd should not fail"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "app public key check failed")]
+    fn request_ckd_pv__should_reject_mismatched_app_public_key() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _secret_key) =
+            basic_setup(SignatureScheme::Bls12381, &mut rng);
+
+        // Generate pk1 and pk2 from different scalars so the pairing check fails
+        let scalar1 = ckd::Scalar::random(&mut rng);
+        let scalar2 = ckd::Scalar::random(&mut rng);
+        let pk1 = dtos::Bls12381G1PublicKey::from(&(ckd::ElementG1::generator() * scalar1));
+        let pk2 = dtos::Bls12381G2PublicKey::from(&(ckd::ElementG2::generator() * scalar2));
+
+        let request = CKDRequestArgs {
+            derivation_path: "test".to_string(),
+            app_public_key: CKDAppPublicKey::AppPublicKeyPV(dtos::CKDAppPublicKeyPV { pk1, pk2 }),
+            domain_id: dtos::DomainId::default(),
+        };
+        contract.request_app_private_key(request);
+    }
+
+    #[test]
+    #[should_panic(expected = "CKD output check failed")]
+    fn respond_ckd_pv__should_reject_invalid_response() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Bls12381, &mut rng);
+        let SharedSecretKey::Bls12381(secret_key) = secret_key else {
+            unreachable!();
+        };
+
+        let (_, app_public_key) = new_ckd_pv_app_pk(&mut rng);
+        let app_public_key = CKDAppPublicKey::AppPublicKeyPV(app_public_key);
+        let request = CKDRequestArgs {
+            derivation_path: "test".to_string(),
+            app_public_key: app_public_key.clone(),
+            domain_id: dtos::DomainId::default(),
+        };
+        let ckd_request = CKDRequest::new(
+            app_public_key,
+            request.domain_id.into(),
+            &context.predecessor_account_id,
+            &request.derivation_path,
+        );
+        contract.request_app_private_key(request);
+
+        // Compute a valid response then tamper with big_c
+        let mut response = compute_ckd_pv_response(&secret_key, &ckd_request);
+        response.big_c = dtos::Bls12381G1PublicKey::from(
+            &(ckd::ElementG1::generator() * ckd::Scalar::random(&mut rng)),
+        );
+
+        with_active_participant_and_attested_context(&contract);
+        let _ = contract.respond_ckd(ckd_request, response);
+    }
+
+    #[test]
     fn test_ckd_timeout() {
         let (context, mut contract, _secret_key) =
             basic_setup(SignatureScheme::Bls12381, &mut OsRng);
@@ -2510,11 +2669,11 @@ mod tests {
                 .unwrap();
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
-            app_public_key: app_public_key.clone(),
+            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
             domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
-            app_public_key,
+            CKDAppPublicKey::AppPublicKey(app_public_key),
             request.domain_id.into(),
             &context.predecessor_account_id,
             &request.derivation_path,
@@ -2727,7 +2886,9 @@ mod tests {
         contract.request_app_private_key(CKDRequestArgs {
             domain_id: dtos::DomainId::default(),
             derivation_path: "test".to_string(),
-            app_public_key: dtos::Bls12381G1PublicKey::from([0u8; 48]),
+            app_public_key: CKDAppPublicKey::AppPublicKey(dtos::Bls12381G1PublicKey::from(
+                [0u8; 48],
+            )),
         });
     }
 
@@ -2988,11 +3149,11 @@ mod tests {
                 .unwrap();
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
-            app_public_key: app_public_key.clone(),
+            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
             domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
-            app_public_key.clone(),
+            CKDAppPublicKey::AppPublicKey(app_public_key),
             request.domain_id.into(),
             &context.predecessor_account_id.clone(),
             &request.derivation_path,
@@ -3081,7 +3242,7 @@ mod tests {
             MpcContract {
                 protocol_state,
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-                pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+                pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
                 pending_verify_foreign_tx_requests: LookupMap::new(
                     StorageKey::PendingVerifyForeignTxRequests,
                 ),

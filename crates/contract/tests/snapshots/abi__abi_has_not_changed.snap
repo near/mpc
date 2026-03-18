@@ -752,7 +752,7 @@ expression: abi
       },
       {
         "name": "request_app_private_key",
-        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.",
+        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in `AppPublicKeyPV` to support use cases\n where the derived key is intentionally public (no encryption).",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1560,6 +1560,49 @@ expression: abi
         "Bls12381G2PublicKey": {
           "type": "string"
         },
+        "CKDAppPublicKey": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "AppPublicKey"
+              ],
+              "properties": {
+                "AppPublicKey": {
+                  "$ref": "#/definitions/Bls12381G1PublicKey"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "AppPublicKeyPV"
+              ],
+              "properties": {
+                "AppPublicKeyPV": {
+                  "$ref": "#/definitions/CKDAppPublicKeyPV"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "CKDAppPublicKeyPV": {
+          "type": "object",
+          "required": [
+            "pk1",
+            "pk2"
+          ],
+          "properties": {
+            "pk1": {
+              "$ref": "#/definitions/Bls12381G1PublicKey"
+            },
+            "pk2": {
+              "$ref": "#/definitions/Bls12381G2PublicKey"
+            }
+          }
+        },
         "CKDRequest": {
           "type": "object",
           "required": [
@@ -1575,7 +1618,7 @@ expression: abi
               "description": "The app ephemeral public key",
               "allOf": [
                 {
-                  "$ref": "#/definitions/Bls12381G1PublicKey"
+                  "$ref": "#/definitions/CKDAppPublicKey"
                 }
               ]
             },
@@ -1593,7 +1636,7 @@ expression: abi
           ],
           "properties": {
             "app_public_key": {
-              "$ref": "#/definitions/Bls12381G1PublicKey"
+              "$ref": "#/definitions/CKDAppPublicKey"
             },
             "derivation_path": {
               "type": "string"
