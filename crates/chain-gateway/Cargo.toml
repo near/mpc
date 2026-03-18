@@ -35,7 +35,6 @@ near-sdk = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
-wat = { workspace = true }
 
 [[test]]
 name = "test"
