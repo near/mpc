@@ -11,6 +11,7 @@ use crate::{
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
+    tracing::init_logging,
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
 };
@@ -40,6 +41,8 @@ use crate::tee::{
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
+    init_logging(&config.log);
+
     let root_runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(1)

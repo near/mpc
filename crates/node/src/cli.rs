@@ -1,6 +1,8 @@
 use crate::{
     config::{
-        load_config_file, ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
+        load_config_file,
+        start::{LogConfig, LogFormat},
+        ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
         SecretsStartConfig, StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
     },
     keyshare::{
@@ -10,7 +12,7 @@ use crate::{
     },
     run::run_mpc_node,
 };
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
 use std::path::PathBuf;
 use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
@@ -24,14 +26,6 @@ pub struct Cli {
     pub log_format: LogFormat,
     #[clap(subcommand)]
     pub command: CliCommand,
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-pub enum LogFormat {
-    /// Plaintext logs
-    Plain,
-    /// JSON logs
-    Json,
 }
 
 #[derive(Subcommand, Debug)]
@@ -129,7 +123,7 @@ pub struct CliImageHashConfig {
 }
 
 impl StartCmd {
-    fn into_start_config(self, config: ConfigFile) -> StartConfig {
+    fn into_start_config(self, config: ConfigFile, log_format: LogFormat) -> StartConfig {
         let gcp = match (self.gcp_keyshare_secret_id, self.gcp_project_id) {
             (Some(keyshare_secret_id), Some(project_id)) => Some(GcpStartConfig {
                 keyshare_secret_id,
@@ -160,6 +154,10 @@ impl StartCmd {
             },
             gcp,
             node: config,
+            log: LogConfig {
+                format: log_format,
+                filter: std::env::var("RUST_LOG").ok(),
+            },
         }
     }
 }
@@ -261,7 +259,7 @@ impl Cli {
                 let home_dir = std::path::Path::new(&start.home_dir);
                 let config_file = load_config_file(home_dir)?;
 
-                let node_configuration = start.into_start_config(config_file);
+                let node_configuration = start.into_start_config(config_file, self.log_format);
                 run_mpc_node(node_configuration).await
             }
             CliCommand::Init(config) => {
