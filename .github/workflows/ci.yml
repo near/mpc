@@ -242,7 +242,7 @@ jobs:
           cargo build -p neard --release
 
       - name: Save pytest binaries cache
-        uses: WarpBuilds/cache/save@v1
+        uses: WarpBuilds/cache/save@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
         with:
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
           path: |
@@ -294,7 +294,7 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Restore pytest binaries cache
-        uses: WarpBuilds/cache/restore@v1
+        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
         with:
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
           fail-on-cache-miss: true
@@ -344,7 +344,7 @@ jobs:
 
     steps:
       - name: Delete pytest binaries cache
-        uses: WarpBuilds/cache@v1
+        uses: WarpBuilds/cache@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
         with:
           delete-cache: true
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
