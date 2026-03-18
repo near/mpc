@@ -584,7 +584,7 @@ RUST_LOG=mpc=debug,info
 
 NEAR_BOOT_NODES=$BOOT_NODES
 
-# telemertry,migration,debug,node-node,DSS
+# telemetry,migration,debug,node-node,DSS
 PORTS=8080:8080,8079:8079,3030:3030,80:80,24567:24567
 
 
