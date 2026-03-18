@@ -1,7 +1,7 @@
 use super::ConfigFile;
 use anyhow::Context;
 use clap::ValueEnum;
-use launcher_interface::types::{ImageConfig, TeeAuthorityConfig};
+use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tee_authority::tee_authority::{
@@ -18,9 +18,7 @@ pub struct StartConfig {
     /// Encryption keys and backup settings.
     pub secrets: SecretsStartConfig,
     /// TEE authority and image hash monitoring settings.
-    pub tee: TeeAuthorityConfig,
-    /// Configuration of the image hash running and where to write allowed image hashes
-    pub image_config: ImageConfig,
+    pub tee: TeeConfig,
     /// GCP keyshare storage settings. Optional — omit if not using GCP.
     pub gcp: Option<GcpStartConfig>,
     /// NEAR node initialization settings. Required for `start-with-config-file`
@@ -178,14 +176,13 @@ pub trait TeeAuthorityImpl {
     fn into_tee_authority(self) -> anyhow::Result<TeeAuthority>;
 }
 
-impl TeeAuthorityImpl for TeeAuthorityConfig {
+impl TeeAuthorityImpl for TeeConfig {
     fn into_tee_authority(self) -> anyhow::Result<TeeAuthority> {
-        Ok(match self {
+        Ok(match self.authority {
             TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
             TeeAuthorityConfig::Dstack {
                 dstack_endpoint,
                 quote_upload_url,
-                ..
             } => {
                 let url: Url = quote_upload_url
                     .parse()
