@@ -156,7 +156,7 @@ impl StartCmd {
             node: config,
             log: LogConfig {
                 format: log_format,
-                filter: None,
+                filter: std::env::var("RUST_LOG").ok(),
             },
         }
     }
