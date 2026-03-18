@@ -10,7 +10,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const TEST_CONTRACT_ACCOUNT: &str = "test-contract.near";
 
-#[derive(Clone)]
 pub struct Contract {
     pub account_id: near_account_id::AccountId,
     pub signing_key: SigningKey,

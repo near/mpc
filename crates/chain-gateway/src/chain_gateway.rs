@@ -1,4 +1,3 @@
-
 use near_account_id::AccountId;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 
@@ -19,11 +18,6 @@ pub struct ChainGateway {
     client: NearClientActorHandle,
     /// For sending transactions to the blockchain.
     rpc_handler: NearRpcActorHandle,
-}
-impl ChainGateway {
-    pub fn shutdown(&self) {
-        self.client.stop();
-    }
 }
 
 impl IsSyncing for ChainGateway {
