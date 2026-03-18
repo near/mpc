@@ -1,6 +1,8 @@
 use crate::{
     config::{
-        load_config_file, ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
+        load_config_file,
+        start::{LogConfig, LogFormat},
+        ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
         SecretsStartConfig, StartConfig,
     },
     keyshare::{
@@ -10,7 +12,7 @@ use crate::{
     },
     run::run_mpc_node,
 };
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
 use launcher_interface::types::{ImageConfig, TeeAuthorityConfig};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
@@ -26,18 +28,11 @@ const ALLOWED_IMAGE_HASHES_FILE_PATH: &str = "/tmp/allowed_image_hashes.json";
 #[command(about = "MPC Node for Near Protocol")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
+    // TODO(#2334): can be removed when deprecating StartCmd as it's part of config file
     #[arg(long, value_enum, env("MPC_LOG_FORMAT"), default_value = "plain")]
     pub log_format: LogFormat,
     #[clap(subcommand)]
     pub command: CliCommand,
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-pub enum LogFormat {
-    /// Plaintext logs
-    Plain,
-    /// JSON logs
-    Json,
 }
 
 #[derive(Subcommand, Debug)]
@@ -132,7 +127,7 @@ pub struct CliImageHashConfig {
 }
 
 impl StartCmd {
-    fn into_start_config(self, config: ConfigFile) -> StartConfig {
+    fn into_start_config(self, config: ConfigFile, log_format: LogFormat) -> StartConfig {
         let gcp = match (self.gcp_keyshare_secret_id, self.gcp_project_id) {
             (Some(keyshare_secret_id), Some(project_id)) => Some(GcpStartConfig {
                 keyshare_secret_id,
@@ -159,6 +154,10 @@ impl StartCmd {
                 latest_allowed_hash_file_path: ALLOWED_IMAGE_HASHES_FILE_PATH
                     .parse()
                     .expect("dummy allowed image hashes is valid path"),
+            },
+            log_config: LogConfig {
+                log_format,
+                log_level: None,
             },
         }
     }

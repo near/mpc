@@ -1,5 +1,6 @@
 use super::ConfigFile;
 use anyhow::Context;
+use clap::ValueEnum;
 use launcher_interface::types::{ImageConfig, TeeAuthorityConfig};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -29,6 +30,32 @@ pub struct StartConfig {
     pub near_init: Option<NearInitConfig>,
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
+    pub log_config: LogConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogConfig {
+    // TODO(#2334): make non optional
+    pub log_level: Option<LogLevel>,
+    pub log_format: LogFormat,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, Serialize, Deserialize)]
+pub enum LogFormat {
+    /// Plaintext logs
+    Plain,
+    /// JSON logs
+    Json,
 }
 
 /// NEAR node initialization configuration. Controls how the NEAR node's
