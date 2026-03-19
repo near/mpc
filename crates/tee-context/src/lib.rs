@@ -122,74 +122,85 @@ async fn spawn_hash_watcher(
 ) -> Result<watch::Receiver<AllowedTeeHashes>, TeeContextError> {
     let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-    tokio::spawn(async move {
-        let mut image_sub = chain_gateway
-            .subscribe_to_contract_method::<Vec<DockerImageHash>>(
-                governance_contract.clone(),
-                ALLOWED_DOCKER_IMAGE_HASHES,
-            )
-            .await;
-
-        let mut launcher_sub = chain_gateway
-            .subscribe_to_contract_method::<Vec<LauncherDockerComposeHash>>(
-                governance_contract,
-                ALLOWED_LAUNCHER_COMPOSE_HASHES,
-            )
-            .await;
-
-        let (image, launcher) = match (image_sub.latest(), launcher_sub.latest()) {
-            (Ok(image), Ok(launcher)) => (image, launcher),
-            (image_res, launcher_res) => {
-                if let Err(err) = &image_res {
-                    tracing::error!(%err, "failed to fetch initial docker image hashes");
-                }
-                if let Err(err) = &launcher_res {
-                    tracing::error!(%err, "failed to fetch initial launcher compose hashes");
-                }
-                return;
-            }
-        };
-
-        tx.send_modify(|h| {
-            h.allowed_docker_image_hashes = image.value;
-            h.allowed_launcher_compose_hashes = launcher.value;
-        });
-
-        loop {
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    tracing::debug!("hash watcher cancelled");
-                    break;
-                }
-                result = image_sub.changed() => {
-                    if result.is_err() {
-                        tracing::warn!("docker image hashes subscription closed");
-                        break;
-                    }
-                    match image_sub.latest() {
-                        Ok(observed) => tx.send_modify(|h| h.allowed_docker_image_hashes = observed.value),
-                        Err(err) => tracing::warn!(%err, "failed to read latest docker image hashes"),
-                    }
-                }
-                result = launcher_sub.changed() => {
-                    if result.is_err() {
-                        tracing::warn!("launcher compose hashes subscription closed");
-                        break;
-                    }
-                    match launcher_sub.latest() {
-                        Ok(observed) => tx.send_modify(|h| h.allowed_launcher_compose_hashes = observed.value),
-                        Err(err) => tracing::warn!(%err, "failed to read latest launcher compose hashes"),
-                    }
-                }
-            }
-        }
-    });
+    tokio::spawn(watch_hashes(chain_gateway, governance_contract, tx, cancel));
 
     rx.changed().await.map_err(|_| {
         TeeContextError::ChainGateway(chain_gateway::errors::ChainGatewayError::MonitoringClosed)
     })?;
 
     Ok(rx)
+}
+
+/// Polls the governance contract for allowed image and launcher hashes,
+/// merging updates into a single [`watch::Sender<AllowedTeeHashes>`].
+///
+/// Exits when the [`CancellationToken`] is cancelled or a subscription closes.
+async fn watch_hashes(
+    chain_gateway: impl SubscribeToContractMethod,
+    governance_contract: AccountId,
+    tx: watch::Sender<AllowedTeeHashes>,
+    cancel: CancellationToken,
+) {
+    let mut image_sub = chain_gateway
+        .subscribe_to_contract_method::<Vec<DockerImageHash>>(
+            governance_contract.clone(),
+            ALLOWED_DOCKER_IMAGE_HASHES,
+        )
+        .await;
+
+    let mut launcher_sub = chain_gateway
+        .subscribe_to_contract_method::<Vec<LauncherDockerComposeHash>>(
+            governance_contract,
+            ALLOWED_LAUNCHER_COMPOSE_HASHES,
+        )
+        .await;
+
+    let (image, launcher) = match (image_sub.latest(), launcher_sub.latest()) {
+        (Ok(image), Ok(launcher)) => (image, launcher),
+        (image_res, launcher_res) => {
+            if let Err(err) = &image_res {
+                tracing::error!(%err, "failed to fetch initial docker image hashes");
+            }
+            if let Err(err) = &launcher_res {
+                tracing::error!(%err, "failed to fetch initial launcher compose hashes");
+            }
+            return;
+        }
+    };
+
+    tx.send_modify(|h| {
+        h.allowed_docker_image_hashes = image.value;
+        h.allowed_launcher_compose_hashes = launcher.value;
+    });
+
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                tracing::debug!("hash watcher cancelled");
+                break;
+            }
+            result = image_sub.changed() => {
+                if result.is_err() {
+                    tracing::warn!("docker image hashes subscription closed");
+                    break;
+                }
+                match image_sub.latest() {
+                    Ok(observed) => tx.send_modify(|h| h.allowed_docker_image_hashes = observed.value),
+                    Err(err) => tracing::warn!(%err, "failed to read latest docker image hashes"),
+                }
+            }
+            result = launcher_sub.changed() => {
+                if result.is_err() {
+                    tracing::warn!("launcher compose hashes subscription closed");
+                    break;
+                }
+                match launcher_sub.latest() {
+                    Ok(observed) => tx.send_modify(|h| h.allowed_launcher_compose_hashes = observed.value),
+                    Err(err) => tracing::warn!(%err, "failed to read latest launcher compose hashes"),
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -437,6 +448,82 @@ mod tests {
         tokio::time::sleep(chain_gateway::state_viewer::POLL_INTERVAL * 3).await;
 
         rx.changed().await.unwrap();
+        assert_eq!(
+            *rx.borrow(),
+            AllowedTeeHashes {
+                allowed_docker_image_hashes: updated_image,
+                allowed_launcher_compose_hashes: updated_launcher,
+            }
+        );
+    }
+
+    /// Verifies that `watch_hashes` returns immediately (dropping the sender)
+    /// when the initial hash fetch fails, rather than entering the poll loop.
+    #[tokio::test(start_paused = true)]
+    async fn test_watch_hashes_exits_on_initial_error() {
+        let mock = MockChainState::builder()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Err(MockError::ViewClientError))
+            .build();
+        let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
+
+        watch_hashes(mock, governance_account(), tx, CancellationToken::new()).await;
+
+        assert!(rx.changed().await.is_err(), "sender should be dropped");
+    }
+
+    /// Verifies that cancelling the token causes `watch_hashes` to exit its
+    /// poll loop and drop the sender, closing the watch channel.
+    #[tokio::test(start_paused = true)]
+    async fn test_watch_hashes_exits_on_cancellation() {
+        let mock = mock_chain();
+        let cancel = CancellationToken::new();
+        let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
+
+        let cancel_clone = cancel.clone();
+        tokio::select! {
+            _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
+            _ = async {
+                rx.changed().await.unwrap();
+                cancel_clone.cancel();
+            } => {}
+        }
+
+        assert!(rx.changed().await.is_err(), "sender should be dropped");
+    }
+
+    /// Verifies that when the governance contract's view response changes,
+    /// `watch_hashes` detects the update on the next poll cycle and sends
+    /// the new hashes through the watch channel.
+    #[tokio::test(start_paused = true)]
+    async fn test_watch_hashes_propagates_updates() {
+        let mock = mock_chain();
+        let cancel = CancellationToken::new();
+        let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
+
+        let updated_bytes = [99u8; 32];
+        let updated_image = vec![DockerImageHash::from(updated_bytes)];
+        let updated_launcher = vec![LauncherDockerComposeHash::from(updated_bytes)];
+
+        let cancel_clone = cancel.clone();
+        let mock_clone = mock.clone();
+        let expected_image = updated_image.clone();
+        tokio::select! {
+            _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
+            _ = async {
+                rx.changed().await.unwrap();
+                // Confirm initial value differs from the update we're about to make.
+                assert_ne!(rx.borrow().allowed_docker_image_hashes, expected_image);
+                mock_clone.set_view_response(Ok(ObservedState {
+                    observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
+                    value: serde_json::to_vec(&expected_image).unwrap(),
+                })).await;
+                tokio::time::sleep(chain_gateway::state_viewer::POLL_INTERVAL * 3).await;
+                rx.changed().await.unwrap();
+                cancel_clone.cancel();
+            } => {}
+        }
+
         assert_eq!(
             *rx.borrow(),
             AllowedTeeHashes {
