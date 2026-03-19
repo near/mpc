@@ -11,7 +11,8 @@ use serde_json::json;
 use crate::port_allocator::E2ePortAllocator;
 use crate::sandbox::SandboxNode;
 
-const DUMMY_IMAGE_HASH: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+const DUMMY_IMAGE_HASH: &str =
+    "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
 /// Ports allocated for a single MPC node.
 pub struct NodePorts {
@@ -224,8 +225,12 @@ impl MpcNode {
             },
             tee: TeeToml {
                 image_hash: DUMMY_IMAGE_HASH,
-                latest_allowed_hash_file: "latest_allowed_hash.txt",
+                latest_allowed_hash_file_path: "latest_allowed_hash.txt",
                 authority: TeeAuthorityToml { r#type: "local" },
+            },
+            log: LogToml {
+                format: "plain",
+                filter: "debug",
             },
             near_init: NearInitToml {
                 chain_id: "mpc-localnet",
@@ -287,7 +292,7 @@ impl Drop for MpcNode {
 }
 
 // ---------------------------------------------------------------------------
-// TODO(anodar): Factor `StartConfig` out of `mpc-node` into a lightweight crate so we
+// TODO: Factor `StartConfig` out of `mpc-node` into a lightweight crate so we
 // can reuse it here instead of duplicating the structure.
 //
 // Serialization types for `start_config.toml`.
@@ -300,6 +305,7 @@ struct StartConfigToml<'a> {
     home_dir: String,
     secrets: SecretsToml<'a>,
     tee: TeeToml<'a>,
+    log: LogToml<'a>,
     near_init: NearInitToml<'a>,
     node: NodeToml<'a>,
 }
@@ -313,8 +319,14 @@ struct SecretsToml<'a> {
 #[derive(Serialize)]
 struct TeeToml<'a> {
     image_hash: &'a str,
-    latest_allowed_hash_file: &'a str,
+    latest_allowed_hash_file_path: &'a str,
     authority: TeeAuthorityToml<'a>,
+}
+
+#[derive(Serialize)]
+struct LogToml<'a> {
+    format: &'a str,
+    filter: &'a str,
 }
 
 #[derive(Serialize)]
