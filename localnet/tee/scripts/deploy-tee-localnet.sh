@@ -1598,9 +1598,7 @@ main() {
 
   if should_run_from_start near_vote_measurement; then
     pause_phase "NEAR: vote add OS measurements"
-    local repo_root
-    repo_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-    local tcb_info_dir="$repo_root/crates/mpc-attestation/assets"
+    local tcb_info_dir="$REPO_ROOT/crates/mpc-attestation/assets"
     for tcb_file in "$tcb_info_dir"/tcb_info*.json; do
       local measurement_json
       measurement_json="$(extract_measurement_from_tcb_info "$tcb_file")"
