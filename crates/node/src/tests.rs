@@ -365,10 +365,11 @@ pub async fn request_ckd_and_await_response(
         entropy: rand::random(),
         timestamp_nanosec: rand::random(),
         request: CKDArgs {
-            app_public_key:
+            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
                 "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                     .parse()
                     .unwrap(),
+            ),
             domain_id: domain.id,
             app_id: [1u8; 32].into(),
         },

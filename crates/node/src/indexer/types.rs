@@ -64,24 +64,26 @@ impl ChainSignatureRequest {
 /* The format in which the chain contract expects
  * to receive the details of the original ckd request.
  */
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, derive_more::Constructor)]
 pub struct ChainCKDRequest {
-    pub app_public_key: dtos::Bls12381G1PublicKey,
+    /// For the `AppPublicKey` (legacy) variant, we serialize as a plain G1 key
+    /// string so that both old (pre-PV) and new contracts can deserialize it.
+    /// TODO(#2491): remove `serialize_with` once the contract supports CKDAppPublicKey.
+    #[serde(serialize_with = "serialize_ckd_app_public_key_compat")]
+    pub app_public_key: dtos::CKDAppPublicKey,
     pub app_id: dtos::CkdAppId,
     pub domain_id: DomainId,
 }
 
-impl ChainCKDRequest {
-    pub fn new(
-        app_public_key: dtos::Bls12381G1PublicKey,
-        app_id: dtos::CkdAppId,
-        domain_id: DomainId,
-    ) -> Self {
-        ChainCKDRequest {
-            app_public_key,
-            app_id,
-            domain_id,
-        }
+/// Serializes `CKDAppPublicKey::AppPublicKey` as a plain G1 key (old format)
+/// for backward compatibility with pre-upgrade contracts.
+fn serialize_ckd_app_public_key_compat<S: serde::Serializer>(
+    value: &dtos::CKDAppPublicKey,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match value {
+        dtos::CKDAppPublicKey::AppPublicKey(pk) => serde::Serialize::serialize(pk, serializer),
+        other => serde::Serialize::serialize(other, serializer),
     }
 }
 
@@ -345,7 +347,7 @@ impl ChainCKDRespondArgs {
     pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
         Ok(ChainCKDRespondArgs {
             request: ChainCKDRequest::new(
-                request.app_public_key.clone(),
+                dtos::CKDAppPublicKey::AppPublicKey(request.app_public_key.clone()),
                 request.app_id.clone(),
                 request.domain_id,
             ),
@@ -375,7 +377,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
         Ok(ChainVerifyForeignTransactionRespondArgs {
             request: VerifyForeignTransactionRequest {
                 request: request.request,
-                domain_id: request.domain_id.0.into(),
+                domain_id: request.domain_id.into(),
                 payload_version: request.payload_version,
             },
             response: VerifyForeignTransactionResponse {

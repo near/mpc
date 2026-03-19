@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.6.0",
+    "version": "3.7.0",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -100,6 +100,17 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
+          }
+        }
+      },
+      {
+        "name": "code_hash_votes",
+        "doc": " Returns the current code hash votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/CodeHashesVotes"
           }
         }
       },
@@ -741,7 +752,7 @@ expression: abi
       },
       {
         "name": "request_app_private_key",
-        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.",
+        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in `AppPublicKeyPV` to support use cases\n where the derived key is intentionally public (no encryption).",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1549,6 +1560,49 @@ expression: abi
         "Bls12381G2PublicKey": {
           "type": "string"
         },
+        "CKDAppPublicKey": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "AppPublicKey"
+              ],
+              "properties": {
+                "AppPublicKey": {
+                  "$ref": "#/definitions/Bls12381G1PublicKey"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "AppPublicKeyPV"
+              ],
+              "properties": {
+                "AppPublicKeyPV": {
+                  "$ref": "#/definitions/CKDAppPublicKeyPV"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "CKDAppPublicKeyPV": {
+          "type": "object",
+          "required": [
+            "pk1",
+            "pk2"
+          ],
+          "properties": {
+            "pk1": {
+              "$ref": "#/definitions/Bls12381G1PublicKey"
+            },
+            "pk2": {
+              "$ref": "#/definitions/Bls12381G2PublicKey"
+            }
+          }
+        },
         "CKDRequest": {
           "type": "object",
           "required": [
@@ -1564,7 +1618,7 @@ expression: abi
               "description": "The app ephemeral public key",
               "allOf": [
                 {
-                  "$ref": "#/definitions/Bls12381G1PublicKey"
+                  "$ref": "#/definitions/CKDAppPublicKey"
                 }
               ]
             },
@@ -1582,13 +1636,13 @@ expression: abi
           ],
           "properties": {
             "app_public_key": {
-              "$ref": "#/definitions/Bls12381G1PublicKey"
+              "$ref": "#/definitions/CKDAppPublicKey"
             },
             "derivation_path": {
               "type": "string"
             },
             "domain_id": {
-              "$ref": "#/definitions/DomainId"
+              "$ref": "#/definitions/DomainId2"
             }
           }
         },
@@ -1617,6 +1671,28 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
+        },
+        "CodeHashesVotes": {
+          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          }
         },
         "Collateral": {
           "type": "object",

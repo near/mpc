@@ -41,10 +41,7 @@ pub struct Hash32<T> {
 
 impl<T> From<[u8; 32]> for Hash32<T> {
     fn from(bytes: [u8; 32]) -> Self {
-        Self {
-            bytes,
-            _marker: PhantomData,
-        }
+        Self::new(bytes)
     }
 }
 
@@ -52,6 +49,17 @@ impl<T> Hash32<T> {
     /// Converts the hash to a hexadecimal string representation.
     pub fn as_hex(&self) -> String {
         hex::encode(self.as_ref())
+    }
+
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.bytes
+    }
+
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self {
+            bytes,
+            _marker: PhantomData,
+        }
     }
 }
 

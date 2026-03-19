@@ -63,9 +63,11 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 [dependencies]
 anyhow = { workspace = true }
 assert_matches = { workspace = true }
+blstrs = { workspace = true }
 borsh = { workspace = true }
 curve25519-dalek = { workspace = true }
 derive_more = { workspace = true, features = ["from", "deref"] }
+elliptic-curve = { workspace = true }
 hex = { workspace = true, features = [] }
 k256 = { workspace = true, features = [
     "sha256",

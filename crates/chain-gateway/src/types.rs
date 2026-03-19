@@ -1,4 +1,5 @@
 use derive_more::{From, Into};
+use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::errors::ChainGatewayError;
@@ -18,6 +19,9 @@ pub struct ObservedState<T = Vec<u8>> {
     pub value: T,
 }
 
+/// block height and block hash
+pub(crate) type LatestFinalBlockInfo = ObservedState<CryptoHash>;
+
 impl ObservedState<Vec<u8>> {
     pub fn deserialize<Res: DeserializeOwned>(
         self,
@@ -36,6 +40,7 @@ impl ObservedState<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use serde::Deserialize;
 
     use crate::{
@@ -69,8 +74,7 @@ mod tests {
         };
 
         let err = observed.deserialize::<Num>().unwrap_err();
-
-        assert!(matches!(err, ChainGatewayError::Deserialization { .. }));
+        assert_matches!(err, ChainGatewayError::Deserialization { .. });
     }
 
     #[test]

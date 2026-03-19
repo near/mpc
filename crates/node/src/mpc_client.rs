@@ -281,7 +281,8 @@ where
                             let ckd_request = CKDRequest {
                                 id: ckd_id,
                                 receipt_id,
-                                app_public_key: request.app_public_key,
+                                // TODO(#2470): this only works for legacy CKD
+                                app_public_key: request.app_public_key.g1_public_key().clone(),
                                 app_id: request.app_id,
                                 entropy,
                                 timestamp_nanosec,
@@ -308,7 +309,7 @@ where
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
-                                domain_id: request.domain_id.0.into(),
+                                domain_id: request.domain_id.into(),
                                 entropy,
                                 payload_version: request.payload_version,
                                 request: request.request,
