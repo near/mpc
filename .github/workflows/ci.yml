@@ -208,7 +208,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           cargo near build reproducible-wasm \
-            --manifest-path crates/contract/Cargo.toml
+            --manifest-path crates/contract/Cargo.toml \
+            --out-dir target/wasm32-unknown-unknown/release-contract
 
       - name: Build mpc-contract (fast, on PRs)
         if: github.ref != 'refs/heads/main'
