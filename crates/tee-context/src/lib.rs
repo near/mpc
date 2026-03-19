@@ -399,6 +399,24 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn test_spawn_hash_watcher_initial_error_drops_sender() {
+        let mock = MockChainState::builder()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Err(MockError::ViewClientError))
+            .build();
+
+        let result = spawn_hash_watcher(mock.clone(), governance_account()).await;
+        assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+
+        // The task exited on initial failure — no further polling should happen.
+        assert_eq!(
+            mock.await_next_view_call(std::time::Duration::from_secs(1)).await,
+            Err(MockError::Timeout),
+            "no additional polls should happen after initial failure"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn test_spawn_hash_watcher_updates_on_hash_change() {
         let mock = mock_chain();
 
