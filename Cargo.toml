@@ -24,6 +24,7 @@ members = [
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
+    "crates/tee-context",
     "crates/tee-launcher",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
@@ -42,6 +43,7 @@ repository = "https://github.com/near/mpc"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+chain-gateway = { path = "crates/chain-gateway" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
@@ -167,7 +169,13 @@ reddsa = { git = "https://github.com/near/reddsa", rev = "c7cd92a55f7399d8d7f8c0
 ] }
 regex = "1.12.3"
 # TODO(#2053): upgrading this leads to errors
-reqwest = { version = "0.12.28", default-features = false, features = ["charset", "http2", "rustls-tls", "multipart", "json"] }
+reqwest = { version = "0.12.28", default-features = false, features = [
+    "charset",
+    "http2",
+    "rustls-tls",
+    "multipart",
+    "json",
+] }
 rmp-serde = "1.3.1"
 rstest = { version = "0.26.1" }
 rustls = { version = "0.23.37", default-features = false, features = ["std"] }
