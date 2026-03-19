@@ -145,6 +145,58 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --cargo-profile=test-release --all-features --locked --profile=ci-workflow
 
+  mpc-e2e-tests:
+    name: "Rust E2E tests"
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: nextest@0.9.126
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-binstall
+
+      - name: Install wasm-opt
+        run: |
+          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
+          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build mpc-node binary
+        run: cargo build -p mpc-node --release --locked --features test-utils
+
+      - name: Build contract WASM
+        run: |
+          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
+          wasm-opt -Oz --enable-bulk-memory target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+
+      - name: Run E2E tests
+        run: cargo nextest run -p e2e-tests --cargo-profile=test-release --locked
+
   mpc-pytest-build:
     name: "MPC pytests: build"
     runs-on: warp-ubuntu-2404-x64-16x
