@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn fully_redacted_hides_all_fields() {
         let val = FullyRedacted { _secret: 42 };
-        let debug = format!("{:?}", val);
+        let debug = format!("{val:?}");
         assert_eq!(debug, "FullyRedacted(<redacted>)");
         assert!(!debug.contains("42"));
     }
@@ -82,6 +82,7 @@ mod tests {
     // Arm 2: show/redact fields
     struct PartiallyRedacted {
         public_id: u32,
+        #[allow(dead_code)]
         secret_key: &'static str,
     }
     impl_secret_debug!(PartiallyRedacted {
@@ -95,9 +96,9 @@ mod tests {
             public_id: 7,
             secret_key: "super_secret_value",
         };
-        let debug = format!("{:?}", val);
+        let debug = format!("{val:?}");
         assert!(debug.contains("public_id"));
-        assert!(debug.contains("7"));
+        assert!(debug.contains('7'));
         assert!(debug.contains("secret_key"));
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("super_secret_value"));
@@ -107,6 +108,7 @@ mod tests {
     trait Dummy {}
     struct GenericRedacted<T: Dummy> {
         visible: u32,
+        #[allow(dead_code)]
         hidden: u64,
         _marker: PhantomData<T>,
     }
@@ -122,9 +124,9 @@ mod tests {
             hidden: 99,
             _marker: PhantomData,
         };
-        let debug = format!("{:?}", val);
+        let debug = format!("{val:?}");
         assert!(debug.contains("visible"));
-        assert!(debug.contains("1"));
+        assert!(debug.contains('1'));
         assert!(debug.contains("hidden"));
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("99"));
@@ -141,7 +143,7 @@ mod tests {
     #[test]
     fn custom_format_shows_metadata_but_not_contents() {
         let val = CustomFormat(vec![0xDE, 0xAD, 0xBE, 0xEF]);
-        let debug = format!("{:?}", val);
+        let debug = format!("{val:?}");
         assert_eq!(debug, "CustomFormat(<redacted>, len=4)");
         assert!(!debug.contains("DE"));
     }
