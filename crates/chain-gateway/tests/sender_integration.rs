@@ -9,7 +9,15 @@ use common::localnet::Localnet;
 
 use super::common;
 
-/// Sends a `set_value` transaction via the observer node, and verifies the state change via `get_value`.
+/// This integration test uses the `ChainGateway` struct to spin up two neard nodes
+/// for a localnet. One of the nodes is an observer node (what the MPC node would be running),
+/// the other is a validator node.
+/// A smart contract is injected in the genesis file to simplify testing.
+///
+/// The test uses the chain gateway of the observert node to veify that view functions of
+/// the smart contract yield expected results. It constructs a `TransactionSigner` from
+/// the private key of the contract account and has the observer's chain gateway
+/// sign and route the transaction.
 #[test]
 fn test_submit_set_value_and_read_back() {
     common::run_localnet_test(|localnet| async move {
