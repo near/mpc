@@ -1,5 +1,8 @@
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
+    tee::measurements::{
+        AllowedMeasurements, ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
+    },
     tee::proposal::{
         AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage, CodeHashesVotes,
         LauncherHashVotes, LauncherVoteAction, MpcDockerImageHash,
@@ -106,6 +109,8 @@ pub struct TeeState {
     /// Attestations are stored for any valid participant that has submitted one, not
     /// just for the currently active participants.
     pub(crate) stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
+    pub(crate) allowed_measurements: AllowedMeasurements,
+    pub(crate) measurement_votes: MeasurementVotes,
 }
 
 impl TeeState {
@@ -179,12 +184,13 @@ impl TeeState {
         let expected_report_data: ReportData =
             ReportDataV1::new(*tls_public_key.as_bytes(), account_key_bytes).into();
 
+        let accepted_measurements = self.get_accepted_measurements();
         let verified_attestation = attestation.verify(
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
-            mpc_attestation::attestation::default_measurements(),
+            &accepted_measurements,
         )?;
 
         let tls_pk = node_id.tls_public_key.clone();
@@ -358,6 +364,40 @@ impl TeeState {
     /// Returns all allowed launcher image hashes.
     pub fn get_allowed_launcher_hashes(&self) -> Vec<LauncherImageHash> {
         self.allowed_launcher_images.launcher_hashes()
+    }
+
+    /// Casts a vote for adding or removing an OS measurement.
+    /// Returns the total number of votes for the same action.
+    pub fn vote_measurement(
+        &mut self,
+        action: MeasurementVoteAction,
+        participant: &AuthenticatedParticipantId,
+    ) -> u64 {
+        self.measurement_votes.vote(action, participant)
+    }
+
+    /// Adds a new measurement set to the allowed list. Clears measurement votes.
+    pub fn add_measurement(&mut self, measurement: ContractExpectedMeasurements) -> bool {
+        self.measurement_votes.clear_votes();
+        self.allowed_measurements.add(measurement)
+    }
+
+    /// Removes a measurement set from the allowed list. Clears measurement votes.
+    pub fn remove_measurement(&mut self, measurement: &ContractExpectedMeasurements) -> bool {
+        self.measurement_votes.clear_votes();
+        self.allowed_measurements.remove(measurement)
+    }
+
+    /// Returns all allowed OS measurements.
+    pub fn get_allowed_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+        self.allowed_measurements.entries().to_vec()
+    }
+
+    /// Returns accepted measurements for attestation verification.
+    /// Returns the on-chain list as-is (empty list means no measurements are accepted,
+    /// consistent with docker image hashes and launcher hashes).
+    fn get_accepted_measurements(&self) -> Vec<mpc_attestation::attestation::ExpectedMeasurements> {
+        self.allowed_measurements.to_attestation_measurements()
     }
 
     /// Removes TEE information for nodes that are not in the provided participants list.
