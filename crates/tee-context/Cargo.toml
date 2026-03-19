@@ -8,6 +8,7 @@ license = { workspace = true }
 chain-gateway = { path = "../chain-gateway" }
 mpc-primitives = { path = "../primitives" }
 near-mpc-contract-interface = { path = "../near-mpc-contract-interface" }
+
 near-account-id = { workspace = true }
 near-indexer-primitives = { workspace = true }
 serde = { workspace = true }
