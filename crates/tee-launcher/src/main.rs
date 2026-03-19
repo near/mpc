@@ -5,7 +5,7 @@ use std::{collections::VecDeque, time::Duration};
 use backon::{ExponentialBuilder, Retryable};
 use clap::Parser;
 use launcher_interface::types::{
-    ApprovedHashes, DockerSha256Digest, ImageConfig, TeeAuthorityConfig,
+    ApprovedHashes, DockerSha256Digest, TeeAuthorityConfig, TeeConfig,
 };
 use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
 
@@ -122,7 +122,7 @@ async fn run() -> Result<(), LauncherError> {
 
     let mpc_binary_config_path = std::path::Path::new(MPC_CONFIG_SHARED_PATH);
 
-    let tee_config = match args.platform {
+    let tee_authority_config = match args.platform {
         Platform::Tee => TeeAuthorityConfig::Dstack {
             dstack_endpoint: DSTACK_UNIX_SOCKET.to_string(),
             quote_upload_url: DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL.to_string(),
@@ -130,15 +130,15 @@ async fn run() -> Result<(), LauncherError> {
         Platform::NonTee => TeeAuthorityConfig::Local,
     };
 
-    let image_hash_config = ImageConfig {
+    let tee_config = TeeConfig {
+        authority: tee_authority_config,
         image_hash: image_hash.clone(),
         latest_allowed_hash_file_path: IMAGE_DIGEST_FILE
             .parse()
             .expect("image digest file has a valid path"),
     };
 
-    let mpc_node_config =
-        intercept_node_config(config.mpc_node_config, &tee_config, &image_hash_config)?;
+    let mpc_node_config = intercept_node_config(config.mpc_node_config, &tee_config)?;
 
     let mpc_config_toml =
         toml::to_string(&mpc_node_config).expect("re-serializing a toml::Table always succeeds");
@@ -165,18 +165,12 @@ async fn run() -> Result<(), LauncherError> {
 /// config already contains either reserved key.
 fn intercept_node_config(
     mut node_config: toml::Table,
-    tee_config: &TeeAuthorityConfig,
-    image_config: &ImageConfig,
+    tee_config: &TeeConfig,
 ) -> Result<toml::Table, LauncherError> {
     insert_reserved(
         &mut node_config,
         "tee",
-        toml::Value::try_from(tee_config).expect("TeeAuthorityConfig serializes to TOML"),
-    )?;
-    insert_reserved(
-        &mut node_config,
-        "image_config",
-        toml::Value::try_from(image_config).expect("ImageConfig serializes to TOML"),
+        toml::Value::try_from(tee_config).expect("tee config serializes to TOML"),
     )?;
     Ok(node_config)
 }

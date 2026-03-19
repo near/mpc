@@ -22,22 +22,7 @@ dependencies = [
 [tasks.check-all]
 description = "Run all checks"
 dependencies = [
-  "crate-names",
-  "kebab-file-names",
-  "todo-format",
-  "use-in-fn",
-  "ruff-format",
-  "ruff-check",
-  "fmt",
-  "cargo-sort",
-  "cargo-shear",
-  "cargo-deny-no-advisories",
-  "zizmor",
-  "check-markdown-links",
-  "check",
-  "check-docs",
-  "clippy",
-  "clippy-all-features",
+  "check-all-fast",
   "nextest",
 ]
 

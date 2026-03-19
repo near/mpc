@@ -1054,7 +1054,8 @@ mod tests {
     use std::time::Duration;
     use tokio::time::timeout;
 
-    #[test_log::test(tokio::test)]
+    #[tokio::test]
+    #[test_log::test]
     async fn test_basic_tls_mesh_network() {
         let configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
@@ -1155,7 +1156,8 @@ mod tests {
         result
     }
 
-    #[test_log::test(tokio::test)]
+    #[tokio::test]
+    #[test_log::test]
     async fn test_wait_for_ready() {
         let mut configs = generate_test_p2p_configs(
             &[
@@ -1284,7 +1286,8 @@ mod tests {
         ids
     }
 
-    #[test_log::test(tokio::test)]
+    #[tokio::test]
+    #[test_log::test]
     async fn test_receiver_does_not_accept_new_connection_if_connected() {
         let mut configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
