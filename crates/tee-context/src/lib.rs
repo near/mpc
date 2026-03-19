@@ -2,7 +2,8 @@ mod errors;
 mod types;
 
 pub use errors::TeeContextError;
-pub use types::{AllowedTeeHashes, SubmitParticipantInfoArgs, TeeNodeIdentity};
+pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
+pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use std::{future::Future, sync::Arc};
 

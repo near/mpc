@@ -11,7 +11,6 @@ near-mpc-contract-interface = { path = "../near-mpc-contract-interface" }
 
 near-account-id = { workspace = true }
 near-indexer-primitives = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
