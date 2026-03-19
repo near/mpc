@@ -204,7 +204,7 @@ jobs:
 
       - name: Build mpc-contract
         run: |
-          cargo near build non-reproducible-wasm \
+          cargo near build non-reproducible-wasm --no-abi \
             --manifest-path crates/contract/Cargo.toml \
             --out-dir target/wasm32-unknown-unknown/release-contract
 
