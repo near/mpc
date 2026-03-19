@@ -179,6 +179,10 @@ async fn spawn_hash_watcher(
         });
 
         loop {
+            if tx.is_closed() {
+                tracing::debug!("all hash receivers dropped, stopping watcher");
+                break;
+            }
             tokio::select! {
                 result = image_sub.changed() => {
                     if result.is_err() {
