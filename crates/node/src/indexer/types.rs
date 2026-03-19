@@ -347,7 +347,7 @@ impl ChainCKDRespondArgs {
     pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
         Ok(ChainCKDRespondArgs {
             request: ChainCKDRequest::new(
-                dtos::CKDAppPublicKey::AppPublicKey(request.app_public_key.clone()),
+                request.app_public_key.clone(),
                 request.app_id.clone(),
                 request.domain_id,
             ),
