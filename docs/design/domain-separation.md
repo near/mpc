@@ -20,7 +20,7 @@ Goals:
 1. [Current State Analysis](#1-current-state-analysis)
 2. [Proposed Design](#2-proposed-design)
 3. [Validation Logic](#3-validation-logic)
-4. [Migration Strategy](#4-migration-strategy)
+4. [Backwards-Compatible Migration Strategy](#4-backwards-compatible-migration-strategy)
 5. [Shared Types Between Contract and Node](#5-shared-types-between-contract-and-node)
 6. [Impact on State Machine](#6-impact-on-state-machine)
 7. [Open Questions](#7-open-questions)
