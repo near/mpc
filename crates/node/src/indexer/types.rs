@@ -200,7 +200,6 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
     pub key_event_id: KeyEventId,
 }
 
-
 #[derive(Serialize, Debug)]
 pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
