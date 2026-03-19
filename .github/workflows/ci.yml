@@ -204,7 +204,7 @@ jobs:
 
       - name: Build mpc-contract
         run: |
-          cargo near build reproducible-wasm \
+          cargo near build non-reproducible-wasm \
             --manifest-path crates/contract/Cargo.toml \
             --out-dir target/wasm32-unknown-unknown/release-contract
 
@@ -266,6 +266,52 @@ jobs:
             target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
             target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
             libs/nearcore/target/release/neard
+
+  mpc-contract-reproducible-build:
+    name: "MPC contract reproducible build"
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+
+      - name: Clear cache for fresh rebuild
+        if: github.event_name == 'schedule'
+        run: |
+          cargo clean
+          rm -rf ~/.cargo
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev libudev-dev
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-binstall
+
+      - name: Install cargo-near
+        run: |
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build mpc-contract (reproducible)
+        run: |
+          cargo near build reproducible-wasm \
+            --manifest-path crates/contract/Cargo.toml
 
   mpc-pytests:
     name: "MPC pytests: ${{ matrix.group }}"
