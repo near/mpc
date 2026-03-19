@@ -270,7 +270,7 @@ jobs:
             runner: warp-ubuntu-2404-x64-2x
           - group: "robust-ecdsa"
             tests: "tests/robust_ecdsa/"
-            runner: warp-ubuntu-2404-x64-8x
+            runner: warp-ubuntu-2404-x64-16x
           - group: "resharing-cancel"
             tests: "tests/test_cancellation_of_key_resharing.py"
             runner: warp-ubuntu-2404-x64-2x
