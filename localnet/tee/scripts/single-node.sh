@@ -130,15 +130,28 @@ DISK="${DISK:-500G}"
 
 # Paths
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-TEE_LAUNCHER_DIR="$REPO_ROOT/tee_launcher"
+TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
 ENV_TPL="${ENV_TPL:-$REPO_ROOT/localnet/tee/scripts/node.env.tpl}"
-CONF_TPL="${CONF_TPL:-$REPO_ROOT/localnet/tee/scripts/node.conf.localnet.tpl}"
+CONF_TPL="${CONF_TPL:-$REPO_ROOT/localnet/tee/scripts/node.conf.localnet.toml.tpl}"
+
+# Convert comma-separated "host:container" port string to TOML inline table array entries.
+ports_to_toml() {
+  local ports="$1" result=""
+  IFS=',' read -ra pairs <<< "$ports"
+  for pair in "${pairs[@]}"; do
+    local host_port="${pair%%:*}"
+    local container_port="${pair##*:}"
+    result+="    { host =$host_port, container =$container_port },
+"
+  done
+  echo -n "$result"
+}
 
 WORKDIR="${WORKDIR:-$(mktemp -d /tmp/mpc_localnet_one_node.XXXXXX)}"
 mkdir -p "$WORKDIR"
 log "Work directory: $WORKDIR"
 ENV_OUT="$WORKDIR/node.env"
-CONF_OUT="$WORKDIR/node.conf"
+CONF_OUT="$WORKDIR/node.toml"
 PUBLIC_DATA_JSON_OUT="${PUBLIC_DATA_JSON_OUT:-$WORKDIR/public_data.json}"
 
 near_account_exists() {
@@ -193,6 +206,8 @@ render_env_and_conf() {
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"
   export MPC_SECRET_STORE_KEY="${MPC_SECRET_STORE_KEY:-00000000000000000000000000000000}"
   export PORTS="${PORTS:-8080:8080,24566:24566,${FUTURE_PORT}:${FUTURE_PORT}}"
+  export PORTS_TOML
+  PORTS_TOML="$(ports_to_toml "$PORTS")"
 
   envsubst <"$ENV_TPL" >"$ENV_OUT"
   envsubst <"$CONF_TPL" >"$CONF_OUT"
