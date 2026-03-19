@@ -17,19 +17,18 @@ Goals:
 
 ## Table of Contents
 
-2. [Current State Analysis](#2-current-state-analysis)
-3. [Problem Statement](#3-problem-statement)
-4. [Proposed Design](#4-proposed-design)
-5. [Validation Logic](#5-validation-logic)
-6. [Migration Strategy](#6-migration-strategy)
-7. [Shared Types Between Contract and Node](#7-shared-types-between-contract-and-node)
-8. [Impact on State Machine](#8-impact-on-state-machine)
-9. [Open Questions](#9-open-questions)
+1. [Current State Analysis](#1-current-state-analysis)
+2. [Proposed Design](#2-proposed-design)
+3. [Validation Logic](#3-validation-logic)
+4. [Migration Strategy](#4-migration-strategy)
+5. [Shared Types Between Contract and Node](#5-shared-types-between-contract-and-node)
+6. [Impact on State Machine](#6-impact-on-state-machine)
+7. [Open Questions](#7-open-questions)
 
 
-## 2. Current State Analysis
+## 1. Current State Analysis
 
-### 2.1 Contract Types (internal)
+### 1.1 Contract Types (internal)
 
 **`crates/contract/src/primitives/domain.rs`**:
 ```rust
@@ -59,7 +58,7 @@ pub struct ThresholdParameters {
 }
 ```
 
-### 2.2 Contract-Interface DTOs
+### 1.2 Contract-Interface DTOs
 
 **`crates/near-mpc-contract-interface/src/types/state.rs`** mirrors the internal types:
 ```rust
@@ -68,7 +67,7 @@ pub struct DomainConfig { pub id: DomainId, pub scheme: SignatureScheme, pub pur
 pub struct ThresholdParameters { pub participants: Participants, pub threshold: Threshold }
 ```
 
-### 2.3 Node Usage
+### 1.3 Node Usage
 
 The node (`crates/node/`) imports types from **both** the internal contract crate and the contract-interface DTO crate:
 
@@ -81,7 +80,7 @@ The node (`crates/node/`) imports types from **both** the internal contract crat
 | `mpc_contract::state::ProtocolContractState` | ~5 files | State machine transitions |
 | `near_mpc_contract_interface::types` | ~10 files | Indexer queries, public key types, config |
 
-### 2.4 Threshold Flow Through the System
+### 1.4 Threshold Flow Through the System
 
 ```
 Contract ThresholdParameters.threshold (Threshold(u64))
@@ -94,7 +93,7 @@ Contract ThresholdParameters.threshold (Threshold(u64))
 The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.rs` is an explicit workaround for the mismatch between the contract's single threshold and DamgardEtAl's `MaxMalicious` semantics. The code itself documents this as a hack:
 > "This function translates the current threshold from the contract to the threshold expected by the robust-ecdsa scheme, which is semantically different."
 
-### 2.5 Current Curve-Protocol Pairings
+### 1.5 Current Curve-Protocol Pairings
 
 | Curve | Protocol | Purpose | Deployed |
 |---|---|---|---|
@@ -104,9 +103,9 @@ The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.
 | Secp256k1 | DamgardEtAl (V2Secp256k1) | Sign | Ongoing |
 
 
-## 4. Proposed Design
+## 2. Proposed Design
 
-### 4.1 New Contract Types
+### 2.1 New Contract Types
 
 ```rust
 /// Identifies the elliptic curve. Used by the contract to verify
@@ -180,7 +179,7 @@ pub struct GovernanceBody {
 pub struct VotingThreshold(pub u64);
 ```
 
-### 4.2 Design Rationale
+### 2.2 Design Rationale
 
 #### Why `KeyConfigId` indirection?
 
@@ -207,7 +206,7 @@ However, if the additional complexity is not justified, an alternative is to inl
 - Future protocols may have different threshold requirements.
 - Allows gradual rollout: add a new domain with a different threshold without affecting existing ones.
 
-### 4.3 Relationship to Existing Types
+### 2.3 Relationship to Existing Types
 
 | Current | Proposed | Change |
 |---|---|---|
@@ -217,7 +216,7 @@ However, if the additional complexity is not justified, an alternative is to inl
 | `Threshold` | `VotingThreshold` + `ReconstructionThreshold` | Distinct newtypes for distinct purposes |
 | `V2Secp256k1` | `Protocol::DamgardEtAl` + `Curve::Secp256k1` | No more version-in-curve-name hack |
 
-### 4.4 State Structure
+### 2.4 State Structure
 
 ```rust
 pub struct RunningContractState {
@@ -231,7 +230,7 @@ pub struct RunningContractState {
 }
 ```
 
-### 4.5 KeyEvent Changes
+### 2.5 KeyEvent Changes
 
 `KeyEvent` currently carries `ThresholdParameters` to know the participant set and threshold for key generation. With the split:
 
@@ -250,9 +249,9 @@ The `KeyEvent` needs both: `GovernanceBody` for who participates, and `KeyConfig
 
 ---
 
-## 5. Validation Logic
+## 3. Validation Logic
 
-### 5.1 Curve-Protocol Compatibility
+### 3.1 Curve-Protocol Compatibility
 
 Only certain (curve, protocol) pairs are valid:
 
@@ -270,7 +269,7 @@ impl KeyConfig {
 }
 ```
 
-### 5.2 Threshold Validation per Protocol
+### 3.2 Threshold Validation per Protocol
 
 Each protocol has different constraints on `ReconstructionThreshold` relative to the participant count:
 
@@ -316,7 +315,7 @@ impl KeyConfig {
 }
 ```
 
-### 5.3 Resharing Validation
+### 3.3 Resharing Validation
 
 When resharing (changing participants/threshold), we need to validate that:
 1. The new governance threshold is valid for the new participant count.
@@ -361,7 +360,7 @@ impl KeyConfigs {
 }
 ```
 
-### 5.4 Governance Threshold Validation
+### 3.4 Governance Threshold Validation
 
 ```rust
 impl GovernanceBody {
@@ -382,9 +381,9 @@ impl GovernanceBody {
 
 ---
 
-## 6. Backwards-Compatible Migration Strategy
+## 4. Backwards-Compatible Migration Strategy
 
-### 6.1 Guiding Principles
+### 4.1 Guiding Principles
 
 Every PR in the sequence must satisfy:
 
@@ -393,7 +392,7 @@ Every PR in the sequence must satisfy:
 3. **No JSON wire breakage**: Internal types serialized to JSON in contract calls (`vote_add_domains`, test fixtures) must remain parseable. Use `#[serde(rename = "old_name")]` for serialization compat and `#[serde(alias = "old_name")]` or `DomainConfigCompat` with `#[serde(from = "...")]` for deserialization of both old and new formats.
 4. **Each PR is independently deployable**: The system must be functional after each PR lands, even if subsequent PRs are delayed.
 
-### 6.2 Step-by-Step PR Plan
+### 4.2 Step-by-Step PR Plan
 
 Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PRs that can be parallelized are noted.
 
@@ -678,7 +677,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 
 ---
 
-### 6.3 PR Dependency Graph
+### 4.3 PR Dependency Graph
 
 ```
 PR 1 [DONE] --> PR 2 [DONE] --> PR 3 (delete V2Secp256k1)
@@ -706,7 +705,7 @@ PR 1 [DONE] --> PR 2 [DONE] --> PR 3 (delete V2Secp256k1)
 
 PRs 6 and 8 can be developed in parallel after PR 5, though PR 8 should land after PR 7 to consume the final type shapes.
 
-### 6.4 Backwards Compatibility Techniques Reference
+### 4.4 Backwards Compatibility Techniques Reference
 
 Each technique used in the PR plan, summarized:
 
@@ -720,7 +719,7 @@ Each technique used in the PR plan, summarized:
 | `dto_mapping.rs` | Decouples internal type evolution from public API | Internal `GovernanceBody` maps to DTO `ThresholdParameters` |
 | Borsh variant index preservation | Adding/removing enum variants at the end is safe | Remove `V2Secp256k1` (last variant) without shifting others |
 
-### 6.5 Rolling Upgrade Scenario
+### 4.5 Rolling Upgrade Scenario
 
 During a deployment, old and new nodes coexist. The upgrade proceeds in two phases:
 
@@ -740,9 +739,9 @@ This two-phase approach means contract and node upgrades are **not** required to
 
 ---
 
-## 7. Shared Types Between Contract and Node
+## 5. Shared Types Between Contract and Node
 
-### 7.1 Current Problem: Tight Coupling
+### 5.1 Current Problem: Tight Coupling
 
 The node currently depends directly on `mpc-contract` internal types:
 
@@ -761,7 +760,7 @@ This means the node depends on the contract's **internal** representation, which
 - Makes it unclear which types are part of the public API vs. implementation details.
 - Pulls in `near-sdk` and WASM-related dependencies into the node build.
 
-### 7.2 Profiling: Types Used by Both Contract and Node
+### 5.2 Profiling: Types Used by Both Contract and Node
 
 The following types are imported by the node from the contract's internals:
 
@@ -805,7 +804,7 @@ The following types are imported by the node from the contract's internals:
 | `protocol_state_to_string` | `utils` | web server |
 | TEE types | `tee::*` | attestation, indexer |
 
-### 7.3 Proposed Separation Strategy
+### 5.3 Proposed Separation Strategy
 
 #### Layer 1: Shared Primitives Crate (`mpc-primitives` or extend existing)
 
@@ -874,7 +873,7 @@ The node should **not** depend on `mpc-contract` internals. Currently, the main 
 6. **TEE types** — used for attestation; should live in a dedicated crate or `mpc-primitives`.
 7. **`protocol_state_to_string`** — utility; trivially reimplemented or moved.
 
-### 7.4 Dependency Graph
+### 5.4 Dependency Graph
 
 ```
                     mpc-primitives (no_std, pure data)
@@ -890,7 +889,7 @@ The node should **not** depend on `mpc-contract` internals. Currently, the main 
                       NOT on mpc-contract)
 ```
 
-### 7.5 Migration Path for Decoupling
+### 5.5 Migration Path for Decoupling
 
 This can be done incrementally:
 
