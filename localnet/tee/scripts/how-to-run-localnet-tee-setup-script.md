@@ -153,7 +153,7 @@ All generated files are stored under:
 ```
 
 Important artifacts:
-- `node{i}.toml`, `node{i}.env`
+- `node{i}.conf`, `node{i}.env`
 - `keys.json`
 - `init_args.json`
 
