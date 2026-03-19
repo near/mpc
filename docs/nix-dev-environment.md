@@ -71,7 +71,19 @@ hide_env_diff = true
 EOF
 ```
 
-### 6. VS Code rust-analyzer plugin support
+### 6. VS Code setup
+
+#### Recommended extensions
+
+The following VS Code extensions are recommended for working in this repository:
+
+- **Rust**: [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer), [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb), [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml), [Rust Doc Viewer](https://marketplace.visualstudio.com/items?itemName=JScearcy.rust-doc-viewer)
+- **Nix**: [direnv](https://marketplace.visualstudio.com/items?itemName=mkhl.direnv) (needed for rust-analyzer to run in nix environment)
+- **GitHub**: [GitHub Actions](https://marketplace.visualstudio.com/items?itemName=github.vscode-github-actions), [GitHub Pull Requests](https://marketplace.visualstudio.com/items?itemName=GitHub.vscode-pull-request-github)
+- **Python**: [Python](https://marketplace.visualstudio.com/items?itemName=ms-python.python), [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff)
+- **General**: [Code Spell Checker](https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker)
+
+#### rust-analyzer plugin support
 
 For `rust-analyzer` installed through nix to work with the VS Code extension, you must configure the server path in your settings:
 

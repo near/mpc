@@ -44,7 +44,7 @@ async fn test_view_method_nonexistent_method_returns_error() {
         .await;
 
     let err = result.expect_err("calling a nonexistent method should fail");
-    assert_matches!(err, ChainGatewayError::ViewClient { .. });
+    assert_matches!(err, ChainGatewayError::ViewError { .. });
 }
 
 /// Spawns a local neard node, inserts a test contract and checks if subscribing to the state

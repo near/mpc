@@ -1,7 +1,9 @@
 use crate::{
     config::{
-        load_config_file, ConfigFile, GcpStartConfig, SecretsStartConfig, StartConfig,
-        TeeAuthorityStartConfig, TeeStartConfig,
+        load_config_file,
+        start::{LogConfig, LogFormat},
+        ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
+        SecretsStartConfig, StartConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
@@ -10,11 +12,14 @@ use crate::{
     },
     run::run_mpc_node,
 };
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
+use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
+use mpc_primitives::hash::MpcDockerImageHash;
 use std::path::PathBuf;
-use tee_authority::tee_authority::{DEFAULT_DSTACK_ENDPOINT, DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL};
-use url::Url;
+
+const DUMMY_ALLOWED_HASH: MpcDockerImageHash = MpcDockerImageHash::new([0; 32]);
+const ALLOWED_IMAGE_HASHES_FILE_PATH: &str = "/tmp/allowed_image_hashes.json";
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
 #[command(about = "MPC Node for Near Protocol")]
@@ -24,14 +29,6 @@ pub struct Cli {
     pub log_format: LogFormat,
     #[clap(subcommand)]
     pub command: CliCommand,
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-pub enum LogFormat {
-    /// Plaintext logs
-    Plain,
-    /// JSON logs
-    Json,
 }
 
 #[derive(Subcommand, Debug)]
@@ -90,26 +87,12 @@ pub struct StartCmd {
     pub gcp_keyshare_secret_id: Option<String>,
     #[arg(env("GCP_PROJECT_ID"))]
     pub gcp_project_id: Option<String>,
-    /// TEE authority config
-    #[command(subcommand)]
-    pub tee_authority: CliTeeAuthorityConfig,
     /// TEE related configuration settings.
     #[command(flatten)]
     pub image_hash_config: CliImageHashConfig,
     /// Hex-encoded 32 byte AES key for backup encryption.
     #[arg(env("MPC_BACKUP_ENCRYPTION_KEY_HEX"))]
     pub backup_encryption_key_hex: Option<String>,
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum CliTeeAuthorityConfig {
-    Local,
-    Dstack {
-        #[arg(long, env("DSTACK_ENDPOINT"), default_value = DEFAULT_DSTACK_ENDPOINT)]
-        dstack_endpoint: String,
-        #[arg(long, env("QUOTE_UPLOAD_URL"), default_value = DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL)]
-        quote_upload_url: Url,
-    },
 }
 
 #[derive(Args, Debug)]
@@ -129,7 +112,7 @@ pub struct CliImageHashConfig {
 }
 
 impl StartCmd {
-    fn into_start_config(self, config: ConfigFile) -> StartConfig {
+    fn into_start_config(self, config: ConfigFile, log_format: LogFormat) -> StartConfig {
         let gcp = match (self.gcp_keyshare_secret_id, self.gcp_project_id) {
             (Some(keyshare_secret_id), Some(project_id)) => Some(GcpStartConfig {
                 keyshare_secret_id,
@@ -143,22 +126,25 @@ impl StartCmd {
                 secret_store_key_hex: self.secret_store_key_hex,
                 backup_encryption_key_hex: self.backup_encryption_key_hex,
             },
-            tee: TeeStartConfig {
-                authority: match self.tee_authority {
-                    CliTeeAuthorityConfig::Local => TeeAuthorityStartConfig::Local,
-                    CliTeeAuthorityConfig::Dstack {
-                        dstack_endpoint,
-                        quote_upload_url,
-                    } => TeeAuthorityStartConfig::Dstack {
-                        dstack_endpoint,
-                        quote_upload_url: quote_upload_url.to_string(),
-                    },
-                },
-                image_hash: self.image_hash_config.image_hash,
-                latest_allowed_hash_file: self.image_hash_config.latest_allowed_hash_file,
-            },
+            near_init: None,
             gcp,
             node: config,
+            // dstack and TEE is not supported with StartCmd, as it will be removed
+            // in #2334, and not used by the rust launcher.
+            tee: TeeConfig {
+                authority: TeeAuthorityConfig::Local,
+                // Use dummy values as we don't want a breaking change, and
+                // this start command will be deprecated in #2334
+                image_hash: DUMMY_ALLOWED_HASH.into(),
+                latest_allowed_hash_file_path: ALLOWED_IMAGE_HASHES_FILE_PATH
+                    .parse()
+                    .expect("dummy allowed image hashes is valid path"),
+            },
+
+            log: LogConfig {
+                format: log_format,
+                filter: std::env::var("RUST_LOG").ok(),
+            },
         }
     }
 }
@@ -188,6 +174,38 @@ pub struct InitConfigArgs {
     #[arg(long)]
     pub boot_nodes: Option<String>,
 }
+
+impl InitConfigArgs {
+    pub fn into_near_init_config(self) -> NearInitConfig {
+        NearInitConfig {
+            chain_id: match self.chain_id.as_deref() {
+                Some("mainnet") => ChainId::Mainnet,
+                Some("testnet") => ChainId::Testnet,
+                Some("mpc-localnet") => ChainId::Localnet,
+                Some(other) => ChainId::Custom(other.to_string()),
+                None => ChainId::Custom(String::new()),
+            },
+            boot_nodes: self.boot_nodes,
+            genesis_path: self.genesis.map(PathBuf::from),
+            download_config: if self.download_config {
+                Some(DownloadConfigType::RPC)
+            } else {
+                None
+            },
+            download_config_url: if self.download_config {
+                self.download_config_url
+            } else {
+                None
+            },
+            download_genesis: self.download_genesis,
+            download_genesis_url: self.download_genesis_url,
+            download_genesis_records_url: self.download_genesis_records_url,
+            rpc_addr: None,
+            network_addr: None,
+        }
+    }
+}
+
 #[derive(Args, Debug)]
 pub struct ImportKeyshareCmd {
     /// Path to home directory
@@ -220,6 +238,7 @@ impl Cli {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
                 let node_configuration = StartConfig::from_toml_file(&config_path)?;
+                node_configuration.ensure_near_initialized()?;
                 run_mpc_node(node_configuration).await
             }
             // TODO(#2334): deprecate this
@@ -227,38 +246,13 @@ impl Cli {
                 let home_dir = std::path::Path::new(&start.home_dir);
                 let config_file = load_config_file(home_dir)?;
 
-                let node_configuration = start.into_start_config(config_file);
+                let node_configuration = start.into_start_config(config_file, self.log_format);
                 run_mpc_node(node_configuration).await
             }
             CliCommand::Init(config) => {
-                let (download_config_type, download_config_url) = if config.download_config {
-                    (
-                        Some(near_config_utils::DownloadConfigType::RPC),
-                        config.download_config_url.as_ref().map(AsRef::as_ref),
-                    )
-                } else {
-                    (None, None)
-                };
-                near_indexer::init_configs(
-                    &config.dir,
-                    config.chain_id,
-                    None,
-                    None,
-                    1,
-                    false,
-                    config.genesis.as_ref().map(AsRef::as_ref),
-                    config.download_genesis,
-                    config.download_genesis_url.as_ref().map(AsRef::as_ref),
-                    config
-                        .download_genesis_records_url
-                        .as_ref()
-                        .map(AsRef::as_ref),
-                    download_config_type,
-                    download_config_url,
-                    config.boot_nodes.as_ref().map(AsRef::as_ref),
-                    None,
-                    None,
-                )
+                let dir = config.dir.clone();
+                let near_init = config.into_near_init_config();
+                near_init.run_init(&dir)
             }
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,
             CliCommand::ExportKeyshare(cmd) => cmd.run().await,
