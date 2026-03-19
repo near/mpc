@@ -205,7 +205,7 @@ jobs:
           cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
 
       # We run this build step on main as well to cache the contract build.
-      # The build will not be used since it will be overwritten by the reproducible
+      # The non reproducible build will not be used on main since it will be overwritten by the reproducible
       # step below.
       - name: Build mpc-contract
         run: |
@@ -214,7 +214,7 @@ jobs:
             target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
             -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 
-      - name: Build mpc-contract (reproducible, on main)
+      - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
         run: |
           cargo near build reproducible-wasm \
