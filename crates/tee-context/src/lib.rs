@@ -170,8 +170,17 @@ async fn spawn_hash_watcher(
             )
             .await;
 
-        let (Ok(image), Ok(launcher)) = (image_sub.latest(), launcher_sub.latest()) else {
-            return;
+        let (image, launcher) = match (image_sub.latest(), launcher_sub.latest()) {
+            (Ok(image), Ok(launcher)) => (image, launcher),
+            (image_res, launcher_res) => {
+                if let Err(err) = &image_res {
+                    tracing::error!(%err, "failed to fetch initial docker image hashes");
+                }
+                if let Err(err) = &launcher_res {
+                    tracing::error!(%err, "failed to fetch initial launcher compose hashes");
+                }
+                return;
+            }
         };
 
         tx.send_modify(|h| {
