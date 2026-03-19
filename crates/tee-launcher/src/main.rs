@@ -160,9 +160,9 @@ async fn run() -> Result<(), LauncherError> {
     Ok(())
 }
 
-/// Inject launcher-controlled config sections (`tee` and `image_config`) into
-/// the user-provided MPC node config table.  Returns an error if the user
-/// config already contains either reserved key.
+/// Inject launcher-controlled config section (`tee`) into the user-provided
+/// MPC node config table.  Returns an error if the user config already
+/// contains the reserved key.
 fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
@@ -175,9 +175,9 @@ fn intercept_node_config(
     Ok(node_config)
 }
 
-/// Inject launcher-controlled config sections (`tee` and `image_config`) into
-/// the user-provided MPC node config table.  Returns an error if the user
-/// config already contains either reserved key.
+/// Inject launcher-controlled config section (`tee`) into the user-provided
+/// MPC node config table.  Returns an error if the user config already
+/// contains the reserved key.
 /// Insert `value` under `key` in `table`, returning an error if the key
 /// already exists.
 fn insert_reserved(
@@ -573,7 +573,7 @@ mod tests {
     use assert_matches::assert_matches;
     use httpmock::prelude::*;
     use launcher_interface::types::{
-        ApprovedHashes, DockerSha256Digest, ImageConfig, TeeAuthorityConfig,
+        ApprovedHashes, DockerSha256Digest, TeeAuthorityConfig, TeeConfig,
     };
     use near_mpc_bounded_collections::NonEmptyVec;
 
@@ -767,32 +767,27 @@ mod tests {
         assert!(!rendered.contains("environment:"));
     }
 
-    fn sample_tee_config() -> TeeAuthorityConfig {
-        TeeAuthorityConfig::Dstack {
-            dstack_endpoint: "/var/run/dstack.sock".to_string(),
-            quote_upload_url: "https://example.com/quote".to_string(),
-        }
-    }
-
-    fn sample_image_config() -> ImageConfig {
-        ImageConfig {
+    fn sample_tee_config() -> TeeConfig {
+        TeeConfig {
+            authority: TeeAuthorityConfig::Dstack {
+                dstack_endpoint: "/var/run/dstack.sock".to_string(),
+                quote_upload_url: "https://example.com/quote".to_string(),
+            },
             image_hash: sample_digest(),
             latest_allowed_hash_file_path: "/mnt/shared/image-digest.bin".into(),
         }
     }
 
     #[test]
-    fn intercept_config_injects_tee_and_image_config() {
+    fn intercept_config_injects_tee_config() {
         // given
         let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
 
         // when
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_image_config()).unwrap();
+        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
 
         // then
         assert!(result.contains_key("tee"));
-        assert!(result.contains_key("image_config"));
         assert_eq!(result["home_dir"].as_str(), Some("/data"));
     }
 
@@ -807,7 +802,7 @@ type = "Local"
         .unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_image_config());
+        let result = intercept_node_config(config, &sample_tee_config());
 
         // then
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
@@ -816,61 +811,16 @@ type = "Local"
     }
 
     #[test]
-    fn intercept_config_rejects_user_provided_image_config_key() {
-        // given
-        let config: toml::Table = toml::from_str(
-            r#"[image_config]
-image_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-latest_allowed_hash_file_path = "/evil"
-"#,
-        )
-        .unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_image_config());
-
-        // then
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
-            assert_eq!(key, "image_config");
-        });
-    }
-
-    #[test]
-    fn intercept_config_rejects_both_reserved_keys_reports_tee_first() {
-        // given — both reserved keys present
-        let config: toml::Table = toml::from_str(
-            r#"
-[tee]
-type = "Local"
-[image_config]
-image_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-latest_allowed_hash_file_path = "/evil"
-"#,
-        )
-        .unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_image_config());
-
-        // then — tee is checked first
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
-            assert_eq!(key, "tee");
-        });
-    }
-
-    #[test]
-    fn intercept_config_empty_table_gets_both_keys() {
+    fn intercept_config_empty_table_gets_tee_key() {
         // given
         let config = toml::Table::new();
 
         // when
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_image_config()).unwrap();
+        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
 
         // then
         assert!(result.contains_key("tee"));
-        assert!(result.contains_key("image_config"));
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 1);
     }
 
     #[test]
@@ -887,34 +837,37 @@ key = "value"
         .unwrap();
 
         // when
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_image_config()).unwrap();
+        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
 
         // then
         assert_eq!(result["home_dir"].as_str(), Some("/data"));
         assert_eq!(result["port"].as_integer(), Some(8080));
         assert_eq!(result["nested"]["key"].as_str(), Some("value"));
         assert!(result.contains_key("tee"));
-        assert!(result.contains_key("image_config"));
     }
 
     #[test]
     fn intercept_config_dstack_tee_config_serializes_correctly() {
         // given
         let config = toml::Table::new();
-        let tee = TeeAuthorityConfig::Dstack {
-            dstack_endpoint: "/my/socket".to_string(),
-            quote_upload_url: "https://example.com".to_string(),
+        let tee = TeeConfig {
+            authority: TeeAuthorityConfig::Dstack {
+                dstack_endpoint: "/my/socket".to_string(),
+                quote_upload_url: "https://example.com".to_string(),
+            },
+            image_hash: sample_digest(),
+            latest_allowed_hash_file_path: "/mnt/shared/image-digest.bin".into(),
         };
 
         // when
-        let result = intercept_node_config(config, &tee, &sample_image_config()).unwrap();
+        let result = intercept_node_config(config, &tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
-        assert_eq!(tee_table["dstack_endpoint"].as_str(), Some("/my/socket"));
+        let authority = tee_table["authority"].as_table().unwrap();
+        assert_eq!(authority["dstack_endpoint"].as_str(), Some("/my/socket"));
         assert_eq!(
-            tee_table["quote_upload_url"].as_str(),
+            authority["quote_upload_url"].as_str(),
             Some("https://example.com")
         );
     }
@@ -923,11 +876,14 @@ key = "value"
     fn intercept_config_local_tee_config_serializes_correctly() {
         // given
         let config = toml::Table::new();
+        let tee = TeeConfig {
+            authority: TeeAuthorityConfig::Local,
+            image_hash: sample_digest(),
+            latest_allowed_hash_file_path: "/mnt/shared/image-digest.bin".into(),
+        };
 
         // when
-        let result =
-            intercept_node_config(config, &TeeAuthorityConfig::Local, &sample_image_config())
-                .unwrap();
+        let result = intercept_node_config(config, &tee).unwrap();
 
         // then — Local variant is a unit variant; just verify the key exists
         assert!(result.contains_key("tee"));
@@ -940,19 +896,23 @@ key = "value"
     fn intercept_config_image_config_contains_expected_fields() {
         // given
         let config = toml::Table::new();
-        let image_cfg = ImageConfig {
+        let tee = TeeConfig {
+            authority: TeeAuthorityConfig::Dstack {
+                dstack_endpoint: "/var/run/dstack.sock".to_string(),
+                quote_upload_url: "https://example.com/quote".to_string(),
+            },
             image_hash: digest('b'),
             latest_allowed_hash_file_path: "/some/path".into(),
         };
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config(), &image_cfg).unwrap();
+        let result = intercept_node_config(config, &tee).unwrap();
 
         // then
-        let ic = result["image_config"].as_table().unwrap();
-        assert!(ic["image_hash"].as_str().unwrap().contains("bbbb"));
+        let tee_table = result["tee"].as_table().unwrap();
+        assert!(tee_table["image_hash"].as_str().unwrap().contains("bbbb"));
         assert_eq!(
-            ic["latest_allowed_hash_file_path"].as_str(),
+            tee_table["latest_allowed_hash_file_path"].as_str(),
             Some("/some/path")
         );
     }
@@ -963,14 +923,12 @@ key = "value"
         let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
 
         // when
-        let result =
-            intercept_node_config(config, &sample_tee_config(), &sample_image_config()).unwrap();
+        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
         let toml_str = toml::to_string(&result).unwrap();
 
         // then — the output can be parsed back
         let reparsed: toml::Table = toml::from_str(&toml_str).unwrap();
         assert!(reparsed.contains_key("tee"));
-        assert!(reparsed.contains_key("image_config"));
         assert_eq!(reparsed["home_dir"].as_str(), Some("/data"));
     }
 
@@ -980,25 +938,11 @@ key = "value"
         let config: toml::Table = toml::from_str(r#"tee = "sneaky""#).unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_image_config());
+        let result = intercept_node_config(config, &sample_tee_config());
 
         // then — any occupied entry is rejected regardless of value type
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
             assert_eq!(key, "tee");
-        });
-    }
-
-    #[test]
-    fn intercept_config_image_config_as_non_table_value_is_rejected() {
-        // given
-        let config: toml::Table = toml::from_str(r#"image_config = 42"#).unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), &sample_image_config());
-
-        // then
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
-            assert_eq!(key, "image_config");
         });
     }
 
