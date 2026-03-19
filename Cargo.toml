@@ -10,6 +10,7 @@ members = [
     "crates/contract",
     "crates/contract-history",
     "crates/devnet",
+    "crates/e2e-tests",
     "crates/foreign-chain-inspector",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
