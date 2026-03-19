@@ -2,6 +2,7 @@ use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
+use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 
@@ -342,4 +343,11 @@ pub struct EventLog {
     pub event: String,
     /// The payload data associated with the event
     pub event_payload: String,
+}
+
+/// Arguments for the `submit_participant_info` contract call.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubmitParticipantInfoArgs {
+    pub proposed_participant_attestation: Attestation,
+    pub tls_public_key: Ed25519PublicKey,
 }

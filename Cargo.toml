@@ -24,6 +24,7 @@ members = [
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
+    "crates/tee-context",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-utils",
@@ -41,6 +42,7 @@ repository = "https://github.com/near/mpc"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+chain-gateway = { path = "crates/chain-gateway" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
