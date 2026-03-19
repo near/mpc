@@ -299,6 +299,12 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
+      - name: Clear cache for fresh rebuild
+        if: github.event_name == 'schedule'
+        run: |
+          cargo clean
+          rm -rf ~/.cargo
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
