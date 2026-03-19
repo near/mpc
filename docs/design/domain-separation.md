@@ -430,32 +430,20 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
 
 ---
 
-#### PR 3 — Clean up: delete `V2Secp256k1` variant from `Curve`
+#### PR 3 — Delete `V2Secp256k1` and add `Protocol` enum
 
 **Scope**: `crates/contract/src/primitives/domain.rs`, `crates/near-mpc-contract-interface/src/types/state.rs`, node provider routing.
 
 **Precondition**: `V2Secp256k1` is not deployed to mainnet. No on-chain state references this variant.
 
-**Changes**:
+**Changes (delete V2Secp256k1)**:
 - Remove `V2Secp256k1` from internal `Curve` enum.
 - Remove `V2Secp256k1` from DTO `SignatureScheme` enum.
 - Remove `is_valid_scheme_for_purpose` entry for `V2Secp256k1`.
 - Remove the `KeyshareData::V2Secp256k1` variant in the node (or gate behind a feature flag if reshare data exists in dev/testnet).
-- Update `coordinator.rs` routing: the `V2Secp256k1` match arm is removed; robust ECDSA will be routed via `Protocol::DamgardEtAl` once that enum exists (PR 5).
+- Update `coordinator.rs` routing: the `V2Secp256k1` match arm is removed; robust ECDSA will be routed via `Protocol::DamgardEtAl` (added below).
 
-**Borsh compat**: Since `V2Secp256k1` was the last variant (index 3), removing it does not shift other variant indices. No stored state references it. No migration needed.
-
-**JSON compat**: No deployed contract emits this value. Safe to remove.
-
-**Risk**: If any testnet/devnet deployment has `V2Secp256k1` domains, those nodes will fail to deserialize. Acceptable if coordinated with testnet reset.
-
----
-
-#### PR 4 — Add `Protocol` enum (contract internals only)
-
-**Scope**: `crates/contract/src/primitives/domain.rs` (new file or extend existing).
-
-**Changes**:
+**Changes (add Protocol enum)**:
 - Add new enum:
   ```rust
   #[near(serializers=[borsh, json])]
@@ -479,15 +467,15 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
 - **No changes to `DomainConfig` yet** — `Protocol` exists but is not wired into state.
 - No changes to contract-interface DTO.
 
-**Borsh compat**: New type, not stored yet. No migration.
+**Borsh compat**: Removing `V2Secp256k1` (last variant, index 3) does not shift other variant indices. No stored state references it. `Protocol` is a new type, not stored yet. No migration needed.
 
-**JSON compat**: Not exposed yet. No impact.
+**JSON compat**: No deployed contract emits `V2Secp256k1`. `Protocol` is not exposed yet. No impact.
 
-**Purpose**: Introduce the type early so subsequent PRs can reference it. Also enables early review of the enum design and naming.
+**Risk**: If any testnet/devnet deployment has `V2Secp256k1` domains, those nodes will fail to deserialize. Acceptable if coordinated with testnet reset.
 
 ---
 
-#### PR 5 — Create `KeyConfig` struct, update `DomainConfig`
+#### PR 4 — Create `KeyConfig` struct, update `DomainConfig`
 
 **Scope**: `crates/contract/src/primitives/domain.rs`, `crates/contract/src/dto_mapping.rs`, `crates/near-mpc-contract-interface/src/types/state.rs`.
 
@@ -545,17 +533,17 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
 - External consumers calling `state()` see unchanged JSON.
 - `vote_add_domains` uses the new `DomainConfig` JSON format directly (breaking change OK — partner-node-only function).
 
-**Node changes**: Minimal in this PR — node can continue using `state()`. Full node migration happens in PR 8.
+**Node changes**: Minimal in this PR — node can continue using `state()`. Full node migration happens in PR 7.
 
 **Tests**: Borsh migration roundtrip tests (old state → migrate → new state → serialize → deserialize). Verify `state()` output is unchanged. Verify `state_v2()` returns new structure. Verify `vote_add_domains` accepts new `DomainConfig` JSON.
 
 ---
 
-#### PR 6 — Add per-domain threshold validation
+#### PR 5 — Add per-domain threshold validation
 
 **Scope**: `crates/contract/src/primitives/thresholds.rs`, `crates/contract/src/state/running.rs`, `crates/contract/src/state/key_event.rs`.
 
-**Precondition**: PR 5 landed. `KeyConfig.reconstruction_threshold` exists but is populated from the global threshold during migration.
+**Precondition**: PR 4 landed. `KeyConfig.reconstruction_threshold` exists but is populated from the global threshold during migration.
 
 **Changes**:
 - Add `KeyConfig::validate_threshold(num_participants)` with protocol-specific rules:
@@ -564,9 +552,9 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
 - Update `vote_add_domains` to validate each new domain's `KeyConfig.reconstruction_threshold` against the current participant count.
 - Update `KeyEvent` to pass per-domain threshold (from `DomainConfig.key_config`) instead of the global threshold.
 - Update resharing validation: `validate_incoming_proposal` must check that ALL existing `KeyConfig` thresholds remain achievable under the proposed new participant count.
-- Existing domains continue to have `reconstruction_threshold == global_threshold` (set during PR 5 migration). New domains can choose a different value.
+- Existing domains continue to have `reconstruction_threshold == global_threshold` (set during PR 4 migration). New domains can choose a different value.
 
-**Borsh compat**: No struct layout changes (threshold is already in `KeyConfig` from PR 5). No migration.
+**Borsh compat**: No struct layout changes (threshold is already in `KeyConfig` from PR 4). No migration.
 
 **Key behavioral change**: This is where `DomainConfig` gains real per-domain threshold semantics. Before this PR, the threshold in `KeyConfig` was always the global value.
 
@@ -574,7 +562,7 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
 
 ---
 
-#### PR 7 — Separate governance threshold from signing thresholds
+#### PR 6 — Separate governance threshold from signing thresholds
 
 **Scope**: `crates/contract/src/primitives/thresholds.rs`, `crates/contract/src/state/`.
 
@@ -616,7 +604,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 
 ---
 
-#### PR 8 — Update node to consume new contract types
+#### PR 7 — Update node to consume new contract types
 
 **Scope**: `crates/node/src/coordinator.rs`, `crates/node/src/key_events.rs`, `crates/node/src/providers/`.
 
@@ -656,7 +644,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 
 ---
 
-#### PR 9 — Move shared primitives to `mpc-primitives` crate
+#### PR 8 — Move shared primitives to `mpc-primitives` crate
 
 **Scope**: `crates/primitives/src/`, `crates/contract/`, `crates/node/`, `crates/near-mpc-contract-interface/`.
 
@@ -674,11 +662,11 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 
 ---
 
-#### PR 10 — Remove node's direct dependency on `mpc-contract`
+#### PR 9 — Remove node's direct dependency on `mpc-contract`
 
 **Scope**: `crates/node/Cargo.toml`, all `use mpc_contract::` imports in node.
 
-**Precondition**: PR 9 landed. All types the node needs are available from `mpc-primitives` or `near-mpc-contract-interface`.
+**Precondition**: PR 8 landed. All types the node needs are available from `mpc-primitives` or `near-mpc-contract-interface`.
 
 **Changes**:
 - Replace remaining `use mpc_contract::` imports with `use mpc_primitives::` or `use near_mpc_contract_interface::types::`.
@@ -694,35 +682,33 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 ### 4.3 PR Dependency Graph
 
 ```
-PR 1 [DONE] --> PR 2 [DONE] --+--> PR 3 (delete V2Secp256k1) --+
-                               |                                 |
-                               +--> PR 4 (add Protocol enum) ---+
-                               |                                 |
-                               +--> PR 9 (move types to          v
-                               |    mpc-primitives)     PR 5 (KeyConfig + DomainConfig
-                               |         |              update + state_v2())
-                               |         |                       |
-                               |         |              +---> PR 6 (per-domain threshold
-                               |         |              |     validation)
-                               |         |              |        |
-                               |         |              |        v
-                               |         |              |     PR 7 (GovernanceBody
-                               |         |              |     separation)
-                               |         |              |        |
-                               |         v              |        v
-                               |      PR 10 (remove     +--> PR 8 (node consumes
-                               |      node -> contract        new types)
-                               |      dep)
+PR 1 [DONE] --> PR 2 [DONE] --+--> PR 3 (delete V2Secp256k1 + add Protocol)
+                               |         |
+                               |         v
+                               |    PR 4 (KeyConfig + DomainConfig update + state_v2())
+                               |         |
+                               |         +---> PR 5 (per-domain threshold validation)
+                               |         |       |
+                               |         |       v
+                               |         |    PR 6 (GovernanceBody separation)
+                               |         |       |
+                               |         |       v
+                               |         +--> PR 7 (node consumes new types)
                                |
+                               +--> PR 8 (move types to mpc-primitives)
+                                         |
+                                         v
+                                    PR 9 (remove node -> contract dep)
+                                         [depends on PR 7 + PR 8]
 ```
 
 **Parallelization notes**:
-- PRs 3, 4, and 9 can all start in parallel after PR 2. PR 3 (delete V2Secp256k1) and PR 4 (add Protocol) are independent changes. PR 9 (move existing types to `mpc-primitives`) only moves existing, unchanged types and doesn't depend on new types being added.
-- PR 5 depends on both PR 3 and PR 4.
-- PRs 6 and 8 can be developed in parallel after PR 5, though PR 8 should land after PR 7 to consume the final type shapes.
-- PR 10 depends on PR 9 and PR 8.
+- PR 3 and PR 8 can start in parallel after PR 2. PR 8 (move existing types to `mpc-primitives`) only moves existing, unchanged types and doesn't depend on new types being added.
+- PR 4 depends on PR 3.
+- PRs 5 and 7 can be developed in parallel after PR 4, though PR 7 should land after PR 6 to consume the final type shapes.
+- PR 9 depends on both PR 7 and PR 8.
 
-**Consolidation option**: Since partner-node compat shims are no longer needed (§4.1 principle 3), PRs 5+6+7 could be combined into a single contract PR with one Borsh `migrate()`. This reduces deployment overhead (one contract upgrade instead of two) at the cost of a larger PR to review. See open question §7.6.
+**Consolidation option**: Since partner-node compat shims are no longer needed (§4.1 principle 3), PRs 4+5+6 could be combined into a single contract PR with one Borsh `migrate()`. This reduces deployment overhead (one contract upgrade instead of two) at the cost of a larger PR to review. See open question §7.6.
 
 ### 4.4 Backwards Compatibility Techniques Reference
 
@@ -947,19 +933,19 @@ What changes is the data carried through transitions:
 
 ### 6.3 Adding Domains with Different Thresholds
 
-With `KeyConfig` per domain, `vote_add_domains` must now also specify or reference a `KeyConfigId`:
+With `KeyConfig` per domain, `vote_add_domains` must now include the full `KeyConfig` for each new domain:
 
 ```rust
 // Old: vote_add_domains(Vec<DomainConfig>) where DomainConfig has scheme
-// New: vote_add_domains(Vec<DomainConfig>) where DomainConfig has key_config_id
-//   OR vote_add_domains(Vec<DomainConfig>, Vec<KeyConfig>) to create new configs atomically
+// New: vote_add_domains(Vec<DomainConfig>) where DomainConfig has key_config
 ```
 
 ### 6.4 Resharing with Per-Domain Thresholds
 
-During resharing, each domain's key must be reshared with its own `ReconstructionThreshold`. The `KeyEvent` for each domain already carries its config. The coordinator passes the per-domain threshold to the crypto protocol.
+During resharing, each domain's key must be reshared with its own `ReconstructionThreshold`. The `KeyEvent` for each domain already carries its config. The coordinator passes the per-domain threshold to the crypto protocol. Per-domain thresholds can only be changed via resharing — there is no independent vote function for threshold changes.
 
-On the node side, this eliminates the `translate_threshold()` hack:
+`ReconstructionThreshold` has uniform semantics across all protocols: it always means "number of shares needed to reconstruct the secret" (`t`). Each protocol may impose different constraints on `t` (e.g., DamgardEtAl requires `t < n/2`), but the stored value has the same meaning everywhere. The node handles the protocol-specific translation:
+
 
 ```rust
 // Current (hack):
@@ -981,54 +967,19 @@ let threshold = match key_config.protocol {
 
 ## 7. Open Questions
 
-### 7.1 KeyConfig Identity
-
-**Option A**: `KeyConfigId` indirection (as proposed). Domains reference configs by ID.
-- Pro: Shared configs, atomic updates.
-- Con: Extra registry, indirection complexity.
-
-**Option B**: Inline `KeyConfig` in `DomainConfig`.
-- Pro: Simpler, self-contained.
-- Con: Duplication, must update each domain individually.
-
-**Recommendation**: Start with Option B (inline) for simplicity. Introduce indirection only if the need arises.
-
-### 7.2 Governance Threshold Validation
+### 7.1 Governance Threshold Validation
 
 Should the governance `VotingThreshold` be constrained relative to the cryptographic `ReconstructionThreshold`? For example, should we require `voting_threshold >= max(reconstruction_threshold for all configs)`?
 
 If not, it is possible for a governance majority to approve a resharing that a cryptographic protocol cannot support.
 
-### 7.3 Per-Domain Threshold Changes
-
-Can individual domain thresholds be changed independently (via a new vote function), or only during resharing when all keys are re-distributed?
-
-Allowing independent threshold changes would require a new resharing variant that only reshares affected domains. This adds complexity but offers flexibility.
-
-### 7.4 `ReconstructionThreshold` Semantics
-
-Should `ReconstructionThreshold` mean the same thing across all protocols (i.e., "number of shares to reconstruct"), or should each protocol interpret it according to its own conventions?
-
-- **Uniform semantics**: The contract stores `t` meaning "t shares needed". DamgardEtAl requires `2t-1` participants, which is a protocol detail.
-- **Protocol-native semantics**: DamgardEtAl stores `MaxMalicious` directly, and the contract understands each protocol's threshold meaning.
-
-**Recommendation**: Uniform semantics (t = shares to reconstruct). The protocol-specific translation (`t → MaxMalicious = t-1`) happens in the node, keeping the contract simple and protocol-agnostic.
-
-### 7.5 Backward-Compatible View Methods
+### 7.2 Backward-Compatible View Methods
 
 How long should the old `state()` view method be maintained alongside the new `state_v2()`? Should the old format be deprecated immediately or kept for N epochs? Are there external consumers (e.g., block explorers, SDK clients) that depend on the `state()` format?
 
-### 7.6 Migration Consolidation
+### 7.3 Migration Consolidation
 
-PRs 5 and 7 each require a Borsh `migrate()` function. Should these be separate contract deployments (one migration per deploy), or can they be combined into a single deploy with a combined migration? Separate deploys are safer but slower to roll out. Since partner-node compat shims are not needed (§4.1 principle 3), the incremental-deploy benefit is weaker — combining PRs 5+6+7 with one migration is a viable option.
-
-### 7.7 P2P Wire Format Compatibility
-
-During Phase A of the rolling upgrade (§4.5), old and new nodes coexist and communicate via P2P. If P2P messages change to carry `Protocol` or `KeyConfig` instead of `SignatureScheme`, old and new nodes won't understand each other. Options:
-- **P2P messages don't change**: Nodes derive `Protocol`/`KeyConfig` locally from contract state, and P2P messages continue to use `DomainId` to identify the context. If so, no P2P compat issue.
-- **P2P messages do change**: New nodes must support both old and new message formats until all nodes are upgraded.
-
-This needs investigation of which types appear in P2P message serialization.
+PRs 4 and 6 each require a Borsh `migrate()` function. Should these be separate contract deployments (one migration per deploy), or can they be combined into a single deploy with a combined migration? Separate deploys are safer but slower to roll out. Since partner-node compat shims are not needed (§4.1 principle 3), the incremental-deploy benefit is weaker — combining PRs 4+5+6 with one migration is a viable option.
 
 ---
 
