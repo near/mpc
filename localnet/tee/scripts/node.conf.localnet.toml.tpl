@@ -13,11 +13,6 @@ ${PORTS_TOML}]
 [mpc_config]
 home_dir = "/data"
 
-[mpc_config.near_init]
-chain_id = "mpc-localnet"
-boot_nodes = "${NEAR_BOOT_NODES}"
-genesis_path = "/app/localnet-genesis.json"
-
 [mpc_config.secrets]
 secret_store_key_hex = "${MPC_SECRET_STORE_KEY}"
 backup_encryption_key_hex = "0000000000000000000000000000000000000000000000000000000000000000"
