@@ -388,8 +388,8 @@ pub fn validate_governance(governance: &GovernanceBody) -> Result<(), Error> {
 Every PR in the sequence must satisfy:
 
 1. **No on-chain breakage**: The deployed contract's Borsh-serialized state must remain deserializable after each upgrade. If a struct layout changes, a `migrate()` function converts old to new.
-2. **No node breakage**: Nodes running the previous release must be able to read the contract state emitted by the new release (and vice-versa during rollout). This is achieved by keeping the existing `state()` view method unchanged and adding `state_v2()` when the DTO shape changes.
-3. **No JSON wire breakage**: Internal types serialized to JSON in contract calls (`vote_add_domains`, test fixtures) must remain parseable. Use `#[serde(rename = "old_name")]` for serialization compat and `#[serde(alias = "old_name")]` or `DomainConfigCompat` with `#[serde(from = "...")]` for deserialization of both old and new formats.
+2. **No external API breakage**: View methods used by external consumers (block explorers, SDK clients, monitoring) — such as `state()`, `public_key()`, `sign()` — must remain backward-compatible. This is achieved by keeping the existing `state()` view method unchanged and adding `state_v2()` when the DTO shape changes.
+3. **Partner-node functions can break**: Functions only called by partner nodes (`vote_*`, `respond*`, `start_keygen_instance`, `start_reshare_instance`, etc.) may introduce breaking JSON changes without compat shims on the contract side. The upgrade order is nodes first, then contract (see §4.5), so new nodes must handle both old and new contract, but the contract does not need to accept old-format calls from nodes.
 4. **Each PR is independently deployable**: The system must be functional after each PR lands, even if subsequent PRs are delayed.
 
 ### 4.2 Step-by-Step PR Plan
@@ -493,6 +493,8 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
 
 This is the most complex PR. It wires `Protocol` and `Curve` together and changes `DomainConfig`'s shape.
 
+**Design decision**: Section 2.1 proposes a `KeyConfigs` registry with `KeyConfigId` indirection, while open question §7.1 recommends inlining `KeyConfig` directly into `DomainConfig`. This PR follows the inline approach (Option B). If the registry approach (Option A) is chosen instead, this PR must also add `KeyConfigs` to `RunningContractState` and `KeyConfigId` to `DomainConfig`. See §7.1.
+
 **Changes (contract internals)**:
 - Add `ReconstructionThreshold(u64)` newtype.
 - Add `KeyConfig` struct:
@@ -510,27 +512,18 @@ This is the most complex PR. It wires `Protocol` and `Curve` together and change
   // After:
   pub struct DomainConfig { pub id: DomainId, pub key_config: KeyConfig, pub purpose: DomainPurpose }
   ```
-- Update `DomainConfigCompat` to handle deserialization of old format:
-  ```rust
-  // Old JSON: { "id": 0, "scheme": "Secp256k1", "purpose": "Sign" }
-  // New JSON: { "id": 0, "key_config": { "protocol": "CaitSith", "curve": "Secp256k1",
-  //             "reconstruction_threshold": 6 }, "purpose": "Sign" }
-  //
-  // DomainConfigCompat deserializes both formats.
-  // When old format is detected, infer protocol from curve and use a sentinel/default threshold.
-  ```
+- `DomainConfigCompat` no longer needs to handle the old `{ "scheme": "Secp256k1" }` format for `vote_add_domains` — partner nodes will use the new format directly. `DomainConfigCompat` can be simplified or removed.
 
 **Changes (contract-interface DTO)**:
 - Add new DTO types: `dtos::Protocol`, `dtos::KeyConfig`, `dtos::ReconstructionThreshold`.
-- Add new `dtos::DomainConfigV2` that includes `key_config`.
-- **Keep existing `dtos::DomainConfig` unchanged** (with `scheme: SignatureScheme`).
-- Add new view method `state_v2()` that returns the new DTO structure.
-- Existing `state()` continues to return old DTO format via `dto_mapping.rs`.
+- Update `dtos::DomainConfig` to include `key_config`.
+- Add new view method `state_v2()` that returns the new DTO structure (for nodes).
+- Existing `state()` continues to return old DTO format via `dto_mapping.rs` (for external consumers: block explorers, SDK clients).
 
 **Changes (dto_mapping.rs)**:
 - Map internal `KeyConfig` to `dtos::KeyConfig`.
 - Map internal `DomainConfig` to old `dtos::DomainConfig` (for `state()`) by extracting `curve` from `key_config`.
-- Map internal `DomainConfig` to new `dtos::DomainConfigV2` (for `state_v2()`).
+- Map internal `DomainConfig` to new `dtos::DomainConfig` (for `state_v2()`).
 
 **Borsh compat**: `DomainConfig`'s Borsh layout changes (from `(DomainId, Curve, DomainPurpose)` to `(DomainId, KeyConfig, DomainPurpose)`). Requires `migrate()`:
 ```rust
@@ -549,11 +542,12 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
 ```
 
 **JSON compat**:
-- Old nodes calling `state()` see unchanged JSON.
-- New nodes call `state_v2()` for rich data, fall back to `state()` if `state_v2()` is not available (rolling upgrade).
-- `vote_add_domains` accepts both old and new `DomainConfig` JSON via `DomainConfigCompat`.
+- External consumers calling `state()` see unchanged JSON.
+- `vote_add_domains` uses the new `DomainConfig` JSON format directly (breaking change OK — partner-node-only function).
 
 **Node changes**: Minimal in this PR — node can continue using `state()`. Full node migration happens in PR 8.
+
+**Tests**: Borsh migration roundtrip tests (old state → migrate → new state → serialize → deserialize). Verify `state()` output is unchanged. Verify `state_v2()` returns new structure. Verify `vote_add_domains` accepts new `DomainConfig` JSON.
 
 ---
 
@@ -565,7 +559,7 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
 
 **Changes**:
 - Add `KeyConfig::validate_threshold(num_participants)` with protocol-specific rules:
-  - CaitSith/Frost/CKD: `t >= ceil(3n/5)` and `t <= n` (same as current).
+  - CaitSith/Frost/CKD: `t <= n` (same as current).
   - DamgardEtAl: `2t - 1 <= n`.
 - Update `vote_add_domains` to validate each new domain's `KeyConfig.reconstruction_threshold` against the current participant count.
 - Update `KeyEvent` to pass per-domain threshold (from `DomainConfig.key_config`) instead of the global threshold.
@@ -574,9 +568,9 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
 
 **Borsh compat**: No struct layout changes (threshold is already in `KeyConfig` from PR 5). No migration.
 
-**JSON compat**: `vote_add_domains` with old-format JSON infers threshold from global value via `DomainConfigCompat`.
-
 **Key behavioral change**: This is where `DomainConfig` gains real per-domain threshold semantics. Before this PR, the threshold in `KeyConfig` was always the global value.
+
+**Tests**: Unit tests for `validate_threshold` edge cases: DamgardEtAl with `2t-1 == n` (boundary), `2t-1 > n` (reject), `t < 2` (reject). Resharing validation tests: propose new participant set that violates one domain's threshold. Verify `vote_add_domains` rejects invalid thresholds.
 
 ---
 
@@ -612,11 +606,13 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 ```
 
 **JSON compat**:
-- `state()` view method continues to emit old format (maps `GovernanceBody` back to `ThresholdParameters` DTO).
+- `state()` view method continues to emit old format (maps `GovernanceBody` back to `ThresholdParameters` DTO) for external consumers.
 - `state_v2()` emits the new `GovernanceBody` structure.
-- `vote_new_parameters` continues to accept `ThresholdParameters` JSON and internally converts to `GovernanceBody`.
+- `vote_new_parameters` accepts the new `GovernanceBody` JSON directly (breaking change OK — partner-node-only function).
 
 **Behavioral change**: After this PR, governance votes and crypto thresholds are fully decoupled. Changing participants (`vote_new_parameters`) updates the `GovernanceBody` but does not automatically change any domain's `reconstruction_threshold`.
+
+**Tests**: Borsh migration roundtrip for `RunningContractState`. Verify `state()` maps `GovernanceBody` back to `ThresholdParameters` DTO. Verify vote-counting uses `voting_threshold`. Verify resharing still validates all per-domain thresholds.
 
 ---
 
@@ -625,9 +621,25 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 **Scope**: `crates/node/src/coordinator.rs`, `crates/node/src/key_events.rs`, `crates/node/src/providers/`.
 
 **Changes**:
-- Node switches from `state()` to `state_v2()` for contract queries (with fallback to `state()` for backward compat during rolling upgrades).
+- Node switches from `state()` to `state_v2()` for contract queries, with fallback to `state()` when `state_v2()` is not available (during Phase A of the rolling upgrade, before the contract is deployed). The fallback path constructs a synthetic `KeyConfig` from the old state:
+  ```rust
+  // Fallback: old contract, state() only
+  let key_config = KeyConfig {
+      protocol: infer_protocol_from_curve(&old_scheme),
+      curve: old_scheme.into(),
+      reconstruction_threshold: ReconstructionThreshold(global_threshold),
+  };
+  ```
 - Coordinator reads per-domain `KeyConfig` from contract state instead of using global threshold.
-- Remove `translate_threshold()` hack in `robust_ecdsa.rs` — the contract now provides the correct per-domain threshold, and the node translates `ReconstructionThreshold` to `MaxMalicious` cleanly based on `Protocol::DamgardEtAl`.
+- Replace `translate_threshold()` hack in `robust_ecdsa.rs` with clean per-protocol derivation of active participants threshold:
+  ```rust
+  // Node computes required active signers from KeyConfig
+  let active_signers = match key_config.protocol {
+      Protocol::DamgardEtAl => 2 * key_config.reconstruction_threshold.inner() - 1,
+      _ => key_config.reconstruction_threshold.inner(),
+  };
+  ```
+  Note: `translate_threshold()` is still needed on the `state()` fallback path (it's effectively moved into the synthetic `KeyConfig` construction above). It can be fully removed once the old contract is guaranteed gone.
 - Provider routing uses `Protocol` enum instead of pattern-matching on `SignatureScheme`/`Curve`:
   ```rust
   match key_config.protocol {
@@ -639,6 +651,8 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
   ```
 
 **No contract changes in this PR** — purely a node-side consumer update.
+
+**Tests**: Integration tests with both old contract (fallback to `state()`) and new contract (`state_v2()`). Verify DamgardEtAl active-signers derivation produces correct values. Verify provider routing for all protocol types.
 
 ---
 
@@ -680,30 +694,35 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 ### 4.3 PR Dependency Graph
 
 ```
-PR 1 [DONE] --> PR 2 [DONE] --> PR 3 (delete V2Secp256k1)
-                                  |
-                                  v
-                               PR 4 (add Protocol enum)
-                                  |
-                                  v
-                               PR 5 (KeyConfig + DomainConfig update + state_v2())
-                                  |
-                                  +---> PR 6 (per-domain threshold validation)
-                                  |       |
-                                  |       v
-                                  |    PR 7 (GovernanceBody separation)
-                                  |       |
-                                  |       v
-                                  +---> PR 8 (node consumes new types)
-                                          |
-                                          v
-                                       PR 9 (move types to mpc-primitives)
-                                          |
-                                          v
-                                       PR 10 (remove node -> mpc-contract dep)
+PR 1 [DONE] --> PR 2 [DONE] --+--> PR 3 (delete V2Secp256k1) --+
+                               |                                 |
+                               +--> PR 4 (add Protocol enum) ---+
+                               |                                 |
+                               +--> PR 9 (move types to          v
+                               |    mpc-primitives)     PR 5 (KeyConfig + DomainConfig
+                               |         |              update + state_v2())
+                               |         |                       |
+                               |         |              +---> PR 6 (per-domain threshold
+                               |         |              |     validation)
+                               |         |              |        |
+                               |         |              |        v
+                               |         |              |     PR 7 (GovernanceBody
+                               |         |              |     separation)
+                               |         |              |        |
+                               |         v              |        v
+                               |      PR 10 (remove     +--> PR 8 (node consumes
+                               |      node -> contract        new types)
+                               |      dep)
+                               |
 ```
 
-PRs 6 and 8 can be developed in parallel after PR 5, though PR 8 should land after PR 7 to consume the final type shapes.
+**Parallelization notes**:
+- PRs 3, 4, and 9 can all start in parallel after PR 2. PR 3 (delete V2Secp256k1) and PR 4 (add Protocol) are independent changes. PR 9 (move existing types to `mpc-primitives`) only moves existing, unchanged types and doesn't depend on new types being added.
+- PR 5 depends on both PR 3 and PR 4.
+- PRs 6 and 8 can be developed in parallel after PR 5, though PR 8 should land after PR 7 to consume the final type shapes.
+- PR 10 depends on PR 9 and PR 8.
+
+**Consolidation option**: Since partner-node compat shims are no longer needed (§4.1 principle 3), PRs 5+6+7 could be combined into a single contract PR with one Borsh `migrate()`. This reduces deployment overhead (one contract upgrade instead of two) at the cost of a larger PR to review. See open question §7.6.
 
 ### 4.4 Backwards Compatibility Techniques Reference
 
@@ -713,29 +732,27 @@ Each technique used in the PR plan, summarized:
 |---|---|---|
 | `#[serde(rename = "old")]` on field/variant | Serializes using old name, deserializes old name | `Curve::Edwards25519` serializes as `"Ed25519"` |
 | `#[serde(alias = "old")]` on field | Deserializes both old and new name, serializes new name | `DomainConfigCompat.curve` accepts `"scheme"` |
-| `#[serde(from = "CompatType")]` on struct | Custom deserialization from a flexible intermediate type | `DomainConfig` from `DomainConfigCompat` |
 | `migrate()` in contract | Converts Borsh-stored old state to new layout on upgrade | `OldRunningContractState` to `RunningContractState` |
-| `state()` + `state_v2()` view methods | Old consumers see old DTO, new consumers see new DTO | Node falls back to `state()` during rolling upgrade |
+| `state()` + `state_v2()` view methods | External consumers see old DTO via `state()`, nodes see new DTO via `state_v2()` | Block explorers continue to work unchanged |
 | `dto_mapping.rs` | Decouples internal type evolution from public API | Internal `GovernanceBody` maps to DTO `ThresholdParameters` |
 | Borsh variant index preservation | Adding/removing enum variants at the end is safe | Remove `V2Secp256k1` (last variant) without shifting others |
+| Breaking change on node-facing functions | Partner nodes upgrade with the contract, no compat needed | `vote_add_domains` uses new `DomainConfig` JSON directly |
 
-### 4.5 Rolling Upgrade Scenario
+### 4.5 Upgrade Scenario
 
-During a deployment, old and new nodes coexist. The upgrade proceeds in two phases:
+Node-facing functions (`vote_*`, `respond*`, etc.) are only called by partner nodes, but nodes don't all upgrade at the exact same time — there is a rolling window where old and new nodes coexist. The recommended upgrade order is **nodes first, then contract**:
 
-**Phase A — Contract upgrade (PRs 5-7)**:
-1. Deploy new contract with `migrate()`.
+**Phase A — Roll out new node binary**:
+1. New nodes are backwards-compatible: they can work with the old contract (no `state_v2()` yet, old JSON formats for `vote_*` calls).
+2. Gradually upgrade all partner nodes. During this window, all nodes — old and new — still talk to the old contract.
+
+**Phase B — Deploy new contract**:
+1. Once all nodes are running the new binary, deploy the new contract with `migrate()`.
 2. On-chain state is converted to new Borsh layout.
-3. `state()` continues to emit old JSON format.
-4. Old nodes continue operating normally via `state()`.
-5. `state_v2()` is available for new nodes.
+3. Nodes switch to `state_v2()` and the new JSON formats for `vote_*` calls.
+4. `state()` continues to emit old JSON format for external consumers (block explorers, SDK clients).
 
-**Phase B — Node upgrade (PR 8)**:
-1. Deploy new node binary.
-2. New nodes call `state_v2()`. If it fails (contract not yet upgraded), fall back to `state()` and infer `Protocol`/`KeyConfig` from `SignatureScheme`.
-3. Once all nodes are upgraded, `state()` can be deprecated (but not removed immediately).
-
-This two-phase approach means contract and node upgrades are **not** required to happen atomically.
+This "nodes first" approach avoids the need for the contract to accept both old and new JSON formats on node-facing functions. New nodes handle both old and new contract, but the old contract never sees new-format calls.
 
 ---
 
@@ -1003,7 +1020,15 @@ How long should the old `state()` view method be maintained alongside the new `s
 
 ### 7.6 Migration Consolidation
 
-PRs 5 and 7 each require a Borsh `migrate()` function. Should these be separate contract deployments (one migration per deploy), or can they be combined into a single deploy with a combined migration? Separate deploys are safer but slower to roll out.
+PRs 5 and 7 each require a Borsh `migrate()` function. Should these be separate contract deployments (one migration per deploy), or can they be combined into a single deploy with a combined migration? Separate deploys are safer but slower to roll out. Since partner-node compat shims are not needed (§4.1 principle 3), the incremental-deploy benefit is weaker — combining PRs 5+6+7 with one migration is a viable option.
+
+### 7.7 P2P Wire Format Compatibility
+
+During Phase A of the rolling upgrade (§4.5), old and new nodes coexist and communicate via P2P. If P2P messages change to carry `Protocol` or `KeyConfig` instead of `SignatureScheme`, old and new nodes won't understand each other. Options:
+- **P2P messages don't change**: Nodes derive `Protocol`/`KeyConfig` locally from contract state, and P2P messages continue to use `DomainId` to identify the context. If so, no P2P compat issue.
+- **P2P messages do change**: New nodes must support both old and new message formats until all nodes are upgraded.
+
+This needs investigation of which types appear in P2P message serialization.
 
 ---
 
