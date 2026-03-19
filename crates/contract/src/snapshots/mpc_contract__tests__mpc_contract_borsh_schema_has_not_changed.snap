@@ -373,6 +373,20 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ExpectedMeasurements": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "rtmrs",
+                        "Measurements",
+                    ),
+                    (
+                        "key_provider_event_digest",
+                        "[u8; 48]",
+                    ),
+                ],
+            ),
+        },
         "ForeignChain": Enum {
             tag_width: 1,
             variants: [
@@ -699,6 +713,28 @@ BorshSchemaContainer {
                     (
                         "vote_by_account",
                         "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>",
+                    ),
+                ],
+            ),
+        },
+        "Measurements": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "mrtd",
+                        "[u8; 48]",
+                    ),
+                    (
+                        "rtmr0",
+                        "[u8; 48]",
+                    ),
+                    (
+                        "rtmr1",
+                        "[u8; 48]",
+                    ),
+                    (
+                        "rtmr2",
+                        "[u8; 48]",
                     ),
                 ],
             ),
@@ -1370,6 +1406,10 @@ BorshSchemaContainer {
                     (
                         "expiry_timestamp_seconds",
                         "u64",
+                    ),
+                    (
+                        "measurements",
+                        "ExpectedMeasurements",
                     ),
                 ],
             ),

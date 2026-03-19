@@ -21,6 +21,7 @@ pub struct VerificationResult {
     pub mpc_image_hash: MpcDockerImageHash,
     pub launcher_compose_hash: LauncherDockerComposeHash,
     pub expiry_timestamp_seconds: u64,
+    pub measurements: ExpectedMeasurements,
 }
 
 pub fn run_verification(
@@ -79,10 +80,12 @@ pub fn verify_at_timestamp(
             mpc_image_hash,
             launcher_compose_hash,
             expiry_timestamp_seconds,
+            measurements,
         }) => Ok(VerificationResult {
             mpc_image_hash,
             launcher_compose_hash,
             expiry_timestamp_seconds,
+            measurements,
         }),
         VerifiedAttestation::Mock(_) => Err(VerificationError::Custom(
             "attestation is a Mock — cannot produce verification result".into(),
