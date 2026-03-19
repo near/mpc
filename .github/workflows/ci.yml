@@ -353,7 +353,6 @@ jobs:
   mpc-pytests-cache-cleanup:
     name: "MPC pytests: cache cleanup"
     needs: mpc-pytests
-    if: ${{ always() }}
     runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 10
     permissions:
