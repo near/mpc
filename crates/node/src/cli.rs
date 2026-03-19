@@ -144,6 +144,7 @@ impl StartCmd {
             log: LogConfig {
                 format: log_format,
                 filter: std::env::var("RUST_LOG").ok(),
+                rust_backtrace: None,
             },
         }
     }

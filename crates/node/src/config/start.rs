@@ -38,6 +38,10 @@ pub struct LogConfig {
     /// Examples: `"info"`, `"mpc_node=debug,info"`, `"mpc_node::indexer=trace,warn"`
     /// Falls back to the `RUST_LOG` env var when not set.
     pub filter: Option<String>,
+
+    /// Configures the rust backtrace environment variable, to allow for configurable
+    /// backtrace reports in case of panics
+    pub rust_backtrace: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum, Serialize, Deserialize)]

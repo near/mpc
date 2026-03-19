@@ -101,6 +101,7 @@ mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 near-sdk = { workspace = true }
 rstest = { workspace = true }
+rusty-fork = { workspace = true }
 serial_test = { workspace = true }
 test-log = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
