@@ -6,26 +6,30 @@ rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
 port_mappings = [
-    { host =8080, container =8080 },
-    { host =24567, container =24567 },
-    { host =13001, container =13001 },
-    { host =80, container =80 },
+    { host = 8080, container = 8080 },
+    { host = 24567, container = 24567 },
+    { host = 13001, container = 13001 },
+    { host = 80, container = 80 },
 ]
 
-[mpc_config]
+[mpc_node_config]
 home_dir = "/data"
 
-[mpc_config.near_init]
+[mpc_node_config.log]
+format = "json"
+filter = "info"
+
+[mpc_node_config.near_init]
 chain_id = "testnet"
 boot_nodes = ""
 download_genesis = true
 download_config = "rpc"
 
-[mpc_config.secrets]
+[mpc_node_config.secrets]
 secret_store_key_hex = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 backup_encryption_key_hex = "0000000000000000000000000000000000000000000000000000000000000000"
 
-[mpc_config.node]
+[mpc_node_config.node]
 my_near_account_id = "$FRODO_ACCOUNT"
 near_responder_account_id = "$FRODO_ACCOUNT"
 number_of_responder_keys = 50
@@ -34,7 +38,7 @@ migration_web_ui = "0.0.0.0:8078"
 pprof_bind_address = "0.0.0.0:34001"
 cores = 12
 
-[mpc_config.node.indexer]
+[mpc_node_config.node.indexer]
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
@@ -42,19 +46,19 @@ mpc_contract_id = "$MPC_CONTRACT_ACCOUNT"
 finality = "optimistic"
 port_override = 80
 
-[mpc_config.node.triple]
+[mpc_node_config.node.triple]
 concurrency = 2
 desired_triples_to_buffer = 1000000
 timeout_sec = 60
 parallel_triple_generation_stagger_time_sec = 1
 
-[mpc_config.node.presignature]
+[mpc_node_config.node.presignature]
 concurrency = 16
 desired_presignatures_to_buffer = 8192
 timeout_sec = 60
 
-[mpc_config.node.signature]
+[mpc_node_config.node.signature]
 timeout_sec = 60
 
-[mpc_config.node.ckd]
+[mpc_node_config.node.ckd]
 timeout_sec = 60
