@@ -66,35 +66,11 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 /// Describes the configuration of a domain: the domain ID and the curve it uses.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[serde(from = "DomainConfigCompat")]
 pub struct DomainConfig {
     pub id: DomainId,
     #[serde(rename = "scheme")]
     pub curve: Curve,
     pub purpose: DomainPurpose,
-}
-
-/// JSON-only compatibility helper:
-/// old 3.4.x state omitted `purpose`, so we infer it from `curve` when absent.
-#[derive(serde::Deserialize)]
-struct DomainConfigCompat {
-    id: DomainId,
-    #[serde(alias = "scheme")]
-    curve: Curve,
-    #[serde(default)]
-    purpose: Option<DomainPurpose>,
-}
-
-impl From<DomainConfigCompat> for DomainConfig {
-    fn from(value: DomainConfigCompat) -> Self {
-        Self {
-            id: value.id,
-            curve: value.curve,
-            purpose: value
-                .purpose
-                .unwrap_or_else(|| infer_purpose_from_curve(value.curve)),
-        }
-    }
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
