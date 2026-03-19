@@ -192,11 +192,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cargo-near (for reproducible build on main)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build mpc-node
         run: |
           cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
 
-      - name: Build mpc-contract
+      - name: Build mpc-contract (reproducible, on main)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cargo near build reproducible-wasm \
+            --manifest-path crates/contract/Cargo.toml
+
+      - name: Build mpc-contract (fast, on PRs)
+        if: github.ref != 'refs/heads/main'
         run: |
           cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
           wasm-opt -Oz \
