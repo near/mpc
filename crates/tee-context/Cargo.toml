@@ -5,9 +5,9 @@ edition = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
-chain-gateway = { path = "../chain-gateway" }
-mpc-primitives = { path = "../primitives" }
-near-mpc-contract-interface = { path = "../near-mpc-contract-interface" }
+chain-gateway = { workspace = true }
+mpc-primitives = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
 
 near-account-id = { workspace = true }
 near-indexer-primitives = { workspace = true }
@@ -18,8 +18,8 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-chain-gateway = { path = "../chain-gateway", features = ["test-utils"] }
-mpc-primitives = { path = "../primitives" }
+chain-gateway = { workspace = true, features = ["test-utils"] }
+mpc-primitives = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros"] }
 
 [lints]
