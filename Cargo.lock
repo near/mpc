@@ -2944,7 +2944,6 @@ dependencies = [
  "bs58 0.5.1",
  "ed25519-dalek",
  "hex",
- "libc",
  "near-mpc-contract-interface",
  "near-sandbox",
  "near-workspaces",
