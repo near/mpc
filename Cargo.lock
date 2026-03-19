@@ -10670,7 +10670,6 @@ dependencies = [
  "chain-gateway",
  "mpc-primitives",
  "near-account-id 2.5.0",
- "near-indexer-primitives",
  "near-mpc-contract-interface",
  "serde_json",
  "thiserror 2.0.18",

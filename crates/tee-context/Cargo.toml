@@ -10,7 +10,6 @@ mpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 
 near-account-id = { workspace = true }
-near-indexer-primitives = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

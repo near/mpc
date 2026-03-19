@@ -5,15 +5,11 @@ pub use errors::TeeContextError;
 pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
-use std::{future::Future, sync::Arc};
-
 use chain_gateway::{
-    ChainGateway,
     state_viewer::{SubscribeToContractMethod, WatchContractState},
-    transaction_sender::{SubmitFunctionCall, TransactionSigner},
+    transaction_sender::{SubmitTransaction, TransactionSender},
 };
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
     VERIFY_TEE,
@@ -50,7 +46,11 @@ impl Drop for CancelOnDrop {
     }
 }
 
-impl<S: SubmitTransaction> TeeContext<S> {
+impl<S> TeeContext<S>
+where
+    S: SubmitTransaction,
+    S::Error: Into<TeeContextError>,
+{
     /// Creates a new `TeeContext`.
     ///
     /// Subscribes to the governance contract's allowed image and launcher hash
@@ -101,6 +101,7 @@ impl<S: SubmitTransaction> TeeContext<S> {
                 args_json,
             )
             .await
+            .map_err(Into::into)
     }
 
     /// Triggers on-chain re-validation of all stored attestations.
@@ -108,56 +109,7 @@ impl<S: SubmitTransaction> TeeContext<S> {
         self.transaction_sender
             .submit(self.governance_contract.clone(), VERIFY_TEE, b"{}".to_vec())
             .await
-    }
-}
-
-/// Trait for submitting transactions to a governance contract.
-pub trait SubmitTransaction: Send + Sync + 'static {
-    fn submit(
-        &self,
-        receiver_id: AccountId,
-        method_name: &str,
-        args: Vec<u8>,
-    ) -> impl Future<Output = Result<(), TeeContextError>> + Send;
-}
-
-/// Bundles a [`ChainGateway`] with a [`TransactionSigner`] for submitting
-/// transactions to the governance contract.
-#[derive(Clone)]
-pub struct TransactionSender {
-    chain_gateway: ChainGateway,
-    /// `Arc` because [`TransactionSigner`] holds a nonce counter (`Mutex<u64>`)
-    /// and is not [`Clone`].
-    signer: Arc<TransactionSigner>,
-}
-
-impl TransactionSender {
-    pub fn new(chain_gateway: ChainGateway, signer: TransactionSigner) -> Self {
-        Self {
-            chain_gateway,
-            signer: Arc::new(signer),
-        }
-    }
-}
-
-impl SubmitTransaction for TransactionSender {
-    async fn submit(
-        &self,
-        receiver_id: AccountId,
-        method_name: &str,
-        args: Vec<u8>,
-    ) -> Result<(), TeeContextError> {
-        const MAX_GAS: Gas = Gas::from_teragas(300);
-        self.chain_gateway
-            .submit_function_call_tx(
-                &self.signer,
-                receiver_id,
-                method_name.to_string(),
-                args,
-                MAX_GAS,
-            )
-            .await?;
-        Ok(())
+            .map_err(Into::into)
     }
 }
 
@@ -250,7 +202,7 @@ mod tests {
         types::ObservedState,
     };
     use near_mpc_contract_interface::types::{Attestation, MockAttestation};
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     /// Block height returned by [`MockChainState`] view responses.
     const MOCK_BLOCK_HEIGHT: u64 = 1;
@@ -311,14 +263,15 @@ mod tests {
     }
 
     impl SubmitTransaction for MockTransactionSender {
+        type Error = ChainGatewayError;
         async fn submit(
             &self,
             receiver_id: AccountId,
             method_name: &str,
             args: Vec<u8>,
-        ) -> Result<(), TeeContextError> {
+        ) -> Result<(), ChainGatewayError> {
             if let Some(err) = &self.error {
-                return Err(TeeContextError::ChainGateway(err.clone()));
+                return Err(err.clone());
             }
             self.calls
                 .lock()
