@@ -10,7 +10,7 @@ Orthogonally, first trials of adding Robust ECDSA revealed an unecessary (a tech
 
 Goals:
 
-- Determine cryptographic and governance thresholds of the MPC network by reading the contract state.
+- Split cryptographic and governance thresholds of the MPC network by which allows determining such info simply by reading the contract state.
 - Allow flexibility and ease in adding new protocol schemes with different configurations without requiring major contract refactors.
 - Disentangle the SC from the node.
 
@@ -127,84 +127,96 @@ pub enum Protocol {
 }
 
 /// Number of shares required to reconstruct the secret key.
+/// This is the "t" in a t-of-n threshold scheme: the minimum number of
+/// key shares that must be combined to recover the secret.
+/// The inner value is private; construction goes through `new()`.
 pub struct ReconstructionThreshold(u64);
 
-impl struct ReconstructionThreshold{
-    pub fn new(u64) -> Self;
-    pub fn inner(&self) -> u64; 
+impl ReconstructionThreshold {
+    pub fn new(value: u64) -> Self;
+    pub fn inner(&self) -> u64;
 }
 
 /// Unique identifier for a key configuration.
+/// Assigned by `KeyConfigs` via a monotonically increasing counter.
 pub struct KeyConfigId(pub u64);
 
-/// Specifies the cryptographic configuration for a domain's key.
+/// Specifies the cryptographic configuration for a domain's key:
+/// which protocol to run, over which curve, and how many shares
+/// are needed to reconstruct the secret.
 pub struct KeyConfig {
     pub protocol: Protocol,
     pub curve: Curve,
     pub reconstruction_threshold: ReconstructionThreshold,
 }
 
-impl struct KeyConfig {
-    pub fn activeParticipantsThreshold(&self) -> ActiveParticipantThreshold
-}
-
-
-/// Number of shares required to provide a valid signature.
-/// e.g. Cait-Sith: ActiveParticipantsThreshold = ReconstructionThreshold
-///     DamgardEtAl: ActiveParticipantsThreshold = 2*ReconstructionThreshold-1
-/// No constructor for this struct except for the one in reconstruction threshold
-pub struct ActiveParticipantsThreshold(u64);
-
-
-/// Manages all key configurations.
+/// Registry of all key configurations. Lives in `RunningContractState`.
+/// Multiple domains can reference the same `KeyConfigId`, avoiding
+/// duplication when they share the same protocol/curve/threshold.
+/// `next_config_id` is a monotonically increasing counter used to
+/// assign unique `KeyConfigId` values when new configs are added.
 pub struct KeyConfigs {
     configs: IterableMap<KeyConfigId, KeyConfig>,
     next_config_id: u64,
 }
 
-/// Updated domain configuration.
+/// Updated domain configuration. References a `KeyConfig` by ID
+/// rather than inlining the cryptographic configuration.
 pub struct DomainConfig {
     pub id: DomainId,
     pub key_config_id: KeyConfigId,
     pub purpose: DomainPurpose,
 }
 
-/// Governs the participant set and voting rules,
-/// decoupled from cryptographic thresholds.
+/// Governs the participant set and voting rules for governance
+/// decisions (adding domains, changing parameters).
+/// Decoupled from cryptographic thresholds: `voting_threshold`
+/// controls how many participants must agree on a governance action,
+/// independent of any domain's `ReconstructionThreshold`.
 pub struct GovernanceBody {
     pub participants: Participants,
     pub voting_threshold: VotingThreshold,
 }
 
+/// Minimum number of participant votes required to approve a
+/// governance action (resharing, adding domains, etc.).
 pub struct VotingThreshold(pub u64);
 ```
 
 ### 2.2 Design Rationale
 
-#### Why `KeyConfigId` indirection?
+#### How `KeyConfigs` works
 
-Multiple domains can share the same `KeyConfig` (e.g., two Secp256k1/CaitSith domains for Sign and ForeignTx). The indirection avoids duplication and allows changing config for all domains that reference it atomically during resharing.
+`KeyConfigs` is a registry that lives in `RunningContractState`. It assigns each unique cryptographic configuration a `KeyConfigId`, and domains reference configs by that ID rather than inlining the config.
 
-However, if the additional complexity is not justified, an alternative is to inline `KeyConfig` directly into `DomainConfig` and accept the duplication. The advantage is simplicity: no need for a separate `KeyConfigs` registry or ID management.
+- **Adding a new key config**: When a new protocol configuration is needed, a `KeyConfig` is inserted into the registry. `next_config_id` is used as the new entry's `KeyConfigId`, then incremented. This guarantees unique IDs without hashing or deduplication logic.
+- **Domains reference configs by ID**: `DomainConfig` stores `key_config_id: KeyConfigId`. Multiple domains can point to the same ID. For example, a Sign domain and a ForeignTx domain that both use CaitSith/Secp256k1/threshold=6 share one `KeyConfigId`.
 
-**Trade-off summary**:
+**Lifecycle example**:
 
-| Approach | Pros | Cons |
-|---|---|---|
-| `KeyConfigId` indirection | No duplication, atomic config change | Extra registry, lookup overhead, more validation |
-| Inline `KeyConfig` in `DomainConfig` | Simpler, self-contained | Duplication, must update each domain separately |
+```
+1. System starts with KeyConfigs = {
+     0 → { CaitSith, Secp256k1, threshold: 6 },
+     1 → { Frost, Edwards25519, threshold: 6 },
+     2 → { CKD, Bls12381, threshold: 6 },
+   }
+   next_config_id = 3
 
-#### Why separate `GovernanceBody`?
+2. Domain 0 (Sign)       → key_config_id: 0
+   Domain 1 (ForeignTx)  → key_config_id: 0   // same config as Domain 0
+   Domain 2 (Sign/Ed)    → key_config_id: 1
+   Domain 3 (CKD)        → key_config_id: 2
 
-- Governance votes (resharing, adding domains) should not be constrained by cryptographic threshold requirements.
-- Example: governance may require 80% vote to change participants, while a CaitSith domain only needs 60% for reconstruction.
-- The existing `ThresholdParameters` conflates these; splitting them makes both explicit.
+3. Adding DamgardEtAl:
+   Insert { DamgardEtAl, Secp256k1, threshold: 4 } → gets id 3
+   next_config_id = 4
+   New Domain 4 (Sign/Robust) → key_config_id: 3
+```
 
-#### Why `ReconstructionThreshold` is per-domain (via `KeyConfig`), not global?
+**Where it matters most — resharing**: During resharing, the system iterates `KeyConfigs` to validate that every config's `reconstruction_threshold` is still achievable with the new participant set. Since configs are deduplicated, each unique config is validated once rather than once per domain.
 
-- DamgardEtAl may need a different threshold than CaitSith over the same participant set.
-- Future protocols may have different threshold requirements.
-- Allows gradual rollout: add a new domain with a different threshold without affecting existing ones.
+*Note: An alternative is to inline `KeyConfig` directly into `DomainConfig` and accept the duplication. The advantage is simplicity (no separate registry or ID management) but we would lose on the code duplication, non-atomicity of config changes and single-time config validation.*
+
 
 ### 2.3 Relationship to Existing Types
 
@@ -213,8 +225,7 @@ However, if the additional complexity is not justified, an alternative is to inl
 | `SignatureScheme` | `Curve` + `Protocol` | Split enum into two orthogonal enums |
 | `DomainConfig.scheme` | `DomainConfig.key_config_id` | Reference to `KeyConfig` instead of scheme |
 | `ThresholdParameters` | `GovernanceBody` (governance) + `KeyConfig.reconstruction_threshold` (crypto) | Split into two concerns |
-| `Threshold` | `VotingThreshold` + `ReconstructionThreshold` | Distinct newtypes for distinct purposes |
-| `V2Secp256k1` | `Protocol::DamgardEtAl` + `Curve::Secp256k1` | No more version-in-curve-name hack |
+| `Threshold` | `VotingThreshold` + `ReconstructionThreshold`(`ActiveParticipantsThreshold` can be indirectly derived from `ReconstructionThreshold`) | Distinct newtypes for distinct purposes |
 
 ### 2.4 State Structure
 
@@ -251,71 +262,61 @@ The `KeyEvent` needs both: `GovernanceBody` for who participates, and `KeyConfig
 
 ## 3. Validation Logic
 
-### 3.1 Curve-Protocol Compatibility
+### 3.1 KeyConfig Validation
+
+#### 3.1.1 Curve-Protocol Compatibility
 
 Only certain (curve, protocol) pairs are valid:
 
 ```rust
-impl KeyConfig {
-    pub fn validate_curve_protocol(&self) -> Result<(), Error> {
-        match (&self.protocol, &self.curve) {
-            (Protocol::CaitSith, Curve::Secp256k1) => Ok(()),
-            (Protocol::Frost, Curve::Edwards25519) => Ok(()),
-            (Protocol::ConfidentialKeyDerivation, Curve::Bls12381) => Ok(()),
-            (Protocol::DamgardEtAl, Curve::Secp256k1) => Ok(()),
-            _ => Err(Error::InvalidCurveProtocolCombination),
-        }
+pub fn validate_curve_protocol(config: &KeyConfig) -> Result<(), Error> {
+    match (&config.protocol, &config.curve) {
+        (Protocol::CaitSith, Curve::Secp256k1) => Ok(()),
+        (Protocol::Frost, Curve::Edwards25519) => Ok(()),
+        (Protocol::ConfidentialKeyDerivation, Curve::Bls12381) => Ok(()),
+        (Protocol::DamgardEtAl, Curve::Secp256k1) => Ok(()),
+        _ => Err(Error::InvalidCurveProtocolCombination),
     }
 }
 ```
 
-### 3.2 Threshold Validation per Protocol
+#### 3.1.2 Threshold Validation per Protocol
 
 Each protocol has different constraints on `ReconstructionThreshold` relative to the participant count:
 
 ```rust
-impl KeyConfig {
-    /// Validates that the reconstruction threshold is achievable
-    /// given the number of participants.
-    pub fn validate_threshold(&self, num_participants: u64) -> Result<(), Error> {
-        let t = self.reconstruction_threshold.0;
+/// Validates that the reconstruction threshold is achievable
+/// given the number of participants.
+pub fn validate_threshold(config: &KeyConfig, num_participants: u64) -> Result<(), Error> {
+    let t = config.reconstruction_threshold.0;
 
-        // Universal constraints
-        if t < 2 {
-            return Err(Error::ThresholdTooLow);
-        }
-        if t > num_participants {
-            return Err(Error::ThresholdExceedsParticipants);
-        }
+    // Universal constraints
+    if t < 2 {
+        return Err(Error::ThresholdTooLow);
+    }
+    if t > num_participants {
+        return Err(Error::ThresholdExceedsParticipants);
+    }
 
-        // Protocol-specific constraints
-        match self.protocol {
-            Protocol::CaitSith | Protocol::Frost | Protocol::ConfidentialKeyDerivation => {
-                // t-of-n: t <= n (already checked above)
-                // Minimum relative threshold: t >= ceil(3n/5)
-                let min_relative = (3 * num_participants).div_ceil(5);
-                if t < min_relative {
-                    return Err(Error::ThresholdBelowMinimumRelative);
-                }
-                Ok(())
+    // Protocol-specific constraints
+    match config.protocol {
+        Protocol::DamgardEtAl => {
+            // DamgardEtAl works in honest majority setting
+            // i.e. requires t < n/2
+            if 2 * t - 1 > num_participants {
+                return Err(Error::InsufficientParticipantsForProtocol {
+                    required: 2 * t - 1,
+                    available: num_participants,
+                });
             }
-            Protocol::DamgardEtAl => {
-                // Requires exactly 2t-1 signers, so 2t-1 <= n
-                let required = 2 * t - 1;
-                if required > num_participants {
-                    return Err(Error::InsufficientParticipantsForProtocol {
-                        required,
-                        available: num_participants,
-                    });
-                }
-                Ok(())
-            }
+            Ok(())
         }
+        _ => Ok(()),
     }
 }
 ```
 
-### 3.3 Resharing Validation
+#### 3.1.3 Resharing Validation
 
 When resharing (changing participants/threshold), we need to validate that:
 1. The new governance threshold is valid for the new participant count.
@@ -323,59 +324,58 @@ When resharing (changing participants/threshold), we need to validate that:
 3. Enough old participants are retained to meet both governance and cryptographic thresholds.
 
 ```rust
-impl KeyConfigs {
-    /// Validates that all key configs remain valid under a new participant count.
-    pub fn validate_for_participant_count(&self, num_participants: u64) -> Result<(), Error> {
-        for (id, config) in self.configs.iter() {
-            config.validate_threshold(num_participants).map_err(|e| {
-                Error::KeyConfigIncompatibleWithNewParticipants { key_config_id: id, inner: e }
-            })?;
+/// Validates that all key configs remain valid under a new participant count.
+pub fn validate_for_participant_count(
+    configs: &KeyConfigs,
+    num_participants: u64,
+) -> Result<(), Error> {
+    for (id, config) in configs.configs.iter() {
+        validate_threshold(config, num_participants).map_err(|e| {
+            Error::KeyConfigIncompatibleWithNewParticipants { key_config_id: id, inner: e }
+        })?;
+    }
+    Ok(())
+}
+
+/// Returns the minimum number of participants required across all key configs.
+pub fn min_participants_required(configs: &KeyConfigs) -> u64 {
+    configs.configs.values().map(|c| {
+        match c.protocol {
+            Protocol::DamgardEtAl => 2 * c.reconstruction_threshold.0 - 1,
+            _ => c.reconstruction_threshold.0,
         }
-        Ok(())
-    }
+    }).max().unwrap_or(0)
+}
 
-    /// Returns the minimum number of participants required across all key configs.
-    pub fn min_participants_required(&self) -> u64 {
-        self.configs.values().map(|c| {
-            match c.protocol {
-                Protocol::DamgardEtAl => 2 * c.reconstruction_threshold.0 - 1,
-                _ => c.reconstruction_threshold.0,
-            }
-        }).max().unwrap_or(0)
-    }
-
-    /// Returns the valid range of reconstruction thresholds for a new key config
-    /// given the protocol and current participant count.
-    pub fn threshold_range(
-        protocol: &Protocol,
-        num_participants: u64,
-    ) -> Option<(u64, u64)> {
-        let min = 2u64;
-        let max = match protocol {
-            Protocol::DamgardEtAl => (num_participants + 1) / 2,
-            _ => num_participants,
-        };
-        if min > max { None } else { Some((min, max)) }
-    }
+/// Returns the valid range of reconstruction thresholds for a new key config
+/// given the protocol and current participant count.
+pub fn threshold_range(
+    protocol: &Protocol,
+    num_participants: u64,
+) -> Option<(u64, u64)> {
+    let min = 2u64;
+    let max = match protocol {
+        Protocol::DamgardEtAl => (num_participants + 1) / 2,
+        _ => num_participants,
+    };
+    if min > max { None } else { Some((min, max)) }
 }
 ```
 
-### 3.4 Governance Threshold Validation
+### 3.2 Governance Validation
 
 ```rust
-impl GovernanceBody {
-    pub fn validate(&self) -> Result<(), Error> {
-        let n = self.participants.len() as u64;
-        let t = self.voting_threshold.0;
-        if t < 2 { return Err(Error::VotingThresholdTooLow); }
-        if t > n { return Err(Error::VotingThresholdExceedsParticipants); }
-        // Governance minimum: >= 60% (same policy as current)
-        let min_relative = (3 * n).div_ceil(5);
-        if t < min_relative {
-            return Err(Error::VotingThresholdBelowMinimumRelative);
-        }
-        Ok(())
+pub fn validate_governance(governance: &GovernanceBody) -> Result<(), Error> {
+    let n = governance.participants.len() as u64;
+    let t = governance.voting_threshold.0;
+    if t < 2 { return Err(Error::VotingThresholdTooLow); }
+    if t > n { return Err(Error::VotingThresholdExceedsParticipants); }
+    // Governance minimum: >= 60% (same policy as current)
+    let min_relative = (3 * n).div_ceil(5);
+    if t < min_relative {
+        return Err(Error::VotingThresholdBelowMinimumRelative);
     }
+    Ok(())
 }
 ```
 
@@ -903,9 +903,9 @@ This can be done incrementally:
 
 ---
 
-## 8. Impact on State Machine
+## 6. Impact on State Machine
 
-### 8.1 State Transitions (unchanged structure)
+### 6.1 State Transitions (unchanged structure)
 
 The state machine transitions remain the same:
 ```
@@ -917,7 +917,7 @@ What changes is the data carried through transitions:
 - `KeyEvent` carries both `GovernanceBody` (who participates) and `KeyConfig` (crypto params).
 - Resharing must validate ALL `KeyConfig` thresholds against the proposed new participant set.
 
-### 8.2 Vote Functions
+### 6.2 Vote Functions
 
 | Function | Current threshold source | Proposed threshold source |
 |---|---|---|
@@ -928,7 +928,7 @@ What changes is the data carried through transitions:
 | `vote_cancel_resharing` | Old `ThresholdParameters.threshold` | Old `GovernanceBody.voting_threshold` |
 | `vote_cancel_keygen` | `ThresholdParameters.threshold` | `GovernanceBody.voting_threshold` |
 
-### 8.3 Adding Domains with Different Thresholds
+### 6.3 Adding Domains with Different Thresholds
 
 With `KeyConfig` per domain, `vote_add_domains` must now also specify or reference a `KeyConfigId`:
 
@@ -938,7 +938,7 @@ With `KeyConfig` per domain, `vote_add_domains` must now also specify or referen
 //   OR vote_add_domains(Vec<DomainConfig>, Vec<KeyConfig>) to create new configs atomically
 ```
 
-### 8.4 Resharing with Per-Domain Thresholds
+### 6.4 Resharing with Per-Domain Thresholds
 
 During resharing, each domain's key must be reshared with its own `ReconstructionThreshold`. The `KeyEvent` for each domain already carries its config. The coordinator passes the per-domain threshold to the crypto protocol.
 
@@ -962,9 +962,9 @@ let threshold = match key_config.protocol {
 
 ---
 
-## 9. Open Questions
+## 7. Open Questions
 
-### 9.1 KeyConfig Identity
+### 7.1 KeyConfig Identity
 
 **Option A**: `KeyConfigId` indirection (as proposed). Domains reference configs by ID.
 - Pro: Shared configs, atomic updates.
@@ -976,19 +976,19 @@ let threshold = match key_config.protocol {
 
 **Recommendation**: Start with Option B (inline) for simplicity. Introduce indirection only if the need arises.
 
-### 9.2 Governance Threshold Validation
+### 7.2 Governance Threshold Validation
 
 Should the governance `VotingThreshold` be constrained relative to the cryptographic `ReconstructionThreshold`? For example, should we require `voting_threshold >= max(reconstruction_threshold for all configs)`?
 
 If not, it is possible for a governance majority to approve a resharing that a cryptographic protocol cannot support.
 
-### 9.3 Per-Domain Threshold Changes
+### 7.3 Per-Domain Threshold Changes
 
 Can individual domain thresholds be changed independently (via a new vote function), or only during resharing when all keys are re-distributed?
 
 Allowing independent threshold changes would require a new resharing variant that only reshares affected domains. This adds complexity but offers flexibility.
 
-### 9.4 `ReconstructionThreshold` Semantics
+### 7.4 `ReconstructionThreshold` Semantics
 
 Should `ReconstructionThreshold` mean the same thing across all protocols (i.e., "number of shares to reconstruct"), or should each protocol interpret it according to its own conventions?
 
@@ -997,11 +997,11 @@ Should `ReconstructionThreshold` mean the same thing across all protocols (i.e.,
 
 **Recommendation**: Uniform semantics (t = shares to reconstruct). The protocol-specific translation (`t → MaxMalicious = t-1`) happens in the node, keeping the contract simple and protocol-agnostic.
 
-### 9.5 Backward-Compatible View Methods
+### 7.5 Backward-Compatible View Methods
 
 How long should the old `state()` view method be maintained alongside the new `state_v2()`? Should the old format be deprecated immediately or kept for N epochs? Are there external consumers (e.g., block explorers, SDK clients) that depend on the `state()` format?
 
-### 9.6 Migration Consolidation
+### 7.6 Migration Consolidation
 
 PRs 5 and 7 each require a Borsh `migrate()` function. Should these be separate contract deployments (one migration per deploy), or can they be combined into a single deploy with a combined migration? Separate deploys are safer but slower to roll out.
 
