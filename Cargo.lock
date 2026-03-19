@@ -10672,7 +10672,6 @@ dependencies = [
  "near-account-id 2.5.0",
  "near-indexer-primitives",
  "near-mpc-contract-interface",
- "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
