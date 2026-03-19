@@ -255,7 +255,7 @@ jobs:
   mpc-pytests:
     name: "MPC pytests: ${{ matrix.group }}"
     needs: mpc-pytest-build
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -267,24 +267,34 @@ jobs:
         include:
           - group: "shared-cluster"
             tests: "tests/shared_cluster_tests/"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "robust-ecdsa"
             tests: "tests/robust_ecdsa/"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "resharing-cancel"
             tests: "tests/test_cancellation_of_key_resharing.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "resharing-request"
             tests: "tests/test_request_during_resharing.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "foreign-tx"
             tests: "tests/test_foreign_transaction_validation.py tests/test_foreign_chain_policy_auto_voting.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "key-event-single-domain"
             tests: "tests/test_key_event.py::test_single_domain"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "key-event-multi-domain"
             tests: "tests/test_key_event.py::test_multi_domain"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "migration"
             tests: "tests/test_migration_service.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "participant-info"
             tests: "tests/test_submit_participant_info.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "lost-assets"
             tests: "tests/test_lost_assets.py"
+            runner: warp-ubuntu-2404-x64-2x
 
     steps:
       - name: Checkout repository
