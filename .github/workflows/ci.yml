@@ -204,7 +204,7 @@ jobs:
         run: |
           cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
 
-      # Wwe run this build step on main as well to cache the contract build.
+      # We run this build step on main as well to cache the contract build.
       # The build will not be used since it will be overwritten by the reproducible
       # step below.
       - name: Build mpc-contract
