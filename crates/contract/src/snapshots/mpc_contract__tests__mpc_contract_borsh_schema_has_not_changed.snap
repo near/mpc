@@ -33,6 +33,12 @@ BorshSchemaContainer {
                 "LauncherVoteAction",
             ],
         },
+        "(AuthenticatedParticipantId, MeasurementVoteAction)": Tuple {
+            elements: [
+                "AuthenticatedParticipantId",
+                "MeasurementVoteAction",
+            ],
+        },
         "(AuthenticatedParticipantId, Vec<DomainConfig>)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -102,6 +108,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "AllowedMeasurements": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "entries",
+                        "Vec<ContractExpectedMeasurements>",
+                    ),
+                ],
+            ),
+        },
         "AllowedMpcDockerImage": Struct {
             fields: NamedFields(
                 [
@@ -151,6 +167,11 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, LauncherVoteAction)",
+        },
+        "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(AuthenticatedParticipantId, MeasurementVoteAction)",
         },
         "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>": Sequence {
             length_width: 4,
@@ -240,6 +261,32 @@ BorshSchemaContainer {
                     (
                         "remove_non_participant_update_votes_tera_gas",
                         "u64",
+                    ),
+                ],
+            ),
+        },
+        "ContractExpectedMeasurements": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "mrtd",
+                        "Sha384Digest",
+                    ),
+                    (
+                        "rtmr0",
+                        "Sha384Digest",
+                    ),
+                    (
+                        "rtmr1",
+                        "Sha384Digest",
+                    ),
+                    (
+                        "rtmr2",
+                        "Sha384Digest",
+                    ),
+                    (
+                        "key_provider_event_digest",
+                        "Sha384Digest",
                     ),
                 ],
             ),
@@ -613,6 +660,45 @@ BorshSchemaContainer {
                     (
                         "prefix",
                         "Vec<u8>",
+                    ),
+                ],
+            ),
+        },
+        "MeasurementVoteAction": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Add",
+                    "MeasurementVoteAction__Add",
+                ),
+                (
+                    1,
+                    "Remove",
+                    "MeasurementVoteAction__Remove",
+                ),
+            ],
+        },
+        "MeasurementVoteAction__Add": Struct {
+            fields: UnnamedFields(
+                [
+                    "ContractExpectedMeasurements",
+                ],
+            ),
+        },
+        "MeasurementVoteAction__Remove": Struct {
+            fields: UnnamedFields(
+                [
+                    "ContractExpectedMeasurements",
+                ],
+            ),
+        },
+        "MeasurementVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "vote_by_account",
+                        "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>",
                     ),
                 ],
             ),
@@ -1136,6 +1222,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "Sha384Digest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 48]",
+                    ),
+                ],
+            ),
+        },
         "SignatureScheme": Enum {
             tag_width: 1,
             variants: [
@@ -1203,6 +1299,14 @@ BorshSchemaContainer {
                     (
                         "stored_attestations",
                         "BTreeMap<PublicKey, NodeAttestation>",
+                    ),
+                    (
+                        "allowed_measurements",
+                        "AllowedMeasurements",
+                    ),
+                    (
+                        "measurement_votes",
+                        "MeasurementVotes",
                     ),
                 ],
             ),
@@ -1285,6 +1389,11 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "AllowedMpcDockerImage",
         },
+        "Vec<ContractExpectedMeasurements>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "ContractExpectedMeasurements",
+        },
         "Vec<DomainConfig>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -1351,6 +1460,11 @@ BorshSchemaContainer {
         "[u8; 32]": Sequence {
             length_width: 0,
             length_range: 32..=32,
+            elements: "u8",
+        },
+        "[u8; 48]": Sequence {
+            length_width: 0,
+            length_range: 48..=48,
             elements: "u8",
         },
         "[u8; 64]": Sequence {

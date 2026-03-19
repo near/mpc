@@ -62,6 +62,7 @@ use primitives::{
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
+use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 
 use state::{running::RunningContractState, ProtocolContractState};
@@ -1469,6 +1470,85 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Vote to add a new OS measurement set to the allowed list. Requires threshold votes.
+    #[handle_result]
+    pub fn vote_add_os_measurement(
+        &mut self,
+        measurement: ContractExpectedMeasurements,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_add_os_measurement: signer={}, measurement={:?}",
+            env::signer_account_id(),
+            measurement,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for an OS measurement before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = MeasurementVoteAction::Add(measurement.clone());
+        let votes = self.tee_state.vote_measurement(action, &participant);
+
+        if votes >= self.threshold()?.value() {
+            let added = self.tee_state.add_measurement(measurement);
+            log!("OS measurement add result: {}", added);
+        }
+
+        Ok(())
+    }
+
+    /// Vote to remove an OS measurement set from the allowed list. Requires ALL participants
+    /// to vote for removal.
+    #[handle_result]
+    pub fn vote_remove_os_measurement(
+        &mut self,
+        measurement: ContractExpectedMeasurements,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_remove_os_measurement: signer={}, measurement={:?}",
+            env::signer_account_id(),
+            measurement,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote to remove an OS measurement before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = MeasurementVoteAction::Remove(measurement.clone());
+        let votes = self.tee_state.vote_measurement(action, &participant);
+
+        // Removal requires ALL participants to vote
+        let total_participants = threshold_parameters.participants().len() as u64;
+        if votes >= total_participants {
+            let removed = self.tee_state.remove_measurement(&measurement);
+            log!("OS measurement remove result: {}", removed);
+        }
+
+        Ok(())
+    }
+
+    /// Returns the current OS measurement votes, showing each participant's vote.
+    pub fn os_measurement_votes(&self) -> MeasurementVotes {
+        log!("os_measurement_votes");
+        self.tee_state.measurement_votes.clone()
+    }
+
+    /// Returns all currently allowed OS measurements.
+    pub fn allowed_os_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+        log!("allowed_os_measurements");
+        self.tee_state.get_allowed_measurements()
+    }
+
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
@@ -2181,6 +2261,7 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
+    use crate::tee::measurements::Sha384Digest;
     use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
     use crate::{
@@ -4499,6 +4580,28 @@ mod tests {
         }
     }
 
+    /// Adds the default OS measurements so that Dstack attestation verification passes.
+    fn setup_approved_measurements(
+        contract: &mut MpcContract,
+        participant_account_ids: &[near_sdk::AccountId],
+        block_timestamp_ns: u64,
+    ) {
+        for measurement in mpc_attestation::attestation::default_measurements() {
+            let contract_measurement = ContractExpectedMeasurements::from(*measurement);
+            for participant_account_id in participant_account_ids {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(participant_account_id.clone())
+                    .predecessor_account_id(participant_account_id.clone())
+                    .block_timestamp(block_timestamp_ns)
+                    .build());
+
+                contract
+                    .vote_add_os_measurement(contract_measurement.clone())
+                    .expect("measurement vote succeeds");
+            }
+        }
+    }
+
     /// **Test method with matching measurements** - Tests that participant info submission succeeds with the test-only method.
     /// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
     /// the attestation data.
@@ -4523,6 +4626,7 @@ mod tests {
             &mpc_hash,
             block_timestamp_ns,
         );
+        setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
 
         let account_id = participant_account_ids[0].clone();
         testing_env!(VMContextBuilder::new()
@@ -4597,6 +4701,7 @@ mod tests {
             &mpc_hash,
             block_timestamp_ns,
         );
+        setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
 
         // Create invalid TLS key by flipping the last bit
         let mut invalid_tls_key_bytes = *tls_key.as_bytes();
@@ -5226,6 +5331,283 @@ mod tests {
         assert!(compose_hashes.contains(&get_docker_compose_hash(&l2, &m2)));
         assert!(compose_hashes.contains(&get_docker_compose_hash(&l2, &m3)));
         assert!(!compose_hashes.contains(&get_docker_compose_hash(&l2, &m1)));
+    }
+
+    fn make_measurement(byte: u8) -> ContractExpectedMeasurements {
+        ContractExpectedMeasurements {
+            mrtd: Sha384Digest::from([byte; 48]),
+            rtmr0: Sha384Digest::from([byte.wrapping_add(1); 48]),
+            rtmr1: Sha384Digest::from([byte.wrapping_add(2); 48]),
+            rtmr2: Sha384Digest::from([byte.wrapping_add(3); 48]),
+            key_provider_event_digest: Sha384Digest::from([byte.wrapping_add(4); 48]),
+        }
+    }
+
+    /// Tests that adding an OS measurement requires threshold votes and that
+    /// duplicate measurements are rejected.
+    #[test]
+    fn test_vote_add_os_measurement_threshold() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement = make_measurement(0xAA);
+
+        // First 2 votes — below threshold (3)
+        for (account_id, _, _) in &participant_list[0..2] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement.clone())
+                .expect("add vote should succeed");
+        }
+        assert!(
+            contract.allowed_os_measurements().is_empty(),
+            "measurement should not be added before threshold"
+        );
+
+        // 3rd vote — threshold reached
+        let (account_id, _, _) = &participant_list[2];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_os_measurement(measurement.clone())
+            .expect("add vote should succeed");
+        assert_eq!(contract.allowed_os_measurements().len(), 1);
+        assert_eq!(contract.allowed_os_measurements()[0], measurement);
+
+        // Voting for the same measurement again should not duplicate
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement.clone())
+                .expect("add vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_os_measurements().len(),
+            1,
+            "duplicate measurement should not be added"
+        );
+    }
+
+    /// Tests that removing an OS measurement requires unanimity and that
+    /// the last measurement cannot be removed.
+    #[test]
+    fn test_vote_remove_os_measurement_unanimity() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement_1 = make_measurement(0xAA);
+        let measurement_2 = make_measurement(0xBB);
+
+        // Add two measurements
+        for m in [&measurement_1, &measurement_2] {
+            for (account_id, _, _) in participant_list {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build());
+                contract
+                    .vote_add_os_measurement(m.clone())
+                    .expect("add vote should succeed");
+            }
+        }
+        assert_eq!(contract.allowed_os_measurements().len(), 2);
+
+        // 3 votes to remove — not enough (need all 4)
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_remove_os_measurement(measurement_1.clone())
+                .expect("remove vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_os_measurements().len(),
+            2,
+            "measurement should not be removed before unanimity"
+        );
+
+        // 4th vote — unanimous, should remove
+        let (account_id, _, _) = &participant_list[3];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_remove_os_measurement(measurement_1.clone())
+            .expect("remove vote should succeed");
+        assert_eq!(contract.allowed_os_measurements().len(), 1);
+        assert_eq!(contract.allowed_os_measurements()[0], measurement_2);
+    }
+
+    /// Tests that the last OS measurement cannot be removed.
+    #[test]
+    fn test_cannot_remove_last_os_measurement() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement = make_measurement(0xAA);
+
+        // Add a single measurement
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement.clone())
+                .expect("add vote should succeed");
+        }
+        assert_eq!(contract.allowed_os_measurements().len(), 1);
+
+        // All 4 vote to remove — should not remove because it's the last one
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_remove_os_measurement(measurement.clone())
+                .expect("remove vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_os_measurements().len(),
+            1,
+            "last OS measurement should not be removable"
+        );
+    }
+
+    /// Tests the os_measurement_votes view method returns correct vote data.
+    #[test]
+    fn test_os_measurement_votes_view() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement = make_measurement(0xCC);
+
+        // Initially empty
+        assert!(contract.os_measurement_votes().vote_by_account.is_empty());
+
+        // Cast one vote
+        let (account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_os_measurement(measurement.clone())
+            .expect("add vote should succeed");
+
+        let votes = contract.os_measurement_votes();
+        assert_eq!(votes.vote_by_account.len(), 1);
+        let (_, action) = votes.vote_by_account.iter().next().unwrap();
+        assert_eq!(*action, MeasurementVoteAction::Add(measurement));
+    }
+
+    /// Tests the allowed_os_measurements view method returns the full structs
+    /// with correct field values after adding measurements.
+    #[test]
+    fn test_allowed_os_measurements_view() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement_1 = make_measurement(0xAA);
+        let measurement_2 = make_measurement(0xBB);
+
+        // Initially empty
+        assert!(contract.allowed_os_measurements().is_empty());
+
+        // Add first measurement (3 votes = threshold)
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement_1.clone())
+                .expect("add vote should succeed");
+        }
+
+        let allowed = contract.allowed_os_measurements();
+        assert_eq!(allowed.len(), 1);
+        assert_eq!(allowed[0], measurement_1);
+
+        // Add second measurement
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement_2.clone())
+                .expect("add vote should succeed");
+        }
+
+        let allowed = contract.allowed_os_measurements();
+        assert_eq!(allowed.len(), 2);
+        assert_eq!(allowed[0], measurement_1);
+        assert_eq!(allowed[1], measurement_2);
+    }
+
+    /// Tests that votes are cleared after a successful measurement add,
+    /// so a subsequent vote starts from scratch.
+    #[test]
+    fn test_vote_add_os_measurement_clears_votes_on_success() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement = make_measurement(0xAA);
+
+        // Vote with 3 participants to reach threshold
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement.clone())
+                .expect("vote should succeed");
+        }
+        assert_eq!(contract.allowed_os_measurements().len(), 1);
+
+        // Votes should be cleared — voting for a second measurement should start from 0
+        let measurement_2 = make_measurement(0xBB);
+        let (account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_os_measurement(measurement_2.clone())
+            .expect("vote should succeed");
+
+        // Only 1 vote for measurement_2, should not be added yet
+        assert_eq!(
+            contract.allowed_os_measurements().len(),
+            1,
+            "second measurement should not be added with only 1 vote"
+        );
+    }
+
+    /// Tests JSON serialization roundtrip for `ContractExpectedMeasurements`.
+    /// Verifies hex encoding/decoding of 48-byte fields works correctly.
+    #[test]
+    fn test_contract_expected_measurements_json_roundtrip() {
+        let measurement = make_measurement(0xAA);
+        let json = serde_json::to_string(&measurement).expect("serialize to JSON");
+        let deserialized: ContractExpectedMeasurements =
+            serde_json::from_str(&json).expect("deserialize from JSON");
+        assert_eq!(measurement, deserialized);
+
+        // Verify the JSON contains hex strings, not raw byte arrays
+        assert!(json.contains("aa"), "JSON should contain hex-encoded bytes");
+        assert!(
+            !json.contains('['),
+            "JSON should not contain array brackets"
+        );
     }
 
     #[cfg(all(feature = "__abi-generate", not(target_arch = "wasm32")))]

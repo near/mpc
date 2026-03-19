@@ -1,15 +1,13 @@
 use alloc::vec::Vec;
+pub use attestation::attestation::{DstackAttestation, VerificationError};
+pub use attestation::measurements::{ExpectedMeasurements, Measurements};
 use attestation::{
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
-    measurements::Measurements,
     report_data::ReportData,
 };
 
 use include_measurements::include_measurements;
-
-pub use attestation::attestation::{DstackAttestation, VerificationError};
-pub use attestation::measurements::ExpectedMeasurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 
 use borsh::{BorshDeserialize, BorshSerialize};
