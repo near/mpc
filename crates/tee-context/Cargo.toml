@@ -16,5 +16,11 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+assert_matches = { workspace = true }
+chain-gateway = { path = "../chain-gateway", features = ["test-utils"] }
+mpc-primitives = { path = "../primitives" }
+tokio = { workspace = true, features = ["test-util", "macros"] }
+
 [lints]
 workspace = true

@@ -4,7 +4,7 @@ use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey};
 use serde::{Deserialize, Serialize};
 
 /// Allowed TEE hashes fetched from the governance contract.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AllowedTeeHashes {
     pub allowed_docker_image_hashes: Vec<DockerImageHash>,
     pub allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
@@ -18,7 +18,7 @@ pub struct TeeNodeIdentity {
 }
 
 /// Arguments for the `submit_participant_info` contract call.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
     pub proposed_participant_attestation: Attestation,
     pub tls_public_key: Ed25519PublicKey,
