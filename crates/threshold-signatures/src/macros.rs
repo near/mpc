@@ -84,7 +84,10 @@ mod tests {
         public_id: u32,
         secret_key: &'static str,
     }
-    impl_secret_debug!(PartiallyRedacted { show: [public_id], redact: [secret_key] });
+    impl_secret_debug!(PartiallyRedacted {
+        show: [public_id],
+        redact: [secret_key]
+    });
 
     #[test]
     fn partially_redacted_shows_public_and_hides_secret() {
@@ -129,7 +132,11 @@ mod tests {
 
     // Arm 4: custom format with metadata
     struct CustomFormat(Vec<u8>);
-    impl_secret_debug!(CustomFormat, |self| "CustomFormat(<redacted>, len={})", self.0.len());
+    impl_secret_debug!(
+        CustomFormat,
+        |self| "CustomFormat(<redacted>, len={})",
+        self.0.len()
+    );
 
     #[test]
     fn custom_format_shows_metadata_but_not_contents() {
