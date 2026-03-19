@@ -204,7 +204,7 @@ impl MpcContract {
         );
 
         if request.deprecated_payload.is_some() {
-            self.metrics.sign_with_v1_payload_count += 1;
+            self.metrics.sign_with_v1_payload_count += 2;
         }
 
         if request.payload_v2.is_some() {
