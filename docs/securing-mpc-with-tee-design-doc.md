@@ -641,11 +641,13 @@ Therefore, CVM upgrades require a controlled migration process.
 To support CVM upgrades, the contract must support governance over:
 
 -   Approved **Launcher image hashes**.
--   Approved **OS measurement identities** (MRTD, RTMR0--2).
+-   Approved **OS measurement identities** (MRTD, RTMR0-2, key-provider event digest).
 
 ### Launcher Upgrade APIs
 
-The following contract methods are implemented:
+> Implemented in PR [#2343](https://github.com/near/mpc/pull/2343).
+
+Contract methods:
 
 ``` rust
 // requires a vote by a threshold of participants
@@ -658,6 +660,11 @@ pub fn vote_remove_launcher_hash(
     &mut self,
     launcher_hash: LauncherImageHash
 ) -> Result<(), Error>
+
+// view: list currently approved launcher hashes (pre-existing)
+pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash>
+// view: list pending votes
+pub fn launcher_hash_votes(&self) -> LauncherHashVotes
 ```
 
 Once the voting threshold is reached:
@@ -670,32 +677,36 @@ Once the voting threshold is reached:
 
 ### OS Measurement Upgrade
 
-Two approaches are possible:
+> Implemented in PR [#2447](https://github.com/near/mpc/pull/2447).
+> Decision: use explicit voting APIs, keeping OS upgrades decoupled from contract deployment.
+> The `key_provider_event_digest` is bundled into the measurement struct because updating the SGX local key store may affect the sealing key, so it is grouped with the other measurements that affect the sealing key.
 
-1.  Add explicit voting APIs to add/remove approved OS measurements
-    (similar to Launcher upgrades).
-2.  Introduce new OS measurements as part of a contract upgrade.
-
-decision: Use explicit voting APIs, as it keeps OS upgrades decoupled from contract deployment.
+Contract methods:
 
 ``` rust
 // requires a vote by a threshold of participants
 pub fn vote_add_os_measurement(
     &mut self,
-    os_measurement: OsMeasurement
+    measurement: ContractExpectedMeasurements
 ) -> Result<(), Error>
 
 // requires a vote by ALL of participants
 pub fn vote_remove_os_measurement(
     &mut self,
-    os_measurement: OsMeasurement
+    measurement: ContractExpectedMeasurements
 ) -> Result<(), Error>
 
-pub struct OsMeasurement {
-    pub mrtd: HexDigest,
-    pub rtmr0: HexDigest,
-    pub rtmr1: HexDigest,
-    pub rtmr2: HexDigest,
+// view: list currently approved measurements
+pub fn allowed_os_measurements(&self) -> Vec<ContractExpectedMeasurements>
+// view: list pending votes
+pub fn os_measurement_votes(&self) -> MeasurementVotes
+
+pub struct ContractExpectedMeasurements {
+    pub mrtd: Sha384Digest,
+    pub rtmr0: Sha384Digest,
+    pub rtmr1: Sha384Digest,
+    pub rtmr2: Sha384Digest,
+    pub key_provider_event_digest: Sha384Digest,
 }
 ```
 
