@@ -20,6 +20,7 @@ use near_mpc_contract_interface::method_names::{
 };
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey};
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
 
@@ -29,7 +30,6 @@ use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
 /// - Subscribes to changes in allowed image and launcher hashes.
 /// - Submits attestations.
 /// - Triggers on-chain re-validation of stored attestations.
-#[derive(Clone)]
 pub struct TeeContext<S: SubmitTransaction = TransactionSender> {
     /// Contract that manages TEE attestations and allowed hashes.
     governance_contract: AccountId,
@@ -37,6 +37,17 @@ pub struct TeeContext<S: SubmitTransaction = TransactionSender> {
     allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
     /// Submits transactions to the governance contract.
     transaction_sender: S,
+    /// Cancels the background hash-watcher task when `TeeContext` is dropped.
+    _watcher_cancel: CancelOnDrop,
+}
+
+/// Cancels the background hash-watcher task when dropped.
+struct CancelOnDrop(CancellationToken);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
 }
 
 impl<S: SubmitTransaction> TeeContext<S> {
@@ -51,12 +62,15 @@ impl<S: SubmitTransaction> TeeContext<S> {
         governance_contract: AccountId,
         transaction_sender: S,
     ) -> Result<Self, TeeContextError> {
-        let rx = spawn_hash_watcher(chain_gateway, governance_contract.clone()).await?;
+        let cancel = CancellationToken::new();
+        let rx =
+            spawn_hash_watcher(chain_gateway, governance_contract.clone(), cancel.clone()).await?;
 
         Ok(Self {
             governance_contract,
             allowed_hashes_rx: rx,
             transaction_sender,
+            _watcher_cancel: CancelOnDrop(cancel),
         })
     }
 
@@ -152,6 +166,7 @@ impl SubmitTransaction for TransactionSender {
 async fn spawn_hash_watcher(
     chain_gateway: impl SubscribeToContractMethod + Send + 'static,
     governance_contract: AccountId,
+    cancel: CancellationToken,
 ) -> Result<watch::Receiver<AllowedTeeHashes>, TeeContextError> {
     let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
@@ -189,11 +204,11 @@ async fn spawn_hash_watcher(
         });
 
         loop {
-            if tx.is_closed() {
-                tracing::debug!("all hash receivers dropped, stopping watcher");
-                break;
-            }
             tokio::select! {
+                _ = cancel.cancelled() => {
+                    tracing::debug!("hash watcher cancelled");
+                    break;
+                }
                 result = image_sub.changed() => {
                     if result.is_err() {
                         tracing::warn!("docker image hashes subscription closed");
@@ -393,7 +408,8 @@ mod tests {
             .with_query_view_function_response(Err(MockError::ViewClientError))
             .build();
 
-        let result = spawn_hash_watcher(mock, governance_account()).await;
+        let cancel = CancellationToken::new();
+        let result = spawn_hash_watcher(mock, governance_account(), cancel).await;
 
         assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
     }
@@ -405,22 +421,44 @@ mod tests {
             .with_query_view_function_response(Err(MockError::ViewClientError))
             .build();
 
-        let result = spawn_hash_watcher(mock.clone(), governance_account()).await;
+        let cancel = CancellationToken::new();
+        let result = spawn_hash_watcher(mock.clone(), governance_account(), cancel).await;
         assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
 
         // The task exited on initial failure — no further polling should happen.
         assert_eq!(
-            mock.await_next_view_call(std::time::Duration::from_secs(1)).await,
+            mock.await_next_view_call(std::time::Duration::from_secs(1))
+                .await,
             Err(MockError::Timeout),
             "no additional polls should happen after initial failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_drop_cancels_and_closes_receiver() {
+        let (ctx, _) = create_test_context().await;
+
+        // Clone the receiver so we can observe closure after dropping the context.
+        let mut rx = ctx.watch_allowed_tee_hashes();
+
+        // Dropping should cancel the background watcher loop.
+        drop(ctx);
+
+        // Once the watcher exits, the sender is dropped and changed() returns Err.
+        let res = tokio::time::timeout(std::time::Duration::from_secs(2), rx.changed()).await;
+        assert!(res.is_ok(), "expected receiver to close after drop");
+        assert!(
+            res.unwrap().is_err(),
+            "expected channel closed (sender dropped)"
         );
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_spawn_hash_watcher_updates_on_hash_change() {
         let mock = mock_chain();
+        let cancel = CancellationToken::new();
 
-        let mut rx = spawn_hash_watcher(mock.clone(), governance_account())
+        let mut rx = spawn_hash_watcher(mock.clone(), governance_account(), cancel)
             .await
             .unwrap();
 
