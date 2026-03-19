@@ -11,6 +11,9 @@ on:
   push:
     branches:
       - main
+  # Weekly cron to clear and rebuild Rust cache (https://github.com/Swatinem/rust-cache/issues/181).
+  schedule:
+    - cron: "0 12 * * 6"
 
 jobs:
   docker-tee-build:
@@ -109,6 +112,12 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
+      - name: Clear cache for fresh rebuild
+        if: github.event_name == 'schedule'
+        run: |
+          cargo clean
+          rm -rf ~/.cargo
+
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
@@ -159,6 +168,12 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+
+      - name: Clear cache for fresh rebuild
+        if: github.event_name == 'schedule'
+        run: |
+          cargo clean
+          rm -rf ~/.cargo
 
       - name: Install build dependencies
         run: |
@@ -255,7 +270,7 @@ jobs:
   mpc-pytests:
     name: "MPC pytests: ${{ matrix.group }}"
     needs: mpc-pytest-build
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -267,24 +282,34 @@ jobs:
         include:
           - group: "shared-cluster"
             tests: "tests/shared_cluster_tests/"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "robust-ecdsa"
             tests: "tests/robust_ecdsa/"
+            runner: warp-ubuntu-2404-x64-16x
           - group: "resharing-cancel"
             tests: "tests/test_cancellation_of_key_resharing.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "resharing-request"
             tests: "tests/test_request_during_resharing.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "foreign-tx"
             tests: "tests/test_foreign_transaction_validation.py tests/test_foreign_chain_policy_auto_voting.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "key-event-single-domain"
             tests: "tests/test_key_event.py::test_single_domain"
+            runner: warp-ubuntu-2404-x64-8x
           - group: "key-event-multi-domain"
             tests: "tests/test_key_event.py::test_multi_domain"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "migration"
             tests: "tests/test_migration_service.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "participant-info"
             tests: "tests/test_submit_participant_info.py"
+            runner: warp-ubuntu-2404-x64-2x
           - group: "lost-assets"
             tests: "tests/test_lost_assets.py"
+            runner: warp-ubuntu-2404-x64-2x
 
     steps:
       - name: Checkout repository
@@ -338,7 +363,6 @@ jobs:
   mpc-pytests-cache-cleanup:
     name: "MPC pytests: cache cleanup"
     needs: mpc-pytests
-    if: ${{ always() }}
     runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 10
     permissions:
@@ -406,6 +430,12 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+
+      - name: Clear cache for fresh rebuild
+        if: github.event_name == 'schedule'
+        run: |
+          cargo clean
+          rm -rf ~/.cargo
 
       - name: Install ruff
         uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
