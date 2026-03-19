@@ -190,8 +190,9 @@ async fn spawn_hash_watcher(
                         tracing::warn!("docker image hashes subscription closed");
                         break;
                     }
-                    if let Ok(observed) = image_sub.latest() {
-                        tx.send_modify(|h| h.allowed_docker_image_hashes = observed.value);
+                    match image_sub.latest() {
+                        Ok(observed) => tx.send_modify(|h| h.allowed_docker_image_hashes = observed.value),
+                        Err(err) => tracing::warn!(%err, "failed to read latest docker image hashes"),
                     }
                 }
                 result = launcher_sub.changed() => {
@@ -199,8 +200,9 @@ async fn spawn_hash_watcher(
                         tracing::warn!("launcher compose hashes subscription closed");
                         break;
                     }
-                    if let Ok(observed) = launcher_sub.latest() {
-                        tx.send_modify(|h| h.allowed_launcher_compose_hashes = observed.value);
+                    match launcher_sub.latest() {
+                        Ok(observed) => tx.send_modify(|h| h.allowed_launcher_compose_hashes = observed.value),
+                        Err(err) => tracing::warn!(%err, "failed to read latest launcher compose hashes"),
                     }
                 }
             }
