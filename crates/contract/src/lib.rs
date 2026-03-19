@@ -4561,7 +4561,7 @@ mod tests {
         block_timestamp_ns: u64,
     ) {
         let launcher_hash_bytes: [u8; 32] =
-            hex::decode("e28cb0425db06255fe5fc7aadb79534ac63c94c7a721f75c1af1e934d2eb0701")
+            hex::decode("02ba809689637d13a9e28b31a9e00de4fef776f3d604bdd51c5a03ee756eb316")
                 .unwrap()
                 .try_into()
                 .unwrap();
