@@ -178,18 +178,12 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y liblzma-dev libudev-dev
+          sudo apt-get install -y liblzma-dev
 
       - name: Install cargo-binstall
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
           tool: cargo-binstall
-
-      - name: Install cargo-near
-        run: |
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install wasm-opt
         run: |
@@ -204,9 +198,10 @@ jobs:
 
       - name: Build mpc-contract
         run: |
-          cargo near build non-reproducible-wasm --no-abi \
-            --manifest-path crates/contract/Cargo.toml \
-            --out-dir target/wasm32-unknown-unknown/release-contract
+          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
+          wasm-opt -Oz \
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
+            -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 
       - name: Build test-parallel-contract
         run: |
