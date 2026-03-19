@@ -204,20 +204,22 @@ jobs:
         run: |
           cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
 
+      # Wwe run this build step on main as well to cache the contract build.
+      # The build will not be used since it will be overwritten by the reproducible
+      # step below.
+      - name: Build mpc-contract
+        run: |
+          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
+          wasm-opt -Oz \
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
+            -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+
       - name: Build mpc-contract (reproducible, on main)
         if: github.ref == 'refs/heads/main'
         run: |
           cargo near build reproducible-wasm \
             --manifest-path crates/contract/Cargo.toml \
             --out-dir target/wasm32-unknown-unknown/release-contract
-
-      - name: Build mpc-contract (fast, on PRs)
-        if: github.ref != 'refs/heads/main'
-        run: |
-          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
-          wasm-opt -Oz \
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
-            -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 
       - name: Build test-parallel-contract
         run: |
