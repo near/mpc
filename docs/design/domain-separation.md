@@ -172,8 +172,8 @@ pub enum Curve {
     Bls12381,
 }
 
-impl From<&Protocol> for Curve {
-    fn from(protocol: &Protocol) -> Self {
+impl From<Protocol> for Curve {
+    fn from(protocol: Protocol) -> Self {
         match protocol {
             Protocol::CaitSith | Protocol::DamgardEtAl => Curve::Secp256k1,
             Protocol::Frost => Curve::Edwards25519,
@@ -417,7 +417,7 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
       DamgardEtAl,                 // Robust ECDSA (new)
   }
   ```
-- Implement `From<&Protocol> for Curve` to derive the curve from the protocol (see §2.1).
+- Implement `From<Protocol> for Curve` to derive the curve from the protocol (see §2.1).
 - **No changes to `DomainConfig` yet** — `Protocol` exists but is not wired into state.
 - No changes to contract-interface DTO.
 
@@ -470,7 +470,7 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
     DomainConfig {
         id: old.id,
         key_config: KeyConfig {
-            protocol: Protocol::from(&old.curve),  // infer protocol from old curve
+            protocol: Protocol::from(old.curve),  // infer protocol from old curve
             // Use global threshold as default for all existing domains
             reconstruction_threshold: ReconstructionThreshold(old_global_threshold),
         },
@@ -479,7 +479,7 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
 }
 ```
 
-Note: Migration needs a `From<&Curve> for Protocol` (the reverse direction) to infer protocol from legacy curve values. This is unambiguous for existing domains since each deployed curve maps to exactly one protocol.
+Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to infer protocol from legacy curve values. This is unambiguous for existing domains since each deployed curve maps to exactly one protocol.
 
 **JSON compat**:
 - External consumers calling `state()` see unchanged JSON.
@@ -565,7 +565,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
   ```rust
   // Fallback: old contract, state() only
   let key_config = KeyConfig {
-      protocol: Protocol::from(&old_scheme),  // infer protocol from old curve
+      protocol: Protocol::from(old_scheme),  // infer protocol from old curve
       reconstruction_threshold: ReconstructionThreshold(global_threshold),
   };
   ```
