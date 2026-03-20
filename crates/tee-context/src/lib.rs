@@ -112,7 +112,12 @@ where
     /// Triggers on-chain re-validation of all stored attestations.
     pub async fn verify_tee(&self) -> Result<(), TeeContextError> {
         self.transaction_sender
-            .submit(self.governance_contract.clone(), VERIFY_TEE, b"{}".to_vec(), VERIFY_TEE_GAS)
+            .submit(
+                self.governance_contract.clone(),
+                VERIFY_TEE,
+                b"{}".to_vec(),
+                VERIFY_TEE_GAS,
+            )
             .await
             .map_err(Into::into)
     }
