@@ -2687,8 +2687,7 @@ mod tests {
     #[should_panic(expected = "app public key check failed")]
     fn request_ckd_pv__should_reject_mismatched_app_public_key() {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _secret_key) =
-            basic_setup(Curve::Bls12381, &mut rng);
+        let (_context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut rng);
 
         // Generate pk1 and pk2 from different scalars so the pairing check fails
         let scalar1 = ckd::Scalar::random(&mut rng);
