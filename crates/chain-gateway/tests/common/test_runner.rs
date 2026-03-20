@@ -25,17 +25,10 @@ fn make_test_home_dir(account_id: &str) -> tempfile::TempDir {
 
 /// Runs an async test body inside a self-managed tokio runtime.
 ///
-/// nearcore spawns detached OS threads (per-actor tokio runtimes, multithread
-/// actor workers, RocksDB, thread pools, rayon, trie prefetch) that cannot be
-/// joined or stopped. Dropping the tokio runtime while those threads run causes
-/// SIGSEGV. We avoid this by forgetting the runtime and calling POSIX `_exit(0)`
-/// to terminate the process immediately without running atexit handlers or
-/// destructors.
-///
-/// This is the in-process equivalent of near-sandbox-rs's approach, which runs
-/// nearcore as a child process and uses `kill(pid, SIGKILL)` for cleanup.
-///
-/// On failure we panic (before `_exit`) so the test harness captures the error.
+/// After the test body completes, each node's actor system is stopped and we
+/// wait for all RocksDB instances to close before dropping the runtime. This
+/// mirrors the shutdown sequence used by nearcore's own integration tests
+/// (see `NodeCluster::run_and_then_shutdown`).
 pub fn run_localnet_test<F, Fut>(test_body: F)
 where
     F: FnOnce(Localnet) -> Fut + Send + 'static,
@@ -46,11 +39,6 @@ where
     let validator_path = validator_dir.path().to_path_buf();
     let observer_path = observer_dir.path().to_path_buf();
 
-    // Leak temp dirs: detached RocksDB threads outlive the runtime.
-    // Dirs live under target/ and are cleaned by `cargo clean`.
-    let _ = validator_dir.keep();
-    let _ = observer_dir.keep();
-
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -58,28 +46,27 @@ where
 
     let result = rt.block_on(async {
         let localnet = setup_localnet(validator_path, observer_path).await;
-        test_body(localnet).await
+        // Keep clones of the gateways so we can shut them down after the test
+        // body consumes the Localnet.
+        let validator_gw = localnet.validator.chain_gateway.clone();
+        let observer_gw = localnet.observer.chain_gateway.clone();
+        let result = test_body(localnet).await;
+        validator_gw.shutdown();
+        observer_gw.shutdown();
+        result
     });
 
-    // nearcore's detached threads cannot be joined or stopped. If we let the
-    // tokio runtime drop, it tears down I/O drivers while threads still use
-    // them → SIGSEGV. Even `std::process::exit()` can trigger SIGSEGV via
-    // C++ atexit destructors (e.g. RocksDB) racing with those threads.
-    //
-    // `_exit(0)` terminates immediately: no atexit handlers, no destructors,
-    // no stdio flush. The OS reclaims all memory and file descriptors.
-    std::mem::forget(rt);
+    // `shutdown()` cancels all actor runtimes, but nearcore's background
+    // threads (RocksDB compaction, trie prefetch, etc.) wind down
+    // asynchronously. RocksDB instances are the last resources to close, so
+    // blocking on them acts as a fence that all background work has finished.
+    // This is the same shutdown sequence nearcore uses in its own integration
+    // tests — see `NodeCluster::run_and_then_shutdown` in
+    // nearcore/integration-tests/src/tests/nearcore/node_cluster.rs.
+    near_store::db::RocksDB::block_until_all_instances_are_dropped();
 
     match result {
-        Ok(()) => {
-            unsafe extern "C" {
-                fn _exit(status: std::ffi::c_int) -> !;
-            }
-            // SAFETY: _exit is a standard POSIX function. We call it with a
-            // valid exit code after the test has passed and all assertions
-            // have been checked.
-            unsafe { _exit(0) }
-        }
+        Ok(()) => {}
         Err(msg) => panic!("test failed: {msg}"),
     }
 }
