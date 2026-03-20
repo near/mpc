@@ -112,6 +112,7 @@ The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.
 ```rust
 /// Identifies the elliptic curve. Used by the contract to verify
 /// signature responses and derive public keys.
+/// Not stored in `KeyConfig` — derived from `Protocol` via `From<Protocol>`.
 pub enum Curve {
     Secp256k1,
     Edwards25519,  // renamed from Ed25519 for clarity
@@ -119,13 +120,25 @@ pub enum Curve {
 }
 
 /// Identifies the threshold signature protocol.
-/// The contract does not execute protocols, but stores this
-/// for nodes to know what to run and for external observability.
+/// Each current protocol uniquely determines its curve, so `Curve`
+/// is derived via `From<Protocol>` rather than stored separately.
+/// If a future protocol supports multiple curves, it can carry
+/// the curve as data: `NewProtocol(Curve)`.
 pub enum Protocol {
-    CaitSith,
-    Frost,
-    ConfidentialKeyDerivation,
-    DamgardEtAl,
+    CaitSith,                    // → Secp256k1
+    Frost,                       // → Edwards25519
+    ConfidentialKeyDerivation,   // → Bls12381
+    DamgardEtAl,                 // → Secp256k1
+}
+
+impl From<&Protocol> for Curve {
+    fn from(protocol: &Protocol) -> Self {
+        match protocol {
+            Protocol::CaitSith | Protocol::DamgardEtAl => Curve::Secp256k1,
+            Protocol::Frost => Curve::Edwards25519,
+            Protocol::ConfidentialKeyDerivation => Curve::Bls12381,
+        }
+    }
 }
 
 /// Number of shares required to reconstruct the secret key.
@@ -140,11 +153,10 @@ impl ReconstructionThreshold {
 }
 
 /// Specifies the cryptographic configuration for a domain's key:
-/// which protocol to run, over which curve, and how many shares
-/// are needed to reconstruct the secret.
+/// which protocol to run and how many shares are needed to
+/// reconstruct the secret. The curve is derived from the protocol.
 pub struct KeyConfig {
     pub protocol: Protocol,
-    pub curve: Curve,
     pub reconstruction_threshold: ReconstructionThreshold,
 }
 
@@ -173,6 +185,12 @@ pub struct VotingThreshold(pub u64);
 
 ### 2.2 Design Rationale
 
+#### Why `Curve` is derived from `Protocol`, not stored
+
+Every current protocol uniquely determines its curve (CaitSith → Secp256k1, Frost → Edwards25519, etc.). Storing both creates a redundant field and a validation burden (`validate_curve_protocol`) to keep them consistent. Instead, `Curve` is derived via `From<Protocol>`.
+
+If a future protocol supports multiple curves, it can carry the curve as data in the enum variant — e.g. `NewProtocol(Curve)`. The `From` impl naturally handles this by extracting the inner value. This avoids premature generalization while keeping the extension path clean.
+
 #### Why inline `KeyConfig` in `DomainConfig`
 
 `KeyConfig` is inlined directly into `DomainConfig` rather than stored in a separate registry with ID indirection. With a small number of domains (currently 4), the registry approach adds complexity (ID management, separate lookups, atomicity concerns) without meaningful savings. Inlining keeps the code ergonomic: any code that has a `DomainConfig` can directly access its cryptographic configuration without a second lookup.
@@ -184,7 +202,7 @@ The trade-off is that domains sharing the same config (e.g., Sign and ForeignTx 
 
 | Current | Proposed | Change |
 |---|---|---|
-| `SignatureScheme` | `Curve` + `Protocol` | Split enum into two orthogonal enums |
+| `SignatureScheme` | `Protocol` (with `Curve` derived via `From`) | Protocol is the primary identifier; curve is derived |
 | `DomainConfig.scheme` | `DomainConfig.key_config` | Inlined `KeyConfig` instead of scheme |
 | `ThresholdParameters` | `GovernanceBody` (governance) + `KeyConfig.reconstruction_threshold` (crypto) | Split into two concerns |
 | `Threshold` | `VotingThreshold` + `ReconstructionThreshold`(`ActiveParticipantsThreshold` can be indirectly derived from `ReconstructionThreshold`) | Distinct newtypes for distinct purposes |
@@ -211,7 +229,7 @@ pub struct KeyEvent {
     pub epoch_id: EpochId,
     pub domain: DomainConfig,
     pub governance: GovernanceBody,          // participant set
-    pub key_config: KeyConfig,              // protocol + curve + reconstruction threshold
+    pub key_config: KeyConfig,              // protocol + reconstruction threshold (curve derived from protocol)
     pub instance: Option<KeyEventInstance>,
     pub next_attempt_id: AttemptId,
 }
@@ -225,23 +243,7 @@ The `KeyEvent` needs both: `GovernanceBody` for who participates, and `KeyConfig
 
 ### 3.1 KeyConfig Validation
 
-#### 3.1.1 Curve-Protocol Compatibility
-
-Only certain (curve, protocol) pairs are valid:
-
-```rust
-pub fn validate_curve_protocol(config: &KeyConfig) -> Result<(), Error> {
-    match (&config.protocol, &config.curve) {
-        (Protocol::CaitSith, Curve::Secp256k1) => Ok(()),
-        (Protocol::Frost, Curve::Edwards25519) => Ok(()),
-        (Protocol::ConfidentialKeyDerivation, Curve::Bls12381) => Ok(()),
-        (Protocol::DamgardEtAl, Curve::Secp256k1) => Ok(()),
-        _ => Err(Error::InvalidCurveProtocolCombination),
-    }
-}
-```
-
-#### 3.1.2 Threshold Validation per Protocol
+#### 3.1.1 Threshold Validation per Protocol
 
 Each protocol has different constraints on `ReconstructionThreshold` relative to the participant count:
 
@@ -277,7 +279,7 @@ pub fn validate_threshold(config: &KeyConfig, num_participants: u64) -> Result<(
 }
 ```
 
-#### 3.1.3 Resharing Validation
+#### 3.1.2 Resharing Validation
 
 When resharing (changing participants/threshold), we need to validate that:
 1. The new governance threshold is valid for the new participant count.
@@ -415,16 +417,7 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
       DamgardEtAl,                 // Robust ECDSA (new)
   }
   ```
-- Add `infer_protocol_from_curve()` helper:
-  ```rust
-  pub fn infer_protocol_from_curve(curve: &Curve) -> Protocol {
-      match curve {
-          Curve::Secp256k1 => Protocol::CaitSith,
-          Curve::Edwards25519 => Protocol::Frost,
-          Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
-      }
-  }
-  ```
+- Implement `From<&Protocol> for Curve` to derive the curve from the protocol (see §2.1).
 - **No changes to `DomainConfig` yet** — `Protocol` exists but is not wired into state.
 - No changes to contract-interface DTO.
 
@@ -448,7 +441,6 @@ This is the most complex PR. It wires `Protocol` and `Curve` together and change
   ```rust
   pub struct KeyConfig {
       pub protocol: Protocol,
-      pub curve: Curve,
       pub reconstruction_threshold: ReconstructionThreshold,
   }
   ```
@@ -468,8 +460,8 @@ This is the most complex PR. It wires `Protocol` and `Curve` together and change
 - Existing `state()` continues to return old DTO format via `dto_mapping.rs` (for external consumers: block explorers, SDK clients).
 
 **Changes (dto_mapping.rs)**:
-- Map internal `KeyConfig` to `dtos::KeyConfig`.
-- Map internal `DomainConfig` to old `dtos::DomainConfig` (for `state()`) by extracting `curve` from `key_config`.
+- Map internal `KeyConfig` to `dtos::KeyConfig` (DTO can include both `protocol` and derived `curve` for convenience).
+- Map internal `DomainConfig` to old `dtos::DomainConfig` (for `state()`) by deriving `curve` from `key_config.protocol`.
 - Map internal `DomainConfig` to new `dtos::DomainConfig` (for `state_v2()`).
 
 **Borsh compat**: `DomainConfig`'s Borsh layout changes (from `(DomainId, Curve, DomainPurpose)` to `(DomainId, KeyConfig, DomainPurpose)`). Requires `migrate()`:
@@ -478,8 +470,7 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
     DomainConfig {
         id: old.id,
         key_config: KeyConfig {
-            protocol: infer_protocol_from_curve(&old.curve),
-            curve: old.curve,
+            protocol: Protocol::from(&old.curve),  // infer protocol from old curve
             // Use global threshold as default for all existing domains
             reconstruction_threshold: ReconstructionThreshold(old_global_threshold),
         },
@@ -487,6 +478,8 @@ fn migrate(old: OldDomainConfig) -> DomainConfig {
     }
 }
 ```
+
+Note: Migration needs a `From<&Curve> for Protocol` (the reverse direction) to infer protocol from legacy curve values. This is unambiguous for existing domains since each deployed curve maps to exactly one protocol.
 
 **JSON compat**:
 - External consumers calling `state()` see unchanged JSON.
@@ -572,8 +565,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
   ```rust
   // Fallback: old contract, state() only
   let key_config = KeyConfig {
-      protocol: infer_protocol_from_curve(&old_scheme),
-      curve: old_scheme.into(),
+      protocol: Protocol::from(&old_scheme),  // infer protocol from old curve
       reconstruction_threshold: ReconstructionThreshold(global_threshold),
   };
   ```
