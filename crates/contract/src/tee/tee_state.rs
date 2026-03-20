@@ -5,7 +5,7 @@ use crate::{
     },
     tee::proposal::{
         AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage, CodeHashesVotes,
-        DockerImageHash, LauncherHashVotes, LauncherVoteAction,
+        LauncherHashVotes, LauncherVoteAction, NodeImageHash,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -290,7 +290,7 @@ impl TeeState {
 
     pub fn vote(
         &mut self,
-        code_hash: DockerImageHash,
+        code_hash: NodeImageHash,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
         self.votes.vote(code_hash, participant)
@@ -299,7 +299,7 @@ impl TeeState {
     pub fn get_allowed_mpc_docker_image_hashes(
         &self,
         tee_upgrade_deadline_duration: Duration,
-    ) -> Vec<DockerImageHash> {
+    ) -> Vec<NodeImageHash> {
         self.get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
             .into_iter()
             .map(|entry| entry.image_hash)
@@ -316,7 +316,7 @@ impl TeeState {
 
     pub fn whitelist_tee_proposal(
         &mut self,
-        tee_proposal: DockerImageHash,
+        tee_proposal: NodeImageHash,
         tee_upgrade_deadline_duration: Duration,
     ) {
         self.votes.clear_votes();

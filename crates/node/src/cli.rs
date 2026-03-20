@@ -15,10 +15,10 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
-use mpc_primitives::hash::DockerImageHash;
+use mpc_primitives::hash::NodeImageHash;
 use std::path::PathBuf;
 
-const DUMMY_ALLOWED_HASH: DockerImageHash = DockerImageHash::new([0; 32]);
+const DUMMY_ALLOWED_HASH: NodeImageHash = NodeImageHash::new([0; 32]);
 const ALLOWED_IMAGE_HASHES_FILE_PATH: &str = "/tmp/allowed_image_hashes.json";
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]

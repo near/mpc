@@ -67,7 +67,7 @@ use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
-    proposal::{DockerImageHash, LauncherVoteAction},
+    proposal::{LauncherVoteAction, NodeImageHash},
     tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
 
@@ -1367,7 +1367,7 @@ impl MpcContract {
     }
 
     #[handle_result]
-    pub fn vote_code_hash(&mut self, code_hash: DockerImageHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error> {
         log!(
             "vote_code_hash: signer={}, code_hash={:?}",
             env::signer_account_id(),
@@ -1812,11 +1812,11 @@ impl MpcContract {
     }
 
     /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
-    pub fn allowed_docker_image_hashes(&self) -> Vec<DockerImageHash> {
+    pub fn allowed_docker_image_hashes(&self) -> Vec<NodeImageHash> {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let mut hashes: Vec<DockerImageHash> = self
+        let mut hashes: Vec<NodeImageHash> = self
             .tee_state
             .get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
             .into_iter()
@@ -4361,7 +4361,7 @@ mod tests {
                 .expect("vote succeeds");
         }
 
-        let allowed_docker_image_hashes: Vec<DockerImageHash> = contract
+        let allowed_docker_image_hashes: Vec<NodeImageHash> = contract
             .tee_state
             .get_allowed_mpc_docker_images(Duration::from_secs(10))
             .into_iter()
@@ -4370,7 +4370,7 @@ mod tests {
 
         assert_eq!(
             allowed_docker_image_hashes,
-            vec![DockerImageHash::from(code_hash)]
+            vec![NodeImageHash::from(code_hash)]
         )
     }
 
@@ -5015,7 +5015,7 @@ mod tests {
 
         // First approve an MPC image hash so compose hashes can be derived
         let mpc_hash_bytes: [u8; 32] = [0x11; 32];
-        let mpc_hash = mpc_primitives::hash::DockerImageHash::from(mpc_hash_bytes);
+        let mpc_hash = mpc_primitives::hash::NodeImageHash::from(mpc_hash_bytes);
         let block_ts = 1_000_000_000u64;
 
         for (account_id, _, _) in participant_list {
@@ -5159,7 +5159,7 @@ mod tests {
         let threshold = 3;
         let (mut contract, participants, _) = setup_tee_test_contract(num_participants, threshold);
         let participant_list = participants.participants();
-        let code_hash = DockerImageHash::from([0xAB; 32]);
+        let code_hash = NodeImageHash::from([0xAB; 32]);
 
         assert!(contract.code_hash_votes().proposal_by_account.is_empty());
 
@@ -5193,7 +5193,7 @@ mod tests {
         let block_ts = 1_000_000_000u64;
 
         // First approve an MPC image
-        let mpc_hash_1 = mpc_primitives::hash::DockerImageHash::from([0x11; 32]);
+        let mpc_hash_1 = mpc_primitives::hash::NodeImageHash::from([0x11; 32]);
         for (account_id, _, _) in participant_list {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(account_id.clone())
@@ -5219,7 +5219,7 @@ mod tests {
         assert_eq!(contract.allowed_launcher_compose_hashes().len(), 1);
 
         // Now vote in a second MPC image — should auto-derive a new compose hash
-        let mpc_hash_2 = mpc_primitives::hash::DockerImageHash::from([0x22; 32]);
+        let mpc_hash_2 = mpc_primitives::hash::NodeImageHash::from([0x22; 32]);
         for (account_id, _, _) in participant_list {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(account_id.clone())
@@ -5258,7 +5258,7 @@ mod tests {
         let upgrade_deadline = 7 * day;
         let t0 = sec;
 
-        let vote_mpc = |contract: &mut MpcContract, hash: DockerImageHash, ts: u64| {
+        let vote_mpc = |contract: &mut MpcContract, hash: NodeImageHash, ts: u64| {
             for (account_id, _, _) in participant_list {
                 testing_env!(VMContextBuilder::new()
                     .signer_account_id(account_id.clone())
@@ -5286,9 +5286,9 @@ mod tests {
 
         let l1 = make_launcher_hash(0xA1);
         let l2 = make_launcher_hash(0xA2);
-        let m1 = DockerImageHash::from([0x11; 32]);
-        let m2 = DockerImageHash::from([0x22; 32]);
-        let m3 = DockerImageHash::from([0x33; 32]);
+        let m1 = NodeImageHash::from([0x11; 32]);
+        let m2 = NodeImageHash::from([0x22; 32]);
+        let m3 = NodeImageHash::from([0x33; 32]);
 
         vote_mpc(&mut contract, m1.clone(), t0);
         vote_launcher(&mut contract, l1.clone(), t0);

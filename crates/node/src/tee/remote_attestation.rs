@@ -18,7 +18,7 @@ use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
 use mpc_contract::tee::{
-    proposal::{DockerImageHash, LauncherDockerComposeHash},
+    proposal::{LauncherDockerComposeHash, NodeImageHash},
     tee_state::NodeId,
 };
 use near_account_id::AccountId;
@@ -95,7 +95,7 @@ fn validate_remote_attestation(
     attestation: &Attestation,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_docker_image_hashes: &[DockerImageHash],
+    allowed_docker_image_hashes: &[NodeImageHash],
     allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
 ) -> Result<(), VerificationError> {
     let expected_report_data: ReportData =
@@ -120,7 +120,7 @@ pub async fn validate_and_submit_remote_attestation(
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_docker_image_hashes: &[DockerImageHash],
+    allowed_docker_image_hashes: &[NodeImageHash],
     allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
 ) -> anyhow::Result<()> {
     let _ = validate_remote_attestation(
@@ -143,7 +143,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     tx_sender: T,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_image_hashes_in_contract: watch::Receiver<Vec<DockerImageHash>>,
+    allowed_image_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
@@ -191,7 +191,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     tx_sender: T,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_image_hashes_in_contract: watch::Receiver<Vec<DockerImageHash>>,
+    allowed_image_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
@@ -502,7 +502,7 @@ mod tests {
             .generate_attestation(report_data)
             .await
             .unwrap();
-        let allowed_docker_image_hashes = [DockerImageHash::from([42u8; 32])];
+        let allowed_docker_image_hashes = [NodeImageHash::from([42u8; 32])];
         let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
         validate_remote_attestation(
             &attestation,
@@ -528,7 +528,7 @@ mod tests {
             .generate_attestation(report_data)
             .await
             .unwrap();
-        let allowed_docker_image_hashes = [DockerImageHash::from([42u8; 32])];
+        let allowed_docker_image_hashes = [NodeImageHash::from([42u8; 32])];
         let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
         assert!(validate_remote_attestation(
             &attestation,
