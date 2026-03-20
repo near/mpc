@@ -92,6 +92,11 @@ NotInitialized → Running ↔ Initializing/Resharing
 5. Nodes exchange partial signatures via P2P
 6. Final signature submitted back to contract
 
+## Code Style
+
+### Arithmetic in Tests
+Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test modules (`#[cfg(test)]`). Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
+
 ## Test Terminology
 
 - **Unit test**: Rust test in `/src` folder
