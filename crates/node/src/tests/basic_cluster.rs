@@ -1,8 +1,9 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    request_ckd_and_await_response, request_ckd_pv_and_await_response,
+    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
@@ -93,6 +94,15 @@ async fn test_basic_cluster() {
     .is_some());
 
     assert!(request_ckd_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &ckd_domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
+
+    assert!(request_ckd_pv_and_await_response(
         &mut setup.indexer,
         "user0",
         &ckd_domain,

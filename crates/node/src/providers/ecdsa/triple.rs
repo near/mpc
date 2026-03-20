@@ -312,14 +312,12 @@ pub fn participants_from_triples(
 #[cfg(test)]
 mod tests {
     use super::{ManyTripleGenerationComputation, PairedTriple};
-    use crate::cli::LogFormat;
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::ecdsa::EcdsaTaskId;
     use crate::tests::into_participant_ids;
-    use crate::tracing::init_logging;
     use crate::tracking;
     use futures::{stream, StreamExt};
     use std::collections::HashMap;
@@ -334,9 +332,8 @@ mod tests {
     const TRIPLES_PER_BATCH: usize = 10;
     const BATCHES_TO_GENERATE_PER_CLIENT: usize = 10;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[test_log::test(tokio::test(flavor = "multi_thread"))]
     async fn test_many_triple_generation() {
-        init_logging(LogFormat::Plain);
         tracking::testing::start_root_task_with_periodic_dump(async {
             let all_triples = run_test_clients(
                 into_participant_ids(&TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD.into())),

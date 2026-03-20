@@ -1,5 +1,6 @@
 use std::{
     convert::{TryFrom, TryInto},
+    ops::Deref,
     slice::{Iter, IterMut},
     vec,
 };
@@ -18,6 +19,14 @@ use thiserror::Error;
 pub struct BoundedVec<T, const L: usize, const U: usize, W = witnesses::NonEmpty<L, U>> {
     inner: Vec<T>,
     witness: W,
+}
+
+impl<T, const L: usize, const U: usize, W> Deref for BoundedVec<T, L, U, W> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 /// BoundedVec errors

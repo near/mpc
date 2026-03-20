@@ -32,9 +32,11 @@ humantime = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
+launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true }
 mpc-contract = { workspace = true }
+mpc-primitives = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id = { workspace = true }
 near-async = { workspace = true }
@@ -94,6 +96,8 @@ built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+blstrs = { workspace = true }
+elliptic-curve = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }

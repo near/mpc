@@ -14,6 +14,18 @@ pub use near_mpc_contract_interface::types::DomainPurpose;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Deref)]
 pub struct DomainId(pub u64);
 
+impl From<near_mpc_contract_interface::types::DomainId> for DomainId {
+    fn from(id: near_mpc_contract_interface::types::DomainId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<DomainId> for near_mpc_contract_interface::types::DomainId {
+    fn from(id: DomainId) -> Self {
+        Self(id.0)
+    }
+}
+
 impl Default for DomainId {
     fn default() -> Self {
         Self::legacy_ecdsa_id()

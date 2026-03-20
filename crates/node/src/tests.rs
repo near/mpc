@@ -1,4 +1,6 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
+use blstrs::{G1Projective, G2Projective, Scalar};
+use elliptic_curve::{Field as _, Group as _};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use near_mpc_contract_interface::types::{
@@ -353,6 +355,41 @@ pub async fn request_ckd_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
+    let app_public_key = near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
+        "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+            .parse()
+            .unwrap(),
+    );
+    do_request_ckd_and_await_response(indexer, user, domain, timeout_sec, app_public_key).await
+}
+
+/// Request a ckd with public verifiability from the indexer and wait for the response.
+/// Returns the time taken to receive the response, or None if timed out.
+pub async fn request_ckd_pv_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    timeout_sec: std::time::Duration,
+) -> Option<std::time::Duration> {
+    let app_sk = Scalar::random(&mut OsRng);
+    let pk1 = G1Projective::generator() * app_sk;
+    let pk2 = G2Projective::generator() * app_sk;
+    let app_public_key = near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV(
+        near_mpc_contract_interface::types::CKDAppPublicKeyPV {
+            pk1: (&pk1).into(),
+            pk2: (&pk2).into(),
+        },
+    );
+    do_request_ckd_and_await_response(indexer, user, domain, timeout_sec, app_public_key).await
+}
+
+async fn do_request_ckd_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    timeout_sec: std::time::Duration,
+    app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey,
+) -> Option<std::time::Duration> {
     assert_matches!(
         domain.curve,
         Curve::Bls12381,
@@ -365,10 +402,7 @@ pub async fn request_ckd_and_await_response(
         entropy: rand::random(),
         timestamp_nanosec: rand::random(),
         request: CKDArgs {
-            app_public_key:
-                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                    .parse()
-                    .unwrap(),
+            app_public_key,
             domain_id: domain.id,
             app_id: [1u8; 32].into(),
         },

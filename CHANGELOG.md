@@ -5,6 +5,103 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.7.0] - 2026-03-17
+
+### 🚀 Features
+
+- [#2329](https://github.com/near/mpc/pull/2329)(@anodar): Serve mpc-node configuration over debug endpoint (#2329)
+
+- [#2211](https://github.com/near/mpc/pull/2211)(@barakeinav1): Add standalone attestation-cli for independent TEE verification (#2211)
+
+- [#2332](https://github.com/near/mpc/pull/2332)(@DSharifi): Allow configuration files for full config of the mpc node (#2332)
+
+- [#2378](https://github.com/near/mpc/pull/2378)(@DSharifi): [**breaking**] Remove derivation paths from foreign chain validation requests (#2378)
+
+- [#2344](https://github.com/near/mpc/pull/2344)(@kevindeforth): Chain gateway state viewer (#2344)
+
+- [#2343](https://github.com/near/mpc/pull/2343)(@barakeinav1): Vote on launcher image hash (#2343)
+
+- [#2392](https://github.com/near/mpc/pull/2392)(@gilcu3): Ckd with public verifiability in ts crate (#2392)
+
+- [#2455](https://github.com/near/mpc/pull/2455)(@DSharifi): *(node)* Start with config file option also initializes neard (#2455)
+
+- [#2460](https://github.com/near/mpc/pull/2460)(@SimonRastikian): Viewing method for code hash votes and testings (#2460)
+
+
+### 🐛 Bug Fixes
+
+- [#2346](https://github.com/near/mpc/pull/2346)(@SimonRastikian): Using ct-eq ensures security (#2346)
+
+- [#2386](https://github.com/near/mpc/pull/2386)(@gilcu3): Do not crash when vectors received are smaller than expected (#2386)
+
+
+### 🚜 Refactor
+
+- [#2318](https://github.com/near/mpc/pull/2318)(@anodar): Retry read calls in localnet script (#2318)
+
+- [#2410](https://github.com/near/mpc/pull/2410)(@gilcu3): Feature gate mod testing in p2p.rs (#2410)
+
+
+### 📚 Documentation
+
+- [#2214](https://github.com/near/mpc/pull/2214)(@gilcu3): Added asset generation doc (#2214)
+
+- [#2371](https://github.com/near/mpc/pull/2371)(@barakeinav1): Add attestation verification step to operator guide (#2371)
+
+- [#2397](https://github.com/near/mpc/pull/2397)(@barakeinav1): Fix operator guide access key section (#2397)
+
+- [#2414](https://github.com/near/mpc/pull/2414)(@barakeinav1): Update to latest dstack configuration (#2414)
+
+- [#2408](https://github.com/near/mpc/pull/2408)(@gilcu3): Add cargo insta instructions to contributing guidelines (#2408)
+
+- [#2324](https://github.com/near/mpc/pull/2324)(@pbeza): Restructure TEE lifecycle and extract TEE Context design doc (#2324)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#2325](https://github.com/near/mpc/pull/2325)(@barakeinav1): Rename shadowed variable in verify_event_log_rtmr3 (#2325)
+
+- [#2319](https://github.com/near/mpc/pull/2319)(@gilcu3): Added borsch schema snapshot test (#2319)
+
+- [#2338](https://github.com/near/mpc/pull/2338)(@gilcu3): Replace ed25519_dalek::VerifyingKey with Ed25519PublicKey in node-types crate (#2338)
+
+- [#2352](https://github.com/near/mpc/pull/2352)(@pbeza): Add security section to PR review prompt (#2352)
+
+- [#2384](https://github.com/near/mpc/pull/2384)(@gilcu3): Update migrations after 3.6.0 release, remove infer domain purpose helpers (#2384)
+
+- [#2372](https://github.com/near/mpc/pull/2372)(@dependabot[bot]): Bump the rust-minor-and-patch group with 3 updates (#2372)
+
+- [#2389](https://github.com/near/mpc/pull/2389)(@gilcu3): Try all nearcore branches to have a better chance of getting the binary (#2389)
+
+- [#2394](https://github.com/near/mpc/pull/2394)(@barakeinav1): Update TEE localnet deploy script and documentation (#2394)
+
+- [#2405](https://github.com/near/mpc/pull/2405)(@gilcu3): Tiny follow up to contract cleanup in #2384 (#2405)
+
+- [#2412](https://github.com/near/mpc/pull/2412)(@gilcu3): Add all features to rust tests in ci (#2412)
+
+- [#2406](https://github.com/near/mpc/pull/2406)(@gilcu3): Remove usage of deprecated near_bindgen (#2406)
+
+- [#2421](https://github.com/near/mpc/pull/2421)(@gilcu3): Ensure we do not block ci on external services tests (#2421)
+
+- [#2306](https://github.com/near/mpc/pull/2306)(@DSharifi): Prepare workspace crates for publishing by setting version to 0.0.1 (#2306)
+
+- [#2429](https://github.com/near/mpc/pull/2429)(@DSharifi): Add `near-mpc-` prefix for crates that will be published (#2429)
+
+- [#2432](https://github.com/near/mpc/pull/2432)(@DSharifi): Add missing fields to publish all external crates (#2432)
+
+- [#2426](https://github.com/near/mpc/pull/2426)(@DSharifi): Use cargo lint section for clippy lint rules (#2426)
+
+- [#2436](https://github.com/near/mpc/pull/2436)(@DSharifi): Disallow allow attributes, and remove unexpected allows (#2436)
+
+- [#2438](https://github.com/near/mpc/pull/2438)(@gilcu3): Remove EXTRA_HOST usage in launcher (#2438)
+
+- [#2425](https://github.com/near/mpc/pull/2425)(@gilcu3): Upgrade to a patched nearcore 2.11.0-rc.1 (#2425)
+
+- [#2468](https://github.com/near/mpc/pull/2468)(@DSharifi): Bump nearcore to 2.11.0-rc.2 (#2468)
+
+- [#2465](https://github.com/near/mpc/pull/2465)(@dependabot[bot]): Bump the rust-minor-and-patch group with 3 updates (#2465)
+
+
 ## [3.6.0] - 2026-03-05
 
 ### 🚀 Features
@@ -112,6 +209,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2312](https://github.com/near/mpc/pull/2312)(@gilcu3): Build docker workflows cancelling each other (#2312)
 
 - [#2314](https://github.com/near/mpc/pull/2314)(@gilcu3): Update nearcore to 2.10.7 (#2314)
+
+- [#2321](https://github.com/near/mpc/pull/2321)(@netrome): Update changelog, licenses and bump crate versions for 3.6.0 (#2321)
 
 
 ## [3.5.1] - 2026-02-20

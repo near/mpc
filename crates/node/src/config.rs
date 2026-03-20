@@ -13,9 +13,9 @@ use std::{
     path::Path,
 };
 
-mod start;
+pub(crate) mod start;
 pub use start::{
-    GcpStartConfig, SecretsStartConfig, StartConfig, TeeAuthorityStartConfig, TeeStartConfig,
+    ChainId, DownloadConfigType, GcpStartConfig, NearInitConfig, SecretsStartConfig, StartConfig,
 };
 
 mod foreign_chains;
