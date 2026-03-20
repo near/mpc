@@ -2,7 +2,7 @@ use std::future::Future;
 use std::{sync::Arc, time::Duration};
 
 use backon::{BackoffBuilder, ExponentialBuilder};
-use mpc_contract::tee::proposal::{LauncherDockerComposeHash, DockerImageHash};
+use mpc_contract::tee::proposal::{DockerImageHash, LauncherDockerComposeHash};
 use mpc_contract::tee::tee_state::NodeId;
 use near_account_id::AccountId;
 use tokio::sync::watch;

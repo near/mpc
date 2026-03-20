@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::{LauncherImageHash, DockerImageHash};
+use mpc_primitives::hash::{DockerImageHash, LauncherImageHash};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,

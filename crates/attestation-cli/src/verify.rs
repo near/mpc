@@ -7,7 +7,7 @@ use attestation::{
     tcb_info::TcbInfo,
 };
 use mpc_attestation::attestation::{ValidatedDstackAttestation, VerifiedAttestation};
-use mpc_primitives::hash::{LauncherDockerComposeHash, DockerImageHash};
+use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
 use node_types::http_server::StaticWebData;
 use sha2::{Digest, Sha256};
 

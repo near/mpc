@@ -18,7 +18,7 @@ use mpc_contract::{
         domain::SignatureScheme, participants::Participants, test_utils::bogus_ed25519_public_key,
     },
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, DockerImageHash};
+use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash, LauncherImageHash};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_workspaces::Contract;

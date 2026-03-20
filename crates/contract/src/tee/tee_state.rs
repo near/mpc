@@ -5,7 +5,7 @@ use crate::{
     },
     tee::proposal::{
         AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage, CodeHashesVotes,
-        LauncherHashVotes, LauncherVoteAction, DockerImageHash,
+        DockerImageHash, LauncherHashVotes, LauncherVoteAction,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};

@@ -67,7 +67,7 @@ use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
-    proposal::{LauncherVoteAction, DockerImageHash},
+    proposal::{DockerImageHash, LauncherVoteAction},
     tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
 

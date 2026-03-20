@@ -18,7 +18,7 @@ use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
 use mpc_contract::tee::{
-    proposal::{LauncherDockerComposeHash, DockerImageHash},
+    proposal::{DockerImageHash, LauncherDockerComposeHash},
     tee_state::NodeId,
 };
 use near_account_id::AccountId;

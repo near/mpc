@@ -17,7 +17,7 @@ use mpc_contract::{
     primitives::signature::YieldIndex,
     state::ProtocolContractState,
     tee::{
-        proposal::{LauncherDockerComposeHash, DockerImageHash},
+        proposal::{DockerImageHash, LauncherDockerComposeHash},
         tee_state::NodeId,
     },
 };

@@ -8,7 +8,7 @@ use attestation::{
 };
 
 use include_measurements::include_measurements;
-use mpc_primitives::hash::{LauncherDockerComposeHash, DockerImageHash};
+use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use launcher_interface::MPC_IMAGE_HASH_EVENT;

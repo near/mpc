@@ -3,7 +3,7 @@ use mpc_attestation::{
     quote::QuoteBytes,
     tcb_info::TcbInfo,
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, DockerImageHash};
+use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 

@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use crate::primitives::{key_state::AuthenticatedParticipantId, time::Timestamp};
 
-pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, DockerImageHash};
+pub use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash, LauncherImageHash};
 
 /// Docker Compose YAML template for the launcher. Compose hashes are derived on-chain as
 /// `sha256(template(launcher_hash, mpc_hash))`. Placeholders:
@@ -169,11 +169,7 @@ impl AllowedDockerImageHashes {
 
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
     /// order by `added` (ascending).
-    pub fn insert(
-        &mut self,
-        code_hash: DockerImageHash,
-        tee_upgrade_deadline_duration: Duration,
-    ) {
+    pub fn insert(&mut self, code_hash: DockerImageHash, tee_upgrade_deadline_duration: Duration) {
         self.cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
         // Remove the old entry if it exists
