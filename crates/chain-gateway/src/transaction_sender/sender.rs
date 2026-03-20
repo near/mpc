@@ -23,15 +23,15 @@ impl SubmitTransaction for TransactionSender {
         receiver_id: AccountId,
         method_name: &str,
         args: Vec<u8>,
+        gas: Gas,
     ) -> Result<(), ChainGatewayError> {
-        const MAX_GAS: Gas = Gas::from_teragas(300);
         self.chain_gateway
             .submit_function_call_tx(
                 &self.signer,
                 receiver_id,
                 method_name.to_string(),
                 args,
-                MAX_GAS,
+                gas,
             )
             .await?;
         Ok(())

@@ -78,6 +78,7 @@ pub trait SubmitTransaction: Send + Sync + 'static {
         receiver_id: AccountId,
         method_name: &str,
         args: Vec<u8>,
+        gas: Gas,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
