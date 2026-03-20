@@ -2,15 +2,17 @@
 pub mod method_names;
 pub mod types {
     pub use attestation::{
-        AppCompose, Attestation, Collateral, DstackAttestation, EventLog, MockAttestation, TcbInfo,
-        VerifiedAttestation, VerifiedDstackAttestation,
+        AppCompose, Attestation, Collateral, DstackAttestation, EventLog, MockAttestation,
+        SubmitParticipantInfoArgs, TcbInfo, VerifiedAttestation, VerifiedDstackAttestation,
+        VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;
     pub use participants::{ParticipantId, ParticipantInfo, Participants};
 
+    pub use ckd::{CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, CkdAppId};
     pub use metrics::Metrics;
-    pub use primitives::{AccountId, CkdAppId, DomainId, Tweak};
+    pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
@@ -29,6 +31,7 @@ pub mod types {
     };
 
     mod attestation;
+    mod ckd;
     mod config;
     mod foreign_chain;
     mod metrics;

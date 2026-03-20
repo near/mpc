@@ -10,6 +10,7 @@ members = [
     "crates/contract",
     "crates/contract-history",
     "crates/devnet",
+    "crates/e2e-tests",
     "crates/foreign-chain-inspector",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
@@ -24,6 +25,7 @@ members = [
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
+    "crates/tee-context",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-utils",
@@ -41,6 +43,7 @@ repository = "https://github.com/near/mpc"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+chain-gateway = { path = "crates/chain-gateway" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
@@ -96,6 +99,7 @@ derive_more = { version = "2.1.1", features = [
     "deref",
     "display",
     "from",
+    "from_str",
     "into",
 ] }
 digest = "0.10.7"
@@ -206,14 +210,14 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
