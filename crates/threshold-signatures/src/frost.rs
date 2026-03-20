@@ -6,6 +6,7 @@ use frost_core::{
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use zeroize::Zeroize;
 
 use crate::{
     errors::{InitializationError, ProtocolError},
@@ -35,9 +36,16 @@ pub struct PresignArguments<C: Ciphersuite> {
 /// without knowing the message.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
-    /// The public nonce commitment.
+    /// The secret signing nonces.
     pub nonces: SigningNonces<C>,
     pub commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>>,
+}
+
+impl<C: Ciphersuite + Send + 'static> Zeroize for PresignOutput<C> {
+    fn zeroize(&mut self) {
+        self.nonces.zeroize();
+        self.commitments_map.clear();
+    }
 }
 
 /// Maximum incoming buffer entries for the FROST presign protocol.

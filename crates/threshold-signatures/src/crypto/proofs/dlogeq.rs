@@ -11,6 +11,7 @@ use crate::{
 };
 use frost_core::{serialization::SerializableScalar, Group};
 use subtle::ConstantTimeEq;
+use zeroize::Zeroize;
 
 /// The public statement for this proof.
 /// This statement claims knowledge of a scalar that's the discrete logarithm
@@ -63,9 +64,30 @@ impl<C: Ciphersuite> Statement<'_, C> {
 
 /// The private witness for this proof.
 /// This holds the scalar the prover needs to know.
-#[derive(Clone, Copy)]
-pub struct Witness<C: Ciphersuite> {
+#[derive(Clone)]
+pub struct Witness<C: Ciphersuite>
+where
+    Scalar<C>: Zeroize,
+{
     pub x: SerializableScalar<C>,
+}
+
+impl<C: Ciphersuite> Zeroize for Witness<C>
+where
+    Scalar<C>: Zeroize,
+{
+    fn zeroize(&mut self) {
+        self.x.0.zeroize();
+    }
+}
+
+impl<C: Ciphersuite> Drop for Witness<C>
+where
+    Scalar<C>: Zeroize,
+{
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 /// Represents a proof of the statement.
@@ -105,11 +127,12 @@ fn encode_two_points<C: Ciphersuite>(
 pub fn prove_with_nonce<C: Ciphersuite>(
     transcript: &mut Transcript,
     statement: Statement<'_, C>,
-    witness: Witness<C>,
+    witness: &Witness<C>,
     k: Scalar<C>,
 ) -> Result<Proof<C>, ProtocolError>
 where
     Element<C>: ConstantTimeEq,
+    Scalar<C>: Zeroize,
 {
     if statement.generator1.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);
@@ -194,7 +217,7 @@ mod test {
         let transcript = Transcript::new(b"protocol");
 
         let proof =
-            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, witness, k).unwrap();
+            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, &witness, k).unwrap();
 
         let ok = verify(&mut transcript.fork(b"party", &[1]), statement, &proof).unwrap();
 
@@ -221,7 +244,7 @@ mod test {
         let transcript = Transcript::new(b"protocol");
 
         let proof =
-            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, witness, k).unwrap();
+            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, &witness, k).unwrap();
 
         // Snapshot values for deterministic nonce from MockCryptoRng(42)
         insta::assert_snapshot!(format!("{:?}", proof.s.0), @"Scalar(Uint(0x0D5982BE2922D4BF893BFA4F0086C59738CA1F77BCA4316F28F263E2F1347C21))");
@@ -272,7 +295,7 @@ mod test {
         let transcript = Transcript::new(b"protocol");
 
         let proof_result =
-            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, witness, k);
+            prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, &witness, k);
 
         assert!(matches!(proof_result, Err(ProtocolError::IdentityElement)));
     }
