@@ -4,21 +4,21 @@ use anyhow::Context;
 
 use crate::port_allocator::E2ePortAllocator;
 
-/// Wraps a `near-sandbox` neard process with controlled ports.
+/// Wraps a NEAR node process with controlled ports.
 ///
-/// The sandbox validator is the single NEAR node that all mpc-node indexers
+/// The NEAR node is the single validator that all mpc-node indexers
 /// connect to via P2P boot_nodes.
-pub struct SandboxNode {
+pub struct NearNode {
     sandbox: near_sandbox::Sandbox,
     rpc_port: u16,
     net_port: u16,
 }
 
-impl SandboxNode {
-    /// Start a sandbox validator with ports from the allocator.
+impl NearNode {
+    /// Start a NEAR validator with ports from the allocator.
     pub async fn start(ports: &E2ePortAllocator) -> anyhow::Result<Self> {
-        let rpc_port = ports.sandbox_rpc_port();
-        let net_port = ports.sandbox_network_port();
+        let rpc_port = ports.near_node_rpc_port();
+        let net_port = ports.near_node_network_port();
 
         tracing::info!(rpc_port, net_port, "starting near-sandbox");
 
@@ -53,12 +53,12 @@ impl SandboxNode {
         self.net_port
     }
 
-    /// Path to the sandbox home directory (contains genesis.json, node_key.json, etc.).
+    /// Path to the NEAR node home directory (contains genesis.json, node_key.json, etc.).
     pub fn home_dir(&self) -> &Path {
         self.sandbox.home_dir.path()
     }
 
-    /// Path to genesis.json inside the sandbox home.
+    /// Path to genesis.json inside the NEAR node home.
     pub fn genesis_path(&self) -> PathBuf {
         self.home_dir().join("genesis.json")
     }

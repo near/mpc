@@ -8,8 +8,8 @@ use near_workspaces::{Account, AccountId};
 use serde::Serialize;
 use serde_json::json;
 
+use crate::near_node::NearNode;
 use crate::port_allocator::E2ePortAllocator;
-use crate::sandbox::SandboxNode;
 
 const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
@@ -54,7 +54,7 @@ pub struct MpcNodeConfig {
 /// Manages a single `mpc-node` OS process.
 ///
 /// Generates the `start_config.toml` and spawns the binary. Each node runs its
-/// own internal neard indexer that peers with the sandbox validator via P2P.
+/// own internal neard indexer that peers with the NEAR validator via P2P.
 pub struct MpcNode {
     pub node_index: usize,
     pub home_dir: PathBuf,
@@ -66,8 +66,8 @@ pub struct MpcNode {
 
     // Blockchain connection info (for TOML config)
     pub mpc_contract_id: AccountId,
-    sandbox_genesis_path: PathBuf,
-    sandbox_boot_nodes: String,
+    near_node_genesis_path: PathBuf,
+    near_node_boot_nodes: String,
 
     // Config values
     secret_store_key_hex: String,
@@ -84,9 +84,9 @@ pub struct MpcNode {
 
 impl MpcNode {
     /// Create a new MPC node config (not yet running).
-    pub fn new(config: MpcNodeConfig, sandbox: &SandboxNode) -> anyhow::Result<Self> {
-        let sandbox_genesis_path = sandbox.genesis_path();
-        let sandbox_boot_nodes = sandbox.boot_nodes()?;
+    pub fn new(config: MpcNodeConfig, near_node: &NearNode) -> anyhow::Result<Self> {
+        let near_node_genesis_path = near_node.genesis_path();
+        let near_node_boot_nodes = near_node.boot_nodes()?;
 
         // Deterministic secret keys for each node
         let secret_byte = b'A'
@@ -110,8 +110,8 @@ impl MpcNode {
             near_signer_key: config.near_signer_key,
             ports: config.ports,
             mpc_contract_id: config.mpc_contract_id,
-            sandbox_genesis_path,
-            sandbox_boot_nodes,
+            near_node_genesis_path,
+            near_node_boot_nodes,
             secret_store_key_hex,
             backup_encryption_key_hex,
             triples_to_buffer: config.triples_to_buffer,
@@ -245,8 +245,8 @@ impl MpcNode {
             },
             near_init: NearInitToml {
                 chain_id: "mpc-localnet",
-                boot_nodes: &self.sandbox_boot_nodes,
-                genesis_path: self.sandbox_genesis_path.display().to_string(),
+                boot_nodes: &self.near_node_boot_nodes,
+                genesis_path: self.near_node_genesis_path.display().to_string(),
                 download_genesis: false,
                 rpc_addr: format!("0.0.0.0:{}", self.ports.near_rpc),
                 network_addr: format!("0.0.0.0:{}", self.ports.near_network),
