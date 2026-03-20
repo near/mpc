@@ -2,8 +2,10 @@
 
 The addition of Robust ECDSA (aka DamgardEtAl) invalidates three assumptions in the current design:
 
-✗ There is one protocol per curve (now: both CaitSith and DamgardEtAl operate over Secp256k1).$\newline$
+✗ There is one protocol per curve (now: both CaitSith and DamgardEtAl operate over Secp256k1).
+
 ✗ All domains share a single cryptographic threshold. The node already has a `translate_threshold()` hack to bridge this gap.$\newline$
+
 ✗ Governance voting threshold and cryptographic reconstruction threshold are the same value. The threshold of how many participants must vote to change parameters is currently the same `Threshold` value as the cryptographic reconstruction threshold.
 
 Orthogonally, first trials of adding Robust ECDSA revealed an unecessary (a tech-dept) entanglement between the smart contract and the node which makes it difficult to update the Smart Contract "independently" of the node.
