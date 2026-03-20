@@ -110,56 +110,6 @@ The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.
 ### 2.1 New Contract Types
 
 ```rust
-/// Identifies the elliptic curve. Used by the contract to verify
-/// signature responses and derive public keys.
-/// Not stored in `KeyConfig` — derived from `Protocol` via `From<Protocol>`.
-pub enum Curve {
-    Secp256k1,
-    Edwards25519,  // renamed from Ed25519 for clarity
-    Bls12381,
-}
-
-/// Identifies the threshold signature protocol.
-/// Each current protocol uniquely determines its curve, so `Curve`
-/// is derived via `From<Protocol>` rather than stored separately.
-/// If a future protocol supports multiple curves, it can carry
-/// the curve as data: `NewProtocol(Curve)`.
-pub enum Protocol {
-    CaitSith,                    // → Secp256k1
-    Frost,                       // → Edwards25519
-    ConfidentialKeyDerivation,   // → Bls12381
-    DamgardEtAl,                 // → Secp256k1
-}
-
-impl From<&Protocol> for Curve {
-    fn from(protocol: &Protocol) -> Self {
-        match protocol {
-            Protocol::CaitSith | Protocol::DamgardEtAl => Curve::Secp256k1,
-            Protocol::Frost => Curve::Edwards25519,
-            Protocol::ConfidentialKeyDerivation => Curve::Bls12381,
-        }
-    }
-}
-
-/// Number of shares required to reconstruct the secret key.
-/// This is the "t" in a t-of-n threshold scheme: the minimum number of
-/// key shares that must be combined to recover the secret.
-/// The inner value is private; construction goes through `new()`.
-pub struct ReconstructionThreshold(u64);
-
-impl ReconstructionThreshold {
-    pub fn new(value: u64) -> Self;
-    pub fn inner(&self) -> u64;
-}
-
-/// Specifies the cryptographic configuration for a domain's key:
-/// which protocol to run and how many shares are needed to
-/// reconstruct the secret. The curve is derived from the protocol.
-pub struct KeyConfig {
-    pub protocol: Protocol,
-    pub reconstruction_threshold: ReconstructionThreshold,
-}
-
 /// Updated domain configuration. Inlines the cryptographic
 /// configuration directly rather than referencing it by ID.
 pub struct DomainConfig {
@@ -181,6 +131,56 @@ pub struct GovernanceBody {
 /// Minimum number of participant votes required to approve a
 /// governance action (resharing, adding domains, etc.).
 pub struct VotingThreshold(pub u64);
+
+/// Specifies the cryptographic configuration for a domain's key:
+/// which protocol to run and how many shares are needed to
+/// reconstruct the secret. The curve is derived from the protocol.
+pub struct KeyConfig {
+    pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
+}
+
+/// Number of shares required to reconstruct the secret key.
+/// This is the "t" in a t-of-n threshold scheme: the minimum number of
+/// key shares that must be combined to recover the secret.
+/// The inner value is private; construction goes through `new()`.
+pub struct ReconstructionThreshold(u64);
+
+impl ReconstructionThreshold {
+    pub fn new(value: u64) -> Self;
+    pub fn inner(&self) -> u64;
+}
+
+/// Identifies the threshold signature protocol.
+/// Each current protocol uniquely determines its curve, so `Curve`
+/// is derived via `From<Protocol>` rather than stored separately.
+/// If a future protocol supports multiple curves, it can carry
+/// the curve as data: `NewProtocol(Curve)`.
+pub enum Protocol {
+    CaitSith,                    // → Secp256k1
+    Frost,                       // → Edwards25519
+    ConfidentialKeyDerivation,   // → Bls12381
+    DamgardEtAl,                 // → Secp256k1
+}
+
+/// Identifies the elliptic curve. Used by the contract to verify
+/// signature responses and derive public keys.
+/// Not stored in `KeyConfig` — derived from `Protocol` via `From<Protocol>`.
+pub enum Curve {
+    Secp256k1,
+    Edwards25519,  // renamed from Ed25519 for clarity
+    Bls12381,
+}
+
+impl From<&Protocol> for Curve {
+    fn from(protocol: &Protocol) -> Self {
+        match protocol {
+            Protocol::CaitSith | Protocol::DamgardEtAl => Curve::Secp256k1,
+            Protocol::Frost => Curve::Edwards25519,
+            Protocol::ConfidentialKeyDerivation => Curve::Bls12381,
+        }
+    }
+}
 ```
 
 ### 2.2 Design Rationale
