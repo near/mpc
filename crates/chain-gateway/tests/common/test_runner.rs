@@ -56,8 +56,13 @@ where
         result
     });
 
-    // Wait for all RocksDB instances to close before dropping the runtime,
-    // so background threads are not torn down while RocksDB is still open.
+    // `shutdown()` cancels all actor runtimes, but nearcore's background
+    // threads (RocksDB compaction, trie prefetch, etc.) wind down
+    // asynchronously. RocksDB instances are the last resources to close, so
+    // blocking on them acts as a fence that all background work has finished.
+    // This is the same shutdown sequence nearcore uses in its own integration
+    // tests — see `NodeCluster::run_and_then_shutdown` in
+    // nearcore/integration-tests/src/tests/nearcore/node_cluster.rs.
     near_store::db::RocksDB::block_until_all_instances_are_dropped();
 
     match result {
