@@ -155,7 +155,7 @@ pub mod tests {
     use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key_extended, gen_account_id, NUM_PROTOCOLS,
+        bogus_ed25519_public_key_extended, gen_account_id, NUM_CURVES,
     };
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::find_leader;
@@ -320,9 +320,9 @@ pub mod tests {
     #[case(3, 0)]
     #[case(3, 1)]
     #[case(3, 2)]
-    #[case(NUM_PROTOCOLS, 0)]
-    #[case(NUM_PROTOCOLS, 1)]
-    #[case(NUM_PROTOCOLS, 2)]
+    #[case(NUM_CURVES, 0)]
+    #[case(NUM_CURVES, 1)]
+    #[case(NUM_CURVES, 2)]
     fn test_initializing_contract_state(
         #[case] domains: usize,
         #[case] num_already_generated: usize,
@@ -332,7 +332,7 @@ pub mod tests {
 
     #[test]
     fn test_cancel_key_generation() {
-        let (mut env, mut state) = gen_initializing_state(NUM_PROTOCOLS, 2);
+        let (mut env, mut state) = gen_initializing_state(NUM_CURVES, 2);
 
         // Vote for domain #2.
         let leader = find_leader(&state.generating_key);

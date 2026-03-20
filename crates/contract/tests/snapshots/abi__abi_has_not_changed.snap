@@ -460,7 +460,7 @@ expression: abi
               "type_schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/definitions/SignatureScheme"
+                    "$ref": "#/definitions/Curve"
                   },
                   {
                     "type": "null"
@@ -1901,6 +1901,15 @@ expression: abi
             }
           }
         },
+        "Curve": {
+          "description": "Elliptic curve used by a domain. More curves may be added in the future. When adding new curves, both Borsh *and* JSON serialization must be kept compatible.",
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Ed25519",
+            "Bls12381",
+            "V2Secp256k1"
+          ]
         "ContractExpectedMeasurements": {
           "description": "On-chain representation of expected TDX measurements. Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with contract-compatible serialization (hex strings in JSON, borsh for storage).",
           "type": "object",
@@ -1946,7 +1955,7 @@ expression: abi
           }
         },
         "DomainConfig": {
-          "description": "Describes the configuration of a domain: the domain ID and the protocol it uses.",
+          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.",
           "type": "object",
           "required": [
             "id",
@@ -1961,7 +1970,7 @@ expression: abi
               "$ref": "#/definitions/DomainPurpose"
             },
             "scheme": {
-              "$ref": "#/definitions/SignatureScheme"
+              "$ref": "#/definitions/Curve"
             }
           }
         },
@@ -1988,7 +1997,7 @@ expression: abi
               ]
             },
             "scheme": {
-              "$ref": "#/definitions/SignatureScheme2"
+              "$ref": "#/definitions/SignatureScheme"
             }
           }
         },
@@ -3575,16 +3584,6 @@ expression: abi
           ]
         },
         "SignatureScheme": {
-          "description": "Uniquely identifies a specific request algorithm. More protocols may be added in the future. When adding new protocols, both Borsh *and* JSON serialization must be kept compatible.",
-          "type": "string",
-          "enum": [
-            "Secp256k1",
-            "Ed25519",
-            "Bls12381",
-            "V2Secp256k1"
-          ]
-        },
-        "SignatureScheme2": {
           "description": "Supported signature schemes.",
           "oneOf": [
             {
