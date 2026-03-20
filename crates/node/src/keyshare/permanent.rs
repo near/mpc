@@ -1,6 +1,7 @@
 use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
+use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId};
 use serde::{Deserialize, Serialize};
 
@@ -8,9 +9,9 @@ use serde::{Deserialize, Serialize};
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PermanentKeyshareData {
-    pub epoch_id: EpochId,
-    /// These keyshares are in the exact same order as the domains in the Keyset.
-    pub keyshares: Vec<Keyshare>,
+    epoch_id: EpochId,
+    /// These keyshares are sorted by domain_id (ascending).
+    keyshares: Vec<Keyshare>,
 }
 
 impl PermanentKeyshareData {
@@ -21,7 +22,24 @@ impl PermanentKeyshareData {
         }
     }
 
-    // TODO(#1217): Move this to a separate crate, s.t. we are forced to use the constructor
+    pub fn epoch_id(&self) -> EpochId {
+        self.epoch_id
+    }
+
+    pub fn keyshares(&self) -> &[Keyshare] {
+        &self.keyshares
+    }
+
+    pub fn into_keyshares(self) -> Vec<Keyshare> {
+        self.keyshares
+    }
+
+    pub fn keyshare_by_domain_id(&self, domain_id: DomainId) -> Option<&Keyshare> {
+        self.keyshares
+            .iter()
+            .find(|k| k.key_id.domain_id == domain_id)
+    }
+
     pub fn new(epoch_id: EpochId, keyshares: Vec<Keyshare>) -> anyhow::Result<Self> {
         let is_consistent = keyshares.windows(2).all(|w| {
             w[0].key_id.epoch_id == w[1].key_id.epoch_id
@@ -115,33 +133,34 @@ impl PermanentKeyStorage {
         let existing = self.load().await.context("Checking existing keyshare")?;
         if let Some(existing) = existing {
             let existing_keyset_is_more_recent =
-                existing.epoch_id.get() > keyshare_data.epoch_id.get();
+                existing.epoch_id().get() > keyshare_data.epoch_id().get();
             if existing_keyset_is_more_recent {
                 anyhow::bail!(
                     "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of older epoch {}",
-                    existing.epoch_id.get(),
-                    keyshare_data.epoch_id.get(),
+                    existing.epoch_id().get(),
+                    keyshare_data.epoch_id().get(),
                 );
             }
             let existing_keset_has_more_domains =
-                existing.keyshares.len() > keyshare_data.keyshares.len();
+                existing.keyshares().len() > keyshare_data.keyshares().len();
             if existing_keset_has_more_domains {
                 anyhow::bail!(
                     "Refusing to overwrite existing permanent keyshares for {} domains with new permanent keyshares for fewer domains {}",
-                    existing.keyshares.len(),
-                    keyshare_data.keyshares.len()
+                    existing.keyshares().len(),
+                    keyshare_data.keyshares().len()
                 );
             }
-            let is_same_epoch_id = existing.epoch_id.get() == keyshare_data.epoch_id.get();
-            let does_not_extend_keyset = existing.keyshares.len() >= keyshare_data.keyshares.len();
+            let is_same_epoch_id = existing.epoch_id().get() == keyshare_data.epoch_id().get();
+            let does_not_extend_keyset =
+                existing.keyshares().len() >= keyshare_data.keyshares().len();
             if is_same_epoch_id && does_not_extend_keyset {
                 anyhow::bail!(
                     "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of same epoch but equal number of domains",
-                    existing.epoch_id.get(),
+                    existing.epoch_id().get(),
                 );
             }
             for (existing_keyshare, new_keyshare) in
-                existing.keyshares.iter().zip(&keyshare_data.keyshares)
+                existing.keyshares().iter().zip(keyshare_data.keyshares())
             {
                 let domain_ids_match =
                     existing_keyshare.key_id.domain_id == new_keyshare.key_id.domain_id;
@@ -183,8 +202,8 @@ impl PermanentKeyStorage {
         let data_json = serde_json::to_vec(keyshare_data)?;
         let identifier = format!(
             "epoch_{}_with_{}_domains",
-            keyshare_data.epoch_id.get(),
-            keyshare_data.keyshares.len()
+            keyshare_data.epoch_id().get(),
+            keyshare_data.keyshares().len()
         );
         self.backend.store(&data_json, &identifier).await
     }
@@ -231,10 +250,7 @@ mod tests {
         let (key_1, key_1_alternate) = generate_dummy_keyshares(1, 0, 1, &mut rng);
         let (key_2, key_2_alternate) = generate_dummy_keyshares(1, 2, 4, &mut rng);
         let keys = vec![key_1.clone(), key_2];
-        let permanent_keyshare = PermanentKeyshareData {
-            epoch_id: EpochId::new(1),
-            keyshares: keys.clone(),
-        };
+        let permanent_keyshare = PermanentKeyshareData::new(EpochId::new(1), keys.clone()).unwrap();
 
         storage.store(&permanent_keyshare).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
@@ -319,13 +335,13 @@ mod tests {
         // Make the storage. The storage should upgrade the legacy keyshare to the new format.
         let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
-        assert_eq!(loaded.epoch_id.get(), 1);
-        assert_eq!(loaded.keyshares.len(), 1);
-        assert_eq!(loaded.keyshares[0].key_id.epoch_id.get(), 1);
-        assert_eq!(loaded.keyshares[0].key_id.domain_id.0, 0);
-        assert_eq!(loaded.keyshares[0].key_id.attempt_id.get(), 0);
+        assert_eq!(loaded.epoch_id().get(), 1);
+        assert_eq!(loaded.keyshares().len(), 1);
+        assert_eq!(loaded.keyshares()[0].key_id.epoch_id.get(), 1);
+        assert_eq!(loaded.keyshares()[0].key_id.domain_id.0, 0);
+        assert_eq!(loaded.keyshares()[0].key_id.attempt_id.get(), 0);
         assert_eq!(
-            loaded.keyshares[0].data,
+            loaded.keyshares()[0].data,
             KeyshareData::Secp256k1(threshold_signatures::ecdsa::KeygenOutput {
                 private_share: SigningShare::new(legacy_data.private_share),
                 public_key: VerifyingKey::new(legacy_data.public_key.into()),
