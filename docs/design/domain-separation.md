@@ -4,7 +4,7 @@ The addition of Robust ECDSA (aka DamgardEtAl) invalidates three assumptions in 
 
 ✗ There is one protocol per curve (now: both CaitSith and DamgardEtAl operate over Secp256k1).
 
-✗ All domains share a single cryptographic threshold. The node already has a `translate_threshold()` hack to bridge this gap.$\newline$
+✗ All domains share a single cryptographic threshold. The node already has a `translate_threshold()` hack to bridge this gap.
 
 ✗ Governance voting threshold and cryptographic reconstruction threshold are the same value. The threshold of how many participants must vote to change parameters is currently the same `Threshold` value as the cryptographic reconstruction threshold.
 
