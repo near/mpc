@@ -278,10 +278,11 @@ mod tests {
             id: CryptoHash(rand::random()),
             // All other fields are irrelevant for the test.
             receipt_id: CryptoHash([0; 32]),
-            app_public_key:
+            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
                 "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                     .parse()
                     .unwrap(),
+            ),
             app_id: [1u8; 32].into(),
             entropy: [0; 32],
             timestamp_nanosec: 0,
@@ -297,10 +298,11 @@ mod tests {
             id: CryptoHash(rand::random()),
             // All other fields are irrelevant for the test.
             receipt_id: CryptoHash([0; 32]),
-            app_public_key:
+            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
                 "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                     .parse()
                     .unwrap(),
+            ),
             app_id: [1u8; 32].into(),
             entropy: [0; 32],
             timestamp_nanosec: 0,

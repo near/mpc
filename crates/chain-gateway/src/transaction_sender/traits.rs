@@ -71,6 +71,17 @@ where
     }
 }
 
+pub trait SubmitTransaction: Send + Sync + 'static {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn submit(
+        &self,
+        receiver_id: AccountId,
+        method_name: &str,
+        args: Vec<u8>,
+        gas: Gas,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{

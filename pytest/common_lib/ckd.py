@@ -42,6 +42,11 @@ def b58decode_g1(pk_encoded: str) -> G1Point:
     return G1Point.from_compressed_bytes(pk_bytes)
 
 
+def b58encode_g2(pk: G2Point) -> str:
+    pk_bytes = bytes(pk.to_compressed_bytes())
+    return BLS12381G2_PREFIX + base58.b58encode(pk_bytes).decode("ascii")
+
+
 def b58decode_g2(pk_encoded: str) -> G2Point:
     assert pk_encoded.startswith(BLS12381G2_PREFIX)
     pk_bytes = base58.b58decode(pk_encoded[len(BLS12381G2_PREFIX) :])
@@ -96,6 +101,23 @@ def verify_ckd(
     return verify_bls_signature(public_key, app_id, k)
 
 
+def generate_app_public_key_pv() -> Tuple[dict, Scalar]:
+    """Generate a PV (publicly verifiable) app key pair.
+
+    Returns (app_public_key_pv dict with pk1/pk2, private_key scalar).
+    The pk1 (G1) and pk2 (G2) are derived from the same scalar.
+    """
+    private_key = Scalar(int.from_bytes(os.urandom(32), "big"))
+    pk1: G1Point = G1Point() * private_key
+    pk2: G2Point = G2Point() * private_key
+    return {
+        "AppPublicKeyPV": {
+            "pk1": b58encode_g1(pk1),
+            "pk2": b58encode_g2(pk2),
+        }
+    }, private_key
+
+
 def generate_ckd_args(
     domain: Domain, app_public_key: Optional[str] = None, path: str = ""
 ) -> dict:
@@ -107,5 +129,21 @@ def generate_ckd_args(
             "derivation_path": path,
             "domain_id": domain.id,
             "app_public_key": app_public_key,
+        }
+    }
+
+
+def generate_ckd_pv_args(
+    domain: Domain, app_public_key_pv: Optional[dict] = None, path: str = ""
+) -> dict:
+    """Generate CKD request args using the PV (publicly verifiable) format."""
+    assert domain.scheme == "Bls12381"
+    if app_public_key_pv is None:
+        app_public_key_pv, _ = generate_app_public_key_pv()
+    return {
+        "request": {
+            "derivation_path": path,
+            "domain_id": domain.id,
+            "app_public_key": app_public_key_pv,
         }
     }

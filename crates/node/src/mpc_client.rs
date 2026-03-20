@@ -281,8 +281,7 @@ where
                             let ckd_request = CKDRequest {
                                 id: ckd_id,
                                 receipt_id,
-                                // TODO(#2470): this only works for legacy CKD
-                                app_public_key: request.app_public_key.g1_public_key().clone(),
+                                app_public_key: request.app_public_key,
                                 app_id: request.app_id,
                                 entropy,
                                 timestamp_nanosec,
