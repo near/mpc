@@ -89,7 +89,9 @@ impl MpcNode {
         let sandbox_boot_nodes = sandbox.boot_nodes()?;
 
         // Deterministic secret keys for each node
-        let secret_byte = b'A' + config.node_index as u8;
+        let secret_byte = b'A'
+            .checked_add(u8::try_from(config.node_index).context("node_index too large")?)
+            .context("secret_byte overflow")?;
         let secret_store_key_hex = hex::encode([secret_byte; 16]);
         let backup_encryption_key_hex = hex::encode([secret_byte; 32]);
 
@@ -184,8 +186,17 @@ impl MpcNode {
         }
     }
 
-    pub fn is_running(&self) -> bool {
-        self.process.is_some()
+    pub fn is_running(&mut self) -> bool {
+        match &mut self.process {
+            Some(child) => match child.try_wait() {
+                Ok(Some(_)) => {
+                    self.process.take();
+                    false
+                }
+                _ => true,
+            },
+            None => false,
+        }
     }
 
     /// Write `secrets.json` so the node uses our pre-generated keys instead of
