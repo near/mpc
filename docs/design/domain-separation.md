@@ -139,10 +139,6 @@ impl ReconstructionThreshold {
     pub fn inner(&self) -> u64;
 }
 
-/// Unique identifier for a key configuration.
-/// Assigned by `KeyConfigs` via a monotonically increasing counter.
-pub struct KeyConfigId(pub u64);
-
 /// Specifies the cryptographic configuration for a domain's key:
 /// which protocol to run, over which curve, and how many shares
 /// are needed to reconstruct the secret.
@@ -152,21 +148,11 @@ pub struct KeyConfig {
     pub reconstruction_threshold: ReconstructionThreshold,
 }
 
-/// Registry of all key configurations. Lives in `RunningContractState`.
-/// Multiple domains can reference the same `KeyConfigId`, avoiding
-/// duplication when they share the same protocol/curve/threshold.
-/// `next_config_id` is a monotonically increasing counter used to
-/// assign unique `KeyConfigId` values when new configs are added.
-pub struct KeyConfigs {
-    configs: IterableMap<KeyConfigId, KeyConfig>,
-    next_config_id: u64,
-}
-
-/// Updated domain configuration. References a `KeyConfig` by ID
-/// rather than inlining the cryptographic configuration.
+/// Updated domain configuration. Inlines the cryptographic
+/// configuration directly rather than referencing it by ID.
 pub struct DomainConfig {
     pub id: DomainId,
-    pub key_config_id: KeyConfigId,
+    pub key_config: KeyConfig,
     pub purpose: DomainPurpose,
 }
 
@@ -187,37 +173,11 @@ pub struct VotingThreshold(pub u64);
 
 ### 2.2 Design Rationale
 
-#### How `KeyConfigs` works
+#### Why inline `KeyConfig` in `DomainConfig`
 
-`KeyConfigs` is a registry that lives in `RunningContractState`. It assigns each unique cryptographic configuration a `KeyConfigId`, and domains reference configs by that ID rather than inlining the config.
+`KeyConfig` is inlined directly into `DomainConfig` rather than stored in a separate registry with ID indirection. With a small number of domains (currently 4), the registry approach adds complexity (ID management, separate lookups, atomicity concerns) without meaningful savings. Inlining keeps the code ergonomic: any code that has a `DomainConfig` can directly access its cryptographic configuration without a second lookup.
 
-- **Adding a new key config**: When a new protocol configuration is needed, a `KeyConfig` is inserted into the registry. `next_config_id` is used as the new entry's `KeyConfigId`, then incremented. This guarantees unique IDs without hashing or deduplication logic.
-- **Domains reference configs by ID**: `DomainConfig` stores `key_config_id: KeyConfigId`. Multiple domains can point to the same ID. For example, a Sign domain and a ForeignTx domain that both use CaitSith/Secp256k1/threshold=6 share one `KeyConfigId`.
-
-**Lifecycle example**:
-
-```
-1. System starts with KeyConfigs = {
-     0 → { CaitSith, Secp256k1, threshold: 6 },
-     1 → { Frost, Edwards25519, threshold: 6 },
-     2 → { CKD, Bls12381, threshold: 6 },
-   }
-   next_config_id = 3
-
-2. Domain 0 (Sign)       → key_config_id: 0
-   Domain 1 (ForeignTx)  → key_config_id: 0   // same config as Domain 0
-   Domain 2 (Sign/Ed)    → key_config_id: 1
-   Domain 3 (CKD)        → key_config_id: 2
-
-3. Adding DamgardEtAl:
-   Insert { DamgardEtAl, Secp256k1, threshold: 4 } → gets id 3
-   next_config_id = 4
-   New Domain 4 (Sign/Robust) → key_config_id: 3
-```
-
-**Where it matters most — resharing**: During resharing, the system iterates `KeyConfigs` to validate that every config's `reconstruction_threshold` is still achievable with the new participant set. Since configs are deduplicated, each unique config is validated once rather than once per domain.
-
-*Note: An alternative is to inline `KeyConfig` directly into `DomainConfig` and accept the duplication. The advantage is simplicity (no separate registry or ID management) but we would lose on the code duplication, non-atomicity of config changes and single-time config validation.*
+The trade-off is that domains sharing the same config (e.g., Sign and ForeignTx both using CaitSith/Secp256k1/threshold=6) will have duplicate `KeyConfig` values. This is acceptable — the duplication is trivial in storage cost, and validation during resharing simply iterates all domains.
 
 
 ### 2.3 Relationship to Existing Types
@@ -225,7 +185,7 @@ pub struct VotingThreshold(pub u64);
 | Current | Proposed | Change |
 |---|---|---|
 | `SignatureScheme` | `Curve` + `Protocol` | Split enum into two orthogonal enums |
-| `DomainConfig.scheme` | `DomainConfig.key_config_id` | Reference to `KeyConfig` instead of scheme |
+| `DomainConfig.scheme` | `DomainConfig.key_config` | Inlined `KeyConfig` instead of scheme |
 | `ThresholdParameters` | `GovernanceBody` (governance) + `KeyConfig.reconstruction_threshold` (crypto) | Split into two concerns |
 | `Threshold` | `VotingThreshold` + `ReconstructionThreshold`(`ActiveParticipantsThreshold` can be indirectly derived from `ReconstructionThreshold`) | Distinct newtypes for distinct purposes |
 
@@ -234,7 +194,6 @@ pub struct VotingThreshold(pub u64);
 ```rust
 pub struct RunningContractState {
     pub domains: DomainRegistry,
-    pub key_configs: KeyConfigs,        // NEW: protocol/curve/threshold per config
     pub keyset: Keyset,
     pub governance: GovernanceBody,     // RENAMED from parameters, threshold is voting-only
     pub governance_votes: GovernanceVotes,  // RENAMED from parameters_votes
@@ -326,25 +285,25 @@ When resharing (changing participants/threshold), we need to validate that:
 3. Enough old participants are retained to meet both governance and cryptographic thresholds.
 
 ```rust
-/// Validates that all key configs remain valid under a new participant count.
+/// Validates that all domains' key configs remain valid under a new participant count.
 pub fn validate_for_participant_count(
-    configs: &KeyConfigs,
+    domains: &DomainRegistry,
     num_participants: u64,
 ) -> Result<(), Error> {
-    for (id, config) in configs.configs.iter() {
-        validate_threshold(config, num_participants).map_err(|e| {
-            Error::KeyConfigIncompatibleWithNewParticipants { key_config_id: id, inner: e }
+    for domain in domains.iter() {
+        validate_threshold(&domain.key_config, num_participants).map_err(|e| {
+            Error::KeyConfigIncompatibleWithNewParticipants { domain_id: domain.id, inner: e }
         })?;
     }
     Ok(())
 }
 
-/// Returns the minimum number of participants required across all key configs.
-pub fn min_participants_required(configs: &KeyConfigs) -> u64 {
-    configs.configs.values().map(|c| {
-        match c.protocol {
-            Protocol::DamgardEtAl => 2 * c.reconstruction_threshold.0 - 1,
-            _ => c.reconstruction_threshold.0,
+/// Returns the minimum number of participants required across all domains.
+pub fn min_participants_required(domains: &DomainRegistry) -> u64 {
+    domains.iter().map(|d| {
+        match d.key_config.protocol {
+            Protocol::DamgardEtAl => 2 * d.key_config.reconstruction_threshold.0 - 1,
+            _ => d.key_config.reconstruction_threshold.0,
         }
     }).max().unwrap_or(0)
 }
@@ -481,9 +440,7 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
 
 **Scope**: `crates/contract/src/primitives/domain.rs`, `crates/contract/src/dto_mapping.rs`, `crates/near-mpc-contract-interface/src/types/state.rs`.
 
-This is the most complex PR. It wires `Protocol` and `Curve` together and changes `DomainConfig`'s shape.
-
-**Design decision**: Section 2.1 proposes a `KeyConfigs` registry with `KeyConfigId` indirection, while open question §7.1 recommends inlining `KeyConfig` directly into `DomainConfig`. This PR follows the inline approach (Option B). If the registry approach (Option A) is chosen instead, this PR must also add `KeyConfigs` to `RunningContractState` and `KeyConfigId` to `DomainConfig`. See §7.1.
+This is the most complex PR. It wires `Protocol` and `Curve` together and changes `DomainConfig`'s shape. `KeyConfig` is inlined directly into `DomainConfig` (see §2.2 rationale).
 
 **Changes (contract internals)**:
 - Add `ReconstructionThreshold(u64)` newtype.
@@ -818,7 +775,7 @@ Move pure identity/data types that both contract and node need:
 ```
 mpc-primitives/
   src/
-    domain.rs       → DomainId, Curve, Protocol, DomainPurpose, KeyConfigId
+    domain.rs       → DomainId, Curve, Protocol, DomainPurpose
     key_state.rs    → EpochId, AttemptId, KeyEventId
     thresholds.rs   → ReconstructionThreshold, VotingThreshold
     signature.rs    → Payload, Tweak, SignRequest, SignRequestArgs
@@ -918,7 +875,7 @@ NotInitialized → Running ↔ Initializing/Resharing
 ```
 
 What changes is the data carried through transitions:
-- `RunningContractState` gains `key_configs: KeyConfigs` and replaces `parameters` with `governance: GovernanceBody`.
+- `RunningContractState` replaces `parameters` with `governance: GovernanceBody`.
 - `KeyEvent` carries both `GovernanceBody` (who participates) and `KeyConfig` (crypto params).
 - Resharing must validate ALL `KeyConfig` thresholds against the proposed new participant set.
 
