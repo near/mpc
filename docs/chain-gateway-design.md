@@ -162,7 +162,7 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
         /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
         /// Watcher that keeps track of allowed [`DockerImageHash`]es on the contract.
-    pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
+    pub allowed_docker_images_receiver: watch::Receiver<Vec<DockerImageHash>>,
         /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
         /// Watcher that tracks node IDs that have TEE attestations in the contract.

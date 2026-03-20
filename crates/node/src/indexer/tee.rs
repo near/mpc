@@ -2,7 +2,7 @@ use std::future::Future;
 use std::{sync::Arc, time::Duration};
 
 use backon::{BackoffBuilder, ExponentialBuilder};
-use mpc_contract::tee::proposal::{LauncherDockerComposeHash, MpcDockerImageHash};
+use mpc_contract::tee::proposal::{LauncherDockerComposeHash, DockerImageHash};
 use mpc_contract::tee::tee_state::NodeId;
 use near_account_id::AccountId;
 use tokio::sync::watch;
@@ -80,7 +80,7 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
 /// allowed [`AllowedDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
 pub async fn monitor_allowed_docker_images(
-    sender: watch::Sender<Vec<MpcDockerImageHash>>,
+    sender: watch::Sender<Vec<DockerImageHash>>,
     indexer_state: Arc<IndexerState>,
 ) {
     let view_client = indexer_state.view_client.clone();

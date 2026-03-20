@@ -3,7 +3,7 @@ use mpc_attestation::{
     quote::QuoteBytes,
     tcb_info::TcbInfo,
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, DockerImageHash};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -28,13 +28,13 @@ pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
     LauncherDockerComposeHash::from(digest)
 }
 
-pub fn image_digest() -> MpcDockerImageHash {
+pub fn image_digest() -> DockerImageHash {
     let digest: [u8; 32] = hex::decode(TEST_MPC_IMAGE_DIGEST_HEX)
         .expect("File has valid hex encoding.")
         .try_into()
         .expect("Hex file decoded is 32 bytes.");
 
-    MpcDockerImageHash::from(digest)
+    DockerImageHash::from(digest)
 }
 
 pub fn collateral() -> Value {

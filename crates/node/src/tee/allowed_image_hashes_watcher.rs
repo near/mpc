@@ -1,7 +1,7 @@
 use derive_more::From;
 use itertools::Itertools;
 use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
-use mpc_contract::tee::proposal::MpcDockerImageHash;
+use mpc_contract::tee::proposal::DockerImageHash;
 use near_mpc_bounded_collections::NonEmptyVec;
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
@@ -20,7 +20,7 @@ use mockall::automock;
 pub trait AllowedImageHashesStorage {
     fn set(
         &mut self,
-        approved_hashes: NonEmptyVec<MpcDockerImageHash>,
+        approved_hashes: NonEmptyVec<DockerImageHash>,
     ) -> impl Future<Output = Result<(), io::Error>> + Send;
 }
 
@@ -32,7 +32,7 @@ pub struct AllowedImageHashesFile {
 impl AllowedImageHashesStorage for AllowedImageHashesFile {
     async fn set(
         &mut self,
-        approved_hashes: NonEmptyVec<MpcDockerImageHash>,
+        approved_hashes: NonEmptyVec<DockerImageHash>,
     ) -> Result<(), io::Error> {
         tracing::info!(
             ?self.file_path,
@@ -93,8 +93,8 @@ pub enum ExitError {
 /// gracefully please cancel the parent of the cancellation token that is passed as an argument, `cancellation_token`.
 pub async fn monitor_allowed_image_hashes<Storage>(
     cancellation_token: CancellationToken,
-    current_image: MpcDockerImageHash,
-    allowed_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
+    current_image: DockerImageHash,
+    allowed_hashes_in_contract: watch::Receiver<Vec<DockerImageHash>>,
     image_hash_storage: Storage,
     shutdown_signal_sender: mpsc::Sender<()>,
 ) -> Result<(), ExitError>
@@ -114,8 +114,8 @@ where
 
 struct AllowedImageHashesWatcher<A> {
     cancellation_token: CancellationToken,
-    allowed_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
-    current_image: MpcDockerImageHash,
+    allowed_hashes_in_contract: watch::Receiver<Vec<DockerImageHash>>,
+    current_image: DockerImageHash,
     image_hash_storage: A,
     shutdown_signal_sender: mpsc::Sender<()>,
 }
@@ -202,16 +202,16 @@ mod tests {
 
     const TEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
-    fn image_hash_1() -> MpcDockerImageHash {
-        MpcDockerImageHash::from([1; 32])
+    fn image_hash_1() -> DockerImageHash {
+        DockerImageHash::from([1; 32])
     }
 
-    fn image_hash_2() -> MpcDockerImageHash {
-        MpcDockerImageHash::from([2; 32])
+    fn image_hash_2() -> DockerImageHash {
+        DockerImageHash::from([2; 32])
     }
 
-    fn image_hash_3() -> MpcDockerImageHash {
-        MpcDockerImageHash::from([3; 32])
+    fn image_hash_3() -> DockerImageHash {
+        DockerImageHash::from([3; 32])
     }
 
     /// Ensures that whenever the allowed image hash list changes,
@@ -277,8 +277,8 @@ mod tests {
     #[case::image_is_disallowed(image_hash_2(), vec![image_hash_1()])]
     #[tokio::test]
     async fn test_shutdown_signal_is_sent_on_write_error(
-        #[case] current_image: MpcDockerImageHash,
-        #[case] allowed_images: Vec<MpcDockerImageHash>,
+        #[case] current_image: DockerImageHash,
+        #[case] allowed_images: Vec<DockerImageHash>,
     ) {
         let mut mock = MockAllowedImageHashesStorage::new();
 
@@ -475,7 +475,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_hash_list_does_not_panic() {
         // Contract sends an empty list
-        let allowed_images: Vec<MpcDockerImageHash> = vec![];
+        let allowed_images: Vec<DockerImageHash> = vec![];
         let current_image = image_hash_1();
 
         let cancellation_token = CancellationToken::new();
