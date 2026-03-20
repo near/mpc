@@ -19,6 +19,7 @@ use near_mpc_contract_interface::method_names::{
     START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
     VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
 };
+pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
@@ -199,12 +200,6 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
     pub key_event_id: KeyEventId,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SubmitParticipantInfoArgs {
-    pub proposed_participant_attestation: near_mpc_contract_interface::types::Attestation,
-    pub tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey,
-}
-
 #[derive(Serialize, Debug)]
 pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
@@ -347,7 +342,7 @@ impl ChainCKDRespondArgs {
     pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
         Ok(ChainCKDRespondArgs {
             request: ChainCKDRequest::new(
-                dtos::CKDAppPublicKey::AppPublicKey(request.app_public_key.clone()),
+                request.app_public_key.clone(),
                 request.app_id.clone(),
                 request.domain_id,
             ),

@@ -2,6 +2,7 @@ use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
+use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 
@@ -30,6 +31,7 @@ pub enum Attestation {
     Mock(MockAttestation),
 }
 
+#[expect(clippy::large_enum_variant)]
 #[derive(
     Clone,
     Debug,
@@ -79,6 +81,41 @@ pub struct VerifiedDstackAttestation {
     pub launcher_compose_hash: Sha256Digest,
     /// Unix time stamp for when this attestation expires.
     pub expiry_timestamp_seconds: u64,
+    /// The OS measurements that were verified during initial attestation.
+    pub measurements: VerifiedMeasurements,
+}
+
+type Sha384Digest = [u8; 48];
+
+#[serde_as]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct VerifiedMeasurements {
+    #[serde_as(as = "Hex")]
+    pub mrtd: Sha384Digest,
+    #[serde_as(as = "Hex")]
+    pub rtmr0: Sha384Digest,
+    #[serde_as(as = "Hex")]
+    pub rtmr1: Sha384Digest,
+    #[serde_as(as = "Hex")]
+    pub rtmr2: Sha384Digest,
+    #[serde_as(as = "Hex")]
+    pub key_provider_event_digest: Sha384Digest,
 }
 
 #[serde_as]
@@ -306,4 +343,11 @@ pub struct EventLog {
     pub event: String,
     /// The payload data associated with the event
     pub event_payload: String,
+}
+
+/// Arguments for the `submit_participant_info` contract call.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubmitParticipantInfoArgs {
+    pub proposed_participant_attestation: Attestation,
+    pub tls_public_key: Ed25519PublicKey,
 }

@@ -1,2 +1,2 @@
-[profile.ci-workflow]
-default-filter = 'not package(contract-history) and not test(=test_upload_quote_for_collateral_with_phala_endpoint)'
+[profile.ci-other]
+default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(contract-history) and not test(=tee_authority::tests::test_upload_quote_for_collateral_with_phala_endpoint)'

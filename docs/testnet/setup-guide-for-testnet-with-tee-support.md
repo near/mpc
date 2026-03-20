@@ -21,9 +21,10 @@ This guide describes how to set up a testnet MPC cluster, where each MPC node is
 6. Workaround for port override issue.  
 7. Vote for MPC code hash on the contract.
 8. Vote for launcher image hash on the contract.
-9. MPC nodes attestation submission.
-10. Add a domain to the contract.
-11. Submit a signing request to the MPC cluster.  
+9. Vote for OS measurements on the contract.
+10. MPC nodes attestation submission.
+11. Add a domain to the contract.
+12. Submit a signing request to the MPC cluster.
 
 ---
 
@@ -423,7 +424,48 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT allowed_launcher_
 
 ---
 
-## Step 9: Check Attestation Submission
+## Step 9: Vote OS Measurements on Contract
+
+OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Both participants must vote for each measurement set. The values can be found in `crates/mpc-attestation/assets/tcb_info.json` and `tcb_info_dev.json`.
+
+Extract the measurement values from a `tcb_info.json` file:
+
+```bash
+# Extract from tcb_info.json (repeat for tcb_info_dev.json)
+TCB_FILE=crates/mpc-attestation/assets/tcb_info.json
+MRTD=$(jq -r '.mrtd' $TCB_FILE)
+RTMR0=$(jq -r '.rtmr0' $TCB_FILE)
+RTMR1=$(jq -r '.rtmr1' $TCB_FILE)
+RTMR2=$(jq -r '.rtmr2' $TCB_FILE)
+KP_DIGEST=$(jq -r '.event_log[] | select(.event == "key-provider") | .digest' $TCB_FILE)
+```
+
+### Frodo votes
+```bash
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT vote_add_os_measurement \
+  json-args "{\"measurement\": {\"mrtd\": \"$MRTD\", \"rtmr0\": \"$RTMR0\", \"rtmr1\": \"$RTMR1\", \"rtmr2\": \"$RTMR2\", \"key_provider_event_digest\": \"$KP_DIGEST\"}}" \
+  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as $FRODO_ACCOUNT network-config testnet sign-with-keychain send
+```
+
+### Sam votes
+```bash
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT vote_add_os_measurement \
+  json-args "{\"measurement\": {\"mrtd\": \"$MRTD\", \"rtmr0\": \"$RTMR0\", \"rtmr1\": \"$RTMR1\", \"rtmr2\": \"$RTMR2\", \"key_provider_event_digest\": \"$KP_DIGEST\"}}" \
+  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
+```
+
+Check the allowed measurements:
+
+```bash
+near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT allowed_os_measurements \
+  json-args '{}' network-config testnet now
+```
+
+---
+
+## Step 10: Check Attestation Submission
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accounts \
@@ -437,7 +479,7 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accoun
 
 ---
 
-## Step 10: Add Domain to Contract
+## Step 11: Add Domain to Contract
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_add_domains \
@@ -460,7 +502,7 @@ If the contract is stuck in **Initializing**, this usually means the MPC nodes f
 
 ---
 
-## Step 11: Submit Signing Request
+## Step 12: Submit Signing Request
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  sign \

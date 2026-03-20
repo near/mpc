@@ -77,6 +77,20 @@ expression: abi
         }
       },
       {
+        "name": "allowed_os_measurements",
+        "doc": " Returns all currently allowed OS measurements.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ContractExpectedMeasurements"
+            }
+          }
+        }
+      },
+      {
         "name": "clean_tee_status",
         "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
         "kind": "call",
@@ -529,6 +543,17 @@ expression: abi
               "maxItems": 2,
               "minItems": 2
             }
+          }
+        }
+      },
+      {
+        "name": "os_measurement_votes",
+        "doc": " Returns the current OS measurement votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/MeasurementVotes"
           }
         }
       },
@@ -1210,6 +1235,28 @@ expression: abi
         }
       },
       {
+        "name": "vote_add_os_measurement",
+        "doc": " Vote to add a new OS measurement set to the allowed list. Requires threshold votes.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "measurement",
+              "type_schema": {
+                "$ref": "#/definitions/ContractExpectedMeasurements"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_cancel_keygen",
         "doc": " Casts a vote to cancel key generation. Any keys that have already been generated\n are kept and we transition into Running state; remaining domains are permanently deleted.\n Deleted domain IDs cannot be reused again in future calls to vote_add_domains.\n\n A next_domain_id that matches that in the state's domains struct must be passed in. This is\n to prevent stale requests from accidentally cancelling a future key generation state.",
         "kind": "call",
@@ -1368,6 +1415,28 @@ expression: abi
                 },
                 "maxItems": 32,
                 "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_os_measurement",
+        "doc": " Vote to remove an OS measurement set from the allowed list. Requires ALL participants\n to vote for removal.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "measurement",
+              "type_schema": {
+                "$ref": "#/definitions/ContractExpectedMeasurements"
               }
             }
           ]
@@ -1829,6 +1898,34 @@ expression: abi
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
+            }
+          }
+        },
+        "ContractExpectedMeasurements": {
+          "description": "On-chain representation of expected TDX measurements. Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with contract-compatible serialization (hex strings in JSON, borsh for storage).",
+          "type": "object",
+          "required": [
+            "key_provider_event_digest",
+            "mrtd",
+            "rtmr0",
+            "rtmr1",
+            "rtmr2"
+          ],
+          "properties": {
+            "key_provider_event_digest": {
+              "type": "string"
+            },
+            "mrtd": {
+              "type": "string"
+            },
+            "rtmr0": {
+              "type": "string"
+            },
+            "rtmr1": {
+              "type": "string"
+            },
+            "rtmr2": {
+              "type": "string"
             }
           }
         },
@@ -2613,6 +2710,50 @@ expression: abi
               "additionalProperties": false
             }
           ]
+        },
+        "MeasurementVoteAction": {
+          "description": "The action a participant is voting for on an OS measurement set.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Add"
+              ],
+              "properties": {
+                "Add": {
+                  "$ref": "#/definitions/ContractExpectedMeasurements"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Remove"
+              ],
+              "properties": {
+                "Remove": {
+                  "$ref": "#/definitions/ContractExpectedMeasurements"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "MeasurementVotes": {
+          "description": "Tracks votes for adding or removing OS measurements. Each participant can have at most one active vote at a time.",
+          "type": "object",
+          "required": [
+            "vote_by_account"
+          ],
+          "properties": {
+            "vote_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/MeasurementVoteAction"
+              }
+            }
+          }
         },
         "Metrics": {
           "type": "object",
@@ -3828,6 +3969,7 @@ expression: abi
           "required": [
             "expiry_timestamp_seconds",
             "launcher_compose_hash",
+            "measurements",
             "mpc_image_hash"
           ],
           "properties": {
@@ -3842,8 +3984,48 @@ expression: abi
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
+            "measurements": {
+              "description": "The OS measurements that were verified during initial attestation.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/VerifiedMeasurements"
+                }
+              ]
+            },
             "mpc_image_hash": {
               "description": "The digest of the MPC image running.",
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            }
+          }
+        },
+        "VerifiedMeasurements": {
+          "type": "object",
+          "required": [
+            "key_provider_event_digest",
+            "mrtd",
+            "rtmr0",
+            "rtmr1",
+            "rtmr2"
+          ],
+          "properties": {
+            "key_provider_event_digest": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "mrtd": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr0": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr1": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr2": {
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }

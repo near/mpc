@@ -25,13 +25,7 @@ impl E2ePortAllocator {
     }
 
     fn base(&self) -> u16 {
-        Self::BASE_PORT
-            .checked_add(
-                self.test_id
-                    .checked_mul(Self::PORTS_PER_TEST)
-                    .expect("test_id overflows port range"),
-            )
-            .expect("base port overflows u16")
+        Self::BASE_PORT + self.test_id * Self::PORTS_PER_TEST
     }
 
     // -- Cluster-level ports --
@@ -51,10 +45,7 @@ impl E2ePortAllocator {
             node_index < Self::MAX_NODES as usize,
             "node_index {node_index} exceeds MAX_NODES"
         );
-        self.base()
-            .checked_add(Self::CLUSTER_PORTS)
-            .and_then(|p| p.checked_add((node_index as u16).checked_mul(Self::PORTS_PER_NODE)?))
-            .expect("node port overflows u16")
+        self.base() + Self::CLUSTER_PORTS + (node_index as u16) * Self::PORTS_PER_NODE
     }
 
     pub fn p2p_port(&self, node_index: usize) -> u16 {
