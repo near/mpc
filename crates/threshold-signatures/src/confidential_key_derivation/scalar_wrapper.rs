@@ -6,8 +6,10 @@ use elliptic_curve::Field;
 use std::sync::atomic;
 use zeroize::Zeroize;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone)]
 pub struct ScalarWrapper(pub(crate) blstrs::Scalar);
+
+impl_secret_debug!(ScalarWrapper);
 
 impl Zeroize for ScalarWrapper {
     /// Implementation based on the zeroize crate, which guarantees the value
