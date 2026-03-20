@@ -6,6 +6,7 @@ pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::{
+    Gas,
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::{SubmitTransaction, TransactionSender},
 };
@@ -19,6 +20,9 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
+
+const SUBMIT_ATTESTATION_GAS: Gas = Gas::from_teragas(300);
+const VERIFY_TEE_GAS: Gas = Gas::from_teragas(300);
 
 /// Shared TEE attestation lifecycle context.
 ///
@@ -99,6 +103,7 @@ where
                 self.governance_contract.clone(),
                 SUBMIT_PARTICIPANT_INFO,
                 args_json,
+                SUBMIT_ATTESTATION_GAS,
             )
             .await
             .map_err(Into::into)
@@ -107,7 +112,12 @@ where
     /// Triggers on-chain re-validation of all stored attestations.
     pub async fn verify_tee(&self) -> Result<(), TeeContextError> {
         self.transaction_sender
-            .submit(self.governance_contract.clone(), VERIFY_TEE, b"{}".to_vec())
+            .submit(
+                self.governance_contract.clone(),
+                VERIFY_TEE,
+                b"{}".to_vec(),
+                VERIFY_TEE_GAS,
+            )
             .await
             .map_err(Into::into)
     }
@@ -280,6 +290,7 @@ mod tests {
             receiver_id: AccountId,
             method_name: &str,
             args: Vec<u8>,
+            _gas: Gas,
         ) -> Result<(), ChainGatewayError> {
             if let Some(err) = &self.error {
                 return Err(err.clone());
