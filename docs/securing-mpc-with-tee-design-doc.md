@@ -371,11 +371,11 @@ pub struct Contract {
     ///If the vote threshold is reached and the new Docker image hash
     ///   is allowed by the TEE's RTMR3 measurement, the proposed hash is added
     ///   to the whitelist of approved MPC Docker images.
-    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error>
+    pub fn vote_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error>
 
     ///Returns all whitelisted Docker image hashes that have been approved
     ///     by the DAO and verified by the TEE.
-    pub fn allowed_docker_image_hashes(&mut self) -> Result<Vec<MpcDockerImageHash>, Error>
+    pub fn allowed_docker_image_hashes(&self) -> Vec<NodeImageHash>
 
     /// Verifies if all current participants have an accepted TEE state.
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
