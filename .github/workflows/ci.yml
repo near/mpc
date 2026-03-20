@@ -88,8 +88,46 @@ jobs:
         run: |
           ./scripts/build-and-verify-launcher-docker-image.sh
 
-  mpc-unittests:
-    name: "Cargo test"
+  mpc-node-tests:
+    name: "Cargo test: node"
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+
+      - name: Clear cache for fresh rebuild
+        if: github.event_name == 'schedule'
+        run: |
+          cargo clean
+          rm -rf ~/.cargo
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: nextest@0.9.126
+
+      - name: Run cargo-nextest
+        run: cargo nextest run -p mpc-node --cargo-profile=test-release --all-features --locked
+
+  mpc-contract-tests:
+    name: "Cargo test: contract"
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
@@ -143,7 +181,45 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run cargo-nextest
-        run: cargo nextest run --cargo-profile=test-release --all-features --locked --profile=ci-workflow
+        run: cargo nextest run -p mpc-contract --cargo-profile=test-release --all-features --locked
+
+  mpc-other-tests:
+    name: "Cargo test: other"
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+
+      - name: Clear cache for fresh rebuild
+        if: github.event_name == 'schedule'
+        run: |
+          cargo clean
+          rm -rf ~/.cargo
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: nextest@0.9.126
+
+      - name: Run cargo-nextest
+        run: cargo nextest run --cargo-profile=test-release --all-features --locked --profile=ci-other
 
   mpc-pytest-build:
     name: "MPC pytests: build"
