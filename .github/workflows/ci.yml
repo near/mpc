@@ -122,6 +122,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+          prefix-key: v0-rust-tests-${{ matrix.group }}
 
       - name: Clear cache for fresh rebuild
         if: github.event_name == 'schedule'
