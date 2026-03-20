@@ -375,7 +375,7 @@ pub struct Contract {
 
     ///Returns all whitelisted Docker image hashes that have been approved
     ///     by the DAO and verified by the TEE.
-    pub fn allowed_docker_image_hashes(&mut self) -> Result<Vec<DockerImageHash>, Error>
+    pub fn allowed_docker_image_hashes(&self) -> Vec<DockerImageHash>
 
     /// Verifies if all current participants have an accepted TEE state.
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
