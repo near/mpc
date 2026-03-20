@@ -2646,7 +2646,7 @@ mod tests {
     #[test]
     fn respond_ckd_pv__should_succeed_when_response_is_valid_and_request_exists() {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Bls12381, &mut rng);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Bls12381, &mut rng);
         let SharedSecretKey::Bls12381(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2688,7 +2688,7 @@ mod tests {
     fn request_ckd_pv__should_reject_mismatched_app_public_key() {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut rng);
+            basic_setup(Curve::Bls12381, &mut rng);
 
         // Generate pk1 and pk2 from different scalars so the pairing check fails
         let scalar1 = ckd::Scalar::random(&mut rng);
@@ -2708,7 +2708,7 @@ mod tests {
     #[should_panic(expected = "CKD output check failed")]
     fn respond_ckd_pv__should_reject_invalid_response() {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Bls12381, &mut rng);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Bls12381, &mut rng);
         let SharedSecretKey::Bls12381(secret_key) = secret_key else {
             unreachable!();
         };

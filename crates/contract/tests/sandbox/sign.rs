@@ -376,7 +376,7 @@ async fn test_contract_ckd_pv_request() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
 
     let bls_key = &keys[0];
@@ -408,7 +408,7 @@ async fn test_ckd_gas_regression() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
 
     let bls_key = &keys[0];
