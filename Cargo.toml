@@ -212,7 +212,9 @@ near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
 near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
 near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.2" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
