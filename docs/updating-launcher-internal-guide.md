@@ -50,7 +50,7 @@ consistent with the intended release.
    a new attestation with the updated launcher, then extract the measurements
    and update the test fixtures accordingly.
 
-2. Follow the instructions in `crates/test-utils/assets/README.md` on how to
+2. Follow the instructions in [`crates/test-utils/assets/README.md`](../crates/test-utils/assets/README.md) on how to
    update the test assets
 
 This should regenerate/update the required assets so the fixture attestation
