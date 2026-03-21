@@ -58,4 +58,3 @@ cargo test -p mpc-contract test_verify_tee_triggers_resharing_and_kickout_on_exp
 cargo test -p test-utils
 ```
 
-The launcher image hash is extracted automatically from `launcher_image_compose.yaml` by `test_utils::attestation::launcher_image_hash()`, so no manual hash update is needed in the contract test code.
