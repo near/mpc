@@ -125,9 +125,11 @@ You should see your account and registered backup_cli  public key listed, someth
 {
   "your-account.testnet": [
     {
-      "public_key": "ed25519:AbC123"
+      "public_key": "ed25519:AbC123..."
     },
-} 
+    null
+  ]
+}
 ```
 
 ## Step 3: Generate and Set Encryption Key
@@ -207,9 +209,9 @@ Set up your new node on the new host with the following:
 1. **Install and configure the MPC node software** on the new host (the new node should use the same NEAR account as the old node)
 2. **Set the encryption key**: on the backup-cli and the new node (note: this can be a different key from the one used in the previous steps, but it's safe to re-use the same key).
 
-For the new node, add this to the .env file.
+For the new node, add this to the .env file (replace `<value>` with the actual key from Step 3):
    ```env
-   MPC_BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
+   MPC_BACKUP_ENCRYPTION_KEY_HEX=<value>
    ```
 
 
@@ -278,15 +280,15 @@ Call the `start_node_migration` method on the MPC contract to register the new n
 near contract call-function as-transaction \
   $MPC_CONTRACT_ACCOUNT_ID \
   start_node_migration \
-  json-args '{
-    "destination_node_info": {
-      "signer_account_pk": "$near_signer_public_key",
-      "destination_node_info": {
-        "url": "new-node.example.com:80",
-        "sign_pk": "$P2P_KEY"
+  json-args "{
+    \"destination_node_info\": {
+      \"signer_account_pk\": \"$near_signer_public_key\",
+      \"destination_node_info\": {
+        \"url\": \"new-node.example.com:80\",
+        \"sign_pk\": \"$P2P_KEY\"
       }
     }
-  }' \
+  }" \
   prepaid-gas '300.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as $SIGNER_ACCOUNT_ID \
