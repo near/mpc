@@ -6,7 +6,7 @@ This script:
 - Fetches `/public_data` and saves it to JSON
 
 It is used to generate real attestation data for testing only:
-See [UPDATING_LAUNCHER.md](../../../tee_launcher/UPDATING_LAUNCHER.md)
+See [updating-launcher-internal-guide.md](../../../docs/updating-launcher-internal-guide.md)
 
 ## Prerequisites
 - Local NEAR network running: `NEAR_ENV=mpc-localnet neard --home ~/.near/mpc-localnet run`
