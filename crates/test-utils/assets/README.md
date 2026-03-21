@@ -46,11 +46,6 @@ All files will be written into the specified output directory.
 
 4. Update the `VALID_ATTESTATION_TIMESTAMP` constant in `crates/test-utils/src/attestation.rs` to a Unix timestamp that is after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
-   You can generate a current timestamp with:
-   ```shell
-   date +%s
-   ```
-
 ## Tests that depend on these assets
 
 After updating assets, these tests should pass:
