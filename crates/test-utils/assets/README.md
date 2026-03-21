@@ -1,6 +1,6 @@
 # Updating Test Assets
 
-Updating test assets is needed when updating launcher code (or when updating other measured components).  See [UPDATING_LAUNCHER.md](../../../tee_launcher/UPDATING_LAUNCHER.md)
+Updating test assets is needed when updating launcher code (or when updating other measured components).  See [updating-launcher-internal-guide.md](../../../docs/updating-launcher-internal-guide.md)
 
 
 To update the test asset files, fetch `/public_data` from the MPC node’s public
@@ -47,4 +47,16 @@ This will regenerate the following files:
 
 All files will be written into the specified output directory.
 
-In addition, look for the `VALID_ATTESTATION_TIMESTAMP` constant in `crates/test-utils/src/attestation.rs` and update it to a Unix timestamp that is after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
+4. Update the `VALID_ATTESTATION_TIMESTAMP` constant in `crates/test-utils/src/attestation.rs` to a Unix timestamp that is after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
+
+## Tests that depend on these assets
+
+After updating assets, these tests should pass:
+
+```shell
+cargo test -p mpc-contract test_submit_participant_info_succeeds_with_valid_dstack_attestation
+cargo test -p mpc-contract test_tee_attestation_fails_with_invalid_tls_key
+cargo test -p mpc-contract test_submit_participant_info_fails_without_approved_mpc_hash
+cargo test -p mpc-contract test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation
+cargo test -p test-utils
+```
