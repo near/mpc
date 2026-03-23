@@ -182,7 +182,7 @@ EOF
 4. **Download Guest OS images:**
 
    ```bash
-   DSTACK_VERSION=0.5.4
+   DSTACK_VERSION=0.5.7
    wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
    mkdir -p images/
    tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
@@ -246,7 +246,7 @@ Notice that some of the commands require `sudo`, so they cannot be run using the
 > **Important:** The guest OS image that runs inside the CVM must be **identical across all nodes**.  
 > The image is **measured**, and those measurements are **hardcoded in the contract**.
 
-The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.4**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
+The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.7**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
 
 If you need to **verify**, **re-download**, or **rebuild** the image, follow one of the methods below.
 
@@ -257,14 +257,14 @@ If you need to **verify**, **re-download**, or **rebuild** the image, follow one
 Use this method to retrieve the official pre-built image provided by the Dstack project.
 
 ```bash
-DSTACK_VERSION=0.5.4
+DSTACK_VERSION=0.5.7
 wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
 mkdir -p images/
 tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
 rm -f dstack-${DSTACK_VERSION}.tar.gz
 ```
 
-This ensures you are using the verified release image corresponding to version **0.5.4**.
+This ensures you are using the verified release image corresponding to version **0.5.7**.
 
 ---
 
@@ -277,7 +277,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
    ```bash
    git clone https://github.com/Dstack-TEE/meta-dstack.git
    cd meta-dstack/
-   git checkout f7c795b76faa693f218e1c255007e3a68c541d79
+   git checkout 1f2c3c73ffb67887c4858ab073b7d74a68686f55
    git submodule update --init --recursive
    ```
 
@@ -285,7 +285,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
 
    - **Download the pre-built image (recommended, faster):**
      ```bash
-     ./build.sh dl 0.5.4
+     ./build.sh dl 0.5.7
      ```
 
    - **Build a reproducible image from source (slower, ~1–2 hours):**
@@ -296,7 +296,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
 
 ###### Verification Steps
 
-Run these commands from inside your image folder (e.g., `dstack-0.5.4`).
+Run these commands from inside your image folder (e.g., `dstack-0.5.7`).
 
 **1. Verify file hashes against expected values:**
 
@@ -307,9 +307,9 @@ set -euo pipefail
 # Hard-coded expected hashes
 declare -A EXPECTED
 EXPECTED["ovmf.fd"]="76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0"
-EXPECTED["bzImage"]="987083c434a937e47361377196644169b8d2183919c6c3ab89e251e021ab55cb"
-EXPECTED["initramfs.cpio.gz"]="fd5267f04bf95dc073c21934de552517506acde6485524834376c8a479c92fcd"
-EXPECTED["metadata.json"]="a0a8489dd9f05db9ba26b37c1a7e3c99e94fa4a3e82736b57b1c19b058a11674"
+EXPECTED["bzImage"]="bfb747a3649e3dc7f0fc996b8d5f012f72b15de58d1229fa7e1ebc4c5a94a6da"
+EXPECTED["initramfs.cpio.gz"]="da76e309cb8cb03e76f5a98f6f72069d810d1f014b4795b1bc7c11107bf8044d"
+EXPECTED["metadata.json"]="ecca6c433360ed7be97bee73fa554dd34b7f8eadee9f729a0c949ecf4c20d539"
 
 ALL_OK=1
 for FILE in "${!EXPECTED[@]}"; do
@@ -382,7 +382,7 @@ For more details, see the [Dstack attestation guide](https://github.com/Dstack-T
 Build `dstack-mr` docker image:
 
 ```bash
-cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.4
+cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.7
 ```
 
 Create a Dockerfile file with the following contents:
@@ -422,9 +422,9 @@ Run:
 
 ```bash
 docker run --rm \
-  -v "$(pwd)":/dstack-0.5.4 \
+  -v "$(pwd)":/dstack-0.5.7 \
   dstack-mr \
-  measure -c 8 -m 64G /dstack-0.5.4/metadata.json
+  measure -c 8 -m 64G /dstack-0.5.7/metadata.json
 ```
 
 Example output:
@@ -433,8 +433,8 @@ Example output:
 Machine measurements:
 MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
 RTMR0: e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46
-RTMR1: a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8b01713d3d9937e3e0d26c15
-RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe
+RTMR1: 920eb831509b58bf83a554b5377dd5ce26d3f5182f14d33622ac24c1d343a0fa3c7bde746e55098ca30baf784dfd2556
+RTMR2: 4674857a0f5b090f9203245f55c6516c37f533b362576a505f5b89efa2a28376d6b82e984e41f1f0ebcddfcbeb9581b9
 ```
 
 ---
