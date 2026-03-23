@@ -402,8 +402,8 @@ impl TeeState {
         self.allowed_measurements.to_attestation_measurements()
     }
 
-    /// Removes TEE information for nodes that are not in the provided participants list.
-    /// Used to clean up storage after a resharing concludes.
+    /// Removes TEE information and stale votes for nodes that are not in the provided
+    /// participants list. Used to clean up storage after a resharing concludes.
     pub fn clean_non_participants(&mut self, participants: &Participants) {
         // Collect all allowed TLS public keys from current participants
         let active_tls_keys: HashSet<&near_sdk::PublicKey> = participants
@@ -424,6 +424,11 @@ impl TeeState {
         for tls_pk in stale_keys {
             self.stored_attestations.remove(&tls_pk);
         }
+
+        // Remove stale votes from non-participants
+        self.votes = self.votes.get_remaining_votes(participants);
+        self.launcher_votes = self.launcher_votes.get_remaining_votes(participants);
+        self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.
@@ -487,11 +492,14 @@ pub(crate) enum AttestationCheckError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
+    use crate::primitives::test_utils::gen_participant;
     use crate::primitives::test_utils::gen_participants;
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::{Attestation, MockAttestation};
+    use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
@@ -1232,5 +1240,86 @@ mod tests {
             add_participant_result,
             Err(AttestationSubmissionError::InvalidAttestation(_))
         )
+    }
+
+    /// Stale CodeHashesVotes entries from removed participants must not count toward
+    /// quorum after resharing.
+    ///
+    /// Scenario (N=5, T=3):
+    /// 1. P1 and P2 vote for malicious hash before resharing.
+    /// 2. Resharing removes P1 and P2. New set: {P3, P4, P5}.
+    /// 3. clean_non_participants removes stale votes.
+    /// 4. P3 votes for the same hash — only 1 vote, not 3.
+    #[test]
+    fn test_clean_non_participants_removes_stale_votes() {
+        // Build 5 participants
+        let mut all_participants = Participants::new();
+        let mut account_ids = Vec::new();
+        for i in 0..5 {
+            let (account_id, info) = gen_participant(i);
+            account_ids.push(account_id.clone());
+            all_participants.insert(account_id, info).unwrap();
+        }
+
+        let mut tee_state = TeeState::default();
+
+        // P0 and P1 vote for a malicious hash before resharing
+        let malicious_hash = NodeImageHash::from([0xAA; 32]);
+        for account_id in &account_ids[0..2] {
+            let mut ctx = VMContextBuilder::new();
+            ctx.signer_account_id(account_id.clone());
+            testing_env!(ctx.build());
+            let auth_id = AuthenticatedParticipantId::new(&all_participants).unwrap();
+            tee_state.votes.vote(malicious_hash.clone(), &auth_id);
+        }
+        assert_eq!(tee_state.votes.proposal_by_account.len(), 2);
+
+        // Resharing removes P0 and P1. New participant set: {P2, P3, P4}.
+        let new_participants = all_participants.subset(2..5);
+
+        // Clean non-participants (as done by CLEAN_TEE_STATUS after resharing)
+        tee_state.clean_non_participants(&new_participants);
+
+        // Stale votes must be removed
+        assert_eq!(tee_state.votes.proposal_by_account.len(), 0);
+
+        // P2 votes for the same malicious hash — should be only 1 vote, not 3
+        let p2_account = &account_ids[2];
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(p2_account.clone());
+        testing_env!(ctx.build());
+        let auth_id = AuthenticatedParticipantId::new(&new_participants).unwrap();
+        let vote_count = tee_state.votes.vote(malicious_hash.clone(), &auth_id);
+        assert_eq!(vote_count, 1, "Only the fresh vote from P2 should count");
+    }
+
+    /// Verifies that clean_non_participants also removes stale launcher and measurement votes.
+    #[test]
+    fn test_clean_non_participants_removes_stale_launcher_and_measurement_votes() {
+        let mut all_participants = Participants::new();
+        let mut account_ids = Vec::new();
+        for i in 0..3 {
+            let (account_id, info) = gen_participant(i);
+            account_ids.push(account_id.clone());
+            all_participants.insert(account_id, info).unwrap();
+        }
+
+        let mut tee_state = TeeState::default();
+
+        // P0 votes for a launcher hash
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(account_ids[0].clone());
+        testing_env!(ctx.build());
+        let auth_id = AuthenticatedParticipantId::new(&all_participants).unwrap();
+        let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
+        tee_state.launcher_votes.vote(launcher_action, &auth_id);
+
+        assert_eq!(tee_state.launcher_votes.vote_by_account.len(), 1);
+
+        // New participant set excludes P0
+        let new_participants = all_participants.subset(1..3);
+        tee_state.clean_non_participants(&new_participants);
+
+        assert_eq!(tee_state.launcher_votes.vote_by_account.len(), 0);
     }
 }
