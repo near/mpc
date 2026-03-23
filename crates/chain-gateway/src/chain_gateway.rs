@@ -98,7 +98,7 @@ impl ChainGateway {
 
     /// Signals all nearcore actors owned by this gateway to stop.
     ///
-    /// After calling this, use [`near_store::db::RocksDB::block_until_all_instances_are_dropped`]
+    /// After calling this, use `near_store::db::RocksDB::block_until_all_instances_are_dropped`
     /// to wait for RocksDB cleanup before dropping the tokio runtime.
     pub fn stop(&self) {
         self.actor_system.stop();
