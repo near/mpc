@@ -22,20 +22,6 @@ pub struct MpcNode {
     process: ProcessGuard,
 }
 
-/// Guard that kills the child process on drop.
-struct ProcessGuard(Child);
-
-impl Drop for ProcessGuard {
-    fn drop(&mut self) {
-        if let Err(e) = self.0.kill() {
-            tracing::error!(error = %e, "failed to kill mpc-node process");
-        }
-        if let Err(e) = self.0.wait() {
-            tracing::error!(error = %e, "failed to wait on mpc-node process");
-        }
-    }
-}
-
 impl MpcNode {
     /// Stop the node. Consumes self and returns the setup for potential restart.
     pub fn kill(self) -> MpcNodeSetup {
@@ -50,6 +36,20 @@ impl MpcNode {
 
     pub fn is_running(&mut self) -> bool {
         !matches!(self.process.0.try_wait(), Ok(Some(_)))
+    }
+}
+
+/// Guard that kills the child process on drop.
+struct ProcessGuard(Child);
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        if let Err(e) = self.0.kill() {
+            tracing::error!(error = %e, "failed to kill mpc-node process");
+        }
+        if let Err(e) = self.0.wait() {
+            tracing::error!(error = %e, "failed to wait on mpc-node process");
+        }
     }
 }
 
