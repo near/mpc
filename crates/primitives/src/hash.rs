@@ -128,139 +128,36 @@ impl<T, const N: usize> FromStr for Hash<T, N> {
     }
 }
 
-// 32-byte marker types
+/// Defines a phantom marker struct for use as a type parameter in `Hash<T, N>`.
+/// Each marker makes its `Hash` type incompatible with others at compile time.
+macro_rules! hash_marker {
+    ($name:ident) => {
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            derive(::schemars::JsonSchema, ::borsh::BorshSchema)
+        )]
+        #[derive(
+            Debug,
+            Clone,
+            PartialEq,
+            Eq,
+            serde::Serialize,
+            serde::Deserialize,
+            BorshSerialize,
+            BorshDeserialize,
+        )]
+        pub struct $name;
+    };
+}
 
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct Image;
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct Compose;
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct Launcher;
-
-// 48-byte marker types for TDX measurements
-
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct Mrtd;
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct Rtmr0;
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct Rtmr1;
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct Rtmr2;
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct KeyProviderEventDigest;
+hash_marker!(Image);
+hash_marker!(Compose);
+hash_marker!(Launcher);
+hash_marker!(Mrtd);
+hash_marker!(Rtmr0);
+hash_marker!(Rtmr1);
+hash_marker!(Rtmr2);
+hash_marker!(KeyProviderEventDigest);
 
 /// Hash of a Docker image running in the TEE environment. Used as a proposal for a new TEE
 /// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
