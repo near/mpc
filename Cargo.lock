@@ -10767,6 +10767,7 @@ dependencies = [
  "near-mpc-contract-interface",
  "near-sdk",
  "serde_json",
+ "serde_yaml",
  "sha2",
 ]
 
