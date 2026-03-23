@@ -270,23 +270,23 @@ BorshSchemaContainer {
                 [
                     (
                         "mrtd",
-                        "Sha384Digest",
+                        "Hash48",
                     ),
                     (
                         "rtmr0",
-                        "Sha384Digest",
+                        "Hash48",
                     ),
                     (
                         "rtmr1",
-                        "Sha384Digest",
+                        "Hash48",
                     ),
                     (
                         "rtmr2",
-                        "Sha384Digest",
+                        "Hash48",
                     ),
                     (
                         "key_provider_event_digest",
-                        "Sha384Digest",
+                        "Hash48",
                     ),
                 ],
             ),
@@ -482,6 +482,20 @@ BorshSchemaContainer {
                     (
                         "bytes",
                         "[u8; 32]",
+                    ),
+                    (
+                        "_marker",
+                        "()",
+                    ),
+                ],
+            ),
+        },
+        "Hash48": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 48]",
                     ),
                     (
                         "_marker",
@@ -1255,16 +1269,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 32]",
-                ],
-            ),
-        },
-        "Sha384Digest": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "bytes",
-                        "[u8; 48]",
-                    ),
                 ],
             ),
         },

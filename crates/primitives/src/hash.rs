@@ -6,11 +6,6 @@ use hex::FromHexError;
 use serde_with::serde_as;
 use thiserror::Error;
 
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::schemars::JsonSchema),
-    derive(::borsh::BorshSchema)
-)]
 #[serde_as]
 #[derive(
     Debug,
@@ -29,33 +24,76 @@ use thiserror::Error;
     Into,
 )]
 #[serde(transparent)]
-pub struct Hash32<T> {
+pub struct Hash<T, const N: usize> {
     #[deref]
     #[as_ref]
     #[into]
     #[serde_as(as = "serde_with::hex::Hex")]
-    bytes: [u8; 32],
+    bytes: [u8; N],
     #[into(skip)]
     _marker: PhantomData<T>,
 }
 
-impl<T> From<[u8; 32]> for Hash32<T> {
-    fn from(bytes: [u8; 32]) -> Self {
+// Manual BorshSchema impl because borsh derive generates "Hash" for all
+// Hash<T, N> regardless of N, causing a name collision when both N=32 and
+// N=48 are used in the same schema. We include N in the declaration name.
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl<T: borsh::BorshSchema, const N: usize> borsh::BorshSchema for Hash<T, N> {
+    fn declaration() -> borsh::schema::Declaration {
+        alloc::format!("Hash{}", N)
+    }
+
+    fn add_definitions_recursively(
+        definitions: &mut alloc::collections::BTreeMap<
+            borsh::schema::Declaration,
+            borsh::schema::Definition,
+        >,
+    ) {
+        let byte_array_decl = alloc::format!("[u8; {}]", N);
+        definitions.insert(
+            Self::declaration(),
+            borsh::schema::Definition::Struct {
+                fields: borsh::schema::Fields::NamedFields(alloc::vec![
+                    ("bytes".into(), byte_array_decl),
+                    ("_marker".into(), "()".into()),
+                ]),
+            },
+        );
+    }
+}
+
+// Manual JsonSchema impl because:
+// 1. schemars doesn't support [u8; N] for N > 32
+// 2. The JSON representation is always a hex string regardless of N,
+//    so the correct JSON schema type is String for all sizes
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl<T, const N: usize> schemars::JsonSchema for Hash<T, N> {
+    fn schema_name() -> String {
+        alloc::format!("Hash{}", N)
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        <String as schemars::JsonSchema>::json_schema(generator)
+    }
+}
+
+impl<T, const N: usize> From<[u8; N]> for Hash<T, N> {
+    fn from(bytes: [u8; N]) -> Self {
         Self::new(bytes)
     }
 }
 
-impl<T> Hash32<T> {
+impl<T, const N: usize> Hash<T, N> {
     /// Converts the hash to a hexadecimal string representation.
     pub fn as_hex(&self) -> String {
         hex::encode(self.as_ref())
     }
 
-    pub fn as_bytes(&self) -> [u8; 32] {
+    pub fn as_bytes(&self) -> [u8; N] {
         self.bytes
     }
 
-    pub const fn new(bytes: [u8; 32]) -> Self {
+    pub const fn new(bytes: [u8; N]) -> Self {
         Self {
             bytes,
             _marker: PhantomData,
@@ -63,28 +101,35 @@ impl<T> Hash32<T> {
     }
 }
 
+/// Backward-compatible alias for 32-byte hashes.
+pub type Hash32<T> = Hash<T, 32>;
+
 #[derive(Error, Debug)]
-pub enum Hash32ParseError {
+pub enum HashParseError {
     #[error("not a valid hex string")]
     HexError(#[from] FromHexError),
-    #[error("hex string not 32 bytes, got {0}")]
+    #[error("hex string not {0} bytes")]
     InvalidLength(usize),
 }
 
-impl<T> FromStr for Hash32<T> {
-    type Err = Hash32ParseError;
+/// Backward-compatible alias.
+pub type Hash32ParseError = HashParseError;
+
+impl<T, const N: usize> FromStr for Hash<T, N> {
+    type Err = HashParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let decoded_hex_bytes = hex::decode(s)?;
-        let hash_32_bytes: [u8; 32] = decoded_hex_bytes
+        let hash_bytes: [u8; N] = decoded_hex_bytes
             .try_into()
-            .map_err(|v: Vec<u8>| Hash32ParseError::InvalidLength(v.len()))?;
+            .map_err(|v: Vec<u8>| HashParseError::InvalidLength(v.len()))?;
 
-        Ok(hash_32_bytes.into())
+        Ok(hash_bytes.into())
     }
 }
 
-// Marker types
+// 32-byte marker types
+
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(::schemars::JsonSchema),
@@ -134,6 +179,89 @@ pub struct Compose;
 )]
 pub struct Launcher;
 
+// 48-byte marker types for TDX measurements
+
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+pub struct Mrtd;
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+pub struct Rtmr0;
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+pub struct Rtmr1;
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+pub struct Rtmr2;
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(::schemars::JsonSchema),
+    derive(::borsh::BorshSchema)
+)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+pub struct KeyProviderEventDigest;
+
 /// Hash of a Docker image running in the TEE environment. Used as a proposal for a new TEE
 /// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
 /// measurement and more).
@@ -150,6 +278,21 @@ pub type LauncherDockerComposeHash = Hash32<Compose>;
 /// Hash of the launcher Docker image itself. Voted on by participants to allow
 /// launcher upgrades without contract redeployment.
 pub type LauncherImageHash = Hash32<Launcher>;
+
+/// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
+pub type MrtdHash = Hash<Mrtd, 48>;
+
+/// SHA-384 digest of the RTMR0 TDX measurement.
+pub type Rtmr0Hash = Hash<Rtmr0, 48>;
+
+/// SHA-384 digest of the RTMR1 TDX measurement.
+pub type Rtmr1Hash = Hash<Rtmr1, 48>;
+
+/// SHA-384 digest of the RTMR2 TDX measurement.
+pub type Rtmr2Hash = Hash<Rtmr2, 48>;
+
+/// SHA-384 digest of the key provider event.
+pub type KeyProviderEventDigestHash = Hash<KeyProviderEventDigest, 48>;
 
 #[cfg(test)]
 mod tests {
@@ -356,7 +499,7 @@ mod tests {
     fn test_parse_rejects_invalid_hex() {
         let err = "0x00".parse::<TestHash>().unwrap_err();
 
-        assert!(matches!(err, Hash32ParseError::HexError(_)));
+        assert!(matches!(err, HashParseError::HexError(_)));
     }
 
     #[test]
@@ -364,8 +507,73 @@ mod tests {
         let err = "00".parse::<TestHash>().unwrap_err();
 
         match err {
-            Hash32ParseError::InvalidLength(len) => assert_eq!(len, 1),
+            HashParseError::InvalidLength(len) => assert_eq!(len, 1),
             _ => panic!("unexpected error variant"),
         }
+    }
+
+    #[test]
+    fn test_48_byte_hash_roundtrip() {
+        let bytes = [0xABu8; 48];
+        let hash = MrtdHash::from(bytes);
+        assert_eq!(hash.as_bytes(), bytes);
+        assert_eq!(hash.as_hex(), "ab".repeat(48));
+
+        let converted_back: [u8; 48] = hash.into();
+        assert_eq!(converted_back, bytes);
+    }
+
+    #[test]
+    fn test_48_byte_hash_serde_roundtrip() {
+        let bytes = [0x42u8; 48];
+        let hash = MrtdHash::from(bytes);
+
+        let json = serde_json::to_string(&hash).unwrap();
+        let deserialized: MrtdHash = serde_json::from_str(&json).unwrap();
+        assert_eq!(hash, deserialized);
+    }
+
+    #[test]
+    fn test_48_byte_hash_borsh_roundtrip() {
+        let bytes = [0x42u8; 48];
+        let hash = MrtdHash::from(bytes);
+
+        let borsh_bytes = borsh::to_vec(&hash).unwrap();
+        let deserialized = MrtdHash::try_from_slice(&borsh_bytes).unwrap();
+        assert_eq!(hash, deserialized);
+    }
+
+    #[test]
+    fn test_48_byte_borsh_equivalent_to_raw_array() {
+        let bytes = [0x42u8; 48];
+        let hash = MrtdHash::from(bytes);
+
+        let bytes_as_borsh = borsh::to_vec(&bytes).unwrap();
+        let hash_as_borsh = borsh::to_vec(&hash).unwrap();
+        assert_eq!(bytes_as_borsh, hash_as_borsh);
+    }
+
+    #[test]
+    fn test_48_byte_different_markers_are_distinct_types() {
+        let bytes = [1u8; 48];
+        let mrtd = MrtdHash::from(bytes);
+        let rtmr0 = Rtmr0Hash::from(bytes);
+
+        // Same data but different types
+        assert_eq!(*mrtd, *rtmr0);
+
+        // This wouldn't compile (different types):
+        // let _: MrtdHash = rtmr0;
+    }
+
+    #[test]
+    fn test_48_byte_parse_from_hex_string() {
+        let expected_bytes = [0x11u8; 48];
+        let hex_string = "11".repeat(48);
+
+        let parsed: MrtdHash = hex_string.parse().unwrap();
+
+        assert_eq!(*parsed, expected_bytes);
+        assert_eq!(parsed.as_hex(), hex_string);
     }
 }
