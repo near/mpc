@@ -49,6 +49,7 @@ pub struct MpcNodeConfig {
     pub account: Account,
     pub triples_to_buffer: usize,
     pub presignatures_to_buffer: usize,
+    pub rust_log: Option<String>,
 }
 
 /// Manages a single `mpc-node` OS process.
@@ -74,6 +75,7 @@ pub struct MpcNode {
     backup_encryption_key_hex: String,
     triples_to_buffer: usize,
     presignatures_to_buffer: usize,
+    rust_log: String,
 
     // near-workspaces account (for voting on contract)
     pub account: Account,
@@ -116,6 +118,7 @@ impl MpcNode {
             backup_encryption_key_hex,
             triples_to_buffer: config.triples_to_buffer,
             presignatures_to_buffer: config.presignatures_to_buffer,
+            rust_log: config.rust_log.unwrap_or_else(|| "DEBUG".to_string()),
             account: config.account,
             process: None,
         })
@@ -161,7 +164,7 @@ impl MpcNode {
         let child = Command::new(binary_path)
             .arg("start-with-config-file")
             .arg(&config_path)
-            .env("RUST_LOG", "DEBUG")
+            .env("RUST_LOG", &self.rust_log)
             .env("RUST_BACKTRACE", "1")
             .stdout(Stdio::from(stdout_file))
             .stderr(Stdio::from(stderr_file))
@@ -228,58 +231,60 @@ impl MpcNode {
         let config_path = self.home_dir.join("start_config.toml");
         let signer = self.signer_account_id.to_string();
 
-        let config = StartConfigToml {
+        let config = StartConfig {
             home_dir: self.home_dir.display().to_string(),
-            secrets: SecretsToml {
-                secret_store_key_hex: &self.secret_store_key_hex,
-                backup_encryption_key_hex: &self.backup_encryption_key_hex,
+            secrets: Secrets {
+                secret_store_key_hex: self.secret_store_key_hex.clone(),
+                backup_encryption_key_hex: self.backup_encryption_key_hex.clone(),
             },
-            tee: TeeToml {
-                image_hash: DUMMY_IMAGE_HASH,
-                latest_allowed_hash_file_path: "latest_allowed_hash.txt",
-                authority: TeeAuthorityToml { r#type: "local" },
+            tee: Tee {
+                image_hash: DUMMY_IMAGE_HASH.to_string(),
+                latest_allowed_hash_file_path: "latest_allowed_hash.txt".to_string(),
+                authority: TeeAuthority {
+                    r#type: "local".to_string(),
+                },
             },
-            log: LogToml {
-                format: "plain",
-                filter: "debug",
+            log: Log {
+                format: "plain".to_string(),
+                filter: "debug".to_string(),
             },
-            near_init: NearInitToml {
-                chain_id: "mpc-localnet",
-                boot_nodes: &self.near_node_boot_nodes,
+            near_init: NearInit {
+                chain_id: "mpc-localnet".to_string(),
+                boot_nodes: self.near_node_boot_nodes.clone(),
                 genesis_path: self.near_node_genesis_path.display().to_string(),
                 download_genesis: false,
                 rpc_addr: format!("0.0.0.0:{}", self.ports.near_rpc),
                 network_addr: format!("0.0.0.0:{}", self.ports.near_network),
             },
-            node: NodeToml {
-                my_near_account_id: &signer,
-                near_responder_account_id: &signer,
+            node: Node {
+                my_near_account_id: signer.clone(),
+                near_responder_account_id: signer,
                 number_of_responder_keys: 1,
                 web_ui: format!("127.0.0.1:{}", self.ports.web_ui),
                 migration_web_ui: format!("127.0.0.1:{}", self.ports.migration_web_ui),
                 pprof_bind_address: format!("127.0.0.1:{}", self.ports.pprof),
                 cores: 4,
-                indexer: IndexerToml {
+                indexer: Indexer {
                     validate_genesis: true,
                     concurrency: 1,
-                    mpc_contract_id: self.mpc_contract_id.as_str(),
-                    finality: "optimistic",
-                    sync_mode: BTreeMap::from([("Block", SyncModeBlockToml { height: 0 })]),
+                    mpc_contract_id: self.mpc_contract_id.to_string(),
+                    finality: "optimistic".to_string(),
+                    sync_mode: BTreeMap::from([("Block".to_string(), SyncModeBlock { height: 0 })]),
                 },
-                triple: TripleToml {
+                triple: Triple {
                     concurrency: 2,
                     desired_triples_to_buffer: self.triples_to_buffer,
                     timeout_sec: 60,
                     parallel_triple_generation_stagger_time_sec: 1,
                 },
-                presignature: PresignatureToml {
+                presignature: Presignature {
                     concurrency: 2,
                     desired_presignatures_to_buffer: self.presignatures_to_buffer,
                     timeout_sec: 60,
                 },
-                signature: TimeoutToml { timeout_sec: 60 },
-                ckd: TimeoutToml { timeout_sec: 60 },
-                keygen: TimeoutToml { timeout_sec: 60 },
+                signature: Timeout { timeout_sec: 60 },
+                ckd: Timeout { timeout_sec: 60 },
+                keygen: Timeout { timeout_sec: 60 },
             },
         };
 
@@ -303,7 +308,7 @@ impl Drop for MpcNode {
 }
 
 // ---------------------------------------------------------------------------
-// TODO: Factor `StartConfig` out of `mpc-node` into a lightweight crate so we
+// TODO(#2560): Factor `StartConfig` out of `mpc-node` into a lightweight crate so we
 // can reuse it here instead of duplicating the structure.
 //
 // Serialization types for `start_config.toml`.
@@ -312,43 +317,43 @@ impl Drop for MpcNode {
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
-struct StartConfigToml<'a> {
+struct StartConfig {
     home_dir: String,
-    secrets: SecretsToml<'a>,
-    tee: TeeToml<'a>,
-    log: LogToml<'a>,
-    near_init: NearInitToml<'a>,
-    node: NodeToml<'a>,
+    secrets: Secrets,
+    tee: Tee,
+    log: Log,
+    near_init: NearInit,
+    node: Node,
 }
 
 #[derive(Serialize)]
-struct SecretsToml<'a> {
-    secret_store_key_hex: &'a str,
-    backup_encryption_key_hex: &'a str,
+struct Secrets {
+    secret_store_key_hex: String,
+    backup_encryption_key_hex: String,
 }
 
 #[derive(Serialize)]
-struct TeeToml<'a> {
-    image_hash: &'a str,
-    latest_allowed_hash_file_path: &'a str,
-    authority: TeeAuthorityToml<'a>,
+struct Tee {
+    image_hash: String,
+    latest_allowed_hash_file_path: String,
+    authority: TeeAuthority,
 }
 
 #[derive(Serialize)]
-struct LogToml<'a> {
-    format: &'a str,
-    filter: &'a str,
+struct Log {
+    format: String,
+    filter: String,
 }
 
 #[derive(Serialize)]
-struct TeeAuthorityToml<'a> {
-    r#type: &'a str,
+struct TeeAuthority {
+    r#type: String,
 }
 
 #[derive(Serialize)]
-struct NearInitToml<'a> {
-    chain_id: &'a str,
-    boot_nodes: &'a str,
+struct NearInit {
+    chain_id: String,
+    boot_nodes: String,
     genesis_path: String,
     download_genesis: bool,
     rpc_addr: String,
@@ -356,38 +361,38 @@ struct NearInitToml<'a> {
 }
 
 #[derive(Serialize)]
-struct NodeToml<'a> {
-    my_near_account_id: &'a str,
-    near_responder_account_id: &'a str,
+struct Node {
+    my_near_account_id: String,
+    near_responder_account_id: String,
     number_of_responder_keys: usize,
     web_ui: String,
     migration_web_ui: String,
     pprof_bind_address: String,
     cores: usize,
-    indexer: IndexerToml<'a>,
-    triple: TripleToml,
-    presignature: PresignatureToml,
-    signature: TimeoutToml,
-    ckd: TimeoutToml,
-    keygen: TimeoutToml,
+    indexer: Indexer,
+    triple: Triple,
+    presignature: Presignature,
+    signature: Timeout,
+    ckd: Timeout,
+    keygen: Timeout,
 }
 
 #[derive(Serialize)]
-struct IndexerToml<'a> {
+struct Indexer {
     validate_genesis: bool,
     concurrency: usize,
-    mpc_contract_id: &'a str,
-    finality: &'a str,
-    sync_mode: BTreeMap<&'a str, SyncModeBlockToml>,
+    mpc_contract_id: String,
+    finality: String,
+    sync_mode: BTreeMap<String, SyncModeBlock>,
 }
 
 #[derive(Serialize)]
-struct SyncModeBlockToml {
+struct SyncModeBlock {
     height: u64,
 }
 
 #[derive(Serialize)]
-struct TripleToml {
+struct Triple {
     concurrency: usize,
     desired_triples_to_buffer: usize,
     timeout_sec: u64,
@@ -395,13 +400,13 @@ struct TripleToml {
 }
 
 #[derive(Serialize)]
-struct PresignatureToml {
+struct Presignature {
     concurrency: usize,
     desired_presignatures_to_buffer: usize,
     timeout_sec: u64,
 }
 
 #[derive(Serialize)]
-struct TimeoutToml {
+struct Timeout {
     timeout_sec: u64,
 }

@@ -11,20 +11,20 @@ use crate::port_allocator::E2ePortAllocator;
 pub struct NearNode {
     sandbox: near_sandbox::Sandbox,
     rpc_port: u16,
-    net_port: u16,
+    network_port: u16,
 }
 
 impl NearNode {
     /// Start a NEAR validator with ports from the allocator.
     pub async fn start(ports: &E2ePortAllocator) -> anyhow::Result<Self> {
         let rpc_port = ports.near_node_rpc_port();
-        let net_port = ports.near_node_network_port();
+        let network_port = ports.near_node_network_port();
 
-        tracing::info!(rpc_port, net_port, "starting near-sandbox");
+        tracing::info!(rpc_port, network_port, "starting near-sandbox");
 
         let config = near_sandbox::SandboxConfig {
             rpc_port: Some(rpc_port),
-            net_port: Some(net_port),
+            net_port: Some(network_port),
             ..Default::default()
         };
 
@@ -37,7 +37,7 @@ impl NearNode {
         Ok(Self {
             sandbox,
             rpc_port,
-            net_port,
+            network_port,
         })
     }
 
@@ -49,8 +49,8 @@ impl NearNode {
         self.rpc_port
     }
 
-    pub fn net_port(&self) -> u16 {
-        self.net_port
+    pub fn network_port(&self) -> u16 {
+        self.network_port
     }
 
     /// Path to the NEAR node home directory (contains genesis.json, node_key.json, etc.).
@@ -65,7 +65,7 @@ impl NearNode {
 
     /// Constructs the boot_nodes string for mpc-node NearInitConfig.
     ///
-    /// Format: `"ed25519:<base58_pubkey>@127.0.0.1:<net_port>"`
+    /// Format: `"ed25519:<base58_pubkey>@127.0.0.1:<network_port>"`
     pub fn boot_nodes(&self) -> anyhow::Result<String> {
         let node_key_path = self.home_dir().join("node_key.json");
         let content = std::fs::read_to_string(&node_key_path)
@@ -75,6 +75,6 @@ impl NearNode {
         let public_key = parsed["public_key"]
             .as_str()
             .context("missing public_key in node_key.json")?;
-        Ok(format!("{public_key}@127.0.0.1:{}", self.net_port))
+        Ok(format!("{public_key}@127.0.0.1:{}", self.network_port))
     }
 }
