@@ -139,8 +139,8 @@ pub struct Launcher;
 /// measurement and more).
 pub type DockerImageHash = Hash32<Image>;
 
-/// MPC-specific alias for [`DockerImageHash`].
-pub type MpcDockerImageHash = DockerImageHash;
+/// Hash of the MPC node's Docker image.
+pub type NodeImageHash = DockerImageHash;
 
 /// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment. It
 /// is computed from the launcher's Docker Compose template populated with the launcher image hash
@@ -247,7 +247,7 @@ mod tests {
     fn test_type_aliases() {
         let bytes = [1u8; 32];
 
-        let image_hash = MpcDockerImageHash::from(bytes);
+        let image_hash = NodeImageHash::from(bytes);
         let compose_hash = LauncherDockerComposeHash::from(bytes);
 
         assert_eq!(*image_hash, bytes);
@@ -260,14 +260,14 @@ mod tests {
         let bytes = [42u8; 32];
 
         // Ensure different marker types create different types
-        let image_hash = MpcDockerImageHash::from(bytes);
+        let image_hash = NodeImageHash::from(bytes);
         let compose_hash = LauncherDockerComposeHash::from(bytes);
 
         // They should have the same data but be different types
         assert_eq!(*image_hash, *compose_hash);
 
         // This wouldn't compile (different types):
-        // let _: MpcDockerImageHash = compose_hash;
+        // let _: NodeImageHash = compose_hash;
     }
 
     #[test]
@@ -317,12 +317,12 @@ mod tests {
     }
 
     #[test]
-    fn test_mpc_docker_image_hash_hex_serialization() {
+    fn test_node_image_hash_hex_serialization() {
         // Given
         let expected_hex = "\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\"";
 
         // When
-        let hash: MpcDockerImageHash = serde_json::from_str(expected_hex).unwrap();
+        let hash: NodeImageHash = serde_json::from_str(expected_hex).unwrap();
         let serialized_hex = serde_json::to_string(&hash).unwrap();
 
         // Then

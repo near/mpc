@@ -16,7 +16,7 @@ use mpc_contract::{
     errors::InvalidState,
     primitives::{domain::Curve, participants::Participants, test_utils::bogus_ed25519_public_key},
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, MpcDockerImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_workspaces::Contract;
@@ -87,7 +87,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     let first_hash = image_digest();
 
     let arbitrary_bytes = [2; 32];
-    let second_hash = MpcDockerImageHash::from(arbitrary_bytes);
+    let second_hash = NodeImageHash::from(arbitrary_bytes);
 
     // Initially, there should be no allowed hashes
     assert_eq!(get_allowed_hashes(&contract).await.len(), 0);
@@ -199,7 +199,7 @@ async fn get_allowed_launcher_compose_hashes(
         .json::<Vec<LauncherDockerComposeHash>>()?)
 }
 
-async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
+async fn get_allowed_hashes(contract: &Contract) -> Vec<NodeImageHash> {
     contract
         .call(method_names::ALLOWED_DOCKER_IMAGE_HASHES)
         .args_json(serde_json::json!(""))
@@ -207,7 +207,7 @@ async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
         .transact()
         .await
         .expect("Contract is running")
-        .json::<Vec<MpcDockerImageHash>>()
+        .json::<Vec<NodeImageHash>>()
         .expect("allowed_docker_image_hashes method is infallible")
 }
 
@@ -357,7 +357,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     let hashes = [hash_1, hash_2, hash_3];
 
     for (i, current_hash) in hashes.iter().enumerate() {
-        let hash = MpcDockerImageHash::from(*current_hash);
+        let hash = NodeImageHash::from(*current_hash);
         for account in mpc_signer_accounts.iter().take(threshold.0 as usize) {
             vote_for_hash(account, &contract, &hash).await?;
         }

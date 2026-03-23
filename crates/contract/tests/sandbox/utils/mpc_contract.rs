@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::{LauncherImageHash, MpcDockerImageHash};
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
@@ -102,7 +102,7 @@ pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
 pub async fn vote_for_hash(
     account: &Account,
     contract: &Contract,
-    image_hash: &MpcDockerImageHash,
+    image_hash: &NodeImageHash,
 ) -> anyhow::Result<()> {
     let result = account
         .call(contract.id(), method_names::VOTE_CODE_HASH)
