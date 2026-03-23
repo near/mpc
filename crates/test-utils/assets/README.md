@@ -49,7 +49,10 @@ All files will be written into the specified output directory.
 
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
-5. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json` there as well, since unit tests in the `attestation` crate use it.
+5. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
+   there as well, since unit tests in the `attestation` crate use it for deserialization tests.
+   This is optional — the tests only verify parsing, not measurement values — but keeping it
+   in sync avoids confusion.
 
 6. Update the compiled-in measurements in `crates/mpc-attestation/assets/`:
    - `tcb_info_dev.json` — replace with the `tcb_info.json` from a **dev** image attestation
@@ -58,6 +61,15 @@ All files will be written into the specified output directory.
    These are compiled into the contract and node binary via the `include_measurements!` macro.
    You need attestation data from **both** release and dev images — run the single-node script
    twice with `OS_IMAGE=dstack-<version>` and `OS_IMAGE=dstack-dev-<version>`.
+
+   **Why this matters:** These measurements are seeded as the default allowed OS measurements
+   when the contract is deployed or migrated (see `default_measurements()` in
+   `mpc-attestation/src/attestation.rs`). If they are stale, nodes running a newer OS image
+   will fail attestation until operators vote in the correct measurements.
+
+   > **Note:** This hardcoded seeding is a bootstrap mechanism. After release 3.8, measurements
+   > will be managed entirely through on-chain voting (`vote_add_os_measurement`), and these
+   > files will no longer need to be kept in sync with the deployed OS image.
 
 ## Tests that depend on these assets
 
