@@ -10684,6 +10684,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "tee-launcher"
+version = "3.7.0"
+dependencies = [
+ "assert_matches",
+ "backon",
+ "clap",
+ "dstack-sdk",
+ "httpmock",
+ "launcher-interface",
+ "near-mpc-bounded-collections",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 1.0.6+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

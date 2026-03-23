@@ -30,6 +30,7 @@ EXEMPT_FILES=(
     launcher_docker_compose.yaml
     launcher_docker_compose_nontee.yaml
     launcher_image_compose.yaml
+    UPDATING_LAUNCHER.md
 )
 
 # Build a regex that matches any of the allowed non-kebab-case filenames
