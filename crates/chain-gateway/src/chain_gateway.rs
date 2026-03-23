@@ -63,9 +63,12 @@ impl SubmitSignedTransaction for ChainGateway {
 }
 
 impl ChainGateway {
-    pub async fn start(
+    /// Starts a NEAR node and returns both the [`ChainGateway`] and the underlying
+    /// [`nearcore::NearNode`]. Use this when the caller needs direct access to the
+    /// NEAR node (e.g., for block streaming via the indexer).
+    pub async fn start_with_near_node(
         config: near_indexer::IndexerConfig,
-    ) -> Result<ChainGateway, ChainGatewayError> {
+    ) -> Result<(ChainGateway, nearcore::NearNode), ChainGatewayError> {
         let near_config =
             config
                 .load_near_config()
@@ -79,14 +82,25 @@ impl ChainGateway {
                 msg: err.to_string(),
             })?;
 
-        let view_client = NearViewClientActorHandle::new(near_node.view_client);
-        let client = NearClientActorHandle::new(near_node.client);
-        let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
+        let view_client = NearViewClientActorHandle::new(near_node.view_client.clone());
+        let client = NearClientActorHandle::new(near_node.client.clone());
+        let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler.clone());
 
-        Ok(ChainGateway {
-            view_client,
-            client,
-            rpc_handler,
-        })
+        Ok((
+            ChainGateway {
+                view_client,
+                client,
+                rpc_handler,
+            },
+            near_node,
+        ))
+    }
+
+    pub async fn start(
+        config: near_indexer::IndexerConfig,
+    ) -> Result<ChainGateway, ChainGatewayError> {
+        Self::start_with_near_node(config)
+            .await
+            .map(|(gateway, _)| gateway)
     }
 }

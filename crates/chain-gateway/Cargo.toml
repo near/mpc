@@ -16,6 +16,7 @@ near-client = { workspace = true }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
+nearcore = { workspace = true }
 near-o11y = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -6,9 +6,8 @@ use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
-use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
-};
+use crate::indexer::tee::monitor_tee_accounts;
+use chain_gateway::ChainGateway;
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
@@ -56,22 +55,23 @@ pub fn spawn_real_indexer(
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     tls_public_key: VerifyingKey,
-) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
+) -> (
+    IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader>,
+    ChainGateway,
+) {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
     let (foreign_chain_policy_reader_sender, foreign_chain_policy_reader_receiver) =
         oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
-    let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
-    let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
-        watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
 
     let (txn_sender_sender, txn_sender_receiver) = oneshot::channel();
+    let (chain_gateway_sender, chain_gateway_receiver) = oneshot::channel();
 
     std::thread::spawn(move || {
         // TODO(#1515): limit number of worker threads? Assume not as we don't want the node to fall behind
@@ -91,9 +91,14 @@ pub fn spawn_real_indexer(
                 .load_near_config()
                 .expect("near config is present");
 
-            let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
-                .await
-                .expect("near node has started");
+            let (chain_gw, near_node) =
+                ChainGateway::start_with_near_node(near_indexer_config.clone())
+                    .await
+                    .expect("chain gateway / near node has started");
+
+            if chain_gateway_sender.send(chain_gw).is_err() {
+                tracing::error!("Failed to send chain_gateway back to main thread.");
+            }
 
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 
@@ -140,16 +145,6 @@ pub fn spawn_real_indexer(
             };
 
             tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
-
-            tokio::spawn(monitor_allowed_docker_images(
-                allowed_docker_images_sender,
-                indexer_state.clone(),
-            ));
-
-            tokio::spawn(monitor_allowed_launcher_compose_hashes(
-                allowed_launcher_compose_sender,
-                indexer_state.clone(),
-            ));
 
             tokio::spawn(monitor_tee_accounts(
                 tee_accounts_sender,
@@ -234,14 +229,19 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain policy reader must be returned by indexer");
 
-    IndexerAPI {
-        contract_state_receiver,
-        block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
-        txn_sender,
-        allowed_docker_images_receiver,
-        allowed_launcher_compose_receiver,
-        attested_nodes_receiver: tee_accounts_receiver,
-        my_migration_info_receiver,
-        foreign_chain_policy_reader,
-    }
+    let chain_gateway = chain_gateway_receiver
+        .blocking_recv()
+        .expect("chain_gateway must be returned by indexer");
+
+    (
+        IndexerAPI {
+            contract_state_receiver,
+            block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
+            txn_sender,
+            attested_nodes_receiver: tee_accounts_receiver,
+            my_migration_info_receiver,
+            foreign_chain_policy_reader,
+        },
+        chain_gateway,
+    )
 }

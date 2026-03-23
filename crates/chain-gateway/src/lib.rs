@@ -8,6 +8,7 @@ pub mod types;
 
 pub use chain_gateway::ChainGateway;
 pub use near_indexer_primitives::types::Gas;
+pub use nearcore::NearNode;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock;

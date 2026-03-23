@@ -16,10 +16,7 @@ use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
     state::ProtocolContractState,
-    tee::{
-        proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
-        tee_state::NodeId,
-    },
+    tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
 use near_async::{
@@ -32,10 +29,9 @@ use near_indexer_primitives::{
     views::{BlockView, QueryRequest, QueryResponseKind},
 };
 use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
-    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
-    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
-    STATE,
+    GET_ATTESTATION, GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
+    GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
@@ -304,21 +300,6 @@ impl IndexerViewClient {
         self.get_mpc_state(mpc_contract_id, STATE).await
     }
 
-    pub(crate) async fn get_mpc_allowed_image_hashes(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
-            .await
-    }
-    pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES)
-            .await
-    }
-
     pub(crate) async fn get_mpc_tee_accounts(
         &self,
         mpc_contract_id: AccountId,
@@ -484,10 +465,6 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
-    /// Watcher that keeps track of allowed [`DockerImageHash`]es on the contract.
-    pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
-    /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
-    pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     /// Watcher that tracks node IDs that have TEE attestations in the contract.
     pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
 

@@ -61,6 +61,7 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
 near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
+tee-context = { path = "crates/tee-context" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
 utilities = { path = "crates/utilities" }
@@ -217,6 +218,7 @@ near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 
 ## Outdated dependencies we cannot upgrade ##

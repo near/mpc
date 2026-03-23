@@ -18,7 +18,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
-use mpc_contract::tee::proposal::MpcDockerImageHash;
+use mpc_primitives::hash::NodeImageHash;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::{
@@ -33,8 +33,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::tee::{
-    monitor_allowed_image_hashes,
-    remote_attestation::{monitor_attestation_removal, periodic_attestation_submission},
+    remote_attestation::{monitor_attestation_removal, validate_remote_attestation},
     AllowedImageHashesFile,
 };
 
@@ -113,7 +112,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
-    let indexer_api = spawn_real_indexer(
+    let (indexer_api, chain_gateway) = spawn_real_indexer(
         config.home_dir.clone(),
         node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
@@ -125,20 +124,72 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         *tls_public_key,
     );
 
+    // Initialize TeeContext using chain-gateway for hash watching and transaction submission
+    let cg_signer = chain_gateway::transaction_sender::TransactionSigner::from_key(
+        node_config.my_near_account_id.clone(),
+        persistent_secrets.near_signer_key.clone(),
+    );
+    let cg_tx_sender =
+        chain_gateway::transaction_sender::TransactionSender::new(chain_gateway.clone(), cg_signer);
+    let tee_ctx = root_runtime
+        .block_on(tee_context::TeeContext::new(
+            chain_gateway,
+            node_config.indexer.mpc_contract_id.clone(),
+            cg_tx_sender,
+        ))
+        .context("Failed to initialize TeeContext")?;
+
     let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
     let cancellation_token = CancellationToken::new();
 
-    let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+    // Spawn hash watcher: writes allowed hashes to disk for the launcher
     let image_hash_storage =
         AllowedImageHashesFile::from(config.tee.latest_allowed_hash_file_path.clone());
+    let current_image = NodeImageHash::from(config.tee.image_hash.as_bytes());
+    let mut hashes_rx = tee_ctx.watch_allowed_tee_hashes();
+    let shutdown_sender_clone = shutdown_signal_sender.clone();
+    let child_token = cancellation_token.child_token();
+    let image_hash_watcher_handle = root_runtime.spawn(async move {
+        loop {
+            tokio::select! {
+                _ = child_token.cancelled() => {
+                    return Ok(());
+                }
+                result = hashes_rx.changed() => {
+                    if let Err(e) = result {
+                        tracing::error!("TeeContext hash watcher closed: {e}");
+                        let _ = shutdown_sender_clone.send(()).await;
+                        return Err(anyhow!("TeeContext hash watcher closed"));
+                    }
+                    let hashes = hashes_rx.borrow().clone();
+                    let image_hashes = &hashes.allowed_docker_image_hashes;
 
-    let image_hash_watcher_handle = root_runtime.spawn(monitor_allowed_image_hashes(
-        cancellation_token.child_token(),
-        MpcDockerImageHash::from(config.tee.image_hash.as_bytes()),
-        allowed_hashes_in_contract,
-        image_hash_storage,
-        shutdown_signal_sender.clone(),
-    ));
+                    if !image_hashes.contains(&current_image) {
+                        tracing::warn!(
+                            "Current image hash is not in the allowed list. \
+                             The node may be evicted."
+                        );
+                    }
+
+                    let non_empty = match near_mpc_bounded_collections::NonEmptyVec::try_from_vec(
+                        image_hashes.iter().copied().collect(),
+                    ) {
+                        Some(v) => v,
+                        None => {
+                            tracing::warn!("Allowed image hashes list is empty, skipping disk write");
+                            continue;
+                        }
+                    };
+
+                    if let Err(e) = image_hash_storage.set(non_empty).await {
+                        tracing::error!("Failed to write allowed hashes to disk: {e}");
+                        let _ = shutdown_sender_clone.send(()).await;
+                        return Err(anyhow!("Failed to write allowed hashes to disk: {e}"));
+                    }
+                }
+            }
+        }
+    });
 
     let home_dir = config.home_dir.clone();
     let root_future = create_root_future(
@@ -150,6 +201,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         debug_request_sender,
         root_task_handle,
         tee_authority,
+        tee_ctx,
     );
 
     let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
@@ -188,6 +240,7 @@ async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
     // Otherwise we would not write to the same cell/lock.
     root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
     tee_authority: TeeAuthority,
+    tee_ctx: tee_context::TeeContext,
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
@@ -215,59 +268,84 @@ where
         }),
     };
 
-    // Spawn periodic attestation submission task
-    let tee_authority_clone = tee_authority.clone();
-    let tx_sender_clone = indexer_api.txn_sender.clone();
-    let tls_public_key_clone = tls_public_key.clone();
-    let account_public_key_clone = account_public_key.clone();
-    let allowed_docker_images_receiver_clone = indexer_api.allowed_docker_images_receiver.clone();
-    let allowed_launcher_compose_receiver_clone =
-        indexer_api.allowed_launcher_compose_receiver.clone();
-    tokio::spawn(async move {
-        if let Err(e) = periodic_attestation_submission(
-            tee_authority_clone,
-            tx_sender_clone,
-            tls_public_key_clone,
-            account_public_key_clone,
-            allowed_docker_images_receiver_clone,
-            allowed_launcher_compose_receiver_clone,
-            tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
-        )
-        .await
-        {
-            tracing::error!(
-                error = ?e,
-                "periodic attestation submission task failed"
-            );
-        }
-    });
+    // Spawn periodic attestation submission task using TeeContext
+    {
+        let tee_authority = tee_authority.clone();
+        let tee_ctx = tee_ctx.clone();
+        let tls_public_key = tls_public_key.clone();
+        let account_public_key = account_public_key.clone();
+        let hashes_rx = tee_ctx.watch_allowed_tee_hashes();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
+            loop {
+                interval.tick().await;
+                let attestation = match tee_authority
+                    .generate_attestation(
+                        mpc_attestation::report_data::ReportDataV1::new(
+                            *tls_public_key.as_bytes(),
+                            *account_public_key.as_bytes(),
+                        )
+                        .into(),
+                    )
+                    .await
+                {
+                    Ok(a) => a,
+                    Err(e) => {
+                        tracing::error!(error = ?e, "failed to generate attestation");
+                        continue;
+                    }
+                };
+
+                // Validate locally before submitting
+                let hashes = hashes_rx.borrow().clone();
+                if let Err(e) = validate_remote_attestation(
+                    &attestation,
+                    tls_public_key.clone(),
+                    account_public_key.clone(),
+                    &hashes.allowed_docker_image_hashes,
+                    &hashes.allowed_launcher_compose_hashes,
+                ) {
+                    tracing::warn!(error = ?e, "local attestation validation failed, submitting anyway");
+                }
+
+                if let Err(e) = tee_ctx
+                    .submit_attestation(
+                        attestation.into_contract_interface_type(),
+                        tls_public_key.clone(),
+                    )
+                    .await
+                {
+                    tracing::error!(error = ?e, "periodic attestation submission failed");
+                }
+            }
+        });
+    }
 
     // Spawn TEE attestation monitoring task
-    let tx_sender_clone = indexer_api.txn_sender.clone();
-    let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
-    let account_id_clone = config.my_near_account_id.clone();
-    let allowed_docker_images_receiver_clone = indexer_api.allowed_docker_images_receiver.clone();
-    let allowed_launcher_compose_receiver_clone =
-        indexer_api.allowed_launcher_compose_receiver.clone();
-    tokio::spawn(async move {
-        if let Err(e) = monitor_attestation_removal(
-            account_id_clone,
-            tee_authority,
-            tx_sender_clone,
-            tls_public_key,
-            account_public_key,
-            allowed_docker_images_receiver_clone,
-            allowed_launcher_compose_receiver_clone,
-            tee_accounts_receiver,
-        )
-        .await
-        {
-            tracing::error!(
-                error = ?e,
-                "attestation removal monitoring task failed"
-            );
-        }
-    });
+    {
+        let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
+        let account_id = config.my_near_account_id.clone();
+        let tee_ctx = tee_ctx.clone();
+        let tls_public_key = tls_public_key.clone();
+        let account_public_key = account_public_key.clone();
+        tokio::spawn(async move {
+            if let Err(e) = monitor_attestation_removal(
+                account_id,
+                tee_authority,
+                tee_ctx,
+                tls_public_key,
+                account_public_key,
+                tee_accounts_receiver,
+            )
+            .await
+            {
+                tracing::error!(
+                    error = ?e,
+                    "attestation removal monitoring task failed"
+                );
+            }
+        });
+    }
 
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();
