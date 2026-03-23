@@ -1956,7 +1956,7 @@ expression: abi
           }
         },
         "DomainConfig": {
-          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nSerialization: always uses `\"scheme\"` as the JSON key for backward compatibility with older contract binaries.\n\nDeserialization: handled by `DomainConfigCompat` which accepts both `\"curve\"` and `\"scheme\"` keys, and infers `purpose` from the curve when the field is missing (for JSON from pre-3.5 contracts).",
+          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nThe `curve` field is serialized as `\"scheme\"` for backward compatibility with older contract binaries.",
           "type": "object",
           "required": [
             "id",

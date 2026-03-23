@@ -77,52 +77,15 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 
 /// Describes the configuration of a domain: the domain ID and the curve it uses.
 ///
-/// Serialization: always uses `"scheme"` as the JSON key for backward compatibility
-/// with older contract binaries.
-///
-/// Deserialization: handled by `DomainConfigCompat` which accepts both `"curve"` and
-/// `"scheme"` keys, and infers `purpose` from the curve when the field is missing
-/// (for JSON from pre-3.5 contracts).
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
+/// The `curve` field is serialized as `"scheme"` for backward compatibility with
+/// older contract binaries.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
     #[serde(rename = "scheme")]
     pub curve: Curve,
     pub purpose: DomainPurpose,
-}
-
-/// Intermediate struct for deserializing [`DomainConfig`] from JSON.
-/// Accepts both `"curve"` and `"scheme"` as the key for the curve field,
-/// and makes `purpose` optional (inferred from the curve when absent).
-#[derive(serde::Deserialize)]
-struct DomainConfigCompat {
-    id: DomainId,
-    #[serde(alias = "scheme")]
-    curve: Curve,
-    purpose: Option<DomainPurpose>,
-}
-
-impl<'de> serde::Deserialize<'de> for DomainConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let compat = DomainConfigCompat::deserialize(deserializer)?;
-        let purpose = compat.purpose.unwrap_or(match compat.curve {
-            Curve::Bls12381 => DomainPurpose::CKD,
-            _ => DomainPurpose::Sign,
-        });
-        Ok(DomainConfig {
-            id: compat.id,
-            curve: compat.curve,
-            purpose,
-        })
-    }
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
