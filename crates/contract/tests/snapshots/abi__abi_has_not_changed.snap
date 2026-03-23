@@ -2251,10 +2251,16 @@ expression: abi
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "Hash32": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "Hash48": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 96,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
