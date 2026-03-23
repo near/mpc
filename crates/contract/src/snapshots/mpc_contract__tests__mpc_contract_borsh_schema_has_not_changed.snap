@@ -291,6 +291,43 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "Curve": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Secp256k1",
+                    "Curve__Secp256k1",
+                ),
+                (
+                    1,
+                    "Ed25519",
+                    "Curve__Ed25519",
+                ),
+                (
+                    2,
+                    "Bls12381",
+                    "Curve__Bls12381",
+                ),
+                (
+                    3,
+                    "V2Secp256k1",
+                    "Curve__V2Secp256k1",
+                ),
+            ],
+        },
+        "Curve__Bls12381": Struct {
+            fields: Empty,
+        },
+        "Curve__Ed25519": Struct {
+            fields: Empty,
+        },
+        "Curve__Secp256k1": Struct {
+            fields: Empty,
+        },
+        "Curve__V2Secp256k1": Struct {
+            fields: Empty,
+        },
         "DomainConfig": Struct {
             fields: NamedFields(
                 [
@@ -299,8 +336,8 @@ BorshSchemaContainer {
                         "DomainId",
                     ),
                     (
-                        "scheme",
-                        "SignatureScheme",
+                        "curve",
+                        "Curve",
                     ),
                     (
                         "purpose",
@@ -1267,43 +1304,6 @@ BorshSchemaContainer {
                     ),
                 ],
             ),
-        },
-        "SignatureScheme": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Secp256k1",
-                    "SignatureScheme__Secp256k1",
-                ),
-                (
-                    1,
-                    "Ed25519",
-                    "SignatureScheme__Ed25519",
-                ),
-                (
-                    2,
-                    "Bls12381",
-                    "SignatureScheme__Bls12381",
-                ),
-                (
-                    3,
-                    "V2Secp256k1",
-                    "SignatureScheme__V2Secp256k1",
-                ),
-            ],
-        },
-        "SignatureScheme__Bls12381": Struct {
-            fields: Empty,
-        },
-        "SignatureScheme__Ed25519": Struct {
-            fields: Empty,
-        },
-        "SignatureScheme__Secp256k1": Struct {
-            fields: Empty,
-        },
-        "SignatureScheme__V2Secp256k1": Struct {
-            fields: Empty,
         },
         "StaleData": Struct {
             fields: Empty,
