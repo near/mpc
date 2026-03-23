@@ -1959,19 +1959,19 @@ expression: abi
           "description": "Describes the configuration of a domain: the domain ID and the curve it uses.",
           "type": "object",
           "required": [
+            "curve",
             "id",
-            "purpose",
-            "scheme"
+            "purpose"
           ],
           "properties": {
+            "curve": {
+              "$ref": "#/definitions/Curve"
+            },
             "id": {
               "$ref": "#/definitions/DomainId"
             },
             "purpose": {
               "$ref": "#/definitions/DomainPurpose"
-            },
-            "scheme": {
-              "$ref": "#/definitions/Curve"
             }
           }
         },
