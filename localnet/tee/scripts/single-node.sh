@@ -124,7 +124,7 @@ LOCAL_DEBUG_PORT="${LOCAL_DEBUG_PORT:-$(find_free_port)}"
 
 # dstack
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
-OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.4}"
+OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.7}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 DISK="${DISK:-500G}"
 
