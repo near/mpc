@@ -80,11 +80,12 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 /// Serialization: always uses `"scheme"` as the JSON key for backward compatibility
 /// with older contract binaries.
 ///
-/// Deserialization: handled by [`DomainConfigCompat`] which accepts both `"curve"` and
+/// Deserialization: handled by `DomainConfigCompat` which accepts both `"curve"` and
 /// `"scheme"` keys, and infers `purpose` from the curve when the field is missing
 /// (for JSON from pre-3.5 contracts).
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "abi", derive(schemars::JsonSchema))]
 pub struct DomainConfig {
     pub id: DomainId,
     #[serde(rename = "scheme")]
@@ -109,7 +110,7 @@ impl<'de> serde::Deserialize<'de> for DomainConfig {
         D: serde::Deserializer<'de>,
     {
         let compat = DomainConfigCompat::deserialize(deserializer)?;
-        let purpose = compat.purpose.unwrap_or_else(|| match compat.curve {
+        let purpose = compat.purpose.unwrap_or(match compat.curve {
             Curve::Bls12381 => DomainPurpose::CKD,
             _ => DomainPurpose::Sign,
         });
