@@ -121,7 +121,7 @@ near contract call-function as-read-only \
 You should see your account and registered backup_cli  public key listed, something like this:
 
 
-```bash
+```json
 {
   "your-account.testnet": [
     {

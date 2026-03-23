@@ -16,7 +16,7 @@ The CVM filesystem is encrypted with a hardware-bound key derived from SGX seali
 
 Platform-bound sealed data may also become unrecoverable if TDX-related hardware changes (for example, a CPU replacement).
 
-To move a node between hosts, follow the supported procedure described in the Node Migration section, which uses the backup-cli tool to securely transfer key shares.
+To move a node between hosts, follow the supported procedure described in the [Node Migration](./node-migration-guide.md) section, which uses the backup-cli tool to securely transfer key shares.
 
 
 ## Main difference between TEE and non TEE MPC nodes
@@ -584,7 +584,7 @@ RUST_LOG=mpc=debug,info
 
 NEAR_BOOT_NODES=$BOOT_NODES
 
-# telemetry,migration,debug,node-node,DSS
+# telemetry,migration,debug,node-node,DSS (Decentralized Status Sync)
 PORTS=8080:8080,8079:8079,3030:3030,80:80,24567:24567
 
 
@@ -665,7 +665,7 @@ This creates a limitation when trying to run both **mainnet** and **testnet** no
 |--------|-------------------------------------------------------------------------|
 | **80** | Node-to-node communication (port override convention)                   |
 | **24567** | Decentralized state sync                                             |
-| **8080** | Debug and telemetry collection, plus the new `/get_data` endpoint      |
+| **8080** | Debug and telemetry collection, plus the `/public_data` endpoint       |
 | **3030** | Debug and telemetry collection                                         |
 | **8079** | Migration port                    |
 
