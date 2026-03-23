@@ -1,13 +1,4 @@
 use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry};
-
-/// Infer a default purpose from the curve.
-/// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
-    }
-}
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -154,4 +145,13 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+}
+
+/// Infer a default purpose from the curve.
+/// Used during migration from old state that lacks the `purpose` field.
+pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
+    match curve {
+        Curve::Bls12381 => DomainPurpose::CKD,
+        _ => DomainPurpose::Sign,
+    }
 }
