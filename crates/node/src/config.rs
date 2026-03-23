@@ -350,7 +350,11 @@ pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N
 }
 
 /// Writes data to a file with owner-only permissions (0o600).
+/// Permissions are set explicitly after writing to ensure correctness
+/// even if the file already exists with different permissions.
 fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -360,6 +364,8 @@ fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
         .with_context(|| format!("failed to create secret file {}", path.display()))?;
     file.write_all(data)
         .with_context(|| format!("failed to write secret file {}", path.display()))?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("failed to set permissions on secret file {}", path.display()))?;
     Ok(())
 }
 
