@@ -14,18 +14,18 @@ curl http://<MPC_NODE_IP>:<MPC_NODE_PORT>/public_data -o public_data.json
 
 
 See [single-node-readme.md](../../../localnet/tee/scripts/single-node-readme.md)
-for automation script that will launch a TEE MPC node, collect the attestation, and save the public data into /tmp/%user/public_data.json
+for an automation script that will launch a TEE MPC node, collect the attestation, and save the public data to a temp directory (path printed by the script).
 
 
 ## Steps
 
-1. Change into the `crates/test_utils/assets` directory:
+1. Change into the `crates/test-utils/assets` directory:
 
    ```shell
-   cd crates/test_utils/assets
+   cd crates/test-utils/assets
    ```
 
-2. Copy the `public_data.json` file into this directory.  
+2. Copy the `public_data.json` file into this directory.
    Keeping the original file allows future developers to trace the test vectors back to their source.
 
 3. Run the asset extraction script:
@@ -47,7 +47,17 @@ This will regenerate the following files:
 
 All files will be written into the specified output directory.
 
-4. Update the `VALID_ATTESTATION_TIMESTAMP` constant in `crates/test-utils/src/attestation.rs` to a Unix timestamp that is after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
+4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
+
+5. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json` there as well, since unit tests in the `attestation` crate use it.
+
+6. Update the compiled-in measurements in `crates/mpc-attestation/assets/`:
+   - `tcb_info_dev.json` — replace with the `tcb_info.json` from a **dev** image attestation
+   - `tcb_info.json` — replace with the `tcb_info.json` from a **release** (non-dev) image attestation
+
+   These are compiled into the contract and node binary via the `include_measurements!` macro.
+   You need attestation data from **both** release and dev images — run the single-node script
+   twice with `OS_IMAGE=dstack-<version>` and `OS_IMAGE=dstack-dev-<version>`.
 
 ## Tests that depend on these assets
 
