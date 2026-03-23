@@ -85,7 +85,10 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 /// (for JSON from pre-3.5 contracts).
 #[near(serializers=[borsh])]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[cfg_attr(all(feature = "abi", not(target_arch = "wasm32")), derive(schemars::JsonSchema))]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct DomainConfig {
     pub id: DomainId,
     #[serde(rename = "scheme")]
