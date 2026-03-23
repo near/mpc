@@ -11,7 +11,7 @@ use std::{
     fs,
     io::Write,
     net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
-    os::unix::fs::OpenOptionsExt,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::Path,
 };
 
@@ -353,8 +353,6 @@ pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N
 /// Permissions are set explicitly after writing to ensure correctness
 /// even if the file already exists with different permissions.
 fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create(true)
