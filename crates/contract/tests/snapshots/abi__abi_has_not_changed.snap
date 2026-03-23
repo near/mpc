@@ -1901,15 +1901,6 @@ expression: abi
             }
           }
         },
-        "Curve": {
-          "description": "Elliptic curve used by a domain. More curves may be added in the future. When adding new curves, both Borsh *and* JSON serialization must be kept compatible.",
-          "type": "string",
-          "enum": [
-            "Secp256k1",
-            "Ed25519",
-            "Bls12381",
-            "V2Secp256k1"
-          ]
         "ContractExpectedMeasurements": {
           "description": "On-chain representation of expected TDX measurements. Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with contract-compatible serialization (hex strings in JSON, borsh for storage).",
           "type": "object",
@@ -1937,6 +1928,16 @@ expression: abi
               "type": "string"
             }
           }
+        },
+        "Curve": {
+          "description": "Elliptic curve used by a domain. More curves may be added in the future. When adding new curves, both Borsh *and* JSON serialization must be kept compatible.",
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Ed25519",
+            "Bls12381",
+            "V2Secp256k1"
+          ]
         },
         "DestinationNodeInfo": {
           "type": "object",
