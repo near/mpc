@@ -80,7 +80,7 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
-    #[serde(rename = "scheme")]
+    #[serde(alias = "scheme")]
     pub curve: Curve,
     pub purpose: DomainPurpose,
 }
@@ -400,7 +400,7 @@ pub mod tests {
             purpose: DomainPurpose::Sign,
         };
         let json = serde_json::to_string(&domain_config).unwrap();
-        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#);
+        assert_eq!(json, r#"{"id":3,"curve":"Secp256k1","purpose":"Sign"}"#);
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
