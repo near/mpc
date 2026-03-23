@@ -1783,6 +1783,8 @@ dependencies = [
  "near-indexer-primitives",
  "near-o11y",
  "near-sdk",
+ "near-store",
+ "nearcore",
  "rand 0.8.5",
  "rstest",
  "serde",

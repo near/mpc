@@ -1,4 +1,5 @@
 use near_account_id::AccountId;
+use near_async::ActorSystem;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
@@ -18,6 +19,8 @@ pub struct ChainGateway {
     client: NearClientActorHandle,
     /// For sending transactions to the blockchain.
     rpc_handler: NearRpcActorHandle,
+    /// Handle to the actor system that owns the nearcore actors.
+    actor_system: ActorSystem,
 }
 
 impl IsSyncing for ChainGateway {
@@ -73,11 +76,13 @@ impl ChainGateway {
                     msg: err.to_string(),
                 })?;
 
-        let near_node = near_indexer::Indexer::start_near_node(&config, near_config)
-            .await
-            .map_err(|err| ChainGatewayError::StartupFailed {
-                msg: err.to_string(),
-            })?;
+        let actor_system = ActorSystem::new();
+        let near_node =
+            nearcore::start_with_config(&config.home_dir, near_config, actor_system.clone())
+                .await
+                .map_err(|err| ChainGatewayError::StartupFailed {
+                    msg: err.to_string(),
+                })?;
 
         let view_client = NearViewClientActorHandle::new(near_node.view_client);
         let client = NearClientActorHandle::new(near_node.client);
@@ -87,6 +92,15 @@ impl ChainGateway {
             view_client,
             client,
             rpc_handler,
+            actor_system,
         })
+    }
+
+    /// Signals all nearcore actors owned by this gateway to stop.
+    ///
+    /// After calling this, use [`near_store::db::RocksDB::block_until_all_instances_are_dropped`]
+    /// to wait for RocksDB cleanup before dropping the tokio runtime.
+    pub fn shutdown(&self) {
+        self.actor_system.stop();
     }
 }
