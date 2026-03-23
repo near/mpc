@@ -1,4 +1,4 @@
-use super::domain::{Curve, DomainConfig, DomainId, DomainRegistry};
+use super::domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainRegistry};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -10,6 +10,7 @@ use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
+// Re-export for convenience
 
 const ALL_CURVES: [Curve; 4] = [
     Curve::Secp256k1,
@@ -145,6 +146,3 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
 }
-
-// Re-export for convenience
-pub use super::domain::infer_purpose_from_curve;

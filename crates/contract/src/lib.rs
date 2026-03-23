@@ -2266,7 +2266,7 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use crate::{
         errors::{ErrorKind, NodeMigrationError},
-        primitives::test_utils::infer_purpose_from_curve,
+        primitives::domain::infer_purpose_from_curve,
     };
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
