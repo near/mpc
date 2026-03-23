@@ -2261,9 +2261,6 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use mpc_primitives::hash::{
-        KeyProviderEventDigestHash, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
-    };
     use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
     use crate::{
@@ -2279,6 +2276,9 @@ mod tests {
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
     use mpc_primitives::hash::{Hash32, Image};
+    use mpc_primitives::hash::{
+        KeyProviderEventDigestHash, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+    };
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::{
@@ -5341,9 +5341,7 @@ mod tests {
             rtmr0: Rtmr0Hash::from([byte.wrapping_add(1); 48]),
             rtmr1: Rtmr1Hash::from([byte.wrapping_add(2); 48]),
             rtmr2: Rtmr2Hash::from([byte.wrapping_add(3); 48]),
-            key_provider_event_digest: KeyProviderEventDigestHash::from(
-                [byte.wrapping_add(4); 48],
-            ),
+            key_provider_event_digest: KeyProviderEventDigestHash::from([byte.wrapping_add(4); 48]),
         }
     }
 

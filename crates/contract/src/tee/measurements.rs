@@ -1,8 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::{ExpectedMeasurements, Measurements};
-use mpc_primitives::hash::{
-    KeyProviderEventDigestHash, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
-};
+use mpc_primitives::hash::{KeyProviderEventDigestHash, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
