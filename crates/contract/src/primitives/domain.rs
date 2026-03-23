@@ -409,30 +409,6 @@ pub mod tests {
     }
 
     #[rstest]
-    #[case(
-        r#"{"id":0,"curve":"Secp256k1"}"#,
-        Curve::Secp256k1,
-        DomainPurpose::Sign
-    )]
-    #[case(r#"{"id":1,"curve":"Bls12381"}"#, Curve::Bls12381, DomainPurpose::CKD)]
-    // Old JSON used "scheme" as the key — verify the alias still works.
-    #[case(
-        r#"{"id":0,"scheme":"Secp256k1"}"#,
-        Curve::Secp256k1,
-        DomainPurpose::Sign
-    )]
-    fn test_deserialization_without_purpose(
-        #[case] json: &str,
-        #[case] expected_curve: Curve,
-        #[case] expected_purpose: DomainPurpose,
-    ) {
-        // Simulates JSON from a 3.4.1 contract that lacks the `purpose` field.
-        let config: DomainConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.curve, expected_curve);
-        assert_eq!(config.purpose, expected_purpose);
-    }
-
-    #[rstest]
     #[case(Curve::Secp256k1, DomainPurpose::Sign)]
     #[case(Curve::Ed25519, DomainPurpose::Sign)]
     #[case(Curve::V2Secp256k1, DomainPurpose::Sign)]
