@@ -23,6 +23,17 @@ use thiserror::Error;
     AsRef,
     Into,
 )]
+/// Different 32-byte marker types are incompatible:
+/// ```compile_fail,E0308
+/// use mpc_primitives::hash::{NodeImageHash, LauncherDockerComposeHash};
+/// let bytes = [42u8; 32];
+/// let image_hash = NodeImageHash::from(bytes);
+/// let compose_hash = LauncherDockerComposeHash::from(bytes);
+/// // Same data but different types
+/// assert_eq!(*image_hash, *compose_hash);
+/// // This wouldn't compile (different types):
+/// let _: NodeImageHash = compose_hash;
+/// ```
 #[serde(transparent)]
 pub struct Hash<T, const N: usize> {
     #[deref]
