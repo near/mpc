@@ -19,6 +19,7 @@ use near_mpc_contract_interface::method_names::{
     START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
     VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
 };
+pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
@@ -64,24 +65,26 @@ impl ChainSignatureRequest {
 /* The format in which the chain contract expects
  * to receive the details of the original ckd request.
  */
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, derive_more::Constructor)]
 pub struct ChainCKDRequest {
-    pub app_public_key: dtos::Bls12381G1PublicKey,
+    /// For the `AppPublicKey` (legacy) variant, we serialize as a plain G1 key
+    /// string so that both old (pre-PV) and new contracts can deserialize it.
+    /// TODO(#2491): remove `serialize_with` once the contract supports CKDAppPublicKey.
+    #[serde(serialize_with = "serialize_ckd_app_public_key_compat")]
+    pub app_public_key: dtos::CKDAppPublicKey,
     pub app_id: dtos::CkdAppId,
     pub domain_id: DomainId,
 }
 
-impl ChainCKDRequest {
-    pub fn new(
-        app_public_key: dtos::Bls12381G1PublicKey,
-        app_id: dtos::CkdAppId,
-        domain_id: DomainId,
-    ) -> Self {
-        ChainCKDRequest {
-            app_public_key,
-            app_id,
-            domain_id,
-        }
+/// Serializes `CKDAppPublicKey::AppPublicKey` as a plain G1 key (old format)
+/// for backward compatibility with pre-upgrade contracts.
+fn serialize_ckd_app_public_key_compat<S: serde::Serializer>(
+    value: &dtos::CKDAppPublicKey,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match value {
+        dtos::CKDAppPublicKey::AppPublicKey(pk) => serde::Serialize::serialize(pk, serializer),
+        other => serde::Serialize::serialize(other, serializer),
     }
 }
 
@@ -195,12 +198,6 @@ pub struct ChainStartKeygenArgs {
 #[derive(Serialize, Debug)]
 pub struct ChainVoteAbortKeyEventInstanceArgs {
     pub key_event_id: KeyEventId,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SubmitParticipantInfoArgs {
-    pub proposed_participant_attestation: near_mpc_contract_interface::types::Attestation,
-    pub tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey,
 }
 
 #[derive(Serialize, Debug)]

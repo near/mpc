@@ -454,7 +454,7 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 **Hard Launch Implementation Tasks:**
 
 *Phase 1: Standalone Application with Mocked Attestations*
-- [ ] Create `BackupServiceDockerImageHash` type in primitives (separate from `MpcDockerImageHash`)
+- [ ] Create `BackupServiceDockerImageHash` type in primitives (separate from `NodeImageHash`)
 - [ ] Implement voting structures for backup service images (`BackupServiceCodeHashesVotes`, `AllowedBackupServiceDockerImageHashes`)
 - [ ] Implement `allowed_backup_service_code_hashes()` and `allowed_backup_service_launcher_compose_hashes()` view methods
 - [ ] Update `register_backup_service()` to accept and verify attestations using `TeeState` verification logic

@@ -5,8 +5,10 @@ use subtle::{Choice, ConstantTimeEq};
 use super::constants::RANDOMIZER_LEN;
 
 /// Represents the randomizer used to make a commit hiding.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, derive_more::AsRef)]
+#[derive(Clone, Copy, Serialize, Deserialize, derive_more::AsRef)]
 pub struct Randomness([u8; RANDOMIZER_LEN]);
+
+impl_secret_debug!(Randomness);
 
 impl ConstantTimeEq for Randomness {
     fn ct_eq(&self, other: &Self) -> Choice {

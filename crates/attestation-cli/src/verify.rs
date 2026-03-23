@@ -7,7 +7,7 @@ use attestation::{
     tcb_info::TcbInfo,
 };
 use mpc_attestation::attestation::{ValidatedDstackAttestation, VerifiedAttestation};
-use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use node_types::http_server::StaticWebData;
 use sha2::{Digest, Sha256};
 
@@ -18,9 +18,10 @@ const KEY_PROVIDER_EVENT: &str = "key-provider";
 /// Result of a successful verification.
 #[derive(Debug)]
 pub struct VerificationResult {
-    pub mpc_image_hash: MpcDockerImageHash,
+    pub mpc_image_hash: NodeImageHash,
     pub launcher_compose_hash: LauncherDockerComposeHash,
     pub expiry_timestamp_seconds: u64,
+    pub measurements: ExpectedMeasurements,
 }
 
 pub fn run_verification(
@@ -79,10 +80,12 @@ pub fn verify_at_timestamp(
             mpc_image_hash,
             launcher_compose_hash,
             expiry_timestamp_seconds,
+            measurements,
         }) => Ok(VerificationResult {
             mpc_image_hash,
             launcher_compose_hash,
             expiry_timestamp_seconds,
+            measurements,
         }),
         VerifiedAttestation::Mock(_) => Err(VerificationError::Custom(
             "attestation is a Mock — cannot produce verification result".into(),

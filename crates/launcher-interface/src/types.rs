@@ -1,10 +1,30 @@
-use std::fmt;
 use std::str::FromStr;
+use std::{fmt, path::PathBuf};
 
-use mpc_primitives::hash::MpcDockerImageHash;
+use mpc_primitives::hash::NodeImageHash;
 use serde::{Deserialize, Serialize};
 
 const SHA256_PREFIX: &str = "sha256:";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeeConfig {
+    pub authority: TeeAuthorityConfig,
+    /// The hash of the running image.
+    pub image_hash: DockerSha256Digest,
+    /// Path to the file where the node writes the latest allowed hash.
+    pub latest_allowed_hash_file_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TeeAuthorityConfig {
+    Local,
+    Dstack {
+        dstack_endpoint: String,
+        // TODO(#2333): use URL type for this type
+        quote_upload_url: String,
+    },
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApprovedHashes {
@@ -18,7 +38,7 @@ impl ApprovedHashes {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, derive_more::From, derive_more::Deref)]
-pub struct DockerSha256Digest(MpcDockerImageHash);
+pub struct DockerSha256Digest(NodeImageHash);
 
 impl fmt::Display for DockerSha256Digest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -69,10 +89,10 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::{ApprovedHashes, DockerDigestParseError, DockerSha256Digest};
-    use mpc_primitives::hash::MpcDockerImageHash;
+    use mpc_primitives::hash::NodeImageHash;
 
     fn sample_digest() -> DockerSha256Digest {
-        let hash: MpcDockerImageHash = [0xab; 32].into();
+        let hash: NodeImageHash = [0xab; 32].into();
         DockerSha256Digest::from(hash)
     }
 

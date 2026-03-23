@@ -8,7 +8,7 @@ use sha3::{Digest, Sha3_256};
 use std::io::{self, Write as _};
 
 use near_mpc_contract_interface::types::{
-    AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CKDRequestArgs, CkdAppId,
+    AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDRequestArgs, CkdAppId,
 };
 
 use crate::{cli::Args, types::CKDResponse};
@@ -24,7 +24,7 @@ pub fn run(args: Args) -> Result<()> {
     let (ephemeral_private_key, ephemeral_public_key) = generate_ephemeral_key(&mut OsRng);
     let ckd_params = CKDRequestArgs {
         derivation_path: args.derivation_path,
-        app_public_key: ephemeral_public_key,
+        app_public_key: CKDAppPublicKey::AppPublicKey(ephemeral_public_key),
         domain_id: args.domain_id,
     };
     let function_name = near_mpc_contract_interface::method_names::REQUEST_APP_PRIVATE_KEY;

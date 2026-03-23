@@ -298,16 +298,41 @@ near contract call-function as-transaction mpc-contract.test.near vote_code_hash
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
+### Vote for Launcher Image Hash
+
+A launcher image hash must also be voted in so that compose hashes can be derived.
+Extract the launcher hash from `tee_launcher/launcher_docker_compose.yaml`:
+
+```bash
+export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' tee_launcher/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+```
+
+```bash
+# Sam votes
+near contract call-function as-transaction mpc-contract.test.near vote_add_launcher_hash \
+  json-args "{\"launcher_hash\": \"$LAUNCHER_HASH\"}" \
+  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
+
+# Frodo votes
+near contract call-function as-transaction mpc-contract.test.near vote_add_launcher_hash \
+  json-args "{\"launcher_hash\": \"$LAUNCHER_HASH\"}" \
+  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
 Verify the contract state:
 
 ```bash
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
 
-Or view the allowed code hashes
+Or view the allowed code hashes and launcher image hashes:
 
 ```bash
-near contract call-function as-transaction mpc-contract.test.near allowed_docker_image_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-read-only mpc-contract.test.near allowed_docker_image_hashes json-args {} network-config mpc-localnet now
+
+near contract call-function as-read-only mpc-contract.test.near allowed_launcher_image_hashes json-args {} network-config mpc-localnet now
 ```
 
 ### Check That Valid Attestations Are Registered

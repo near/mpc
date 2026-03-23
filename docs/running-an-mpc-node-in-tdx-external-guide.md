@@ -755,7 +755,7 @@ http://localhost:17190
 There are 2 keys that should be retrieved from node.  
 
 * P2P (near\_p2p\_public\_key)- this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract. (see details below)  
-* Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as “vote\_reshared”.  
+* Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as "vote\_reshared".  
   This key needs to be added to the Near account that was created in the step above.
 
 ### Retrieve the node account key and P2P key
@@ -1214,7 +1214,7 @@ A **threshold** number of participant votes is required for the vote to pass.
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_code_hash \
-  json-args '{“code_hash”: “<IMAGE_HASH>”}' \
+  json-args '{"code_hash": "<IMAGE_HASH>"}' \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1252,36 +1252,38 @@ Following the hash update, you should upgrade the MPC node by following those st
 * Download the image to some local machine via the command:
   `docker pull nearone/mpc-node-gcp:abc..`
 * Retrieve the image hash via
-  * `docker inspect nearone/mpc-node-gcp:abc | grep “Id”:`
-* Check that you got `”Id”:”xyz…”`, that matches the hash you voted for.
+  * `docker inspect nearone/mpc-node-gcp:abc | grep "Id":`
+* Check that you got `"Id":"xyz…"`, that matches the hash you voted for.
 
 ## Launcher / CVM Upgrade
 
-Launcher upgrades are less frequent than MPC node upgrades. Unlike MPC node upgrades, changing the launcher image affects the sealing key derivation, which means existing encrypted key shares **cannot** be decrypted by the new CVM. This requires deploying a new CVM and migrating key shares from the old one.
+Launcher or CVM upgrades are less frequent than MPC node upgrades. Unlike MPC node upgrades, changing the launcher image or OS measurements affects the sealing key derivation, which means existing encrypted key shares **cannot** be decrypted by the new CVM. This requires deploying a new CVM and migrating key shares from the old one.
 
 For full design details, see the [CVM Upgrades section in the TEE design doc](securing-mpc-with-tee-design-doc.md#cvm-upgrades).
 
 **Steps:**
 
-1. Verify the launcher image hash.
-2. Participants vote to approve the new launcher image hash.
-3. Operator deploys a new CVM with the new launcher image.
+1. Verify the new launcher image hash and/or OS measurements.
+2. Participants vote to approve the new launcher image hash and/or OS measurements.
+3. Operator deploys a new CVM with the new launcher image and/or OS.
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](node-migration-guide.md).
-5. After all operators have migrated, participants vote to remove the old launcher hash.
+5. After all operators have migrated, participants vote to remove the old launcher hash and/or OS measurements.
 
-### Launcher image/code inspection
+### Launcher image voting
+
+#### Launcher image/code inspection
 
 TBD - add launcher image verification steps.
 
-### Voting for a launcher image hash
+#### Adding a launcher image hash
 
-**Adding a launcher image hash** (requires threshold votes):
+Requires a threshold of participants to vote.
 
 ```bash
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_add_launcher_hash \
-  json-args '{“launcher_hash”: “<LAUNCHER_IMAGE_HASH>”}' \
+  json-args '{"launcher_hash": "<LAUNCHER_IMAGE_HASH>"}' \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1290,13 +1292,15 @@ near contract call-function as-transaction \
   send
 ```
 
-**Removing a launcher image hash** (requires ALL participants to vote):
+#### Removing a launcher image hash
+
+Requires **all** participants to vote. The last launcher hash cannot be removed.
 
 ```bash
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_remove_launcher_hash \
-  json-args '{“launcher_hash”: “<LAUNCHER_IMAGE_HASH>”}' \
+  json-args '{"launcher_hash": "<LAUNCHER_IMAGE_HASH>"}' \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1305,7 +1309,7 @@ near contract call-function as-transaction \
   send
 ```
 
-You can query the currently allowed launcher image hashes:
+#### Query allowed launcher image hashes
 
 ```bash
 near contract call-function as-read-only \
@@ -1316,7 +1320,7 @@ near contract call-function as-read-only \
   now
 ```
 
-You can check the current voting status to see who has voted:
+#### Query launcher hash votes
 
 ```bash
 near contract call-function as-read-only \
@@ -1327,15 +1331,75 @@ near contract call-function as-read-only \
   now
 ```
 
+### OS measurement voting
+
+OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Participants can vote to approve new measurement sets, enabling OS/Dstack upgrades without contract redeployment.
+
+#### Adding an OS measurement
+
+Requires a threshold of participants to vote.
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_add_os_measurement \
+  json-args '{"measurement": {"mrtd": "<hex>", "rtmr0": "<hex>", "rtmr1": "<hex>", "rtmr2": "<hex>", "key_provider_event_digest": "<hex>"}}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+#### Removing an OS measurement
+
+Requires **all** participants to vote. The last measurement cannot be removed.
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_remove_os_measurement \
+  json-args '{"measurement": {"mrtd": "<hex>", "rtmr0": "<hex>", "rtmr1": "<hex>", "rtmr2": "<hex>", "key_provider_event_digest": "<hex>"}}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+#### Query allowed OS measurements
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  allowed_os_measurements \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+#### Query OS measurement votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  os_measurement_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
 ### Deploy new CVM and migrate key shares
 
-After the new launcher hash is approved, deploy a new CVM with the updated launcher image and migrate key shares from the old node. Both old and new launcher hashes are accepted by the contract during the migration period.
+After the new launcher hash and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
 
 For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](migration-service.md).
 
-### Remove old launcher hash
+### Remove old launcher hash / OS measurements
 
-After all operators have migrated to the new CVM, participants should vote to remove the old launcher hash using `vote_remove_launcher_hash` (see above). This requires **all** participants to vote, ensuring no node is still running with the old launcher.
+After all operators have migrated to the new CVM, participants should vote to remove the old launcher hash using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
 
 ## Updating the CVM `user-config.conf` with new registry information
 

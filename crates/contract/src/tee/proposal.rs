@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use crate::primitives::{key_state::AuthenticatedParticipantId, time::Timestamp};
 
-pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, MpcDockerImageHash};
+pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 
 /// Docker Compose YAML template for the launcher. Compose hashes are derived on-chain as
 /// `sha256(template(launcher_hash, mpc_hash))`. Placeholders:
@@ -18,7 +18,7 @@ const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CodeHashesVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, MpcDockerImageHash>,
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
 }
 
 impl CodeHashesVotes {
@@ -26,7 +26,7 @@ impl CodeHashesVotes {
     /// for the same code hash. If the participant already voted, their previous vote is replaced.
     pub fn vote(
         &mut self,
-        proposal: MpcDockerImageHash,
+        proposal: NodeImageHash,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
         if self
@@ -42,7 +42,7 @@ impl CodeHashesVotes {
     }
 
     /// Counts the total number of participants who have voted for the given code hash.
-    fn count_votes(&self, proposal: &MpcDockerImageHash) -> u64 {
+    fn count_votes(&self, proposal: &NodeImageHash) -> u64 {
         self.proposal_by_account
             .values()
             .filter(|&prop| prop == proposal)
@@ -116,7 +116,7 @@ impl LauncherHashVotes {
     derive(borsh::BorshSchema)
 )]
 pub struct AllowedMpcDockerImage {
-    pub(crate) image_hash: MpcDockerImageHash,
+    pub(crate) image_hash: NodeImageHash,
     pub(crate) added: Timestamp,
 }
 
@@ -169,11 +169,7 @@ impl AllowedDockerImageHashes {
 
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
     /// order by `added` (ascending).
-    pub fn insert(
-        &mut self,
-        code_hash: MpcDockerImageHash,
-        tee_upgrade_deadline_duration: Duration,
-    ) {
+    pub fn insert(&mut self, code_hash: NodeImageHash, tee_upgrade_deadline_duration: Duration) {
         self.cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
         // Remove the old entry if it exists
@@ -210,10 +206,7 @@ impl AllowedDockerImageHashes {
     }
 
     /// Returns only the image hashes of valid entries.
-    pub fn get_image_hashes(
-        &self,
-        tee_upgrade_deadline_duration: Duration,
-    ) -> Vec<MpcDockerImageHash> {
+    pub fn get_image_hashes(&self, tee_upgrade_deadline_duration: Duration) -> Vec<NodeImageHash> {
         self.valid_entries(tee_upgrade_deadline_duration)
             .into_iter()
             .map(|entry| entry.image_hash)
@@ -252,7 +245,7 @@ impl AllowedLauncherImages {
     pub fn add(
         &mut self,
         launcher_hash: LauncherImageHash,
-        current_mpc_image_hashes: &[MpcDockerImageHash],
+        current_mpc_image_hashes: &[NodeImageHash],
     ) -> bool {
         if self
             .entries
@@ -294,7 +287,7 @@ impl AllowedLauncherImages {
 
     /// Adds a compose hash for a new MPC image to all existing launcher entries.
     /// Called when a new MPC image hash is voted in.
-    pub fn add_mpc_image_compose_hashes(&mut self, mpc_image_hash: &MpcDockerImageHash) {
+    pub fn add_mpc_image_compose_hashes(&mut self, mpc_image_hash: &NodeImageHash) {
         for entry in &mut self.entries {
             let compose_hash = get_docker_compose_hash(&entry.launcher_hash, mpc_image_hash);
             if !entry.compose_hashes.contains(&compose_hash) {
@@ -324,7 +317,7 @@ impl AllowedLauncherImages {
 /// by filling the template and taking SHA-256.
 pub fn get_docker_compose_hash(
     launcher_image_hash: &LauncherImageHash,
-    mpc_docker_image_hash: &MpcDockerImageHash,
+    mpc_docker_image_hash: &NodeImageHash,
 ) -> LauncherDockerComposeHash {
     let filled_yaml = LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE
         .replace("{{LAUNCHER_IMAGE_HASH}}", &launcher_image_hash.as_hex())
@@ -353,8 +346,8 @@ mod tests {
     const SECOND: Duration = Duration::from_secs(1);
     const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
-    fn dummy_code_hash(val: u8) -> MpcDockerImageHash {
-        MpcDockerImageHash::from([val; 32])
+    fn dummy_code_hash(val: u8) -> NodeImageHash {
+        NodeImageHash::from([val; 32])
     }
 
     fn dummy_launcher_hash(val: u8) -> LauncherImageHash {
