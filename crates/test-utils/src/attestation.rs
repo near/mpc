@@ -29,16 +29,17 @@ pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
 }
 
 /// Extracts the launcher image hash from the `launcher_image_compose.yaml` asset.
-/// Parses the `nearone/mpc-launcher@sha256:<hex>` line.
+/// Parses `services.launcher.image` and extracts the `sha256:<hex>` digest.
 pub fn launcher_image_hash() -> LauncherImageHash {
-    let hash_hex = TEST_LAUNCHER_IMAGE_COMPOSE_STRING
-        .lines()
-        .find_map(|line| {
-            line.find("nearone/mpc-launcher@sha256:")
-                .map(|pos| &line[pos + "nearone/mpc-launcher@sha256:".len()..])
-        })
-        .expect("launcher_image_compose.yaml must contain nearone/mpc-launcher@sha256:<hash>");
-    let hash_hex = hash_hex.trim();
+    let compose: serde_yaml::Value =
+        serde_yaml::from_str(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).expect("valid YAML");
+    let image = compose["services"]["launcher"]["image"]
+        .as_str()
+        .expect("services.launcher.image must be a string");
+    let hash_hex = image
+        .rsplit_once("sha256:")
+        .expect("image must contain sha256: digest")
+        .1;
     let bytes: [u8; 32] = hex::decode(hash_hex)
         .expect("Launcher image hash is valid hex")
         .try_into()
