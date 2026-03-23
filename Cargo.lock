@@ -10676,6 +10676,7 @@ dependencies = [
  "mpc-primitives",
  "near-account-id 2.5.0",
  "near-mpc-contract-interface",
+ "rand 0.8.5",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",

@@ -21,6 +21,7 @@ assert_matches = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
 mpc-primitives = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros"] }
+rand = { workspace = true }
 
 [lints]
 workspace = true
