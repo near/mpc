@@ -2944,6 +2944,7 @@ dependencies = [
  "bs58 0.5.1",
  "ed25519-dalek",
  "hex",
+ "near-mpc-crypto-types",
  "near-sandbox",
  "near-workspaces",
  "serde",

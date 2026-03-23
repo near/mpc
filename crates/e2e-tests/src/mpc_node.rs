@@ -4,6 +4,7 @@ use std::process::{Child, Command, Stdio};
 
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
+use near_mpc_crypto_types::Ed25519PublicKey;
 use near_workspaces::{Account, AccountId};
 use serde::Serialize;
 use serde_json::json;
@@ -127,11 +128,9 @@ impl MpcNodeSetup {
 
     /// The ed25519 public key formatted as `"ed25519:<base58>"`.
     pub fn p2p_public_key_str(&self) -> String {
-        let verifying_key = self.p2p_signing_key.verifying_key();
-        format!(
-            "ed25519:{}",
-            bs58::encode(verifying_key.as_bytes()).into_string()
-        )
+        String::from(&Ed25519PublicKey::from(
+            &self.p2p_signing_key.verifying_key(),
+        ))
     }
 
     /// The P2P URL for this node.
