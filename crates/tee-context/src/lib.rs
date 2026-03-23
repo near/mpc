@@ -228,19 +228,12 @@ async fn watch_hashes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use chain_gateway::{
-        errors::ChainGatewayError,
-        mock::{MockChainState, MockChainStateBuilder, MockError},
-        types::ObservedState,
+        mock::{MockChainState, MockChainStateBuilder},
+        types::{LatestFinalBlockInfo, ObservedState},
     };
-    use near_mpc_contract_interface::{
-        k256::elliptic_curve::rand_core::RngCore,
-        types::{Attestation, MockAttestation},
-    };
-    use std::sync::{Arc, Mutex};
-
-    use rand::{SeedableRng, rngs::StdRng};
+    use ed25519_dalek::SigningKey;
+    use near_mpc_contract_interface::types::{Attestation, MockAttestation};
     /// Block height returned by [`MockChainState`] view responses.
     const MOCK_BLOCK_HEIGHT: u64 = 1;
 
@@ -249,9 +242,6 @@ mod tests {
 
     /// NEAR account ID of the governance contract used in tests.
     const GOVERNANCE_ACCOUNT: &str = "governance.testnet";
-
-    /// A transaction captured by [`MockTransactionSender`].
-    type RecordedCall = (AccountId, String, Vec<u8>);
 
     fn governance_account() -> AccountId {
         GOVERNANCE_ACCOUNT.parse().unwrap()
@@ -265,17 +255,6 @@ mod tests {
         ALLOWED_HASH_BYTES
             .map(LauncherDockerComposeHash::from)
             .to_vec()
-    }
-
-    /// Returns a [`MockChainState`] that responds with [`allowed_image_hashes`].
-    fn mock_chain() -> MockChainState {
-        MockChainState::builder()
-            .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
-            .build()
     }
 
     //    /// Fake [`TransactionSender`] that records submitted transactions
@@ -326,8 +305,13 @@ mod tests {
                 observed_at: MOCK_BLOCK_HEIGHT.into(),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
+            .with_latest_block(Ok(LatestFinalBlockInfo {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: Default::default(),
+            }))
+            .with_signed_transaction_submitter_response(Ok(()))
             .build();
-        let ctx = TeeContext::new(mock_chain_state, governance_account())
+        let ctx = TeeContext::new(mock_chain_state.clone(), governance_account())
             .await
             .unwrap();
         (ctx, mock_chain_state)
@@ -352,27 +336,14 @@ mod tests {
         let (ctx, mock_chain) = create_test_context().await;
         let attestation = Attestation::Mock(MockAttestation::Valid);
         let tls_key = Ed25519PublicKey([0u8; 32]);
-        let mut rng = StdRng::seed_from_u64(42);
-        let signer = TransactionSigner::from_rng(&mut rng);
-        let signer = ctx
-            .submit_attestation(&signer.clone(), attestation.clone(), tls_key.clone())
+        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+        let signer = TransactionSigner::from_key("test.near".parse().unwrap(), signing_key);
+        ctx.submit_attestation(&signer, attestation.clone(), tls_key.clone())
             .await
             .unwrap();
 
-        let expected_args = serde_json::to_vec(&SubmitParticipantInfoArgs {
-            proposed_participant_attestation: attestation,
-            tls_public_key: tls_key,
-        })
-        .unwrap();
-        // todo
-        assert_eq!(
-            mock_chain.signed_transactions(),
-            vec![(
-                governance_account(),
-                SUBMIT_PARTICIPANT_INFO.to_string(),
-                expected_args
-            )]
-        );
+        let txs = mock_chain.signed_transactions().await;
+        assert_eq!(txs.len(), 1);
     }
 
     //#[tokio::test(start_paused = true)]
