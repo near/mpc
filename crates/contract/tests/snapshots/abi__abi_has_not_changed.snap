@@ -24,14 +24,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
+              "$ref": "#/definitions/Hash32"
             }
           }
         }
@@ -44,14 +37,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
+              "$ref": "#/definitions/Hash32"
             }
           }
         }
@@ -64,14 +50,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
+              "$ref": "#/definitions/Hash32"
             }
           }
         }
@@ -1215,14 +1194,7 @@ expression: abi
             {
               "name": "launcher_hash",
               "type_schema": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/Hash32"
               }
             }
           ]
@@ -1300,14 +1272,7 @@ expression: abi
             {
               "name": "code_hash",
               "type_schema": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/Hash32"
               }
             }
           ]
@@ -1407,14 +1372,7 @@ expression: abi
             {
               "name": "launcher_hash",
               "type_schema": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/Hash32"
               }
             }
           ]
@@ -1751,14 +1709,7 @@ expression: abi
             "proposal_by_account": {
               "type": "object",
               "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/Hash32"
               }
             }
           }
@@ -1913,19 +1864,19 @@ expression: abi
           ],
           "properties": {
             "key_provider_event_digest": {
-              "type": "string"
+              "$ref": "#/definitions/Hash48"
             },
             "mrtd": {
-              "type": "string"
+              "$ref": "#/definitions/Hash48"
             },
             "rtmr0": {
-              "type": "string"
+              "$ref": "#/definitions/Hash48"
             },
             "rtmr1": {
-              "type": "string"
+              "$ref": "#/definitions/Hash48"
             },
             "rtmr2": {
-              "type": "string"
+              "$ref": "#/definitions/Hash48"
             }
           }
         },
@@ -2298,6 +2249,12 @@ expression: abi
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "Hash32": {
+          "type": "string"
+        },
+        "Hash48": {
+          "type": "string"
         },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
@@ -2678,14 +2635,7 @@ expression: abi
               ],
               "properties": {
                 "Add": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
+                  "$ref": "#/definitions/Hash32"
                 }
               },
               "additionalProperties": false
@@ -2697,14 +2647,7 @@ expression: abi
               ],
               "properties": {
                 "Remove": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
+                  "$ref": "#/definitions/Hash32"
                 }
               },
               "additionalProperties": false
