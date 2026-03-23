@@ -228,8 +228,9 @@ async fn watch_hashes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use chain_gateway::{
-        mock::{MockChainState, MockChainStateBuilder},
+        mock::{MockChainState, MockChainStateBuilder, MockError},
         types::{LatestFinalBlockInfo, ObservedState},
     };
     use ed25519_dalek::SigningKey;
@@ -257,46 +258,20 @@ mod tests {
             .to_vec()
     }
 
-    //    /// Fake [`TransactionSender`] that records submitted transactions
-    //    /// instead of sending them on-chain. Optionally returns an error.
-    //    #[derive(Clone, Default)]
-    //    struct MockTransactionSender {
-    //        calls: Arc<Mutex<Vec<RecordedCall>>>,
-    //        error: Option<ChainGatewayError>,
-    //    }
-    //
-    //    impl MockTransactionSender {
-    //        fn failing(error: ChainGatewayError) -> Self {
-    //            Self {
-    //                error: Some(error),
-    //                ..Default::default()
-    //            }
-    //        }
-    //
-    //        fn calls(&self) -> Vec<RecordedCall> {
-    //            self.calls.lock().unwrap().clone()
-    //        }
-    //    }
-    //
-    //impl SubmitTransaction for MockTransactionSender {
-    //    type Error = ChainGatewayError;
-    //    async fn submit(
-    //        &self,
-    //        receiver_id: AccountId,
-    //        method_name: &str,
-    //        args: Vec<u8>,
-    //        _gas: Gas,
-    //    ) -> Result<(), ChainGatewayError> {
-    //        if let Some(err) = &self.error {
-    //            return Err(err.clone());
-    //        }
-    //        self.calls
-    //            .lock()
-    //            .unwrap()
-    //            .push((receiver_id, method_name.to_string(), args));
-    //        Ok(())
-    //    }
-    //}
+    fn mock_chain() -> MockChainState {
+        MockChainStateBuilder::new()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
+            }))
+            .build()
+    }
+
+    fn test_signer() -> TransactionSigner {
+        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+        TransactionSigner::from_key("test.near".parse().unwrap(), signing_key)
+    }
 
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
         let mock_chain_state = MockChainStateBuilder::new()
@@ -336,9 +311,8 @@ mod tests {
         let (ctx, mock_chain) = create_test_context().await;
         let attestation = Attestation::Mock(MockAttestation::Valid);
         let tls_key = Ed25519PublicKey([0u8; 32]);
-        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
-        let signer = TransactionSigner::from_key("test.near".parse().unwrap(), signing_key);
-        ctx.submit_attestation(&signer, attestation.clone(), tls_key.clone())
+        let signer = test_signer();
+        ctx.submit_attestation(&signer, attestation, tls_key)
             .await
             .unwrap();
 
@@ -346,198 +320,169 @@ mod tests {
         assert_eq!(txs.len(), 1);
     }
 
-    //#[tokio::test(start_paused = true)]
-    //async fn test_verify_tee() {
-    //    let (ctx, sender) = create_test_context().await;
-    //    ctx.verify_tee().await.unwrap();
-    //    assert_eq!(
-    //        sender.calls(),
-    //        vec![(governance_account(), VERIFY_TEE.to_string(), b"{}".to_vec())]
-    //    );
-    //}
+    #[tokio::test(start_paused = true)]
+    async fn test_verify_tee() {
+        let (ctx, mock_chain) = create_test_context().await;
+        let signer = test_signer();
+        ctx.verify_tee(&signer).await.unwrap();
 
-    //#[tokio::test(start_paused = true)]
-    //async fn test_submit_attestation_propagates_transaction_error() {
-    //    let mock_sender = MockTransactionSender::failing(ChainGatewayError::MonitoringClosed);
-    //    let ctx = TeeContext::new(mock_chain(), governance_account(), mock_sender)
-    //        .await
-    //        .unwrap();
+        let txs = mock_chain.signed_transactions().await;
+        assert_eq!(txs.len(), 1);
+    }
 
-    //    let result = ctx
-    //        .submit_attestation(
-    //            Attestation::Mock(MockAttestation::Valid),
-    //            Ed25519PublicKey([0u8; 32]),
-    //        )
-    //        .await;
+    #[tokio::test(start_paused = true)]
+    async fn test_submit_attestation_propagates_transaction_error() {
+        let mock = MockChainStateBuilder::new()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
+            }))
+            .with_latest_block(Err(MockError::LatestFinalBlockError))
+            .with_signed_transaction_submitter_response(Ok(()))
+            .build();
+        let ctx = TeeContext::new(mock, governance_account()).await.unwrap();
 
-    //    assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
-    //}
+        let result = ctx
+            .submit_attestation(
+                &test_signer(),
+                Attestation::Mock(MockAttestation::Valid),
+                Ed25519PublicKey([0u8; 32]),
+            )
+            .await;
 
-    //#[tokio::test(start_paused = true)]
-    //async fn test_spawn_hash_watcher_fails_when_view_errors() {
-    //    let mock = MockChainState::builder()
-    //        .with_syncing_status(Ok(false))
-    //        .with_query_view_function_response(Err(MockError::ViewClientError))
-    //        .build();
+        assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+    }
 
-    //    let cancel = CancellationToken::new();
-    //    let result = spawn_hash_watcher(mock, governance_account(), cancel).await;
+    #[tokio::test(start_paused = true)]
+    async fn test_verify_tee_propagates_transaction_error() {
+        let mock = MockChainStateBuilder::new()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
+            }))
+            .with_latest_block(Err(MockError::LatestFinalBlockError))
+            .with_signed_transaction_submitter_response(Ok(()))
+            .build();
+        let ctx = TeeContext::new(mock, governance_account()).await.unwrap();
 
-    //    assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
-    //}
+        let result = ctx.verify_tee(&test_signer()).await;
 
-    //#[tokio::test(start_paused = true)]
-    //async fn test_spawn_hash_watcher_initial_error_drops_sender() {
-    //    let mock = MockChainState::builder()
-    //        .with_syncing_status(Ok(false))
-    //        .with_query_view_function_response(Err(MockError::ViewClientError))
-    //        .build();
+        assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+    }
 
-    //    let cancel = CancellationToken::new();
-    //    let result = spawn_hash_watcher(mock.clone(), governance_account(), cancel).await;
-    //    assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+    #[tokio::test(start_paused = true)]
+    async fn test_new_fails_when_view_errors() {
+        let mock = MockChainStateBuilder::new()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Err(MockError::ViewClientError))
+            .build();
 
-    //    // The task exited on initial failure — no further polling should happen.
-    //    assert_eq!(
-    //        mock.await_next_view_call(std::time::Duration::from_secs(1))
-    //            .await,
-    //        Err(MockError::Timeout),
-    //        "no additional polls should happen after initial failure"
-    //    );
-    //}
+        let result = TeeContext::new(mock.clone(), governance_account()).await;
+        assert!(result.is_err());
 
-    //#[tokio::test]
-    //async fn test_drop_cancels_and_closes_receiver() {
-    //    let (ctx, _) = create_test_context().await;
+        // The task exited on initial failure — no further polling should happen.
+        assert_eq!(
+            mock.await_next_view_call(std::time::Duration::from_secs(1))
+                .await,
+            Err(MockError::Timeout),
+            "no additional polls should happen after initial failure"
+        );
+    }
 
-    //    // Clone the receiver so we can observe closure after dropping the context.
-    //    let mut rx = ctx.watch_allowed_tee_hashes();
+    #[tokio::test(start_paused = true)]
+    async fn test_drop_cancels_and_closes_receiver() {
+        let (ctx, _) = create_test_context().await;
 
-    //    // Dropping should cancel the background watcher loop.
-    //    drop(ctx);
+        // Clone the receiver so we can observe closure after dropping the context.
+        let mut rx = ctx.watch_allowed_tee_hashes();
 
-    //    // Once the watcher exits, the sender is dropped and changed() returns Err.
-    //    let res = tokio::time::timeout(std::time::Duration::from_secs(2), rx.changed()).await;
-    //    assert!(res.is_ok(), "expected receiver to close after drop");
-    //    assert!(
-    //        res.unwrap().is_err(),
-    //        "expected channel closed (sender dropped)"
-    //    );
-    //}
+        // Dropping should cancel the background watcher loop.
+        drop(ctx);
 
-    //#[tokio::test(start_paused = true)]
-    //async fn test_spawn_hash_watcher_updates_on_hash_change() {
-    //    let mock = mock_chain();
-    //    let cancel = CancellationToken::new();
+        // Once the watcher exits, the sender is dropped and changed() returns Err.
+        let res = tokio::time::timeout(std::time::Duration::from_secs(2), rx.changed()).await;
+        assert!(res.is_ok(), "expected receiver to close after drop");
+        assert!(
+            res.unwrap().is_err(),
+            "expected channel closed (sender dropped)"
+        );
+    }
 
-    //    let mut rx = spawn_hash_watcher(mock.clone(), governance_account(), cancel)
-    //        .await
-    //        .unwrap();
+    /// Verifies that `watch_hashes` returns immediately (dropping the sender)
+    /// when the initial hash fetch fails, rather than entering the poll loop.
+    #[tokio::test(start_paused = true)]
+    async fn test_watch_hashes_exits_on_initial_error() {
+        let mock = MockChainState::builder()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Err(MockError::ViewClientError))
+            .build();
+        let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-    //    assert_eq!(
-    //        *rx.borrow(),
-    //        AllowedTeeHashes {
-    //            allowed_docker_image_hashes: allowed_image_hashes(),
-    //            allowed_launcher_compose_hashes: allowed_launcher_hashes(),
-    //        }
-    //    );
+        watch_hashes(mock, governance_account(), tx, CancellationToken::new()).await;
 
-    //    // Simulate a contract state change at a newer block height.
-    //    let updated_bytes = [99u8; 32];
-    //    let updated_image = vec![DockerImageHash::from(updated_bytes)];
-    //    let updated_launcher = vec![LauncherDockerComposeHash::from(updated_bytes)];
-    //    mock.set_view_response(Ok(ObservedState {
-    //        observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
-    //        value: serde_json::to_vec(&updated_image).unwrap(),
-    //    }))
-    //    .await;
+        assert!(rx.changed().await.is_err(), "sender should be dropped");
+    }
 
-    //    // Advance time past the poll interval to trigger the update.
-    //    tokio::time::sleep(chain_gateway::state_viewer::POLL_INTERVAL * 3).await;
+    /// Verifies that cancelling the token causes `watch_hashes` to exit its
+    /// poll loop and drop the sender, closing the watch channel.
+    #[tokio::test(start_paused = true)]
+    async fn test_watch_hashes_exits_on_cancellation() {
+        let mock = mock_chain();
+        let cancel = CancellationToken::new();
+        let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-    //    rx.changed().await.unwrap();
-    //    assert_eq!(
-    //        *rx.borrow(),
-    //        AllowedTeeHashes {
-    //            allowed_docker_image_hashes: updated_image,
-    //            allowed_launcher_compose_hashes: updated_launcher,
-    //        }
-    //    );
-    //}
+        let cancel_clone = cancel.clone();
+        tokio::select! {
+            _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
+            _ = async {
+                rx.changed().await.unwrap();
+                cancel_clone.cancel();
+            } => {}
+        }
 
-    ///// Verifies that `watch_hashes` returns immediately (dropping the sender)
-    ///// when the initial hash fetch fails, rather than entering the poll loop.
-    //#[tokio::test(start_paused = true)]
-    //async fn test_watch_hashes_exits_on_initial_error() {
-    //    let mock = MockChainState::builder()
-    //        .with_syncing_status(Ok(false))
-    //        .with_query_view_function_response(Err(MockError::ViewClientError))
-    //        .build();
-    //    let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
+        assert!(rx.changed().await.is_err(), "sender should be dropped");
+    }
 
-    //    watch_hashes(mock, governance_account(), tx, CancellationToken::new()).await;
+    /// Verifies that when the governance contract's view response changes,
+    /// `watch_hashes` detects the update on the next poll cycle and sends
+    /// the new hashes through the watch channel.
+    #[tokio::test(start_paused = true)]
+    async fn test_watch_hashes_propagates_updates() {
+        let mock = mock_chain();
+        let cancel = CancellationToken::new();
+        let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-    //    assert!(rx.changed().await.is_err(), "sender should be dropped");
-    //}
+        let updated_bytes = [99u8; 32];
+        let updated_image = vec![DockerImageHash::from(updated_bytes)];
+        let updated_launcher = vec![LauncherDockerComposeHash::from(updated_bytes)];
 
-    ///// Verifies that cancelling the token causes `watch_hashes` to exit its
-    ///// poll loop and drop the sender, closing the watch channel.
-    //#[tokio::test(start_paused = true)]
-    //async fn test_watch_hashes_exits_on_cancellation() {
-    //    let mock = mock_chain();
-    //    let cancel = CancellationToken::new();
-    //    let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
+        let cancel_clone = cancel.clone();
+        let mock_clone = mock.clone();
+        let expected_image = updated_image.clone();
+        tokio::select! {
+            _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
+            _ = async {
+                rx.changed().await.unwrap();
+                // Confirm initial value differs from the update we're about to make.
+                assert_ne!(rx.borrow().allowed_docker_image_hashes, expected_image);
+                mock_clone.set_view_response(Ok(ObservedState {
+                    observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
+                    value: serde_json::to_vec(&expected_image).unwrap(),
+                })).await;
+                tokio::time::sleep(chain_gateway::state_viewer::POLL_INTERVAL * 3).await;
+                rx.changed().await.unwrap();
+                cancel_clone.cancel();
+            } => {}
+        }
 
-    //    let cancel_clone = cancel.clone();
-    //    tokio::select! {
-    //        _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
-    //        _ = async {
-    //            rx.changed().await.unwrap();
-    //            cancel_clone.cancel();
-    //        } => {}
-    //    }
-
-    //    assert!(rx.changed().await.is_err(), "sender should be dropped");
-    //}
-
-    ///// Verifies that when the governance contract's view response changes,
-    ///// `watch_hashes` detects the update on the next poll cycle and sends
-    ///// the new hashes through the watch channel.
-    //#[tokio::test(start_paused = true)]
-    //async fn test_watch_hashes_propagates_updates() {
-    //    let mock = mock_chain();
-    //    let cancel = CancellationToken::new();
-    //    let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
-
-    //    let updated_bytes = [99u8; 32];
-    //    let updated_image = vec![DockerImageHash::from(updated_bytes)];
-    //    let updated_launcher = vec![LauncherDockerComposeHash::from(updated_bytes)];
-
-    //    let cancel_clone = cancel.clone();
-    //    let mock_clone = mock.clone();
-    //    let expected_image = updated_image.clone();
-    //    tokio::select! {
-    //        _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
-    //        _ = async {
-    //            rx.changed().await.unwrap();
-    //            // Confirm initial value differs from the update we're about to make.
-    //            assert_ne!(rx.borrow().allowed_docker_image_hashes, expected_image);
-    //            mock_clone.set_view_response(Ok(ObservedState {
-    //                observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
-    //                value: serde_json::to_vec(&expected_image).unwrap(),
-    //            })).await;
-    //            tokio::time::sleep(chain_gateway::state_viewer::POLL_INTERVAL * 3).await;
-    //            rx.changed().await.unwrap();
-    //            cancel_clone.cancel();
-    //        } => {}
-    //    }
-
-    //    assert_eq!(
-    //        *rx.borrow(),
-    //        AllowedTeeHashes {
-    //            allowed_docker_image_hashes: updated_image,
-    //            allowed_launcher_compose_hashes: updated_launcher,
-    //        }
-    //    );
-    //}
+        assert_eq!(
+            *rx.borrow(),
+            AllowedTeeHashes {
+                allowed_docker_image_hashes: updated_image,
+                allowed_launcher_compose_hashes: updated_launcher,
+            }
+        );
+    }
 }
