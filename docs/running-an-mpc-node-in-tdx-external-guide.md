@@ -16,7 +16,7 @@ The CVM filesystem is encrypted with a hardware-bound key derived from SGX seali
 
 Platform-bound sealed data may also become unrecoverable if TDX-related hardware changes (for example, a CPU replacement).
 
-To move a node between hosts, follow the supported procedure described in the Node Migration section, which uses the backup-cli tool to securely transfer keyshares.
+To move a node between hosts, follow the supported procedure described in the Node Migration section, which uses the backup-cli tool to securely transfer key shares.
 
 
 ## Main difference between TEE and non TEE MPC nodes
