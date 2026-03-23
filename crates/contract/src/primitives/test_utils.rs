@@ -1,4 +1,13 @@
-use super::domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainId, DomainRegistry};
+use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry};
+
+/// Infer a default purpose from the curve.
+/// Used during migration from old state that lacks the `purpose` field.
+pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
+    match curve {
+        Curve::Bls12381 => DomainPurpose::CKD,
+        _ => DomainPurpose::Sign,
+    }
+}
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{

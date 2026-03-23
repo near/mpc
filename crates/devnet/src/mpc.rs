@@ -17,7 +17,7 @@ use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConf
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_contract::primitives::domain::infer_purpose_from_curve;
+use mpc_contract::primitives::test_utils::infer_purpose_from_curve;
 use mpc_contract::tee::proposal::NodeImageHash;
 use mpc_contract::{
     primitives::{

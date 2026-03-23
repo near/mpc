@@ -242,23 +242,16 @@ impl AddDomainsVotes {
     }
 }
 
-/// Infer a default purpose from the curve.
-/// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     use super::{
-        infer_purpose_from_curve, is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig,
-        DomainId, DomainPurpose, DomainRegistry, Participants,
+        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
+        DomainRegistry, Participants,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
-    use crate::primitives::test_utils::{gen_participant, gen_participants};
+    use crate::primitives::test_utils::{
+        gen_participant, gen_participants, infer_purpose_from_curve,
+    };
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;

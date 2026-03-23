@@ -2244,16 +2244,16 @@ mod tests {
     };
 
     use super::*;
+    use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        NUM_CURVES,
+        gen_participants, infer_purpose_from_curve, NUM_CURVES,
     };
     use crate::primitives::{
         domain::{Curve, DomainConfig, DomainId},
         participants::Participants,
         signature::{Payload, Tweak},
-        test_utils::gen_participants,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2264,10 +2264,6 @@ mod tests {
     use crate::tee::measurements::Sha384Digest;
     use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
-    use crate::{
-        errors::{ErrorKind, NodeMigrationError},
-        primitives::domain::infer_purpose_from_curve,
-    };
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
