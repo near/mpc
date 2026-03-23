@@ -34,7 +34,7 @@ async fn test_submit_set_value_and_read_back() {
 
     assert_eq!(initial.value, DEFAULT_VALUE);
 
-    // Submit set_value transaction via the validator for reliable mempool insertion.
+    // Submit set_value transaction via the observer
     let new_value = "updated by sender test";
     let args = serde_json::json!({ "value": new_value });
     let signer = Arc::new(TransactionSigner::from_key(

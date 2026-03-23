@@ -23,7 +23,7 @@ impl Localnet {
         let observer_home = make_test_home_dir("observer.near");
         let contract = test_contract();
 
-        // start a validator node
+        // start a validator node (this is what the MPC node calls the "near indexer node")
         let validator = LocalNodeBuilder::new("validator", validator_home)
             .with_consensus_min_peers(1)
             .with_contract(test_contract(), compiled_test_contract_wasm())
