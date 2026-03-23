@@ -83,8 +83,19 @@ impl<T, const N: usize> schemars::JsonSchema for Hash<T, N> {
         alloc::format!("Hash{}", N)
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-        <String as schemars::JsonSchema>::json_schema(generator)
+    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        let hex_len = (N * 2) as u32;
+        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(
+                schemars::schema::InstanceType::String,
+            ))),
+            string: Some(Box::new(schemars::schema::StringValidation {
+                min_length: Some(hex_len),
+                max_length: Some(hex_len),
+                pattern: Some("^[0-9a-fA-F]+$".to_string()),
+            })),
+            ..Default::default()
+        })
     }
 }
 
@@ -119,8 +130,8 @@ pub type Hash32<T> = Hash<T, 32>;
 pub enum HashParseError {
     #[error("not a valid hex string")]
     HexError(#[from] FromHexError),
-    #[error("hex string not {0} bytes")]
-    InvalidLength(usize),
+    #[error("expected {expected} bytes, got {got}")]
+    InvalidLength { expected: usize, got: usize },
 }
 
 /// Backward-compatible alias.
@@ -131,9 +142,13 @@ impl<T, const N: usize> FromStr for Hash<T, N> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let decoded_hex_bytes = hex::decode(s)?;
-        let hash_bytes: [u8; N] = decoded_hex_bytes
-            .try_into()
-            .map_err(|v: Vec<u8>| HashParseError::InvalidLength(v.len()))?;
+        let hash_bytes: [u8; N] =
+            decoded_hex_bytes
+                .try_into()
+                .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
+                    expected: N,
+                    got: v.len(),
+                })?;
 
         Ok(hash_bytes.into())
     }
@@ -415,7 +430,10 @@ mod tests {
         let err = "00".parse::<TestHash>().unwrap_err();
 
         match err {
-            HashParseError::InvalidLength(len) => assert_eq!(len, 1),
+            HashParseError::InvalidLength { expected, got } => {
+                assert_eq!(expected, 32);
+                assert_eq!(got, 1);
+            }
             _ => panic!("unexpected error variant"),
         }
     }
