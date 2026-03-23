@@ -2,25 +2,25 @@ use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
         consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
-        interface::{IntoContractType, IntoInterfaceType},
+        interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            vote_for_hash,
+            vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
     },
 };
 use anyhow::Result;
-use contract_interface::method_names;
-use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     errors::InvalidState,
     primitives::{
         domain::SignatureScheme, participants::Participants, test_utils::bogus_ed25519_public_key,
     },
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_workspaces::Contract;
 use test_utils::attestation::{image_digest, p2p_tls_key};
 
@@ -89,7 +89,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     let first_hash = image_digest();
 
     let arbitrary_bytes = [2; 32];
-    let second_hash = MpcDockerImageHash::from(arbitrary_bytes);
+    let second_hash = NodeImageHash::from(arbitrary_bytes);
 
     // Initially, there should be no allowed hashes
     assert_eq!(get_allowed_hashes(&contract).await.len(), 0);
@@ -201,7 +201,7 @@ async fn get_allowed_launcher_compose_hashes(
         .json::<Vec<LauncherDockerComposeHash>>()?)
 }
 
-async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
+async fn get_allowed_hashes(contract: &Contract) -> Vec<NodeImageHash> {
     contract
         .call(method_names::ALLOWED_DOCKER_IMAGE_HASHES)
         .args_json(serde_json::json!(""))
@@ -209,7 +209,7 @@ async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
         .transact()
         .await
         .expect("Contract is running")
-        .json::<Vec<MpcDockerImageHash>>()
+        .json::<Vec<NodeImageHash>>()
         .expect("allowed_docker_image_hashes method is infallible")
 }
 
@@ -359,7 +359,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     let hashes = [hash_1, hash_2, hash_3];
 
     for (i, current_hash) in hashes.iter().enumerate() {
-        let hash = MpcDockerImageHash::from(*current_hash);
+        let hash = NodeImageHash::from(*current_hash);
         for account in mpc_signer_accounts.iter().take(threshold.0 as usize) {
             vote_for_hash(account, &contract, &hash).await?;
         }
@@ -555,6 +555,8 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     );
 }
 
+/// Tests that on a fresh contract, compose hashes are derived when both an MPC image
+/// hash and a launcher image hash are voted in.
 #[tokio::test]
 async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
     let SandboxTestSetup {
@@ -563,20 +565,31 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
 
-    let allowed_mpc_image_digest = image_digest();
-
     assert_eq!(
         get_allowed_launcher_compose_hashes(&contract).await?.len(),
         0
     );
 
-    for account in mpc_signer_accounts {
-        vote_for_hash(&account, &contract, &allowed_mpc_image_digest).await?;
+    // Vote in an MPC image hash — no compose hashes yet (no launcher images)
+    let allowed_mpc_image_digest = image_digest();
+    for account in &mpc_signer_accounts {
+        vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
     }
-
     assert_eq!(
         get_allowed_launcher_compose_hashes(&contract).await?.len(),
-        1
+        0,
+        "no compose hashes without a launcher image"
+    );
+
+    // Vote in a launcher image hash — compose hash derived for the existing MPC image
+    let launcher_hash = LauncherImageHash::from([0xAA; 32]);
+    for account in &mpc_signer_accounts {
+        vote_add_launcher_hash(account, &contract, &launcher_hash).await?;
+    }
+    assert_eq!(
+        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        1,
+        "1 compose hash: launcher x MPC image"
     );
 
     Ok(())
@@ -633,7 +646,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         target_account,
         &contract,
         &expiring_attestation,
-        &target_node_id.tls_public_key.into_interface_type(),
+        &dtos::Ed25519PublicKey::try_from(&target_node_id.tls_public_key)
+            .expect("expected ED25519 key"),
     )
     .await?
     .is_success();

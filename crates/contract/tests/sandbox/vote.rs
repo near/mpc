@@ -7,22 +7,23 @@ use crate::sandbox::{
     utils::{
         consts::{ALL_SIGNATURE_SCHEMES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-        interface::{IntoContractType, IntoInterfaceType, TryIntoContractType},
+        interface::{IntoContractType, IntoInterfaceType},
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
         transactions::execute_async_transactions,
     },
 };
 use assert_matches::assert_matches;
-use contract_interface::{method_names, types as dtos};
 use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainPurpose, SignatureScheme},
+        domain::{DomainConfig, DomainPurpose, SignatureScheme},
+        test_utils::infer_purpose_from_scheme,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
+use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;
@@ -105,9 +106,12 @@ async fn test_keygen() -> anyhow::Result<()> {
         .find(|k| k.domain_id.0 == domain_id)
         .map(|k| &k.key)
         .unwrap()
-        .try_into_contract_type()
+        .try_into()
         .unwrap();
-    assert_eq!(found_key, public_key.into_contract_type());
+    assert_eq!(
+        found_key,
+        near_sdk::PublicKey::try_from(public_key.clone()).unwrap()
+    );
     assert_eq!(
         running.domains.domains.len(),
         ALL_SIGNATURE_SCHEMES.len() + 1

@@ -9,19 +9,21 @@ use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
 use threshold_signatures::participants::Participant;
+use threshold_signatures::ReconstructionLowerBound;
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
-        new_threshold: usize,
+        new_threshold: ReconstructionLowerBound,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
+        let old_threshold: usize = old_participants.threshold.try_into()?;
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
-            old_threshold: old_participants.threshold as usize,
+            old_threshold: ReconstructionLowerBound::from(old_threshold),
             my_share,
             public_key,
         }
@@ -51,9 +53,9 @@ impl EddsaSignatureProvider {
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
 pub struct KeyResharingComputation {
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     old_participants: Vec<ParticipantId>,
-    old_threshold: usize,
+    old_threshold: ReconstructionLowerBound,
     my_share: Option<SigningShare>,
     public_key: VerifyingKey,
 }
@@ -108,6 +110,7 @@ mod tests {
     use rand::SeedableRng as _;
     use std::sync::Arc;
     use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -149,9 +152,9 @@ mod tests {
                             .ok_or_else(|| anyhow::anyhow!("No channel"))?
                     };
                     let key = KeyResharingComputation {
-                        threshold: THRESHOLD,
+                        threshold: ReconstructionLowerBound::from(THRESHOLD),
                         old_participants,
-                        old_threshold: THRESHOLD,
+                        old_threshold: ReconstructionLowerBound::from(THRESHOLD),
                         my_share: keyshare,
                         public_key: pubkey,
                     }

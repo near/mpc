@@ -1,4 +1,5 @@
 use mpc_primitives::hash::Hash32;
+use near_mpc_contract_interface::types::StarknetLog;
 
 pub mod inspector;
 
@@ -14,4 +15,5 @@ pub type StarknetTransactionHash = Hash32<StarknetTransaction>;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StarknetExtractedValue {
     BlockHash(StarknetBlockHash),
+    Log(StarknetLog),
 }

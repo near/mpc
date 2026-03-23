@@ -1,0 +1,48 @@
+name: External Services Tests
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+  # Weekly cron to clear and rebuild Rust cache (https://github.com/Swatinem/rust-cache/issues/181).
+  schedule:
+    - cron: "0 12 * * 6"
+
+jobs:
+  external-services-tests:
+    name: "Run tests that depend on external services"
+    runs-on: warp-ubuntu-2404-x64-2x
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+
+      - name: Clear cache for fresh rebuild
+        if: github.event_name == 'schedule'
+        run: |
+          cargo clean
+          rm -rf ~/.cargo
+
+      - name: Run contract-history tests
+        if: always()
+        run: cargo test -p contract-history --features external-services-tests --profile test-release --locked
+
+      - name: Run tee-authority tests
+        if: always()
+        run: cargo test -p tee-authority --features external-services-tests --profile test-release --locked test_upload_quote_for_collateral_with_phala_endpoint

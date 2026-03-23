@@ -15,13 +15,13 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
-use ed25519_dalek::SigningKey;
-use mpc_contract::tee::proposal::MpcDockerImageHash;
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use mpc_contract::primitives::test_utils::infer_purpose_from_scheme;
+use mpc_contract::tee::proposal::NodeImageHash;
 use mpc_contract::{
     primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
+        domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -34,9 +34,10 @@ use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_mpc_contract_interface::method_names;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
-use near_sdk::{borsh, CurveType};
+use near_sdk::borsh;
 use node_types::http_server::StaticWebData;
 use reqwest::Client;
 use serde::Serialize;
@@ -218,7 +219,8 @@ impl MpcAddKeysCmd {
             let public_data: StaticWebData = response.json::<StaticWebData>().await.unwrap();
 
             let mpc_participant = MpcParticipantSetup {
-                p2p_public_key: public_data.near_p2p_public_key,
+                p2p_public_key: VerifyingKey::try_from(&public_data.near_p2p_public_key)
+                    .expect("valid p2p public key"),
                 responding_account_id: participant.responding_account_id.clone(),
             };
 
@@ -228,17 +230,22 @@ impl MpcAddKeysCmd {
                 .set_mpc_participant(mpc_participant.clone());
 
             // add all access keys:
-            for key in public_data.near_responder_public_keys {
+            for key in &public_data.near_responder_public_keys {
                 setup
                     .accounts
                     .account_mut(&mpc_participant.responding_account_id)
-                    .add_access_key(key)
+                    .add_access_key(
+                        VerifyingKey::try_from(key).expect("valid responder public key"),
+                    )
                     .await;
             }
             setup
                 .accounts
                 .account_mut(account_id)
-                .add_access_key(public_data.near_signer_public_key)
+                .add_access_key(
+                    VerifyingKey::try_from(&public_data.near_signer_public_key)
+                        .expect("valid signer public key"),
+                )
                 .await;
         }
     }
@@ -347,7 +354,7 @@ impl MpcInitContractCmd {
             ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
-            init_config: contract_interface::types::InitConfig::default(),
+            init_config: near_mpc_contract_interface::types::InitConfig::default(),
         })
         .unwrap();
 
@@ -370,20 +377,15 @@ impl MpcInitContractCmd {
 #[derive(Serialize)]
 struct InitV2Args {
     parameters: ThresholdParameters,
-    init_config: contract_interface::types::InitConfig,
+    init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
-    let p2p_public_key_bytes: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] =
-        *mpc_setup.p2p_public_key.as_bytes();
-
-    let near_sdk_public_key =
-        near_sdk::PublicKey::from_parts(CurveType::ED25519, p2p_public_key_bytes.to_vec())
-            .expect("P2P key is valid.");
-
     ParticipantInfo {
-        sign_pk: near_sdk_public_key,
+        sign_pk: near_sdk::PublicKey::from(
+            near_mpc_contract_interface::types::Ed25519PublicKey::from(&mpc_setup.p2p_public_key),
+        ),
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
     }
 }
@@ -882,7 +884,7 @@ struct VoteNewParametersArgs {
 
 #[derive(Serialize)]
 struct VoteCodeHashArgs {
-    code_hash: MpcDockerImageHash,
+    code_hash: NodeImageHash,
 }
 
 impl MpcDescribeCmd {

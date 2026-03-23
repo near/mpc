@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
-use crate::primitives::{domain::DomainId, key_state::EpochId};
+use crate::primitives::domain::DomainId;
+use crate::primitives::key_state::EpochId;
+use near_mpc_contract_interface::types::ForeignChain;
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -130,6 +132,8 @@ pub enum InvalidParameters {
     InvalidTlsPublicKey,
     #[error("Caller is not the signer account.")]
     CallerNotSigner,
+    #[error("Requested chain {requested:?} is not present in the active foreign chain policy.")]
+    ChainNotInPolicy { requested: ForeignChain },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

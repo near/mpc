@@ -2,6 +2,7 @@ use frost_core::serialization::SerializableScalar;
 use frost_core::Ciphersuite;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::thresholds::ReconstructionLowerBound;
@@ -94,15 +95,28 @@ struct ParallelToMultiplicationTaskOutputMany {
     b_i_v: Vec<Scalar>,
 }
 
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+#[serde(bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>"))]
+struct FixedArray<T, const N: usize>(#[serde_as(as = "[_; N]")] [T; N]);
+
+#[serde_as]
 #[derive(Serialize, Deserialize)]
 #[allow(clippy::struct_field_names)]
-struct PolynomialCommitmentsMessageMany {
-    big_e_v: Vec<PolynomialCommitment>,
-    big_f_v: Vec<PolynomialCommitment>,
-    big_l_v: Vec<PolynomialCommitment>,
-    randomizer_v: Vec<Randomness>,
-    phi_proof0_v: Vec<dlog::Proof<Secp256K1Sha256>>,
-    phi_proof1_v: Vec<dlog::Proof<Secp256K1Sha256>>,
+struct PolynomialCommitmentsMessageMany<const N: usize> {
+    #[serde_as(as = "[_; N]")]
+    big_e_v: [PolynomialCommitment; N],
+    #[serde_as(as = "[_; N]")]
+    big_f_v: [PolynomialCommitment; N],
+    #[serde_as(as = "[_; N]")]
+    big_l_v: [PolynomialCommitment; N],
+    #[serde_as(as = "[_; N]")]
+    randomizer_v: [Randomness; N],
+    #[serde_as(as = "[_; N]")]
+    phi_proof0_v: [dlog::Proof<Secp256K1Sha256>; N],
+    #[serde_as(as = "[_; N]")]
+    phi_proof1_v: [dlog::Proof<Secp256K1Sha256>; N],
 }
 
 #[allow(clippy::too_many_lines)]
@@ -177,7 +191,7 @@ async fn do_generation_many<const N: usize>(
         .iter()
         .any(|all_commitments| !all_commitments.full())
     {
-        let (from, commitments): (_, Vec<_>) = chan.recv(wait0).await?;
+        let (from, FixedArray(commitments)) = chan.recv::<FixedArray<Commitment, N>>(wait0).await?;
         for i in 0..N {
             all_commitments_vec[i].put(from, commitments[i]);
         }
@@ -268,13 +282,13 @@ async fn do_generation_many<const N: usize>(
 
         // Spec 2.7
         let wait2 = chan.next_waitpoint();
-        let message = PolynomialCommitmentsMessageMany {
-            big_e_v: big_e_i_v,
-            big_f_v: big_f_i_v,
-            big_l_v: big_l_i_v,
-            randomizer_v: my_randomizers,
-            phi_proof0_v: my_phi_proof0v,
-            phi_proof1_v: my_phi_proof1v,
+        let message: PolynomialCommitmentsMessageMany<N> = PolynomialCommitmentsMessageMany {
+            big_e_v: big_e_i_v.to_array()?,
+            big_f_v: big_f_i_v.to_array()?,
+            big_l_v: big_l_i_v.to_array()?,
+            randomizer_v: my_randomizers.to_array()?,
+            phi_proof0_v: my_phi_proof0v.to_array()?,
+            phi_proof1_v: my_phi_proof1v.to_array()?,
         };
         chan.send_many(wait2, &message)?;
         let (big_e_i_v, big_f_i_v, big_l_i_v) = (message.big_e_v, message.big_f_v, message.big_l_v);
@@ -329,7 +343,7 @@ async fn do_generation_many<const N: usize>(
         }
 
         for (from, their) in
-            recv_from_others::<PolynomialCommitmentsMessageMany>(&chan, wait2, &participants, me)
+            recv_from_others::<PolynomialCommitmentsMessageMany<N>>(&chan, wait2, &participants, me)
                 .await?
         {
             for i in 0..N {
@@ -397,11 +411,12 @@ async fn do_generation_many<const N: usize>(
         }
 
         // Spec 3.5 + 3.6
-        for (_, (a_j_i_v, b_j_i_v)) in recv_from_others::<(
-            Vec<SerializableScalar<C>>,
-            Vec<SerializableScalar<C>>,
-        )>(&chan, wait3, &participants, me)
-        .await?
+        for (_, (FixedArray(a_j_i_v), FixedArray(b_j_i_v))) in
+            recv_from_others::<(
+                FixedArray<SerializableScalar<C>, N>,
+                FixedArray<SerializableScalar<C>, N>,
+            )>(&chan, wait3, &participants, me)
+            .await?
         {
             for i in 0..N {
                 let a_j_i = &a_j_i_v[i];
@@ -461,11 +476,12 @@ async fn do_generation_many<const N: usize>(
         for big_c_i_v_i in big_c_i_v.iter().take(N) {
             big_c_v.push(*big_c_i_v_i);
         }
-        for (from, (big_c_j_v, their_phi_proofs)) in recv_from_others::<(
-            Vec<CoefficientCommitment>,
-            Vec<dlogeq::Proof<C>>,
-        )>(&chan, wait4, &participants, me)
-        .await?
+        for (from, (FixedArray(big_c_j_v), FixedArray(their_phi_proofs))) in
+            recv_from_others::<(
+                FixedArray<CoefficientCommitment, N>,
+                FixedArray<dlogeq::Proof<C>, N>,
+            )>(&chan, wait4, &participants, me)
+            .await?
         {
             for i in 0..N {
                 let big_e_j_zero = &big_e_j_zero_v[i];
@@ -578,13 +594,12 @@ async fn do_generation_many<const N: usize>(
         hat_big_c_v.push(*hat_big_c_i_v_i);
     }
 
-    for (from, (their_hat_big_c_i_points, their_phi_proofs)) in recv_from_others::<(
-        Vec<CoefficientCommitment>,
-        Vec<dlog::Proof<C>>,
-    )>(
-        &chan, wait5, &participants, me
-    )
-    .await?
+    for (from, (FixedArray(their_hat_big_c_i_points), FixedArray(their_phi_proofs))) in
+        recv_from_others::<(
+            FixedArray<CoefficientCommitment, N>,
+            FixedArray<dlog::Proof<C>, N>,
+        )>(&chan, wait5, &participants, me)
+        .await?
     {
         for i in 0..N {
             let their_hat_big_c = their_hat_big_c_i_points[i].value();
@@ -623,8 +638,9 @@ async fn do_generation_many<const N: usize>(
     }
 
     // Spec 5.5 + 5.6
-    for (_, c_j_i_v) in
-        recv_from_others::<Vec<SerializableScalar<C>>>(&chan, wait6, &participants, me).await?
+    for (_, FixedArray(c_j_i_v)) in
+        recv_from_others::<FixedArray<SerializableScalar<C>, N>>(&chan, wait6, &participants, me)
+            .await?
     {
         for i in 0..N {
             let c_j_i = c_j_i_v[i].0;
@@ -707,6 +723,43 @@ fn validate_triple_inputs(
     Ok((participants, threshold))
 }
 
+/// Maximum incoming buffer entries for OT-based triple generation.
+///
+/// Returns `131 * N * (P - 1) + 7` where P = `num_participants` and
+/// N = `num_triples`. This is a worst-case upper bound; actual usage is
+/// typically ~50% of this value.
+///
+/// The formula comes from two components:
+/// - The main protocol contributes 7 waitpoints, constant regardless of N
+///   (all N triples are batched within the same messages).
+/// - The multiplication sub-protocol runs once per (peer, triple) pair. Each
+///   pair's sender/receiver role is determined by a hash comparison
+///   (`hash(&(i, me))` vs `hash(&(i, p))`). The sender side creates 5 buffer
+///   entries; the receiver side creates 131 (128 from batch random OT + 3 from
+///   OT extension and MTA). The bound assumes the worst case: all-receiver.
+///
+/// For N=1 the bound is exact (the max-buffered participant happens to be
+/// receiver for all peers). For N>1 it is conservative because hash-based role
+/// assignment makes it statistically unlikely for one participant to be receiver
+/// for all N*(P-1) pairs.
+///
+/// Threshold does not affect the count.
+///
+/// Returns an error if `num_participants` is 0 or if the result overflows.
+pub fn triple_generation_max_incoming_buffer_entries(
+    num_participants: usize,
+    num_triples: usize,
+) -> Result<usize, InitializationError> {
+    let peers = num_participants
+        .checked_sub(1)
+        .ok_or_else(|| InitializationError::BadParameters("num_participants must be > 0".into()))?;
+    131usize
+        .checked_mul(num_triples)
+        .and_then(|v| v.checked_mul(peers))
+        .and_then(|v| v.checked_add(7))
+        .ok_or_else(|| InitializationError::BadParameters("buffer size overflow".into()))
+}
+
 /// Generate a triple through a multi-party protocol.
 ///
 /// This requires a setup phase to have been conducted with these parties
@@ -721,7 +774,10 @@ pub fn generate_triple(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(triple_generation_max_incoming_buffer_entries(
+        participants.len(),
+        1,
+    )?);
     let fut = do_generation(ctx.clone(), participants, me, threshold, rng);
     Ok(make_protocol(ctx, fut))
 }
@@ -734,14 +790,34 @@ pub fn generate_triple_many<const N: usize>(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
     let (participants, threshold) = validate_triple_inputs(participants, threshold)?;
-    let ctx = Comms::new();
+    let ctx = Comms::with_buffer_capacity(triple_generation_max_incoming_buffer_entries(
+        participants.len(),
+        N,
+    )?);
     let fut = do_generation_many::<N>(ctx.clone(), participants, me, threshold, rng);
     Ok(make_protocol(ctx, fut))
+}
+
+/// Extension trait for converting a `Vec<T>` into a fixed-size array `[T; N]`.
+trait ToArray<T, const N: usize> {
+    fn to_array(self) -> Result<[T; N], ProtocolError>;
+}
+
+impl<T, const N: usize> ToArray<T, N> for Vec<T> {
+    fn to_array(self) -> Result<[T; N], ProtocolError> {
+        let len = self.len();
+        self.try_into()
+            .map_err(|_: Self| ProtocolError::UnexpectedLength {
+                expected: N,
+                actual: len,
+            })
+    }
 }
 
 #[cfg(test)]
 mod test {
     use rand::{RngCore, SeedableRng};
+    use rstest::rstest;
 
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
@@ -750,7 +826,10 @@ mod test {
         test_utils::{generate_participants, run_protocol, MockCryptoRng},
     };
 
-    use super::{generate_triple_many, TripleGenerationOutput, TripleGenerationOutputMany, C};
+    use super::{
+        do_generation_many, generate_triple_many, triple_generation_max_incoming_buffer_entries,
+        TripleGenerationOutput, TripleGenerationOutputMany, C,
+    };
 
     #[test]
     fn test_triple_generation() {
@@ -858,5 +937,76 @@ mod test {
         assert_eq!(a * b, c);
 
         insta::assert_json_snapshot!(result);
+    }
+
+    // The formula `131*N*(P-1) + 7` is exact for N=1 (the max-buffered
+    // participant is receiver for all peers). For N>1 it is a conservative
+    // upper bound because hash-based role assignment makes it unlikely for one
+    // participant to be receiver for all N*(P-1) pairs.
+    fn run_and_check_buffer<const N: usize>(num_participants: usize, threshold: usize) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(num_participants);
+
+        let (protocols, comms_refs) = crate::test_utils::build_buffer_test(
+            &participants,
+            &mut rng,
+            |comms, p_list, p, rng_p| {
+                do_generation_many::<N>(comms.clone(), p_list, p, threshold.into(), rng_p)
+            },
+        );
+
+        // When
+        let _ = run_protocol(protocols).unwrap();
+
+        // Then
+        let capacity = triple_generation_max_incoming_buffer_entries(num_participants, N).unwrap();
+        let max_entries = comms_refs
+            .iter()
+            .map(|(_, comms)| comms.buffer_len())
+            .max()
+            .unwrap();
+        assert!(
+            max_entries <= capacity,
+            "Buffer entries ({max_entries}) exceed capacity ({capacity}) \
+             for P={num_participants} N={N}"
+        );
+    }
+
+    /// Dispatches a runtime `num_triples` to a const-generic `run_and_check_buffer::<N>`.
+    macro_rules! dispatch_n {
+        ($n:expr, $p:expr, $t:expr, [$($val:literal),+]) => {
+            match $n {
+                $($val => run_and_check_buffer::<$val>($p, $t),)+
+                _ => panic!("unsupported N={}", $n),
+            }
+        };
+    }
+
+    #[rstest]
+    // N=1: formula is exact
+    #[case(2, 2, 1)]
+    #[case(3, 2, 1)]
+    #[case(4, 3, 1)]
+    #[case(5, 3, 1)]
+    #[case(7, 4, 1)]
+    // N>1: formula is a conservative upper bound
+    #[case(2, 2, 2)]
+    #[case(4, 3, 4)]
+    #[case(5, 3, 8)]
+    #[case(6, 4, 16)]
+    // Current node parameters: participants=9, threshold=6, batch triples=64
+    #[case(9, 6, 64)]
+    fn test_triple_generation_max_incoming_buffer_entries(
+        #[case] num_participants: usize,
+        #[case] threshold: usize,
+        #[case] num_triples: usize,
+    ) {
+        dispatch_n!(
+            num_triples,
+            num_participants,
+            threshold,
+            [1, 2, 4, 8, 16, 64]
+        );
     }
 }

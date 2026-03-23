@@ -1,61 +1,25 @@
 use crate::{
     config::{
-        generate_and_write_backup_encryption_key_to_disk, load_config_file, BlockArgs, CKDConfig,
-        ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PersistentSecrets,
-        PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
-    },
-    coordinator::Coordinator,
-    db::SecretDB,
-    indexer::{
-        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI, ReadForeignChainPolicy,
+        load_config_file,
+        start::{LogConfig, LogFormat},
+        ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
+        SecretsStartConfig, StartConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
-        GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage,
     },
-    migration_service::spawn_recovery_server_and_run_onboarding,
-    p2p::testing::{generate_test_p2p_configs, PortSeed},
-    profiler,
-    tracking::{self, start_root_task},
-    web::{start_web_server, static_web_data, DebugRequest},
+    run::run_mpc_node,
 };
-use anyhow::{anyhow, Context};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
-use mpc_attestation::report_data::ReportDataV1;
-use mpc_contract::state::ProtocolContractState;
-use near_account_id::AccountId;
-use near_indexer_primitives::types::Finality;
-use near_time::Clock;
-use std::{
-    collections::BTreeMap,
-    net::{Ipv4Addr, SocketAddr},
-    sync::Mutex,
-};
-use std::{path::PathBuf, sync::Arc, sync::OnceLock, time::Duration};
-use tee_authority::tee_authority::{
-    DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
-    DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
-};
-use tokio::sync::{broadcast, mpsc, oneshot, watch, RwLock};
-use tokio_util::sync::CancellationToken;
-use url::Url;
+use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
+use mpc_primitives::hash::NodeImageHash;
+use std::path::PathBuf;
 
-use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
-use {
-    crate::tee::{
-        monitor_allowed_image_hashes,
-        remote_attestation::{monitor_attestation_removal, periodic_attestation_submission},
-        AllowedImageHashesFile,
-    },
-    mpc_contract::tee::proposal::MpcDockerImageHash,
-    tracing::info,
-};
-
-pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
-
+const DUMMY_ALLOWED_HASH: NodeImageHash = NodeImageHash::new([0; 32]);
+const ALLOWED_IMAGE_HASHES_FILE_PATH: &str = "/tmp/allowed_image_hashes.json";
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
 #[command(about = "MPC Node for Near Protocol")]
@@ -67,16 +31,15 @@ pub struct Cli {
     pub command: CliCommand,
 }
 
-#[derive(Copy, Clone, Debug, ValueEnum)]
-pub enum LogFormat {
-    /// Plaintext logs
-    Plain,
-    /// JSON logs
-    Json,
-}
-
 #[derive(Subcommand, Debug)]
 pub enum CliCommand {
+    /// Starts the MPC node using a single TOML configuration file instead of
+    /// environment variables and CLI flags.
+    StartWithConfigFile {
+        /// Path to a TOML configuration file containing all settings needed to
+        /// start the MPC node.
+        config_path: PathBuf,
+    },
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
     Init(InitConfigArgs),
@@ -86,15 +49,16 @@ pub enum CliCommand {
     ExportKeyshare(ExportKeyshareCmd),
     /// Generates a set of test configurations suitable for running MPC in
     /// an integration test.
+    #[cfg(feature = "test-utils")]
     GenerateTestConfigs {
         #[arg(long)]
         output_dir: String,
         #[arg(long, value_delimiter = ',', required = true)]
         /// Near signer account for each participant
-        participants: Vec<AccountId>,
+        participants: Vec<near_account_id::AccountId>,
         /// Near responder account for each participant. Refer to `indexer/real.rs` for more details.
         #[arg(long, value_delimiter = ',')]
-        responders: Vec<AccountId>,
+        responders: Vec<near_account_id::AccountId>,
         #[arg(long)]
         threshold: usize,
         #[arg(long, default_value = "65536")]
@@ -108,7 +72,82 @@ pub enum CliCommand {
         migrating_nodes: Vec<usize>,
     },
 }
+#[derive(Args, Debug)]
+pub struct StartCmd {
+    #[arg(long, env("MPC_HOME_DIR"))]
+    pub home_dir: PathBuf,
+    /// Hex-encoded 16 byte AES key for local storage encryption.
+    /// This key should come from a secure secret storage.
+    /// TODO(#444): After TEE integration decide on what to do with AES encryption key
+    #[arg(env("MPC_SECRET_STORE_KEY"))]
+    pub secret_store_key_hex: String,
+    /// If provided, the root keyshare is stored on GCP.
+    /// This requires GCP_PROJECT_ID to be set as well.
+    #[arg(env("GCP_KEYSHARE_SECRET_ID"))]
+    pub gcp_keyshare_secret_id: Option<String>,
+    #[arg(env("GCP_PROJECT_ID"))]
+    pub gcp_project_id: Option<String>,
+    /// TEE related configuration settings.
+    #[command(flatten)]
+    pub image_hash_config: CliImageHashConfig,
+    /// Hex-encoded 32 byte AES key for backup encryption.
+    #[arg(env("MPC_BACKUP_ENCRYPTION_KEY_HEX"))]
+    pub backup_encryption_key_hex: Option<String>,
+}
 
+#[derive(Args, Debug)]
+pub struct CliImageHashConfig {
+    #[arg(
+        long,
+        env("MPC_IMAGE_HASH"),
+        help_heading = "Hex representation of the hash of the image running. Only required if running in TEE."
+    )]
+    pub image_hash: Option<String>,
+    #[arg(
+        long,
+        env("MPC_LATEST_ALLOWED_HASH_FILE"),
+        help_heading = "Path to the file which the mpc node will write the latest allowed hash to. If not set, assumes running outside of TEE and skips image hash monitoring."
+    )]
+    pub latest_allowed_hash_file: Option<PathBuf>,
+}
+
+impl StartCmd {
+    fn into_start_config(self, config: ConfigFile, log_format: LogFormat) -> StartConfig {
+        let gcp = match (self.gcp_keyshare_secret_id, self.gcp_project_id) {
+            (Some(keyshare_secret_id), Some(project_id)) => Some(GcpStartConfig {
+                keyshare_secret_id,
+                project_id,
+            }),
+            _ => None,
+        };
+        StartConfig {
+            home_dir: self.home_dir,
+            secrets: SecretsStartConfig {
+                secret_store_key_hex: self.secret_store_key_hex,
+                backup_encryption_key_hex: self.backup_encryption_key_hex,
+            },
+            near_init: None,
+            gcp,
+            node: config,
+            // dstack and TEE is not supported with StartCmd, as it will be removed
+            // in #2334, and not used by the rust launcher.
+            tee: TeeConfig {
+                authority: TeeAuthorityConfig::Local,
+                // Use dummy values as we don't want a breaking change, and
+                // this start command will be deprecated in #2334
+                image_hash: DUMMY_ALLOWED_HASH.into(),
+                latest_allowed_hash_file_path: ALLOWED_IMAGE_HASHES_FILE_PATH
+                    .parse()
+                    .expect("dummy allowed image hashes is valid path"),
+            },
+
+            log: LogConfig {
+                format: log_format,
+                filter: std::env::var("RUST_LOG").ok(),
+            },
+        }
+    }
+}
 #[derive(Args, Debug)]
 pub struct InitConfigArgs {
     #[arg(long, env("MPC_HOME_DIR"))]
@@ -136,73 +175,35 @@ pub struct InitConfigArgs {
     pub boot_nodes: Option<String>,
 }
 
-#[derive(Args, Debug)]
-pub struct StartCmd {
-    #[arg(long, env("MPC_HOME_DIR"))]
-    pub home_dir: String,
-    /// Hex-encoded 16 byte AES key for local storage encryption.
-    /// This key should come from a secure secret storage.
-    /// TODO(#444): After TEE integration decide on what to do with AES encryption key
-    #[arg(env("MPC_SECRET_STORE_KEY"))]
-    pub secret_store_key_hex: String,
-    /// If provided, the root keyshare is stored on GCP.
-    /// This requires GCP_PROJECT_ID to be set as well.
-    #[arg(env("GCP_KEYSHARE_SECRET_ID"))]
-    pub gcp_keyshare_secret_id: Option<String>,
-    #[arg(env("GCP_PROJECT_ID"))]
-    pub gcp_project_id: Option<String>,
-    /// TEE authority config
-    #[command(subcommand)]
-    pub tee_authority: TeeAuthorityConfig,
-    /// TEE related configuration settings.
-    #[command(flatten)]
-    pub image_hash_config: MpcImageHashConfig,
-    /// Hex-encoded 32 byte AES key for backup encryption.
-    #[arg(env("MPC_BACKUP_ENCRYPTION_KEY_HEX"))]
-    pub backup_encryption_key_hex: Option<String>,
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum TeeAuthorityConfig {
-    Local,
-    Dstack {
-        #[arg(long, env("DSTACK_ENDPOINT"), default_value = DEFAULT_DSTACK_ENDPOINT)]
-        dstack_endpoint: String,
-        #[arg(long, env("QUOTE_UPLOAD_URL"), default_value = DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL)]
-        quote_upload_url: Url,
-    },
-}
-
-impl TryFrom<TeeAuthorityConfig> for TeeAuthority {
-    type Error = anyhow::Error;
-
-    fn try_from(cmd: TeeAuthorityConfig) -> Result<Self, Self::Error> {
-        let authority_config = match cmd {
-            TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
-            TeeAuthorityConfig::Dstack {
-                dstack_endpoint,
-                quote_upload_url,
-            } => DstackTeeAuthorityConfig::new(dstack_endpoint, quote_upload_url).into(),
-        };
-
-        Ok(authority_config)
+impl InitConfigArgs {
+    pub fn into_near_init_config(self) -> NearInitConfig {
+        NearInitConfig {
+            chain_id: match self.chain_id.as_deref() {
+                Some("mainnet") => ChainId::Mainnet,
+                Some("testnet") => ChainId::Testnet,
+                Some("mpc-localnet") => ChainId::Localnet,
+                Some(other) => ChainId::Custom(other.to_string()),
+                None => ChainId::Custom(String::new()),
+            },
+            boot_nodes: self.boot_nodes,
+            genesis_path: self.genesis.map(PathBuf::from),
+            download_config: if self.download_config {
+                Some(DownloadConfigType::RPC)
+            } else {
+                None
+            },
+            download_config_url: if self.download_config {
+                self.download_config_url
+            } else {
+                None
+            },
+            download_genesis: self.download_genesis,
+            download_genesis_url: self.download_genesis_url,
+            download_genesis_records_url: self.download_genesis_records_url,
+            rpc_addr: None,
+            network_addr: None,
+        }
     }
-}
-
-#[derive(Args, Debug)]
-pub struct MpcImageHashConfig {
-    #[arg(
-        long,
-        env("MPC_IMAGE_HASH"),
-        help_heading = "Hex representation of the hash of the image running. Only required if running in TEE."
-    )]
-    pub image_hash: Option<String>,
-    #[arg(
-        long,
-        env("MPC_LATEST_ALLOWED_HASH_FILE"),
-        help_heading = "Path to the file which the mpc node will write the latest allowed hash to. If not set, assumes running outside of TEE and skips image hash monitoring."
-    )]
-    pub latest_allowed_hash_file: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -232,331 +233,30 @@ pub struct ExportKeyshareCmd {
     #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
     pub local_encryption_key_hex: String,
 }
-
-impl StartCmd {
-    async fn run(self) -> anyhow::Result<()> {
-        let root_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()?;
-
-        let _tokio_enter_guard = root_runtime.enter();
-
-        // Load configuration and initialize persistent secrets
-        let home_dir = PathBuf::from(self.home_dir.clone());
-        let config = load_config_file(&home_dir)?;
-        let persistent_secrets = PersistentSecrets::generate_or_get_existing(
-            &home_dir,
-            config.number_of_responder_keys,
-        )?;
-
-        profiler::web_server::start_web_server(config.pprof_bind_address).await?;
-        root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
-
-        // TODO(#1296): Decide if the MPC responder account is actually needed
-        let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
-
-        let backup_encryption_key_hex = match &self.backup_encryption_key_hex {
-            Some(key) => key.clone(),
-            None => generate_and_write_backup_encryption_key_to_disk(&home_dir)?,
-        };
-
-        // Load secrets from configuration and persistent storage
-        let secrets = SecretsConfig::from_parts(
-            &self.secret_store_key_hex,
-            persistent_secrets.clone(),
-            &backup_encryption_key_hex,
-        )?;
-
-        // Generate attestation
-        let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
-        let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
-
-        let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
-
-        let report_data = ReportDataV1::new(
-            *tls_public_key.into_contract_interface_type().as_bytes(),
-            *account_public_key.into_contract_interface_type().as_bytes(),
-        )
-        .into();
-
-        let attestation = tee_authority.generate_attestation(report_data).await?;
-
-        // Create communication channels and runtime
-        let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
-        let root_task_handle = Arc::new(OnceLock::new());
-
-        let (protocol_state_sender, protocol_state_receiver) =
-            watch::channel(ProtocolContractState::NotInitialized);
-
-        let (migration_state_sender, migration_state_receiver) =
-            watch::channel((0, BTreeMap::new()));
-        let web_server = root_runtime
-            .block_on(start_web_server(
-                root_task_handle.clone(),
-                debug_request_sender.clone(),
-                config.web_ui,
-                static_web_data(&secrets, Some(attestation)),
-                protocol_state_receiver,
-                migration_state_receiver,
-            ))
-            .context("Failed to create web server.")?;
-
-        let _web_server_join_handle = root_runtime.spawn(web_server);
-
-        // Create Indexer and wait for indexer to be synced.
-        let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
-        let indexer_api = spawn_real_indexer(
-            home_dir.clone(),
-            config.indexer.clone(),
-            config.my_near_account_id.clone(),
-            persistent_secrets.near_signer_key.clone(),
-            respond_config,
-            indexer_exit_sender,
-            protocol_state_sender,
-            migration_state_sender,
-            *tls_public_key,
-        );
-
-        let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
-        let cancellation_token = CancellationToken::new();
-
-        let image_hash_watcher_handle = if let (Some(image_hash), Some(latest_allowed_hash_file)) = (
-            &self.image_hash_config.image_hash,
-            &self.image_hash_config.latest_allowed_hash_file,
-        ) {
-            let current_image_hash_bytes: [u8; 32] = hex::decode(image_hash)
-                .expect("The currently running image is a hex string.")
-                .try_into()
-                .expect("The currently running image hash hex representation is 32 bytes.");
-
-            let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
-            let image_hash_storage = AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
-
-            Some(root_runtime.spawn(monitor_allowed_image_hashes(
-                cancellation_token.child_token(),
-                MpcDockerImageHash::from(current_image_hash_bytes),
-                allowed_hashes_in_contract,
-                image_hash_storage,
-                shutdown_signal_sender.clone(),
-            )))
-        } else {
-            tracing::info!(
-                "MPC_IMAGE_HASH and/or MPC_LATEST_ALLOWED_HASH_FILE not set, skipping TEE image hash monitoring"
-            );
-            None
-        };
-
-        let root_future = self.create_root_future(
-            home_dir.clone(),
-            config.clone(),
-            secrets.clone(),
-            indexer_api,
-            debug_request_sender,
-            root_task_handle,
-            tee_authority,
-        );
-
-        let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
-
-        let exit_reason = tokio::select! {
-            root_task_result = root_task => {
-                root_task_result?
-            }
-            indexer_exit_response = indexer_exit_receiver => {
-                indexer_exit_response.context("Indexer thread dropped response channel.")?
-            }
-            Some(()) = shutdown_signal_receiver.recv() => {
-                Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
-            }
-        };
-
-        // Perform graceful shutdown
-        cancellation_token.cancel();
-
-        if let Some(handle) = image_hash_watcher_handle {
-            info!("Waiting for image hash watcher to gracefully exit.");
-            let exit_result = handle.await;
-            info!(?exit_result, "Image hash watcher exited.");
-        }
-
-        exit_reason
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
-        self,
-        home_dir: PathBuf,
-        config: ConfigFile,
-        secrets: SecretsConfig,
-        indexer_api: IndexerAPI<TransactionSenderImpl, ForeignChainPolicyReader>,
-        debug_request_sender: broadcast::Sender<DebugRequest>,
-        // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
-        // Otherwise we would not write to the same cell/lock.
-        root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
-        tee_authority: TeeAuthority,
-    ) -> anyhow::Result<()>
-    where
-        TransactionSenderImpl: TransactionSender + 'static,
-        ForeignChainPolicyReader: ReadForeignChainPolicy + Clone + Send + Sync + 'static,
-    {
-        let root_task_handle = tracking::current_task();
-
-        root_task_handle_once_lock
-            .set(root_task_handle.clone())
-            .map_err(|_| anyhow!("Root task handle was already set"))?;
-
-        let tls_public_key = secrets
-            .persistent_secrets
-            .p2p_private_key
-            .verifying_key()
-            .into_contract_interface_type();
-        let account_public_key = secrets
-            .persistent_secrets
-            .near_signer_key
-            .verifying_key()
-            .into_contract_interface_type();
-
-        let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
-
-        let key_storage_config = KeyStorageConfig {
-            home_dir: home_dir.clone(),
-            local_encryption_key: secrets.local_storage_aes_key,
-            gcp: if let Some(secret_id) = self.gcp_keyshare_secret_id {
-                let project_id = self.gcp_project_id.ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "GCP_PROJECT_ID must be specified to use GCP_KEYSHARE_SECRET_ID"
-                    )
-                })?;
-                Some(GcpPermanentKeyStorageConfig {
-                    project_id,
-                    secret_id,
-                })
-            } else {
-                None
-            },
-        };
-
-        // Spawn periodic attestation submission task
-        let tee_authority_clone = tee_authority.clone();
-        let tx_sender_clone = indexer_api.txn_sender.clone();
-        let tls_public_key_clone = tls_public_key.clone();
-        let account_public_key_clone = account_public_key.clone();
-        let allowed_docker_images_receiver_clone =
-            indexer_api.allowed_docker_images_receiver.clone();
-        let allowed_launcher_compose_receiver_clone =
-            indexer_api.allowed_launcher_compose_receiver.clone();
-        tokio::spawn(async move {
-            if let Err(e) = periodic_attestation_submission(
-                tee_authority_clone,
-                tx_sender_clone,
-                tls_public_key_clone,
-                account_public_key_clone,
-                allowed_docker_images_receiver_clone,
-                allowed_launcher_compose_receiver_clone,
-                tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
-            )
-            .await
-            {
-                tracing::error!(
-                    error = ?e,
-                    "periodic attestation submission task failed"
-                );
-            }
-        });
-
-        // Spawn TEE attestation monitoring task
-        let tx_sender_clone = indexer_api.txn_sender.clone();
-        let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
-        let account_id_clone = config.my_near_account_id.clone();
-        let allowed_docker_images_receiver_clone =
-            indexer_api.allowed_docker_images_receiver.clone();
-        let allowed_launcher_compose_receiver_clone =
-            indexer_api.allowed_launcher_compose_receiver.clone();
-        tokio::spawn(async move {
-            if let Err(e) = monitor_attestation_removal(
-                account_id_clone,
-                tee_authority,
-                tx_sender_clone,
-                tls_public_key,
-                account_public_key,
-                allowed_docker_images_receiver_clone,
-                allowed_launcher_compose_receiver_clone,
-                tee_accounts_receiver,
-            )
-            .await
-            {
-                tracing::error!(
-                    error = ?e,
-                    "attestation removal monitoring task failed"
-                );
-            }
-        });
-
-        let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
-            RwLock::new(key_storage_config.create().await?).into();
-
-        spawn_recovery_server_and_run_onboarding(
-            config.migration_web_ui,
-            (&secrets).into(),
-            config.my_near_account_id.clone(),
-            keyshare_storage.clone(),
-            indexer_api.my_migration_info_receiver.clone(),
-            indexer_api.contract_state_receiver.clone(),
-            indexer_api.txn_sender.clone(),
-        )
-        .await?;
-
-        let coordinator = Coordinator {
-            clock: Clock::real(),
-            config_file: config,
-            secrets,
-            secret_db,
-            keyshare_storage,
-            indexer: indexer_api,
-            currently_running_job_name: Arc::new(Mutex::new(String::new())),
-            debug_request_sender,
-        };
-        coordinator.run().await
-    }
-}
-
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
-            CliCommand::Start(start) => start.run().await,
+            CliCommand::StartWithConfigFile { config_path } => {
+                let node_configuration = StartConfig::from_toml_file(&config_path)?;
+                node_configuration.ensure_near_initialized()?;
+                run_mpc_node(node_configuration).await
+            }
+            // TODO(#2334): deprecate this
+            CliCommand::Start(start) => {
+                let home_dir = std::path::Path::new(&start.home_dir);
+                let config_file = load_config_file(home_dir)?;
+
+                let node_configuration = start.into_start_config(config_file, self.log_format);
+                run_mpc_node(node_configuration).await
+            }
             CliCommand::Init(config) => {
-                let (download_config_type, download_config_url) = if config.download_config {
-                    (
-                        Some(near_config_utils::DownloadConfigType::RPC),
-                        config.download_config_url.as_ref().map(AsRef::as_ref),
-                    )
-                } else {
-                    (None, None)
-                };
-                near_indexer::init_configs(
-                    &config.dir,
-                    config.chain_id,
-                    None,
-                    None,
-                    1,
-                    false,
-                    config.genesis.as_ref().map(AsRef::as_ref),
-                    config.download_genesis,
-                    config.download_genesis_url.as_ref().map(AsRef::as_ref),
-                    config
-                        .download_genesis_records_url
-                        .as_ref()
-                        .map(AsRef::as_ref),
-                    download_config_type,
-                    download_config_url,
-                    config.boot_nodes.as_ref().map(AsRef::as_ref),
-                    None,
-                    None,
-                )
+                let dir = config.dir.clone();
+                let near_init = config.into_near_init_config();
+                near_init.run_init(&dir)
             }
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,
             CliCommand::ExportKeyshare(cmd) => cmd.run().await,
+            #[cfg(feature = "test-utils")]
             CliCommand::GenerateTestConfigs {
                 ref output_dir,
                 ref participants,
@@ -571,7 +271,7 @@ impl Cli {
                     participants.len() == responders.len(),
                     "Number of participants must match number of responders"
                 );
-                self.run_generate_test_configs(
+                testing::run_generate_test_configs(
                     output_dir,
                     participants.clone(),
                     responders.clone(),
@@ -584,132 +284,7 @@ impl Cli {
             }
         }
     }
-
-    fn duplicate_migrating_accounts(
-        mut accounts: Vec<AccountId>,
-        migrating_nodes: &[usize],
-    ) -> anyhow::Result<Vec<AccountId>> {
-        for migrating_node_idx in migrating_nodes {
-            let migrating_node_account: AccountId = accounts
-                .get(*migrating_node_idx)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("index {} out of bounds for accounts", migrating_node_idx)
-                })?
-                .clone();
-
-            accounts.push(migrating_node_account);
-        }
-        Ok(accounts)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn run_generate_test_configs(
-        &self,
-        output_dir: &str,
-        participants: Vec<AccountId>,
-        responders: Vec<AccountId>,
-        threshold: usize,
-        desired_triples_to_buffer: usize,
-        desired_presignatures_to_buffer: usize,
-        desired_responder_keys_per_participant: usize,
-        migrating_nodes: &[usize],
-    ) -> anyhow::Result<()> {
-        let participants = Self::duplicate_migrating_accounts(participants, migrating_nodes)?;
-        let responders = Self::duplicate_migrating_accounts(responders, migrating_nodes)?;
-
-        let p2p_key_pairs = participants
-            .iter()
-            .enumerate()
-            .map(|(idx, _account_id)| {
-                let subdir = PathBuf::from(output_dir).join(idx.to_string());
-                PersistentSecrets::generate_or_get_existing(
-                    &subdir,
-                    desired_responder_keys_per_participant,
-                )
-                .map(|secret| secret.p2p_private_key)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let configs = generate_test_p2p_configs(
-            &participants,
-            threshold,
-            PortSeed::CLI_FOR_PYTEST,
-            Some(p2p_key_pairs),
-        )?;
-        let participants_config = configs[0].0.participants.clone();
-        for (i, (_config, _p2p_private_key)) in configs.into_iter().enumerate() {
-            let subdir = format!("{}/{}", output_dir, i);
-            std::fs::create_dir_all(&subdir)?;
-            let file_config = self.create_file_config(
-                &participants[i],
-                &responders[i],
-                i,
-                desired_triples_to_buffer,
-                desired_presignatures_to_buffer,
-            )?;
-            std::fs::write(
-                format!("{}/config.yaml", subdir),
-                serde_yaml::to_string(&file_config)?,
-            )?;
-        }
-        std::fs::write(
-            format!("{}/participants.json", output_dir),
-            serde_json::to_string(&participants_config)?,
-        )?;
-        Ok(())
-    }
-
-    fn create_file_config(
-        &self,
-        participant: &AccountId,
-        responder: &AccountId,
-        index: usize,
-        desired_triples_to_buffer: usize,
-        desired_presignatures_to_buffer: usize,
-    ) -> anyhow::Result<ConfigFile> {
-        Ok(ConfigFile {
-            my_near_account_id: participant.clone(),
-            near_responder_account_id: responder.clone(),
-            number_of_responder_keys: 1,
-            web_ui: SocketAddr::new(
-                Ipv4Addr::LOCALHOST.into(),
-                PortSeed::CLI_FOR_PYTEST.web_port(index),
-            ),
-            migration_web_ui: SocketAddr::new(
-                Ipv4Addr::LOCALHOST.into(),
-                PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
-            ),
-            pprof_bind_address: SocketAddr::new(
-                Ipv4Addr::LOCALHOST.into(),
-                PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),
-            ),
-            indexer: IndexerConfig {
-                validate_genesis: true,
-                sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
-                concurrency: 1.try_into().unwrap(),
-                mpc_contract_id: "test0".parse().unwrap(),
-                finality: Finality::None,
-                port_override: None,
-            },
-            triple: TripleConfig {
-                concurrency: 2,
-                desired_triples_to_buffer,
-                timeout_sec: 60,
-                parallel_triple_generation_stagger_time_sec: 1,
-            },
-            presignature: PresignatureConfig {
-                concurrency: 2,
-                desired_presignatures_to_buffer,
-                timeout_sec: 60,
-            },
-            signature: SignatureConfig { timeout_sec: 60 },
-            ckd: CKDConfig { timeout_sec: 60 },
-            keygen: KeygenConfig { timeout_sec: 60 },
-            foreign_chains: ForeignChainsConfig::default(),
-            cores: Some(4),
-        })
-    }
 }
-
 impl ImportKeyshareCmd {
     pub async fn run(&self) -> anyhow::Result<()> {
         let runtime = tokio::runtime::Runtime::new()?;
@@ -804,6 +379,146 @@ impl ExportKeyshareCmd {
 
             Ok(())
         })
+    }
+}
+
+#[cfg(feature = "test-utils")]
+mod testing {
+    use std::{
+        net::{Ipv4Addr, SocketAddr},
+        path::PathBuf,
+    };
+
+    use crate::{
+        config::{
+            BlockArgs, CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig,
+            PersistentSecrets, PresignatureConfig, SignatureConfig, SyncMode, TripleConfig,
+        },
+        p2p::testing::{generate_test_p2p_configs, PortSeed},
+    };
+    use near_indexer_primitives::types::Finality;
+    use near_sdk::AccountId;
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) fn run_generate_test_configs(
+        output_dir: &str,
+        participants: Vec<AccountId>,
+        responders: Vec<AccountId>,
+        threshold: usize,
+        desired_triples_to_buffer: usize,
+        desired_presignatures_to_buffer: usize,
+        desired_responder_keys_per_participant: usize,
+        migrating_nodes: &[usize],
+    ) -> anyhow::Result<()> {
+        let participants = duplicate_migrating_accounts(participants, migrating_nodes)?;
+        let responders = duplicate_migrating_accounts(responders, migrating_nodes)?;
+
+        let p2p_key_pairs = participants
+            .iter()
+            .enumerate()
+            .map(|(idx, _account_id)| {
+                let subdir = PathBuf::from(output_dir).join(idx.to_string());
+                PersistentSecrets::generate_or_get_existing(
+                    &subdir,
+                    desired_responder_keys_per_participant,
+                )
+                .map(|secret| secret.p2p_private_key)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let configs = generate_test_p2p_configs(
+            &participants,
+            threshold,
+            PortSeed::CLI_FOR_PYTEST,
+            Some(p2p_key_pairs),
+        )?;
+        let participants_config = configs[0].0.participants.clone();
+        for (i, (_config, _p2p_private_key)) in configs.into_iter().enumerate() {
+            let subdir = format!("{}/{}", output_dir, i);
+            std::fs::create_dir_all(&subdir)?;
+            let file_config = create_file_config(
+                &participants[i],
+                &responders[i],
+                i,
+                desired_triples_to_buffer,
+                desired_presignatures_to_buffer,
+            );
+            std::fs::write(
+                format!("{}/mpc_node_config.json", subdir),
+                serde_json::to_string_pretty(&file_config)?,
+            )?;
+        }
+        std::fs::write(
+            format!("{}/participants.json", output_dir),
+            serde_json::to_string(&participants_config)?,
+        )?;
+        Ok(())
+    }
+
+    fn duplicate_migrating_accounts(
+        mut accounts: Vec<AccountId>,
+        migrating_nodes: &[usize],
+    ) -> anyhow::Result<Vec<AccountId>> {
+        for migrating_node_idx in migrating_nodes {
+            let migrating_node_account: AccountId = accounts
+                .get(*migrating_node_idx)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("index {} out of bounds for accounts", migrating_node_idx)
+                })?
+                .clone();
+
+            accounts.push(migrating_node_account);
+        }
+        Ok(accounts)
+    }
+
+    fn create_file_config(
+        participant: &AccountId,
+        responder: &AccountId,
+        index: usize,
+        desired_triples_to_buffer: usize,
+        desired_presignatures_to_buffer: usize,
+    ) -> ConfigFile {
+        ConfigFile {
+            my_near_account_id: participant.clone(),
+            near_responder_account_id: responder.clone(),
+            number_of_responder_keys: 1,
+            web_ui: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.web_port(index),
+            ),
+            migration_web_ui: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
+            ),
+            pprof_bind_address: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),
+            ),
+            indexer: IndexerConfig {
+                validate_genesis: true,
+                sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
+                concurrency: 1.try_into().unwrap(),
+                mpc_contract_id: "test0".parse().unwrap(),
+                finality: Finality::None,
+                port_override: None,
+            },
+            triple: TripleConfig {
+                concurrency: 2,
+                desired_triples_to_buffer,
+                timeout_sec: 60,
+                parallel_triple_generation_stagger_time_sec: 1,
+            },
+            presignature: PresignatureConfig {
+                concurrency: 2,
+                desired_presignatures_to_buffer,
+                timeout_sec: 60,
+            },
+            signature: SignatureConfig { timeout_sec: 60 },
+            ckd: CKDConfig { timeout_sec: 60 },
+            keygen: KeygenConfig { timeout_sec: 60 },
+            foreign_chains: ForeignChainsConfig::default(),
+            cores: Some(4),
+        }
     }
 }
 

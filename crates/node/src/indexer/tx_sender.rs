@@ -4,11 +4,11 @@ use super::IndexerState;
 use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;
-use contract_interface::types::{Attestation, VerifiedAttestation};
 use ed25519_dalek::SigningKey;
 use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
+use near_mpc_contract_interface::types::{Attestation, VerifiedAttestation};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -155,7 +155,7 @@ async fn submit_tx(
     let tx_hash = transaction.get_hash();
     tracing::info!(
         target = "mpc",
-        "sending tx {:?} with ak={:?} nonce={}",
+        "sending tx {:?} with ak={:?} nonce={:?}",
         tx_hash,
         tx_signer.public_key(),
         transaction.transaction.nonce(),

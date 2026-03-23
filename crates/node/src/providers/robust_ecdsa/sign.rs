@@ -18,6 +18,7 @@ use threshold_signatures::ecdsa::robust_ecdsa::{PresignOutput, RerandomizedPresi
 use threshold_signatures::ecdsa::{RerandomizationArguments, Signature, SignatureOption};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::participants::Participant;
+use threshold_signatures::MaxMalicious;
 use threshold_signatures::ParticipantList;
 use tokio::time::timeout;
 
@@ -48,7 +49,7 @@ impl RobustEcdsaSignatureProvider {
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
-            threshold: robust_ecdsa_threshold,
+            max_malicious: robust_ecdsa_threshold,
             presign_out: presignature.presignature,
             msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
@@ -100,7 +101,7 @@ impl RobustEcdsaSignatureProvider {
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
             keygen_out: domain_data.keyshare,
-            threshold: robust_ecdsa_threshold,
+            max_malicious: robust_ecdsa_threshold,
             presignature_store: domain_data.presignature_store.clone(),
             presignature_id,
             msg_hash: msg_hash.into(),
@@ -130,7 +131,7 @@ impl RobustEcdsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
-    pub threshold: usize,
+    pub max_malicious: MaxMalicious,
     pub presign_out: PresignOutput,
     pub msg_hash: EcdsaMessageHash,
     pub tweak: Tweak,
@@ -178,7 +179,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
         let protocol = threshold_signatures::ecdsa::robust_ecdsa::sign::sign(
             &cs_participants,
             channel.sender().get_leader().into(),
-            self.threshold,
+            self.max_malicious,
             channel.my_participant_id().into(),
             derived_public_key,
             rerandomized_presignature,
@@ -198,7 +199,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
 /// The difference is that the follower needs to look up the presignature, which may fail.
 pub struct FollowerSignComputation {
     pub keygen_out: KeygenOutput,
-    pub threshold: usize,
+    pub max_malicious: MaxMalicious,
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
     pub msg_hash: EcdsaMessageHash,
@@ -215,7 +216,7 @@ impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
             .presignature;
         SignComputation {
             keygen_out: self.keygen_out,
-            threshold: self.threshold,
+            max_malicious: self.max_malicious,
             presign_out,
             msg_hash: self.msg_hash,
             tweak: self.tweak,

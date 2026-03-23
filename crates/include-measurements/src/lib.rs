@@ -100,7 +100,7 @@ impl ToCompileError for anyhow::Result<proc_macro2::TokenStream> {
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
 

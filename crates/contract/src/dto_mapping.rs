@@ -1,33 +1,22 @@
 //! This module provides convenience methods to map contract interface types
-//! from [`contract_interface::types`] to internal types.
+//! from [`near_mpc_contract_interface::types`] to internal types.
 //!
 //! These types are mapped with the [IntoContractType] trait. We can not use [`From`]
 //! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
-use contract_interface::types as dtos;
-use curve25519_dalek::edwards::CompressedEdwardsY;
-use k256::{
-    elliptic_curve::{
-        group::GroupEncoding as _,
-        sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
-        PrimeField as _,
-    },
-    EncodedPoint,
-};
+use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation, VerifiedAttestation},
     collateral::{Collateral, QuoteCollateralV3},
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
-#[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
-use threshold_signatures::confidential_key_derivation as ckd;
 
 use crate::{
     config::Config,
-    crypto_shared::{k256_types, types::PublicKeyExtended},
-    derive_foreign_tx_tweak,
+    crypto_shared::types::PublicKeyExtended,
     errors::{ConversionError, Error},
     primitives::{
         domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
@@ -60,11 +49,6 @@ pub(crate) trait IntoInterfaceType<InterfaceType> {
 pub(crate) trait TryIntoContractType<ContractType> {
     type Error;
     fn try_into_contract_type(self) -> Result<ContractType, Self::Error>;
-}
-
-pub(crate) trait TryIntoInterfaceType<InterfaceType> {
-    type Error;
-    fn try_into_dto_type(self) -> Result<InterfaceType, Self::Error>;
 }
 
 impl TryIntoContractType<Attestation> for dtos::Attestation {
@@ -223,13 +207,18 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
             VerifiedAttestation::Mock(mock_attestation) => {
                 dtos::VerifiedAttestation::Mock(mock_attestation.into_dto_type())
             }
-            VerifiedAttestation::Dstack(validated_dstack_attestation) => {
+            VerifiedAttestation::Dstack(v) => {
                 dtos::VerifiedAttestation::Dstack(dtos::VerifiedDstackAttestation {
-                    mpc_image_hash: validated_dstack_attestation.mpc_image_hash.into(),
-                    launcher_compose_hash: validated_dstack_attestation
-                        .launcher_compose_hash
-                        .into(),
-                    expiry_timestamp_seconds: validated_dstack_attestation.expiry_timestamp_seconds,
+                    mpc_image_hash: v.mpc_image_hash.into(),
+                    launcher_compose_hash: v.launcher_compose_hash.into(),
+                    expiry_timestamp_seconds: v.expiry_timestamp_seconds,
+                    measurements: dtos::VerifiedMeasurements {
+                        mrtd: v.measurements.rtmrs.mrtd,
+                        rtmr0: v.measurements.rtmrs.rtmr0,
+                        rtmr1: v.measurements.rtmrs.rtmr1,
+                        rtmr2: v.measurements.rtmrs.rtmr2,
+                        key_provider_event_digest: v.measurements.key_provider_event_digest,
+                    },
                 })
             }
         }
@@ -356,102 +345,6 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::Secp256k1PublicKey> for &k256_types::PublicKey {
-    fn into_dto_type(self) -> dtos::Secp256k1PublicKey {
-        let mut bytes = [0u8; 64];
-        // The first byte is the curve type
-        bytes.copy_from_slice(&self.to_encoded_point(false).to_bytes()[1..]);
-        dtos::Secp256k1PublicKey::from(bytes)
-    }
-}
-
-// This is not yet used, but will be necessary once we complete the migration from near_sdk::PublicKey
-impl TryIntoContractType<k256_types::PublicKey> for dtos::Secp256k1PublicKey {
-    type Error = Error;
-    fn try_into_contract_type(self) -> Result<k256_types::PublicKey, Error> {
-        let mut bytes = [0u8; 65];
-        bytes[1..].copy_from_slice(&self.0);
-        // The first byte is the curve representation, in this case uncompressed
-        bytes[0] = 0x4;
-        let point = EncodedPoint::from_bytes(bytes).map_err(|err| {
-            ConversionError::DataConversion.message(format!("Failed to get EncodedPoint: {err}"))
-        })?;
-        k256_types::PublicKey::from_encoded_point(&point)
-            .into_option()
-            .ok_or(
-                ConversionError::DataConversion
-                    .message("Failed to convert EncodedPoint to PublicKey"),
-            )
-    }
-}
-
-impl IntoInterfaceType<dtos::Ed25519PublicKey> for &CompressedEdwardsY {
-    fn into_dto_type(self) -> dtos::Ed25519PublicKey {
-        dtos::Ed25519PublicKey::from(self.to_bytes())
-    }
-}
-
-#[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
-impl IntoInterfaceType<dtos::Bls12381G1PublicKey> for &ckd::ElementG1 {
-    fn into_dto_type(self) -> dtos::Bls12381G1PublicKey {
-        dtos::Bls12381G1PublicKey::from(self.to_compressed())
-    }
-}
-
-// These are temporary conversions to avoid breaking the contract API.
-// Once we complete the migration from near_sdk::PublicKey they should not be
-// needed anymore
-impl TryIntoInterfaceType<dtos::Ed25519PublicKey> for &near_sdk::PublicKey {
-    type Error = Error;
-    fn try_into_dto_type(self) -> Result<dtos::Ed25519PublicKey, Error> {
-        // This function should not be called with any other curve type
-        match self.curve_type() {
-            near_sdk::CurveType::ED25519 => {
-                let mut bytes = [0u8; 32];
-                // The first byte is the curve type
-                bytes.copy_from_slice(&self.as_bytes()[1..]);
-                Ok(dtos::Ed25519PublicKey::from(bytes))
-            }
-            curve_type => Err(ConversionError::DataConversion
-                .message(format!("Wrong curve type was used: {curve_type:?}"))),
-        }
-    }
-}
-
-impl IntoContractType<near_sdk::PublicKey> for &dtos::Ed25519PublicKey {
-    fn into_contract_type(self) -> near_sdk::PublicKey {
-        // This will never panic, as type Ed25519PublicKey enforces the correct key size
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, self.0.into()).unwrap()
-    }
-}
-
-impl IntoContractType<near_sdk::PublicKey> for &dtos::Secp256k1PublicKey {
-    fn into_contract_type(self) -> near_sdk::PublicKey {
-        // This will never panic, as type Secp256k1PublicKey enforces the correct key size
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, self.0.into()).unwrap()
-    }
-}
-
-impl IntoInterfaceType<dtos::PublicKey> for &near_sdk::PublicKey {
-    // This will never panic, because the key sizes match
-    fn into_dto_type(self) -> dtos::PublicKey {
-        match self.curve_type() {
-            near_sdk::CurveType::SECP256K1 => {
-                let mut bytes = [0u8; 64];
-                // The first byte is the curve type
-                bytes.copy_from_slice(&self.as_bytes()[1..]);
-                dtos::PublicKey::from(dtos::Secp256k1PublicKey::from(bytes))
-            }
-            near_sdk::CurveType::ED25519 => {
-                let mut bytes = [0u8; 32];
-                // The first byte is the curve type
-                bytes.copy_from_slice(&self.as_bytes()[1..]);
-                dtos::PublicKey::from(dtos::Ed25519PublicKey::from(bytes))
-            }
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::AccountId> for &AccountId {
     fn into_dto_type(self) -> dtos::AccountId {
         dtos::AccountId(self.clone().into())
@@ -489,8 +382,8 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
     }
 }
 
-impl From<contract_interface::types::InitConfig> for Config {
-    fn from(config_ext: contract_interface::types::InitConfig) -> Self {
+impl From<near_mpc_contract_interface::types::InitConfig> for Config {
+    fn from(config_ext: near_mpc_contract_interface::types::InitConfig) -> Self {
         let mut config = super::Config::default();
 
         if let Some(v) = config_ext.key_event_timeout_blocks {
@@ -531,9 +424,9 @@ impl From<contract_interface::types::InitConfig> for Config {
     }
 }
 
-impl From<&Config> for contract_interface::types::Config {
+impl From<&Config> for near_mpc_contract_interface::types::Config {
     fn from(value: &Config) -> Self {
-        contract_interface::types::Config {
+        near_mpc_contract_interface::types::Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
             contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
@@ -555,8 +448,8 @@ impl From<&Config> for contract_interface::types::Config {
     }
 }
 
-impl From<contract_interface::types::Config> for Config {
-    fn from(value: contract_interface::types::Config) -> Self {
+impl From<near_mpc_contract_interface::types::Config> for Config {
+    fn from(value: near_mpc_contract_interface::types::Config) -> Self {
         Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
@@ -871,33 +764,13 @@ impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
     }
 }
 
-impl TryIntoContractType<k256::AffinePoint> for dtos::K256AffinePoint {
-    type Error = Error;
-    fn try_into_contract_type(self) -> Result<k256::AffinePoint, Self::Error> {
-        k256::AffinePoint::from_bytes(&self.affine_point.into())
-            .into_option()
-            .ok_or(ConversionError::DataConversion.message("Failed to convert k256 affine point"))
-    }
-}
-
-impl TryIntoContractType<k256::Scalar> for dtos::K256Scalar {
-    type Error = Error;
-    fn try_into_contract_type(self) -> Result<k256::Scalar, Self::Error> {
-        k256::Scalar::from_repr_vartime(self.scalar.into())
-            .ok_or(ConversionError::DataConversion.message("Failed to convert k256 scalar"))
-    }
-}
-
 // Temporary location of this logic until we decide where it should live
 
 pub fn args_into_verify_foreign_tx_request(
     args: dtos::VerifyForeignTransactionRequestArgs,
-    predecessor_id: &AccountId,
 ) -> dtos::VerifyForeignTransactionRequest {
-    let tweak = derive_foreign_tx_tweak(predecessor_id, &args.derivation_path);
     dtos::VerifyForeignTransactionRequest {
         domain_id: args.domain_id,
-        tweak,
         request: args.request,
         payload_version: args.payload_version,
     }

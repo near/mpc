@@ -1,16 +1,14 @@
-use super::domain::{
-    infer_purpose_from_scheme, DomainConfig, DomainId, DomainRegistry, SignatureScheme,
-};
+use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
     },
-    IntoInterfaceType,
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::DomainPurpose;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
@@ -69,9 +67,9 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     }
 }
 
-pub fn bogus_ed25519_public_key() -> contract_interface::types::Ed25519PublicKey {
+pub fn bogus_ed25519_public_key() -> near_mpc_contract_interface::types::Ed25519PublicKey {
     let (_, compressed_edwards_point) = gen_random_edwards_point();
-    compressed_edwards_point.into_dto_type()
+    near_mpc_contract_interface::types::Ed25519PublicKey::from(compressed_edwards_point)
 }
 
 pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
@@ -147,4 +145,13 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+}
+
+/// Infer a default purpose from the signature scheme.
+/// Used during migration from old state that lacks the `purpose` field.
+pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
+    match scheme {
+        SignatureScheme::Bls12381 => DomainPurpose::CKD,
+        _ => DomainPurpose::Sign,
+    }
 }

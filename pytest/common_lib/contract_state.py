@@ -79,7 +79,7 @@ class Domains:
             Domain(
                 id=d["id"],
                 scheme=d["scheme"],
-                purpose=d.get("purpose", infer_purpose_from_scheme(d["scheme"])),
+                purpose=d["purpose"],
             )
             for d in domains_data["domains"]
         ]
@@ -257,9 +257,7 @@ class KeyEvent:
         event_key = Domain(
             id=domain_data["id"],
             scheme=domain_data["scheme"],
-            purpose=domain_data.get(
-                "purpose", infer_purpose_from_scheme(domain_data["scheme"])
-            ),
+            purpose=domain_data["purpose"],
         )
         return KeyEvent(
             next_attempt_id=event_data["next_attempt_id"],

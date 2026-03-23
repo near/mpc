@@ -16,7 +16,6 @@ use crate::{
     },
 };
 
-#[allow(dead_code)]
 /// Connects to the web server, performs the TLS handshake and returns the connection.
 pub async fn connect_to_web_server(
     p2p_private_key: &ed25519_dalek::SigningKey,

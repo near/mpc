@@ -33,6 +33,12 @@ use zeroize::Zeroizing;
 /// as if it were the message.
 /// For reference, see how RFC 8032 handles "pre-hashing".
 ///
+/// Maximum incoming buffer entries for the coordinator in the `RedJubjub` sign protocol.
+pub(crate) const REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 1;
+/// Maximum incoming buffer entries for non-coordinator participants in the `RedJubjub` sign protocol.
+#[cfg(test)]
+pub(crate) const REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
+
 /// /!\ Warning: the threshold in this scheme is the exactly the
 ///              same as the max number of malicious parties.
 #[allow(clippy::too_many_arguments)]
@@ -49,7 +55,7 @@ pub fn sign(
     let threshold = threshold.into();
     let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
-    let comms = Comms::new();
+    let comms = Comms::with_buffer_capacity(REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
     let chan = comms.shared_channel();
     let fut = fut_wrapper(
         chan,
@@ -262,12 +268,17 @@ fn construct_key_package(
 
 #[cfg(test)]
 mod test {
+    use super::{
+        fut_wrapper, REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+        REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+    };
+    use crate::test_utils::{
+        assert_buffer_capacity, build_frost_key_packages_with_dealer, expected_buffer_by_role,
+    };
     use crate::{
         crypto::hash::hash,
         frost::redjubjub::{
-            sign::sign,
-            test::{build_key_packages_with_dealer, run_sign_with_presign},
-            PresignOutput, SignatureOption,
+            sign::sign, test::run_sign_with_presign, PresignOutput, SignatureOption,
         },
         test_utils::{one_coordinator_output, MockCryptoRng},
         Protocol,
@@ -278,6 +289,7 @@ mod test {
     use reddsa::frost::redjubjub::{
         round1::commit, JubjubBlake2b512, JubjubScalarField, Randomizer,
     };
+    use rstest::rstest;
     use std::collections::BTreeMap;
 
     #[test]
@@ -290,7 +302,8 @@ mod test {
 
         for threshold in 2..max_signers {
             for actual_signers in threshold..=max_signers {
-                let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
+                let key_packages =
+                    build_frost_key_packages_with_dealer(max_signers, threshold, &mut rng);
                 let threshold: usize = threshold.into();
                 let coordinator = key_packages[0].0;
                 let data = run_sign_with_presign(
@@ -310,7 +323,7 @@ mod test {
     fn test_signature_correctness() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let threshold = 6;
-        let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
+        let keys = build_frost_key_packages_with_dealer(11, threshold, &mut rng);
         let public_key = keys[0].1.public_key.to_element();
 
         let msg = b"hello world".to_vec();
@@ -369,5 +382,70 @@ mod test {
         .unwrap();
         let signature = one_coordinator_output(result, coordinator).unwrap();
         insta::assert_json_snapshot!(signature);
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    #[case(10, 4)]
+    fn test_sign_buffer_entries(#[case] num_participants: usize, #[case] threshold: usize) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let keys = build_frost_key_packages_with_dealer(
+            u16::try_from(num_participants).unwrap(),
+            u16::try_from(threshold).unwrap(),
+            &mut rng,
+        );
+        let coordinator = keys[0].0;
+        let message = b"test message for buffer entries".to_vec();
+
+        let mut presig_rng = MockCryptoRng::seed_from_u64(100);
+        let mut commitments_map = std::collections::BTreeMap::new();
+        let mut nonces_map = std::collections::HashMap::new();
+        for (p, keygen) in &keys {
+            let (nonces, commitments) =
+                reddsa::frost::redjubjub::round1::commit(&keygen.private_share, &mut presig_rng);
+            commitments_map.insert(p.to_identifier().unwrap(), commitments);
+            nonces_map.insert(*p, nonces);
+        }
+
+        let randomizer_scalar = JubjubScalarField::random(&mut presig_rng);
+        let randomizer = Randomizer::from_scalar(randomizer_scalar);
+
+        let participants_list: Vec<_> = keys.iter().map(|(p, _)| *p).collect();
+
+        // When + Then
+        assert_buffer_capacity(
+            &participants_list,
+            &mut rng,
+            |comms, p_list, p, _rng_p| {
+                let keygen_output = keys.iter().find(|(kp, _)| *kp == p).unwrap().1.clone();
+                let presign_output = PresignOutput {
+                    nonces: nonces_map[&p].clone(),
+                    commitments_map: commitments_map.clone(),
+                };
+                let randomize = if p == coordinator {
+                    Some(randomizer)
+                } else {
+                    None
+                };
+                fut_wrapper(
+                    comms.shared_channel(),
+                    p_list,
+                    threshold.into(),
+                    p,
+                    coordinator,
+                    keygen_output,
+                    presign_output,
+                    message.clone(),
+                    randomize,
+                )
+            },
+            expected_buffer_by_role(
+                coordinator,
+                REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
+                REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
+        );
     }
 }

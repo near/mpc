@@ -1,0 +1,537 @@
+# Archive Signer
+
+This document outlines the design of the Archive Signer — a TEE application for long-term support of legacy HOT Wallet keys.
+
+## Background
+
+HOT Labs operates a threshold MPC network for ECDSA (secp256k1) and EdDSA (ed25519) signing on behalf of HOT Wallet users. HOT Labs wants to retire this network.
+
+To support this, we'll provide a standalone application running inside a Trusted Execution Environment (TEE) that holds the reconstructed full private keys and handles signing requests. HOT will then be able to operate an instance of this application.
+
+### Scope
+
+The Archive Signer is a custom lightweight binary that replaces HOT's MPC network ([`near/hot-mpc`][hot-mpc]). It must:
+
+- **Sign ECDSA (secp256k1) and EdDSA (ed25519)** using the [reconstructed][key-import] full private keys directly with `k256` and `ed25519-dalek` (_not_ threshold signatures).
+- **Receive signature requests via an off-chain HTTP API** compatible with [`hot_protocol::MpcClient`][mpc-client]. HOT's existing backend already sends sign requests via HTTP. Current volume is \~25k requests/day (bearish market baseline) with spikes to 25+ TPS during campaigns (airdrops, mints, claims). On-chain requests would add per-request gas costs (\~$0.001/tx → \~$750/month at current low volume, scaling with activity), latency, and require the [_Block Event Subscriber_][block-event-subscriber].
+- **Authorize requests** using HOT's existing [`Validation::verify()`][validation-verify] with [`ProofModel`][proof-model] — looks up wallet contract via user's [`Uid`][uid], may delegate to cross-chain auth calls. We refer to [http-signing-api](#http-signing-api) for a detailed overview of the authentication and response mechanism.
+- **Submit TEE attestation** on-chain to a dedicated HOT governance contract.
+- **Monitor the HOT governance contract** for allowed Docker image hashes and launcher compose hashes.
+
+[key-import]: #key-import-process
+[block-event-subscriber]: chain-gateway-design.md#block-event-subscriber
+[hot-mpc]: https://github.com/near/hot-mpc
+[mpc-client]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/mpc_client.rs
+[validation-verify]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143
+[proof-model]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/validation.rs#L7-L12
+[uid]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/primitives/src/uid.rs#L11
+
+
+## Architecture Overview
+
+### Component Diagram
+
+```mermaid
+---
+title: Archive Signer
+---
+flowchart TB
+
+subgraph CVM["CVM"]
+    subgraph DSTACK["Dstack Runtime"]
+        LAUNCHER["Launcher<br/>(verifies image hash)"]
+        subgraph HOT_APP["Archive Signer Container"]
+            SIGNING[
+            <b>Signing</b><br/>
+            <b>HTTP Server</b>
+            <b>Validation SDK</b>
+            <b>Signing Engine</b>
+            <b>In-Memory Key Store</b>
+            ]
+            TEE_GOV[
+            <b>TEE Governance</b><br/>
+            <b>TEE Context</b>
+            <b>Chain Gateway</b>
+            ]
+        end
+    end
+    DISK[("Encrypted Disk<br/>(Gramine Key Provider)")]
+end
+
+CLIENT["Authenticated Accounts"]
+HOT_CONTRACT["HOT TEE Governance<br/>Contract (NEAR)"]
+RPC["Foreign Chain RPCs"]
+
+CLIENT -->|"POST /sign"| SIGNING
+SIGNING -->|"cross-chain auth"| RPC
+SIGNING ---|"persist / load on boot"| DISK
+TEE_GOV -->|"view: allowed hashes, foreign chain policy<br/>call: submit_participant_info"| HOT_CONTRACT
+
+classDef cvm stroke:#1b5e20,stroke-width:4px;
+classDef app stroke:#2563eb,stroke-width:4px;
+classDef ext stroke:#7c3aed,stroke-width:2px;
+
+class CVM cvm;
+class HOT_APP app;
+class HOT_CONTRACT ext;
+class CLIENT ext;
+class RPC ext;
+```
+
+### Shared Components
+
+The Archive Signer is built on three reusable layers from this repository. For the shared boot, attestation, governance, and upgrade patterns, see [TEE Lifecycle][tee-lifecycle].
+
+- **[Embedded Indexer Node](#embedded-indexer-node)** — runs a full `near-indexer` (including `neard`) inside the CVM for trustless NEAR chain access.
+- **[Chain Gateway][chain-gateway-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
+- **[TEE Context][tee-context]** — sits on top of the Chain Gateway; provides the contract interface for the [attestation lifecycle][tee-lifecycle].
+
+[tee-lifecycle]: tee-lifecycle.md
+[chain-gateway-design]: chain-gateway-design.md
+
+### Crate Dependencies
+
+```mermaid
+---
+title: Archive Signer Dependencies
+---
+flowchart TB
+
+subgraph SERVICES["Services"]
+    direction LR
+    MPC_NODE["MPC Node"]
+    BACKUP["Backup Service"]
+    HOT_APP["Archive Signer"]
+end
+
+MPC_CTX[
+<b>MPC Context</b><br/><br/>
+<b>Signature Requests</b>
+<b>Key Events</b>
+<b>Block Event Subscriber</b>
+]
+
+TEE_CTX[
+<b>TEE Context</b><br/><br/>
+<b>tee-authority</b>
+<b>mpc-attestation</b>
+]
+
+subgraph CHAIN["Chain Gateway"]
+    direction LR
+    CSUB["Contract State Subscriber"]
+    TSEND["Transaction Sender"]
+end
+
+MPC_NODE --> MPC_CTX
+BACKUP --> TEE_CTX
+HOT_APP --> TEE_CTX
+
+MPC_CTX --> TEE_CTX
+MPC_CTX --> CHAIN
+
+TEE_CTX --> CHAIN
+
+classDef new stroke:#d97706,stroke-width:3px;
+class HOT_APP new;
+```
+
+### Embedded Indexer Node
+
+The Archive Signer embeds a full `near-indexer` (which includes a `neard` node), the same as the MPC node, rather than using a lightweight RPC client. The embedded neard is used for **TEE governance operations**: monitoring the HOT governance contract for allowed Docker image hashes, launcher compose hashes, and foreign chain policy, and submitting TEE attestation transactions.
+
+
+The Archive Signer depends on the TEE Context interface. The Chain Gateway (`ContractStateSubscriber`, [`TransactionSender`][tx-sender]) is an internal dependency of the TEE Context — the Archive Signer does not use it directly.
+
+[tx-sender]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/indexer/tx_sender.rs#L22
+[hot-validation-core]: https://github.com/hot-dao/hot-validation-sdk/tree/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core
+
+## Key Import Process
+
+### Overview
+
+Key import is a one-time operation performed at initial deployment. HOT MPC network operators export their threshold keyshares via the [`ExportKeyshare`][export-keyshare] CLI command, which are then encrypted to the CVM's ephemeral public key and delivered via an HTTP endpoint (see [Phase 2][phase-2]). The application decrypts the keyshares, reconstructs the full private keys, and verifies them against the expected public keys.
+
+[phase-2]: #phase-2-encryption-and-delivery
+
+### Phase 1: Export (HOT Operators)
+
+Each HOT MPC node operator runs the `ExportKeyshareCmd` CLI command (from [`hot-mpc/node/src/cli.rs`][export-keyshare]):
+
+```rust
+#[derive(Parser, Debug)]
+pub struct ExportKeyshareCmd {
+    /// Path to home directory
+    #[arg(long, env("MPC_HOME_DIR"))]
+    pub home_dir: String,
+
+    /// Hex-encoded 16 byte AES key for local storage encryption
+    #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
+    pub local_encryption_key_hex: String,
+}
+```
+
+This currently **only exports ECDSA keyshares** — it calls `legacy_ecdsa_key_from_keyshares()` (see [`keyshare/compat.rs`][keyshare-compat]) which only handles `KeyshareData::Secp256k1`. It must be extended to also export EdDSA keyshares (this work is on the HOT codebase side).
+
+[export-keyshare]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/cli.rs#L411-L459
+[keyshare-compat]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/keyshare/compat.rs
+
+### Phase 2: Encryption and Delivery
+
+Keyshares are encrypted **to the CVM's public key** so that only the TEE can decrypt them. This follows the same principle as [#2094][issue-2094] (secure provisioning of AES migration key for MPC nodes): the decryption key never exists outside the TEE, protecting against a compromised host intercepting keyshare material.
+
+[issue-2094]: https://github.com/near/mpc/issues/2094
+
+The key import is a two-phase process:
+
+#### Phase 2a: CVM Boot and Encryption Key Publication
+
+1. The CVM boots and the Archive Signer starts.
+2. On first boot (no keys on encrypted disk), the app generates an **ephemeral encryption key pair** inside the TEE.
+3. The app exposes the ephemeral public key via a local HTTP endpoint (`GET /import/public_key`). This endpoint is only available during the initial import phase and is disabled after key reconstruction succeeds.
+4. The app generates a TDX attestation quote binding the ephemeral public key in `report_data`, so operators can verify the public key belongs to a genuine TEE running the approved image.
+
+#### Phase 2b: Operator Encrypts and Delivers Keyshares
+
+1. Each operator fetches the CVM's ephemeral public key from `GET /import/public_key` and verifies the accompanying TDX attestation to confirm it originates from a genuine TEE.
+2. Each operator encrypts their exported keyshare to the CVM's ephemeral public key.
+3. The encrypted keyshares are delivered to the app via `POST /import/keyshares`.
+
+A CLI tool will be provided for these steps (fetch, verify, encrypt, deliver).
+
+An attacker who controls the host could substitute a fake CVM with their own encryption key. The TDX attestation quote binding the ephemeral public key defends against this — operators must verify the attestation before encrypting. An attacker would need to compromise **both** the host and forge a valid TDX attestation.
+
+### Phase 3: Reconstruction (Inside TEE)
+
+The TEE application decrypts the keyshares using its ephemeral private key and reconstructs the full private keys.
+
+### Phase 4: Verification
+
+After reconstruction, the application derives the ECDSA public key from the reconstructed ECDSA private key and the EdDSA public key from the reconstructed EdDSA private key, then compares each against the known HOT wallet root public key for that domain. This detects corrupted keyshares, tampered ciphertext, or shares from different key generation epochs.
+
+If verification succeeds, the keys are written to the CVM's encrypted disk for subsequent boots (see [Redundancy & Recovery][redundancy-recovery]).
+
+[redundancy-recovery]: #redundancy-and-recovery
+
+If verification fails, the application logs the error and exits without starting the HTTP server.
+
+## TEE Context
+
+The TEE Context is described in the [TEE Context design doc][tee-context]. It is a shared crate managing the attestation lifecycle — polling allowed hashes, periodic attestation submission, attestation removal monitoring, and polling foreign chain policy. The Archive Signer uses it directly, configured to talk to the HOT governance contract. The foreign chain policy task provides the active `ForeignChainPolicy` to the validation SDK so it knows which RPC providers to trust for each chain.
+
+[tee-context]: tee-context-design.md
+
+## HTTP Signing API
+
+The HTTP API is designed to be compatible with HOT's existing interface so their backend can switch to the Archive Signer without client-side changes.
+
+### Request and Response Types
+
+```rust
+/// Signature request — compatible with HOT's OffchainSignatureRequest.
+///
+/// The `uid` field is a HOT-specific user identifier from the
+/// `hot-validation-primitives` crate. The tweak is derived from it
+/// via `uid.to_tweak()`, which produces a 32-byte value used for
+/// child key derivation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SignRequest {
+    /// HOT user identifier — tweak is derived from this.
+    pub uid: Uid,
+    /// The message to sign.
+    /// ECDSA: exactly 32 bytes (pre-hashed).
+    /// EdDSA: 1-1232 bytes (raw message).
+    pub message: Vec<u8>,
+    /// Which signature scheme to use.
+    pub key_type: KeyType,
+    /// HOT validation proof (authentication).
+    pub proof: ProofModel,
+}
+
+/// Signature response — compatible with HOT's OffchainSignatureResponse
+/// (see hot-mpc/node/src/hot_protocol/types.rs:121-133).
+///
+/// ECDSA: uses identical k256 types — serialization is compatible.
+/// EdDSA: uses ed25519-dalek instead of cait_sith's frost_ed25519 — must validate compatibility.
+#[derive(Debug, Clone, Serialize)]
+pub enum SignResponse {
+    Ecdsa {
+        big_r: k256::AffinePoint,
+        signature: k256::Scalar,
+        public_key: k256::AffinePoint,
+    },
+    Eddsa {
+        signature: ed25519_dalek::Signature,
+        public_key: ed25519_dalek::VerifyingKey,
+    },
+}
+```
+
+**Note on response format compatibility:** The current HOT MPC network returns `OffchainSignatureResponse` (defined in [`hot-mpc/node/src/hot_protocol/types.rs:121-133`][offchain-sig-response]). For **ECDSA**, HOT already uses `k256` types (`k256::AffinePoint`, `k256::Scalar`) — identical to our `SignResponse`, so JSON serialization is compatible out of the box. For **EdDSA**, HOT uses cait_sith's `frost_ed25519::Signature` and `frost_ed25519::VerifyingKey`, while the Archive Signer uses `ed25519_dalek::Signature` and `ed25519_dalek::VerifyingKey`. These must serialize identically in JSON. If they do not, we may need to use cait_sith's types in the EdDSA response or write custom serialization. This must be validated during implementation.
+
+[offchain-sig-response]: https://github.com/near/hot-mpc/blob/kuksag/hot-protocol/node/src/hot_protocol/types.rs
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/sign` | Sign a message |
+| `GET` | `/import/public_key` | Get CVM's ephemeral public key + TDX attestation (first boot only) |
+| `POST` | `/import/keyshares` | Deliver encrypted keyshares (first boot only) |
+
+### Request Authorization
+
+The Archive Signer reuses HOT's existing authorization model via [`hot-validation-sdk`][hot-validation-sdk] (`hot-validation-core` and `hot-validation-primitives` crates). Every sign request includes a caller-constructed `ProofModel`, and the Archive Signer verifies it before signing. The entire signing flow (request → validation → signature → response) is **off-chain** — no on-chain transactions are involved.
+
+1. **Caller** (HOT's backend) sends a `SignRequest` containing `uid`, `message`, `key_type`, and `proof: ProofModel`.
+2. **Archive Signer** derives `wallet_id = SHA256(uid)` and calls [`Validation::verify(wallet_id, message, proof)`][validation-verify].
+3. **Validation SDK** makes RPC calls to look up the user's wallet contract on NEAR (`mpc.hot.tg`) and calls `hot_verify()` on it, passing the proof.
+4. The wallet contract either returns a **bool** directly, or returns a `HotVerifyAuthCall` — parameters for a **cross-chain auth call** (target chain, contract address, method, input data).
+5. If a cross-chain auth call is needed, the SDK makes an RPC call to the target chain (EVM, Cosmos, Stellar, TON, Solana) using chain-specific verifiers with threshold voting (multiple RPCs must agree). All cross-chain orchestration is internal to [`hot-validation-core`][hot-validation-core].
+6. If verification passes, the Archive Signer proceeds to sign. If not, it returns `401 UNAUTHORIZED`.
+
+This is the same authorization flow the HOT MPC network uses today. The key difference: in the MPC network, **every node** independently validates each request. In the Archive Signer, there is only one node, so validation happens once.
+
+`ProofModel` is constructed off-chain by the caller:
+
+```rust
+pub struct ProofModel {
+    pub message_body: String,
+    pub user_payloads: Vec<String>,
+}
+```
+
+**Cross-chain RPC configuration:** The `Validation` struct requires RPC endpoints for every chain HOT wallets may reference in auth calls. Which providers are trusted for each chain is governed on-chain via the HOT governance contract using the same [`ForeignChainPolicy`][foreign-chain-policy] mechanism as the MPC signer contract. Governors vote on a `ForeignChainPolicy` (chains → RPC providers); the Archive Signer reads the active policy from the contract via the TEE Context's [foreign chain policy polling task][tee-context]. The validation SDK makes HTTP RPC calls to the governor-approved providers for all chain calls; the embedded neard is **not** used for validation — it is strictly for TEE governance. The `hot-validation-sdk` currently accepts RPC configuration only at initialization (in the existing HOT MPC network, providers are set per-deployment via local config); it will need to be extended to support dynamic provider updates from the governance contract.
+
+[hot-validation-sdk]: https://github.com/hot-dao/hot-validation-sdk
+[foreign-chain-policy]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L570
+
+### Signing Endpoint
+
+```rust
+async fn handle_sign(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<SignRequest>,
+) -> Result<Json<SignResponse>, StatusCode> {
+    // 1. Validate the request using HOT's validation SDK
+    state.validation.verify(
+        request.uid.to_wallet_id(),
+        request.message.clone(),
+        request.proof.clone(),
+    ).await.map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    // 2. Derive tweak from uid
+    let tweak_bytes: [u8; 32] = request.uid.to_tweak();
+
+    // 3. Sign based on key type
+    match request.key_type {
+        KeyType::Ecdsa => sign_ecdsa(state, tweak_bytes, &request.message),
+        KeyType::Eddsa => sign_eddsa(state, tweak_bytes, &request.message),
+    }
+    .map(Json)
+    .map_err(|e| {
+        tracing::error!("Signing failed: {e:?}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+```
+
+## On-Chain Contract (HOT TEE Governance)
+
+### Overview
+
+A dedicated NEAR smart contract manages TEE governance for the Archive Signer. This is **separate** from the MPC signer contract (`v1.signer`). The contract is structurally similar to the TEE-related subset of the MPC contract (see [`crates/contract/src/tee/`][tee-dir]).
+
+[tee-dir]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee
+
+### State
+
+```rust
+pub struct HotTeeContract {
+    /// Set of accounts that can vote on image hashes.
+    /// Multiple entities.
+    governors: BTreeSet<AccountId>,
+    /// Number of governor votes required to approve an action.
+    vote_threshold: u32,
+    /// TEE state: allowed image hashes, attestations.
+    /// Reuses the existing TeeState structure from mpc-contract.
+    tee_state: TeeState,
+    /// Trusted RPC providers per chain for cross-chain authorization.
+    /// Reuses the existing ForeignChainPolicy from contract-interface.
+    foreign_chain_policy: ForeignChainPolicy,
+    foreign_chain_policy_votes: ForeignChainPolicyVotes,
+}
+```
+
+The [`TeeState`][tee-state] struct is reused from the MPC contract:
+
+[tee-state]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/tee_state.rs#L92
+
+```rust
+pub struct TeeState {
+    pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
+    pub(crate) allowed_launcher_images: AllowedLauncherImages,
+    pub(crate) votes: CodeHashesVotes,
+    pub(crate) launcher_votes: LauncherHashVotes,
+    pub(crate) stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
+}
+```
+
+### Governance
+
+Although the Archive Signer is a single node (not a multi-node network), the voting mechanism is still relevant because it governs trust-critical parameters, not node coordination. The governance body consists of multiple actors with equal voting weight, ensuring no single party can unilaterally change the system. Governors vote on: (1) **allowed code** — which Docker images may touch the private keys, (2) **trusted RPC providers** — the [`ForeignChainPolicy`][foreign-chain-policy] governing which external data sources the TEE relies on for cross-chain authorization decisions, and (3) **the governor set itself**. This follows the same multi-entity voting pattern as the MPC contract.
+
+Note: the MPC contract's [`vote_new_parameters`][vote-new-params] method does not have a direct equivalent here. In the MPC contract, `vote_new_parameters` changes the **participant set and threshold for the threshold signing protocol** (via [`ThresholdParameters`][threshold-params]), triggering a resharing. The Archive Signer is a single node doing direct signing — there is no threshold protocol, no resharing, and no signing participant set to manage. Instead, the HOT governance contract needs methods for managing its own **governor set** (see below).
+
+[vote-new-params]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/lib.rs#L922
+[threshold-params]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/primitives/thresholds.rs#L33
+
+### Governor Management
+
+The initial governor set and vote threshold are configured at contract deployment. After deployment, governors can vote to change the governor set and/or threshold via `vote_update_governors`. This requires `vote_threshold` votes on the same proposal to take effect — ensuring that governor changes go through the same multi-stakeholder approval as code hash changes.
+
+### Contract Methods
+
+| Method | Type | Caller | Description |
+|--------|------|--------|-------------|
+| `vote_code_hash(code_hash)` | Call | Governor | Vote for a new Docker image hash |
+| `vote_remove_code_hash(code_hash)` | Call | Governor | Vote to remove a Docker image hash before natural expiry |
+| `vote_add_launcher_hash(launcher_hash)` | Call | Governor | Vote for a new launcher image hash (threshold) |
+| `vote_remove_launcher_hash(launcher_hash)` | Call | Governor | Vote to remove a launcher image hash (unanimity) |
+| `vote_update_governors(governors, threshold)` | Call | Governor | Vote to change the governor set and/or vote threshold |
+| `vote_foreign_chain_policy(policy)` | Call | Governor | Vote on trusted RPC providers per chain |
+| `submit_participant_info(attestation, tls_public_key)` | Call | Archive Signer | Submit TEE attestation |
+| `verify_tee()` | Call | Anyone | Re-validate all stored attestations |
+| `allowed_docker_image_hashes()` | View | Archive Signer | Query approved image hashes |
+| `allowed_launcher_image_hashes()` | View | Archive Signer | Query approved launcher image hashes |
+| `allowed_launcher_compose_hashes()` | View | Archive Signer | Query approved launcher compose hashes |
+| `get_tee_accounts()` | View | Anyone | Query nodes with valid attestations |
+| `get_foreign_chain_policy()` | View | Archive Signer | Query active foreign chain RPC configuration |
+
+### Launcher Compose Hash Derivation
+
+Launcher compose hash derivation follows the standard mechanism described in [TEE Lifecycle: Launcher Compose Hash Derivation][tee-launcher-hash]. The HOT TEE governance contract uses its own launcher compose template, since the Archive Signer has a different Docker Compose configuration than the MPC node.
+
+[tee-launcher-hash]: tee-lifecycle.md#voting-methods
+
+## Attestation Flow
+
+### Boot Flow
+
+The generic CVM boot sequence is described in [TEE Lifecycle: CVM Boot Sequence][tee-boot-sequence]. The diagram below extends it with Archive Signer-specific key import steps.
+
+[tee-boot-sequence]: tee-lifecycle.md#boot
+
+```mermaid
+sequenceDiagram
+    participant OP as HOT Operator
+    participant DS as Dstack
+    participant LA as Launcher
+    participant APP as Archive Signer
+    participant HC as HOT TEE Contract
+
+    OP ->> DS: Start CVM
+    DS ->> DS: Boot, extend RTMR3 with docker_compose
+    DS ->> LA: Start Launcher
+    LA ->> LA: Verify app image hash (from disk or DEFAULT_IMAGE_DIGEST)
+    LA ->> LA: Extend RTMR3 with app image hash
+    LA ->> APP: Start Archive Signer container
+
+    alt Keys found on encrypted disk (subsequent boot)
+        APP ->> APP: Load keys from encrypted disk
+        APP ->> APP: Verify keys are valid
+    else First boot (no keys on disk)
+        APP ->> APP: Generate ephemeral encryption key pair
+        APP ->> APP: Generate TDX attestation binding ephemeral public key
+        APP ->> OP: Expose GET /import/public_key (pubkey + attestation)
+
+        OP ->> OP: Verify TDX attestation
+        OP ->> OP: Encrypt keyshares to CVM's ephemeral public key
+        OP ->> APP: POST /import/keyshares (encrypted payloads)
+
+        APP ->> APP: Decrypt keyshares (asymmetric decryption)
+        APP ->> APP: Reconstruct ECDSA + EdDSA private keys
+        APP ->> APP: Verify public keys match expected values
+        Note right of APP: Key import happens before image hash check.<br/>This is safe: operators already verified the<br/>TDX attestation (including image hash in RTMR3)<br/>before encrypting their keyshares.
+    end
+
+    APP ->> HC: Query allowed_docker_image_hashes()
+    alt Image hash is approved
+        APP ->> APP: Generate TDX attestation quote
+        APP ->> HC: submit_participant_info(attestation, tls_pk)
+        APP ->> APP: Start HTTP server
+    else Not approved
+        APP ->> HC: Fetch latest approved hash
+        APP ->> APP: Store hash to disk, exit
+        Note over OP: Operator restarts CVM with correct image
+    end
+
+    loop Every 7 days
+        APP ->> APP: Generate fresh attestation quote
+        APP ->> HC: submit_participant_info(attestation, tls_pk)
+    end
+```
+
+### Attestation Generation and On-Chain Verification
+
+Attestation generation and on-chain verification follow the standard TEE lifecycle. See [TEE Lifecycle: Attestation][tee-attestation] for the full details.
+
+[tee-attestation]: tee-lifecycle.md#attestation
+
+## Upgrade Path
+
+Application upgrades follow the standard [Launcher pattern][tee-upgrade]: governors vote for a new Docker image hash, the running app detects the update, the operator restarts the CVM, and the new app reattests. See [TEE Lifecycle: Application Upgrade][tee-upgrade] for the full flow.
+
+[tee-upgrade]: tee-lifecycle.md#upgrade
+
+## Redundancy and Recovery
+
+Since the Archive Signer is a single node holding the full private key, redundancy is critical. A hardware failure or misconfiguration must not result in permanent loss of user funds.
+
+### Primary: Encrypted Disk Persistence
+
+Keys are held in memory for signing and persisted on the CVM's encrypted disk for restart resilience. The CVM's encrypted disk (key derived from RTMR measurements) provides safe at-rest storage.
+
+After successful key reconstruction and verification on first boot, the private keys are stored on the CVM's encrypted filesystem. [Gramine Key Provider][gramine-key-provider] derives the encryption key from TDX measurements, so only the same TEE image can decrypt this data.
+
+On subsequent boots, the app first attempts to load keys from the encrypted disk. If found and valid, it skips the import flow entirely (the `/import/*` endpoints are never exposed).
+
+[gramine-key-provider]: https://github.com/MoeMahhouk/gramine-sealing-key-provider
+
+### Recovery via Confidential Key Derivation (CKD)
+
+Encrypted disk persistence protects against restarts, but not against total loss of the CVM instance — for example, if the TEE image is updated (changing RTMR measurements and invalidating the disk encryption key) or all CVM instances are destroyed. Without an additional recovery mechanism, this would be unrecoverable after the HOT MPC network is retired, since keyshares can no longer be re-imported.
+
+To address this, we use [Confidential Key Derivation][ckd] (CKD) via the NEAR MPC network to create a hardware-independent encrypted backup:
+
+1. **Derive a wrapping key.** After key reconstruction, the Archive Signer calls the NEAR MPC network's CKD endpoint with its `app_id`. CKD returns a deterministic, confidential key that only this application can obtain.
+2. **Encrypt and store a backup.** The reconstructed HOT private keys are encrypted with the CKD-derived wrapping key. The resulting ciphertext is stored in external storage.
+3. **Recover from any new instance.** A new instance re-derives the same CKD key — since CKD is deterministic on `app_id`, not on hardware measurements — and decrypts the backup.
+
+This decouples recovery from any specific CVM instance or disk encryption key, requiring only that the NEAR MPC network remains operational.
+
+For additional high availability, a hot standby instance (a second CVM holding the same keys) can be added in the future if needed.
+
+[ckd]: ../crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md
+
+## Open Questions
+
+1. **EdDSA keyshare export:** The HOT `ExportKeyshareCmd` currently only exports ECDSA shares. It must be extended to also export EdDSA shares. This work is on the HOT codebase side.
+
+2. **Response format byte-level compatibility:** Do `k256::AffinePoint` and `k256::Scalar` serialize to the same JSON as `cait_sith::frost_secp256k1::VerifyingKey` and `cait_sith::ecdsa::sign::FullSignature`? This must be validated. If not, we may need to depend on `cait_sith` types in the response or write adapter serialization.
+
+3. **Dynamic RPC provider updates in validation SDK:** `hot-validation-sdk` currently accepts RPC configuration only at initialization. It needs to be extended to support dynamic updates from the governance contract's `ForeignChainPolicy`, so that governor votes to change trusted RPC providers take effect without restarting the Archive Signer.
+
+## Related Issues
+
+- [#2062][issue-2062] -- TEE application for long-term support of legacy keys
+- [#2018][issue-2018] -- HOT keyshare import (original)
+- [#2021][pr-2021] -- Design: HOT migration (closed)
+- [#1891][issue-1891] -- TEE backup service
+- [#2103][pr-2103] -- Indexer design proposal
+
+[issue-2062]: https://github.com/near/mpc/issues/2062
+[issue-2018]: https://github.com/near/mpc/issues/2018
+[issue-1891]: https://github.com/near/mpc/issues/1891
+[pr-2021]: https://github.com/near/mpc/pull/2021
+[pr-2103]: https://github.com/near/mpc/pull/2103

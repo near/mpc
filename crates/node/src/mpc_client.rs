@@ -22,12 +22,11 @@ use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
-use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 
-use mpc_contract::crypto_shared::{derive_foreign_tx_tweak, derive_tweak, CKDResponse};
+use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
@@ -64,7 +63,7 @@ impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
 where
     ForeignChainPolicyReader: ReadForeignChainPolicy + 'static,
 {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         client: Arc<MeshNetworkClient>,
@@ -305,16 +304,15 @@ where
                         .verify_foreign_tx_requests
                         .into_iter()
                         .map(|verify_foreign_tx_request_from_chain| {
-                            let VerifyForeignTxRequestFromChain { verify_foreign_tx_id, receipt_id, request, predecessor_id, entropy, timestamp_nanosec } = verify_foreign_tx_request_from_chain;
+                            let VerifyForeignTxRequestFromChain { verify_foreign_tx_id, receipt_id, request, entropy, timestamp_nanosec, .. } = verify_foreign_tx_request_from_chain;
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
-                                domain_id: request.domain_id.0.into(),
+                                domain_id: request.domain_id.into(),
                                 entropy,
                                 payload_version: request.payload_version,
                                 request: request.request,
                                 timestamp_nanosec,
-                                tweak: derive_foreign_tx_tweak(&predecessor_id, &request.derivation_path),
                             };
                             // Index the foreign tx requests as soon as we see them. We'll decide
                             // whether to *process* them after.
@@ -502,40 +500,39 @@ where
                                     ])
                                     .inc();
 
-                                let response = match this
-                                    .domain_to_scheme
-                                    .get(&ckd_attempt.request.domain_id)
-                                {
-                                    Some(SignatureScheme::Bls12381) => {
-                                        let response = timeout(
-                                            Duration::from_secs(this.config.ckd.timeout_sec),
-                                            this.ckd_provider
-                                                .clone()
-                                                .make_signature(ckd_attempt.request.id),
-                                        )
-                                        .await??;
+                                let response =
+                                    match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
+                                    {
+                                        Some(SignatureScheme::Bls12381) => {
+                                            let response = timeout(
+                                                Duration::from_secs(this.config.ckd.timeout_sec),
+                                                this.ckd_provider
+                                                    .clone()
+                                                    .make_signature(ckd_attempt.request.id),
+                                            )
+                                            .await??;
 
-                                        let response = ChainCKDRespondArgs::new_ckd(
-                                            &ckd_attempt.request,
-                                            &CKDResponse {
-                                                big_y: response.0 .0.into_contract_interface_type(),
-                                                big_c: response.0 .1.into_contract_interface_type(),
-                                            },
-                                        )?;
+                                            let response = ChainCKDRespondArgs::new_ckd(
+                                                &ckd_attempt.request,
+                                                &CKDResponse {
+                                                    big_y: (&response.0 .0).into(),
+                                                    big_c: (&response.0 .1).into(),
+                                                },
+                                            )?;
 
-                                        Ok(response)
-                                    }
-                                    Some(SignatureScheme::Secp256k1)
-                                    | Some(SignatureScheme::V2Secp256k1)
-                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                }?;
+                                            Ok(response)
+                                        }
+                                        Some(SignatureScheme::Secp256k1)
+                                        | Some(SignatureScheme::V2Secp256k1)
+                                        | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                        None => Err(anyhow::anyhow!(
+                                            "Signature scheme is not found for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        )),
+                                    }?;
 
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
                                     .with_label_values(&[

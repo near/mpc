@@ -1,6 +1,6 @@
-use contract_interface::types as contract_types;
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as contract_types;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
 use tokio::fs::File;
@@ -131,8 +131,8 @@ async fn print_register_command(
         .await
         .expect("failed to load secrets");
 
-    let public_key_bytes = secrets.p2p_private_key.verifying_key().to_bytes();
-    let public_key = contract_types::Ed25519PublicKey::from(public_key_bytes);
+    let public_key =
+        contract_types::Ed25519PublicKey::from(&secrets.p2p_private_key.verifying_key());
     let public_key_str = String::from(&public_key);
 
     println!("Run the following command to register your backup service:\n");

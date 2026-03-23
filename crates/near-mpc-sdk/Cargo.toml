@@ -1,13 +1,25 @@
 [package]
 name = "near-mpc-sdk"
-version.workspace = true
+version = "0.0.1"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "SDK for requesting and verifying threshold signatures from the NEAR MPC network"
+
+[features]
+abi = [
+    "near-mpc-contract-interface/abi",
+    "near-mpc-signature-verifier/abi",
+    "near-mpc-bounded-collections/abi",
+    "borsh/unstable__schema",
+]
 
 [dependencies]
-bounded-collections = { workspace = true }
-contract-interface = { workspace = true }
+borsh = { workspace = true }
 derive_more = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
+near-mpc-signature-verifier = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }

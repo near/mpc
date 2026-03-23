@@ -129,7 +129,7 @@ pub async fn run_protocol<T>(
             counters.received(msg.from, msg.data.len());
 
             for one_msg in msg.data {
-                protocol.message(msg.from.into(), one_msg);
+                protocol.message(msg.from.into(), one_msg)?;
             }
         }
     };

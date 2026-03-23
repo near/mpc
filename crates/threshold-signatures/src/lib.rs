@@ -1,3 +1,6 @@
+#[macro_use]
+mod macros;
+
 mod crypto;
 pub mod participants;
 
@@ -45,7 +48,7 @@ use serde::{Deserialize, Serialize};
 pub type Scalar<C> = frost_core::Scalar<C>;
 pub type Element<C> = frost_core::Element<C>;
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, ZeroizeOnDrop)]
+#[derive(Clone, Deserialize, Serialize, Eq, PartialEq, ZeroizeOnDrop)]
 #[serde(bound = "C: Ciphersuite")]
 /// Generic type of key pairs
 pub struct KeygenOutput<C: Ciphersuite> {
@@ -53,6 +56,8 @@ pub struct KeygenOutput<C: Ciphersuite> {
     #[zeroize[skip]]
     pub public_key: VerifyingKey<C>,
 }
+
+impl_secret_debug!({C: Ciphersuite} KeygenOutput<C> { show: [public_key], redact: [private_share] });
 
 /// This is a necessary element to be able to derive different keys
 /// from signing shares.
@@ -84,6 +89,9 @@ impl<C: Ciphersuite> Tweak<C> {
     }
 }
 
+/// Maximum incoming buffer entries for keygen, reshare, and refresh protocols.
+pub(crate) const DKG_MAX_INCOMING_BUFFER_ENTRIES: usize = 5;
+
 /// Generic key generation function agnostic of the curve
 pub fn keygen<C: Ciphersuite>(
     participants: &[Participant],
@@ -95,7 +103,7 @@ where
     Element<C>: Send,
     Scalar<C>: Send,
 {
-    let comms = Comms::new();
+    let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     let participants = assert_key_invariants(participants, me, threshold)?;
     let fut = do_keygen::<C>(comms.shared_channel(), participants, me, threshold, rng);
     Ok(make_protocol(comms, fut))
@@ -117,7 +125,7 @@ where
     Element<C>: Send,
     Scalar<C>: Send,
 {
-    let comms = Comms::new();
+    let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     let threshold = new_threshold;
     let (participants, old_participants) = assert_reshare_keys_invariants::<C>(
         new_participants,
@@ -158,7 +166,7 @@ where
             "The participant {me:?} is running refresh without an old share",
         )));
     }
-    let comms = Comms::new();
+    let comms = Comms::with_buffer_capacity(DKG_MAX_INCOMING_BUFFER_ENTRIES);
     // NOTE: this equality must be kept, as changing the threshold during `key refresh`
     // might lead to insecure scenarios. For more information see https://github.com/ZcashFoundation/frost/security/advisories/GHSA-wgq8-vr6r-mqxm
     let threshold = old_threshold;

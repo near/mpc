@@ -2,30 +2,27 @@ use crate::sandbox::utils::{
     consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-    interface::IntoInterfaceType,
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
     shared_key_utils::{make_key_for_domain, DomainKey},
     sign_utils::{make_and_submit_requests, PendingSignRequest},
 };
-use contract_interface::method_names;
-use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use digest::Digest;
 use dtos::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{
-            infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
-        },
+        domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        test_utils::bogus_ed25519_near_public_key,
+        test_utils::{bogus_ed25519_near_public_key, infer_purpose_from_scheme},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_sdk::NearToken;
 use near_workspaces::{
     network::Sandbox,
@@ -386,7 +383,8 @@ pub async fn submit_tee_attestations(
             account,
             contract,
             &attestation,
-            &node_id.tls_public_key.into_interface_type(),
+            &dtos::Ed25519PublicKey::try_from(&node_id.tls_public_key)
+                .expect("expected ED25519 key"),
         )
         .await?;
         assert!(result.is_success());
@@ -407,7 +405,9 @@ pub async fn submit_attestations(
         .enumerate()
         .map(|(i, ((_, _, participant), account))| async move {
             let attestation = Attestation::Mock(MockAttestation::Valid);
-            let tls_key = (&participant.sign_pk).into_interface_type();
+            let tls_key: dtos::Ed25519PublicKey =
+                dtos::Ed25519PublicKey::try_from(&participant.sign_pk)
+                    .expect("expected ED25519 key");
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
                 .await
                 .expect("submit_participant_info should not error")
@@ -578,7 +578,7 @@ pub async fn generate_participant_and_submit_attestation(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-        &new_participant.sign_pk.into_interface_type(),
+        &dtos::Ed25519PublicKey::try_from(&new_participant.sign_pk).expect("expected ED25519 key"),
     )
     .await
     .expect("Attestation submission for new account must succeed.");

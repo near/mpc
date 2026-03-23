@@ -38,6 +38,7 @@ init_args
 near_keys
 near_init
 near_vote_hash
+near_vote_launcher_hash
 near_vote_domain
 near_vote_new_params
 near_vote_new_params_votes
