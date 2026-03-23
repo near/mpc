@@ -362,8 +362,12 @@ fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
         .with_context(|| format!("failed to create secret file {}", path.display()))?;
     file.write_all(data)
         .with_context(|| format!("failed to write secret file {}", path.display()))?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("failed to set permissions on secret file {}", path.display()))?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).with_context(|| {
+        format!(
+            "failed to set permissions on secret file {}",
+            path.display()
+        )
+    })?;
     Ok(())
 }
 
