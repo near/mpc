@@ -100,8 +100,7 @@ where
         };
         let args_json = serde_json::to_vec(&args)?;
 
-        match self
-            .submitter
+        self.submitter
             .submit_function_call_tx(
                 signer,
                 self.governance_contract.clone(),
@@ -110,16 +109,13 @@ where
                 SUBMIT_ATTESTATION_GAS,
             )
             .await
-        {
-            Ok(_) => Ok(()),
-            Err(err) => Err(err.into()),
-        }
+            .map(|_| ())
+            .map_err(Into::into)
     }
 
     /// Triggers on-chain re-validation of all stored attestations.
     pub async fn verify_tee(&self, signer: &TransactionSigner) -> Result<(), TeeContextError> {
-        match self
-            .submitter
+        self.submitter
             .submit_function_call_tx(
                 signer,
                 self.governance_contract.clone(),
@@ -128,10 +124,8 @@ where
                 VERIFY_TEE_GAS,
             )
             .await
-        {
-            Ok(_) => Ok(()),
-            Err(err) => Err(err.into()),
-        }
+            .map(|_| ())
+            .map_err(Into::into)
     }
 }
 
@@ -273,6 +267,29 @@ mod tests {
         TransactionSigner::from_key("test.near".parse().unwrap(), signing_key)
     }
 
+    fn default_block_info() -> LatestFinalBlockInfo {
+        LatestFinalBlockInfo {
+            observed_at: MOCK_BLOCK_HEIGHT.into(),
+            value: Default::default(),
+        }
+    }
+
+    async fn create_context_with(
+        latest_block: Result<LatestFinalBlockInfo, MockError>,
+        submit_response: Result<(), MockError>,
+    ) -> TeeContext<MockChainState> {
+        let mock = MockChainStateBuilder::new()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
+            }))
+            .with_latest_block(latest_block)
+            .with_signed_transaction_submitter_response(submit_response)
+            .build();
+        TeeContext::new(mock, governance_account()).await.unwrap()
+    }
+
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
         let mock_chain_state = MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
@@ -280,10 +297,7 @@ mod tests {
                 observed_at: MOCK_BLOCK_HEIGHT.into(),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
-            .with_latest_block(Ok(LatestFinalBlockInfo {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: Default::default(),
-            }))
+            .with_latest_block(Ok(default_block_info()))
             .with_signed_transaction_submitter_response(Ok(()))
             .build();
         let ctx = TeeContext::new(mock_chain_state.clone(), governance_account())
@@ -331,18 +345,8 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_submit_attestation_propagates_transaction_error() {
-        let mock = MockChainStateBuilder::new()
-            .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
-            .with_latest_block(Err(MockError::LatestFinalBlockError))
-            .with_signed_transaction_submitter_response(Ok(()))
-            .build();
-        let ctx = TeeContext::new(mock, governance_account()).await.unwrap();
-
+    async fn test_submit_attestation_propagates_fetch_block_error() {
+        let ctx = create_context_with(Err(MockError::LatestFinalBlockError), Ok(())).await;
         let result = ctx
             .submit_attestation(
                 &test_signer(),
@@ -350,25 +354,33 @@ mod tests {
                 Ed25519PublicKey([0u8; 32]),
             )
             .await;
-
         assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_verify_tee_propagates_transaction_error() {
-        let mock = MockChainStateBuilder::new()
-            .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
-            .with_latest_block(Err(MockError::LatestFinalBlockError))
-            .with_signed_transaction_submitter_response(Ok(()))
-            .build();
-        let ctx = TeeContext::new(mock, governance_account()).await.unwrap();
-
+    async fn test_verify_tee_propagates_fetch_block_error() {
+        let ctx = create_context_with(Err(MockError::LatestFinalBlockError), Ok(())).await;
         let result = ctx.verify_tee(&test_signer()).await;
+        assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+    }
 
+    #[tokio::test(start_paused = true)]
+    async fn test_submit_attestation_propagates_submit_error() {
+        let ctx = create_context_with(Ok(default_block_info()), Err(MockError::RpcError)).await;
+        let result = ctx
+            .submit_attestation(
+                &test_signer(),
+                Attestation::Mock(MockAttestation::Valid),
+                Ed25519PublicKey([0u8; 32]),
+            )
+            .await;
+        assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_verify_tee_propagates_submit_error() {
+        let ctx = create_context_with(Ok(default_block_info()), Err(MockError::RpcError)).await;
+        let result = ctx.verify_tee(&test_signer()).await;
         assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
     }
 
