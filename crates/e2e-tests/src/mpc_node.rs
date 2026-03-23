@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
 use anyhow::Context;
@@ -14,114 +14,115 @@ use crate::port_allocator::E2ePortAllocator;
 const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
-/// Ports allocated for a single MPC node.
-pub struct NodePorts {
-    pub p2p: u16,
-    pub web_ui: u16,
-    pub migration_web_ui: u16,
-    pub pprof: u16,
-    pub near_rpc: u16,
-    pub near_network: u16,
+/// Handle to a running `mpc-node` OS process. Always represents a live process.
+/// Obtained by calling [`MpcNodeSetup::start()`].
+/// The child process is killed automatically when this value is dropped.
+pub struct MpcNode {
+    setup: MpcNodeSetup,
+    process: ProcessGuard,
 }
 
-impl NodePorts {
-    pub fn from_allocator(ports: &E2ePortAllocator, index: usize) -> Self {
-        Self {
-            p2p: ports.p2p_port(index),
-            web_ui: ports.web_ui_port(index),
-            migration_web_ui: ports.migration_web_ui_port(index),
-            pprof: ports.pprof_port(index),
-            near_rpc: ports.near_rpc_port(index),
-            near_network: ports.near_network_port(index),
+/// Guard that kills the child process on drop.
+struct ProcessGuard(Child);
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        if let Err(e) = self.0.kill() {
+            tracing::error!(error = %e, "failed to kill mpc-node process");
+        }
+        if let Err(e) = self.0.wait() {
+            tracing::error!(error = %e, "failed to wait on mpc-node process");
         }
     }
 }
 
-/// Arguments for constructing an [`MpcNode`].
-pub struct MpcNodeConfig {
-    pub node_index: usize,
-    pub home_dir: PathBuf,
-    pub signer_account_id: AccountId,
-    pub p2p_signing_key: SigningKey,
-    pub near_signer_key: SigningKey,
-    pub ports: NodePorts,
-    pub mpc_contract_id: AccountId,
-    pub account: Account,
-    pub triples_to_buffer: usize,
-    pub presignatures_to_buffer: usize,
-    pub rust_log: Option<String>,
+impl MpcNode {
+    /// Stop the node. Consumes self and returns the setup for potential restart.
+    pub fn kill(self) -> MpcNodeSetup {
+        drop(self.process);
+        self.setup
+    }
+
+    /// Kill then start. New process, same config and data directory.
+    pub fn restart(self) -> anyhow::Result<MpcNode> {
+        self.kill().start()
+    }
+
+    pub fn is_running(&mut self) -> bool {
+        !matches!(self.process.0.try_wait(), Ok(Some(_)))
+    }
 }
 
-/// Manages a single `mpc-node` OS process.
-///
-/// Generates the `start_config.toml` and spawns the binary. Each node runs its
-/// own internal neard indexer that peers with the NEAR validator via P2P.
-pub struct MpcNode {
-    pub node_index: usize,
-    pub home_dir: PathBuf,
-    pub signer_account_id: AccountId,
-    pub p2p_signing_key: SigningKey,
+/// All configuration and state needed to start an mpc-node process.
+/// Represents a node that is NOT running. Can wipe DB, modify config, etc.
+/// Config files (secrets.json, start_config.toml) are written on creation.
+pub struct MpcNodeSetup {
+    node_index: usize,
+    home_dir: PathBuf,
+    binary_path: PathBuf,
+    signer_account_id: AccountId,
+    p2p_signing_key: SigningKey,
     /// Key used by the node to sign NEAR transactions (must have access key on account).
-    pub near_signer_key: SigningKey,
-    pub ports: NodePorts,
+    near_signer_key: SigningKey,
+    ports: NodePorts,
+    mpc_contract_id: AccountId,
 
-    // Blockchain connection info (for TOML config)
-    pub mpc_contract_id: AccountId,
-    near_node_genesis_path: PathBuf,
-    near_node_boot_nodes: String,
-
-    // Config values
+    // Derived config values
     secret_store_key_hex: String,
     backup_encryption_key_hex: String,
+    near_node_genesis_path: PathBuf,
+    near_node_boot_nodes: String,
     triples_to_buffer: usize,
     presignatures_to_buffer: usize,
-    rust_log: String,
 
-    // near-workspaces account (for voting on contract)
-    pub account: Account,
-
-    // Runtime
-    process: Option<Child>,
+    // Config file path (written on creation)
+    config_path: PathBuf,
 }
 
-impl MpcNode {
-    /// Create a new MPC node config (not yet running).
-    pub fn new(config: MpcNodeConfig, near_node: &NearNode) -> anyhow::Result<Self> {
+impl MpcNodeSetup {
+    /// Create a new node setup. Writes config files to disk immediately.
+    pub fn new(args: MpcNodeSetupArgs, near_node: &NearNode) -> anyhow::Result<Self> {
         let near_node_genesis_path = near_node.genesis_path();
         let near_node_boot_nodes = near_node.boot_nodes()?;
 
         // Deterministic secret keys for each node
         let secret_byte = b'A'
-            .checked_add(u8::try_from(config.node_index).context("node_index too large")?)
+            .checked_add(u8::try_from(args.node_index).context("node_index too large")?)
             .context("secret_byte overflow")?;
         let secret_store_key_hex = hex::encode([secret_byte; 16]);
         let backup_encryption_key_hex = hex::encode([secret_byte; 32]);
 
-        std::fs::create_dir_all(&config.home_dir).with_context(|| {
+        std::fs::create_dir_all(&args.home_dir).with_context(|| {
             format!(
                 "failed to create node home dir: {}",
-                config.home_dir.display()
+                args.home_dir.display()
             )
         })?;
 
-        Ok(Self {
-            node_index: config.node_index,
-            home_dir: config.home_dir,
-            signer_account_id: config.signer_account_id,
-            p2p_signing_key: config.p2p_signing_key,
-            near_signer_key: config.near_signer_key,
-            ports: config.ports,
-            mpc_contract_id: config.mpc_contract_id,
-            near_node_genesis_path,
-            near_node_boot_nodes,
+        let config_path = args.home_dir.join("start_config.toml");
+
+        let setup = Self {
+            node_index: args.node_index,
+            home_dir: args.home_dir,
+            binary_path: args.binary_path,
+            signer_account_id: args.signer_account_id,
+            p2p_signing_key: args.p2p_signing_key,
+            near_signer_key: args.near_signer_key,
+            ports: args.ports,
+            mpc_contract_id: args.mpc_contract_id,
             secret_store_key_hex,
             backup_encryption_key_hex,
-            triples_to_buffer: config.triples_to_buffer,
-            presignatures_to_buffer: config.presignatures_to_buffer,
-            rust_log: config.rust_log.unwrap_or_else(|| "DEBUG".to_string()),
-            account: config.account,
-            process: None,
-        })
+            near_node_genesis_path,
+            near_node_boot_nodes,
+            triples_to_buffer: args.triples_to_buffer,
+            presignatures_to_buffer: args.presignatures_to_buffer,
+            config_path,
+        };
+
+        setup.write_secrets_json()?;
+        setup.write_start_config()?;
+
+        Ok(setup)
     }
 
     /// The ed25519 public key formatted as `"ed25519:<base58>"`.
@@ -138,17 +139,8 @@ impl MpcNode {
         format!("http://127.0.0.1:{}", self.ports.p2p)
     }
 
-    /// Write the `start_config.toml` and spawn the mpc-node process.
-    pub fn start(&mut self, binary_path: &Path) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            self.process.is_none(),
-            "node {} already running",
-            self.node_index
-        );
-
-        self.write_secrets_json()?;
-        let config_path = self.write_start_config()?;
-
+    /// Spawn the mpc-node process. Consumes self, returning an MpcNode handle.
+    pub fn start(self) -> anyhow::Result<MpcNode> {
         tracing::info!(
             node = self.node_index,
             account = %self.signer_account_id,
@@ -161,11 +153,17 @@ impl MpcNode {
         let stderr_file = std::fs::File::create(self.home_dir.join("stderr.log"))
             .context("failed to create stderr log")?;
 
-        let child = Command::new(binary_path)
+        let child = Command::new(&self.binary_path)
             .arg("start-with-config-file")
-            .arg(&config_path)
-            .env("RUST_LOG", &self.rust_log)
-            .env("RUST_BACKTRACE", "1")
+            .arg(&self.config_path)
+            .env(
+                "RUST_LOG",
+                std::env::var("MPC_NODE_LOG").unwrap_or_else(|_| "DEBUG".to_string()),
+            )
+            .env(
+                "RUST_BACKTRACE",
+                std::env::var("MPC_NODE_BACKTRACE").unwrap_or_else(|_| "1".to_string()),
+            )
             .stdout(Stdio::from(stdout_file))
             .stderr(Stdio::from(stderr_file))
             .spawn()
@@ -173,33 +171,14 @@ impl MpcNode {
                 format!(
                     "failed to spawn mpc-node {} (binary: {})",
                     self.node_index,
-                    binary_path.display()
+                    self.binary_path.display()
                 )
             })?;
 
-        self.process = Some(child);
-        Ok(())
-    }
-
-    /// Stop the node.
-    pub fn kill(&mut self) {
-        if let Some(mut child) = self.process.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
-
-    pub fn is_running(&mut self) -> bool {
-        match &mut self.process {
-            Some(child) => match child.try_wait() {
-                Ok(Some(_)) => {
-                    self.process.take();
-                    false
-                }
-                _ => true,
-            },
-            None => false,
-        }
+        Ok(MpcNode {
+            setup: self,
+            process: ProcessGuard(child),
+        })
     }
 
     /// Write `secrets.json` so the node uses our pre-generated keys instead of
@@ -227,8 +206,7 @@ impl MpcNode {
     }
 
     /// Build the TOML config and write it for `mpc-node start-with-config-file`.
-    fn write_start_config(&self) -> anyhow::Result<PathBuf> {
-        let config_path = self.home_dir.join("start_config.toml");
+    fn write_start_config(&self) -> anyhow::Result<()> {
         let signer = self.signer_account_id.to_string();
 
         let config = StartConfig {
@@ -290,19 +268,48 @@ impl MpcNode {
 
         let toml_string =
             toml::to_string_pretty(&config).context("failed to serialize start config")?;
-        std::fs::write(&config_path, &toml_string)
-            .with_context(|| format!("failed to write {}", config_path.display()))?;
+        std::fs::write(&self.config_path, &toml_string)
+            .with_context(|| format!("failed to write {}", self.config_path.display()))?;
 
-        tracing::debug!(path = %config_path.display(), "wrote start_config.toml");
-        Ok(config_path)
+        tracing::debug!(path = %self.config_path.display(), "wrote start_config.toml");
+        Ok(())
     }
 }
 
-impl Drop for MpcNode {
-    fn drop(&mut self) {
-        if let Some(mut child) = self.process.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+/// Arguments for constructing an [`MpcNodeSetup`].
+pub struct MpcNodeSetupArgs {
+    pub node_index: usize,
+    pub home_dir: PathBuf,
+    pub binary_path: PathBuf,
+    pub signer_account_id: AccountId,
+    pub p2p_signing_key: SigningKey,
+    pub near_signer_key: SigningKey,
+    pub ports: NodePorts,
+    pub mpc_contract_id: AccountId,
+    pub account: Account,
+    pub triples_to_buffer: usize,
+    pub presignatures_to_buffer: usize,
+}
+
+/// Ports allocated for a single MPC node.
+pub struct NodePorts {
+    pub p2p: u16,
+    pub web_ui: u16,
+    pub migration_web_ui: u16,
+    pub pprof: u16,
+    pub near_rpc: u16,
+    pub near_network: u16,
+}
+
+impl NodePorts {
+    pub fn from_allocator(ports: &E2ePortAllocator, index: usize) -> Self {
+        Self {
+            p2p: ports.p2p_port(index),
+            web_ui: ports.web_ui_port(index),
+            migration_web_ui: ports.migration_web_ui_port(index),
+            pprof: ports.pprof_port(index),
+            near_rpc: ports.near_rpc_port(index),
+            near_network: ports.near_network_port(index),
         }
     }
 }
