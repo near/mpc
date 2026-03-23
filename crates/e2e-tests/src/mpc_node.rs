@@ -293,12 +293,12 @@ pub struct MpcNodeSetupArgs {
 
 /// Ports allocated for a single MPC node.
 pub struct NodePorts {
-    pub p2p: u16,
-    pub web_ui: u16,
-    pub migration_web_ui: u16,
-    pub pprof: u16,
-    pub near_rpc: u16,
-    pub near_network: u16,
+    p2p: u16,
+    web_ui: u16,
+    migration_web_ui: u16,
+    pprof: u16,
+    near_rpc: u16,
+    near_network: u16,
 }
 
 impl NodePorts {
