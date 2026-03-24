@@ -10829,6 +10829,7 @@ version = "3.7.0"
 dependencies = [
  "assert_matches",
  "chain-gateway",
+ "ed25519-dalek",
  "mpc-primitives",
  "near-account-id 2.5.0",
  "near-mpc-contract-interface",

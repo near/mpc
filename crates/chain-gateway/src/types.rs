@@ -20,7 +20,7 @@ pub struct ObservedState<T = Vec<u8>> {
 }
 
 /// block height and block hash
-pub(crate) type LatestFinalBlockInfo = ObservedState<CryptoHash>;
+pub type LatestFinalBlockInfo = ObservedState<CryptoHash>;
 
 impl ObservedState<Vec<u8>> {
     pub fn deserialize<Res: DeserializeOwned>(
