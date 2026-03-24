@@ -3,7 +3,7 @@ use mpc_attestation::{
     quote::QuoteBytes,
     tcb_info::TcbInfo,
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -26,6 +26,25 @@ pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1774264550;
 pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
     let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();
     LauncherDockerComposeHash::from(digest)
+}
+
+/// Extracts the launcher image hash from the `launcher_image_compose.yaml` asset.
+/// Parses `services.launcher.image` and extracts the `sha256:<hex>` digest.
+pub fn launcher_image_hash() -> LauncherImageHash {
+    let compose: serde_yaml::Value =
+        serde_yaml::from_str(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).expect("valid YAML");
+    let image = compose["services"]["launcher"]["image"]
+        .as_str()
+        .expect("services.launcher.image must be a string");
+    let hash_hex = image
+        .rsplit_once("sha256:")
+        .expect("image must contain sha256: digest")
+        .1;
+    let bytes: [u8; 32] = hex::decode(hash_hex)
+        .expect("Launcher image hash is valid hex")
+        .try_into()
+        .expect("Launcher image hash is 32 bytes");
+    LauncherImageHash::from(bytes)
 }
 
 pub fn image_digest() -> NodeImageHash {
@@ -139,5 +158,10 @@ mod tests {
     #[test]
     fn test_image_digest_works() {
         image_digest();
+    }
+
+    #[test]
+    fn test_launcher_image_hash_works() {
+        launcher_image_hash();
     }
 }
