@@ -1864,19 +1864,24 @@ expression: abi
           ],
           "properties": {
             "key_provider_event_digest": {
-              "$ref": "#/definitions/KeyProviderEventDigest"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "mrtd": {
-              "$ref": "#/definitions/MrtdHash"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "rtmr0": {
-              "$ref": "#/definitions/Rtmr0Hash"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "rtmr1": {
-              "$ref": "#/definitions/Rtmr1Hash"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "rtmr2": {
-              "$ref": "#/definitions/Rtmr2Hash"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -2582,12 +2587,6 @@ expression: abi
             }
           }
         },
-        "KeyProviderEventDigest": {
-          "type": "string",
-          "maxLength": 96,
-          "minLength": 96,
-          "pattern": "^[0-9a-fA-F]+$"
-        },
         "Keyset": {
           "description": "Represents a key for every domain in a specific epoch.",
           "type": "object",
@@ -2802,12 +2801,6 @@ expression: abi
               "additionalProperties": false
             }
           ]
-        },
-        "MrtdHash": {
-          "type": "string",
-          "maxLength": 96,
-          "minLength": 96,
-          "pattern": "^[0-9a-fA-F]+$"
         },
         "NodeId": {
           "type": "object",
@@ -3378,24 +3371,6 @@ expression: abi
               "type": "string"
             }
           }
-        },
-        "Rtmr0Hash": {
-          "type": "string",
-          "maxLength": 96,
-          "minLength": 96,
-          "pattern": "^[0-9a-fA-F]+$"
-        },
-        "Rtmr1Hash": {
-          "type": "string",
-          "maxLength": 96,
-          "minLength": 96,
-          "pattern": "^[0-9a-fA-F]+$"
-        },
-        "Rtmr2Hash": {
-          "type": "string",
-          "maxLength": 96,
-          "minLength": 96,
-          "pattern": "^[0-9a-fA-F]+$"
         },
         "RunningContractState": {
           "description": "State when the contract is ready for signature operations.",
