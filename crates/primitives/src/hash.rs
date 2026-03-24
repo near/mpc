@@ -155,36 +155,6 @@ hash_newtype!(
     32
 );
 
-hash_newtype!(
-    /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
-    MrtdHash,
-    48
-);
-
-hash_newtype!(
-    /// SHA-384 digest of the RTMR0 TDX measurement.
-    Rtmr0Hash,
-    48
-);
-
-hash_newtype!(
-    /// SHA-384 digest of the RTMR1 TDX measurement.
-    Rtmr1Hash,
-    48
-);
-
-hash_newtype!(
-    /// SHA-384 digest of the RTMR2 TDX measurement.
-    Rtmr2Hash,
-    48
-);
-
-hash_newtype!(
-    /// SHA-384 digest of the key provider event.
-    KeyProviderEventDigest,
-    48
-);
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +165,7 @@ mod tests {
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     hash_newtype!(TestHash, 32);
+    hash_newtype!(TestHash48, 48);
 
     #[test]
     fn test_from_bytes_array() {
@@ -373,7 +344,7 @@ mod tests {
     #[test]
     fn test_48_byte_hash_roundtrip() {
         let bytes = [0xABu8; 48];
-        let hash = MrtdHash::from(bytes);
+        let hash = TestHash48::from(bytes);
         assert_eq!(hash.as_bytes(), bytes);
         assert_eq!(hash.as_hex(), "ab".repeat(48));
 
@@ -384,27 +355,27 @@ mod tests {
     #[test]
     fn test_48_byte_hash_serde_roundtrip() {
         let bytes = [0x42u8; 48];
-        let hash = MrtdHash::from(bytes);
+        let hash = TestHash48::from(bytes);
 
         let json = serde_json::to_string(&hash).unwrap();
-        let deserialized: MrtdHash = serde_json::from_str(&json).unwrap();
+        let deserialized: TestHash48 = serde_json::from_str(&json).unwrap();
         assert_eq!(hash, deserialized);
     }
 
     #[test]
     fn test_48_byte_hash_borsh_roundtrip() {
         let bytes = [0x42u8; 48];
-        let hash = MrtdHash::from(bytes);
+        let hash = TestHash48::from(bytes);
 
         let borsh_bytes = borsh::to_vec(&hash).unwrap();
-        let deserialized = MrtdHash::try_from_slice(&borsh_bytes).unwrap();
+        let deserialized = TestHash48::try_from_slice(&borsh_bytes).unwrap();
         assert_eq!(hash, deserialized);
     }
 
     #[test]
     fn test_48_byte_borsh_equivalent_to_raw_array() {
         let bytes = [0x42u8; 48];
-        let hash = MrtdHash::from(bytes);
+        let hash = TestHash48::from(bytes);
 
         let bytes_as_borsh = borsh::to_vec(&bytes).unwrap();
         let hash_as_borsh = borsh::to_vec(&hash).unwrap();
@@ -416,7 +387,7 @@ mod tests {
         let expected_bytes = [0x11u8; 48];
         let hex_string = "11".repeat(48);
 
-        let parsed: MrtdHash = hex_string.parse().unwrap();
+        let parsed: TestHash48 = hex_string.parse().unwrap();
 
         assert_eq!(*parsed, expected_bytes);
         assert_eq!(parsed.as_hex(), hex_string);

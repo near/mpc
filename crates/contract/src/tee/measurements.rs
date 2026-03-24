@@ -1,8 +1,58 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::{ExpectedMeasurements, Measurements};
-use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
+
+/// Generates a 48-byte digest newtype with hex JSON serialization and borsh support.
+macro_rules! digest_newtype {
+    ($(#[$meta:meta])* $name:ident) => {
+        #[serde_with::serde_as]
+        #[derive(
+            Debug, Clone, PartialEq, Eq,
+            serde::Serialize, serde::Deserialize,
+            BorshSerialize, BorshDeserialize,
+        )]
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            derive(borsh::BorshSchema, schemars::JsonSchema)
+        )]
+        $(#[$meta])*
+        #[serde(transparent)]
+        pub struct $name {
+            #[serde_as(as = "serde_with::hex::Hex")]
+            bytes: [u8; 48],
+        }
+
+        impl From<[u8; 48]> for $name {
+            fn from(bytes: [u8; 48]) -> Self { Self { bytes } }
+        }
+
+        impl From<$name> for [u8; 48] {
+            fn from(h: $name) -> [u8; 48] { h.bytes }
+        }
+    };
+}
+
+digest_newtype!(
+    /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
+    MrtdHash
+);
+digest_newtype!(
+    /// SHA-384 digest of the RTMR0 TDX measurement.
+    Rtmr0Hash
+);
+digest_newtype!(
+    /// SHA-384 digest of the RTMR1 TDX measurement.
+    Rtmr1Hash
+);
+digest_newtype!(
+    /// SHA-384 digest of the RTMR2 TDX measurement.
+    Rtmr2Hash
+);
+digest_newtype!(
+    /// SHA-384 digest of the key provider event.
+    KeyProviderEventDigest
+);
 
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 
