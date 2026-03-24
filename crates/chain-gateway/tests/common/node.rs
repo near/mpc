@@ -12,18 +12,10 @@ pub struct LocalNode {
     pub chain_gateway: ChainGateway,
 }
 
-impl LocalNode {
-    /// Read the node's public key from `node_key.json`.
-    pub(crate) fn read_node_public_key(&self) -> String {
-        let node_key_path = self.home_dir.path().join("node_key.json");
-        let node_key_text = std::fs::read_to_string(&node_key_path).expect("read node_key.json");
-        let node_key: serde_json::Value =
-            serde_json::from_str(&node_key_text).expect("parse node_key.json");
-        node_key["public_key"]
-            .as_str()
-            .expect("node_key.json should have public_key")
-            .to_string()
-    }
+#[derive(Clone)]
+pub struct PortsConfig {
+    pub network_port: u16,
+    pub rpc_port: u16,
 }
 
 pub(crate) struct LocalNodeBuilder {
@@ -223,10 +215,18 @@ impl LocalNodeBuilder {
     }
 }
 
-#[derive(Clone)]
-pub struct PortsConfig {
-    pub network_port: u16,
-    pub rpc_port: u16,
+impl LocalNode {
+    /// Read the node's public key from `node_key.json`.
+    pub(crate) fn read_node_public_key(&self) -> String {
+        let node_key_path = self.home_dir.path().join("node_key.json");
+        let node_key_text = std::fs::read_to_string(&node_key_path).expect("read node_key.json");
+        let node_key: serde_json::Value =
+            serde_json::from_str(&node_key_text).expect("parse node_key.json");
+        node_key["public_key"]
+            .as_str()
+            .expect("node_key.json should have public_key")
+            .to_string()
+    }
 }
 
 impl PortsConfig {
