@@ -106,7 +106,7 @@ impl FakeMpcContractState {
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
-        assert!(matches!(self.state, ProtocolContractState::NotInitialized));
+        assert_matches::assert_matches!(self.state, ProtocolContractState::NotInitialized);
 
         self.state = ProtocolContractState::Running(RunningContractState::new(
             DomainRegistry::default(),

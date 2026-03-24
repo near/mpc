@@ -158,7 +158,7 @@ async fn test_onboarding() {
     {
         tracing::info!("Setting backup and destination node info");
         let mut contract = setup.indexer.contract_mut().await;
-        assert!(matches!(&contract.state, ProtocolContractState::Running(_)));
+        assert_matches::assert_matches!(&contract.state, ProtocolContractState::Running(_));
         let backup_service_info = BackupServiceInfo {
             public_key: Ed25519PublicKey::from(&backup_service_key.verifying_key()),
         };

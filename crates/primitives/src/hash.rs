@@ -156,6 +156,7 @@ mod tests {
     use super::*;
 
     use alloc::format;
+    use assert_matches::assert_matches;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     #[derive(Debug)]
@@ -356,7 +357,7 @@ mod tests {
     fn test_parse_rejects_invalid_hex() {
         let err = "0x00".parse::<TestHash>().unwrap_err();
 
-        assert!(matches!(err, Hash32ParseError::HexError(_)));
+        assert_matches!(err, Hash32ParseError::HexError(_));
     }
 
     #[test]

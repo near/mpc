@@ -723,6 +723,7 @@ mod tests {
     use crate::keyshare::KeyStorageConfig;
     use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use assert_matches::assert_matches;
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -790,7 +791,7 @@ mod tests {
         let result = instance.compare_to_expected_key_event_id(&key_event_id);
 
         // Then
-        assert!(matches!(result, KeyEventIdComparisonResult::RemoteBehind));
+        assert_matches!(result, KeyEventIdComparisonResult::RemoteBehind);
     }
 
     #[test]
@@ -803,7 +804,7 @@ mod tests {
         let result = instance.compare_to_expected_key_event_id(&key_event_id);
 
         // Then
-        assert!(matches!(result, KeyEventIdComparisonResult::RemoteMatches));
+        assert_matches!(result, KeyEventIdComparisonResult::RemoteMatches);
     }
 
     // -- Mocks and helpers --
