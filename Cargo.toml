@@ -29,6 +29,7 @@ members = [
     "crates/tee-context",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
+    "crates/test-port-allocator",
     "crates/test-utils",
     "crates/threshold-signatures",
     "crates/tls",
@@ -63,6 +64,7 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
 near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
+test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
 utilities = { path = "crates/utilities" }
@@ -144,6 +146,7 @@ k256 = "0.13.4"
 keccak = "0.1.5"
 lru = "0.16.3"
 mockall = "0.14.0"
+named-lock = "0.4.1"
 near-abi = "0.4.4"
 near-account-id = "2.5.0"
 near-jsonrpc-client = "0.20.0"

@@ -1,5 +1,5 @@
 use base64::Engine;
-use chain_gateway::ChainGateway;
+use chain_gateway::{ChainGateway, NodeHandle};
 use near_indexer::near_primitives::types::Finality;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -10,6 +10,7 @@ pub struct LocalNode {
     pub home_dir: TempDir,
     pub ports: PortsConfig,
     pub chain_gateway: ChainGateway,
+    pub node_handle: NodeHandle,
 }
 
 #[derive(Clone)]
@@ -33,9 +34,10 @@ impl LocalNodeBuilder {
             validate_genesis: true,
         };
 
-        let chain_gateway = chain_gateway::chain_gateway::ChainGateway::start(indexer_config)
-            .await
-            .expect("chain_gateway::start should succeed");
+        let (chain_gateway, node_handle) =
+            chain_gateway::chain_gateway::ChainGateway::start(indexer_config)
+                .await
+                .expect("chain_gateway::start should succeed");
 
         let Self { home_dir, ports } = self;
 
@@ -43,6 +45,7 @@ impl LocalNodeBuilder {
             home_dir,
             ports: ports.unwrap(),
             chain_gateway,
+            node_handle,
         }
     }
 
@@ -231,17 +234,11 @@ impl LocalNode {
 
 impl PortsConfig {
     fn from_os() -> Self {
-        let network_port = find_available_port();
-        let rpc_port = find_available_port();
+        let network_port = test_port_allocator::reserve_port();
+        let rpc_port = test_port_allocator::reserve_port();
         Self {
             network_port,
             rpc_port,
         }
     }
-}
-
-/// Find an available TCP port by binding to port 0 and reading the assigned port.
-fn find_available_port() -> u16 {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind to port 0");
-    listener.local_addr().unwrap().port()
 }

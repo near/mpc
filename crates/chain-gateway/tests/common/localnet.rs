@@ -8,7 +8,7 @@ use super::contract::{Contract, compiled_test_contract_wasm, test_contract};
 use super::node::{LocalNode, LocalNodeBuilder};
 
 pub struct Localnet {
-    pub validator: LocalNode,
+    pub _validator: LocalNode,
     pub observer: LocalNode,
     pub contract: Contract,
 }
@@ -45,14 +45,26 @@ impl Localnet {
             .start()
             .await;
 
+        let localnet = Localnet {
+            _validator: validator,
+            observer,
+            contract,
+        };
+
         // Wait for block production: poll until the observer sees a finalized block
         // beyond genesis (height > 0). This ensures the P2P connection is established
         // and the validator has started producing blocks.
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
-            let state: ObservedState<String> = observer
+            localnet.assert_nodes_alive();
+            let state: ObservedState<String> = localnet
+                .observer
                 .chain_gateway
-                .view_method(contract.account_id.clone(), VIEW_METHOD, &NoArgs {})
+                .view_method(
+                    localnet.contract.account_id.clone(),
+                    VIEW_METHOD,
+                    &NoArgs {},
+                )
                 .await
                 .expect("view call should succeed during startup wait");
             if u64::from(state.observed_at) > 0 {
@@ -65,28 +77,33 @@ impl Localnet {
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
 
-        Localnet {
-            validator,
-            observer,
-            contract,
-        }
+        localnet
     }
 }
 
-impl Drop for Localnet {
-    fn drop(&mut self) {
-        self.validator.chain_gateway.stop();
-        self.observer.chain_gateway.stop();
-        // `stop()` cancels all actor runtimes, but nearcore's background
-        // threads (RocksDB compaction, trie prefetch, etc.) wind down
-        // asynchronously. RocksDB instances are the last resources to close, so
-        // blocking on them acts as a fence that all background work has finished.
-        // This is the same shutdown sequence nearcore uses in its own integration
-        // tests - see `NodeCluster::run_and_then_shutdown` in
-        // nearcore/integration-tests/src/tests/nearcore/node_cluster.rs.
-        // it is important that all background tasks have closed before dropping the temporary
-        // directories of the validator and observer nodes.
-        near_store::db::RocksDB::block_until_all_instances_are_dropped();
+impl Localnet {
+    /// Panics with a clear message if either node's background thread has crashed.
+    pub fn assert_nodes_alive(&self) {
+        assert!(
+            self._validator.node_handle.is_node_alive(),
+            "Validator node crashed"
+        );
+        assert!(
+            self.observer.node_handle.is_node_alive(),
+            "Observer node crashed"
+        );
+    }
+
+    pub async fn shutdown(mut self) {
+        self._validator.node_handle.send_shutdown();
+        self.observer.node_handle.send_shutdown();
+        // RocksDB cleanup happens asynchronously after the actor system stops;
+        // block until all instances are dropped to avoid test interference.
+        tokio::task::spawn_blocking(|| {
+            near_store::db::RocksDB::block_until_all_instances_are_dropped();
+        })
+        .await
+        .unwrap();
     }
 }
 
