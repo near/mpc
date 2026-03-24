@@ -1,5 +1,9 @@
 use near_sdk::{env::log_str, near};
 
+pub fn compiled_wasm() -> &'static [u8] {
+    include_bytes!("../res/chain_gateway_test_contract.wasm")
+}
+
 pub const DEFAULT_VALUE: &str = "hello from test";
 pub const VIEW_METHOD: &str = "view_value";
 pub const WRITE_METHOD: &str = "set_value";

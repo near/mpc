@@ -31,7 +31,6 @@ assert_matches = { workspace = true }
 base64 = { workspace = true }
 chain-gateway = { path = ".", features = ["test-utils"] }
 chain-gateway-test-contract = { workspace = true }
-fs2 = { workspace = true }
 near-sdk = { workspace = true }
 near-store = { workspace = true }
 rand = { workspace = true }

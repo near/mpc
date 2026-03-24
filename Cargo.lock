@@ -1774,7 +1774,6 @@ dependencies = [
  "chain-gateway-test-contract",
  "derive_more 2.1.1",
  "ed25519-dalek",
- "fs2",
  "near-account-id 2.5.0",
  "near-async",
  "near-client",
