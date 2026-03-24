@@ -18,7 +18,7 @@ use super::common;
 /// the smart contract yield expected results. It constructs a `TransactionSigner` from
 /// the private key of the contract account and has the observer's chain gateway
 /// sign and route the transaction.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn test_submit_set_value_and_read_back() {
     let localnet = Localnet::new().await;
     let observer = &localnet.observer;
