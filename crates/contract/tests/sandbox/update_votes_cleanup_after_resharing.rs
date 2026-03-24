@@ -13,15 +13,13 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::method_names;
-use contract_interface::types as dtos;
 use mpc_contract::{
-    primitives::{
-        domain::SignatureScheme, participants::Participants, thresholds::ThresholdParameters,
-    },
+    primitives::{domain::Curve, participants::Participants, thresholds::ThresholdParameters},
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types as dtos;
 use near_workspaces::Account;
 use serde_json::json;
 use sha2::Digest;
@@ -35,7 +33,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -151,7 +149,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;

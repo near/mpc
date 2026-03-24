@@ -15,13 +15,13 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_contract::tee::proposal::MpcDockerImageHash;
+use mpc_contract::primitives::test_utils::infer_purpose_from_curve;
+use mpc_contract::tee::proposal::NodeImageHash;
 use mpc_contract::{
     primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainId},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -34,6 +34,7 @@ use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_mpc_contract_interface::method_names;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::borsh;
@@ -353,7 +354,7 @@ impl MpcInitContractCmd {
             ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
-            init_config: contract_interface::types::InitConfig::default(),
+            init_config: near_mpc_contract_interface::types::InitConfig::default(),
         })
         .unwrap();
 
@@ -376,15 +377,15 @@ impl MpcInitContractCmd {
 #[derive(Serialize)]
 struct InitV2Args {
     parameters: ThresholdParameters,
-    init_config: contract_interface::types::InitConfig,
+    init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
     ParticipantInfo {
-        sign_pk: near_sdk::PublicKey::from(contract_interface::types::Ed25519PublicKey::from(
-            &mpc_setup.p2p_public_key,
-        )),
+        sign_pk: near_sdk::PublicKey::from(
+            near_mpc_contract_interface::types::Ed25519PublicKey::from(&mpc_setup.p2p_public_key),
+        ),
         url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
     }
 }
@@ -578,7 +579,7 @@ impl MpcVoteAddDomainsCmd {
             "Going to vote_add_domains MPC network {} for signature schemes {:?}",
             name, self.schemes
         );
-        let schemes: Vec<SignatureScheme> = self
+        let schemes: Vec<Curve> = self
             .schemes
             .iter()
             .map(|scheme| {
@@ -615,8 +616,8 @@ impl MpcVoteAddDomainsCmd {
         for scheme in &schemes {
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
-                scheme: *scheme,
-                purpose: infer_purpose_from_scheme(*scheme),
+                curve: *scheme,
+                purpose: infer_purpose_from_curve(*scheme),
             });
             next_domain += 1;
         }
@@ -883,7 +884,7 @@ struct VoteNewParametersArgs {
 
 #[derive(Serialize)]
 struct VoteCodeHashArgs {
-    code_hash: MpcDockerImageHash,
+    code_hash: NodeImageHash,
 }
 
 impl MpcDescribeCmd {

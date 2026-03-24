@@ -1,11 +1,4 @@
 #![doc = include_str!("../README.md")]
-#![deny(clippy::mod_module_files)]
-// We disallow using `near_sdk::AccountId` in our own code.
-// However, the `near_bindgen` proc macro expands to code that uses it
-// internally, and Clippy applies the `disallowed_types` lint to that
-// generated code as well. Since the lint cannot be suppressed only for the
-// macro expansion, we allow it in this file to avoid false positives.
-#![allow(clippy::disallowed_types)]
 
 pub mod config;
 pub mod crypto_shared;
@@ -18,7 +11,7 @@ pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
-pub mod v3_5_1_state;
+pub mod v3_7_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -31,7 +24,7 @@ use crate::{
     dto_mapping::{args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType},
     errors::{Error, RequestError},
     primitives::{
-        ckd::{CKDRequest, CKDRequestArgs},
+        ckd::{app_public_key_check, ckd_output_check, CKDRequest},
         domain::AddDomainsVotes,
     },
     state::ContractNotInitialized,
@@ -41,13 +34,8 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
-use contract_interface::method_names;
-use contract_interface::types::{
-    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
-};
 use crypto_shared::{
-    derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak,
+    derive_key_secp256k1, derive_tweak,
     kdf::derive_public_key_edwards_point_ed25519,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
@@ -55,26 +43,31 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::types::{
+    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
+};
+use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
-use mpc_primitives::hash::LauncherDockerComposeHash;
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
-    env::{self},
-    log, near, near_bindgen,
-    state::ContractState,
+    env, log, near,
     store::{IterableMap, LookupMap},
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
+    domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
+use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
+use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
-    proposal::MpcDockerImageHash,
+    proposal::{LauncherVoteAction, NodeImageHash},
     tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
 
@@ -93,14 +86,9 @@ impl Default for MpcContract {
         env::panic_str("Calling default not allowed.");
     }
 }
-impl ContractState for MpcContract {}
 
-#[near_bindgen]
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
+#[near(contract_state)]
+#[derive(Debug)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
@@ -202,7 +190,7 @@ impl MpcContract {
 }
 
 // User contract API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     /// `key_version` must be less than or equal to the value at `latest_key_version`
     /// To avoid overloading the network with too many requests,
@@ -254,17 +242,17 @@ impl MpcContract {
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        match domain_config.scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+        match domain_config.curve {
+            Curve::Secp256k1 | Curve::V2Secp256k1 => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            SignatureScheme::Ed25519 => {
+            Curve::Ed25519 => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
-            SignatureScheme::Bls12381 => {
+            Curve::Bls12381 => {
                 env::panic_str(&InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function").to_string(),);
             }
         }
@@ -400,15 +388,18 @@ impl MpcContract {
     /// within a secure enclave. The signature_scheme parameter specifies which protocol
     /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
     /// to query across all protocols.
-    pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
+    pub fn latest_key_version(&self, signature_scheme: Option<Curve>) -> u32 {
         self.protocol_state
-            .most_recent_domain_for_protocol(signature_scheme.unwrap_or_default())
+            .most_recent_domain_for_curve(signature_scheme.unwrap_or_default())
             .unwrap()
             .0 as u32
     }
 
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each ckd request.
+    ///
+    /// Note: identity points are accepted in `AppPublicKeyPV` to support use cases
+    /// where the derived key is intentionally public (no encryption).
     #[handle_result]
     #[payable]
     pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
@@ -422,10 +413,11 @@ impl MpcContract {
             Ok(domains) => domains,
             Err(err) => env::panic_str(&err.to_string()),
         };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else {
+        let domain_id = request.domain_id.into();
+        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id,
+                    provided: domain_id,
                 }
                 .to_string(),
             );
@@ -485,10 +477,19 @@ impl MpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
+        match &request.app_public_key {
+            dtos::CKDAppPublicKey::AppPublicKey(_) => {}
+            dtos::CKDAppPublicKey::AppPublicKeyPV(pk) => {
+                if !app_public_key_check(pk) {
+                    env::panic_str("app public key check failed")
+                }
+            }
+        }
+
         let account_id = env::predecessor_account_id();
         let request = CKDRequest::new(
             request.app_public_key,
-            request.domain_id,
+            domain_id,
             &account_id,
             &request.derivation_path,
         );
@@ -534,11 +535,10 @@ impl MpcContract {
             Ok(domains) => domains,
             Err(err) => env::panic_str(&err.to_string()),
         };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.0.into())
-        else {
+        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.into()) else {
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id.0.into(),
+                    provided: request.domain_id.into(),
                 }
                 .to_string(),
             );
@@ -619,7 +619,7 @@ impl MpcContract {
                 .return_signature_and_clean_state_on_success_call_tera_gas,
         );
 
-        let request = args_into_verify_foreign_tx_request(request, &predecessor);
+        let request = args_into_verify_foreign_tx_request(request);
 
         let promise_index = env::promise_yield_create(
             method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
@@ -643,7 +643,7 @@ impl MpcContract {
 }
 
 // Node API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     #[handle_result]
     pub fn respond(
@@ -685,7 +685,7 @@ impl MpcContract {
                 let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
 
                 // Check the signature is correct
-                signature_verifier::verify_ecdsa_signature(
+                near_mpc_signature_verifier::verify_ecdsa_signature(
                     signature_response,
                     payload_hash,
                     &expected_public_key,
@@ -708,7 +708,7 @@ impl MpcContract {
 
                 let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
 
-                signature_verifier::verify_eddsa_signature(
+                near_mpc_signature_verifier::verify_eddsa_signature(
                     signature,
                     message,
                     &derived_public_key_32_bytes,
@@ -752,6 +752,26 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
+        let PublicKeyExtended::Bls12381 {
+            public_key: dtos::PublicKey::Bls12381(public_key),
+        } = self.public_key_extended(request.domain_id)?
+        else {
+            env::panic_str(
+                &InvalidParameters::InvalidDomainId
+                    .message("Selected domain is not compatible with CKD")
+                    .to_string(),
+            );
+        };
+
+        match &request.app_public_key {
+            dtos::CKDAppPublicKey::AppPublicKey(_) => {}
+            dtos::CKDAppPublicKey::AppPublicKeyPV(app_pk) => {
+                if !ckd_output_check(&request.app_id, &response, app_pk, &public_key) {
+                    env::panic_str("CKD output check failed");
+                }
+            }
+        }
+
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.pending_ckd_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
@@ -794,25 +814,16 @@ impl MpcContract {
                 dtos::SignatureResponse::Secp256k1(signature_response),
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
-                // generate the expected public key
                 let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
                     .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(&secp_pk)
-                    .expect("stored key is always valid")
-                    .as_affine();
-                let expected_public_key = derive_key_secp256k1(
-                    &affine,
-                    &crate::primitives::signature::Tweak::new(request.tweak.0),
-                )
-                .map_err(RespondError::from)?;
 
                 let payload_hash: [u8; 32] = response.payload_hash.0;
 
-                // Check the signature is correct
-                signature_verifier::verify_ecdsa_signature(
+                // Check the signature is correct against the root public key
+                near_mpc_signature_verifier::verify_ecdsa_signature(
                     signature_response,
                     &payload_hash,
-                    &expected_public_key,
+                    &secp_pk,
                 )
                 .is_ok()
             }
@@ -1356,7 +1367,7 @@ impl MpcContract {
     }
 
     #[handle_result]
-    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error> {
         log!(
             "vote_code_hash: signer={}, code_hash={:?}",
             env::signer_account_id(),
@@ -1383,6 +1394,159 @@ impl MpcContract {
         }
 
         Ok(())
+    }
+
+    /// Vote to add a new launcher image hash to the allowed set. Requires threshold votes.
+    /// When the threshold is reached, compose hashes are automatically derived for all
+    /// currently allowed MPC image hashes.
+    #[handle_result]
+    pub fn vote_add_launcher_hash(
+        &mut self,
+        launcher_hash: LauncherImageHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_add_launcher_hash: signer={}, launcher_hash={:?}",
+            env::signer_account_id(),
+            launcher_hash,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for a new launcher hash before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = LauncherVoteAction::Add(launcher_hash.clone());
+        let votes = self.tee_state.vote_launcher(action, &participant);
+
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        if votes >= self.threshold()?.value() {
+            let added = self
+                .tee_state
+                .add_launcher_image(launcher_hash, tee_upgrade_deadline_duration);
+            log!("launcher hash add result: {}", added);
+        }
+
+        Ok(())
+    }
+
+    /// Vote to remove a launcher image hash from the allowed set. Requires ALL participants
+    /// to vote for removal, since this invalidates attestations of nodes running that launcher.
+    #[handle_result]
+    pub fn vote_remove_launcher_hash(
+        &mut self,
+        launcher_hash: LauncherImageHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_remove_launcher_hash: signer={}, launcher_hash={:?}",
+            env::signer_account_id(),
+            launcher_hash,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote to remove a launcher hash before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = LauncherVoteAction::Remove(launcher_hash.clone());
+        let votes = self.tee_state.vote_launcher(action, &participant);
+
+        // Removal requires ALL participants to vote
+        let total_participants = threshold_parameters.participants().len() as u64;
+        if votes >= total_participants {
+            let removed = self.tee_state.remove_launcher_image(&launcher_hash);
+            log!("launcher hash remove result: {}", removed);
+        }
+
+        Ok(())
+    }
+
+    /// Vote to add a new OS measurement set to the allowed list. Requires threshold votes.
+    #[handle_result]
+    pub fn vote_add_os_measurement(
+        &mut self,
+        measurement: ContractExpectedMeasurements,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_add_os_measurement: signer={}, measurement={:?}",
+            env::signer_account_id(),
+            measurement,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for an OS measurement before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = MeasurementVoteAction::Add(measurement.clone());
+        let votes = self.tee_state.vote_measurement(action, &participant);
+
+        if votes >= self.threshold()?.value() {
+            let added = self.tee_state.add_measurement(measurement);
+            log!("OS measurement add result: {}", added);
+        }
+
+        Ok(())
+    }
+
+    /// Vote to remove an OS measurement set from the allowed list. Requires ALL participants
+    /// to vote for removal.
+    #[handle_result]
+    pub fn vote_remove_os_measurement(
+        &mut self,
+        measurement: ContractExpectedMeasurements,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_remove_os_measurement: signer={}, measurement={:?}",
+            env::signer_account_id(),
+            measurement,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote to remove an OS measurement before initialization.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = MeasurementVoteAction::Remove(measurement.clone());
+        let votes = self.tee_state.vote_measurement(action, &participant);
+
+        // Removal requires ALL participants to vote
+        let total_participants = threshold_parameters.participants().len() as u64;
+        if votes >= total_participants {
+            let removed = self.tee_state.remove_measurement(&measurement);
+            log!("OS measurement remove result: {}", removed);
+        }
+
+        Ok(())
+    }
+
+    /// Returns the current OS measurement votes, showing each participant's vote.
+    pub fn os_measurement_votes(&self) -> MeasurementVotes {
+        log!("os_measurement_votes");
+        self.tee_state.measurement_votes.clone()
+    }
+
+    /// Returns all currently allowed OS measurements.
+    pub fn allowed_os_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+        log!("allowed_os_measurements");
+        self.tee_state.get_allowed_measurements()
     }
 
     /// Returns all accounts that have TEE attestations stored in the contract.
@@ -1500,7 +1664,7 @@ impl MpcContract {
 }
 
 // Contract developer helper API
-#[near_bindgen]
+#[near]
 impl MpcContract {
     #[handle_result]
     #[init]
@@ -1532,7 +1696,7 @@ impl MpcContract {
                 AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
             ),
@@ -1597,7 +1761,7 @@ impl MpcContract {
                 AddDomainsVotes::default(),
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
             ),
@@ -1624,11 +1788,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_5_1_state::MpcContract>() {
+        match try_state_read::<v3_7_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.5.1 state: {:?}", err);
+                log!("failed to deserialize state into v3.7.0 state: {:?}", err);
             }
         };
 
@@ -1639,20 +1803,20 @@ impl MpcContract {
         }
     }
 
-    pub fn state(&self) -> contract_interface::types::ProtocolContractState {
+    pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
         (&self.protocol_state).into_dto_type()
     }
 
-    pub fn metrics(&self) -> contract_interface::types::Metrics {
+    pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {
         self.metrics.clone()
     }
 
     /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
-    pub fn allowed_docker_image_hashes(&self) -> Vec<MpcDockerImageHash> {
+    pub fn allowed_docker_image_hashes(&self) -> Vec<NodeImageHash> {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let mut hashes: Vec<MpcDockerImageHash> = self
+        let mut hashes: Vec<NodeImageHash> = self
             .tee_state
             .get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
             .into_iter()
@@ -1663,7 +1827,21 @@ impl MpcContract {
     }
 
     pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
-        self.tee_state.allowed_launcher_compose_hashes.clone()
+        self.tee_state.get_allowed_launcher_compose_hashes()
+    }
+
+    pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash> {
+        self.tee_state.get_allowed_launcher_hashes()
+    }
+
+    /// Returns the current launcher hash votes, showing each participant's vote.
+    pub fn launcher_hash_votes(&self) -> LauncherHashVotes {
+        self.tee_state.launcher_votes.clone()
+    }
+
+    /// Returns the current code hash votes, showing each participant's vote.
+    pub fn code_hash_votes(&self) -> CodeHashesVotes {
+        self.tee_state.votes.clone()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
@@ -1857,7 +2035,7 @@ impl MpcContract {
 }
 
 /// Methods for Migration service
-#[near_bindgen]
+#[near]
 impl MpcContract {
     pub fn migration_info(
         &self,
@@ -2057,7 +2235,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use std::{
         collections::{BTreeMap, HashSet},
@@ -2070,13 +2248,12 @@ mod tests {
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        NUM_PROTOCOLS,
+        gen_participants, infer_purpose_from_curve, NUM_CURVES,
     };
     use crate::primitives::{
-        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainId},
         participants::Participants,
         signature::{Payload, Tweak},
-        test_utils::gen_participants,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2084,13 +2261,10 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
+    use crate::tee::measurements::Sha384Digest;
+    use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
-    use bounded_collections::NonEmptyBTreeSet;
-    use contract_interface::types::{
-        BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
-        ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
-    };
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
@@ -2099,6 +2273,12 @@ mod tests {
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
     use mpc_primitives::hash::{Hash32, Image};
+    use near_mpc_bounded_collections::NonEmptyBTreeSet;
+    use near_mpc_contract_interface::types::CKDAppPublicKey;
+    use near_mpc_contract_interface::types::{
+        BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
+        ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
+    };
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::seq::SliceRandom;
@@ -2130,9 +2310,9 @@ mod tests {
     }
 
     #[derive(Debug)]
-    #[allow(dead_code)]
     pub enum SharedSecretKey {
         Secp256k1(k256::Scalar),
+        #[expect(dead_code)]
         Ed25519(curve25519_dalek::Scalar),
         Bls12381(ckd::Scalar),
     }
@@ -2174,20 +2354,48 @@ mod tests {
         (pk, scalar)
     }
 
+    pub fn new_ckd_pv_app_pk(
+        rng: &mut impl CryptoRngCore,
+    ) -> (ckd::Scalar, dtos::CKDAppPublicKeyPV) {
+        let scalar = ckd::Scalar::random(rng);
+        let pk2 = ckd::ElementG2::generator() * scalar;
+        let pk1 = ckd::ElementG1::generator() * scalar;
+
+        let pk2 = dtos::Bls12381G2PublicKey::from(&pk2);
+        let pk1 = dtos::Bls12381G1PublicKey::from(&pk1);
+
+        (scalar, dtos::CKDAppPublicKeyPV { pk1, pk2 })
+    }
+
+    pub fn compute_ckd_pv_response(msk: &ckd::Scalar, request: &CKDRequest) -> CKDResponse {
+        let public_key = ckd::ElementG2::generator() * msk;
+        let public_key = ckd::VerifyingKey::new(public_key);
+        let app_pk = ckd::ElementG1::try_from(request.app_public_key.g1_public_key()).unwrap();
+        let big_s = ckd::hash_app_id_with_pk(&public_key, request.app_id.as_ref()) * msk;
+        let y = ckd::Scalar::random(OsRng);
+        let big_y = ckd::ElementG1::generator() * y;
+        let big_c = big_s + app_pk * y;
+
+        CKDResponse {
+            big_y: (&big_y).into(),
+            big_c: (&big_c).into(),
+        }
+    }
+
     pub fn make_public_key_for_domain(
-        domain_scheme: SignatureScheme,
+        domain_curve: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (dtos::PublicKey, SharedSecretKey) {
-        match domain_scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+        match domain_curve {
+            Curve::Secp256k1 | Curve::V2Secp256k1 => {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
-            SignatureScheme::Ed25519 => {
+            Curve::Ed25519 => {
                 let (pk, sk) = new_ed25519(rng);
                 (pk.into(), SharedSecretKey::Ed25519(sk))
             }
-            SignatureScheme::Bls12381 => {
+            Curve::Bls12381 => {
                 let (pk, sk) = new_bls12381g2(rng);
                 (pk.into(), SharedSecretKey::Bls12381(sk))
             }
@@ -2195,14 +2403,14 @@ mod tests {
     }
 
     fn basic_setup(
-        scheme: SignatureScheme,
+        curve: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
-        basic_setup_with_purpose(scheme, infer_purpose_from_scheme(scheme), rng)
+        basic_setup_with_purpose(curve, infer_purpose_from_curve(curve), rng)
     }
 
     fn basic_setup_with_purpose(
-        scheme: SignatureScheme,
+        curve: Curve,
         purpose: DomainPurpose,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
@@ -2216,11 +2424,11 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            scheme,
+            curve,
             purpose,
         }];
         let epoch_id = EpochId::new(0);
-        let (pk, sk) = make_public_key_for_domain(scheme, rng);
+        let (pk, sk) = make_public_key_for_domain(curve, rng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -2277,8 +2485,7 @@ mod tests {
     }
 
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
-        let (context, mut contract, secret_key) =
-            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2365,7 +2572,7 @@ mod tests {
 
     #[test]
     fn test_signature_timeout() {
-        let (context, mut contract, _) = basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let payload = Payload::from_legacy_ecdsa([0u8; 32]);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
@@ -2394,20 +2601,19 @@ mod tests {
 
     #[test]
     fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
-            app_public_key: app_public_key.clone(),
-            domain_id: DomainId::default(),
+            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
+            domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
-            app_public_key,
-            request.domain_id,
+            CKDAppPublicKey::AppPublicKey(app_public_key),
+            request.domain_id.into(),
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2434,21 +2640,114 @@ mod tests {
     }
 
     #[test]
+    fn respond_ckd_pv__should_succeed_when_response_is_valid_and_request_exists() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Bls12381, &mut rng);
+        let SharedSecretKey::Bls12381(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let (_, app_public_key) = new_ckd_pv_app_pk(&mut rng);
+        let app_public_key = CKDAppPublicKey::AppPublicKeyPV(app_public_key);
+        let derivation_path = "my derivation path".to_string();
+        let request = CKDRequestArgs {
+            derivation_path,
+            app_public_key: app_public_key.clone(),
+            domain_id: dtos::DomainId::default(),
+        };
+        let ckd_request = CKDRequest::new(
+            app_public_key,
+            request.domain_id.into(),
+            &context.predecessor_account_id,
+            &request.derivation_path,
+        );
+        contract.request_app_private_key(request);
+        contract.get_pending_ckd_request(&ckd_request).unwrap();
+
+        let response = compute_ckd_pv_response(&secret_key, &ckd_request);
+
+        with_active_participant_and_attested_context(&contract);
+
+        match contract.respond_ckd(ckd_request.clone(), response.clone()) {
+            Ok(_) => {
+                contract
+                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response))
+                    .detach();
+
+                assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
+            }
+            Err(_) => panic!("respond_ckd should not fail"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "app public key check failed")]
+    fn request_ckd_pv__should_reject_mismatched_app_public_key() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut rng);
+
+        // Generate pk1 and pk2 from different scalars so the pairing check fails
+        let scalar1 = ckd::Scalar::random(&mut rng);
+        let scalar2 = ckd::Scalar::random(&mut rng);
+        let pk1 = dtos::Bls12381G1PublicKey::from(&(ckd::ElementG1::generator() * scalar1));
+        let pk2 = dtos::Bls12381G2PublicKey::from(&(ckd::ElementG2::generator() * scalar2));
+
+        let request = CKDRequestArgs {
+            derivation_path: "test".to_string(),
+            app_public_key: CKDAppPublicKey::AppPublicKeyPV(dtos::CKDAppPublicKeyPV { pk1, pk2 }),
+            domain_id: dtos::DomainId::default(),
+        };
+        contract.request_app_private_key(request);
+    }
+
+    #[test]
+    #[should_panic(expected = "CKD output check failed")]
+    fn respond_ckd_pv__should_reject_invalid_response() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Bls12381, &mut rng);
+        let SharedSecretKey::Bls12381(secret_key) = secret_key else {
+            unreachable!();
+        };
+
+        let (_, app_public_key) = new_ckd_pv_app_pk(&mut rng);
+        let app_public_key = CKDAppPublicKey::AppPublicKeyPV(app_public_key);
+        let request = CKDRequestArgs {
+            derivation_path: "test".to_string(),
+            app_public_key: app_public_key.clone(),
+            domain_id: dtos::DomainId::default(),
+        };
+        let ckd_request = CKDRequest::new(
+            app_public_key,
+            request.domain_id.into(),
+            &context.predecessor_account_id,
+            &request.derivation_path,
+        );
+        contract.request_app_private_key(request);
+
+        // Compute a valid response then tamper with big_c
+        let mut response = compute_ckd_pv_response(&secret_key, &ckd_request);
+        response.big_c = dtos::Bls12381G1PublicKey::from(
+            &(ckd::ElementG1::generator() * ckd::Scalar::random(&mut rng)),
+        );
+
+        with_active_participant_and_attested_context(&contract);
+        let _ = contract.respond_ckd(ckd_request, response);
+    }
+
+    #[test]
     fn test_ckd_timeout() {
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
-            app_public_key: app_public_key.clone(),
-            domain_id: DomainId::default(),
+            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
+            domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
-            app_public_key,
-            request.domain_id,
+            CKDAppPublicKey::AppPublicKey(app_public_key),
+            request.domain_id.into(),
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2467,18 +2766,13 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (_context, mut contract, secret_key) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
-        let derivation_path = "what is it".to_string();
         let request_args = VerifyForeignTransactionRequestArgs {
-            derivation_path: derivation_path.clone(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2487,10 +2781,9 @@ mod tests {
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
         };
-        let predecessor = context.predecessor_account_id;
 
         // When
-        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
         contract.verify_foreign_transaction(request_args);
         contract
             .get_pending_verify_foreign_tx_request(&request)
@@ -2502,12 +2795,10 @@ mod tests {
             )],
         });
         let payload_hash = payload.compute_msg_hash().unwrap().0;
-        // simulate signature and response to the request
-        let tweak = derive_foreign_tx_tweak(&predecessor, &derivation_path);
+        // simulate signature with the root key (no tweak for foreign tx)
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let derived_secret_key = derive_secret_key(&secret_key_ec, &Tweak::new(tweak.0));
-        let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
+        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
         let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload_hash).unwrap();
         let signature = dtos::SignatureResponse::Secp256k1(
             dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
@@ -2543,14 +2834,10 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _secret_key) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (_context, mut contract, _secret_key) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let request_args = VerifyForeignTransactionRequestArgs {
-            derivation_path: "".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2559,8 +2846,7 @@ mod tests {
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
         };
-        let predecessor = context.predecessor_account_id;
-        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
 
         // When
         contract.verify_foreign_transaction(request_args);
@@ -2586,7 +2872,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.sign(SignRequestArgs {
@@ -2607,11 +2893,10 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
-            derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2627,11 +2912,8 @@ mod tests {
     fn verify_foreign_tx__should_reject_chain_not_in_policy() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         // Policy has Solana but not Bitcoin
         contract.foreign_chain_policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
@@ -2644,7 +2926,6 @@ mod tests {
 
         // When - requesting Bitcoin which is not in the policy
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
-            derivation_path: "test".to_string(),
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -2663,13 +2944,15 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.request_app_private_key(CKDRequestArgs {
-            domain_id: DomainId::default(),
+            domain_id: dtos::DomainId::default(),
             derivation_path: "test".to_string(),
-            app_public_key: dtos::Bls12381G1PublicKey::from([0u8; 48]),
+            app_public_key: CKDAppPublicKey::AppPublicKey(dtos::Bls12381G1PublicKey::from(
+                [0u8; 48],
+            )),
         });
     }
 
@@ -2911,8 +3194,7 @@ mod tests {
     #[test]
     fn test_respond_ckd_fails_for_attested_non_participant() {
         // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
 
         // Submit valid attestations for all participants (so contract is in Running state)
         // 2. Extract participants list (we have 4 by default)
@@ -2930,12 +3212,12 @@ mod tests {
                 .unwrap();
         let request = CKDRequestArgs {
             derivation_path: "".to_string(),
-            app_public_key: app_public_key.clone(),
-            domain_id: DomainId::default(),
+            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
+            domain_id: dtos::DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
-            app_public_key.clone(),
-            request.domain_id,
+            CKDAppPublicKey::AppPublicKey(app_public_key),
+            request.domain_id.into(),
             &context.predecessor_account_id.clone(),
             &request.derivation_path,
         );
@@ -3023,7 +3305,7 @@ mod tests {
             MpcContract {
                 protocol_state,
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
-                pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+                pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
                 pending_verify_foreign_tx_requests: LookupMap::new(
                     StorageKey::PendingVerifyForeignTxRequests,
                 ),
@@ -3041,7 +3323,7 @@ mod tests {
     }
 
     const NUM_GENERATED_DOMAINS: usize = 1;
-    const NUM_DOMAINS: usize = 2 * NUM_PROTOCOLS;
+    const NUM_DOMAINS: usize = 2 * NUM_CURVES;
     #[test]
     fn test_start_node_migration_failure_not_participant() {
         let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
@@ -3959,7 +4241,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
         assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
         assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
 
@@ -3981,7 +4263,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
         assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
         assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
 
@@ -4003,7 +4285,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
 
         // When — two v1 calls and one v2 call
         contract.sign(SignRequestArgs {
@@ -4061,7 +4343,7 @@ mod tests {
                 .expect("vote succeeds");
         }
 
-        let allowed_docker_image_hashes: Vec<MpcDockerImageHash> = contract
+        let allowed_docker_image_hashes: Vec<NodeImageHash> = contract
             .tee_state
             .get_allowed_mpc_docker_images(Duration::from_secs(10))
             .into_iter()
@@ -4070,7 +4352,7 @@ mod tests {
 
         assert_eq!(
             allowed_docker_image_hashes,
-            vec![MpcDockerImageHash::from(code_hash)]
+            vec![NodeImageHash::from(code_hash)]
         )
     }
 
@@ -4096,10 +4378,10 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            scheme: SignatureScheme::Secp256k1,
+            curve: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         }];
-        let (pk, _) = make_public_key_for_domain(SignatureScheme::Secp256k1, &mut OsRng);
+        let (pk, _) = make_public_key_for_domain(Curve::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -4201,7 +4483,7 @@ mod tests {
         Hash32<Image>,
         near_sdk::PublicKey,
     ) {
-        let (_context, contract, _secret_key) = basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (_context, contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
 
         let participant_account_ids: Vec<_> = contract
             .protocol_state
@@ -4229,6 +4511,7 @@ mod tests {
     }
 
     /// Sets up a contract with an approved MPC hash by having the participants vote for it.
+    /// Also adds the legacy launcher image hash so that compose hashes are derived correctly.
     /// This is a helper function commonly used in tests that require pre-approved hashes.
     fn setup_approved_mpc_hash(
         contract: &mut MpcContract,
@@ -4236,6 +4519,10 @@ mod tests {
         mpc_hash: &Hash32<Image>,
         block_timestamp_ns: u64,
     ) {
+        // Add the legacy launcher image first, so that compose hashes are derived
+        // when the MPC hash is voted in.
+        setup_approved_launcher_hash(contract, participant_account_ids, block_timestamp_ns);
+
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(participant_account_id.clone())
@@ -4246,6 +4533,54 @@ mod tests {
             contract
                 .vote_code_hash(mpc_hash.clone())
                 .expect("vote succeeds");
+        }
+    }
+
+    /// Adds the legacy launcher image hash used in test attestation data.
+    fn setup_approved_launcher_hash(
+        contract: &mut MpcContract,
+        participant_account_ids: &[near_sdk::AccountId],
+        block_timestamp_ns: u64,
+    ) {
+        let launcher_hash_bytes: [u8; 32] =
+            hex::decode("84c7537a2f84d3477eac2e5ef3ba0765b5d688f86096947eea4744ce25b27054")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let launcher_hash = LauncherImageHash::from(launcher_hash_bytes);
+
+        for participant_account_id in participant_account_ids {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(participant_account_id.clone())
+                .predecessor_account_id(participant_account_id.clone())
+                .block_timestamp(block_timestamp_ns)
+                .build());
+
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("launcher vote succeeds");
+        }
+    }
+
+    /// Adds the default OS measurements so that Dstack attestation verification passes.
+    fn setup_approved_measurements(
+        contract: &mut MpcContract,
+        participant_account_ids: &[near_sdk::AccountId],
+        block_timestamp_ns: u64,
+    ) {
+        for measurement in mpc_attestation::attestation::default_measurements() {
+            let contract_measurement = ContractExpectedMeasurements::from(*measurement);
+            for participant_account_id in participant_account_ids {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(participant_account_id.clone())
+                    .predecessor_account_id(participant_account_id.clone())
+                    .block_timestamp(block_timestamp_ns)
+                    .build());
+
+                contract
+                    .vote_add_os_measurement(contract_measurement.clone())
+                    .expect("measurement vote succeeds");
+            }
         }
     }
 
@@ -4273,6 +4608,7 @@ mod tests {
             &mpc_hash,
             block_timestamp_ns,
         );
+        setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
 
         let account_id = participant_account_ids[0].clone();
         testing_env!(VMContextBuilder::new()
@@ -4347,6 +4683,7 @@ mod tests {
             &mpc_hash,
             block_timestamp_ns,
         );
+        setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
 
         // Create invalid TLS key by flipping the last bit
         let mut invalid_tls_key_bytes = *tls_key.as_bytes();
@@ -4495,6 +4832,764 @@ mod tests {
         assert!(votes
             .proposal_by_account
             .contains_key(&dtos::AccountId(first_account.to_string())));
+    }
+
+    fn make_launcher_hash(byte: u8) -> LauncherImageHash {
+        LauncherImageHash::from([byte; 32])
+    }
+
+    #[test]
+    fn test_vote_add_launcher_hash_reaches_threshold() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xAA);
+
+        // First 2 votes (below threshold of 3) — launcher should NOT be added yet
+        for (account_id, _, _) in &participant_list[0..2] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("vote should succeed");
+        }
+        assert!(
+            contract.allowed_launcher_image_hashes().is_empty(),
+            "launcher hash should not be added before threshold"
+        );
+
+        // 3rd vote reaches threshold — launcher should be added
+        let (account_id, _, _) = &participant_list[2];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+
+        let allowed = contract.allowed_launcher_image_hashes();
+        assert_eq!(allowed.len(), 1);
+        assert_eq!(allowed[0], launcher_hash);
+    }
+
+    #[test]
+    fn test_vote_add_launcher_hash_duplicate_vote_is_idempotent() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xBB);
+
+        let (account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+
+        // Same participant votes twice — should count as 1 vote
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("duplicate vote should succeed");
+
+        assert!(
+            contract.allowed_launcher_image_hashes().is_empty(),
+            "duplicate vote should not double-count"
+        );
+    }
+
+    #[test]
+    fn test_vote_remove_launcher_hash_requires_unanimity() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xCC);
+        let launcher_hash_2 = make_launcher_hash(0xDD);
+
+        // Add two launcher hashes so removal of one doesn't hit the "last entry" guard
+        for hash in [&launcher_hash, &launcher_hash_2] {
+            for (account_id, _, _) in participant_list {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build());
+                contract
+                    .vote_add_launcher_hash(hash.clone())
+                    .expect("add vote should succeed");
+            }
+        }
+        assert_eq!(contract.allowed_launcher_image_hashes().len(), 2);
+
+        // Now vote to remove — first 3 votes (not all 4) should NOT remove
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_remove_launcher_hash(launcher_hash.clone())
+                .expect("remove vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_launcher_image_hashes().len(),
+            2,
+            "launcher hash should not be removed before unanimity"
+        );
+
+        // 4th vote — unanimous, should remove
+        let (account_id, _, _) = &participant_list[3];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_remove_launcher_hash(launcher_hash.clone())
+            .expect("remove vote should succeed");
+
+        assert_eq!(
+            contract.allowed_launcher_image_hashes().len(),
+            1,
+            "launcher hash should be removed after unanimity"
+        );
+    }
+
+    #[test]
+    fn test_cannot_remove_last_launcher_hash() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xCC);
+
+        // Add a single launcher hash
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("add vote should succeed");
+        }
+        assert_eq!(contract.allowed_launcher_image_hashes().len(), 1);
+
+        // All 4 vote to remove — should still not remove because it's the last one
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_remove_launcher_hash(launcher_hash.clone())
+                .expect("remove vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_launcher_image_hashes().len(),
+            1,
+            "last launcher hash should not be removable"
+        );
+    }
+
+    #[test]
+    fn test_vote_add_launcher_hash_derives_compose_hashes() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xDD);
+
+        // First approve an MPC image hash so compose hashes can be derived
+        let mpc_hash_bytes: [u8; 32] = [0x11; 32];
+        let mpc_hash = mpc_primitives::hash::NodeImageHash::from(mpc_hash_bytes);
+        let block_ts = 1_000_000_000u64;
+
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_code_hash(mpc_hash.clone())
+                .expect("mpc vote should succeed");
+        }
+
+        // Now add a launcher hash — should auto-derive compose hashes
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("launcher vote should succeed");
+        }
+
+        let compose_hashes = contract.allowed_launcher_compose_hashes();
+        assert_eq!(
+            compose_hashes.len(),
+            1,
+            "should have 1 compose hash (1 launcher x 1 mpc)"
+        );
+    }
+
+    #[test]
+    fn test_allowed_launcher_image_hashes_view_returns_empty_initially() {
+        let (contract, _participants, _first) = setup_tee_test_contract(3, 2);
+        assert!(contract.allowed_launcher_image_hashes().is_empty());
+    }
+
+    #[test]
+    fn test_vote_add_launcher_hash_clears_votes_on_success() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xEE);
+
+        // Vote with 3 participants to reach threshold
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("vote should succeed");
+        }
+        assert_eq!(contract.allowed_launcher_image_hashes().len(), 1);
+
+        // Votes should be cleared — voting for a second hash should start from 0
+        let launcher_hash_2 = make_launcher_hash(0xFF);
+        let (account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash_2.clone())
+            .expect("vote should succeed");
+
+        // Only 1 vote for hash_2, should not be added yet
+        assert_eq!(
+            contract.allowed_launcher_image_hashes().len(),
+            1,
+            "second hash should not be added with only 1 vote"
+        );
+    }
+
+    /// Tests the `launcher_hash_votes()` view method:
+    /// 1. Starts empty
+    /// 2. After each vote, reflects the correct count and action (Add)
+    /// 3. After threshold is reached, votes are cleared
+    #[test]
+    fn test_launcher_hash_votes_view() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xCC);
+
+        assert!(contract.launcher_hash_votes().vote_by_account.is_empty());
+
+        // First vote
+        let (account_0, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_0.clone())
+            .predecessor_account_id(account_0.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+
+        let votes = &contract.launcher_hash_votes().vote_by_account;
+        assert_eq!(votes.len(), 1);
+        let expected_action = LauncherVoteAction::Add(launcher_hash.clone());
+        assert!(votes.values().all(|v| *v == expected_action));
+
+        // Second vote
+        let (account_1, _, _) = &participant_list[1];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_1.clone())
+            .predecessor_account_id(account_1.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+
+        let votes = &contract.launcher_hash_votes().vote_by_account;
+        assert_eq!(votes.len(), 2);
+        assert!(votes.values().all(|v| *v == expected_action));
+
+        // Third vote reaches threshold — votes should be cleared
+        let (account_2, _, _) = &participant_list[2];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_2.clone())
+            .predecessor_account_id(account_2.clone())
+            .build());
+        contract
+            .vote_add_launcher_hash(launcher_hash.clone())
+            .expect("vote should succeed");
+
+        assert!(
+            contract.launcher_hash_votes().vote_by_account.is_empty(),
+            "votes should be cleared after threshold reached"
+        );
+    }
+
+    /// Tests the `code_hash_votes()` view method:
+    /// 1. Starts empty
+    /// 2. After each vote, reflects the correct participant and hash
+    /// 3. After threshold is reached, votes are cleared
+    #[test]
+    fn test_code_hash_votes_view() {
+        let num_participants = 4;
+        let threshold = 3;
+        let (mut contract, participants, _) = setup_tee_test_contract(num_participants, threshold);
+        let participant_list = participants.participants();
+        let code_hash = NodeImageHash::from([0xAB; 32]);
+
+        assert!(contract.code_hash_votes().proposal_by_account.is_empty());
+
+        for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account.clone())
+                .predecessor_account_id(account.clone())
+                .build());
+            contract
+                .vote_code_hash(code_hash.clone())
+                .expect("vote should succeed");
+
+            let votes = &contract.code_hash_votes().proposal_by_account;
+            if i < (threshold - 1) as usize {
+                assert_eq!(votes.len(), i + 1);
+                assert!(votes.values().all(|v| *v == code_hash));
+            } else {
+                assert!(
+                    votes.is_empty(),
+                    "votes should be cleared after threshold reached"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_new_mpc_image_derives_compose_for_existing_launchers() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let launcher_hash = make_launcher_hash(0xAA);
+        let block_ts = 1_000_000_000u64;
+
+        // First approve an MPC image
+        let mpc_hash_1 = mpc_primitives::hash::NodeImageHash::from([0x11; 32]);
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_code_hash(mpc_hash_1.clone())
+                .expect("mpc vote should succeed");
+        }
+
+        // Add a launcher hash
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_add_launcher_hash(launcher_hash.clone())
+                .expect("launcher vote should succeed");
+        }
+        assert_eq!(contract.allowed_launcher_compose_hashes().len(), 1);
+
+        // Now vote in a second MPC image — should auto-derive a new compose hash
+        let mpc_hash_2 = mpc_primitives::hash::NodeImageHash::from([0x22; 32]);
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_ts)
+                .build());
+            contract
+                .vote_code_hash(mpc_hash_2.clone())
+                .expect("mpc vote 2 should succeed");
+        }
+
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes().len(),
+            2,
+            "should have 2 compose hashes (1 launcher x 2 mpc images)"
+        );
+    }
+
+    /// Tests the full launcher compose hash lifecycle with MPC hash expiry:
+    /// 1. Add M1, add L1 → compose: {L1,M1}
+    /// 2. Add M2 → compose: {L1,M1}, {L1,M2}
+    /// 3. Advance time past M2's deadline so M1 is fully expired
+    ///    (valid_entries keeps the last expired entry as cutoff, so M1 only
+    ///    drops when M2's grace period also passes)
+    /// 4. Stored compose hashes persist — still {L1,M1}, {L1,M2}
+    /// 5. Add L2 → paired only with valid M2, not expired M1
+    /// 6. Add M3 → paired with both L1 and L2
+    /// 7. Final: {L1,M1}, {L1,M2}, {L1,M3}, {L2,M2}, {L2,M3}
+    ///    Note: {L2,M1} is NOT present since M1 was expired when L2 was added
+    #[test]
+    fn test_launcher_compose_lifecycle_with_mpc_expiry() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let sec = 1_000_000_000u64;
+        let day = 24 * 60 * 60 * sec;
+        let upgrade_deadline = 7 * day;
+        let t0 = sec;
+
+        let vote_mpc = |contract: &mut MpcContract, hash: NodeImageHash, ts: u64| {
+            for (account_id, _, _) in participant_list {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(ts)
+                    .build());
+                contract
+                    .vote_code_hash(hash.clone())
+                    .expect("mpc vote should succeed");
+            }
+        };
+
+        let vote_launcher = |contract: &mut MpcContract, hash: LauncherImageHash, ts: u64| {
+            for (account_id, _, _) in &participant_list[0..3] {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(ts)
+                    .build());
+                contract
+                    .vote_add_launcher_hash(hash.clone())
+                    .expect("launcher vote should succeed");
+            }
+        };
+
+        let l1 = make_launcher_hash(0xA1);
+        let l2 = make_launcher_hash(0xA2);
+        let m1 = NodeImageHash::from([0x11; 32]);
+        let m2 = NodeImageHash::from([0x22; 32]);
+        let m3 = NodeImageHash::from([0x33; 32]);
+
+        vote_mpc(&mut contract, m1.clone(), t0);
+        vote_launcher(&mut contract, l1.clone(), t0);
+        assert_eq!(contract.allowed_launcher_compose_hashes().len(), 1);
+
+        let t1 = t0 + day;
+        vote_mpc(&mut contract, m2.clone(), t1);
+        assert_eq!(contract.allowed_launcher_compose_hashes().len(), 2);
+
+        let t2 = t1 + upgrade_deadline + sec;
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(participant_list[0].0.clone())
+            .predecessor_account_id(participant_list[0].0.clone())
+            .block_timestamp(t2)
+            .build());
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes().len(),
+            2,
+            "stored compose hashes persist even after MPC hash expires"
+        );
+
+        vote_launcher(&mut contract, l2.clone(), t2);
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes().len(),
+            3,
+            "L2 paired only with valid M2, not expired M1"
+        );
+
+        vote_mpc(&mut contract, m3.clone(), t2);
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes().len(),
+            5,
+            "M3 paired with both L1 and L2"
+        );
+
+        let compose_hashes = contract.allowed_launcher_compose_hashes();
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m1)));
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m2)));
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l1, &m3)));
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l2, &m2)));
+        assert!(compose_hashes.contains(&get_docker_compose_hash(&l2, &m3)));
+        assert!(!compose_hashes.contains(&get_docker_compose_hash(&l2, &m1)));
+    }
+
+    fn make_measurement(byte: u8) -> ContractExpectedMeasurements {
+        ContractExpectedMeasurements {
+            mrtd: Sha384Digest::from([byte; 48]),
+            rtmr0: Sha384Digest::from([byte.wrapping_add(1); 48]),
+            rtmr1: Sha384Digest::from([byte.wrapping_add(2); 48]),
+            rtmr2: Sha384Digest::from([byte.wrapping_add(3); 48]),
+            key_provider_event_digest: Sha384Digest::from([byte.wrapping_add(4); 48]),
+        }
+    }
+
+    /// Tests that adding an OS measurement requires threshold votes and that
+    /// duplicate measurements are rejected.
+    #[test]
+    fn test_vote_add_os_measurement_threshold() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement = make_measurement(0xAA);
+
+        // First 2 votes — below threshold (3)
+        for (account_id, _, _) in &participant_list[0..2] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement.clone())
+                .expect("add vote should succeed");
+        }
+        assert!(
+            contract.allowed_os_measurements().is_empty(),
+            "measurement should not be added before threshold"
+        );
+
+        // 3rd vote — threshold reached
+        let (account_id, _, _) = &participant_list[2];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_os_measurement(measurement.clone())
+            .expect("add vote should succeed");
+        assert_eq!(contract.allowed_os_measurements().len(), 1);
+        assert_eq!(contract.allowed_os_measurements()[0], measurement);
+
+        // Voting for the same measurement again should not duplicate
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement.clone())
+                .expect("add vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_os_measurements().len(),
+            1,
+            "duplicate measurement should not be added"
+        );
+    }
+
+    /// Tests that removing an OS measurement requires unanimity and that
+    /// the last measurement cannot be removed.
+    #[test]
+    fn test_vote_remove_os_measurement_unanimity() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement_1 = make_measurement(0xAA);
+        let measurement_2 = make_measurement(0xBB);
+
+        // Add two measurements
+        for m in [&measurement_1, &measurement_2] {
+            for (account_id, _, _) in participant_list {
+                testing_env!(VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .build());
+                contract
+                    .vote_add_os_measurement(m.clone())
+                    .expect("add vote should succeed");
+            }
+        }
+        assert_eq!(contract.allowed_os_measurements().len(), 2);
+
+        // 3 votes to remove — not enough (need all 4)
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_remove_os_measurement(measurement_1.clone())
+                .expect("remove vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_os_measurements().len(),
+            2,
+            "measurement should not be removed before unanimity"
+        );
+
+        // 4th vote — unanimous, should remove
+        let (account_id, _, _) = &participant_list[3];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_remove_os_measurement(measurement_1.clone())
+            .expect("remove vote should succeed");
+        assert_eq!(contract.allowed_os_measurements().len(), 1);
+        assert_eq!(contract.allowed_os_measurements()[0], measurement_2);
+    }
+
+    /// Tests that the last OS measurement cannot be removed.
+    #[test]
+    fn test_cannot_remove_last_os_measurement() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement = make_measurement(0xAA);
+
+        // Add a single measurement
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement.clone())
+                .expect("add vote should succeed");
+        }
+        assert_eq!(contract.allowed_os_measurements().len(), 1);
+
+        // All 4 vote to remove — should not remove because it's the last one
+        for (account_id, _, _) in participant_list {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_remove_os_measurement(measurement.clone())
+                .expect("remove vote should succeed");
+        }
+        assert_eq!(
+            contract.allowed_os_measurements().len(),
+            1,
+            "last OS measurement should not be removable"
+        );
+    }
+
+    /// Tests the os_measurement_votes view method returns correct vote data.
+    #[test]
+    fn test_os_measurement_votes_view() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement = make_measurement(0xCC);
+
+        // Initially empty
+        assert!(contract.os_measurement_votes().vote_by_account.is_empty());
+
+        // Cast one vote
+        let (account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_os_measurement(measurement.clone())
+            .expect("add vote should succeed");
+
+        let votes = contract.os_measurement_votes();
+        assert_eq!(votes.vote_by_account.len(), 1);
+        let (_, action) = votes.vote_by_account.iter().next().unwrap();
+        assert_eq!(*action, MeasurementVoteAction::Add(measurement));
+    }
+
+    /// Tests the allowed_os_measurements view method returns the full structs
+    /// with correct field values after adding measurements.
+    #[test]
+    fn test_allowed_os_measurements_view() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement_1 = make_measurement(0xAA);
+        let measurement_2 = make_measurement(0xBB);
+
+        // Initially empty
+        assert!(contract.allowed_os_measurements().is_empty());
+
+        // Add first measurement (3 votes = threshold)
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement_1.clone())
+                .expect("add vote should succeed");
+        }
+
+        let allowed = contract.allowed_os_measurements();
+        assert_eq!(allowed.len(), 1);
+        assert_eq!(allowed[0], measurement_1);
+
+        // Add second measurement
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement_2.clone())
+                .expect("add vote should succeed");
+        }
+
+        let allowed = contract.allowed_os_measurements();
+        assert_eq!(allowed.len(), 2);
+        assert_eq!(allowed[0], measurement_1);
+        assert_eq!(allowed[1], measurement_2);
+    }
+
+    /// Tests that votes are cleared after a successful measurement add,
+    /// so a subsequent vote starts from scratch.
+    #[test]
+    fn test_vote_add_os_measurement_clears_votes_on_success() {
+        let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
+        let participant_list = participants.participants();
+        let measurement = make_measurement(0xAA);
+
+        // Vote with 3 participants to reach threshold
+        for (account_id, _, _) in &participant_list[0..3] {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build());
+            contract
+                .vote_add_os_measurement(measurement.clone())
+                .expect("vote should succeed");
+        }
+        assert_eq!(contract.allowed_os_measurements().len(), 1);
+
+        // Votes should be cleared — voting for a second measurement should start from 0
+        let measurement_2 = make_measurement(0xBB);
+        let (account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .build());
+        contract
+            .vote_add_os_measurement(measurement_2.clone())
+            .expect("vote should succeed");
+
+        // Only 1 vote for measurement_2, should not be added yet
+        assert_eq!(
+            contract.allowed_os_measurements().len(),
+            1,
+            "second measurement should not be added with only 1 vote"
+        );
+    }
+
+    /// Tests JSON serialization roundtrip for `ContractExpectedMeasurements`.
+    /// Verifies hex encoding/decoding of 48-byte fields works correctly.
+    #[test]
+    fn test_contract_expected_measurements_json_roundtrip() {
+        let measurement = make_measurement(0xAA);
+        let json = serde_json::to_string(&measurement).expect("serialize to JSON");
+        let deserialized: ContractExpectedMeasurements =
+            serde_json::from_str(&json).expect("deserialize from JSON");
+        assert_eq!(measurement, deserialized);
+
+        // Verify the JSON contains hex strings, not raw byte arrays
+        assert!(json.contains("aa"), "JSON should contain hex-encoded bytes");
+        assert!(
+            !json.contains('['),
+            "JSON should not contain array brackets"
+        );
     }
 
     #[cfg(all(feature = "__abi-generate", not(target_arch = "wasm32")))]

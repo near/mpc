@@ -11,7 +11,6 @@ import time
 import traceback
 from dataclasses import dataclass
 import re
-import ipaddress
 import json
 from typing import NamedTuple
 
@@ -136,7 +135,6 @@ DENIED_CONTAINER_ENV_KEYS = {
 # RUST_BACKTRACE=1
 # RUST_LOG=info
 # MPC_RESPONDER_ID=responder-xyz
-# EXTRA_HOSTS=host1:192.168.0.1,host2:192.168.0.2
 # PORTS=11780:11780,2200:2200
 
 # Define an allow-list of permitted environment variables that will be passed to MPC container.
@@ -193,21 +191,6 @@ def is_safe_env_value(value: str) -> bool:
     return True
 
 
-def is_valid_ip(ip: str) -> bool:
-    try:
-        ipaddress.ip_address(ip)
-        return True
-    except ValueError:
-        return False
-
-
-def is_valid_host_entry(entry: str) -> bool:
-    if not HOST_ENTRY_RE.match(entry):
-        return False
-    host, ip = entry.split(":")
-    return is_valid_ip(ip)
-
-
 def is_valid_port_mapping(entry: str) -> bool:
     match = PORT_MAPPING_RE.match(entry)
     if not match:
@@ -222,18 +205,6 @@ def is_non_empty_and_cleaned(val: str) -> bool:
     if not val.strip():
         return False
     return val.strip() == val
-
-
-def is_safe_host_entry(entry: str) -> bool:
-    """
-    Ensure that host entry does not contain unsafe characters,
-    does not start with '--' or '-', and does not include LD_PRELOAD.
-    """
-    if INVALID_HOST_ENTRY_PATTERN.search(entry):
-        return False
-    if "LD_PRELOAD" in entry:
-        return False
-    return True
 
 
 def is_safe_port_mapping(mapping: str) -> bool:
@@ -489,7 +460,15 @@ def validate_image_hash(
         # Pull
         proc = run(["docker", "pull", name_and_digest], capture_output=True)
         if proc.returncode != 0:
-            logging.error(f"docker pull failed for {image_digest}")
+            logging.error(
+                f"docker pull failed for {image_digest} using {name_and_digest}"
+            )
+            logging.error(
+                f"stdout:\n{proc.stdout}",
+            )
+            logging.error(
+                f"stderr:\n{proc.stderr}",
+            )
             return False
 
         # Verify digest
@@ -815,17 +794,6 @@ def build_docker_cmd(
 
         if key in ALLOWED_LAUNCHER_ENV_VARS:
             # launcher-only env vars: never pass to container
-            continue
-
-        if key == "EXTRA_HOSTS":
-            for host_entry in value.split(","):
-                clean_host = host_entry.strip()
-                if is_safe_host_entry(clean_host) and is_valid_host_entry(clean_host):
-                    docker_cmd += ["--add-host", clean_host]
-                else:
-                    logging.warning(
-                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean_host}"
-                    )
             continue
 
         if key == "PORTS":

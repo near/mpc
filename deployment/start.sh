@@ -213,11 +213,5 @@ else
   echo "Using provided MPC_SECRET_STORE_KEY from environment"
 fi
 
-if [ -n "$DSTACK_ENDPOINT" ]; then
-    tee_authority=dstack
-else
-    tee_authority=local
-fi
-
 echo "Starting mpc node..."
-/app/mpc-node start $tee_authority
+/app/mpc-node start

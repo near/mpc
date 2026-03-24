@@ -30,11 +30,11 @@ use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
 use anyhow::Context;
-use contract_interface::types as dtos;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{Curve, DomainId};
 use mpc_contract::primitives::key_state::EpochId;
+use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -320,7 +320,7 @@ where
     /// Entry point to handle the Running state of the contract.
     /// In this state, we generate triples and presignatures, and listen to
     /// signature requests and submit signature responses.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn run_mpc(
         clock: Clock,
         secret_db: Arc<SecretDB>,
@@ -537,26 +537,26 @@ where
                     DomainId,
                     confidential_key_derivation::KeygenOutput,
                 > = HashMap::new();
-                let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
+                let mut domain_to_curve: HashMap<DomainId, Curve> = HashMap::new();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
                         KeyshareData::Secp256k1(data) => {
                             ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Secp256k1);
+                            domain_to_curve.insert(domain_id, Curve::Secp256k1);
                         }
                         KeyshareData::Ed25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
+                            domain_to_curve.insert(domain_id, Curve::Ed25519);
                         }
                         KeyshareData::Bls12381(data) => {
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::Bls12381);
+                            domain_to_curve.insert(domain_id, Curve::Bls12381);
                         }
                         KeyshareData::V2Secp256k1(data) => {
                             robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::V2Secp256k1);
+                            domain_to_curve.insert(domain_id, Curve::V2Secp256k1);
                         }
                     }
                 }
@@ -619,7 +619,7 @@ where
                     eddsa_signature_provider,
                     ckd_provider,
                     verify_foreign_tx_provider,
-                    domain_to_scheme,
+                    domain_to_curve,
                 ));
 
                 mpc_client
@@ -643,7 +643,7 @@ where
     }
 
     /// Entry point to handle the Resharing state of the contract.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn run_key_resharing(
         config_file: &ConfigFile,
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
@@ -959,12 +959,12 @@ fn make_initializing_stop_fn(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::Coordinator;
     use crate::indexer::fake::FakeForeignChainPolicyReader;
     use crate::tests::common::MockTransactionSender;
-    use contract_interface::types as dtos;
+    use near_mpc_contract_interface::types as dtos;
 
     #[test]
     fn is_supported_foreign_chain__supports_starknet() {

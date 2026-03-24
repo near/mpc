@@ -11,7 +11,13 @@ We use Dstack (from Phala) to orchestrate the environment and run the MPC contai
 ## Limitations and Restrictions
 
  **Important:**
-You cannot migrate an existing MPC node out of its CVM without data loss (for example: key share, P2P key). In addition, replacing or changing TDX-related hardware or dependencies (e.g., a CPU swap) may render the data unrecoverable.
+ 
+The CVM filesystem is encrypted with a hardware-bound key derived from SGX sealing, so copying the CVM or disk data to another machine will not work and may result in data loss, including loss of key shares and P2P identity keys.
+
+Platform-bound sealed data may also become unrecoverable if TDX-related hardware changes (for example, a CPU replacement).
+
+To move a node between hosts, follow the supported procedure described in the [Node Migration](./node-migration-guide.md) section, which uses the backup-cli tool to securely transfer key shares.
+
 
 ## Main difference between TEE and non TEE MPC nodes
 
@@ -99,7 +105,8 @@ sudo apt install build-essential qemu-system docker.io
 * Create `mpc` user and installation folder
 
 ```bash
-sudo useradd -m -G docker -s /usr/bin/bash mpc
+# allow the MPC user to access docker and KVM for running CVMs.
+sudo useradd -m -G docker,kvm -s /usr/bin/bash mpc
 sudo passwd mpc
 # create installation folder
 sudo mkdir /opt/mpc
@@ -132,7 +139,7 @@ All steps below assume the current user is `mpc` and the current directory is
 
    ```bash
    cd dstack
-   git checkout v0.5.4 # Should point to commit `3e4e462cac2a57c204698d2443d252d13e75cd29`
+   git checkout v0.5.7 # Should point to commit `eb97c56bc8f58dafb57f9cc4ec538a4f00bdb5b6`
 
    cargo build --release -p dstack-vmm -p supervisor
    mkdir -p vmm-data
@@ -173,7 +180,7 @@ range = [
 ]
 
 [host_api]
-address = "127.0.0.1"
+address = "vsock:2"
 port = 9300
 EOF
 ```
@@ -181,7 +188,7 @@ EOF
 4. **Download Guest OS images:**
 
    ```bash
-   DSTACK_VERSION=0.5.4
+   DSTACK_VERSION=0.5.7
    wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
    mkdir -p images/
    tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
@@ -245,7 +252,7 @@ Notice that some of the commands require `sudo`, so they cannot be run using the
 > **Important:** The guest OS image that runs inside the CVM must be **identical across all nodes**.  
 > The image is **measured**, and those measurements are **hardcoded in the contract**.
 
-The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.4**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
+The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.7**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
 
 If you need to **verify**, **re-download**, or **rebuild** the image, follow one of the methods below.
 
@@ -256,14 +263,14 @@ If you need to **verify**, **re-download**, or **rebuild** the image, follow one
 Use this method to retrieve the official pre-built image provided by the Dstack project.
 
 ```bash
-DSTACK_VERSION=0.5.4
+DSTACK_VERSION=0.5.7
 wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
 mkdir -p images/
 tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
 rm -f dstack-${DSTACK_VERSION}.tar.gz
 ```
 
-This ensures you are using the verified release image corresponding to version **0.5.4**.
+This ensures you are using the verified release image corresponding to version **0.5.7**.
 
 ---
 
@@ -276,7 +283,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
    ```bash
    git clone https://github.com/Dstack-TEE/meta-dstack.git
    cd meta-dstack/
-   git checkout f7c795b76faa693f218e1c255007e3a68c541d79
+   git checkout 1f2c3c73ffb67887c4858ab073b7d74a68686f55
    git submodule update --init --recursive
    ```
 
@@ -284,7 +291,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
 
    - **Download the pre-built image (recommended, faster):**
      ```bash
-     ./build.sh dl 0.5.4
+     ./build.sh dl 0.5.7
      ```
 
    - **Build a reproducible image from source (slower, ~1–2 hours):**
@@ -295,7 +302,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
 
 ###### Verification Steps
 
-Run these commands from inside your image folder (e.g., `dstack-0.5.4`).
+Run these commands from inside your image folder (e.g., `dstack-0.5.7`).
 
 **1. Verify file hashes against expected values:**
 
@@ -306,9 +313,9 @@ set -euo pipefail
 # Hard-coded expected hashes
 declare -A EXPECTED
 EXPECTED["ovmf.fd"]="76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0"
-EXPECTED["bzImage"]="987083c434a937e47361377196644169b8d2183919c6c3ab89e251e021ab55cb"
-EXPECTED["initramfs.cpio.gz"]="fd5267f04bf95dc073c21934de552517506acde6485524834376c8a479c92fcd"
-EXPECTED["metadata.json"]="a0a8489dd9f05db9ba26b37c1a7e3c99e94fa4a3e82736b57b1c19b058a11674"
+EXPECTED["bzImage"]="bfb747a3649e3dc7f0fc996b8d5f012f72b15de58d1229fa7e1ebc4c5a94a6da"
+EXPECTED["initramfs.cpio.gz"]="da76e309cb8cb03e76f5a98f6f72069d810d1f014b4795b1bc7c11107bf8044d"
+EXPECTED["metadata.json"]="ecca6c433360ed7be97bee73fa554dd34b7f8eadee9f729a0c949ecf4c20d539"
 
 ALL_OK=1
 for FILE in "${!EXPECTED[@]}"; do
@@ -381,7 +388,7 @@ For more details, see the [Dstack attestation guide](https://github.com/Dstack-T
 Build `dstack-mr` docker image:
 
 ```bash
-cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.4
+cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.7
 ```
 
 Create a Dockerfile file with the following contents:
@@ -421,9 +428,9 @@ Run:
 
 ```bash
 docker run --rm \
-  -v "$(pwd)":/dstack-0.5.4 \
+  -v "$(pwd)":/dstack-0.5.7 \
   dstack-mr \
-  measure -c 8 -m 64G /dstack-0.5.4/metadata.json
+  measure -c 8 -m 64G /dstack-0.5.7/metadata.json
 ```
 
 Example output:
@@ -432,8 +439,8 @@ Example output:
 Machine measurements:
 MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
 RTMR0: e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46
-RTMR1: a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8b01713d3d9937e3e0d26c15
-RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe
+RTMR1: 920eb831509b58bf83a554b5377dd5ce26d3f5182f14d33622ac24c1d343a0fa3c7bde746e55098ca30baf784dfd2556
+RTMR2: 4674857a0f5b090f9203245f55c6516c37f533b362576a505f5b89efa2a28376d6b82e984e41f1f0ebcddfcbeb9581b9
 ```
 
 ---
@@ -518,6 +525,7 @@ Including
 * Configuring and starting your CVM with the MPC node.  
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
+* Verify the node's attestation before trusting the keys.
 * Add the node key to your Near account.
 
 ### Create a NEAR Account for Your Node
@@ -576,9 +584,9 @@ RUST_LOG=mpc=debug,info
 
 NEAR_BOOT_NODES=$BOOT_NODES
 
+# telemetry,migration,debug,node-node,DSS (Decentralized Status Sync)
+PORTS=8080:8080,8079:8079,3030:3030,80:80,24567:24567
 
-# Port forwarding 
-PORTS=8080:8080,24567:24567,80:80
 
 ```
 
@@ -609,7 +617,7 @@ To launch the MPC node in the TEE environment, use the Docker Compose file from 
 
 Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image digest retrieved from the contract.
 
-For details on how to map this hash to a specific Docker image published on DockerHub, or to the corresponding source code, see the section [MPC Node Upgrades](#mpc-node-upgrades).
+For details on how to map this hash to a specific Docker image published on DockerHub, or to the corresponding source code, see the section [MPC Node Image Upgrade](#mpc-node-image-upgrade).
 
 Example digest value:
 
@@ -617,7 +625,7 @@ Example digest value:
 DEFAULT_IMAGE_DIGEST=sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
 ```
 
-You can retrieve the allowed MPC Docker image hash directly from the contract using the NEAR CLI. The latest allowed image hash 
+You can retrieve the allowed MPC Docker image hash directly from the contract using the NEAR CLI. The latest allowed image hash
 will appear first in the returned vector:
 
 ```bash
@@ -656,9 +664,10 @@ This creates a limitation when trying to run both **mainnet** and **testnet** no
 | Port   | Purpose                                                                 |
 |--------|-------------------------------------------------------------------------|
 | **80** | Node-to-node communication (port override convention)                   |
-| **24567** | Decentralized state sync                                               |
-| **8080** | Debug and telemetry collection, plus the new `getdata` endpoint         |
+| **24567** | Decentralized state sync                                             |
+| **8080** | Debug and telemetry collection, plus the `/public_data` endpoint       |
 | **3030** | Debug and telemetry collection                                         |
+| **8079** | Migration port                    |
 
 ### Configuring and starting the MPC binary in a CVM
 
@@ -746,7 +755,7 @@ http://localhost:17190
 There are 2 keys that should be retrieved from node.  
 
 * P2P (near\_p2p\_public\_key)- this key is used by the nodes to authenticate with one another. This key needs to be registered on the contract. (see details below)  
-* Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as “vote\_reshared”.  
+* Node Account Key (near\_signer\_public\_key) \- this key is used by the node to issue operations such as "vote\_reshared".  
   This key needs to be added to the Near account that was created in the step above.
 
 ### Retrieve the node account key and P2P key
@@ -763,8 +772,102 @@ Sample curl command to extract the keys:
 ```bash
 $ curl -s http://<IP>:8080/public_data | jq -r '.near_signer_public_key'
 ed25519:B2JvaYmgzfXsvCxrqd4nBrBt8jo9ReqUZatG3dAZEBv5
-$ curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'$ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
+$ curl -s http://<IP>:8080/public_data | jq -r '.near_p2p_public_key'
+ed25519:5SiS1SJiABiM79Yt6uEjMabAT9UguQY9hSyF7xfHLGYt
 ```
+
+### Verify Node Attestation
+
+> **Important:** Before using the node's keys (P2P key or account key), you must verify the node's attestation to confirm that the keys were generated inside a genuine TEE. Without this step, you are susceptible to a man-in-the-middle attack — an adversary could substitute their own keys for the node's real keys.
+
+The `attestation-cli` tool performs the same Intel TDX (DCAP) attestation verification that the NEAR contract and MPC nodes use, allowing you to independently validate that the node is running trusted code inside genuine hardware.
+
+> **Note:** Run the `attestation-cli` on a trusted machine. The verification should be performed from an environment you control and trust.
+
+The CLI supports two modes:
+
+- **Online mode** (`--url`) — Fetches attestation data directly from the node's `/public_data` endpoint.
+- **Offline mode** (`--file`) — Reads attestation data from a previously saved JSON file. This is useful if you want to save the data first, inspect it, or verify on an air-gapped machine.
+
+For full documentation, see the [attestation-cli README](../crates/attestation-cli/README.md).
+
+#### Install the attestation-cli
+
+From the [NEAR MPC repository](https://github.com/near/mpc) root:
+
+```bash
+cargo install --path crates/attestation-cli
+```
+
+#### Gather the required inputs
+
+1. **Allowed MPC Docker image hash** — The SHA256 hex hash of the approved MPC Docker image. You can query it from the contract:
+
+   ```bash
+   near contract call-function as-transaction \
+     v1.signer-prod.testnet \
+     allowed_docker_image_hashes \
+     json-args '{}' \
+     prepaid-gas '100.0 Tgas' \
+     attached-deposit '0 NEAR' \
+     sign-as <your-account-id> \
+     network-config testnet \
+     sign-with-keychain \
+     send
+   ```
+
+   The latest allowed image hash will appear first in the returned vector.
+
+2. **Launcher docker-compose file** — The same `launcher_docker_compose.yaml` you prepared in the [Preparing a Docker Compose File](#preparing-a-docker-compose-file) section. The CLI computes its SHA256 hash and compares it against the hash attested by the node.
+
+#### Run the verification
+
+**Online mode** — fetch and verify directly from the node:
+
+```bash
+attestation-cli \
+  --url http://<IP>:8080/public_data \
+  --allowed-image-hash <IMAGE_HASH> \
+  --launcher-compose-file launcher_docker_compose.yaml
+```
+
+**Offline mode** — save the data first, then verify locally:
+
+```bash
+# Save the attestation data
+curl -o public_data.json http://<IP>:8080/public_data
+
+# Verify from the saved file
+attestation-cli \
+  --file public_data.json \
+  --allowed-image-hash <IMAGE_HASH> \
+  --launcher-compose-file launcher_docker_compose.yaml
+```
+
+Replace `<IP>` with your node's IP address, and `<IMAGE_HASH>` with the hash from the contract.
+
+#### Verify the output
+
+On success, the output will show the node's keys and end with `Verdict: PASS`:
+
+```
+=== MPC Node Attestation Verification ===
+
+TLS Public Key (P2P):   ed25519:<base58-encoded key>
+Account Public Key:     ed25519:<base58-encoded key>
+Attestation Type:       Dstack (TDX)
+
+--- Extracted Values ---
+MPC Image Hash:         <64-char hex>
+Launcher Compose Hash:  <64-char hex>
+Expiry Timestamp:       2025-07-15 12:00:00 UTC (unix: 1752577200)
+
+Verdict: PASS
+```
+
+Confirm that the **TLS Public Key (P2P)** and **Account Public Key** shown in the output match the keys you retrieved in the previous step. If they match and the verdict is PASS, the keys are authenticated — you can proceed to register them.
+
+If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubleshooting](../crates/attestation-cli/README.md#troubleshooting) section for guidance.
 
 ### Add the Node Account Key to Your Account
 
@@ -788,23 +891,25 @@ This section shows how to add the MPC node's public key (from the previous secti
 * **`METHOD_NAMES`** → The list of contract methods the MPC node is allowed to call:  
 
   ```txt
-  respond,
-  respond_ckd,
-  vote_pk,
-  start_keygen_instance,
-  vote_reshared,
-  start_reshare_instance,
-  vote_abort_key_event_instance,
-  verify_tee,
-  submit_participant_info
+  respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration
   ```
+
+  > **Note:** This must be a single comma-separated string with no spaces or newlines.
 
 ---
 
 #### Example Command
 
 ```bash
-./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance '1 NEAR'   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config testnet   sign-with-keychain   send
+./target/release/near account add-key $ACCOUNT_ID \
+  grant-function-call-access \
+  --allowance '1 NEAR' \
+  --contract-account-id $MPC_CONTRACT_ID \
+  --function-names $METHOD_NAMES \
+  use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
+  network-config testnet \
+  sign-with-keychain \
+  send
 ```
 
 ---
@@ -822,10 +927,18 @@ ALLOWANCE="1 NEAR"
 NETWORK="testnet"   # or "mainnet"
 
 # Methods the MPC node is allowed to call
-METHOD_NAMES="respond,respond_ckd,vote_pk,start_keygen_instance,vote_reshared,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info"
+METHOD_NAMES="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
 # === Add Access Key ===
-./target/release/near account add-key $ACCOUNT_ID   grant-function-call-access   --allowance "$ALLOWANCE"   --contract-account-id $MPC_CONTRACT_ID   --function-names $METHOD_NAMES   use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY   network-config $NETWORK   sign-with-keychain   send
+./target/release/near account add-key $ACCOUNT_ID \
+  grant-function-call-access \
+  --allowance "$ALLOWANCE" \
+  --contract-account-id $MPC_CONTRACT_ID \
+  --function-names $METHOD_NAMES \
+  use-manually-provided-public-key $MPC_NODE_PUBLIC_KEY \
+  network-config $NETWORK \
+  sign-with-keychain \
+  send
 ```
 
 ---
@@ -1021,26 +1134,28 @@ You can see this in the node logs (TBD) [#906](https://github.com/near/mpc/issue
 
 And when the resharing has finished look for… (TBD) [#906](https://github.com/near/mpc/issues/906)
 
-## MPC Node Upgrades
+## Upgrades
 
-From time to time, MPC nodes will need to be upgraded.  
-This section describes how to vote for a new MPC Docker image hash and how to securely upgrade the MPC node in the CVM.
+There are two types of upgrades, with different frequencies and operator effort:
 
-When a new MPC node is released, the release will along with precompiled binaries contain the following information:
+| Upgrade Type | Frequency | Operator Effort | Sealing Key Changes |
+| :--- | :--- | :--- | :--- |
+| MPC node image | High (~monthly) | Vote + restart CVM | No |
+| Launcher / CVM | Low | Vote + deploy new CVM + migrate key shares | Yes |
 
-* Git commit used to build the MPC image, identified by the release tag.
-* Link to Docker Hub (or another repository) containing the released MPC Docker image.  
-* Hash of the MPC Docker image (note: this is not the same as the Docker image manifest hash published on Docker Hub).  
+When either type of hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
-> **Important:** Each operator is responsible for verifying that the MPC Docker image hash being voted for corresponds to the intended MPC Git commit, and for performing their own due diligence on the code.
+## MPC Node Image Upgrade
 
-**Main Steps:**
+This is the most common upgrade. When a new MPC node version is released, operators vote for the new image hash and restart their CVM. The MPC node image hash does **not** affect the sealing key, so existing key shares remain accessible.
 
-1. Verify that the Docker image hash matches the expected MPC node Git commit.  
-2. Vote for the new Docker image hash in the contract.  
-3. Upgrade the MPC node running in your CVM.
+**Steps:**
 
-### MPC node Image/code inspection
+1. Verify the Docker image hash (see [Image/code inspection](#imagecode-inspection)).
+2. Vote for the new hash in the contract.
+3. Update `user-config.conf` and restart the CVM.
+
+### Image/code inspection
 
 The following steps allow you to inspect the code that was used to build the
 docker image. Let's assume you want to vote for a docker image with tag
@@ -1086,17 +1201,17 @@ before. In the same way, the launcher images published in
 verified. The one shown above corresponds to
 [mpc-launcher:main-828f816](https://hub.docker.com/layers/nearone/mpc-launcher/main-828f816/)
 
-* Do your own self do diligence on the code/binary
+* Do your own due diligence on the code/binary
 
-### **Voting for the Image**
+> **Important:** Each operator is responsible for verifying that the image hashes being voted for correspond to the intended Git commit, and for performing their own due diligence on the code.
 
-After deciding to vote for a new MPC Docker image hash, each participant submits a vote for that hash.  
-A **threshold** number of participant votes is required in order for the vote to pass.
+### Voting for the MPC image hash
 
-Vote Command using NEAR CLI:
+Each participant submits a vote for the new MPC Docker image hash.
+A **threshold** number of participant votes is required for the vote to pass.
 
 ```bash
-  near contract call-function as-transaction \
+near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_code_hash \
   json-args '{"code_hash": "<IMAGE_HASH>"}' \
@@ -1112,33 +1227,179 @@ The **IMAGE_HASH** argument must be provided as an SHA-256 hex digest.
 
 For example, for the digest
 
-````bash
+```bash
 IMAGE_HASH=4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
-````
+```
 
 TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
 
-### **Update the MPC node**
+### Update the MPC node
 
-After voting has finished, the MPC node will detect that there is a new approved MPC docker image hash register on the contract, and will download and save the hash into a secure location inside the CVM.
+After voting has finished, the MPC node will detect that there is a new approved MPC docker image hash registered on the contract, and will download and save the hash into a secure location inside the CVM.
 
 You can view this has happened by
 
 TBD [#909](https://github.com/near/mpc/issues/909) \- add logs/screen shoot.
 
-Following the hash update, you should upgrade the MPC node by following those steps:  
-1\. Manually confirm the MPC dockerhub path/tag.  (optionly)
-2\. Update the dockerhub image path/tag in the user-config.conf  
-3\. Restart the CVM.  
+Following the hash update, you should upgrade the MPC node by following those steps:
+1. (Optional) Manually confirm the MPC DockerHub path/tag matches the voted hash.
+2. Update the DockerHub image path/tag in `user-config.conf`.
+3. Restart the CVM.
 
-#### Confirm that you have the correct dockerhub link to the approved MPC docker image
+#### Confirm that you have the correct DockerHub link to the approved MPC docker image
 
-* Assume the dockerhub link provided to you is  nearone/mpc-node-gcp:abc..
-* download the image to some local machine via the command:
-  “docker pull nearone/mpc-node-gcp:abc..  
-* Retrieve the image hash via  
-  * docker inspect nearone/mpc-node-gcp:abc | grep “Id”:  
-* Check that you got "Id":"xyz…", that matches the hash you voted for.
+* Assume the DockerHub link provided to you is `nearone/mpc-node-gcp:abc..`
+* Download the image to some local machine via the command:
+  `docker pull nearone/mpc-node-gcp:abc..`
+* Retrieve the image hash via
+  * `docker inspect nearone/mpc-node-gcp:abc | grep "Id":`
+* Check that you got `"Id":"xyz…"`, that matches the hash you voted for.
+
+## Launcher / CVM Upgrade
+
+Launcher or CVM upgrades are less frequent than MPC node upgrades. Unlike MPC node upgrades, changing the launcher image or OS measurements affects the sealing key derivation, which means existing encrypted key shares **cannot** be decrypted by the new CVM. This requires deploying a new CVM and migrating key shares from the old one.
+
+For full design details, see the [CVM Upgrades section in the TEE design doc](securing-mpc-with-tee-design-doc.md#cvm-upgrades).
+
+**Steps:**
+
+1. Verify the new launcher image hash and/or OS measurements.
+2. Participants vote to approve the new launcher image hash and/or OS measurements.
+3. Operator deploys a new CVM with the new launcher image and/or OS.
+4. Operator migrates key shares from the old CVM to the new one using the [migration service](node-migration-guide.md).
+5. After all operators have migrated, participants vote to remove the old launcher hash and/or OS measurements.
+
+### Launcher image voting
+
+#### Launcher image/code inspection
+
+TBD - add launcher image verification steps.
+
+#### Adding a launcher image hash
+
+Requires a threshold of participants to vote.
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_add_launcher_hash \
+  json-args '{"launcher_hash": "<LAUNCHER_IMAGE_HASH>"}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+#### Removing a launcher image hash
+
+Requires **all** participants to vote. The last launcher hash cannot be removed.
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_remove_launcher_hash \
+  json-args '{"launcher_hash": "<LAUNCHER_IMAGE_HASH>"}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+#### Query allowed launcher image hashes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  allowed_launcher_image_hashes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+#### Query launcher hash votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  launcher_hash_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+### OS measurement voting
+
+OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Participants can vote to approve new measurement sets, enabling OS/Dstack upgrades without contract redeployment.
+
+#### Adding an OS measurement
+
+Requires a threshold of participants to vote.
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_add_os_measurement \
+  json-args '{"measurement": {"mrtd": "<hex>", "rtmr0": "<hex>", "rtmr1": "<hex>", "rtmr2": "<hex>", "key_provider_event_digest": "<hex>"}}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+#### Removing an OS measurement
+
+Requires **all** participants to vote. The last measurement cannot be removed.
+
+```bash
+near contract call-function as-transaction \
+  v1.signer-prod.testnet \
+  vote_remove_os_measurement \
+  json-args '{"measurement": {"mrtd": "<hex>", "rtmr0": "<hex>", "rtmr1": "<hex>", "rtmr2": "<hex>", "key_provider_event_digest": "<hex>"}}' \
+  prepaid-gas '100.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as <your-account-id> \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+#### Query allowed OS measurements
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  allowed_os_measurements \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+#### Query OS measurement votes
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  os_measurement_votes \
+  json-args '{}' \
+  network-config testnet \
+  now
+```
+
+### Deploy new CVM and migrate key shares
+
+After the new launcher hash and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
+
+For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](migration-service.md).
+
+### Remove old launcher hash / OS measurements
+
+After all operators have migrated to the new CVM, participants should vote to remove the old launcher hash using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
 
 ## Updating the CVM `user-config.conf` with new registry information
 

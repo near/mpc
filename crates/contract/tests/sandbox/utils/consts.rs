@@ -1,15 +1,15 @@
 use std::time::Duration;
 
-use mpc_contract::primitives::domain::SignatureScheme;
+use mpc_contract::primitives::domain::Curve;
 use near_sdk::{Gas, NearToken};
 
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
-pub const ALL_SIGNATURE_SCHEMES: &[SignatureScheme; 4] = &[
-    SignatureScheme::Secp256k1,
-    SignatureScheme::Ed25519,
-    SignatureScheme::Bls12381,
-    SignatureScheme::V2Secp256k1,
+pub const ALL_CURVES: &[Curve; 4] = &[
+    Curve::Secp256k1,
+    Curve::Ed25519,
+    Curve::Bls12381,
+    Curve::V2Secp256k1,
 ];
 
 /* --- Gas constants --- */
@@ -39,7 +39,7 @@ pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 /// Maximum gas expected for the threshold vote that triggers the contract update.
 /// This vote is more expensive because it deploys the new contract code and executes
 /// the migration function.
-pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(166);
+pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(178);
 
 /* --- Deposit constants --- */
 /// This is the current deposit required for a contract deploy. This is subject to change but make
@@ -47,6 +47,6 @@ pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(166);
 /// not be getting that big.
 ///
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(14000);
+pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(15000);
 
 pub const DEFAULT_MAX_TIMEOUT_TX_INCLUDED: Duration = Duration::from_secs(3);

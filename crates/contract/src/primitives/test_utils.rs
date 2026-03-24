@@ -1,6 +1,4 @@
-use super::domain::{
-    infer_purpose_from_scheme, DomainConfig, DomainId, DomainRegistry, SignatureScheme,
-};
+use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -12,24 +10,25 @@ use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
+// Re-export for convenience
 
-const ALL_PROTOCOLS: [SignatureScheme; 4] = [
-    SignatureScheme::Secp256k1,
-    SignatureScheme::Ed25519,
-    SignatureScheme::Bls12381,
-    SignatureScheme::V2Secp256k1,
+const ALL_CURVES: [Curve; 4] = [
+    Curve::Secp256k1,
+    Curve::Ed25519,
+    Curve::Bls12381,
+    Curve::V2Secp256k1,
 ];
-pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
+pub const NUM_CURVES: usize = ALL_CURVES.len();
 
-/// Generates a valid DomainRegistry with various signature schemes, with num_domains total.
+/// Generates a valid DomainRegistry with various curves, with num_domains total.
 pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
     for i in 0..num_domains {
-        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
+        let curve = ALL_CURVES[i % ALL_CURVES.len()];
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
-            scheme,
-            purpose: infer_purpose_from_scheme(scheme),
+            curve,
+            purpose: infer_purpose_from_curve(curve),
         });
     }
     DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
@@ -39,11 +38,11 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
 pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<DomainConfig> {
     let mut new_domains = Vec::new();
     for i in 0..num_domains {
-        let scheme = ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()];
+        let curve = ALL_CURVES[i % ALL_CURVES.len()];
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
-            scheme,
-            purpose: infer_purpose_from_scheme(scheme),
+            curve,
+            purpose: infer_purpose_from_curve(curve),
         });
     }
     new_domains
@@ -68,9 +67,9 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     }
 }
 
-pub fn bogus_ed25519_public_key() -> contract_interface::types::Ed25519PublicKey {
+pub fn bogus_ed25519_public_key() -> near_mpc_contract_interface::types::Ed25519PublicKey {
     let (_, compressed_edwards_point) = gen_random_edwards_point();
-    contract_interface::types::Ed25519PublicKey::from(compressed_edwards_point)
+    near_mpc_contract_interface::types::Ed25519PublicKey::from(compressed_edwards_point)
 }
 
 pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
@@ -146,4 +145,13 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
     ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+}
+
+/// Infer a default purpose from the curve.
+/// Used during migration from old state that lacks the `purpose` field.
+pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
+    match curve {
+        Curve::Bls12381 => DomainPurpose::CKD,
+        _ => DomainPurpose::Sign,
+    }
 }

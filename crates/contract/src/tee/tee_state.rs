@@ -1,7 +1,11 @@
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
+    tee::measurements::{
+        AllowedMeasurements, ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
+    },
     tee::proposal::{
-        AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
+        AllowedDockerImageHashes, AllowedLauncherImages, AllowedMpcDockerImage, CodeHashesVotes,
+        LauncherHashVotes, LauncherVoteAction, NodeImageHash,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -9,7 +13,7 @@ use mpc_attestation::{
     attestation::{self, Attestation, VerifiedAttestation},
     report_data::{ReportData, ReportDataV1},
 };
-use mpc_primitives::hash::LauncherDockerComposeHash;
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_account_id::AccountId;
 use near_sdk::{env, near};
 use std::{
@@ -98,12 +102,15 @@ pub(crate) struct NodeAttestation {
 )]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
-    pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+    pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: CodeHashesVotes,
+    pub(crate) launcher_votes: LauncherHashVotes,
     /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
     /// Attestations are stored for any valid participant that has submitted one, not
     /// just for the currently active participants.
     pub(crate) stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
+    pub(crate) allowed_measurements: AllowedMeasurements,
+    pub(crate) measurement_votes: MeasurementVotes,
 }
 
 impl TeeState {
@@ -151,8 +158,8 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         // Convert TLS public key
-        let tls_public_key: contract_interface::types::Ed25519PublicKey =
-            contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
+        let tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey =
+            near_mpc_contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
                 .map_err(|_| AttestationSubmissionError::InvalidTlsKey)?;
 
         // Convert account public key if available
@@ -163,9 +170,9 @@ impl TeeState {
         //
         // TODO(#823): Remove this fallback once all MPC nodes are required
         //             to run inside a TEE and provide a valid account_public_key.
-        let account_public_key: Option<contract_interface::types::Ed25519PublicKey> =
+        let account_public_key: Option<near_mpc_contract_interface::types::Ed25519PublicKey> =
             match node_id.account_public_key.as_ref() {
-                Some(pk) => contract_interface::types::Ed25519PublicKey::try_from(pk).ok(),
+                Some(pk) => near_mpc_contract_interface::types::Ed25519PublicKey::try_from(pk).ok(),
                 None => None,
             };
 
@@ -177,12 +184,13 @@ impl TeeState {
         let expected_report_data: ReportData =
             ReportDataV1::new(*tls_public_key.as_bytes(), account_key_bytes).into();
 
+        let accepted_measurements = self.get_accepted_measurements();
         let verified_attestation = attestation.verify(
             expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
-            &self.allowed_launcher_compose_hashes,
-            mpc_attestation::attestation::default_measurements(),
+            &self.get_allowed_launcher_compose_hashes(),
+            &accepted_measurements,
         )?;
 
         let tls_pk = node_id.tls_public_key.clone();
@@ -209,7 +217,8 @@ impl TeeState {
     ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes =
             self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
-        let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
+        let allowed_launcher_compose_hashes = self.get_allowed_launcher_compose_hashes();
+        let allowed_measurements = self.get_accepted_measurements();
 
         let participant_attestation = self.stored_attestations.get(&node_id.tls_public_key);
         let Some(participant_attestation) = participant_attestation else {
@@ -221,7 +230,8 @@ impl TeeState {
         match participant_attestation.verified_attestation.re_verify(
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
-            allowed_launcher_compose_hashes,
+            &allowed_launcher_compose_hashes,
+            &allowed_measurements,
         ) {
             Ok(()) => TeeQuoteStatus::Valid,
             Err(err) => TeeQuoteStatus::Invalid(err.to_string()),
@@ -280,16 +290,16 @@ impl TeeState {
 
     pub fn vote(
         &mut self,
-        code_hash: MpcDockerImageHash,
+        code_hash: NodeImageHash,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
-        self.votes.vote(code_hash.clone(), participant)
+        self.votes.vote(code_hash, participant)
     }
 
     pub fn get_allowed_mpc_docker_image_hashes(
         &self,
         tee_upgrade_deadline_duration: Duration,
-    ) -> Vec<MpcDockerImageHash> {
+    ) -> Vec<NodeImageHash> {
         self.get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
             .into_iter()
             .map(|entry| entry.image_hash)
@@ -306,19 +316,94 @@ impl TeeState {
 
     pub fn whitelist_tee_proposal(
         &mut self,
-        tee_proposal: MpcDockerImageHash,
+        tee_proposal: NodeImageHash,
         tee_upgrade_deadline_duration: Duration,
     ) {
         self.votes.clear_votes();
-        self.allowed_launcher_compose_hashes.push(
-            AllowedDockerImageHashes::get_docker_compose_hash(tee_proposal.clone()),
-        );
+        // Add compose hashes for the new MPC image across all allowed launcher images
+        self.allowed_launcher_images
+            .add_mpc_image_compose_hashes(&tee_proposal);
         self.allowed_docker_image_hashes
             .insert(tee_proposal, tee_upgrade_deadline_duration);
     }
 
-    /// Removes TEE information for nodes that are not in the provided participants list.
-    /// Used to clean up storage after a resharing concludes.
+    /// Returns all allowed launcher compose hashes (flattened from all allowed launcher images).
+    pub fn get_allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
+        self.allowed_launcher_images.all_compose_hashes()
+    }
+
+    /// Casts a vote for adding or removing a launcher image hash.
+    /// Returns the total number of votes for the same action.
+    pub fn vote_launcher(
+        &mut self,
+        action: LauncherVoteAction,
+        participant: &AuthenticatedParticipantId,
+    ) -> u64 {
+        self.launcher_votes.vote(action, participant)
+    }
+
+    /// Adds a new launcher image to the allowed set, computing compose hashes
+    /// for all currently allowed MPC images. Clears launcher votes.
+    pub fn add_launcher_image(
+        &mut self,
+        launcher_hash: LauncherImageHash,
+        tee_upgrade_deadline_duration: Duration,
+    ) -> bool {
+        self.launcher_votes.clear_votes();
+        let mpc_image_hashes = self
+            .allowed_docker_image_hashes
+            .get_image_hashes(tee_upgrade_deadline_duration);
+        self.allowed_launcher_images
+            .add(launcher_hash, &mpc_image_hashes)
+    }
+
+    /// Removes a launcher image from the allowed set. Clears launcher votes.
+    pub fn remove_launcher_image(&mut self, launcher_hash: &LauncherImageHash) -> bool {
+        self.launcher_votes.clear_votes();
+        self.allowed_launcher_images.remove(launcher_hash)
+    }
+
+    /// Returns all allowed launcher image hashes.
+    pub fn get_allowed_launcher_hashes(&self) -> Vec<LauncherImageHash> {
+        self.allowed_launcher_images.launcher_hashes()
+    }
+
+    /// Casts a vote for adding or removing an OS measurement.
+    /// Returns the total number of votes for the same action.
+    pub fn vote_measurement(
+        &mut self,
+        action: MeasurementVoteAction,
+        participant: &AuthenticatedParticipantId,
+    ) -> u64 {
+        self.measurement_votes.vote(action, participant)
+    }
+
+    /// Adds a new measurement set to the allowed list. Clears measurement votes.
+    pub fn add_measurement(&mut self, measurement: ContractExpectedMeasurements) -> bool {
+        self.measurement_votes.clear_votes();
+        self.allowed_measurements.add(measurement)
+    }
+
+    /// Removes a measurement set from the allowed list. Clears measurement votes.
+    pub fn remove_measurement(&mut self, measurement: &ContractExpectedMeasurements) -> bool {
+        self.measurement_votes.clear_votes();
+        self.allowed_measurements.remove(measurement)
+    }
+
+    /// Returns all allowed OS measurements.
+    pub fn get_allowed_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+        self.allowed_measurements.entries().to_vec()
+    }
+
+    /// Returns accepted measurements for attestation verification.
+    /// Returns the on-chain list as-is (empty list means no measurements are accepted,
+    /// consistent with docker image hashes and launcher hashes).
+    fn get_accepted_measurements(&self) -> Vec<mpc_attestation::attestation::ExpectedMeasurements> {
+        self.allowed_measurements.to_attestation_measurements()
+    }
+
+    /// Removes TEE information and stale votes for nodes that are not in the provided
+    /// participants list. Used to clean up storage after a resharing concludes.
     pub fn clean_non_participants(&mut self, participants: &Participants) {
         // Collect all allowed TLS public keys from current participants
         let active_tls_keys: HashSet<&near_sdk::PublicKey> = participants
@@ -339,6 +424,11 @@ impl TeeState {
         for tls_pk in stale_keys {
             self.stored_attestations.remove(&tls_pk);
         }
+
+        // Remove stale votes from non-participants
+        self.votes = self.votes.get_remaining_votes(participants);
+        self.launcher_votes = self.launcher_votes.get_remaining_votes(participants);
+        self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.
@@ -402,11 +492,14 @@ pub(crate) enum AttestationCheckError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
+    use crate::primitives::test_utils::gen_participant;
     use crate::primitives::test_utils::gen_participants;
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::{Attestation, MockAttestation};
+    use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
@@ -1147,5 +1240,86 @@ mod tests {
             add_participant_result,
             Err(AttestationSubmissionError::InvalidAttestation(_))
         )
+    }
+
+    /// Stale CodeHashesVotes entries from removed participants must not count toward
+    /// quorum after resharing.
+    ///
+    /// Scenario (N=5, T=3):
+    /// 1. P1 and P2 vote for malicious hash before resharing.
+    /// 2. Resharing removes P1 and P2. New set: {P3, P4, P5}.
+    /// 3. clean_non_participants removes stale votes.
+    /// 4. P3 votes for the same hash — only 1 vote, not 3.
+    #[test]
+    fn test_clean_non_participants_removes_stale_votes() {
+        // Build 5 participants
+        let mut all_participants = Participants::new();
+        let mut account_ids = Vec::new();
+        for i in 0..5 {
+            let (account_id, info) = gen_participant(i);
+            account_ids.push(account_id.clone());
+            all_participants.insert(account_id, info).unwrap();
+        }
+
+        let mut tee_state = TeeState::default();
+
+        // P0 and P1 vote for a malicious hash before resharing
+        let malicious_hash = NodeImageHash::from([0xAA; 32]);
+        for account_id in &account_ids[0..2] {
+            let mut ctx = VMContextBuilder::new();
+            ctx.signer_account_id(account_id.clone());
+            testing_env!(ctx.build());
+            let auth_id = AuthenticatedParticipantId::new(&all_participants).unwrap();
+            tee_state.votes.vote(malicious_hash.clone(), &auth_id);
+        }
+        assert_eq!(tee_state.votes.proposal_by_account.len(), 2);
+
+        // Resharing removes P0 and P1. New participant set: {P2, P3, P4}.
+        let new_participants = all_participants.subset(2..5);
+
+        // Clean non-participants (as done by CLEAN_TEE_STATUS after resharing)
+        tee_state.clean_non_participants(&new_participants);
+
+        // Stale votes must be removed
+        assert_eq!(tee_state.votes.proposal_by_account.len(), 0);
+
+        // P2 votes for the same malicious hash — should be only 1 vote, not 3
+        let p2_account = &account_ids[2];
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(p2_account.clone());
+        testing_env!(ctx.build());
+        let auth_id = AuthenticatedParticipantId::new(&new_participants).unwrap();
+        let vote_count = tee_state.votes.vote(malicious_hash.clone(), &auth_id);
+        assert_eq!(vote_count, 1, "Only the fresh vote from P2 should count");
+    }
+
+    /// Verifies that clean_non_participants also removes stale launcher and measurement votes.
+    #[test]
+    fn test_clean_non_participants_removes_stale_launcher_and_measurement_votes() {
+        let mut all_participants = Participants::new();
+        let mut account_ids = Vec::new();
+        for i in 0..3 {
+            let (account_id, info) = gen_participant(i);
+            account_ids.push(account_id.clone());
+            all_participants.insert(account_id, info).unwrap();
+        }
+
+        let mut tee_state = TeeState::default();
+
+        // P0 votes for a launcher hash
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(account_ids[0].clone());
+        testing_env!(ctx.build());
+        let auth_id = AuthenticatedParticipantId::new(&all_participants).unwrap();
+        let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
+        tee_state.launcher_votes.vote(launcher_action, &auth_id);
+
+        assert_eq!(tee_state.launcher_votes.vote_by_account.len(), 1);
+
+        // New participant set excludes P0
+        let new_participants = all_participants.subset(1..3);
+        tee_state.clean_non_participants(&new_participants);
+
+        assert_eq!(tee_state.launcher_votes.vote_by_account.len(), 0);
     }
 }

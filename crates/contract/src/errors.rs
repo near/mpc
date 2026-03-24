@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::primitives::domain::DomainId;
 use crate::primitives::key_state::EpochId;
-use contract_interface::types::ForeignChain;
+use near_mpc_contract_interface::types::ForeignChain;
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -200,9 +200,9 @@ pub enum DomainError {
     InvalidDomains,
     #[error("Domains from keyset do not match the provided domains")]
     DomainsMismatch,
-    #[error("Invalid scheme-purpose combination: scheme {scheme:?} is not compatible with purpose {purpose:?}")]
-    InvalidSchemePurposeCombination {
-        scheme: crate::primitives::domain::SignatureScheme,
+    #[error("Invalid curve-purpose combination: curve {curve:?} is not compatible with purpose {purpose:?}")]
+    InvalidCurvePurposeCombination {
+        curve: crate::primitives::domain::Curve,
         purpose: crate::primitives::domain::DomainPurpose,
     },
 }

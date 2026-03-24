@@ -60,11 +60,11 @@ several providers to choose from, such as
    until before
    [step 2](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#2-download-or-build-guest-image).
    At this point your current directory should be `WORKING_DIRECTORY_NAME/meta-dstack/build/`.
-   Download the development version of the `0.5.2` by running:
+   Download the development version of the `0.5.7` by running:
 
    ```bash
    # This will download the guest image from the release page.
-   ../build.sh dl -dev 0.5.2
+   ../build.sh dl -dev 0.5.7
    ```
 
 4. Once it's installed you need to run `dstack-vmm` and `dstack-kms`. It's
@@ -117,7 +117,7 @@ several providers to choose from, such as
 3. Fill in the form
 
    - name: `mpc_tee_test` (this parameter can be selected at will)
-   - image: `dstack-dev-0.5.2`
+   - image: `dstack-dev-0.5.7`
    - 8 CPUs
    - 64GiB Memory
    - 200GiB Storage
@@ -188,10 +188,6 @@ several providers to choose from, such as
             - MPC_RESPONDER_ID=$MPC_RESPONDER_ID
             - IMAGE_HASH=$IMAGE_HASH
             - LATEST_ALLOWED_HASH_FILE=/mnt/shared/image-digest.bin
-
-         extra_hosts:
-            - "$MPC_NODE_0"
-            - "$MPC_NODE_1"
 
    volumes:
       mpc-data:

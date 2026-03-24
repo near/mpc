@@ -23,6 +23,15 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo fmt -- --check
 ```
 
+### Updating Snapshots
+```bash
+# We use cargo insta for snapshot testing (.snap files)
+cargo nextest run --cargo-profile=test-release <test_name>  # Run failing test to generate .snap.new
+cargo insta review                                          # Interactively review pending snapshots
+cargo insta accept                                          # Accept all pending snapshots
+# Commit updated .snap files alongside code changes
+```
+
 ### System Tests (pytest)
 ```bash
 cd pytest
@@ -82,6 +91,11 @@ NotInitialized → Running ↔ Initializing/Resharing
 4. Provider acquires triple/presignature, runs FROST protocol
 5. Nodes exchange partial signatures via P2P
 6. Final signature submitted back to contract
+
+## Code Style
+
+### Arithmetic in Tests
+Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
 ## Test Terminology
 
