@@ -4,16 +4,17 @@ use std::process::{Child, Command, Stdio};
 
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
+use near_kit::AccountId;
 use near_mpc_crypto_types::Ed25519PublicKey;
-use near_workspaces::{Account, AccountId};
 use serde::Serialize;
 use serde_json::json;
 
-use crate::near_node::NearNode;
 use crate::port_allocator::E2ePortAllocator;
 
 const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+const LISTEN_BLOCKS_FILE: &str = "listen_blocks";
 
 /// Handle to a running `mpc-node` OS process. Always represents a live process.
 /// Obtained by calling [`MpcNodeSetup::start()`].
@@ -30,13 +31,47 @@ impl MpcNode {
         self.setup
     }
 
-    /// Kill then start. New process, same config and data directory.
-    pub fn restart(self) -> anyhow::Result<MpcNode> {
-        self.kill().start()
+    /// Reference to the underlying setup (config, paths, ports).
+    pub fn setup(&self) -> &MpcNodeSetup {
+        &self.setup
     }
 
-    pub fn is_running(&mut self) -> bool {
-        !matches!(self.process.0.try_wait(), Ok(Some(_)))
+    fn web_address(&self) -> String {
+        format!("127.0.0.1:{}", self.setup.ports.web_ui)
+    }
+
+    /// Scrapes the node's `/metrics` HTTP endpoint and returns the value of
+    /// the named metric, parsed as `i64`. Returns `None` if the metric is not
+    /// found or the node is unreachable.
+    pub async fn get_metric(&self, name: &str) -> anyhow::Result<Option<i64>> {
+        let url = format!("http://{}/metrics", self.web_address());
+        let body = match reqwest::get(&url).await {
+            Ok(resp) => resp.text().await.context("failed to read metrics body")?,
+            Err(_) => return Ok(None),
+        };
+
+        for line in body.lines() {
+            if line.starts_with('#') {
+                continue;
+            }
+            // Match lines like "metric_name <value>" or "metric_name{labels} <value>"
+            let metric_key = line.split([' ', '{']).next().unwrap_or("");
+            if metric_key == name {
+                let value_str = line.rsplit_once(' ').map(|(_, v)| v).unwrap_or("0");
+                if let Ok(v) = value_str.parse::<f64>() {
+                    return Ok(Some(v as i64));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Writes a flag file that controls block ingestion. Requires the
+    /// `network-hardship-simulation` feature on the mpc-node binary.
+    pub fn set_block_ingestion(&self, active: bool) -> anyhow::Result<()> {
+        let path = self.setup.home_dir.join(LISTEN_BLOCKS_FILE);
+        std::fs::write(&path, if active { "true" } else { "false" })
+            .with_context(|| format!("failed to write {}", path.display()))
     }
 }
 
@@ -68,11 +103,14 @@ pub struct MpcNodeSetup {
     ports: NodePorts,
     mpc_contract_id: AccountId,
 
+    // NEAR chain info (from sandbox)
+    chain_id: String,
+    near_genesis_path: PathBuf,
+    near_boot_nodes: String,
+
     // Derived config values
     secret_store_key_hex: String,
     backup_encryption_key_hex: String,
-    near_node_genesis_path: PathBuf,
-    near_node_boot_nodes: String,
     triples_to_buffer: usize,
     presignatures_to_buffer: usize,
 
@@ -82,10 +120,7 @@ pub struct MpcNodeSetup {
 
 impl MpcNodeSetup {
     /// Create a new node setup. Writes config files to disk immediately.
-    pub fn new(args: MpcNodeSetupArgs, near_node: &NearNode) -> anyhow::Result<Self> {
-        let near_node_genesis_path = near_node.genesis_path();
-        let near_node_boot_nodes = near_node.boot_nodes()?;
-
+    pub fn new(args: MpcNodeSetupArgs) -> anyhow::Result<Self> {
         // Deterministic secret keys for each node
         let secret_byte = b'A'
             .checked_add(u8::try_from(args.node_index).context("node_index too large")?)
@@ -111,10 +146,11 @@ impl MpcNodeSetup {
             near_signer_key: args.near_signer_key,
             ports: args.ports,
             mpc_contract_id: args.mpc_contract_id,
+            chain_id: args.chain_id,
+            near_genesis_path: args.near_genesis_path,
+            near_boot_nodes: args.near_boot_nodes,
             secret_store_key_hex,
             backup_encryption_key_hex,
-            near_node_genesis_path,
-            near_node_boot_nodes,
             triples_to_buffer: args.triples_to_buffer,
             presignatures_to_buffer: args.presignatures_to_buffer,
             config_path,
@@ -129,13 +165,43 @@ impl MpcNodeSetup {
     /// The ed25519 public key formatted as `"ed25519:<base58>"`.
     pub fn p2p_public_key_str(&self) -> String {
         String::from(&Ed25519PublicKey::from(
-            &self.p2p_signing_key.verifying_key(),
+            self.p2p_signing_key.verifying_key().to_bytes(),
         ))
     }
 
     /// The P2P URL for this node.
     pub fn p2p_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.ports.p2p)
+    }
+
+    /// The NEAR account ID for this node.
+    pub fn account_id(&self) -> &AccountId {
+        &self.signer_account_id
+    }
+
+    /// Deletes RocksDB files (.sst, MANIFEST, etc.) from the data directory.
+    /// Safe to call because the node is not running.
+    pub fn wipe_db(&self) -> anyhow::Result<()> {
+        let entries = std::fs::read_dir(&self.home_dir)
+            .with_context(|| format!("failed to read dir {}", self.home_dir.display()))?;
+
+        for entry in entries {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+
+            let should_remove = matches!(name.as_ref(), "CURRENT" | "IDENTITY" | "LOCK" | "LOG")
+                || name.starts_with("MANIFEST-")
+                || name.starts_with("OPTIONS-")
+                || name.ends_with(".log")
+                || name.ends_with(".sst");
+
+            if should_remove {
+                std::fs::remove_file(entry.path())
+                    .with_context(|| format!("failed to remove {}", entry.path().display()))?;
+            }
+        }
+        Ok(())
     }
 
     /// Spawn the mpc-node process. Consumes self, returning an MpcNode handle.
@@ -181,8 +247,7 @@ impl MpcNodeSetup {
     }
 
     /// Write `secrets.json` so the node uses our pre-generated keys instead of
-    /// generating random ones. The p2p key must match what was registered on
-    /// the contract, and the near signer key must have an access key on the account.
+    /// generating random ones.
     fn write_secrets_json(&self) -> anyhow::Result<()> {
         let secrets_path = self.home_dir.join("secrets.json");
 
@@ -226,16 +291,16 @@ impl MpcNodeSetup {
                 filter: "debug".to_string(),
             },
             near_init: NearInit {
-                chain_id: "mpc-localnet".to_string(),
-                boot_nodes: self.near_node_boot_nodes.clone(),
-                genesis_path: self.near_node_genesis_path.display().to_string(),
+                chain_id: self.chain_id.clone(),
+                boot_nodes: self.near_boot_nodes.clone(),
+                genesis_path: self.near_genesis_path.display().to_string(),
                 download_genesis: false,
                 rpc_addr: format!("0.0.0.0:{}", self.ports.near_rpc),
                 network_addr: format!("0.0.0.0:{}", self.ports.near_network),
             },
             node: Node {
                 my_near_account_id: signer.clone(),
-                near_responder_account_id: signer,
+                near_responder_account_id: signer.clone(),
                 number_of_responder_keys: 1,
                 web_ui: format!("127.0.0.1:{}", self.ports.web_ui),
                 migration_web_ui: format!("127.0.0.1:{}", self.ports.migration_web_ui),
@@ -285,9 +350,14 @@ pub struct MpcNodeSetupArgs {
     pub near_signer_key: SigningKey,
     pub ports: NodePorts,
     pub mpc_contract_id: AccountId,
-    pub account: Account,
     pub triples_to_buffer: usize,
     pub presignatures_to_buffer: usize,
+    /// Chain ID from the sandbox's genesis.json.
+    pub chain_id: String,
+    /// Path to genesis.json on the host (copied from sandbox container).
+    pub near_genesis_path: PathBuf,
+    /// Boot nodes string: `"ed25519:<pubkey>@127.0.0.1:<port>"`.
+    pub near_boot_nodes: String,
 }
 
 /// Ports allocated for a single MPC node.
@@ -312,6 +382,10 @@ impl NodePorts {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // TODO(#2560): Factor `StartConfig` out of `mpc-node` into a lightweight crate so we
