@@ -233,7 +233,7 @@ dependencies = [
  "either",
  "serde",
  "serde_with",
- "sha2",
+ "sha2 0.10.9",
  "thiserror 2.0.18",
 ]
 
@@ -1004,7 +1004,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sha2",
+ "sha2 0.10.9",
  "test-utils",
  "thiserror 2.0.18",
  "tracing",
@@ -1024,7 +1024,7 @@ dependencies = [
  "node-types",
  "reqwest 0.13.2",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "tempfile",
  "test-utils",
  "time",
@@ -1089,7 +1089,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aeeee1a5defa63cba39097a510dfe63ef53658fc8995202a610f6a8a4d03639"
 dependencies = [
  "attohttpc",
- "dirs",
+ "dirs 4.0.0",
  "rust-ini",
  "serde",
  "serde-xml-rs",
@@ -1228,7 +1228,7 @@ dependencies = [
  "ed25519-dalek",
  "mpc-contract",
  "mpc-node",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-mpc-contract-interface",
  "rand 0.8.5",
  "rand_core 0.6.4",
@@ -1327,6 +1327,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bip39"
+version = "2.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90dbd31c98227229239363921e60fcf5e558e43ec69094d46fc4996f08d1d5bc"
+dependencies = [
+ "bitcoin_hashes",
+ "serde",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1408,6 +1419,15 @@ dependencies = [
  "arrayref",
  "arrayvec",
  "constant_time_eq 0.4.2",
+]
+
+[[package]]
+name = "block-buffer"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4152116fd6e9dadb291ae18fc1ec3575ed6d84c29642d97890f4b4a3417297e4"
+dependencies = [
+ "generic-array",
 ]
 
 [[package]]
@@ -1669,7 +1689,7 @@ dependencies = [
  "indenter",
  "pathdiff",
  "rustc_version 0.4.1",
- "sha2",
+ "sha2 0.10.9",
  "tracing",
 ]
 
@@ -1772,7 +1792,7 @@ dependencies = [
  "base64 0.22.1",
  "derive_more 2.1.1",
  "ed25519-dalek",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-async",
  "near-client",
  "near-crypto 2.11.0-rc.3",
@@ -1857,7 +1877,7 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "sha3",
 ]
 
@@ -2071,7 +2091,7 @@ dependencies = [
  "reqwest 0.13.2",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "tokio",
 ]
 
@@ -2426,6 +2446,16 @@ dependencies = [
  "generic-array",
  "rand_core 0.6.4",
  "typenum",
+]
+
+[[package]]
+name = "crypto-mac"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58bcd97a54c7ca5ce2f6eb16f6bede5b0ab5f0055fedc17d2f0b4466e21671ca"
+dependencies = [
+ "generic-array",
+ "subtle",
 ]
 
 [[package]]
@@ -2831,7 +2861,7 @@ version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
- "block-buffer",
+ "block-buffer 0.10.4",
  "const-oid",
  "crypto-common",
  "subtle",
@@ -2843,7 +2873,16 @@ version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3aa72a6f96ea37bbc5aa912f6788242832f75369bdfdadcb0e38423f100059"
 dependencies = [
- "dirs-sys",
+ "dirs-sys 0.3.7",
+]
+
+[[package]]
+name = "dirs"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+dependencies = [
+ "dirs-sys 0.5.0",
 ]
 
 [[package]]
@@ -2863,8 +2902,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b1d1d91c932ef41c0f2663aa8b0ca0342d444d842c06914aa0a7e352d0bada6"
 dependencies = [
  "libc",
- "redox_users",
+ "redox_users 0.4.6",
  "winapi",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
+dependencies = [
+ "libc",
+ "option-ext",
+ "redox_users 0.5.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2874,7 +2925,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ebda144c4fe02d1f7ea1a7d9641b6fc6b580adcfa024ae48797ecdeb6825b4d"
 dependencies = [
  "libc",
- "redox_users",
+ "redox_users 0.4.6",
  "winapi",
 ]
 
@@ -2932,7 +2983,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "x509-parser 0.16.0",
 ]
 
@@ -2949,7 +3000,7 @@ dependencies = [
  "pkcs8",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -2999,11 +3050,14 @@ dependencies = [
  "bs58 0.5.1",
  "ed25519-dalek",
  "hex",
+ "near-kit",
+ "near-mpc-contract-interface",
  "near-mpc-crypto-types",
- "near-sandbox",
- "near-workspaces",
+ "reqwest 0.13.2",
  "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
  "toml 1.0.6+spec-1.1.0",
  "tracing",
 ]
@@ -3059,7 +3113,7 @@ dependencies = [
  "ed25519",
  "rand_core 0.6.4",
  "serde",
- "sha2",
+ "sha2 0.10.9",
  "signature",
  "subtle",
  "zeroize",
@@ -3623,7 +3677,7 @@ dependencies = [
  "frost-core",
  "frost-rerandomized",
  "rand_core 0.6.4",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -3650,7 +3704,7 @@ dependencies = [
  "frost-rerandomized",
  "k256",
  "rand_core 0.6.4",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -4166,7 +4220,17 @@ version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b5f8eb2ad728638ea2c7d47a21db23b7b58a72ed6a38256b8a1849f15fbbdf7"
 dependencies = [
- "hmac",
+ "hmac 0.12.1",
+]
+
+[[package]]
+name = "hmac"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "deae6d9dbb35ec2c502d62b8f7b1c000a0822c3b0794ba36b3149c0a1c840dff"
+dependencies = [
+ "crypto-mac",
+ "digest 0.9.0",
 ]
 
 [[package]]
@@ -5038,7 +5102,7 @@ dependencies = [
  "elliptic-curve",
  "once_cell",
  "serdect",
- "sha2",
+ "sha2 0.10.9",
  "signature",
 ]
 
@@ -5527,7 +5591,7 @@ dependencies = [
  "mpc-primitives",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "sha3",
  "test-utils",
 ]
@@ -5557,7 +5621,7 @@ dependencies = [
  "mpc-contract",
  "mpc-primitives",
  "near-abi",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-sdk",
@@ -5571,7 +5635,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sha2",
+ "sha2 0.10.9",
  "sha3",
  "signature",
  "test-utils",
@@ -5594,7 +5658,7 @@ dependencies = [
  "futures",
  "hex",
  "mpc-contract",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-crypto 0.28.0",
  "near-jsonrpc-client 0.15.1",
  "near-jsonrpc-primitives 0.28.0",
@@ -5650,7 +5714,7 @@ dependencies = [
  "mpc-contract",
  "mpc-primitives",
  "mpc-tls",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-async",
  "near-client",
  "near-config-utils 2.11.0-rc.3",
@@ -5839,9 +5903,9 @@ dependencies = [
 
 [[package]]
 name = "near-account-id"
-version = "2.5.0"
+version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91f75ff8eee73815c247d0e17f3c0b705f0e993922a5548acd2ad377aeb67fca"
+checksum = "702dbca982e748975658812c7be2ca53211f454137486f98f6cf768934e2cb29"
 dependencies = [
  "borsh",
  "schemars 0.8.22",
@@ -5950,7 +6014,7 @@ dependencies = [
  "num-rational",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "smart-default 0.6.0",
  "time",
  "tracing",
@@ -5975,7 +6039,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "smart-default 0.7.1",
  "time",
  "tracing",
@@ -6000,7 +6064,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "smart-default 0.7.1",
  "time",
  "tracing",
@@ -6195,7 +6259,7 @@ dependencies = [
  "derive_more 2.1.1",
  "ed25519-dalek",
  "hex",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-config-utils 0.34.6",
  "near-schema-checker-lib 0.34.6",
  "near-stdx 0.34.6",
@@ -6220,7 +6284,7 @@ dependencies = [
  "derive_more 2.1.1",
  "ed25519-dalek",
  "hex",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-config-utils 2.11.0-rc.3",
  "near-schema-checker-lib 2.11.0-rc.3",
  "near-stdx 2.11.0-rc.3",
@@ -6242,7 +6306,7 @@ dependencies = [
  "ed25519-dalek",
  "merlin",
  "rand_core 0.6.4",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -6506,11 +6570,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-kit"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "518dc7024a8cbe6eed77bd69ddc073bfcff629c286649a5e6bfcde3a3929a772"
+dependencies = [
+ "base64 0.22.1",
+ "bip39",
+ "borsh",
+ "bs58 0.5.1",
+ "dirs 6.0.0",
+ "ed25519-dalek",
+ "futures",
+ "hex",
+ "k256",
+ "near-account-id 2.6.0",
+ "near-gas",
+ "near-kit-macros",
+ "near-token",
+ "rand 0.8.5",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha2 0.10.9",
+ "sha3",
+ "slipped10",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "near-kit-macros"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "149fb4f24c335dfc4e2c485e74befcc83f75a398c858a7a38fc3f75171b6628a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "near-mainnet-res"
 version = "2.11.0-rc.3"
 source = "git+https://github.com/near/nearcore?tag=2.11.0-rc.3#e14d0211789f7112f4af68110979a5bec36b5933"
 dependencies = [
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-chain-configs 2.11.0-rc.3",
  "near-primitives 2.11.0-rc.3",
  "serde_json",
@@ -6548,7 +6655,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "serde_with",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -6631,7 +6738,7 @@ dependencies = [
  "rayon",
  "reed-solomon-erasure",
  "serde",
- "sha2",
+ "sha2 0.10.9",
  "strum 0.24.1",
  "stun",
  "thiserror 2.0.18",
@@ -6691,7 +6798,7 @@ checksum = "6e1dcbb5276d4c400cb8e897a34aa87d08e0ef05143d4f394ac70257fd066345"
 dependencies = [
  "borsh",
  "enum-map",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-primitives-core 0.34.6",
  "near-schema-checker-lib 0.34.6",
  "num-rational",
@@ -6709,7 +6816,7 @@ source = "git+https://github.com/near/nearcore?tag=2.11.0-rc.3#e14d0211789f7112f
 dependencies = [
  "borsh",
  "enum-map",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-primitives-core 2.11.0-rc.3",
  "near-schema-checker-lib 2.11.0-rc.3",
  "num-rational",
@@ -6876,7 +6983,7 @@ dependencies = [
  "num-rational",
  "serde",
  "serde_repr",
- "sha2",
+ "sha2 0.10.9",
  "thiserror 2.0.18",
 ]
 
@@ -6892,7 +6999,7 @@ dependencies = [
  "bs58 0.4.0",
  "derive_more 2.1.1",
  "enum-map",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-gas",
  "near-schema-checker-lib 0.34.6",
  "near-token",
@@ -6900,7 +7007,7 @@ dependencies = [
  "serde",
  "serde_repr",
  "serde_with",
- "sha2",
+ "sha2 0.10.9",
  "thiserror 2.0.18",
 ]
 
@@ -6915,7 +7022,7 @@ dependencies = [
  "bs58 0.4.0",
  "derive_more 2.1.1",
  "enum-map",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-gas",
  "near-schema-checker-lib 2.11.0-rc.3",
  "near-token",
@@ -6923,7 +7030,7 @@ dependencies = [
  "serde",
  "serde_repr",
  "serde_with",
- "sha2",
+ "sha2 0.10.9",
  "thiserror 2.0.18",
 ]
 
@@ -6937,7 +7044,7 @@ dependencies = [
  "futures",
  "hex",
  "insta",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-async",
  "near-chain-configs 2.11.0-rc.3",
  "near-client",
@@ -6967,7 +7074,7 @@ dependencies = [
  "binary-install",
  "fs4",
  "json-patch 4.1.0",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-token",
  "serde",
  "serde_json",
@@ -7051,7 +7158,7 @@ dependencies = [
  "borsh",
  "bs58 0.5.1",
  "near-abi",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-crypto 0.34.6",
  "near-gas",
  "near-parameters 0.34.6",
@@ -7295,7 +7402,7 @@ dependencies = [
  "ripemd",
  "rustix 1.1.4",
  "serde",
- "sha2",
+ "sha2 0.10.9",
  "sha3",
  "strum 0.24.1",
  "tempfile",
@@ -7339,7 +7446,7 @@ dependencies = [
  "ripemd",
  "rustix 1.1.4",
  "serde",
- "sha2",
+ "sha2 0.10.9",
  "sha3",
  "strum 0.24.1",
  "tempfile",
@@ -7403,13 +7510,12 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bs58 0.5.1",
- "cargo-near-build",
  "chrono",
  "fs2",
  "json-patch 2.0.0",
  "libc",
  "near-abi-client",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-crypto 0.34.6",
  "near-gas",
  "near-jsonrpc-client 0.20.0",
@@ -7421,7 +7527,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -7465,7 +7571,7 @@ dependencies = [
  "anyhow",
  "borsh",
  "bytesize",
- "dirs",
+ "dirs 4.0.0",
  "easy-ext",
  "futures",
  "hex",
@@ -7552,7 +7658,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rayon",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "smallvec",
  "thiserror 2.0.18",
  "tracing",
@@ -7960,6 +8066,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "option-ext"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
 name = "ordered-float"
 version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8135,7 +8247,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest 0.10.7",
- "hmac",
+ "hmac 0.12.1",
 ]
 
 [[package]]
@@ -8209,7 +8321,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89815c69d36021a140146f26659a81d6c2afa33d216d736dd4be5381a7362220"
 dependencies = [
  "pest",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -9014,6 +9126,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_users"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
+dependencies = [
+ "getrandom 0.2.17",
+ "libredox",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "reed-solomon-erasure"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9268,7 +9391,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dd2a808d456c4a54e300a23e9f5a67e122c3024119acbfd73e3bf664491cb2"
 dependencies = [
- "hmac",
+ "hmac 0.12.1",
  "subtle",
 ]
 
@@ -9406,7 +9529,7 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core 0.6.4",
- "sha2",
+ "sha2 0.10.9",
  "signature",
  "spki",
  "subtle",
@@ -9506,7 +9629,7 @@ version = "8.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5bcdef0be6fe7f6fa333b1073c949729274b05f123a0ad7efcb8efd878e5c3b1"
 dependencies = [
- "sha2",
+ "sha2 0.10.9",
  "walkdir",
 ]
 
@@ -9533,7 +9656,7 @@ dependencies = [
  "block_on_proc",
  "cfg-if 1.0.4",
  "hex",
- "hmac",
+ "hmac 0.12.1",
  "http 0.2.12",
  "log",
  "maybe-async",
@@ -9544,7 +9667,7 @@ dependencies = [
  "serde",
  "serde-xml-rs",
  "serde_derive",
- "sha2",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "time",
  "tokio",
@@ -10304,6 +10427,19 @@ dependencies = [
 
 [[package]]
 name = "sha2"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d58a1e1bf39749807d89cf2d98ac2dfa0ff1cb3faa38fbb64dd88ac8013d800"
+dependencies = [
+ "block-buffer 0.9.0",
+ "cfg-if 1.0.4",
+ "cpufeatures",
+ "digest 0.9.0",
+ "opaque-debug",
+]
+
+[[package]]
+name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
@@ -10419,6 +10555,17 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "slipped10"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a45443e66aa5d96db5e02d17db056e1ca970232a4fe73e1f9bc1816d68f4e98"
+dependencies = [
+ "ed25519-dalek",
+ "hmac 0.9.0",
+ "sha2 0.9.9",
+]
 
 [[package]]
 name = "smallvec"
@@ -10817,7 +10964,7 @@ dependencies = [
  "assert_matches",
  "chain-gateway",
  "mpc-primitives",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
  "near-mpc-contract-interface",
  "serde_json",
  "thiserror 2.0.18",
@@ -10897,7 +11044,7 @@ dependencies = [
  "near-mpc-contract-interface",
  "near-sdk",
  "serde",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -10911,7 +11058,7 @@ dependencies = [
  "near-sdk",
  "serde_json",
  "serde_yaml",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -11021,7 +11168,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "serde_with",
- "sha2",
+ "sha2 0.10.9",
  "sha3",
  "subtle",
  "thiserror 2.0.18",
@@ -11627,6 +11774,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "537dd038a89878be9b64dd4bd1b260315c1bb94f4d784956b81e27a088d9a09e"
 
 [[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
 name = "unicode-segmentation"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11736,7 +11892,7 @@ name = "utilities"
 version = "3.7.0"
 dependencies = [
  "near-account-id 1.1.4",
- "near-account-id 2.5.0",
+ "near-account-id 2.6.0",
 ]
 
 [[package]]
@@ -13204,7 +13360,7 @@ dependencies = [
  "displaydoc",
  "flate2",
  "getrandom 0.3.4",
- "hmac",
+ "hmac 0.12.1",
  "indexmap 2.13.0",
  "lzma-rs",
  "memchr",
