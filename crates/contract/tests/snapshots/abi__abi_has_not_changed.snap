@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.6.0",
+    "version": "3.7.0",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -57,6 +57,40 @@ expression: abi
         }
       },
       {
+        "name": "allowed_launcher_image_hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_os_measurements",
+        "doc": " Returns all currently allowed OS measurements.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ContractExpectedMeasurements"
+            }
+          }
+        }
+      },
+      {
         "name": "clean_tee_status",
         "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
         "kind": "call",
@@ -80,6 +114,17 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
+          }
+        }
+      },
+      {
+        "name": "code_hash_votes",
+        "doc": " Returns the current code hash votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/CodeHashesVotes"
           }
         }
       },
@@ -435,6 +480,17 @@ expression: abi
         }
       },
       {
+        "name": "launcher_hash_votes",
+        "doc": " Returns the current launcher hash votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/LauncherHashVotes"
+          }
+        }
+      },
+      {
         "name": "metrics",
         "kind": "view",
         "result": {
@@ -487,6 +543,17 @@ expression: abi
               "maxItems": 2,
               "minItems": 2
             }
+          }
+        }
+      },
+      {
+        "name": "os_measurement_votes",
+        "doc": " Returns the current OS measurement votes, showing each participant's vote.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/MeasurementVotes"
           }
         }
       },
@@ -710,7 +777,7 @@ expression: abi
       },
       {
         "name": "request_app_private_key",
-        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.",
+        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in `AppPublicKeyPV` to support use cases\n where the derived key is intentionally public (no encryption).",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1139,6 +1206,57 @@ expression: abi
         }
       },
       {
+        "name": "vote_add_launcher_hash",
+        "doc": " Vote to add a new launcher image hash to the allowed set. Requires threshold votes.\n When the threshold is reached, compose hashes are automatically derived for all\n currently allowed MPC image hashes.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_add_os_measurement",
+        "doc": " Vote to add a new OS measurement set to the allowed list. Requires threshold votes.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "measurement",
+              "type_schema": {
+                "$ref": "#/definitions/ContractExpectedMeasurements"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_cancel_keygen",
         "doc": " Casts a vote to cancel key generation. Any keys that have already been generated\n are kept and we transition into Running state; remaining domains are permanently deleted.\n Deleted domain IDs cannot be reused again in future calls to vote_add_domains.\n\n A next_domain_id that matches that in the state's domains struct must be passed in. This is\n to prevent stale requests from accidentally cancelling a future key generation state.",
         "kind": "call",
@@ -1268,6 +1386,57 @@ expression: abi
               "name": "public_key",
               "type_schema": {
                 "$ref": "#/definitions/PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_launcher_hash",
+        "doc": " Vote to remove a launcher image hash from the allowed set. Requires ALL participants\n to vote for removal, since this invalidates attestations of nodes running that launcher.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_os_measurement",
+        "doc": " Vote to remove an OS measurement set from the allowed list. Requires ALL participants\n to vote for removal.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "measurement",
+              "type_schema": {
+                "$ref": "#/definitions/ContractExpectedMeasurements"
               }
             }
           ]
@@ -1460,6 +1629,49 @@ expression: abi
         "Bls12381G2PublicKey": {
           "type": "string"
         },
+        "CKDAppPublicKey": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "AppPublicKey"
+              ],
+              "properties": {
+                "AppPublicKey": {
+                  "$ref": "#/definitions/Bls12381G1PublicKey"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "AppPublicKeyPV"
+              ],
+              "properties": {
+                "AppPublicKeyPV": {
+                  "$ref": "#/definitions/CKDAppPublicKeyPV"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "CKDAppPublicKeyPV": {
+          "type": "object",
+          "required": [
+            "pk1",
+            "pk2"
+          ],
+          "properties": {
+            "pk1": {
+              "$ref": "#/definitions/Bls12381G1PublicKey"
+            },
+            "pk2": {
+              "$ref": "#/definitions/Bls12381G2PublicKey"
+            }
+          }
+        },
         "CKDRequest": {
           "type": "object",
           "required": [
@@ -1475,7 +1687,7 @@ expression: abi
               "description": "The app ephemeral public key",
               "allOf": [
                 {
-                  "$ref": "#/definitions/Bls12381G1PublicKey"
+                  "$ref": "#/definitions/CKDAppPublicKey"
                 }
               ]
             },
@@ -1493,13 +1705,13 @@ expression: abi
           ],
           "properties": {
             "app_public_key": {
-              "$ref": "#/definitions/Bls12381G1PublicKey"
+              "$ref": "#/definitions/CKDAppPublicKey"
             },
             "derivation_path": {
               "type": "string"
             },
             "domain_id": {
-              "$ref": "#/definitions/DomainId"
+              "$ref": "#/definitions/DomainId2"
             }
           }
         },
@@ -1528,6 +1740,28 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
+        },
+        "CodeHashesVotes": {
+          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          }
         },
         "Collateral": {
           "type": "object",
@@ -1667,6 +1901,37 @@ expression: abi
             }
           }
         },
+<<<<<<< HEAD
+=======
+        "ContractExpectedMeasurements": {
+          "description": "On-chain representation of expected TDX measurements. Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with contract-compatible serialization (hex strings in JSON, borsh for storage).",
+          "type": "object",
+          "required": [
+            "key_provider_event_digest",
+            "mrtd",
+            "rtmr0",
+            "rtmr1",
+            "rtmr2"
+          ],
+          "properties": {
+            "key_provider_event_digest": {
+              "type": "string"
+            },
+            "mrtd": {
+              "type": "string"
+            },
+            "rtmr0": {
+              "type": "string"
+            },
+            "rtmr1": {
+              "type": "string"
+            },
+            "rtmr2": {
+              "type": "string"
+            }
+          }
+        },
+>>>>>>> origin/main
         "Curve": {
           "description": "Elliptic curve used by a domain. More curves may be added in the future. When adding new curves, both Borsh *and* JSON serialization must be kept compatible.",
           "type": "string",
@@ -1694,7 +1959,7 @@ expression: abi
           }
         },
         "DomainConfig": {
-          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.",
+          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nThe `curve` field is serialized as `\"scheme\"` for backward compatibility with older contract binaries.",
           "type": "object",
           "required": [
             "id",
@@ -2398,6 +2663,108 @@ expression: abi
             },
             "epoch_id": {
               "$ref": "#/definitions/EpochId2"
+            }
+          }
+        },
+        "LauncherHashVotes": {
+          "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
+          "type": "object",
+          "required": [
+            "vote_by_account"
+          ],
+          "properties": {
+            "vote_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/LauncherVoteAction"
+              }
+            }
+          }
+        },
+        "LauncherVoteAction": {
+          "description": "The action a participant is voting for on a launcher image hash.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Add"
+              ],
+              "properties": {
+                "Add": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Remove"
+              ],
+              "properties": {
+                "Remove": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "MeasurementVoteAction": {
+          "description": "The action a participant is voting for on an OS measurement set.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Add"
+              ],
+              "properties": {
+                "Add": {
+                  "$ref": "#/definitions/ContractExpectedMeasurements"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Remove"
+              ],
+              "properties": {
+                "Remove": {
+                  "$ref": "#/definitions/ContractExpectedMeasurements"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "MeasurementVotes": {
+          "description": "Tracks votes for adding or removing OS measurements. Each participant can have at most one active vote at a time.",
+          "type": "object",
+          "required": [
+            "vote_by_account"
+          ],
+          "properties": {
+            "vote_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/MeasurementVoteAction"
+              }
             }
           }
         },
@@ -3605,6 +3972,7 @@ expression: abi
           "required": [
             "expiry_timestamp_seconds",
             "launcher_compose_hash",
+            "measurements",
             "mpc_image_hash"
           ],
           "properties": {
@@ -3619,8 +3987,48 @@ expression: abi
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
+            "measurements": {
+              "description": "The OS measurements that were verified during initial attestation.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/VerifiedMeasurements"
+                }
+              ]
+            },
             "mpc_image_hash": {
               "description": "The digest of the MPC image running.",
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            }
+          }
+        },
+        "VerifiedMeasurements": {
+          "type": "object",
+          "required": [
+            "key_provider_event_digest",
+            "mrtd",
+            "rtmr0",
+            "rtmr1",
+            "rtmr2"
+          ],
+          "properties": {
+            "key_provider_event_digest": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "mrtd": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr0": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr1": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "rtmr2": {
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }

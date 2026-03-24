@@ -550,7 +550,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 #[cfg(test)]
 mod tests {
     use super::{NetworkAPIForRequests, PendingRequests, QueuedRequest};
-    use crate::cli::LogFormat;
     use crate::indexer::types::{ChainCKDRespondArgs, ChainSignatureRespondArgs};
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
@@ -559,7 +558,6 @@ mod tests {
     };
     use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
     use crate::tests::into_participant_ids;
-    use crate::tracing::init_logging;
     use crate::types::{CKDRequest, SignatureRequest};
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::signature::{Payload, Tweak};
@@ -583,10 +581,11 @@ mod tests {
             let request = CKDRequest {
                 id: CryptoHash(rand::random()),
                 receipt_id: CryptoHash(rand::random()),
-                app_public_key:
+                app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
                     "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                         .parse()
                         .unwrap(),
+                ),
                 app_id: [1u8; 32].into(),
                 entropy: [0; 32],
                 timestamp_nanosec: 0,
@@ -676,9 +675,8 @@ mod tests {
         }
     }
 
-    #[test]
+    #[test_log::test]
     fn test_pending_ckd_requests_leader_retry() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -775,9 +773,8 @@ mod tests {
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_pending_signature_requests_leader_retry() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -875,9 +872,8 @@ mod tests {
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_pending_ckd_requests_abort_after_maximum_attempts() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -913,9 +909,8 @@ mod tests {
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_pending_signature_requests_abort_after_maximum_attempts() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -952,9 +947,8 @@ mod tests {
         assert_eq!(pending_requests.get_requests_to_attempt().len(), 0);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_pending_ckd_requests_discard_old_and_non_canonical_requests() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -1032,9 +1026,8 @@ mod tests {
         ));
     }
 
-    #[test]
+    #[test_log::test]
     fn test_pending_signature_requests_discard_old_and_non_canonical_requests() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -1113,9 +1106,8 @@ mod tests {
         ));
     }
 
-    #[test]
+    #[test_log::test]
     fn test_pending_ckd_requests_fallback_leader() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -1196,9 +1188,8 @@ mod tests {
         assert_eq!(to_attempt3[0].request.id, req2.id);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_pending_signature_requests_fallback_leader() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -1280,9 +1271,8 @@ mod tests {
         assert_eq!(to_attempt3[0].request.id, req2.id);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_ckd_request_latency_debug() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
@@ -1325,9 +1315,8 @@ mod tests {
         );
     }
 
-    #[test]
+    #[test_log::test]
     fn test_signature_request_latency_debug() {
-        init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
             into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));

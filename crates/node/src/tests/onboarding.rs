@@ -14,11 +14,11 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use contract_interface::types::Ed25519PublicKey;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
 use mpc_contract::state::ProtocolContractState;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use rand::rngs::OsRng;
 

@@ -11,7 +11,7 @@ use near_account_id::AccountId;
 use near_sdk::env;
 use sha3::{Digest, Sha3_256};
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 // Constant prefix that ensures tweak derivation values are used specifically for
 // near-mpc-recovery with key derivation protocol vX.Y.Z.

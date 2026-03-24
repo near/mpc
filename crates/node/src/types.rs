@@ -7,7 +7,7 @@ use mpc_contract::primitives::{
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 
 pub enum RequestType {
     Signature,
@@ -36,7 +36,7 @@ pub struct CKDRequest {
     pub id: CKDId,
     /// The receipt that generated the ckd request, which can be used to look up on chain.
     pub receipt_id: CryptoHash,
-    pub app_public_key: dtos::Bls12381G1PublicKey,
+    pub app_public_key: dtos::CKDAppPublicKey,
     pub app_id: dtos::CkdAppId,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,

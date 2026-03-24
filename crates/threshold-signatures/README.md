@@ -96,6 +96,7 @@ More details can be found in
 [docs](docs/ecdsa/robust_ecdsa/signing.md).
 
 4) **Signing (online)**: signing is performed in a single round protocol between the signers. More details can be found in [docs](docs/ecdsa/robust_ecdsa/signing.md).
+
 ### Threshold EdDSA Functionalities
 
 The threshold EdDSA scheme is implemented over curve
@@ -124,7 +125,11 @@ The following functionalities are provided:
 
 3) **CKD (online)**: Corresponds to the online signing phase in which the
 signing parties produce a valid BLS signature encrypted with an ElGammal public
-key. More details in
+key. A variant with public verifiability is also provided, where the app public
+key is a pair $(a \cdot G_1, a \cdot G_2)$ instead of a single $G_1$ point,
+enabling the coordinator to verify correctness of the aggregated encrypted
+signature with respect to the MPC network public key without knowing the app's
+secret key. More details in
 [docs](docs/confidential_key_derivation/confidential-key-derivation.md).
 
 ### Comments
@@ -239,4 +244,5 @@ contributors that actively put this together:
 * Bowen Wang
 
 ### External Contributors
+
 [0xsecaas](https://github.com/0xsecaas), [Aditya2274](https://github.com/Aditya2274)

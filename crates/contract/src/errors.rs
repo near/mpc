@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::primitives::domain::DomainId;
 use crate::primitives::key_state::EpochId;
-use contract_interface::types::ForeignChain;
+use near_mpc_contract_interface::types::ForeignChain;
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

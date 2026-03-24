@@ -3,10 +3,10 @@ use crate::{
     sign::NotSet,
 };
 
-use contract_interface::types::{ExtractedValue, Hash256};
+use near_mpc_contract_interface::types::{ExtractedValue, Hash256};
 
 // API types
-pub use contract_interface::types::{
+pub use near_mpc_contract_interface::types::{
     BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations,
     ForeignChainRpcRequest,
 };
@@ -114,7 +114,7 @@ impl ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet> {
 
 #[cfg(test)]
 mod test {
-    use contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
+    use near_mpc_contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
 
     use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
 

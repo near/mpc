@@ -14,15 +14,16 @@ use crate::sandbox::{
     },
 };
 use assert_matches::assert_matches;
-use contract_interface::{method_names, types as dtos};
 use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{infer_purpose_from_curve, Curve, DomainConfig, DomainPurpose},
+        domain::{Curve, DomainConfig, DomainPurpose},
+        test_utils::infer_purpose_from_curve,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
+use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;

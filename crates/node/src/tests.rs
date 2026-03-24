@@ -1,11 +1,13 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
-use contract_interface::types::{
+use blstrs::{G1Projective, G2Projective, Scalar};
+use elliptic_curve::{Field as _, Group as _};
+use mpc_contract::primitives::key_state::Keyset;
+use mpc_contract::state::ProtocolContractState;
+use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
 };
-use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -278,7 +280,11 @@ pub async fn request_signature_and_await_response(
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
         }
+<<<<<<< HEAD
         Curve::Edwards25519 => {
+=======
+        Curve::Ed25519 => {
+>>>>>>> origin/main
             let len = rand::thread_rng().gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
@@ -353,6 +359,41 @@ pub async fn request_ckd_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
+    let app_public_key = near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
+        "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+            .parse()
+            .unwrap(),
+    );
+    do_request_ckd_and_await_response(indexer, user, domain, timeout_sec, app_public_key).await
+}
+
+/// Request a ckd with public verifiability from the indexer and wait for the response.
+/// Returns the time taken to receive the response, or None if timed out.
+pub async fn request_ckd_pv_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    timeout_sec: std::time::Duration,
+) -> Option<std::time::Duration> {
+    let app_sk = Scalar::random(&mut OsRng);
+    let pk1 = G1Projective::generator() * app_sk;
+    let pk2 = G2Projective::generator() * app_sk;
+    let app_public_key = near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV(
+        near_mpc_contract_interface::types::CKDAppPublicKeyPV {
+            pk1: (&pk1).into(),
+            pk2: (&pk2).into(),
+        },
+    );
+    do_request_ckd_and_await_response(indexer, user, domain, timeout_sec, app_public_key).await
+}
+
+async fn do_request_ckd_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    timeout_sec: std::time::Duration,
+    app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey,
+) -> Option<std::time::Duration> {
     assert_matches!(
         domain.curve,
         Curve::Bls12381,
@@ -365,10 +406,7 @@ pub async fn request_ckd_and_await_response(
         entropy: rand::random(),
         timestamp_nanosec: rand::random(),
         request: CKDArgs {
-            app_public_key:
-                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                    .parse()
-                    .unwrap(),
+            app_public_key,
             domain_id: domain.id,
             app_id: [1u8; 32].into(),
         },
@@ -432,7 +470,7 @@ pub async fn request_ckd_and_await_response(
 /// Request a verify foreign tx from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
 // TODO: remove this when tests are added for this functionality
-#[allow(unused)]
+#[expect(unused)]
 pub async fn request_verify_foreign_tx_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,

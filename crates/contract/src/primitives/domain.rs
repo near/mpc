@@ -6,13 +6,25 @@ use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-pub use contract_interface::types::DomainPurpose;
+pub use near_mpc_contract_interface::types::DomainPurpose;
 
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Deref)]
 pub struct DomainId(pub u64);
+
+impl From<near_mpc_contract_interface::types::DomainId> for DomainId {
+    fn from(id: near_mpc_contract_interface::types::DomainId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<DomainId> for near_mpc_contract_interface::types::DomainId {
+    fn from(id: DomainId) -> Self {
+        Self(id.0)
+    }
+}
 
 impl Default for DomainId {
     fn default() -> Self {
@@ -52,15 +64,6 @@ impl Default for Curve {
     }
 }
 
-/// Infer a default purpose from the curve.
-/// Used during migration from old state that lacks the `purpose` field.
-pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
-    match curve {
-        Curve::Bls12381 => DomainPurpose::CKD,
-        _ => DomainPurpose::Sign,
-    }
-}
-
 /// Returns whether the given curve is valid for the given purpose.
 pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool {
     matches!(
@@ -74,37 +77,16 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 }
 
 /// Describes the configuration of a domain: the domain ID and the curve it uses.
+///
+/// The `curve` field is serialized as `"scheme"` for backward compatibility with
+/// older contract binaries.
 #[near(serializers=[borsh, json])]
-#[serde(from = "DomainConfigCompat")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
     #[serde(rename = "scheme")]
     pub curve: Curve,
     pub purpose: DomainPurpose,
-}
-
-/// JSON-only compatibility helper:
-/// old 3.4.x state omitted `purpose`, so we infer it from `curve` when absent.
-#[derive(serde::Deserialize)]
-struct DomainConfigCompat {
-    id: DomainId,
-    #[serde(alias = "scheme")]
-    curve: Curve,
-    #[serde(default)]
-    purpose: Option<DomainPurpose>,
-}
-
-impl From<DomainConfigCompat> for DomainConfig {
-    fn from(value: DomainConfigCompat) -> Self {
-        Self {
-            id: value.id,
-            curve: value.curve,
-            purpose: value
-                .purpose
-                .unwrap_or_else(|| infer_purpose_from_curve(value.curve)),
-        }
-    }
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -267,11 +249,13 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        infer_purpose_from_curve, is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig,
-        DomainId, DomainPurpose, DomainRegistry, Participants,
+        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
+        DomainRegistry, Participants,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
-    use crate::primitives::test_utils::{gen_participant, gen_participants};
+    use crate::primitives::test_utils::{
+        gen_participant, gen_participants, infer_purpose_from_curve,
+    };
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
@@ -419,30 +403,6 @@ pub mod tests {
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.curve, Curve::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
-    }
-
-    #[rstest]
-    #[case(
-        r#"{"id":0,"curve":"Secp256k1"}"#,
-        Curve::Secp256k1,
-        DomainPurpose::Sign
-    )]
-    #[case(r#"{"id":1,"curve":"Bls12381"}"#, Curve::Bls12381, DomainPurpose::CKD)]
-    // Old JSON used "scheme" as the key — verify the alias still works.
-    #[case(
-        r#"{"id":0,"scheme":"Secp256k1"}"#,
-        Curve::Secp256k1,
-        DomainPurpose::Sign
-    )]
-    fn test_deserialization_without_purpose(
-        #[case] json: &str,
-        #[case] expected_curve: Curve,
-        #[case] expected_purpose: DomainPurpose,
-    ) {
-        // Simulates JSON from a 3.4.1 contract that lacks the `purpose` field.
-        let config: DomainConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.curve, expected_curve);
-        assert_eq!(config.purpose, expected_purpose);
     }
 
     #[rstest]

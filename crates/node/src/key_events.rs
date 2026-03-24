@@ -20,9 +20,9 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use contract_interface::types as dtos;
 use mpc_contract::primitives::domain::{Curve, DomainConfig};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
+use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
@@ -211,7 +211,10 @@ async fn resharing_computation_inner(
     let public_key = dtos::PublicKey::from(previous_public_key.clone());
 
     let keyshare_data = match (public_key, domain.curve) {
-        (contract_interface::types::PublicKey::Secp256k1(inner_public_key), Curve::Secp256k1) => {
+        (
+            near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
+            Curve::Secp256k1,
+        ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
@@ -230,7 +233,10 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Secp256k1(res)
         }
-        (contract_interface::types::PublicKey::Secp256k1(inner_public_key), Curve::V2Secp256k1) => {
+        (
+            near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
+            Curve::V2Secp256k1,
+        ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
@@ -249,7 +255,10 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::V2Secp256k1(res)
         }
-        (contract_interface::types::PublicKey::Ed25519(inner_public_key), Curve::Edwards25519) => {
+        (
+            near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),
+            Curve::Ed25519,
+        ) => {
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
@@ -706,7 +715,7 @@ impl KeyEventLeaderClient for Arc<MeshNetworkClient> {
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
@@ -720,7 +729,7 @@ mod tests {
     #[rstest::rstest]
     #[tokio::test(start_paused = true)]
     #[timeout(Duration::from_millis(100))]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     async fn resharing_leader__should_retry_after_timeout_if_computation_is_not_started() {
         // Given
         // Simulate the expired/idle contract state: started=false but ID already

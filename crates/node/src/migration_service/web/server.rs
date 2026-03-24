@@ -218,7 +218,7 @@ mod tests {
     use crate::migration_service::{
         types::MigrationInfo, web::server::spawn_expected_peer_info_monitoring,
     };
-    use contract_interface::types::Ed25519PublicKey;
+    use near_mpc_contract_interface::types::Ed25519PublicKey;
 
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;

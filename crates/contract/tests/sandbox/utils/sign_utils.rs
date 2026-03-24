@@ -3,11 +3,6 @@ use super::shared_key_utils::{
     derive_secret_key_ed25519, derive_secret_key_secp256k1, generate_random_app_public_key,
     DomainKey, SharedSecretKey,
 };
-use contract_interface::method_names::{
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    SIGN,
-};
-use contract_interface::types::{self as dtos};
 use digest::{Digest, FixedOutput};
 use k256::{
     elliptic_curve::{Field as _, Group as _},
@@ -17,12 +12,19 @@ use mpc_contract::{
     crypto_shared::{derive_tweak, kdf::derive_app_id, CKDResponse},
     errors,
     primitives::{
-        ckd::{CKDRequest, CKDRequestArgs},
+        ckd::CKDRequest,
         domain::DomainId,
         signature::{Bytes, Payload, SignatureRequest, YieldIndex},
     },
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names::{
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
+    SIGN,
+};
+use near_mpc_contract_interface::types::{
+    self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
+};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{
@@ -43,6 +45,7 @@ use threshold_signatures::{
 };
 
 #[derive(Debug)]
+#[expect(clippy::large_enum_variant)]
 pub enum DomainResponseTest {
     Sign(SignRequestTest),
     CKD(CKDRequestTest),
@@ -227,8 +230,8 @@ impl CKDRequestTest {
         );
         let args = CKDRequestArgs {
             derivation_path,
-            app_public_key,
-            domain_id,
+            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key),
+            domain_id: domain_id.into(),
         };
 
         CKDRequestTest {
@@ -236,6 +239,27 @@ impl CKDRequestTest {
             args,
         }
     }
+    pub fn new_pv(
+        rng: &mut impl CryptoRngCore,
+        domain_id: DomainId,
+        predecessor_id: &AccountId,
+        sk: &ckd::KeygenOutput,
+    ) -> CKDRequestTest {
+        let derivation_path = gen_ckd_derivation_path(rng);
+        let (request, response) =
+            create_response_ckd_pv(rng, predecessor_id, &domain_id, sk, &derivation_path);
+        let args = CKDRequestArgs {
+            derivation_path,
+            app_public_key: request.app_public_key.clone(),
+            domain_id: domain_id.into(),
+        };
+
+        CKDRequestTest {
+            response: CKDResponseArgs { request, response },
+            args,
+        }
+    }
+
     pub fn request_json_args(&self) -> serde_json::Value {
         serde_json::json!({
             "request": self.args,
@@ -327,6 +351,22 @@ pub async fn submit_ckd_response(
     submit_response(contract, attested_account, RESPOND_CKD, response).await
 }
 
+pub async fn submit_ckd_response_measure_gas(
+    response: &CKDResponseArgs,
+    contract: &Contract,
+    attested_account: &Account,
+) -> anyhow::Result<near_workspaces::types::Gas> {
+    let respond = attested_account
+        .call(contract.id(), RESPOND_CKD)
+        .args_json(response)
+        .max_gas()
+        .transact()
+        .await?;
+    let gas = respond.total_gas_burnt;
+    respond.into_result()?;
+    Ok(gas)
+}
+
 trait ContractQueueRequest: serde::Serialize + Sync {
     async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex>;
 }
@@ -385,7 +425,7 @@ fn create_response_ckd(
     derivation_path: &str,
 ) -> (CKDRequest, CKDResponse) {
     let request = CKDRequest::new(
-        app_public_key.clone(),
+        CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
         *domain_id,
         account_id,
         derivation_path,
@@ -401,6 +441,38 @@ fn create_response_ckd(
     let y = ckd::Scalar::random(OsRng);
     let big_y = ckd::ElementG1::generator() * y;
     let big_c = big_s + app_pk * y;
+
+    let response = CKDResponse {
+        big_y: (&big_y).into(),
+        big_c: (&big_c).into(),
+    };
+    (request, response)
+}
+
+fn create_response_ckd_pv(
+    rng: &mut impl CryptoRngCore,
+    account_id: &AccountId,
+    domain_id: &DomainId,
+    key_package: &KeygenOutput<BLS12381SHA256>,
+    derivation_path: &str,
+) -> (CKDRequest, CKDResponse) {
+    let app_scalar = ckd::Scalar::random(&mut *rng);
+    let app_pk1 = ckd::ElementG1::generator() * app_scalar;
+    let app_pk2 = ckd::ElementG2::generator() * app_scalar;
+    let app_public_key = CKDAppPublicKey::AppPublicKeyPV(CKDAppPublicKeyPV {
+        pk1: dtos::Bls12381G1PublicKey::from(&app_pk1),
+        pk2: dtos::Bls12381G2PublicKey::from(&app_pk2),
+    });
+
+    let request = CKDRequest::new(app_public_key, *domain_id, account_id, derivation_path);
+
+    let app_id = derive_app_id(account_id, derivation_path);
+    let msk = key_package.private_share.to_scalar();
+
+    let big_s = hash_app_id_with_pk(&key_package.public_key, app_id.as_ref()) * msk;
+    let y = ckd::Scalar::random(rng);
+    let big_y = ckd::ElementG1::generator() * y;
+    let big_c = big_s + app_pk1 * y;
 
     let response = CKDResponse {
         big_y: (&big_y).into(),

@@ -1,3 +1,6 @@
+#[macro_use]
+mod macros;
+
 mod crypto;
 pub mod participants;
 
@@ -45,7 +48,7 @@ use serde::{Deserialize, Serialize};
 pub type Scalar<C> = frost_core::Scalar<C>;
 pub type Element<C> = frost_core::Element<C>;
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, ZeroizeOnDrop)]
+#[derive(Clone, Deserialize, Serialize, Eq, PartialEq, ZeroizeOnDrop)]
 #[serde(bound = "C: Ciphersuite")]
 /// Generic type of key pairs
 pub struct KeygenOutput<C: Ciphersuite> {
@@ -53,6 +56,8 @@ pub struct KeygenOutput<C: Ciphersuite> {
     #[zeroize[skip]]
     pub public_key: VerifyingKey<C>,
 }
+
+impl_secret_debug!({C: Ciphersuite} KeygenOutput<C> { show: [public_key], redact: [private_share] });
 
 /// This is a necessary element to be able to derive different keys
 /// from signing shares.

@@ -204,7 +204,7 @@ impl RunningContractState {
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 pub mod running_tests {
     use rstest::rstest;
 

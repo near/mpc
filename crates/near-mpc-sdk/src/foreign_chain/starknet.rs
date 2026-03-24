@@ -3,10 +3,10 @@ use crate::{
     sign::NotSet,
 };
 
-use contract_interface::types::ExtractedValue;
+use near_mpc_contract_interface::types::ExtractedValue;
 
 // API types
-pub use contract_interface::types::{
+pub use near_mpc_contract_interface::types::{
     ForeignChainRpcRequest, StarknetExtractedValue, StarknetExtractor, StarknetFelt,
     StarknetFinality, StarknetRpcRequest, StarknetTxId,
 };
@@ -115,7 +115,7 @@ impl ForeignChainRequestBuilder<BuildableStarknetRequest, NotSet> {
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
-    use contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
+    use near_mpc_contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
 
     use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
 
