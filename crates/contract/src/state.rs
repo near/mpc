@@ -8,7 +8,7 @@ pub mod test_utils;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
-    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    domain::{Curve, DomainConfig, DomainId, DomainRegistry},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
     thresholds::{Threshold, ThresholdParameters},
@@ -168,12 +168,9 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Running))
     }
 
-    pub fn most_recent_domain_for_protocol(
-        &self,
-        signature_scheme: SignatureScheme,
-    ) -> Result<DomainId, Error> {
+    pub fn most_recent_domain_for_curve(&self, curve: Curve) -> Result<DomainId, Error> {
         self.domain_registry()?
-            .most_recent_domain_for_protocol(signature_scheme)
+            .most_recent_domain_for_curve(curve)
             .ok_or_else(|| DomainError::NoSuchDomain.into())
     }
 
