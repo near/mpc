@@ -58,6 +58,8 @@ async fn test_submit_set_value_and_read_back() {
     let deadline = Instant::now() + Duration::from_secs(30);
 
     loop {
+        localnet.assert_nodes_alive();
+
         let result: chain_gateway::types::ObservedState<String> = observer
             .chain_gateway
             .view_method(contract_id.clone(), VIEW_METHOD, &NoArgs {})
@@ -75,4 +77,5 @@ async fn test_submit_set_value_and_read_back() {
         );
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+    localnet.shutdown().await;
 }

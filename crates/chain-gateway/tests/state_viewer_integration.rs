@@ -22,6 +22,7 @@ async fn test_view_method_contract_state() {
         .expect("view call should succeed");
 
     assert_eq!(value.value, DEFAULT_VALUE);
+    localnet.shutdown().await;
 }
 
 /// Checks if viewing an invalid contract method fails
@@ -38,6 +39,7 @@ async fn test_view_method_nonexistent_method_returns_error() {
 
     let err = result.expect_err("calling a nonexistent method should fail");
     assert_matches!(err, ChainGatewayError::ViewError { .. });
+    localnet.shutdown().await;
 }
 
 /// Checks if subscribing to the state succeeds
@@ -46,12 +48,15 @@ async fn test_subscription_receives_initial_value() {
     let localnet = Localnet::new().await;
     let contract_account_id = localnet.contract.account_id.clone();
 
-    let mut sub = localnet
-        .observer
-        .chain_gateway
-        .subscribe_to_contract_method::<String>(contract_account_id, VIEW_METHOD)
-        .await;
+    {
+        let mut sub = localnet
+            .observer
+            .chain_gateway
+            .subscribe_to_contract_method::<String>(contract_account_id, VIEW_METHOD)
+            .await;
 
-    let res = sub.latest().expect("subscription latest should succeed");
-    assert_eq!(res.value, DEFAULT_VALUE);
+        let res = sub.latest().expect("subscription latest should succeed");
+        assert_eq!(res.value, DEFAULT_VALUE);
+    }
+    localnet.shutdown().await;
 }
