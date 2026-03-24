@@ -30,7 +30,7 @@ const VERIFY_TEE_GAS: Gas = Gas::from_teragas(300);
 /// - Subscribes to changes in allowed image and launcher hashes.
 /// - Submits attestations.
 /// - Triggers on-chain re-validation of stored attestations.
-pub struct TeeContext<S: SubmitFunctionCall> {
+pub struct TeeContext<S> {
     /// Contract that manages TEE attestations and allowed hashes.
     governance_contract: AccountId,
     /// Allowed TEE hashes from the governance contract.
