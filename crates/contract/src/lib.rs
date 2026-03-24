@@ -5080,7 +5080,7 @@ mod tests {
         let participant_list = participants.participants();
         let launcher_hash = make_launcher_hash(0xCC);
 
-        assert!(contract.launcher_hash_votes().vote_by_account.is_empty());
+        assert!(contract.launcher_hash_votes().proposal_by_voter.is_empty());
 
         // First vote
         let (account_0, _, _) = &participant_list[0];
@@ -5092,7 +5092,7 @@ mod tests {
             .vote_add_launcher_hash(launcher_hash.clone())
             .expect("vote should succeed");
 
-        let votes = &contract.launcher_hash_votes().vote_by_account;
+        let votes = &contract.launcher_hash_votes().proposal_by_voter;
         assert_eq!(votes.len(), 1);
         let expected_action = LauncherVoteAction::Add(launcher_hash.clone());
         assert!(votes.values().all(|v| *v == expected_action));
@@ -5107,7 +5107,7 @@ mod tests {
             .vote_add_launcher_hash(launcher_hash.clone())
             .expect("vote should succeed");
 
-        let votes = &contract.launcher_hash_votes().vote_by_account;
+        let votes = &contract.launcher_hash_votes().proposal_by_voter;
         assert_eq!(votes.len(), 2);
         assert!(votes.values().all(|v| *v == expected_action));
 
@@ -5122,7 +5122,7 @@ mod tests {
             .expect("vote should succeed");
 
         assert!(
-            contract.launcher_hash_votes().vote_by_account.is_empty(),
+            contract.launcher_hash_votes().proposal_by_voter.is_empty(),
             "votes should be cleared after threshold reached"
         );
     }
@@ -5139,7 +5139,7 @@ mod tests {
         let participant_list = participants.participants();
         let code_hash = NodeImageHash::from([0xAB; 32]);
 
-        assert!(contract.code_hash_votes().proposal_by_account.is_empty());
+        assert!(contract.code_hash_votes().proposal_by_voter.is_empty());
 
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
             testing_env!(VMContextBuilder::new()
@@ -5150,7 +5150,7 @@ mod tests {
                 .vote_code_hash(code_hash.clone())
                 .expect("vote should succeed");
 
-            let votes = &contract.code_hash_votes().proposal_by_account;
+            let votes = &contract.code_hash_votes().proposal_by_voter;
             if i < (threshold - 1) as usize {
                 assert_eq!(votes.len(), i + 1);
                 assert!(votes.values().all(|v| *v == code_hash));
@@ -5469,7 +5469,7 @@ mod tests {
         let measurement = make_measurement(0xCC);
 
         // Initially empty
-        assert!(contract.os_measurement_votes().vote_by_account.is_empty());
+        assert!(contract.os_measurement_votes().proposal_by_voter.is_empty());
 
         // Cast one vote
         let (account_id, _, _) = &participant_list[0];
@@ -5482,8 +5482,8 @@ mod tests {
             .expect("add vote should succeed");
 
         let votes = contract.os_measurement_votes();
-        assert_eq!(votes.vote_by_account.len(), 1);
-        let (_, action) = votes.vote_by_account.iter().next().unwrap();
+        assert_eq!(votes.proposal_by_voter.len(), 1);
+        let (_, action) = votes.proposal_by_voter.iter().next().unwrap();
         assert_eq!(*action, MeasurementVoteAction::Add(measurement));
     }
 

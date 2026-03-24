@@ -1,9 +1,8 @@
 use super::key_state::AuthenticatedParticipantId;
+use super::votes::Votes;
 use crate::errors::{DomainError, Error};
-use crate::primitives::participants::Participants;
 use derive_more::{Deref, From};
-use near_sdk::{log, near};
-use std::collections::BTreeMap;
+use near_sdk::near;
 use std::fmt::Display;
 
 pub use near_mpc_contract_interface::types::DomainPurpose;
@@ -232,66 +231,24 @@ impl DomainRegistry {
 
 /// Tracks votes to add domains. Each participant can at any given time vote for a list of domains
 /// to add.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AddDomainsVotes {
-    pub(crate) proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
-}
-
-impl AddDomainsVotes {
-    /// Votes for the proposal, returning the total number of voters so far who
-    /// have proposed the exact same domains to add.
-    /// If the participant had voted already, this replaces the existing vote.
-    pub fn vote(
-        &mut self,
-        proposal: Vec<DomainConfig>,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .proposal_by_account
-            .insert(participant.clone(), proposal.clone())
-            .is_some()
-        {
-            log!("removed old vote for signer");
-        }
-        let total = self
-            .proposal_by_account
-            .values()
-            .filter(|&prop| prop == &proposal)
-            .count() as u64;
-        log!("total votes for proposal: {}", total);
-        total
-    }
-
-    /// Filters out existing votes no longer in the participant set
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining_votes = self
-            .proposal_by_account
-            .iter()
-            .filter(|&(participant_id, _vote)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
-            .collect();
-        AddDomainsVotes {
-            proposal_by_account: remaining_votes,
-        }
-    }
-}
+pub type AddDomainsVotes = Votes<AuthenticatedParticipantId, Vec<DomainConfig>>;
 
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
-        DomainRegistry, Participants,
+        is_valid_curve_for_purpose, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
     };
+    use crate::primitives::participants::Participants;
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
         gen_participant, gen_participants, infer_purpose_from_curve,
     };
+    use crate::primitives::votes::Votes;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
+
+    type AddDomainsVotes = Votes<AuthenticatedParticipantId, Vec<DomainConfig>>;
 
     #[test]
     fn test_add_domains() {
@@ -522,74 +479,75 @@ pub mod tests {
     }
 
     #[test]
-    fn test_get_remaining_votes_empty_votes() {
+    fn test_retain_empty_votes() {
         // Given
-        let votes = AddDomainsVotes::default();
+        let mut votes = AddDomainsVotes::default();
         let participants = gen_participants(3);
 
         // When
-        let remaining = votes.get_remaining_votes(&participants);
+        votes.retain(|v| participants.is_participant_given_participant_id(&v.get()));
 
         // Then
-        assert_eq!(remaining, AddDomainsVotes::default());
+        assert_eq!(votes, AddDomainsVotes::default());
     }
 
     #[test]
-    fn test_get_remaining_votes_all_voters_still_participants() {
+    fn test_retain_all_voters_still_participants() {
         // Given
         let (participants, auth_ids) = setup_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
-            votes.vote(proposal.clone(), auth_id);
+            votes.vote(auth_id.clone(), proposal.clone());
         }
+        let expected = votes.clone();
 
         // When
-        let remaining = votes.get_remaining_votes(&participants);
+        votes.retain(|v| participants.is_participant_given_participant_id(&v.get()));
 
         // Then
-        assert_eq!(remaining, votes);
+        assert_eq!(votes, expected);
     }
 
     #[test]
-    fn test_get_remaining_votes_some_voters_removed() {
+    fn test_retain_some_voters_removed() {
         // Given
         let (participants, auth_ids) = setup_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
-            votes.vote(proposal.clone(), auth_id);
+            votes.vote(auth_id.clone(), proposal.clone());
         }
 
         // When
         let smaller_participants = participants.subset(0..1);
-        let remaining = votes.get_remaining_votes(&smaller_participants);
+        votes.retain(|v| smaller_participants.is_participant_given_participant_id(&v.get()));
 
         // Then
-        assert_eq!(remaining.proposal_by_account.len(), 1);
-        assert!(remaining.proposal_by_account.contains_key(&auth_ids[0]));
+        assert_eq!(votes.proposal_by_voter.len(), 1);
+        assert!(votes.proposal_by_voter.contains_key(&auth_ids[0]));
     }
 
     #[test]
-    fn test_get_remaining_votes_all_voters_removed() {
+    fn test_retain_all_voters_removed() {
         // Given
         let (_, auth_ids) = setup_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
-            votes.vote(proposal.clone(), auth_id);
+            votes.vote(auth_id.clone(), proposal.clone());
         }
 
         // When
         let empty_participants = gen_participants(0);
-        let remaining = votes.get_remaining_votes(&empty_participants);
+        votes.retain(|v| empty_participants.is_participant_given_participant_id(&v.get()));
 
         // Then
-        assert_eq!(remaining, AddDomainsVotes::default());
+        assert_eq!(votes, AddDomainsVotes::default());
     }
 
     #[test]
-    fn test_get_remaining_votes_preserves_different_proposals() {
+    fn test_retain_preserves_different_proposals() {
         // Given
         let (participants, auth_ids) = setup_participants(3);
         let proposal_a = vec![DomainConfig {
@@ -603,17 +561,17 @@ pub mod tests {
             purpose: DomainPurpose::Sign,
         }];
         let mut votes = AddDomainsVotes::default();
-        votes.vote(proposal_a.clone(), &auth_ids[0]);
-        votes.vote(proposal_b.clone(), &auth_ids[1]);
-        votes.vote(proposal_a.clone(), &auth_ids[2]);
+        votes.vote(auth_ids[0].clone(), proposal_a.clone());
+        votes.vote(auth_ids[1].clone(), proposal_b.clone());
+        votes.vote(auth_ids[2].clone(), proposal_a.clone());
 
         // When
         let subset = participants.subset(0..2);
-        let remaining = votes.get_remaining_votes(&subset);
+        votes.retain(|v| subset.is_participant_given_participant_id(&v.get()));
 
         // Then
-        assert_eq!(remaining.proposal_by_account.len(), 2);
-        assert_eq!(remaining.proposal_by_account[&auth_ids[0]], proposal_a);
-        assert_eq!(remaining.proposal_by_account[&auth_ids[1]], proposal_b);
+        assert_eq!(votes.proposal_by_voter.len(), 2);
+        assert_eq!(votes.proposal_by_voter[&auth_ids[0]], proposal_a);
+        assert_eq!(votes.proposal_by_voter[&auth_ids[1]], proposal_b);
     }
 }

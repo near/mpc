@@ -640,7 +640,7 @@ impl IntoInterfaceType<dtos::ThresholdParametersVotes> for &ThresholdParametersV
     fn into_dto_type(self) -> dtos::ThresholdParametersVotes {
         dtos::ThresholdParametersVotes {
             proposal_by_account: self
-                .proposal_by_account
+                .proposal_by_voter
                 .iter()
                 .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
                 .collect(),
@@ -652,7 +652,7 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     fn into_dto_type(self) -> dtos::AddDomainsVotes {
         dtos::AddDomainsVotes {
             proposal_by_account: self
-                .proposal_by_account
+                .proposal_by_voter
                 .iter()
                 .map(|(participant, domains)| {
                     (

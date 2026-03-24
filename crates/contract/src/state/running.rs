@@ -6,7 +6,7 @@ use crate::primitives::{
     domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     thresholds::ThresholdParameters,
-    votes::ThresholdParametersVotes,
+    votes::{ThresholdParametersVotes, Votes},
 };
 use near_account_id::AccountId;
 use near_sdk::near;
@@ -45,16 +45,19 @@ impl RunningContractState {
         domains: DomainRegistry,
         keyset: Keyset,
         parameters: ThresholdParameters,
-        add_domains_votes: AddDomainsVotes,
+        mut add_domains_votes: AddDomainsVotes,
     ) -> Self {
-        let remaining_add_domain_votes =
-            add_domains_votes.get_remaining_votes(parameters.participants());
+        add_domains_votes.retain(|v| {
+            parameters
+                .participants()
+                .is_participant_given_participant_id(&v.get())
+        });
         RunningContractState {
             domains,
             keyset,
             parameters,
-            parameters_votes: ThresholdParametersVotes::default(),
-            add_domains_votes: remaining_add_domain_votes,
+            parameters_votes: Votes::default(),
+            add_domains_votes,
             previously_cancelled_resharing_epoch_id: None,
         }
     }
@@ -142,16 +145,24 @@ impl RunningContractState {
         // If the signer is not a participant of the current epoch, they can only vote after
         // `threshold` participant of the current epoch have casted their vote to admit them.
         if AuthenticatedAccountId::new(self.parameters.participants()).is_err() {
-            let n_votes = self
-                .parameters_votes
-                .n_votes(proposal, self.parameters.participants());
+            let n_votes =
+                self.parameters_votes
+                    .count_where(proposal, |voter| {
+                        self.parameters
+                            .participants()
+                            .participants()
+                            .iter()
+                            .any(|(acc_id, _, _)| voter.get() == acc_id)
+                    });
             if n_votes < self.parameters.threshold().value() {
                 return Err(VoteError::VoterPending.into());
             }
         }
 
         // finally, vote.
-        let n_votes = self.parameters_votes.vote(proposal, candidate);
+        let n_votes = self
+            .parameters_votes
+            .vote(candidate, proposal.clone());
         Ok(proposal.participants().len() as u64 == n_votes)
     }
 
@@ -177,7 +188,7 @@ impl RunningContractState {
             }
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
-        let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
+        let n_votes = self.add_domains_votes.vote(participant, domains.clone());
         if self.parameters.participants().len() as u64 == n_votes {
             let new_domains = self.domains.add_domains(domains.clone())?;
             Ok(Some(InitializingContractState {
@@ -212,11 +223,10 @@ pub mod running_tests {
         AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
     };
     use crate::primitives::test_utils::{gen_threshold_params, NUM_CURVES};
+    use crate::primitives::votes::Votes;
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
-    use crate::{
-        primitives::votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
-    };
+    use crate::state::test_utils::gen_running_state;
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);
@@ -319,8 +329,8 @@ pub mod running_tests {
             // If there are no domains, we should transition directly to Running with a higher
             // epoch ID, not resharing.
             assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
-            assert_eq!(state.parameters_votes, ThresholdParametersVotes::default());
-            assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
+            assert_eq!(state.parameters_votes, Votes::default());
+            assert_eq!(state.add_domains_votes, Votes::default());
         } else {
             let resharing = resharing.unwrap();
             assert_eq!(
