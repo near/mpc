@@ -27,7 +27,11 @@ fn do_ckd_participant(
     let (norm_big_y, norm_big_c) =
         compute_signature_share(participants, me, key_pair, app_id, app_pk, rng)?;
     let waitpoint = chan.next_waitpoint();
-    chan.send_private(waitpoint, coordinator, &(norm_big_y, norm_big_c))?;
+    chan.send_private(
+        waitpoint,
+        coordinator,
+        &CKDOutput::new(norm_big_y, norm_big_c),
+    )?;
 
     Ok(None)
 }
