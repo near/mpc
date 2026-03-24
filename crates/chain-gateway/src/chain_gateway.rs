@@ -128,21 +128,15 @@ fn run_node(
     home_dir: &Path,
     shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
 ) {
-    {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("tokio runtime must be constructable on startup");
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime must be constructable on startup");
 
-        rt.block_on(async move {
-            let actor_system = ActorSystem::new();
-            let near_node = match nearcore::start_with_config(
-                home_dir,
-                near_config,
-                actor_system.clone(),
-            )
-            .await
-            {
+    rt.block_on(async move {
+        let actor_system = ActorSystem::new();
+        let near_node =
+            match nearcore::start_with_config(home_dir, near_config, actor_system.clone()).await {
                 Ok(node) => node,
                 Err(err) => {
                     let _ = ready_sender.send(Err(ChainGatewayError::StartupFailed {
@@ -152,26 +146,25 @@ fn run_node(
                 }
             };
 
-            let view_client = NearViewClientActorHandle::new(near_node.view_client);
-            let client = NearClientActorHandle::new(near_node.client);
-            let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
+        let view_client = NearViewClientActorHandle::new(near_node.view_client);
+        let client = NearClientActorHandle::new(near_node.client);
+        let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
 
-            let _ = ready_sender.send(Ok(ChainGateway {
-                view_client,
-                client,
-                rpc_handler,
-            }));
+        let _ = ready_sender.send(Ok(ChainGateway {
+            view_client,
+            client,
+            rpc_handler,
+        }));
 
-            match shutdown_receiver.await {
-                Ok(()) => {
-                    tracing::info!("node gracefully shutting down actor system");
-                }
-                _ => {
-                    tracing::info!("shutdown sender was dropped, shutting down actor system");
-                }
+        match shutdown_receiver.await {
+            Ok(()) => {
+                tracing::info!("node gracefully shutting down actor system");
             }
+            _ => {
+                tracing::info!("shutdown sender was dropped, shutting down actor system");
+            }
+        }
 
-            actor_system.stop();
-        });
-    }
+        actor_system.stop();
+    });
 }
