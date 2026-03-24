@@ -77,15 +77,49 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
 
 /// Describes the configuration of a domain: the domain ID and the curve it uses.
 ///
-/// The `curve` field is serialized as `"scheme"` for backward compatibility with
-/// older contract binaries.
+/// JSON deserialization accepts both `"scheme"` (legacy) and `"curve"` (new) field names.
+/// Serialization outputs `"scheme"` for backward compatibility with the current contract.
+/// After 3.8 is released the compat struct should be removed.
 #[near(serializers=[borsh, json])]
+#[serde(from = "DomainConfigCompat", into = "DomainConfigCompat")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
-    #[serde(rename = "scheme")]
     pub curve: Curve,
     pub purpose: DomainPurpose,
+}
+
+/// JSON-only compatibility helper for [`DomainConfig`]:
+/// - Deserializes both `"scheme"` (legacy) and `"curve"` (new) field names.
+/// - Serializes as `"scheme"` for backward compatibility with the current contract.
+///
+/// After 3.8 is released this compat struct should be removed.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DomainConfigCompat {
+    id: DomainId,
+    #[serde(alias = "curve")]
+    scheme: Curve,
+    purpose: DomainPurpose,
+}
+
+impl From<DomainConfigCompat> for DomainConfig {
+    fn from(value: DomainConfigCompat) -> Self {
+        Self {
+            id: value.id,
+            curve: value.scheme,
+            purpose: value.purpose,
+        }
+    }
+}
+
+impl From<DomainConfig> for DomainConfigCompat {
+    fn from(value: DomainConfig) -> Self {
+        Self {
+            id: value.id,
+            scheme: value.curve,
+            purpose: value.purpose,
+        }
+    }
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -395,6 +429,7 @@ pub mod tests {
             curve: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         };
+        // Serializes as "scheme" for backward compat; remove after 3.8 release.
         let json = serde_json::to_string(&domain_config).unwrap();
         assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#);
 
@@ -402,6 +437,32 @@ pub mod tests {
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.curve, Curve::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
+    }
+
+    #[rstest]
+    #[case(
+        r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#,
+        Curve::Secp256k1,
+        DomainPurpose::Sign
+    )]
+    #[case(
+        r#"{"id":3,"curve":"Secp256k1","purpose":"Sign"}"#,
+        Curve::Secp256k1,
+        DomainPurpose::Sign
+    )]
+    #[case(
+        r#"{"id":1,"curve":"Bls12381","purpose":"CKD"}"#,
+        Curve::Bls12381,
+        DomainPurpose::CKD
+    )]
+    fn test_deserialize_scheme_and_curve_keys(
+        #[case] json: &str,
+        #[case] expected_curve: Curve,
+        #[case] expected_purpose: DomainPurpose,
+    ) {
+        let config: DomainConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.curve, expected_curve);
+        assert_eq!(config.purpose, expected_purpose);
     }
 
     #[rstest]

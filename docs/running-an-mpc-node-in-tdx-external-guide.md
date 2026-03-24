@@ -139,7 +139,7 @@ All steps below assume the current user is `mpc` and the current directory is
 
    ```bash
    cd dstack
-   git checkout v0.5.7 # Should point to commit `eb97c56bc8f58dafb57f9cc4ec538a4f00bdb5b6`
+   git checkout v0.5.8 # Should point to commit `368c62e7de5d4016bd75332824aa7f2ef1d7d19e`
 
    cargo build --release -p dstack-vmm -p supervisor
    mkdir -p vmm-data
@@ -188,7 +188,7 @@ EOF
 4. **Download Guest OS images:**
 
    ```bash
-   DSTACK_VERSION=0.5.7
+   DSTACK_VERSION=0.5.8
    wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
    mkdir -p images/
    tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
@@ -252,7 +252,7 @@ Notice that some of the commands require `sudo`, so they cannot be run using the
 > **Important:** The guest OS image that runs inside the CVM must be **identical across all nodes**.  
 > The image is **measured**, and those measurements are **hardcoded in the contract**.
 
-The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.7**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
+The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.8**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
 
 If you need to **verify**, **re-download**, or **rebuild** the image, follow one of the methods below.
 
@@ -263,14 +263,14 @@ If you need to **verify**, **re-download**, or **rebuild** the image, follow one
 Use this method to retrieve the official pre-built image provided by the Dstack project.
 
 ```bash
-DSTACK_VERSION=0.5.7
+DSTACK_VERSION=0.5.8
 wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
 mkdir -p images/
 tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
 rm -f dstack-${DSTACK_VERSION}.tar.gz
 ```
 
-This ensures you are using the verified release image corresponding to version **0.5.7**.
+This ensures you are using the verified release image corresponding to version **0.5.8**.
 
 ---
 
@@ -283,7 +283,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
    ```bash
    git clone https://github.com/Dstack-TEE/meta-dstack.git
    cd meta-dstack/
-   git checkout 1f2c3c73ffb67887c4858ab073b7d74a68686f55
+   git checkout 48dd3df6f443bfe25a65701d4453fb7cf9c3dbb9
    git submodule update --init --recursive
    ```
 
@@ -291,7 +291,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
 
    - **Download the pre-built image (recommended, faster):**
      ```bash
-     ./build.sh dl 0.5.7
+     ./build.sh dl 0.5.8
      ```
 
    - **Build a reproducible image from source (slower, ~1–2 hours):**
@@ -302,7 +302,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
 
 ###### Verification Steps
 
-Run these commands from inside your image folder (e.g., `dstack-0.5.7`).
+Run these commands from inside your image folder (e.g., `dstack-0.5.8`).
 
 **1. Verify file hashes against expected values:**
 
@@ -313,9 +313,9 @@ set -euo pipefail
 # Hard-coded expected hashes
 declare -A EXPECTED
 EXPECTED["ovmf.fd"]="76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0"
-EXPECTED["bzImage"]="bfb747a3649e3dc7f0fc996b8d5f012f72b15de58d1229fa7e1ebc4c5a94a6da"
-EXPECTED["initramfs.cpio.gz"]="da76e309cb8cb03e76f5a98f6f72069d810d1f014b4795b1bc7c11107bf8044d"
-EXPECTED["metadata.json"]="ecca6c433360ed7be97bee73fa554dd34b7f8eadee9f729a0c949ecf4c20d539"
+EXPECTED["bzImage"]="2afe5b0571363fe2278a3438e337630bfeffc74bafba3d116630e2a1ef1805f3"
+EXPECTED["initramfs.cpio.gz"]="1272ab4b10db1933d02a80059fbb94b4be9eb4af8c4f79e739dfc0b0101acc40"
+EXPECTED["metadata.json"]="20fde70b9e4f31ab6ef55d8a5bf33b1734593a9e605982c510c0963d69af075b"
 
 ALL_OK=1
 for FILE in "${!EXPECTED[@]}"; do
@@ -388,7 +388,7 @@ For more details, see the [Dstack attestation guide](https://github.com/Dstack-T
 Build `dstack-mr` docker image:
 
 ```bash
-cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.7
+cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.8
 ```
 
 Create a Dockerfile file with the following contents:
@@ -428,9 +428,9 @@ Run:
 
 ```bash
 docker run --rm \
-  -v "$(pwd)":/dstack-0.5.7 \
+  -v "$(pwd)":/dstack-0.5.8 \
   dstack-mr \
-  measure -c 8 -m 64G /dstack-0.5.7/metadata.json
+  measure -c 8 -m 64G /dstack-0.5.8/metadata.json
 ```
 
 Example output:
@@ -439,8 +439,8 @@ Example output:
 Machine measurements:
 MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
 RTMR0: e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46
-RTMR1: 920eb831509b58bf83a554b5377dd5ce26d3f5182f14d33622ac24c1d343a0fa3c7bde746e55098ca30baf784dfd2556
-RTMR2: 4674857a0f5b090f9203245f55c6516c37f533b362576a505f5b89efa2a28376d6b82e984e41f1f0ebcddfcbeb9581b9
+RTMR1: b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f
+RTMR2: 9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f69041d8264217f3d24541580cf
 ```
 
 ---
@@ -506,7 +506,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    Ensure that the `mr_enclave` matches the expected value:
 
    ```console
-   1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
+   6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
    ```
 
  **Note**: As part of the mutual attestation between the CVM and the key provider, the CVM will check that the key provider’s `mr_enclave` matches the above hash.
@@ -697,7 +697,7 @@ Use the following custom settings for MPC:
    Local 3030:3030: (use public with you want the debug metrics to be available on the internet)  
    Local <dstack_agent_port>:8090: (required for access CVM information and container logs)
 
-7. Key Provider ID: (The MrEnclave for the sgx local key provider) 1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
+7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
 
 ![CVM Web Page](./attachments/VMM_web_page.png)
 

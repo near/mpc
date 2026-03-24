@@ -1956,22 +1956,22 @@ expression: abi
           }
         },
         "DomainConfig": {
-          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nThe `curve` field is serialized as `\"scheme\"` for backward compatibility with older contract binaries.",
+          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nJSON deserialization accepts both `\"scheme\"` (legacy) and `\"curve\"` (new) field names. Serialization outputs `\"scheme\"` for backward compatibility with the current contract. After 3.8 is released the compat struct should be removed.",
           "type": "object",
           "required": [
+            "curve",
             "id",
-            "purpose",
-            "scheme"
+            "purpose"
           ],
           "properties": {
+            "curve": {
+              "$ref": "#/definitions/Curve"
+            },
             "id": {
               "$ref": "#/definitions/DomainId"
             },
             "purpose": {
               "$ref": "#/definitions/DomainPurpose"
-            },
-            "scheme": {
-              "$ref": "#/definitions/Curve"
             }
           }
         },
