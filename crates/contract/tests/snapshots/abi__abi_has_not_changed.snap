@@ -1,5 +1,6 @@
 ---
 source: crates/contract/tests/abi.rs
+assertion_line: 49
 expression: abi
 ---
 {
@@ -124,7 +125,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/CodeHashesVotes"
+            "$ref": "#/definitions/Votes_for_AuthenticatedParticipantId_and_Array_size_32_of_uint8"
           }
         }
       },
@@ -486,7 +487,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/LauncherHashVotes"
+            "$ref": "#/definitions/Votes_for_AuthenticatedParticipantId_and_LauncherVoteAction"
           }
         }
       },
@@ -553,7 +554,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/MeasurementVotes"
+            "$ref": "#/definitions/Votes_for_AuthenticatedParticipantId_and_MeasurementVoteAction"
           }
         }
       },
@@ -1741,28 +1742,6 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
-        "CodeHashesVotes": {
-          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
-              }
-            }
-          }
-        },
         "Collateral": {
           "type": "object",
           "required": [
@@ -2663,21 +2642,6 @@ expression: abi
             }
           }
         },
-        "LauncherHashVotes": {
-          "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/LauncherVoteAction"
-              }
-            }
-          }
-        },
         "LauncherVoteAction": {
           "description": "The action a participant is voting for on a launcher image hash.",
           "oneOf": [
@@ -2749,21 +2713,6 @@ expression: abi
               "additionalProperties": false
             }
           ]
-        },
-        "MeasurementVotes": {
-          "description": "Tracks votes for adding or removing OS measurements. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/MeasurementVoteAction"
-              }
-            }
-          }
         },
         "Metrics": {
           "type": "object",
@@ -4085,6 +4034,58 @@ expression: abi
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse"
+            }
+          }
+        },
+        "Votes_for_AuthenticatedParticipantId_and_Array_size_32_of_uint8": {
+          "description": "Generic vote collection: each voter maps to exactly one proposal.\n\nMethods handle vote replacement, counting (optionally filtered to valid voters), and cleanup. Threshold checking remains at the call site.",
+          "type": "object",
+          "required": [
+            "proposal_by_voter"
+          ],
+          "properties": {
+            "proposal_by_voter": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          }
+        },
+        "Votes_for_AuthenticatedParticipantId_and_LauncherVoteAction": {
+          "description": "Generic vote collection: each voter maps to exactly one proposal.\n\nMethods handle vote replacement, counting (optionally filtered to valid voters), and cleanup. Threshold checking remains at the call site.",
+          "type": "object",
+          "required": [
+            "proposal_by_voter"
+          ],
+          "properties": {
+            "proposal_by_voter": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/LauncherVoteAction"
+              }
+            }
+          }
+        },
+        "Votes_for_AuthenticatedParticipantId_and_MeasurementVoteAction": {
+          "description": "Generic vote collection: each voter maps to exactly one proposal.\n\nMethods handle vote replacement, counting (optionally filtered to valid voters), and cleanup. Threshold checking remains at the call site.",
+          "type": "object",
+          "required": [
+            "proposal_by_voter"
+          ],
+          "properties": {
+            "proposal_by_voter": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/MeasurementVoteAction"
+              }
             }
           }
         },
