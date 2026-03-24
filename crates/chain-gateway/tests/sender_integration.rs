@@ -55,7 +55,7 @@ async fn test_submit_set_value_and_read_back() {
         .expect("submit_function_call_tx should succeed");
 
     // Poll get_value until state reflects the new value.
-    let deadline = Instant::now() + Duration::from_secs(60);
+    let deadline = Instant::now() + Duration::from_secs(30);
 
     loop {
         let result: chain_gateway::types::ObservedState<String> = observer
