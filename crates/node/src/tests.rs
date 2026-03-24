@@ -280,11 +280,7 @@ pub async fn request_signature_and_await_response(
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
         }
-<<<<<<< HEAD
         Curve::Edwards25519 => {
-=======
-        Curve::Ed25519 => {
->>>>>>> origin/main
             let len = rand::thread_rng().gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
