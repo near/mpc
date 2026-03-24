@@ -11,7 +11,7 @@ use crate::{errors::ProtocolError, participants::Participant};
 use serde::{Deserialize, Deserializer, Serialize};
 /// Polynomial structure of non-empty or non-zero coefficients
 /// Represents a polynomial with coefficients in the scalar field of the curve.
-///  TODO(#2582): Derive ZeroizeOnDrop for Polynomial<C> structure in threshold-signatures  
+///  TODO(#2582): Derive `ZeroizeOnDrop` for `Polynomial` structure in threshold-signatures  
 pub struct Polynomial<C: Ciphersuite> {
     /// The coefficients of our polynomial,
     /// The 0 term being the constant term of the polynomial
