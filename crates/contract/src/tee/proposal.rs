@@ -2,7 +2,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::{env::sha256, log, near};
 use std::{collections::BTreeMap, time::Duration};
 
-use crate::primitives::{key_state::AuthenticatedParticipantId, time::Timestamp};
+use crate::primitives::{
+    key_state::AuthenticatedParticipantId, participants::Participants, time::Timestamp,
+};
 
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 
@@ -52,6 +54,21 @@ impl CodeHashesVotes {
     /// Clears all proposals.
     pub fn clear_votes(&mut self) {
         self.proposal_by_account.clear();
+    }
+
+    /// Returns a new `CodeHashesVotes` containing only votes from current participants.
+    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
+        let remaining = self
+            .proposal_by_account
+            .iter()
+            .filter(|(participant_id, _)| {
+                participants.is_participant_given_participant_id(&participant_id.get())
+            })
+            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
+            .collect();
+        CodeHashesVotes {
+            proposal_by_account: remaining,
+        }
     }
 }
 
@@ -105,6 +122,21 @@ impl LauncherHashVotes {
     /// Clears all launcher votes.
     pub fn clear_votes(&mut self) {
         self.vote_by_account.clear();
+    }
+
+    /// Returns a new `LauncherHashVotes` containing only votes from current participants.
+    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
+        let remaining = self
+            .vote_by_account
+            .iter()
+            .filter(|(participant_id, _)| {
+                participants.is_participant_given_participant_id(&participant_id.get())
+            })
+            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
+            .collect();
+        LauncherHashVotes {
+            vote_by_account: remaining,
+        }
     }
 }
 

@@ -5,7 +5,7 @@ use crate::sandbox::{
         SandboxTestSetup,
     },
     utils::{
-        consts::{ALL_SIGNATURE_SCHEMES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
+        consts::{ALL_CURVES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
         interface::{IntoContractType, IntoInterfaceType},
         mpc_contract::get_state,
@@ -18,8 +18,8 @@ use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{DomainConfig, DomainPurpose, SignatureScheme},
-        test_utils::infer_purpose_from_scheme,
+        domain::{Curve, DomainConfig, DomainPurpose},
+        test_utils::infer_purpose_from_curve,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -34,14 +34,14 @@ async fn test_keygen() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let init_state = get_state(&contract).await;
     let ProtocolContractState::Running(ref init_running) = init_state else {
         panic!("expected running state");
     };
     let epoch_id = init_running.keyset.epoch_id;
     let domain_id = init_running.domains.next_domain_id;
-    let scheme = SignatureScheme::Ed25519;
+    let curve = Curve::Ed25519;
 
     // vote to add the domain and verify we enter initializing state
     vote_add_domains(
@@ -49,7 +49,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         &mpc_signer_accounts,
         &[DomainConfig {
             id: domain_id.into(),
-            scheme,
+            curve,
             purpose: DomainPurpose::Sign,
         }],
     )
@@ -62,7 +62,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     assert_eq!(init.domains.next_domain_id, domain_id + 1);
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
-        scheme: scheme.into_interface_type(),
+        scheme: curve.into_interface_type(),
         purpose: Some(dtos::DomainPurpose::Sign),
     };
     let found = init
@@ -112,10 +112,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         found_key,
         near_sdk::PublicKey::try_from(public_key.clone()).unwrap()
     );
-    assert_eq!(
-        running.domains.domains.len(),
-        ALL_SIGNATURE_SCHEMES.len() + 1
-    );
+    assert_eq!(running.domains.domains.len(), ALL_CURVES.len() + 1);
     // assert that the epoch id did not change
     assert_eq!(running.keyset.epoch_id, epoch_id);
 
@@ -138,14 +135,14 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let init_state = get_state(&contract).await;
     let ProtocolContractState::Running(ref init_running) = init_state else {
         panic!("expected running state");
     };
     let epoch_id: u64 = init_running.keyset.epoch_id.0;
     let mut next_domain_id: u64 = init_running.domains.next_domain_id;
-    for scheme in ALL_SIGNATURE_SCHEMES {
+    for curve in ALL_CURVES {
         let threshold = init_running.parameters.threshold.0 as usize;
 
         // vote to start key generation
@@ -154,8 +151,8 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             &mpc_signer_accounts,
             &[DomainConfig {
                 id: next_domain_id.into(),
-                scheme: *scheme,
-                purpose: infer_purpose_from_scheme(*scheme),
+                curve: *curve,
+                purpose: infer_purpose_from_curve(*curve),
             }],
         )
         .await
@@ -166,13 +163,13 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             panic!("expected initializing state");
         };
         assert_eq!(init.domains.next_domain_id, next_domain_id + 1);
-        let expected_purpose = match scheme {
-            SignatureScheme::Bls12381 => dtos::DomainPurpose::CKD,
+        let expected_purpose = match curve {
+            Curve::Bls12381 => dtos::DomainPurpose::CKD,
             _ => dtos::DomainPurpose::Sign,
         };
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
-            scheme: (*scheme).into_interface_type(),
+            scheme: (*curve).into_interface_type(),
             purpose: Some(expected_purpose),
         };
         let found = init
@@ -207,7 +204,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
                 .all(|k| k.domain_id.0 != next_domain_id),
             "No key should be registered for the cancelled domain"
         );
-        assert_eq!(running.domains.domains.len(), ALL_SIGNATURE_SCHEMES.len());
+        assert_eq!(running.domains.domains.len(), ALL_CURVES.len());
 
         // verify that the contract's `public_key` view method fails for the cancelled domain
         let public_key_result = contract
@@ -325,7 +322,7 @@ async fn setup_resharing_state(
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, number_of_participants).await;
+    } = init_env(ALL_CURVES, number_of_participants).await;
 
     let state: ProtocolContractState = get_state(&contract).await;
     let ProtocolContractState::Running(initial_running_state) = state else {
@@ -756,7 +753,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         contract,
         mut mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     let state = get_state(&contract).await;
     let ProtocolContractState::Running(ref running_state) = state else {

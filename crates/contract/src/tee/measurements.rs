@@ -4,7 +4,7 @@ use mpc_primitives::hash::{KeyProviderEventDigestHash, MrtdHash, Rtmr0Hash, Rtmr
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
-use crate::primitives::key_state::AuthenticatedParticipantId;
+use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 
 /// Tracks votes for adding or removing OS measurements.
 /// Each participant can have at most one active vote at a time.
@@ -48,6 +48,21 @@ impl MeasurementVotes {
     /// Clears all measurement votes.
     pub fn clear_votes(&mut self) {
         self.vote_by_account.clear();
+    }
+
+    /// Returns a new `MeasurementVotes` containing only votes from current participants.
+    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
+        let remaining = self
+            .vote_by_account
+            .iter()
+            .filter(|(participant_id, _)| {
+                participants.is_participant_given_participant_id(&participant_id.get())
+            })
+            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
+            .collect();
+        MeasurementVotes {
+            vote_by_account: remaining,
+        }
     }
 }
 
