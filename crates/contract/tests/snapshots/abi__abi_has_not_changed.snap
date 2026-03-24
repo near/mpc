@@ -24,7 +24,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/Hash32"
+              "$ref": "#/definitions/DockerImageHash"
             }
           }
         }
@@ -37,7 +37,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/Hash32"
+              "$ref": "#/definitions/LauncherDockerComposeHash"
             }
           }
         }
@@ -50,7 +50,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/Hash32"
+              "$ref": "#/definitions/LauncherImageHash"
             }
           }
         }
@@ -1194,7 +1194,7 @@ expression: abi
             {
               "name": "launcher_hash",
               "type_schema": {
-                "$ref": "#/definitions/Hash32"
+                "$ref": "#/definitions/LauncherImageHash"
               }
             }
           ]
@@ -1272,7 +1272,7 @@ expression: abi
             {
               "name": "code_hash",
               "type_schema": {
-                "$ref": "#/definitions/Hash32"
+                "$ref": "#/definitions/DockerImageHash"
               }
             }
           ]
@@ -1372,7 +1372,7 @@ expression: abi
             {
               "name": "launcher_hash",
               "type_schema": {
-                "$ref": "#/definitions/Hash32"
+                "$ref": "#/definitions/LauncherImageHash"
               }
             }
           ]
@@ -1709,7 +1709,7 @@ expression: abi
             "proposal_by_account": {
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/Hash32"
+                "$ref": "#/definitions/DockerImageHash"
               }
             }
           }
@@ -1864,19 +1864,19 @@ expression: abi
           ],
           "properties": {
             "key_provider_event_digest": {
-              "$ref": "#/definitions/Hash48"
+              "$ref": "#/definitions/KeyProviderEventDigest"
             },
             "mrtd": {
-              "$ref": "#/definitions/Hash48"
+              "$ref": "#/definitions/MrtdHash"
             },
             "rtmr0": {
-              "$ref": "#/definitions/Hash48"
+              "$ref": "#/definitions/Rtmr0Hash"
             },
             "rtmr1": {
-              "$ref": "#/definitions/Hash48"
+              "$ref": "#/definitions/Rtmr1Hash"
             },
             "rtmr2": {
-              "$ref": "#/definitions/Hash48"
+              "$ref": "#/definitions/Rtmr2Hash"
             }
           }
         },
@@ -1905,6 +1905,12 @@ expression: abi
               "type": "string"
             }
           }
+        },
+        "DockerImageHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "DomainConfig": {
           "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nJSON deserialization accepts both `\"scheme\"` (legacy) and `\"curve\"` (new) field names. Serialization outputs `\"scheme\"` for backward compatibility with the current contract. After 3.8 is released the compat struct should be removed.",
@@ -2260,18 +2266,6 @@ expression: abi
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
-        "Hash32": {
-          "type": "string",
-          "maxLength": 64,
-          "minLength": 64,
-          "pattern": "^[0-9a-fA-F]+$"
-        },
-        "Hash48": {
-          "type": "string",
-          "maxLength": 96,
-          "minLength": 96,
-          "pattern": "^[0-9a-fA-F]+$"
-        },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
@@ -2588,6 +2582,12 @@ expression: abi
             }
           }
         },
+        "KeyProviderEventDigest": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 96,
+          "pattern": "^[0-9a-fA-F]+$"
+        },
         "Keyset": {
           "description": "Represents a key for every domain in a specific epoch.",
           "type": "object",
@@ -2626,6 +2626,12 @@ expression: abi
             }
           }
         },
+        "LauncherDockerComposeHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
+        },
         "LauncherHashVotes": {
           "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
           "type": "object",
@@ -2641,6 +2647,12 @@ expression: abi
             }
           }
         },
+        "LauncherImageHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
+        },
         "LauncherVoteAction": {
           "description": "The action a participant is voting for on a launcher image hash.",
           "oneOf": [
@@ -2651,7 +2663,7 @@ expression: abi
               ],
               "properties": {
                 "Add": {
-                  "$ref": "#/definitions/Hash32"
+                  "$ref": "#/definitions/LauncherImageHash"
                 }
               },
               "additionalProperties": false
@@ -2663,7 +2675,7 @@ expression: abi
               ],
               "properties": {
                 "Remove": {
-                  "$ref": "#/definitions/Hash32"
+                  "$ref": "#/definitions/LauncherImageHash"
                 }
               },
               "additionalProperties": false
@@ -2790,6 +2802,12 @@ expression: abi
               "additionalProperties": false
             }
           ]
+        },
+        "MrtdHash": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 96,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "NodeId": {
           "type": "object",
@@ -3360,6 +3378,24 @@ expression: abi
               "type": "string"
             }
           }
+        },
+        "Rtmr0Hash": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 96,
+          "pattern": "^[0-9a-fA-F]+$"
+        },
+        "Rtmr1Hash": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 96,
+          "pattern": "^[0-9a-fA-F]+$"
+        },
+        "Rtmr2Hash": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 96,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "RunningContractState": {
           "description": "State when the contract is ready for signature operations.",
