@@ -257,7 +257,7 @@ async fn resharing_computation_inner(
         }
         (
             near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),
-            Curve::Ed25519,
+            Curve::Edwards25519,
         ) => {
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare
