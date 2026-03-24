@@ -164,9 +164,7 @@ impl From<ExpectedMeasurements> for ContractExpectedMeasurements {
             rtmr0: Rtmr0Hash::from(m.rtmrs.rtmr0),
             rtmr1: Rtmr1Hash::from(m.rtmrs.rtmr1),
             rtmr2: Rtmr2Hash::from(m.rtmrs.rtmr2),
-            key_provider_event_digest: KeyProviderEventDigest::from(
-                m.key_provider_event_digest,
-            ),
+            key_provider_event_digest: KeyProviderEventDigest::from(m.key_provider_event_digest),
         }
     }
 }
