@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::{ExpectedMeasurements, Measurements};
-use mpc_primitives::hash::{KeyProviderEventDigestHash, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
@@ -154,7 +154,7 @@ pub struct ContractExpectedMeasurements {
     pub rtmr0: Rtmr0Hash,
     pub rtmr1: Rtmr1Hash,
     pub rtmr2: Rtmr2Hash,
-    pub key_provider_event_digest: KeyProviderEventDigestHash,
+    pub key_provider_event_digest: KeyProviderEventDigest,
 }
 
 impl From<ExpectedMeasurements> for ContractExpectedMeasurements {
@@ -164,7 +164,7 @@ impl From<ExpectedMeasurements> for ContractExpectedMeasurements {
             rtmr0: Rtmr0Hash::from(m.rtmrs.rtmr0),
             rtmr1: Rtmr1Hash::from(m.rtmrs.rtmr1),
             rtmr2: Rtmr2Hash::from(m.rtmrs.rtmr2),
-            key_provider_event_digest: KeyProviderEventDigestHash::from(
+            key_provider_event_digest: KeyProviderEventDigest::from(
                 m.key_provider_event_digest,
             ),
         }

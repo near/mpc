@@ -1,15 +1,9 @@
-use mpc_primitives::hash::Hash32;
+use crate::hash::hash_newtype;
 
 pub mod inspector;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BitcoinBlock;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BitcoinTransaction;
-
-pub type BitcoinBlockHash = Hash32<BitcoinBlock>;
-pub type BitcoinTransactionHash = Hash32<BitcoinTransaction>;
+hash_newtype!(BitcoinBlockHash);
+hash_newtype!(BitcoinTransactionHash);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BitcoinExtractedValue {
