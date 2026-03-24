@@ -129,7 +129,7 @@ INTERNAL_STATE_SYNC_PORT=24567
 INTERNAL_MAIN_PORT=80
 INTERNAL_FUTURE_PORT=13001
 
-OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.4}"
+OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.7}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 
@@ -278,9 +278,10 @@ phase_rank() {
     init_args) echo 75 ;;
     near_keys) echo 80 ;;
     near_init) echo 90 ;;
-    near_vote_hash) echo 95 ;;
-    near_vote_launcher_hash) echo 96 ;;
-    near_vote_domain) echo 97 ;;
+    near_vote_hash) echo 93 ;;
+    near_vote_launcher_hash) echo 94 ;;
+    near_vote_measurement) echo 95 ;;
+    near_vote_domain) echo 96 ;;
     near_vote_new_params) echo 98 ;;
     near_vote_new_params_votes) echo 99 ;;
 
@@ -1113,6 +1114,47 @@ vote_add_launcher_hash_threshold() {
 }
 
 
+## Extract OS measurements from a tcb_info JSON file.
+## Outputs a JSON object: {"mrtd":"<hex>","rtmr0":"<hex>","rtmr1":"<hex>","rtmr2":"<hex>","key_provider_event_digest":"<hex>"}
+extract_measurement_from_tcb_info() {
+  local tcb_info_file="$1"
+  if [ ! -f "$tcb_info_file" ]; then
+    err "tcb_info file not found: $tcb_info_file"
+    exit 1
+  fi
+  local mrtd rtmr0 rtmr1 rtmr2 kp_digest
+  mrtd="$(jq -r '.mrtd' "$tcb_info_file")"
+  rtmr0="$(jq -r '.rtmr0' "$tcb_info_file")"
+  rtmr1="$(jq -r '.rtmr1' "$tcb_info_file")"
+  rtmr2="$(jq -r '.rtmr2' "$tcb_info_file")"
+  kp_digest="$(jq -r '.event_log[] | select(.event == "key-provider") | .digest' "$tcb_info_file")"
+
+  if [ -z "$mrtd" ] || [ -z "$rtmr0" ] || [ -z "$rtmr1" ] || [ -z "$rtmr2" ] || [ -z "$kp_digest" ]; then
+    err "Could not extract all measurement fields from $tcb_info_file"
+    exit 1
+  fi
+
+  printf '{"mrtd":"%s","rtmr0":"%s","rtmr1":"%s","rtmr2":"%s","key_provider_event_digest":"%s"}' \
+    "$mrtd" "$rtmr0" "$rtmr1" "$rtmr2" "$kp_digest"
+}
+
+vote_add_os_measurement_threshold() {
+  local threshold="$1"
+  local measurement_json="$2"
+  log "Voting OS measurement with threshold=$threshold"
+  for i in $(seq 0 $((threshold-1))); do
+    local acct
+    acct="$(node_account_for_i "$i")"
+    log "vote_add_os_measurement as $acct"
+    near_tx_retry "vote_add_os_measurement by $acct" \
+       near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_add_os_measurement \
+        json-args "{\"measurement\": $measurement_json}" prepaid-gas '100.0 Tgas' \
+        attached-deposit '0 NEAR' sign-as "$acct" \
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
+    near_sleep "vote_add_os_measurement by $acct"
+  done
+}
+
 vote_add_domains() {
 
   log "Voting add domain from ALL nodes (N=$N) (file=$ADD_DOMAIN_JSON)"
@@ -1552,6 +1594,18 @@ main() {
     log "LAUNCHER_HASH (no prefix): $launcher_hash"
     vote_add_launcher_hash_threshold "$threshold" "$launcher_hash"
     maybe_stop_after_phase near_vote_launcher_hash
+  fi
+
+  if should_run_from_start near_vote_measurement; then
+    pause_phase "NEAR: vote add OS measurements"
+    local tcb_info_dir="$REPO_ROOT/crates/mpc-attestation/assets"
+    for tcb_file in "$tcb_info_dir"/tcb_info*.json; do
+      local measurement_json
+      measurement_json="$(extract_measurement_from_tcb_info "$tcb_file")"
+      log "Voting measurement from $(basename "$tcb_file"): $measurement_json"
+      vote_add_os_measurement_threshold "$threshold" "$measurement_json"
+    done
+    maybe_stop_after_phase near_vote_measurement
   fi
 
   if should_run_from_start near_vote_domain; then

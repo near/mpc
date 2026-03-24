@@ -7,6 +7,7 @@ pub mod transaction_sender;
 pub mod types;
 
 pub use chain_gateway::ChainGateway;
+pub use near_indexer_primitives::types::Gas;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock;

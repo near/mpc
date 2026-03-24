@@ -1,16 +1,14 @@
 use alloc::vec::Vec;
+pub use attestation::attestation::{DstackAttestation, VerificationError};
+pub use attestation::measurements::{ExpectedMeasurements, Measurements};
 use attestation::{
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
-    measurements::Measurements,
     report_data::ReportData,
 };
 
 use include_measurements::include_measurements;
-
-pub use attestation::attestation::{DstackAttestation, VerificationError};
-pub use attestation::measurements::ExpectedMeasurements;
-use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use launcher_interface::MPC_IMAGE_HASH_EVENT;
@@ -30,6 +28,7 @@ pub enum Attestation {
     Mock(MockAttestation),
 }
 
+#[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -53,7 +52,7 @@ pub enum MockAttestation {
     Invalid,
     /// Pass validation depending on the set constraints
     WithConstraints {
-        mpc_docker_image_hash: Option<MpcDockerImageHash>,
+        mpc_docker_image_hash: Option<NodeImageHash>,
         launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
         /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
@@ -66,25 +65,30 @@ pub enum MockAttestation {
     derive(borsh::BorshSchema)
 )]
 pub struct ValidatedDstackAttestation {
-    pub mpc_image_hash: MpcDockerImageHash,
+    pub mpc_image_hash: NodeImageHash,
     pub launcher_compose_hash: LauncherDockerComposeHash,
     // TODO(#1639): This timestamp can not come from the contract,
     // but should be extracted from the certificate itself.
     pub expiry_timestamp_seconds: u64,
+    /// The measurements that were verified during initial attestation.
+    /// Stored so that re-verification can check they are still in the allowed set.
+    pub measurements: ExpectedMeasurements,
 }
 
 impl VerifiedAttestation {
     pub fn re_verify(
         &self,
         timestamp_seconds: u64,
-        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        allowed_measurements: &[ExpectedMeasurements],
     ) -> Result<(), VerificationError> {
         match self {
             Self::Dstack(ValidatedDstackAttestation {
                 mpc_image_hash,
                 launcher_compose_hash,
                 expiry_timestamp_seconds: expiration_timestamp_seconds,
+                measurements,
             }) => {
                 let attestation_has_expired = *expiration_timestamp_seconds < timestamp_seconds;
 
@@ -100,6 +104,8 @@ impl VerifiedAttestation {
                     launcher_compose_hash,
                     allowed_launcher_docker_compose_hashes,
                 )?;
+
+                verify_measurements(measurements, allowed_measurements)?;
 
                 Ok(())
             }
@@ -128,14 +134,14 @@ impl Attestation {
         &self,
         expected_report_data: ReportData,
         current_timestamp_seconds: u64,
-        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<VerifiedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
                 // Makes MPC related attestation verification first
-                let mpc_image_hash: MpcDockerImageHash = {
+                let mpc_image_hash: NodeImageHash = {
                     let mpc_image_hash_payload = &dstack_attestation
                         .tcb_info
                         .get_single_event(MPC_IMAGE_HASH_EVENT)?
@@ -154,7 +160,7 @@ impl Attestation {
                                 "The provided MPC image hash is not 32 bytes".to_string(),
                             )
                         })?;
-                    MpcDockerImageHash::from(mpc_image_hash_bytes)
+                    NodeImageHash::from(mpc_image_hash_bytes)
                 };
 
                 let () = verify_mpc_hash(&mpc_image_hash, allowed_mpc_docker_image_hashes)?;
@@ -175,7 +181,7 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                dstack_attestation.verify(
+                let measurements = dstack_attestation.verify(
                     expected_report_data,
                     current_timestamp_seconds,
                     accepted_measurements,
@@ -188,6 +194,7 @@ impl Attestation {
                     mpc_image_hash,
                     launcher_compose_hash,
                     expiry_timestamp_seconds: expiration_timestamp_seconds,
+                    measurements,
                 }))
             }
             Self::Mock(mock_attestation) => {
@@ -207,8 +214,8 @@ impl Attestation {
 
 /// Verifies MPC node image hash is in allowed list.
 fn verify_mpc_hash(
-    image_hash: &MpcDockerImageHash,
-    allowed_hashes: &[MpcDockerImageHash],
+    image_hash: &NodeImageHash,
+    allowed_hashes: &[NodeImageHash],
 ) -> Result<(), VerificationError> {
     if allowed_hashes.is_empty() {
         return Err(VerificationError::Custom(
@@ -249,9 +256,24 @@ fn verify_launcher_compose_hash(
     Ok(())
 }
 
+fn verify_measurements(
+    measurements: &ExpectedMeasurements,
+    allowed_measurements: &[ExpectedMeasurements],
+) -> Result<(), VerificationError> {
+    if allowed_measurements.is_empty() {
+        return Err(VerificationError::EmptyMeasurementsList);
+    }
+
+    if !allowed_measurements.contains(measurements) {
+        return Err(VerificationError::MeasurementsNotAllowed);
+    }
+
+    Ok(())
+}
+
 pub(crate) fn verify_mock_attestation(
     mock_attestation: &MockAttestation,
-    allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+    allowed_mpc_docker_image_hashes: &[NodeImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     timestamp_seconds: u64,
 ) -> Result<(), VerificationError> {
@@ -314,7 +336,7 @@ mod tests {
 
     #[test]
     fn mock_constrained_verification_passes_if_hash_in_allowed_list() {
-        let allowed_hash = MpcDockerImageHash::from([42; 32]);
+        let allowed_hash = NodeImageHash::from([42; 32]);
 
         let hash_constrained_attestation =
             VerifiedAttestation::Mock(MockAttestation::WithConstraints {
@@ -323,17 +345,17 @@ mod tests {
                 expiry_timestamp_seconds: None,
             });
 
-        let other_hash = MpcDockerImageHash::from([1; 32]);
-        let allowed_mpc_hashes: Vec<MpcDockerImageHash> = vec![other_hash, allowed_hash];
+        let other_hash = NodeImageHash::from([1; 32]);
+        let allowed_mpc_hashes: Vec<NodeImageHash> = vec![other_hash, allowed_hash];
 
         hash_constrained_attestation
-            .re_verify(0, &allowed_mpc_hashes, &[])
+            .re_verify(0, &allowed_mpc_hashes, &[], &[])
             .expect("constrained mpc image hash is allowed and should therefore pass validation");
     }
 
     #[test]
     fn mock_constrained_verification_fails_if_hash_not_in_allowed_list() {
-        let restricted_hash = MpcDockerImageHash::from([42; 32]);
+        let restricted_hash = NodeImageHash::from([42; 32]);
 
         let hash_constrained_attestation =
             VerifiedAttestation::Mock(MockAttestation::WithConstraints {
@@ -342,10 +364,10 @@ mod tests {
                 expiry_timestamp_seconds: None,
             });
 
-        let other_hash = MpcDockerImageHash::from([1; 32]);
-        let allowed_mpc_hashes: Vec<MpcDockerImageHash> = vec![other_hash];
+        let other_hash = NodeImageHash::from([1; 32]);
+        let allowed_mpc_hashes: Vec<NodeImageHash> = vec![other_hash];
 
-        let result = hash_constrained_attestation.re_verify(0, &allowed_mpc_hashes, &[]);
+        let result = hash_constrained_attestation.re_verify(0, &allowed_mpc_hashes, &[], &[]);
 
         match result {
             Err(VerificationError::Custom(msg)) => {
@@ -361,7 +383,7 @@ mod tests {
 
     #[test]
     fn mock_constrained_verification_fails_if_allowed_list_is_empty() {
-        let restricted_hash = MpcDockerImageHash::from([42; 32]);
+        let restricted_hash = NodeImageHash::from([42; 32]);
 
         let hash_constrained_attestation =
             VerifiedAttestation::Mock(MockAttestation::WithConstraints {
@@ -370,9 +392,9 @@ mod tests {
                 expiry_timestamp_seconds: None,
             });
 
-        let allowed_mpc_hashes: Vec<MpcDockerImageHash> = vec![];
+        let allowed_mpc_hashes: Vec<NodeImageHash> = vec![];
 
-        let result = hash_constrained_attestation.re_verify(0, &allowed_mpc_hashes, &[]);
+        let result = hash_constrained_attestation.re_verify(0, &allowed_mpc_hashes, &[], &[]);
 
         match result {
             Err(VerificationError::Custom(msg)) => {
@@ -398,7 +420,7 @@ mod tests {
             vec![other_hash, allowed_hash];
 
         hash_constrained_attestation
-            .re_verify(0, &[], &allowed_launcher_hashes)
+            .re_verify(0, &[], &allowed_launcher_hashes, &[])
             .expect("constrained launcher hash is allowed and should therefore pass validation");
     }
 
@@ -416,7 +438,7 @@ mod tests {
         let other_hash = LauncherDockerComposeHash::from([1; 32]);
         let allowed_launcher_hashes: Vec<LauncherDockerComposeHash> = vec![other_hash];
 
-        let result = hash_constrained_attestation.re_verify(0, &[], &allowed_launcher_hashes);
+        let result = hash_constrained_attestation.re_verify(0, &[], &allowed_launcher_hashes, &[]);
 
         match result {
             Err(VerificationError::Custom(msg)) => {
@@ -439,7 +461,7 @@ mod tests {
             });
 
         time_constrained_attestation
-            .re_verify(time_now, &[], &[])
+            .re_verify(time_now, &[], &[], &[])
             .expect("Attestation is within valid time window and should pass");
     }
 
@@ -455,7 +477,7 @@ mod tests {
                 expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
             });
 
-        let verification_result = time_constrained_attestation.re_verify(time_now, &[], &[]);
+        let verification_result = time_constrained_attestation.re_verify(time_now, &[], &[], &[]);
 
         assert_matches::assert_matches!(
             verification_result,

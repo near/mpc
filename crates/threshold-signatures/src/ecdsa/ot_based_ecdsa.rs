@@ -52,7 +52,7 @@ impl Drop for PresignArguments {
 ///
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
-#[derive(Debug, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct PresignOutput {
     /// The public nonce commitment.
     #[zeroize[skip]]
@@ -62,6 +62,11 @@ pub struct PresignOutput {
     /// Our share of the sigma value.
     pub sigma: Scalar,
 }
+
+impl_secret_debug!(PresignOutput {
+    show: [big_r],
+    redact: [k, sigma]
+});
 
 impl ConstantTimeEq for PresignOutput {
     fn ct_eq(&self, other: &Self) -> Choice {
@@ -79,7 +84,7 @@ impl Eq for PresignOutput {}
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
 /// independently of the message
-#[derive(Debug, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct RerandomizedPresignOutput {
     /// The rerandomized public nonce commitment.
     #[zeroize[skip]]
@@ -89,6 +94,11 @@ pub struct RerandomizedPresignOutput {
     /// Our rerandomized share of the sigma value.
     pub sigma: Scalar,
 }
+
+impl_secret_debug!(RerandomizedPresignOutput {
+    show: [big_r],
+    redact: [k, sigma]
+});
 
 impl RerandomizedPresignOutput {
     pub fn rerandomize_presign(

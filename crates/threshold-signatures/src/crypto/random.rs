@@ -6,8 +6,10 @@ use zeroize::ZeroizeOnDrop;
 use super::constants::RANDOMIZER_LEN;
 
 /// Represents the randomizer used to make a commit hiding.
-#[derive(Clone, Debug, Serialize, Deserialize, derive_more::AsRef, ZeroizeOnDrop)]
+#[derive(Clone, Copy, Serialize, Deserialize, derive_more::AsRef, ZeroizeOnDrop)]
 pub struct Randomness([u8; RANDOMIZER_LEN]);
+
+impl_secret_debug!(Randomness);
 
 impl ConstantTimeEq for Randomness {
     fn ct_eq(&self, other: &Self) -> Choice {

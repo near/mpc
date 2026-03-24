@@ -318,21 +318,21 @@ mod tests {
         let tests: &[(&[u8], &str)] = &[
             (
                 &[0u8; 48],
-                "ScalarWrapper(Scalar(0x0000000000000000000000000000000000000000000000000000000000000000))",
+                "Scalar(0x0000000000000000000000000000000000000000000000000000000000000000)",
             ),
             (
                 b"aaaaaabbbbbbccccccddddddeeeeeeffffffgggggghhhhhh",
-                "ScalarWrapper(Scalar(0x2228450bf55d8fe62395161bd3677ff6fc28e45b89bc87e02a818eda11a8c5da))",
+                "Scalar(0x2228450bf55d8fe62395161bd3677ff6fc28e45b89bc87e02a818eda11a8c5da)",
             ),
             (
                 b"111111222222333333444444555555666666777777888888",
-                "ScalarWrapper(Scalar(0x4aa543cbd2f0c8f37f8a375ce2e383eb343e7e3405f61e438b0a15fb8899d1ae))",
+                "Scalar(0x4aa543cbd2f0c8f37f8a375ce2e383eb343e7e3405f61e438b0a15fb8899d1ae)",
             ),
         ];
         for (input, expected) in tests {
             let output = format!(
                 "{:?}",
-                <ScalarWrapper as FromOkm>::from_okm(GenericArray::from_slice(input))
+                <ScalarWrapper as FromOkm>::from_okm(GenericArray::from_slice(input)).0
             );
             assert_eq!(&output, expected);
         }

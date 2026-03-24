@@ -19,7 +19,7 @@ use crate::{
     crypto_shared::types::PublicKeyExtended,
     errors::{ConversionError, Error},
     primitives::{
-        domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+        domain::{AddDomainsVotes, Curve, DomainConfig, DomainId, DomainRegistry},
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
             KeyForDomain, Keyset,
@@ -207,13 +207,18 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
             VerifiedAttestation::Mock(mock_attestation) => {
                 dtos::VerifiedAttestation::Mock(mock_attestation.into_dto_type())
             }
-            VerifiedAttestation::Dstack(validated_dstack_attestation) => {
+            VerifiedAttestation::Dstack(v) => {
                 dtos::VerifiedAttestation::Dstack(dtos::VerifiedDstackAttestation {
-                    mpc_image_hash: validated_dstack_attestation.mpc_image_hash.into(),
-                    launcher_compose_hash: validated_dstack_attestation
-                        .launcher_compose_hash
-                        .into(),
-                    expiry_timestamp_seconds: validated_dstack_attestation.expiry_timestamp_seconds,
+                    mpc_image_hash: v.mpc_image_hash.into(),
+                    launcher_compose_hash: v.launcher_compose_hash.into(),
+                    expiry_timestamp_seconds: v.expiry_timestamp_seconds,
+                    measurements: dtos::VerifiedMeasurements {
+                        mrtd: v.measurements.rtmrs.mrtd,
+                        rtmr0: v.measurements.rtmrs.rtmr0,
+                        rtmr1: v.measurements.rtmrs.rtmr1,
+                        rtmr2: v.measurements.rtmrs.rtmr2,
+                        key_provider_event_digest: v.measurements.key_provider_event_digest,
+                    },
                 })
             }
         }
@@ -511,13 +516,13 @@ impl IntoInterfaceType<dtos::AuthenticatedAccountId> for &AuthenticatedAccountId
 
 // --- Domain types ---
 
-impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
+impl IntoInterfaceType<dtos::SignatureScheme> for Curve {
     fn into_dto_type(self) -> dtos::SignatureScheme {
         match self {
-            SignatureScheme::Secp256k1 => dtos::SignatureScheme::Secp256k1,
-            SignatureScheme::Ed25519 => dtos::SignatureScheme::Ed25519,
-            SignatureScheme::Bls12381 => dtos::SignatureScheme::Bls12381,
-            SignatureScheme::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
+            Curve::Secp256k1 => dtos::SignatureScheme::Secp256k1,
+            Curve::Ed25519 => dtos::SignatureScheme::Ed25519,
+            Curve::Bls12381 => dtos::SignatureScheme::Bls12381,
+            Curve::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
         }
     }
 }
@@ -526,7 +531,7 @@ impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
     fn into_dto_type(self) -> dtos::DomainConfig {
         dtos::DomainConfig {
             id: self.id.into_dto_type(),
-            scheme: self.scheme.into_dto_type(),
+            scheme: self.curve.into_dto_type(),
             purpose: Some(self.purpose),
         }
     }

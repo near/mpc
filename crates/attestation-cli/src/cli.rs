@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgGroup, Parser};
-use mpc_primitives::hash::MpcDockerImageHash;
+use mpc_primitives::hash::NodeImageHash;
 
 #[derive(Parser)]
 #[command(name = "attestation-cli")]
@@ -18,7 +18,7 @@ pub struct Cli {
 
     /// Allowed MPC Docker image hash (hex-encoded SHA256, repeatable)
     #[arg(long = "allowed-image-hash", required = true)]
-    pub allowed_image_hashes: Vec<MpcDockerImageHash>,
+    pub allowed_image_hashes: Vec<NodeImageHash>,
 
     /// Path to the launcher docker-compose YAML file (SHA256 is computed by the CLI)
     #[arg(long = "launcher-compose-file")]

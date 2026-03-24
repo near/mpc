@@ -89,11 +89,22 @@ jobs:
           ./scripts/build-and-verify-launcher-docker-image.sh
 
   mpc-unittests:
-    name: "Cargo test"
+    name: "Cargo test: ${{ matrix.group }}"
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: "node"
+            nextest-args: "-p mpc-node"
+          - group: "contract"
+            nextest-args: "-p mpc-contract"
+            extra-tools: true
+          - group: "other"
+            nextest-args: "--profile=ci-other"
 
     steps:
       - name: Checkout repository
@@ -111,12 +122,13 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+          prefix-key: v0-rust-tests-${{ matrix.group }}
 
       - name: Clear cache for fresh rebuild
         if: github.event_name == 'schedule'
         run: |
           cargo clean
-          rm -rf ~/.cargo
+          rm -rf ~/.cargo/registry ~/.cargo/git
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -124,11 +136,13 @@ jobs:
           tool: nextest@0.9.126
 
       - name: Install cargo-binstall
+        if: matrix.extra-tools
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
           tool: cargo-binstall
 
       - name: Install cargo-near
+        if: matrix.extra-tools
         run: |
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
           cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
@@ -136,6 +150,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install wasm-opt
+        if: matrix.extra-tools
         run: |
           cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
@@ -143,7 +158,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run cargo-nextest
-        run: cargo nextest run --cargo-profile=test-release --all-features --locked --profile=ci-workflow
+        run: cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
 
   mpc-pytest-build:
     name: "MPC pytests: build"
@@ -173,23 +188,17 @@ jobs:
         if: github.event_name == 'schedule'
         run: |
           cargo clean
-          rm -rf ~/.cargo
+          rm -rf ~/.cargo/registry ~/.cargo/git
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y liblzma-dev libudev-dev
+          sudo apt-get install -y liblzma-dev
 
       - name: Install cargo-binstall
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
           tool: cargo-binstall
-
-      - name: Install cargo-near
-        run: |
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install wasm-opt
         run: |
@@ -198,11 +207,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cargo-near (for reproducible build on main)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build mpc-node
         run: |
           cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
 
+      # We run this build step on main as well to cache the contract build.
+      # The non reproducible build will not be used on main since it will be overwritten by the reproducible
+      # step below.
       - name: Build mpc-contract
+        run: |
+          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
+          wasm-opt -Oz \
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
+            -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+
+      - name: Build mpc-contract reproducibly
+        if: github.ref == 'refs/heads/main'
         run: |
           cargo near build reproducible-wasm \
             --manifest-path crates/contract/Cargo.toml \
@@ -266,6 +294,40 @@ jobs:
             target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
             target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
             libs/nearcore/target/release/neard
+
+  mpc-contract-reproducible-build:
+    name: "MPC contract reproducible build"
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+          
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev libudev-dev
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-binstall
+
+      - name: Install cargo-near
+        run: |
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build mpc-contract (reproducible)
+        run: |
+          cargo near build reproducible-wasm \
+            --manifest-path crates/contract/Cargo.toml
 
   mpc-pytests:
     name: "MPC pytests: ${{ matrix.group }}"
@@ -435,7 +497,7 @@ jobs:
         if: github.event_name == 'schedule'
         run: |
           cargo clean
-          rm -rf ~/.cargo
+          rm -rf ~/.cargo/registry ~/.cargo/git
 
       - name: Install ruff
         uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1

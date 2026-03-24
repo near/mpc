@@ -17,11 +17,11 @@ use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConf
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_contract::primitives::test_utils::infer_purpose_from_scheme;
-use mpc_contract::tee::proposal::MpcDockerImageHash;
+use mpc_contract::primitives::test_utils::infer_purpose_from_curve;
+use mpc_contract::tee::proposal::NodeImageHash;
 use mpc_contract::{
     primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainId},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -579,7 +579,7 @@ impl MpcVoteAddDomainsCmd {
             "Going to vote_add_domains MPC network {} for signature schemes {:?}",
             name, self.schemes
         );
-        let schemes: Vec<SignatureScheme> = self
+        let schemes: Vec<Curve> = self
             .schemes
             .iter()
             .map(|scheme| {
@@ -616,8 +616,8 @@ impl MpcVoteAddDomainsCmd {
         for scheme in &schemes {
             proposal.push(DomainConfig {
                 id: DomainId(next_domain),
-                scheme: *scheme,
-                purpose: infer_purpose_from_scheme(*scheme),
+                curve: *scheme,
+                purpose: infer_purpose_from_curve(*scheme),
             });
             next_domain += 1;
         }
@@ -884,7 +884,7 @@ struct VoteNewParametersArgs {
 
 #[derive(Serialize)]
 struct VoteCodeHashArgs {
-    code_hash: MpcDockerImageHash,
+    code_hash: NodeImageHash,
 }
 
 impl MpcDescribeCmd {

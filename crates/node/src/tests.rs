@@ -1,4 +1,6 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
+use blstrs::{G1Projective, G2Projective, Scalar};
+use elliptic_curve::{Field as _, Group as _};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use near_mpc_contract_interface::types::{
@@ -33,7 +35,7 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
-use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
+use mpc_contract::primitives::domain::{Curve, DomainConfig};
 use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
@@ -272,13 +274,13 @@ pub async fn request_signature_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    let payload = match domain.scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+    let payload = match domain.curve {
+        Curve::Secp256k1 | Curve::V2Secp256k1 => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
         }
-        SignatureScheme::Ed25519 => {
+        Curve::Ed25519 => {
             let len = rand::thread_rng().gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
@@ -286,7 +288,7 @@ pub async fn request_signature_and_await_response(
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
         }
-        SignatureScheme::Bls12381 => unreachable!(),
+        Curve::Bls12381 => unreachable!(),
     };
     let request = SignatureRequestFromChain {
         entropy: rand::random(),
@@ -353,9 +355,44 @@ pub async fn request_ckd_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
+    let app_public_key = near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
+        "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+            .parse()
+            .unwrap(),
+    );
+    do_request_ckd_and_await_response(indexer, user, domain, timeout_sec, app_public_key).await
+}
+
+/// Request a ckd with public verifiability from the indexer and wait for the response.
+/// Returns the time taken to receive the response, or None if timed out.
+pub async fn request_ckd_pv_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    timeout_sec: std::time::Duration,
+) -> Option<std::time::Duration> {
+    let app_sk = Scalar::random(&mut OsRng);
+    let pk1 = G1Projective::generator() * app_sk;
+    let pk2 = G2Projective::generator() * app_sk;
+    let app_public_key = near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV(
+        near_mpc_contract_interface::types::CKDAppPublicKeyPV {
+            pk1: (&pk1).into(),
+            pk2: (&pk2).into(),
+        },
+    );
+    do_request_ckd_and_await_response(indexer, user, domain, timeout_sec, app_public_key).await
+}
+
+async fn do_request_ckd_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    timeout_sec: std::time::Duration,
+    app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey,
+) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.scheme,
-        SignatureScheme::Bls12381,
+        domain.curve,
+        Curve::Bls12381,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
     let request = CKDRequestFromChain {
@@ -365,11 +402,7 @@ pub async fn request_ckd_and_await_response(
         entropy: rand::random(),
         timestamp_nanosec: rand::random(),
         request: CKDArgs {
-            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
-                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                    .parse()
-                    .unwrap(),
-            ),
+            app_public_key,
             domain_id: domain.id,
             app_id: [1u8; 32].into(),
         },
@@ -441,8 +474,8 @@ pub async fn request_verify_foreign_tx_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.scheme,
-        SignatureScheme::Secp256k1,
+        domain.curve,
+        Curve::Secp256k1,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
     let request = VerifyForeignTxRequestFromChain {

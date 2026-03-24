@@ -52,7 +52,7 @@ where
     }
 }
 
-pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(200);
+pub const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 async fn monitor<V: ViewRaw>(
     viewer: V,
