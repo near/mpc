@@ -2994,6 +2994,19 @@ dependencies = [
 [[package]]
 name = "e2e-tests"
 version = "3.7.0"
+dependencies = [
+ "anyhow",
+ "bs58 0.5.1",
+ "ed25519-dalek",
+ "hex",
+ "near-mpc-crypto-types",
+ "near-sandbox",
+ "near-workspaces",
+ "serde",
+ "serde_json",
+ "toml 1.0.6+spec-1.1.0",
+ "tracing",
+]
 
 [[package]]
 name = "easy-cast"
@@ -7390,6 +7403,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bs58 0.5.1",
+ "cargo-near-build",
  "chrono",
  "fs2",
  "json-patch 2.0.0",
