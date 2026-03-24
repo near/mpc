@@ -60,7 +60,11 @@ impl Localnet {
             let state: ObservedState<String> = localnet
                 .observer
                 .chain_gateway
-                .view_method(localnet.contract.account_id.clone(), VIEW_METHOD, &NoArgs {})
+                .view_method(
+                    localnet.contract.account_id.clone(),
+                    VIEW_METHOD,
+                    &NoArgs {},
+                )
                 .await
                 .expect("view call should succeed during startup wait");
             if u64::from(state.observed_at) > 0 {
