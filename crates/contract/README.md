@@ -109,23 +109,40 @@ yoctonear is required** to prevent abuse by malicious frontends.
 The ckd request takes the following arguments:
 
 - `derivation_path` (String): the derivation path (used to derive different keys from the same account).
-- `"app_public_key": "bls12381g1:<base58 encoded point in curve>"`
+- `app_public_key`: the ephemeral public key for the CKD request. Two formats are supported:
+  - **Privately verifiable** (legacy): a single G1 point, e.g. `"bls12381g1:<base58>"` or `{"AppPublicKey": "bls12381g1:<base58>"}`.
+  - **Publicly verifiable**: a pair of points `(pk1, pk2) = (a·G1, a·G2)`, passed as `{"AppPublicKeyPV": {"pk1": "bls12381g1:<base58>", "pk2": "bls12381g2:<base58>"}}`. This allows anyone to verify the encrypted result on-chain without the app's secret key.
 - `domain_id` (integer): identifies the master key to use for deriving the ckd, and must correspond to bls12381.
-
-Note that `app_public_key` represents a valid point on curve BLS12381 (G1).
 
 Submitting a ckd request costs approximately 7 Tgas, but the contract requires
 that at least 10 Tgas are attached to the transaction.
 
-#### Example
+#### Examples
 
-_ckd request_
+_Privately verifiable ckd request (legacy)_
 
 ```Json
 {
   "request": {
     "derivation_path": "mykey",
     "app_public_key": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
+    "domain_id": 2
+  }
+}
+```
+
+_Publicly verifiable ckd request_
+
+```Json
+{
+  "request": {
+    "derivation_path": "mykey",
+    "app_public_key": {
+      "AppPublicKeyPV": {
+        "pk1": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
+        "pk2": "bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw"
+      }
+    },
     "domain_id": 2
   }
 }
@@ -243,7 +260,7 @@ The `sign` request takes the following arguments:
 The `request_app_private_key` request takes the following arguments:
 
 - `derivation_path` (String): the derivation path.
-- `app_public_key` (String): the ephemeral public key to encrypt the generated confidential key
+- `app_public_key`: the ephemeral public key to encrypt the generated confidential key. Accepts either a plain G1 point string (privately verifiable, legacy) or a tagged enum with `AppPublicKey` (single G1 point) or `AppPublicKeyPV` (a `{pk1, pk2}` pair for public verifiability).
 - `domain_id` (integer): the domain ID that identifies the key and signature scheme to use to generate the confidential key
 
 #### SignRequestArgs (Legacy version for backwards compatibility with V1)
