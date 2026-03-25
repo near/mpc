@@ -14,7 +14,7 @@ use super::common;
 /// the other is a validator node.
 /// A smart contract is injected in the genesis file to simplify testing.
 ///
-/// The test uses the chain gateway of the observert node to veify that view functions of
+/// The test uses the chain gateway of the observer node to verify that view functions of
 /// the smart contract yield expected results. It constructs a `TransactionSigner` from
 /// the private key of the contract account and has the observer's chain gateway
 /// sign and route the transaction.

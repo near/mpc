@@ -107,7 +107,7 @@ impl Localnet {
     }
 }
 
-/// Returns a fresh temp directory under `target/chain-gateway-test-nodes/`.
+/// Returns a temp directory
 /// The returned `TempDir` is automatically deleted when dropped.
 fn make_test_home_dir(account_id: &str) -> tempfile::TempDir {
     tempfile::Builder::new()
