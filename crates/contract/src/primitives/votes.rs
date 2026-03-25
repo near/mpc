@@ -23,7 +23,7 @@ pub struct ProposalId(pub(crate) u64);
 pub struct Votes<VoterId, Proposal>
 where
     VoterId: BorshSerialize + BorshDeserialize + Ord + Clone,
-    Proposal: BorshSerialize + BorshDeserialize + Ord + Clone + PartialEq,
+    Proposal: BorshSerialize + BorshDeserialize + Ord + Clone,
 {
     pub(crate) id_by_proposal: LookupMap<Proposal, ProposalId>,
     pub(crate) votes: BTreeMap<VoterId, ProposalId>,
@@ -35,7 +35,7 @@ where
 impl<VoterId, Proposal> Votes<VoterId, Proposal>
 where
     VoterId: BorshSerialize + BorshDeserialize + Ord + Clone,
-    Proposal: BorshSerialize + BorshDeserialize + Ord + Clone + PartialEq,
+    Proposal: BorshSerialize + BorshDeserialize + Ord + Clone,
 {
     pub fn new<S>(id_by_proposal_key: S, proposals_key: S) -> Self
     where
@@ -143,6 +143,22 @@ where
     /// Returns the number of votes for the given `proposal_id`, or 0 if it doesn't exist.
     pub fn n_votes(&self, proposal_id: &ProposalId) -> u64 {
         self.proposal_votes.get(proposal_id).copied().unwrap_or(0)
+    }
+
+    /// Counts votes for `proposal` where the voter satisfies `predicate`.
+    /// Looks up the proposal by value, then filters voters.
+    pub fn count_where(
+        &self,
+        proposal: &Proposal,
+        predicate: impl Fn(&VoterId) -> bool,
+    ) -> u64 {
+        let Some(proposal_id) = self.id_by_proposal.get(proposal) else {
+            return 0;
+        };
+        self.votes
+            .iter()
+            .filter(|(vid, pid)| **pid == *proposal_id && predicate(vid))
+            .count() as u64
     }
 
     /// Decrements vote count for a proposal, removing it entirely if count reaches 0.
@@ -496,5 +512,29 @@ mod tests {
         let count = votes.vote_for(1, "proposal_b".to_string());
         assert_eq!(count, 1);
         assert_eq!(votes.proposals.len(), 1);
+    }
+
+    #[test]
+    fn test_count_where() {
+        let mut votes = new_votes();
+        votes.vote_for(1, "proposal_a".to_string());
+        votes.vote_for(2, "proposal_a".to_string());
+        votes.vote_for(3, "proposal_b".to_string());
+
+        // Count only even voter ids for proposal_a
+        assert_eq!(
+            votes.count_where(&"proposal_a".to_string(), |vid| *vid % 2 == 0),
+            1
+        );
+        // Count all for proposal_a
+        assert_eq!(
+            votes.count_where(&"proposal_a".to_string(), |_| true),
+            2
+        );
+        // Count for nonexistent proposal
+        assert_eq!(
+            votes.count_where(&"nonexistent".to_string(), |_| true),
+            0
+        );
     }
 }
