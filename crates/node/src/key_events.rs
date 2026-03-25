@@ -721,6 +721,7 @@ mod tests {
     use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
+    use assert_matches::assert_matches;
     use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::collections::BTreeSet;
@@ -790,7 +791,7 @@ mod tests {
         let result = instance.compare_to_expected_key_event_id(&key_event_id);
 
         // Then
-        assert!(matches!(result, KeyEventIdComparisonResult::RemoteBehind));
+        assert_matches!(result, KeyEventIdComparisonResult::RemoteBehind);
     }
 
     #[test]
@@ -803,7 +804,7 @@ mod tests {
         let result = instance.compare_to_expected_key_event_id(&key_event_id);
 
         // Then
-        assert!(matches!(result, KeyEventIdComparisonResult::RemoteMatches));
+        assert_matches!(result, KeyEventIdComparisonResult::RemoteMatches);
     }
 
     // -- Mocks and helpers --

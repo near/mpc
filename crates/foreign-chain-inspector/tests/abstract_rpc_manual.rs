@@ -1,3 +1,4 @@
+use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspector, RpcAuthentication,
     abstract_chain::{
@@ -53,8 +54,5 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         extracted_values[0],
         AbstractExtractedValue::BlockHash(expected_block_hash)
     );
-    assert!(matches!(
-        extracted_values[1],
-        AbstractExtractedValue::Log(_)
-    ));
+    assert_matches!(extracted_values[1], AbstractExtractedValue::Log(_));
 }

@@ -303,6 +303,7 @@ mod tests {
     use crate::abstract_chain::AbstractBlockHash;
     use crate::bitcoin::BitcoinBlockHash;
     use crate::starknet::StarknetBlockHash;
+    use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::evm::Log;
 
     #[test]
@@ -374,7 +375,7 @@ mod tests {
     fn abstract_extractor_log_roundtrip() {
         let inspector = AbstractExtractor::Log { log_index: 5 };
         let contract = dtos::EvmExtractor::try_from(inspector.clone()).unwrap();
-        assert!(matches!(contract, dtos::EvmExtractor::Log { log_index: 5 }));
+        assert_matches!(contract, dtos::EvmExtractor::Log { log_index: 5 });
         let back = AbstractExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -423,7 +424,7 @@ mod tests {
         };
         let inspector = AbstractExtractedValue::Log(log);
         let contract = dtos::EvmExtractedValue::from(inspector.clone());
-        assert!(matches!(contract, dtos::EvmExtractedValue::Log(_)));
+        assert_matches!(contract, dtos::EvmExtractedValue::Log(_));
         let back = AbstractExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }

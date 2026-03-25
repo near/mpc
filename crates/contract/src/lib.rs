@@ -2563,6 +2563,7 @@ mod tests {
             &request.path,
         );
         contract.sign(request);
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_signature_and_clean_state_on_success(
                 signature_request.clone(),
@@ -2726,6 +2727,7 @@ mod tests {
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_ck_and_clean_state_on_success(
                 ckd_request.clone(),
@@ -2826,6 +2828,7 @@ mod tests {
         contract.verify_foreign_transaction(request_args);
 
         // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_verify_foreign_tx_and_clean_state_on_success(
                 request.clone(),
@@ -3896,7 +3899,7 @@ mod tests {
 
         assert!(all_updates.updates.contains_key(&expected_update_id));
         let update = all_updates.updates.get(&expected_update_id).unwrap();
-        assert!(matches!(update, dtos::UpdateHash::Code(_)));
+        assert_matches!(update, dtos::UpdateHash::Code(_));
 
         let actual_voters: HashSet<_> = all_updates
             .votes
@@ -4367,10 +4370,7 @@ mod tests {
             MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
                 .unwrap();
 
-        assert!(matches!(
-            contract.protocol_state,
-            ProtocolContractState::Running(_)
-        ));
+        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
 
         // Get participant info for the target (last participant)
         let participant_list: Vec<_> = participants.participants().to_vec();

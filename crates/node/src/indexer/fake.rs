@@ -17,6 +17,7 @@ use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
+use assert_matches::assert_matches;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
@@ -106,7 +107,7 @@ impl FakeMpcContractState {
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
-        assert!(matches!(self.state, ProtocolContractState::NotInitialized));
+        assert_matches!(self.state, ProtocolContractState::NotInitialized);
 
         self.state = ProtocolContractState::Running(RunningContractState::new(
             DomainRegistry::default(),
