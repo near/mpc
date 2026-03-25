@@ -9,7 +9,9 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::Write,
     net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::Path,
 };
 
@@ -347,13 +349,35 @@ pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N
     ))
 }
 
+/// Writes data to a file with owner-only permissions (0o600).
+/// Permissions are set explicitly after writing to ensure correctness
+/// even if the file already exists with different permissions.
+fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("failed to create secret file {}", path.display()))?;
+    file.write_all(data)
+        .with_context(|| format!("failed to write secret file {}", path.display()))?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).with_context(|| {
+        format!(
+            "failed to set permissions on secret file {}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
 pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {
     tracing::info!("generating encryption key");
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
     let key_path = home_dir.join("backup_encryption_key.hex");
     let key_hex = hex::encode(key);
-    std::fs::write(&key_path, &key_hex)?;
+    write_secret_file(&key_path, key_hex.as_bytes())?;
     tracing::info!("wrote encryption key to disk {:?}", key_path);
     Ok(key_hex)
 }
@@ -439,7 +463,7 @@ impl PersistentSecrets {
         if path.exists() {
             anyhow::bail!("secrets.json already exists. Refusing to overwrite.");
         }
-        std::fs::write(&path, serde_json::to_vec(&secrets)?)?;
+        write_secret_file(&path, &serde_json::to_vec(&secrets)?)?;
         tracing::debug!("p2p and near account key generated in {}", path.display());
 
         Ok(secrets)

@@ -8,20 +8,20 @@ the full binary including config parsing, P2P networking and built-in NEAR index
 
 ```
 MpcCluster
-  |-- SandboxNode          near-sandbox process with controlled ports
+  |-- NearNode             NEAR node process with controlled ports
   |-- NearBlockchain       RPC client (near-workspaces) for contract interaction
   |-- Vec<MpcNode>         N mpc-node OS processes, each with its own neard indexer
 ```
 
-- **SandboxNode** starts a `near-sandbox` neard validator with deterministic ports.
+- **NearNode** starts a NEAR validator with deterministic ports.
 - **NearBlockchain** is a pure RPC client wrapping `near-workspaces`. It deploys
   the MPC contract, creates accounts, submits transactions, and queries state.
   Environment-agnostic -- can target sandbox or testnet.
 - **MpcNode** manages a single `mpc-node` binary. Generates a `start_config.toml`
-  pointing the node's built-in NEAR indexer at the sandbox validator via
+  pointing the node's built-in NEAR indexer at the NEAR validator via
   `boot_nodes`. Each node runs its own neard process internally, peering with the
-  sandbox validator over P2P.
-- **MpcCluster** orchestrates everything: starts sandbox, deploys contract, creates
+  NEAR validator over P2P.
+- **MpcCluster** orchestrates everything: starts NEAR node, deploys contract, creates
   accounts, starts N nodes, initializes the contract, adds signature domains, and
   waits for the Running state.
 
@@ -33,7 +33,7 @@ Each test gets a unique `test_id`. All ports are computed deterministically:
 BASE_PORT (20000) + test_id * 82 + offset
 ```
 
-Per test: 2 cluster-level ports (sandbox RPC, sandbox network) + 8 ports per
+Per test: 2 cluster-level ports (NEAR node RPC, NEAR node network) + 8 ports per
 node (P2P, web UI, migration UI, pprof, near RPC, near network, 2 reserved)
 times up to 10 nodes = 82 ports total.
 
