@@ -57,7 +57,9 @@ struct LatestBlockWithTxHashesResponse {
     transactions: Vec<String>,
 }
 
-fn parse_starknet_felt_hash<T>(value: &str) -> Result<mpc_primitives::hash::Hash32<T>, String> {
+fn parse_starknet_felt_hash<T: core::str::FromStr<Err = mpc_primitives::hash::HashParseError>>(
+    value: &str,
+) -> Result<T, String> {
     let stripped = value.trim_start_matches("0x");
     if stripped.len() > 64 {
         return Err(format!("felt hash too long: {value}"));
