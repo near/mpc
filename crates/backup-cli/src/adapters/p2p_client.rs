@@ -96,8 +96,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let test_setup = test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_GET_KEYSHARES).await;
+        let addr: NodeAddress = test_setup.target_address.to_string().parse().unwrap();
         let client = MpcP2PClient::new(
-            NodeAddress::Ip(test_setup.target_address),
+            addr,
             test_setup.server_key.verifying_key(),
             test_setup.client_key,
             test_setup.backup_encryption_key,
@@ -132,8 +133,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let mut test_setup = test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES).await;
+        let addr: NodeAddress = test_setup.target_address.to_string().parse().unwrap();
         let client = MpcP2PClient::new(
-            NodeAddress::Ip(test_setup.target_address),
+            addr,
             test_setup.server_key.verifying_key(),
             test_setup.client_key,
             test_setup.backup_encryption_key,
@@ -159,9 +161,11 @@ mod tests {
         // Given
         let mut test_setup =
             test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME).await;
-        let port = test_setup.target_address.port();
+        let addr: NodeAddress = format!("localhost:{}", test_setup.target_address.port())
+            .parse()
+            .unwrap();
         let client = MpcP2PClient::new(
-            NodeAddress::Host("localhost".to_string(), port),
+            addr,
             test_setup.server_key.verifying_key(),
             test_setup.client_key,
             test_setup.backup_encryption_key,

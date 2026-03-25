@@ -111,20 +111,28 @@ pub struct PutKeysharesArgs {
 
 #[cfg(test)]
 mod tests {
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    use assert_matches::assert_matches;
+
     use super::*;
 
     #[test]
     fn test_parse_ip_address() {
         let addr: NodeAddress = "127.0.0.1:8081".parse().unwrap();
-        assert!(matches!(addr, NodeAddress::Ip(_)));
-        assert_eq!(addr.to_string(), "127.0.0.1:8081");
+        assert_matches!(
+            addr,
+            NodeAddress::Ip(SocketAddr::V4(a)) if a.ip() == &Ipv4Addr::LOCALHOST && a.port() == 8081
+        );
     }
 
     #[test]
     fn test_parse_hostname() {
         let addr: NodeAddress = "multichain-testnet-0.nearone.org:8081".parse().unwrap();
-        assert!(matches!(addr, NodeAddress::Host(_, 8081)));
-        assert_eq!(addr.to_string(), "multichain-testnet-0.nearone.org:8081");
+        assert_matches!(
+            addr,
+            NodeAddress::Host(host, 8081) if host == "multichain-testnet-0.nearone.org"
+        );
     }
 
     #[test]
