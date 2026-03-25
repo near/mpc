@@ -17,12 +17,6 @@ pub struct Polynomial<C: Ciphersuite> {
     coefficients: Vec<Scalar<C>>,
 }
 
-impl<C: Ciphersuite> core::fmt::Debug for Polynomial<C> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Polynomial").finish_non_exhaustive()
-    }
-}
-
 impl<C: Ciphersuite> Polynomial<C> {
     /// Constructs the polynomial out of scalars
     /// The first scalar (coefficients[0]) is the constant term
@@ -632,10 +626,10 @@ mod test {
     use std::ops::Neg;
 
     use super::*;
+    use crate::errors::ProtocolError;
     use crate::test_utils::{
         generate_participants, generate_participants_with_random_ids, MockCryptoRng,
     };
-    use assert_matches::assert_matches;
     use frost_core::Field;
     use frost_secp256k1::{Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
     use k256::Scalar;
@@ -1361,11 +1355,11 @@ mod test {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         // Test with a degree that would cause an overflow in `degree + 1`
         let result = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng);
-        assert_matches!(result, Err(ProtocolError::IntegerOverflow));
+        assert_eq!(result.unwrap_err(), ProtocolError::IntegerOverflow);
 
         // Test with a degree that is at the boundary of isize::MAX
         let result = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng);
-        assert_matches!(result, Err(ProtocolError::IntegerOverflow));
+        assert_eq!(result.unwrap_err(), ProtocolError::IntegerOverflow);
     }
 
     #[test]

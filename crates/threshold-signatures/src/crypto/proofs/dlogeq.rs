@@ -76,12 +76,6 @@ pub struct Proof<C: Ciphersuite> {
     s: SerializableScalar<C>,
 }
 
-impl<C: Ciphersuite> core::fmt::Debug for Proof<C> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Proof").finish_non_exhaustive()
-    }
-}
-
 /// Encodes two EC points into a vec including the identity point.
 /// Should be used with HIGH precaution as it allows serializing the identity point
 /// deviating from the standard
@@ -172,7 +166,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use assert_matches::assert_matches;
+    use crate::errors::ProtocolError;
     use elliptic_curve::{bigint::Uint, scalar::FromUintUnchecked};
     use rand::SeedableRng;
 
@@ -281,7 +275,7 @@ mod test {
         let proof_result =
             prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, witness, k);
 
-        assert_matches!(proof_result, Err(ProtocolError::IdentityElement));
+        assert_eq!(proof_result.unwrap_err(), ProtocolError::IdentityElement);
     }
 
     #[test]
@@ -309,6 +303,6 @@ mod test {
             &dummy_proof,
         );
 
-        assert_matches!(verify_result, Err(ProtocolError::IdentityElement));
+        assert_eq!(verify_result.unwrap_err(), ProtocolError::IdentityElement);
     }
 }
