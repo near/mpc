@@ -1224,7 +1224,6 @@ name = "backup-cli"
 version = "3.7.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "clap",
  "ed25519-dalek",
  "mpc-contract",
