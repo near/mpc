@@ -1,10 +1,13 @@
 use std::time::{Duration, Instant};
 
+use chain_gateway::event_subscriber::block_events::BlockUpdate;
+use chain_gateway::event_subscriber::subscriber::BlockEventSubscriber;
 use chain_gateway::state_viewer::ViewMethod;
 use chain_gateway::types::{NoArgs, ObservedState};
-use chain_gateway_test_contract::VIEW_METHOD;
+use chain_gateway_test_contract::consts::VIEW;
+use ed25519_dalek::SigningKey;
 
-use super::contract::{Contract, compiled_test_contract_wasm, test_contract};
+use super::accounts::{Contract, TestAccount, compiled_test_contract_wasm, test_contract};
 use super::node::{LocalNode, LocalNodeBuilder};
 
 pub struct Localnet {
@@ -14,23 +17,77 @@ pub struct Localnet {
 }
 
 impl Localnet {
-    /// Two-node setup for sender tests.
+    /// Takes the block update receiver from the observer, panics if already taken.
+    pub fn take_block_update_receiver(&mut self) -> tokio::sync::mpsc::Receiver<BlockUpdate> {
+        self.observer
+            .block_update_receiver
+            .take()
+            .expect("block_update_receiver already taken")
+    }
+
+    pub async fn new() -> Self {
+        LocalnetBuilder::new().build().await
+    }
+}
+
+pub struct LocalnetBuilder {
+    contract_id: Option<near_account_id::AccountId>,
+    test_account: Option<TestAccount>,
+    event_subscriber: Option<BlockEventSubscriber>,
+}
+
+impl LocalnetBuilder {
+    pub fn new() -> Self {
+        LocalnetBuilder {
+            contract_id: None,
+            event_subscriber: None,
+            test_account: None,
+        }
+    }
+    pub fn with_contract_id(mut self, contract_id: near_account_id::AccountId) -> Self {
+        self.contract_id = Some(contract_id);
+        self
+    }
+
+    pub fn with_event_subscriber(mut self, subscriber: BlockEventSubscriber) -> Self {
+        self.event_subscriber = Some(subscriber);
+        self
+    }
+
+    pub fn with_test_account(
+        mut self,
+        test_account_id: near_account_id::AccountId,
+    ) -> (Self, TestAccount) {
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let test_account = TestAccount::new(test_account_id, signing_key);
+        self.test_account = Some(test_account.clone());
+        (self, test_account)
+    }
+
+    /// Build and start the two-node localnet.
     ///
     /// The observer is a non-validator node that syncs from the validator.
     /// Genesis is copied from the validator to ensure both nodes share the same chain.
-    pub async fn new() -> Self {
+    pub async fn build(self) -> Localnet {
         let validator_home = make_test_home_dir("validator.near");
         let observer_home = make_test_home_dir("observer.near");
-        let contract = test_contract();
+        let contract = test_contract(
+            self.contract_id
+                .unwrap_or("default-contract-name.near".parse().unwrap()),
+        );
 
-        // start a validator node (this is what the MPC node calls the "near indexer node")
-        let validator = LocalNodeBuilder::new("validator", validator_home)
+        // Start a validator node (this is what the MPC node calls the "near indexer node").
+        let mut validator = LocalNodeBuilder::new("validator", validator_home)
             .with_consensus_min_peers(1)
-            .with_contract(contract.clone(), compiled_test_contract_wasm())
-            .start()
-            .await;
+            .with_contract(contract.clone(), compiled_test_contract_wasm());
 
-        // start an observer node (non-validator, just like what the MPC node would be running)
+        if let Some(test_account) = self.test_account {
+            validator = validator.with_account(test_account);
+        }
+
+        let validator = validator.start(None).await;
+
+        // Start an observer node (non-validator, just like what the MPC node would be running).
         // Copy genesis from validator so both nodes share the same chain
         // (indexer_init_configs embeds genesis_time = Utc::now(), so independent
         // genesis generation produces different genesis hashes).
@@ -42,7 +99,7 @@ impl Localnet {
             .with_genesis_from(&validator)
             .without_validator_key()
             .with_boot_nodes(&boot_node)
-            .start()
+            .start(self.event_subscriber)
             .await;
 
         let localnet = Localnet {
@@ -60,11 +117,7 @@ impl Localnet {
             let state: ObservedState<String> = localnet
                 .observer
                 .chain_gateway
-                .view_method(
-                    localnet.contract.account_id.clone(),
-                    VIEW_METHOD,
-                    &NoArgs {},
-                )
+                .view_method(localnet.contract.account_id.clone(), VIEW, &NoArgs {})
                 .await
                 .expect("view call should succeed during startup wait");
             if u64::from(state.observed_at) > 0 {
@@ -107,7 +160,7 @@ impl Localnet {
     }
 }
 
-/// Returns a temp directory
+/// Returns a temp directory.
 /// The returned `TempDir` is automatically deleted when dropped.
 fn make_test_home_dir(account_id: &str) -> tempfile::TempDir {
     tempfile::Builder::new()

@@ -120,4 +120,15 @@ pub enum ChainGatewayError {
 
     #[error("view client error while {op}: {message}")]
     ViewError { op: ChainGatewayOp, message: String },
+
+    #[error(
+        "block event channel has been full for too long, the receiver must drain messages otherwise we risk out of memory"
+    )]
+    BlockEventBufferFull,
+
+    #[error("near indexer dropped")]
+    BlockEventIndexerDropped,
+
+    #[error("block event stream has been closed or dropped by the receiver")]
+    BlockEventReceiverDropped,
 }
