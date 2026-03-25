@@ -1,12 +1,9 @@
-use std::{collections::BTreeMap, collections::BTreeSet};
+use std::hash::Hash;
+use std::{collections::BTreeMap, collections::BTreeSet, collections::HashMap};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{Deref, From, Into};
-use near_sdk::{
-    log, near,
-    store::{IterableMap, LookupMap},
-    IntoStorageKey,
-};
+use near_sdk::{log, near, store::IterableMap, IntoStorageKey};
 
 use super::thresholds::ThresholdParameters;
 use super::{key_state::AuthenticatedAccountId, participants::Participants};
@@ -23,9 +20,9 @@ pub struct ProposalId(pub(crate) u64);
 pub struct Votes<VoterId, Proposal>
 where
     VoterId: BorshSerialize + BorshDeserialize + Ord + Clone,
-    Proposal: BorshSerialize + BorshDeserialize + Ord + Clone,
+    Proposal: BorshSerialize + BorshDeserialize + Ord + Clone + Hash,
 {
-    pub(crate) id_by_proposal: LookupMap<Proposal, ProposalId>,
+    pub(crate) id_by_proposal: HashMap<Proposal, ProposalId>,
     pub(crate) votes: BTreeMap<VoterId, ProposalId>,
     pub(crate) proposals: IterableMap<ProposalId, Proposal>,
     pub(crate) proposal_votes: BTreeMap<ProposalId, u64>,
@@ -35,14 +32,14 @@ where
 impl<VoterId, Proposal> Votes<VoterId, Proposal>
 where
     VoterId: BorshSerialize + BorshDeserialize + Ord + Clone,
-    Proposal: BorshSerialize + BorshDeserialize + Ord + Clone,
+    Proposal: BorshSerialize + BorshDeserialize + Ord + Clone + Hash,
 {
-    pub fn new<S>(id_by_proposal_key: S, proposals_key: S) -> Self
+    pub fn new<S>(proposals_key: S) -> Self
     where
         S: IntoStorageKey,
     {
         Self {
-            id_by_proposal: LookupMap::new(id_by_proposal_key),
+            id_by_proposal: HashMap::new(),
             votes: BTreeMap::new(),
             proposals: IterableMap::new(proposals_key),
             proposal_votes: BTreeMap::new(),
@@ -147,11 +144,7 @@ where
 
     /// Counts votes for `proposal` where the voter satisfies `predicate`.
     /// Looks up the proposal by value, then filters voters.
-    pub fn count_where(
-        &self,
-        proposal: &Proposal,
-        predicate: impl Fn(&VoterId) -> bool,
-    ) -> u64 {
+    pub fn count_where(&self, proposal: &Proposal, predicate: impl Fn(&VoterId) -> bool) -> u64 {
         let Some(proposal_id) = self.id_by_proposal.get(proposal) else {
             return 0;
         };
@@ -319,12 +312,11 @@ mod tests {
     #[derive(BorshStorageKey, BorshSerialize)]
     #[borsh(crate = "borsh")]
     enum StorageKeys {
-        IdByProposal,
         Proposals,
     }
 
     fn new_votes() -> Votes<u64, String> {
-        Votes::new(StorageKeys::IdByProposal, StorageKeys::Proposals)
+        Votes::new(StorageKeys::Proposals)
     }
 
     #[test]
@@ -527,14 +519,8 @@ mod tests {
             1
         );
         // Count all for proposal_a
-        assert_eq!(
-            votes.count_where(&"proposal_a".to_string(), |_| true),
-            2
-        );
+        assert_eq!(votes.count_where(&"proposal_a".to_string(), |_| true), 2);
         // Count for nonexistent proposal
-        assert_eq!(
-            votes.count_where(&"nonexistent".to_string(), |_| true),
-            0
-        );
+        assert_eq!(votes.count_where(&"nonexistent".to_string(), |_| true), 0);
     }
 }
