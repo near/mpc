@@ -1,4 +1,4 @@
-use derive_more::{From, Into};
+use derive_more::{Display, From, Into};
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -9,7 +9,7 @@ use crate::errors::ChainGatewayError;
 pub struct NoArgs {}
 
 #[derive(
-    Into, From, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug,
+    Into, From, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Display,
 )]
 pub struct BlockHeight(u64);
 

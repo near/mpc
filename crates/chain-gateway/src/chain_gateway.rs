@@ -2,10 +2,15 @@ use std::path::Path;
 
 use near_account_id::AccountId;
 use near_async::ActorSystem;
+use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use nearcore::NearConfig;
+use tokio::sync::mpsc::Receiver;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
+use crate::event_subscriber;
+use crate::event_subscriber::block_events::BlockUpdate;
+use crate::event_subscriber::subscriber::BlockEventSubscriber;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
@@ -92,41 +97,64 @@ impl NodeHandle {
 }
 
 impl ChainGateway {
-    /// Spawns a near node with `config`.
+    /// Spawns a near node with `indexer_config`.
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
+    /// Returns a stream for BlockUpdates if BlockEventSubscriber is not None.
     pub async fn start(
-        config: near_indexer::IndexerConfig,
-    ) -> Result<(ChainGateway, NodeHandle), ChainGatewayError> {
-        let near_config: NearConfig =
-            config
-                .load_near_config()
-                .map_err(|err| ChainGatewayError::FailureLoadingConfig {
-                    msg: err.to_string(),
-                })?;
-        let home_dir = config.home_dir;
+        indexer_config: near_indexer::IndexerConfig,
+        subscriber: Option<BlockEventSubscriber>,
+    ) -> Result<
+        (
+            ChainGateway,
+            NodeHandle,
+            Option<tokio::sync::mpsc::Receiver<BlockUpdate>>,
+        ),
+        ChainGatewayError,
+    > {
+        let near_config: NearConfig = indexer_config.load_near_config().map_err(|err| {
+            ChainGatewayError::FailureLoadingConfig {
+                msg: err.to_string(),
+            }
+        })?;
+
+        let home_dir = indexer_config.home_dir.clone();
+        let streamer_setup = subscriber.map(|subscriber| StreamerSetup {
+            subscriber,
+            indexer_config,
+            near_config: near_config.clone(),
+        });
+
         let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
         let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
 
         let thread_handle = std::thread::spawn(move || {
-            // blocking method, resumes once `shutdown_sender` sends the shutdown signal
-            run_node(ready_sender, near_config, &home_dir, shutdown_receiver)
+            run_node(
+                ready_sender,
+                near_config,
+                &home_dir,
+                shutdown_receiver,
+                streamer_setup,
+            )
         });
 
-        let chain_gateway = ready_receiver.await.expect("startup thread died")?;
+        let (chain_gateway, stream) = ready_receiver.await.expect("startup thread died")?;
         let node_handle = NodeHandle {
             thread_handle,
             shutdown_sender: Some(shutdown_sender),
         };
-        Ok((chain_gateway, node_handle))
+        Ok((chain_gateway, node_handle, stream))
     }
 }
 
+type RunNodeResult = Result<(ChainGateway, Option<Receiver<BlockUpdate>>), ChainGatewayError>;
+
 fn run_node(
-    ready_sender: tokio::sync::oneshot::Sender<Result<ChainGateway, ChainGatewayError>>,
+    ready_sender: tokio::sync::oneshot::Sender<RunNodeResult>,
     near_config: nearcore::NearConfig,
     home_dir: &Path,
     shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
+    streamer_setup: Option<StreamerSetup>,
 ) {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -146,15 +174,43 @@ fn run_node(
                 }
             };
 
+        let indexer_and_params = streamer_setup.map(|s| {
+            let indexer =
+                near_indexer::Indexer::from_near_node(s.indexer_config, s.near_config, &near_node);
+            (indexer, s.subscriber)
+        });
+
         let view_client = NearViewClientActorHandle::new(near_node.view_client);
         let client = NearClientActorHandle::new(near_node.client);
         let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
 
-        let _ = ready_sender.send(Ok(ChainGateway {
-            view_client,
-            client,
-            rpc_handler,
-        }));
+        let stream = if let Some((indexer, streamer_config)) = indexer_and_params {
+            let raw_stream: Receiver<StreamerMessage> = indexer.streamer();
+            match event_subscriber::streamer::start(
+                streamer_config,
+                raw_stream,
+                view_client.clone(),
+            )
+            .await
+            {
+                Ok(rx) => Some(rx),
+                Err(err) => {
+                    let _ = ready_sender.send(Err(err));
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
+        let _ = ready_sender.send(Ok((
+            ChainGateway {
+                view_client,
+                client,
+                rpc_handler,
+            },
+            stream,
+        )));
 
         match shutdown_receiver.await {
             Ok(()) => {
@@ -167,4 +223,12 @@ fn run_node(
 
         actor_system.stop();
     });
+}
+
+/// Parameters for optionally starting the block-event streaming pipeline
+/// alongside the nearcore node.
+struct StreamerSetup {
+    subscriber: BlockEventSubscriber,
+    indexer_config: near_indexer::IndexerConfig,
+    near_config: NearConfig,
 }

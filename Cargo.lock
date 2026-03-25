@@ -1823,6 +1823,7 @@ version = "3.7.0"
 dependencies = [
  "borsh",
  "near-sdk",
+ "serde_json",
 ]
 
 [[package]]
