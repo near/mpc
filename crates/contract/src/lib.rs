@@ -2289,8 +2289,8 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use test_utils::attestation::{
-        image_digest, mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
-        VALID_ATTESTATION_TIMESTAMP,
+        image_digest, launcher_image_hash, mock_dto_dstack_attestation, near_account_key,
+        p2p_tls_key, VALID_ATTESTATION_TIMESTAMP,
     };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -4536,18 +4536,14 @@ mod tests {
         }
     }
 
-    /// Adds the legacy launcher image hash used in test attestation data.
+    /// Adds the launcher image hash from test attestation assets.
+    /// The hash is extracted from `test-utils/assets/launcher_image_compose.yaml`.
     fn setup_approved_launcher_hash(
         contract: &mut MpcContract,
         participant_account_ids: &[near_sdk::AccountId],
         block_timestamp_ns: u64,
     ) {
-        let launcher_hash_bytes: [u8; 32] =
-            hex::decode("84c7537a2f84d3477eac2e5ef3ba0765b5d688f86096947eea4744ce25b27054")
-                .unwrap()
-                .try_into()
-                .unwrap();
-        let launcher_hash = LauncherImageHash::from(launcher_hash_bytes);
+        let launcher_hash = launcher_image_hash();
 
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
