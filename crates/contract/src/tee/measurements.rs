@@ -3,6 +3,8 @@ use mpc_attestation::attestation::{ExpectedMeasurements, Measurements};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
+use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
+
 /// Generates a 48-byte digest newtype with hex JSON serialization and borsh support.
 macro_rules! digest_newtype {
     ($(#[$meta:meta])* $name:ident) => {
@@ -53,8 +55,6 @@ digest_newtype!(
     /// SHA-384 digest of the key provider event.
     KeyProviderEventDigest
 );
-
-use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 
 /// Tracks votes for adding or removing OS measurements.
 /// Each participant can have at most one active vote at a time.
