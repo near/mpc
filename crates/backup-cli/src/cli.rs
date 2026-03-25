@@ -6,7 +6,7 @@ use near_account_id::AccountId;
 ///
 /// This type is used for CLI arguments where users may specify either an IP address
 /// or a domain name. DNS resolution is deferred to connection time.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NodeAddress {
     Ip(SocketAddr),
     Host(String, u16),
@@ -113,43 +113,40 @@ pub struct PutKeysharesArgs {
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
-    use assert_matches::assert_matches;
+    use std::net::SocketAddrV4;
 
     use super::*;
 
     #[test]
     fn test_parse_ip_address() {
         let addr: NodeAddress = "127.0.0.1:8081".parse().unwrap();
-        assert_matches!(
+        assert_eq!(
             addr,
-            NodeAddress::Ip(SocketAddr::V4(a)) if a.ip() == &Ipv4Addr::LOCALHOST && a.port() == 8081
+            NodeAddress::Ip(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8081)))
         );
     }
 
     #[test]
     fn test_parse_hostname() {
         let addr: NodeAddress = "multichain-testnet-0.nearone.org:8081".parse().unwrap();
-        assert_matches!(
+        assert_eq!(
             addr,
-            NodeAddress::Host(host, 8081) if host == "multichain-testnet-0.nearone.org"
+            NodeAddress::Host("multichain-testnet-0.nearone.org".to_string(), 8081)
         );
     }
 
     #[test]
     fn test_parse_missing_port() {
-        let result: Result<NodeAddress, _> = "hostname-only".parse();
-        result.unwrap_err();
+        assert!("hostname-only".parse::<NodeAddress>().is_err());
     }
 
     #[test]
     fn test_parse_empty_host() {
-        let result: Result<NodeAddress, _> = ":8081".parse();
-        result.unwrap_err();
+        assert!(":8081".parse::<NodeAddress>().is_err());
     }
 
     #[test]
     fn test_parse_invalid_port() {
-        let result: Result<NodeAddress, _> = "host:notaport".parse();
-        result.unwrap_err();
+        assert!("host:notaport".parse::<NodeAddress>().is_err());
     }
 }
