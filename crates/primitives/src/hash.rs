@@ -272,12 +272,15 @@ mod tests {
 
     #[test]
     fn should_serialize_equivalent_to_byte_array_with_borsh() {
+        // Given
         let bytes = random_byte_slice(42);
         let hash = TestHash::from(bytes);
 
+        // When
         let bytes_as_borsh_vec = borsh::to_vec(&bytes).unwrap();
         let hash_as_borsh_vec = borsh::to_vec(&hash).unwrap();
 
+        // Then
         assert_eq!(bytes_as_borsh_vec, hash_as_borsh_vec);
     }
 
@@ -290,48 +293,61 @@ mod tests {
 
     #[test]
     fn test_node_image_hash_hex_serialization() {
+        // Given
         let expected_hex = "\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\"";
 
+        // When
         let hash: NodeImageHash = serde_json::from_str(expected_hex).unwrap();
         let serialized_hex = serde_json::to_string(&hash).unwrap();
 
+        // Then
         assert_eq!(format!("\"{}\"", hash.as_hex()), expected_hex);
         assert_eq!(serialized_hex, expected_hex);
     }
 
     #[test]
     fn test_parse_from_hex_string() {
+        // Given
         let expected_bytes = [0x11u8; 32];
         let hex_string = "11".repeat(32);
 
+        // When
         let parsed: TestHash = hex_string.parse().unwrap();
 
+        // Then
         assert_eq!(*parsed, expected_bytes);
         assert_eq!(parsed.as_hex(), hex_string);
     }
 
     #[test]
     fn test_parse_accepts_uppercase_hex() {
+        // Given
         let expected_bytes = [0xABu8; 32];
         let hex_string = "AB".repeat(32);
 
+        // When
         let parsed: TestHash = hex_string.parse().unwrap();
 
+        // Then
         assert_eq!(*parsed, expected_bytes);
         assert_eq!(parsed.as_hex(), "ab".repeat(32));
     }
 
     #[test]
     fn test_parse_rejects_invalid_hex() {
+        // When
         let err = "0x00".parse::<TestHash>().unwrap_err();
 
+        // Then
         assert_matches!(err, HashParseError::HexError(_));
     }
 
     #[test]
     fn test_parse_rejects_invalid_length() {
+        // When
         let err = "00".parse::<TestHash>().unwrap_err();
 
+        // Then
         match err {
             HashParseError::InvalidLength { expected, got } => {
                 assert_eq!(expected, 32);
@@ -343,8 +359,11 @@ mod tests {
 
     #[test]
     fn test_48_byte_hash_roundtrip() {
+        // Given
         let bytes = [0xABu8; 48];
         let hash = TestHash48::from(bytes);
+
+        // Then
         assert_eq!(hash.as_bytes(), bytes);
         assert_eq!(hash.as_hex(), "ab".repeat(48));
 
@@ -354,41 +373,56 @@ mod tests {
 
     #[test]
     fn test_48_byte_hash_serde_roundtrip() {
+        // Given
         let bytes = [0x42u8; 48];
         let hash = TestHash48::from(bytes);
 
+        // When
         let json = serde_json::to_string(&hash).unwrap();
         let deserialized: TestHash48 = serde_json::from_str(&json).unwrap();
+
+        // Then
         assert_eq!(hash, deserialized);
     }
 
     #[test]
     fn test_48_byte_hash_borsh_roundtrip() {
+        // Given
         let bytes = [0x42u8; 48];
         let hash = TestHash48::from(bytes);
 
+        // When
         let borsh_bytes = borsh::to_vec(&hash).unwrap();
         let deserialized = TestHash48::try_from_slice(&borsh_bytes).unwrap();
+
+        // Then
         assert_eq!(hash, deserialized);
     }
 
     #[test]
     fn test_48_byte_borsh_equivalent_to_raw_array() {
+        // Given
         let bytes = [0x42u8; 48];
         let hash = TestHash48::from(bytes);
 
+        // When
         let bytes_as_borsh = borsh::to_vec(&bytes).unwrap();
         let hash_as_borsh = borsh::to_vec(&hash).unwrap();
+
+        // Then
         assert_eq!(bytes_as_borsh, hash_as_borsh);
     }
 
     #[test]
     fn test_48_byte_parse_from_hex_string() {
+        // Given
         let expected_bytes = [0x11u8; 48];
         let hex_string = "11".repeat(48);
 
+        // When
         let parsed: TestHash48 = hex_string.parse().unwrap();
 
+        // Then
         assert_eq!(*parsed, expected_bytes);
         assert_eq!(parsed.as_hex(), hex_string);
     }
