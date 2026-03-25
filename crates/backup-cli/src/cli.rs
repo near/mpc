@@ -1,6 +1,45 @@
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr, str::FromStr};
 
 use near_account_id::AccountId;
+
+/// A network address that can be either an IP:port or a hostname:port.
+///
+/// This type is used for CLI arguments where users may specify either an IP address
+/// or a domain name. DNS resolution is deferred to connection time.
+#[derive(Debug, Clone)]
+pub enum NodeAddress {
+    Ip(SocketAddr),
+    Host(String, u16),
+}
+
+impl FromStr for NodeAddress {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(addr) = s.parse::<SocketAddr>() {
+            return Ok(NodeAddress::Ip(addr));
+        }
+        let (host, port_str) = s
+            .rsplit_once(':')
+            .ok_or_else(|| format!("expected host:port, got '{s}'"))?;
+        if host.is_empty() {
+            return Err(format!("empty hostname in '{s}'"));
+        }
+        let port: u16 = port_str
+            .parse()
+            .map_err(|_| format!("invalid port in '{s}'"))?;
+        Ok(NodeAddress::Host(host.to_string(), port))
+    }
+}
+
+impl fmt::Display for NodeAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NodeAddress::Ip(addr) => write!(f, "{addr}"),
+            NodeAddress::Host(host, port) => write!(f, "{host}:{port}"),
+        }
+    }
+}
 
 #[derive(clap::Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
@@ -48,7 +87,7 @@ pub struct RegisterArgs {
 pub struct GetKeysharesArgs {
     /// host address of the MPC node to retrieve keyshares from (`host:port`).
     #[arg(long, env)]
-    pub mpc_node_address: SocketAddr,
+    pub mpc_node_address: NodeAddress,
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
@@ -61,11 +100,48 @@ pub struct GetKeysharesArgs {
 pub struct PutKeysharesArgs {
     /// host address of the MPC node to retrieve keyshares from (`host:port`).
     #[arg(long, env)]
-    pub mpc_node_address: SocketAddr,
+    pub mpc_node_address: NodeAddress,
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
     /// hex encryption key
     #[arg(long, env)]
     pub backup_encryption_key_hex: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ip_address() {
+        let addr: NodeAddress = "127.0.0.1:8081".parse().unwrap();
+        assert!(matches!(addr, NodeAddress::Ip(_)));
+        assert_eq!(addr.to_string(), "127.0.0.1:8081");
+    }
+
+    #[test]
+    fn test_parse_hostname() {
+        let addr: NodeAddress = "multichain-testnet-0.nearone.org:8081".parse().unwrap();
+        assert!(matches!(addr, NodeAddress::Host(_, 8081)));
+        assert_eq!(addr.to_string(), "multichain-testnet-0.nearone.org:8081");
+    }
+
+    #[test]
+    fn test_parse_missing_port() {
+        let result: Result<NodeAddress, _> = "hostname-only".parse();
+        result.unwrap_err();
+    }
+
+    #[test]
+    fn test_parse_empty_host() {
+        let result: Result<NodeAddress, _> = ":8081".parse();
+        result.unwrap_err();
+    }
+
+    #[test]
+    fn test_parse_invalid_port() {
+        let result: Result<NodeAddress, _> = "host:notaport".parse();
+        result.unwrap_err();
+    }
 }

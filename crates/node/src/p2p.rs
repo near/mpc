@@ -985,6 +985,7 @@ pub mod testing {
         pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self::new(18);
         pub const RECONNECTION_TEST: Self = Self::new(19);
         pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: Self = Self::new(21);
     }
 
     pub fn generate_test_p2p_configs(
