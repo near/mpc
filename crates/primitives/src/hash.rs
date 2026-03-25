@@ -161,6 +161,7 @@ mod tests {
 
     use alloc::format;
     use assert_matches::assert_matches;
+    use borsh::BorshDeserialize;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     hash_newtype!(TestHash, 32);
