@@ -8,7 +8,7 @@ set -euo pipefail
 # are allowed (e.g., when the matched type doesn't implement Debug).
 
 VIOLATIONS=$(git ls-files -z "crates/*.rs" | \
-    xargs -0 grep -Hn 'assert!(matches!(' || true)
+    xargs -0 grep -HnE 'assert!\s*\(\s*matches!\s*\(' || true)
 
 if [ -z "$VIOLATIONS" ]; then
     echo "✅ No non-exempt assert!(matches!(...)) found — all assertions use assert_matches!"
