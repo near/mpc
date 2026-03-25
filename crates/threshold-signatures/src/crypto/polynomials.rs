@@ -1354,12 +1354,17 @@ mod test {
     fn test_generate_polynomial_overflow() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         // Test with a degree that would cause an overflow in `degree + 1`
-        let result = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng);
-        assert_eq!(result.unwrap_err(), ProtocolError::IntegerOverflow);
+        let Err(e) = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng) else {
+            panic!("expected IntegerOverflow error");
+        };
+        assert_eq!(e, ProtocolError::IntegerOverflow);
 
         // Test with a degree that is at the boundary of isize::MAX
-        let result = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng);
-        assert_eq!(result.unwrap_err(), ProtocolError::IntegerOverflow);
+        let Err(e) = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng)
+        else {
+            panic!("expected IntegerOverflow error");
+        };
+        assert_eq!(e, ProtocolError::IntegerOverflow);
     }
 
     #[test]
