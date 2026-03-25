@@ -52,9 +52,15 @@ Participants can propose and vote on contract updates (code or configuration cha
 
 ## Usage
 
+### Deposit requirement
+
+Both `sign` and `request_app_private_key` require a **deposit of at least 1 yoctonear**. Any excess deposit is automatically refunded.
+
+The deposit exists to prevent abuse by malicious frontends. On NEAR, a dApp frontend can hold a function-call access key that lets it submit transactions on behalf of a user without prompting for approval each time. By default, however, function-call access keys **cannot attach a deposit**. Requiring a deposit therefore guarantees that the call was authorised by the user's full-access key (or a function-call key with an explicit deposit allowance), preventing a compromised or malicious frontend from silently submitting signature requests without the user's knowledge.
+
 ### Submitting a signature request
 
-Users can submit a signature request to the MPC network via the `sign` endpoint of this contract. Note that a **deposit of 1 yoctonear is required** to prevent abuse by malicious frontends.
+Users can submit a signature request to the MPC network via the `sign` endpoint of this contract. A **deposit of 1 yoctonear is required** (see [Deposit requirement](#deposit-requirement)).
 
 The sign request takes the following arguments:
 
@@ -103,8 +109,8 @@ Note that an Ecdsa payload is subsequently represented as a Scalar on curve Secp
 ### Submitting a confidential key derivation (ckd) request
 
 Users can submit a ckd request to the MPC network via the
-`request_app_private_key` endpoint of this contract. Note that a **deposit of 1
-yoctonear is required** to prevent abuse by malicious frontends.
+`request_app_private_key` endpoint of this contract. A **deposit of 1
+yoctonear is required** (see [Deposit requirement](#deposit-requirement)).
 
 The ckd request takes the following arguments:
 

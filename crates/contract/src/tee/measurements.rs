@@ -1,10 +1,60 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::{ExpectedMeasurements, Measurements};
 use near_sdk::{log, near};
-use serde_with::serde_as;
 use std::collections::BTreeMap;
 
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
+
+/// Generates a 48-byte digest newtype with hex JSON serialization and borsh support.
+macro_rules! digest_newtype {
+    ($(#[$meta:meta])* $name:ident) => {
+        #[serde_with::serde_as]
+        #[derive(
+            Debug, Clone, PartialEq, Eq,
+            serde::Serialize, serde::Deserialize,
+            BorshSerialize, BorshDeserialize,
+        )]
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            derive(borsh::BorshSchema, schemars::JsonSchema)
+        )]
+        $(#[$meta])*
+        #[serde(transparent)]
+        pub struct $name {
+            #[serde_as(as = "serde_with::hex::Hex")]
+            bytes: [u8; 48],
+        }
+
+        impl From<[u8; 48]> for $name {
+            fn from(bytes: [u8; 48]) -> Self { Self { bytes } }
+        }
+
+        impl From<$name> for [u8; 48] {
+            fn from(h: $name) -> [u8; 48] { h.bytes }
+        }
+    };
+}
+
+digest_newtype!(
+    /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
+    MrtdHash
+);
+digest_newtype!(
+    /// SHA-384 digest of the RTMR0 TDX measurement.
+    Rtmr0Hash
+);
+digest_newtype!(
+    /// SHA-384 digest of the RTMR1 TDX measurement.
+    Rtmr1Hash
+);
+digest_newtype!(
+    /// SHA-384 digest of the RTMR2 TDX measurement.
+    Rtmr2Hash
+);
+digest_newtype!(
+    /// SHA-384 digest of the key provider event.
+    KeyProviderEventDigest
+);
 
 /// Tracks votes for adding or removing OS measurements.
 /// Each participant can have at most one active vote at a time.
@@ -135,7 +185,6 @@ impl AllowedMeasurements {
 /// On-chain representation of expected TDX measurements.
 /// Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with
 /// contract-compatible serialization (hex strings in JSON, borsh for storage).
-#[serde_as]
 #[derive(
     Debug,
     Clone,
@@ -151,21 +200,21 @@ impl AllowedMeasurements {
     derive(borsh::BorshSchema, schemars::JsonSchema)
 )]
 pub struct ContractExpectedMeasurements {
-    pub mrtd: Sha384Digest,
-    pub rtmr0: Sha384Digest,
-    pub rtmr1: Sha384Digest,
-    pub rtmr2: Sha384Digest,
-    pub key_provider_event_digest: Sha384Digest,
+    pub mrtd: MrtdHash,
+    pub rtmr0: Rtmr0Hash,
+    pub rtmr1: Rtmr1Hash,
+    pub rtmr2: Rtmr2Hash,
+    pub key_provider_event_digest: KeyProviderEventDigest,
 }
 
 impl From<ExpectedMeasurements> for ContractExpectedMeasurements {
     fn from(m: ExpectedMeasurements) -> Self {
         Self {
-            mrtd: Sha384Digest::from(m.rtmrs.mrtd),
-            rtmr0: Sha384Digest::from(m.rtmrs.rtmr0),
-            rtmr1: Sha384Digest::from(m.rtmrs.rtmr1),
-            rtmr2: Sha384Digest::from(m.rtmrs.rtmr2),
-            key_provider_event_digest: Sha384Digest::from(m.key_provider_event_digest),
+            mrtd: MrtdHash::from(m.rtmrs.mrtd),
+            rtmr0: Rtmr0Hash::from(m.rtmrs.rtmr0),
+            rtmr1: Rtmr1Hash::from(m.rtmrs.rtmr1),
+            rtmr2: Rtmr2Hash::from(m.rtmrs.rtmr2),
+            key_provider_event_digest: KeyProviderEventDigest::from(m.key_provider_event_digest),
         }
     }
 }
@@ -181,45 +230,5 @@ impl From<ContractExpectedMeasurements> for ExpectedMeasurements {
             },
             key_provider_event_digest: m.key_provider_event_digest.into(),
         }
-    }
-}
-
-/// A 48-byte digest serialized as hex in JSON and raw bytes in borsh.
-#[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema, schemars::JsonSchema)
-)]
-#[serde(transparent)]
-pub struct Sha384Digest {
-    #[serde_as(as = "serde_with::hex::Hex")]
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        schemars(with = "String") // Schemars doesn't support arrays >32; actual JSON is a hex string.
-    )]
-    bytes: [u8; 48],
-}
-
-impl From<[u8; 48]> for Sha384Digest {
-    fn from(bytes: [u8; 48]) -> Self {
-        Self { bytes }
-    }
-}
-
-impl From<Sha384Digest> for [u8; 48] {
-    fn from(digest: Sha384Digest) -> Self {
-        digest.bytes
     }
 }
