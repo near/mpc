@@ -8,7 +8,7 @@ use super::contract::{Contract, compiled_test_contract_wasm, test_contract};
 use super::node::{LocalNode, LocalNodeBuilder};
 
 pub struct Localnet {
-    pub _validator: LocalNode,
+    pub validator: LocalNode,
     pub observer: LocalNode,
     pub contract: Contract,
 }
@@ -46,7 +46,7 @@ impl Localnet {
             .await;
 
         let localnet = Localnet {
-            _validator: validator,
+            validator,
             observer,
             contract,
         };
@@ -85,7 +85,7 @@ impl Localnet {
     /// Panics with a clear message if either node's background thread has crashed.
     pub fn assert_nodes_alive(&self) {
         assert!(
-            self._validator.node_handle.is_node_alive(),
+            self.validator.node_handle.is_node_alive(),
             "Validator node crashed"
         );
         assert!(
@@ -95,7 +95,7 @@ impl Localnet {
     }
 
     pub async fn shutdown(mut self) {
-        self._validator.node_handle.send_shutdown();
+        self.validator.node_handle.send_shutdown();
         self.observer.node_handle.send_shutdown();
         // RocksDB cleanup happens asynchronously after the actor system stops;
         // block until all instances are dropped to avoid test interference.

@@ -2,7 +2,7 @@
 name = "chain-gateway-test-contract"
 version = { workspace = true }
 license = { workspace = true }
-edition = "2021"
+edition = { workspace = true }
 repository = "https://github.com/near/mpc"
 
 [package.metadata.cargo-shear]
