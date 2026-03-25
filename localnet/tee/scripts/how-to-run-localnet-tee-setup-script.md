@@ -58,41 +58,16 @@ localnet/tee/scripts/deploy-tee-localnet.sh
 
 ## Environment Variables
 
-### Required / Common Defaults
+A ready-to-source env file is provided at [`localnet-env.sh`](localnet-env.sh).
+Review it, set `MACHINE_IP` and `BASE_PATH`, then source it:
 
 ```bash
-export HOST_PROFILE=alice
-#export HOST_PROFILE=bob
-
-
-# Mode
-export MODE=localnet
-
-# Network
-export MPC_NETWORK_BASE_NAME=mpc-local
-export REUSE_NETWORK_NAME=mpc-local
-export N=2
-
-# Machine / ports
 export MACHINE_IP=<EXTERNAL_SERVER_IP>
-export FUTURE_BASE_PORT=13001
-export VMM_RPC=http://127.0.0.1:10000
-
-# dstack / images
-export BASE_PATH=/path/to/dstack
-export MPC_IMAGE_NAME=nearone/mpc-node
-export MPC_IMAGE_TAGS=3.3.0
-export MPC_REGISTRY=registry.hub.docker.com
-
-# NEAR localnet
-export NEAR_NETWORK_CONFIG=mpc-localnet
-export NEAR_RPC_URL=http://127.0.0.1:3030
-export ACCOUNT_SUFFIX=.test.near
-
-# Funding (localnet validator)
-export FUNDER_ACCOUNT=test.near
-export FUNDER_PRIVATE_KEY=$(jq -r '.secret_key' ~/.near/mpc-localnet/validator_key.json)
+export BASE_PATH=/path/to/meta-dstack/dstack
+source localnet/tee/scripts/localnet-env.sh
 ```
+
+This sets all required and optional variables. You can also set them manually — see the file for the full list.
 
 ### Optional Control Variables
 
@@ -110,9 +85,9 @@ export FORCE_REINIT_ARGS=1
 ## Running the Script (Fresh Run)
 
 ```bash
-unset START_FROM_PHASE STOP_AFTER_PHASE
-export MODE=localnet
-export RESUME=0
+export MACHINE_IP=<EXTERNAL_SERVER_IP>
+export BASE_PATH=/path/to/meta-dstack/dstack
+source localnet/tee/scripts/localnet-env.sh
 
 bash localnet/tee/scripts/deploy-tee-localnet.sh
 ```
