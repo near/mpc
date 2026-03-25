@@ -179,7 +179,10 @@ impl MpcCluster {
     pub fn kill_nodes(&mut self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
             if idx >= self.nodes.len() {
-                anyhow::bail!("node index {idx} out of bounds (have {} nodes)", self.nodes.len());
+                anyhow::bail!(
+                    "node index {idx} out of bounds (have {} nodes)",
+                    self.nodes.len()
+                );
             }
             let state = self.nodes.remove(idx);
             let new_state = match state {
