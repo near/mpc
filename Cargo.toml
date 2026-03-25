@@ -6,6 +6,7 @@ members = [
     "crates/attestation-cli",
     "crates/backup-cli",
     "crates/chain-gateway",
+    "crates/chain-gateway-test-contract",
     "crates/ckd-example-cli",
     "crates/contract",
     "crates/contract-history",
@@ -28,6 +29,7 @@ members = [
     "crates/tee-context",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
+    "crates/test-port-allocator",
     "crates/test-utils",
     "crates/threshold-signatures",
     "crates/tls",
@@ -44,6 +46,7 @@ repository = "https://github.com/near/mpc"
 #workspace members
 attestation = { path = "crates/attestation" }
 chain-gateway = { path = "crates/chain-gateway" }
+chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
@@ -61,6 +64,7 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
 near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
+test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
 utilities = { path = "crates/utilities" }
@@ -142,6 +146,7 @@ k256 = "0.13.4"
 keccak = "0.1.5"
 lru = "0.16.3"
 mockall = "0.14.0"
+named-lock = "0.4.1"
 near-abi = "0.4.4"
 near-account-id = "2.5.0"
 near-jsonrpc-client = "0.20.0"
@@ -208,7 +213,6 @@ tracing-subscriber = { version = "0.3.23", features = [
 ] }
 tracing-test = "0.2.6"
 url = "2"
-wat = "1"
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
@@ -221,7 +225,9 @@ near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
