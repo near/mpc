@@ -482,16 +482,16 @@ mod tests {
         let mpc_hashes = vec![dummy_code_hash(10), dummy_code_hash(20)];
 
         // Add first launcher
-        assert!(allowed.add(launcher_1.clone(), &mpc_hashes));
+        assert!(allowed.add(launcher_1, &mpc_hashes));
         assert_eq!(allowed.launcher_hashes().len(), 1);
         // Should have 2 compose hashes (one per MPC image)
         assert_eq!(allowed.all_compose_hashes().len(), 2);
 
         // Adding the same launcher again returns false
-        assert!(!allowed.add(launcher_1.clone(), &mpc_hashes));
+        assert!(!allowed.add(launcher_1, &mpc_hashes));
 
         // Add second launcher
-        assert!(allowed.add(launcher_2.clone(), &mpc_hashes));
+        assert!(allowed.add(launcher_2, &mpc_hashes));
         assert_eq!(allowed.launcher_hashes().len(), 2);
         assert_eq!(allowed.all_compose_hashes().len(), 4);
 
@@ -512,7 +512,7 @@ mod tests {
         let launcher = dummy_launcher_hash(1);
         let mpc_hash_1 = dummy_code_hash(10);
 
-        allowed.add(launcher.clone(), &[mpc_hash_1.clone()]);
+        allowed.add(launcher, &[mpc_hash_1]);
         assert_eq!(allowed.all_compose_hashes().len(), 1);
 
         // Add a new MPC image — should add one compose hash per launcher

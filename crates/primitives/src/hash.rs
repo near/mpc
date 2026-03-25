@@ -16,7 +16,7 @@ pub enum HashParseError {
 /// Each concrete hash type defines a zero-sized spec struct and implements this trait
 /// for exactly one `N`. This prevents constructing a `HashDigest<S, WRONG_N>` — the
 /// compiler rejects it because the trait bound `S: HashSpec<WRONG_N>` is not satisfied.
-pub trait HashSpec<const N: usize>: borsh::BorshSerialize + borsh::BorshDeserialize {
+pub trait HashSpec<const N: usize> {
     const NAME: &'static str;
 }
 
@@ -75,7 +75,12 @@ impl<S: HashSpec<N>, const N: usize> core::hash::Hash for HashDigest<S, N> {
 
 impl<S: HashSpec<N>, const N: usize> core::fmt::Debug for HashDigest<S, N> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}({})", S::NAME, self.as_hex())
+        // Encode hex directly into a stack buffer to avoid allocating a String.
+        let mut buf = [0u8; 2 * 128]; // max 128-byte hashes (256 hex chars)
+        let hex_buf = &mut buf[..2 * N];
+        hex::encode_to_slice(self.bytes, hex_buf).map_err(|_| core::fmt::Error)?;
+        let hex_str = core::str::from_utf8(hex_buf).map_err(|_| core::fmt::Error)?;
+        write!(f, "{}({})", S::NAME, hex_str)
     }
 }
 
@@ -229,7 +234,7 @@ impl<S: HashSpec<N>, const N: usize> FromStr for HashDigest<S, N> {
 macro_rules! define_hash {
     ($(#[$meta:meta])* $name:ident, $n:literal) => {
         $crate::_macro_deps::paste::paste! {
-            #[doc = concat!("Spec for [`", stringify!($name), "`].")]
+            #[doc(hidden)]
             pub struct [<$name Spec>];
 
             impl $crate::_macro_deps::borsh::BorshSerialize for [<$name Spec>] {
