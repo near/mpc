@@ -632,10 +632,10 @@ mod test {
     use std::ops::Neg;
 
     use super::*;
-    use assert_matches::assert_matches;
     use crate::test_utils::{
         generate_participants, generate_participants_with_random_ids, MockCryptoRng,
     };
+    use assert_matches::assert_matches;
     use frost_core::Field;
     use frost_secp256k1::{Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
     use k256::Scalar;
