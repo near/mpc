@@ -4,6 +4,7 @@ dependencies = [
   "crate-names",
   "kebab-file-names",
   "todo-format",
+  "assert-matches",
   "use-in-fn",
   "ruff-format",
   "ruff-check",
@@ -97,6 +98,11 @@ args = ["scripts/check-kebab-case-files.sh"]
 [tasks.todo-format]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
+
+[tasks.assert-matches]
+description = "Check for assert!(matches!(...)) — use assert_matches!() instead"
+command = "bash"
+args = ["scripts/check-assert-matches.sh"]
 
 [tasks.use-in-fn]
 description = "Check for use statements inside function bodies"

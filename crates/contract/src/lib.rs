@@ -57,7 +57,7 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
+    domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -80,6 +80,41 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
+/// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
+///
+/// A non-zero deposit is required so that the transaction must be signed by a
+/// full-access key (or a function-call access key whose `deposit` allowance is
+/// explicitly set). This prevents a **malicious frontend** from silently
+/// submitting signature requests on behalf of a user via a restricted
+/// function-call access key, because such keys cannot attach deposits by
+/// default. In other words, requiring a deposit ensures the user (or their
+/// full-access key) explicitly authorised the call.
+///
+/// See the "Deposit requirement" section in the contract README for more
+/// details.
+fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
+    let deposit = env::attached_deposit();
+    match deposit.checked_sub(minimum_deposit) {
+        None => {
+            env::panic_str(
+                &InvalidParameters::InsufficientDeposit
+                    .message(format!(
+                        "Require a deposit of {} yoctonear, found: {}",
+                        minimum_deposit.as_yoctonear(),
+                        deposit.as_yoctonear(),
+                    ))
+                    .to_string(),
+            );
+        }
+        Some(diff) => {
+            if diff > NearToken::from_yoctonear(0) {
+                log!("refund excess deposit {diff} to {predecessor}");
+                Promise::new(predecessor.clone()).transfer(diff).detach();
+            }
+        }
+    }
+}
 
 impl Default for MpcContract {
     fn default() -> Self {
@@ -242,17 +277,17 @@ impl MpcContract {
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        match domain_config.scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+        match domain_config.curve {
+            Curve::Secp256k1 | Curve::V2Secp256k1 => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            SignatureScheme::Ed25519 => {
+            Curve::Ed25519 => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
-            SignatureScheme::Bls12381 => {
+            Curve::Bls12381 => {
                 env::panic_str(&InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function").to_string(),);
             }
         }
@@ -273,29 +308,8 @@ impl MpcContract {
             );
         }
 
-        // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
 
         let request = SignatureRequest::new(
             request.domain_id,
@@ -388,9 +402,9 @@ impl MpcContract {
     /// within a secure enclave. The signature_scheme parameter specifies which protocol
     /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
     /// to query across all protocols.
-    pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
+    pub fn latest_key_version(&self, signature_scheme: Option<Curve>) -> u32 {
         self.protocol_state
-            .most_recent_domain_for_protocol(signature_scheme.unwrap_or_default())
+            .most_recent_domain_for_curve(signature_scheme.unwrap_or_default())
             .unwrap()
             .0 as u32
     }
@@ -450,28 +464,7 @@ impl MpcContract {
         }
 
         let predecessor = env::predecessor_account_id();
-        // Check deposit and refund if required
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_CKD_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_CKD_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_CKD_REQUEST_DEPOSIT, &predecessor);
 
         if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
@@ -586,29 +579,8 @@ impl MpcContract {
             );
         }
 
-        // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
 
         if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
@@ -2244,16 +2216,16 @@ mod tests {
     };
 
     use super::*;
+    use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        NUM_PROTOCOLS,
+        gen_participants, infer_purpose_from_curve, NUM_CURVES,
     };
     use crate::primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainId},
         participants::Participants,
         signature::{Payload, Tweak},
-        test_utils::gen_participants,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2261,13 +2233,11 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::measurements::Sha384Digest;
+    use crate::tee::measurements::{
+        KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+    };
     use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
-    use crate::{
-        errors::{ErrorKind, NodeMigrationError},
-        primitives::test_utils::infer_purpose_from_scheme,
-    };
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
@@ -2276,7 +2246,7 @@ mod tests {
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
-    use mpc_primitives::hash::{Hash32, Image};
+    use mpc_primitives::hash::DockerImageHash;
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::{
@@ -2293,8 +2263,8 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use test_utils::attestation::{
-        image_digest, mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
-        VALID_ATTESTATION_TIMESTAMP,
+        image_digest, launcher_image_hash, mock_dto_dstack_attestation, near_account_key,
+        p2p_tls_key, VALID_ATTESTATION_TIMESTAMP,
     };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -2387,19 +2357,19 @@ mod tests {
     }
 
     pub fn make_public_key_for_domain(
-        domain_scheme: SignatureScheme,
+        domain_curve: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (dtos::PublicKey, SharedSecretKey) {
-        match domain_scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+        match domain_curve {
+            Curve::Secp256k1 | Curve::V2Secp256k1 => {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
-            SignatureScheme::Ed25519 => {
+            Curve::Ed25519 => {
                 let (pk, sk) = new_ed25519(rng);
                 (pk.into(), SharedSecretKey::Ed25519(sk))
             }
-            SignatureScheme::Bls12381 => {
+            Curve::Bls12381 => {
                 let (pk, sk) = new_bls12381g2(rng);
                 (pk.into(), SharedSecretKey::Bls12381(sk))
             }
@@ -2407,14 +2377,14 @@ mod tests {
     }
 
     fn basic_setup(
-        scheme: SignatureScheme,
+        curve: Curve,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
-        basic_setup_with_purpose(scheme, infer_purpose_from_scheme(scheme), rng)
+        basic_setup_with_purpose(curve, infer_purpose_from_curve(curve), rng)
     }
 
     fn basic_setup_with_purpose(
-        scheme: SignatureScheme,
+        curve: Curve,
         purpose: DomainPurpose,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
@@ -2428,11 +2398,11 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            scheme,
+            curve,
             purpose,
         }];
         let epoch_id = EpochId::new(0);
-        let (pk, sk) = make_public_key_for_domain(scheme, rng);
+        let (pk, sk) = make_public_key_for_domain(curve, rng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -2489,8 +2459,7 @@ mod tests {
     }
 
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
-        let (context, mut contract, secret_key) =
-            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2577,7 +2546,7 @@ mod tests {
 
     #[test]
     fn test_signature_timeout() {
-        let (context, mut contract, _) = basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         let payload = Payload::from_legacy_ecdsa([0u8; 32]);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
@@ -2594,6 +2563,7 @@ mod tests {
             &request.path,
         );
         contract.sign(request);
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_signature_and_clean_state_on_success(
                 signature_request.clone(),
@@ -2606,8 +2576,7 @@ mod tests {
 
     #[test]
     fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
@@ -2648,7 +2617,7 @@ mod tests {
     #[test]
     fn respond_ckd_pv__should_succeed_when_response_is_valid_and_request_exists() {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Bls12381, &mut rng);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Bls12381, &mut rng);
         let SharedSecretKey::Bls12381(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2689,8 +2658,7 @@ mod tests {
     #[should_panic(expected = "app public key check failed")]
     fn request_ckd_pv__should_reject_mismatched_app_public_key() {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut rng);
+        let (_context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut rng);
 
         // Generate pk1 and pk2 from different scalars so the pairing check fails
         let scalar1 = ckd::Scalar::random(&mut rng);
@@ -2710,7 +2678,7 @@ mod tests {
     #[should_panic(expected = "CKD output check failed")]
     fn respond_ckd_pv__should_reject_invalid_response() {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Bls12381, &mut rng);
+        let (context, mut contract, secret_key) = basic_setup(Curve::Bls12381, &mut rng);
         let SharedSecretKey::Bls12381(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2742,8 +2710,7 @@ mod tests {
 
     #[test]
     fn test_ckd_timeout() {
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
@@ -2760,6 +2727,7 @@ mod tests {
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_ck_and_clean_state_on_success(
                 ckd_request.clone(),
@@ -2774,11 +2742,8 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, secret_key) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (_context, mut contract, secret_key) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
@@ -2845,11 +2810,8 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _secret_key) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (_context, mut contract, _secret_key) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
@@ -2866,6 +2828,7 @@ mod tests {
         contract.verify_foreign_transaction(request_args);
 
         // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_verify_foreign_tx_and_clean_state_on_success(
                 request.clone(),
@@ -2886,7 +2849,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.sign(SignRequestArgs {
@@ -2907,7 +2870,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
@@ -2926,11 +2889,8 @@ mod tests {
     fn verify_foreign_tx__should_reject_chain_not_in_policy() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) = basic_setup_with_purpose(
-            SignatureScheme::Secp256k1,
-            DomainPurpose::ForeignTx,
-            &mut rng,
-        );
+        let (_context, mut contract, _sk) =
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
         // Policy has Solana but not Bitcoin
         contract.foreign_chain_policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
@@ -2961,7 +2921,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, purpose, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, purpose, &mut rng);
 
         // When
         contract.request_app_private_key(CKDRequestArgs {
@@ -3211,8 +3171,7 @@ mod tests {
     #[test]
     fn test_respond_ckd_fails_for_attested_non_participant() {
         // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
 
         // Submit valid attestations for all participants (so contract is in Running state)
         // 2. Extract participants list (we have 4 by default)
@@ -3341,7 +3300,7 @@ mod tests {
     }
 
     const NUM_GENERATED_DOMAINS: usize = 1;
-    const NUM_DOMAINS: usize = 2 * NUM_PROTOCOLS;
+    const NUM_DOMAINS: usize = 2 * NUM_CURVES;
     #[test]
     fn test_start_node_migration_failure_not_participant() {
         let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
@@ -3940,7 +3899,7 @@ mod tests {
 
         assert!(all_updates.updates.contains_key(&expected_update_id));
         let update = all_updates.updates.get(&expected_update_id).unwrap();
-        assert!(matches!(update, dtos::UpdateHash::Code(_)));
+        assert_matches!(update, dtos::UpdateHash::Code(_));
 
         let actual_voters: HashSet<_> = all_updates
             .votes
@@ -4259,7 +4218,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
         assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
         assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
 
@@ -4281,7 +4240,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
         assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
         assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
 
@@ -4303,7 +4262,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(SignatureScheme::Secp256k1, DomainPurpose::Sign, &mut rng);
+            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
 
         // When — two v1 calls and one v2 call
         contract.sign(SignRequestArgs {
@@ -4396,10 +4355,10 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            scheme: SignatureScheme::Secp256k1,
+            curve: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         }];
-        let (pk, _) = make_public_key_for_domain(SignatureScheme::Secp256k1, &mut OsRng);
+        let (pk, _) = make_public_key_for_domain(Curve::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -4411,10 +4370,7 @@ mod tests {
             MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
                 .unwrap();
 
-        assert!(matches!(
-            contract.protocol_state,
-            ProtocolContractState::Running(_)
-        ));
+        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
 
         // Get participant info for the target (last participant)
         let participant_list: Vec<_> = participants.participants().to_vec();
@@ -4498,10 +4454,10 @@ mod tests {
         Vec<near_sdk::AccountId>,
         Attestation,
         dtos::Ed25519PublicKey,
-        Hash32<Image>,
+        DockerImageHash,
         near_sdk::PublicKey,
     ) {
-        let (_context, contract, _secret_key) = basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (_context, contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
 
         let participant_account_ids: Vec<_> = contract
             .protocol_state
@@ -4534,7 +4490,7 @@ mod tests {
     fn setup_approved_mpc_hash(
         contract: &mut MpcContract,
         participant_account_ids: &[near_sdk::AccountId],
-        mpc_hash: &Hash32<Image>,
+        mpc_hash: &DockerImageHash,
         block_timestamp_ns: u64,
     ) {
         // Add the legacy launcher image first, so that compose hashes are derived
@@ -4554,18 +4510,14 @@ mod tests {
         }
     }
 
-    /// Adds the legacy launcher image hash used in test attestation data.
+    /// Adds the launcher image hash from test attestation assets.
+    /// The hash is extracted from `test-utils/assets/launcher_image_compose.yaml`.
     fn setup_approved_launcher_hash(
         contract: &mut MpcContract,
         participant_account_ids: &[near_sdk::AccountId],
         block_timestamp_ns: u64,
     ) {
-        let launcher_hash_bytes: [u8; 32] =
-            hex::decode("02ba809689637d13a9e28b31a9e00de4fef776f3d604bdd51c5a03ee756eb316")
-                .unwrap()
-                .try_into()
-                .unwrap();
-        let launcher_hash = LauncherImageHash::from(launcher_hash_bytes);
+        let launcher_hash = launcher_image_hash();
 
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
@@ -5335,11 +5287,11 @@ mod tests {
 
     fn make_measurement(byte: u8) -> ContractExpectedMeasurements {
         ContractExpectedMeasurements {
-            mrtd: Sha384Digest::from([byte; 48]),
-            rtmr0: Sha384Digest::from([byte.wrapping_add(1); 48]),
-            rtmr1: Sha384Digest::from([byte.wrapping_add(2); 48]),
-            rtmr2: Sha384Digest::from([byte.wrapping_add(3); 48]),
-            key_provider_event_digest: Sha384Digest::from([byte.wrapping_add(4); 48]),
+            mrtd: MrtdHash::from([byte; 48]),
+            rtmr0: Rtmr0Hash::from([byte.wrapping_add(1); 48]),
+            rtmr1: Rtmr1Hash::from([byte.wrapping_add(2); 48]),
+            rtmr2: Rtmr2Hash::from([byte.wrapping_add(3); 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([byte.wrapping_add(4); 48]),
         }
     }
 

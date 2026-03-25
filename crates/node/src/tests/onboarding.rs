@@ -1,3 +1,4 @@
+use assert_matches::assert_matches;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -16,7 +17,7 @@ use crate::tests::{
 use crate::tracking::AutoAbortTask;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
+use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
 use mpc_contract::state::ProtocolContractState;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
@@ -103,7 +104,7 @@ async fn test_onboarding() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        curve: Curve::Secp256k1,
         purpose: DomainPurpose::Sign,
     };
 
@@ -158,7 +159,7 @@ async fn test_onboarding() {
     {
         tracing::info!("Setting backup and destination node info");
         let mut contract = setup.indexer.contract_mut().await;
-        assert!(matches!(&contract.state, ProtocolContractState::Running(_)));
+        assert_matches!(&contract.state, ProtocolContractState::Running(_));
         let backup_service_info = BackupServiceInfo {
             public_key: Ed25519PublicKey::from(&backup_service_key.verifying_key()),
         };

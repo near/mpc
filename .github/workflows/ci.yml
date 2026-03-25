@@ -143,7 +143,7 @@ jobs:
         if: github.event_name == 'schedule'
         run: |
           cargo clean
-          rm -rf ~/.cargo
+          rm -rf ~/.cargo/registry ~/.cargo/git
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -203,7 +203,7 @@ jobs:
         if: github.event_name == 'schedule'
         run: |
           cargo clean
-          rm -rf ~/.cargo
+          rm -rf ~/.cargo/registry ~/.cargo/git
 
       - name: Install build dependencies
         run: |
@@ -481,7 +481,7 @@ jobs:
         if: github.event_name == 'schedule'
         run: |
           cargo clean
-          rm -rf ~/.cargo
+          rm -rf ~/.cargo/registry ~/.cargo/git
 
       - name: Install ruff
         uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1

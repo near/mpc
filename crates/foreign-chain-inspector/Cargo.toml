@@ -8,17 +8,18 @@ license.workspace = true
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
+hex = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
 httpmock = { workspace = true }
 rstest = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 
