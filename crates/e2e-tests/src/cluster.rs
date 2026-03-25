@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
@@ -21,10 +21,6 @@ use crate::port_allocator::E2ePortAllocator;
 const DEFAULT_SANDBOX_IMAGE: &str = "nearprotocol/sandbox:2.10.7";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = "ed25519:3JoAjwLppjgvxkk6kNsu5wQj3FfUJnpBKWieC73hVTpBeA6FZiCc5tfyZL3a3tHeQJegQe4qGSv8FLsYp7TYd1r6";
-
-// ---------------------------------------------------------------------------
-// MpcClusterConfig
-// ---------------------------------------------------------------------------
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -91,10 +87,6 @@ impl MpcClusterConfig {
 fn default_mpc_binary_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/mpc-node")
 }
-
-// ---------------------------------------------------------------------------
-// MpcCluster
-// ---------------------------------------------------------------------------
 
 /// A running MPC test cluster with a deployed contract and N mpc-node processes.
 ///
@@ -168,7 +160,7 @@ impl MpcCluster {
             &ports,
         )?;
 
-        let user_accounts = create_user_account(&blockchain).await?;
+        let user_accounts = create_user_accounts(&blockchain).await?;
 
         tracing::info!("MPC cluster is ready");
 
@@ -184,10 +176,11 @@ impl MpcCluster {
         })
     }
 
-    // -- Node lifecycle ------------------------------------------------------
-
     pub fn kill_nodes(&mut self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
+            if idx >= self.nodes.len() {
+                anyhow::bail!("node index {idx} out of bounds (have {} nodes)", self.nodes.len());
+            }
             let state = self.nodes.remove(idx);
             let new_state = match state {
                 MpcNodeState::Running(node) => MpcNodeState::Stopped(node.kill()),
@@ -216,12 +209,10 @@ impl MpcCluster {
         Ok(())
     }
 
-    pub fn kill_all(&mut self) {
+    pub fn kill_all(&mut self) -> anyhow::Result<()> {
         let indices: Vec<usize> = (0..self.nodes.len()).collect();
-        let _ = self.kill_nodes(&indices);
+        self.kill_nodes(&indices)
     }
-
-    // -- Contract operations -------------------------------------------------
 
     pub async fn get_contract_state(&self) -> anyhow::Result<ProtocolContractState> {
         self.contract.state().await
@@ -261,7 +252,7 @@ impl MpcCluster {
         let state = self.get_contract_state().await?;
         let epoch_id = match &state {
             ProtocolContractState::Running(r) => r.keyset.epoch_id,
-            _ => bail!("cannot reshare: contract not in Running state"),
+            _ => anyhow::bail!("cannot reshare: contract not in Running state"),
         };
 
         let participants =
@@ -290,8 +281,6 @@ impl MpcCluster {
         .await
     }
 
-    // -- Metrics -------------------------------------------------------------
-
     pub async fn get_metric_all_nodes(&self, name: &str) -> anyhow::Result<Vec<Option<i64>>> {
         let mut results = Vec::new();
         for node in &self.nodes {
@@ -316,7 +305,7 @@ impl MpcCluster {
                 return Ok(());
             }
             if tokio::time::Instant::now() >= deadline {
-                bail!(
+                anyhow::bail!(
                     "metric {name} did not reach {expected} on all nodes within {}s (values: {values:?})",
                     timeout.as_secs()
                 );
@@ -325,13 +314,11 @@ impl MpcCluster {
         }
     }
 
-    // -- Data management -----------------------------------------------------
-
     pub fn wipe_db(&self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
             match &self.nodes[idx] {
                 MpcNodeState::Stopped(setup) => setup.wipe_db()?,
-                MpcNodeState::Running(_) => bail!("cannot wipe DB for running node {idx}"),
+                MpcNodeState::Running(_) => anyhow::bail!("cannot wipe DB for running node {idx}"),
             }
         }
         Ok(())
@@ -342,14 +329,12 @@ impl MpcCluster {
             match &self.nodes[idx] {
                 MpcNodeState::Running(node) => node.set_block_ingestion(active)?,
                 MpcNodeState::Stopped(_) => {
-                    bail!("cannot set block ingestion for stopped node {idx}")
+                    anyhow::bail!("cannot set block ingestion for stopped node {idx}")
                 }
             }
         }
         Ok(())
     }
-
-    // -- Helpers -------------------------------------------------------------
 
     async fn call_from_all_nodes_concurrently(
         &self,
@@ -403,13 +388,11 @@ impl MpcCluster {
 
 impl Drop for MpcCluster {
     fn drop(&mut self) {
-        self.kill_all();
+        if let Err(e) = self.kill_all() {
+            tracing::error!(error = %e, "failed to kill all nodes during drop");
+        }
     }
 }
-
-// ---------------------------------------------------------------------------
-// MpcNodeState
-// ---------------------------------------------------------------------------
 
 /// A node that is either running or stopped (killed).
 pub enum MpcNodeState {
@@ -439,10 +422,6 @@ impl MpcNodeState {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Setup helpers (factored out of MpcCluster::start)
-// ---------------------------------------------------------------------------
 
 fn create_test_dir(home_base: &Option<PathBuf>) -> anyhow::Result<tempfile::TempDir> {
     match home_base {
@@ -610,7 +589,9 @@ fn start_mpc_nodes(
     Ok(nodes)
 }
 
-async fn create_user_account(
+/// Creates user accounts for test interactions. Currently only creates a single
+/// default account under SANDBOX_ROOT_ACCOUNT.
+async fn create_user_accounts(
     blockchain: &NearBlockchain,
 ) -> anyhow::Result<HashMap<AccountId, SigningKey>> {
     let key = generate_deterministic_key(200);
@@ -622,10 +603,6 @@ async fn create_user_account(
     map.insert(account, key);
     Ok(map)
 }
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
 
 fn build_participants(
     num_nodes: usize,
@@ -696,7 +673,7 @@ async fn wait_for_contract_state(
             Err(e) => tracing::debug!(error = %e, "failed to query contract state (retrying)"),
         }
         if tokio::time::Instant::now() >= deadline {
-            bail!(
+            anyhow::bail!(
                 "contract state predicate not satisfied within {}s",
                 timeout.as_secs()
             );
