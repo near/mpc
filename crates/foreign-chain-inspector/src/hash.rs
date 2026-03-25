@@ -3,16 +3,14 @@ pub(crate) fn parse_hex_hash<const N: usize, T: From<[u8; N]>>(
     s: &str,
 ) -> Result<T, mpc_primitives::hash::HashParseError> {
     let decoded = hex::decode(s)?;
-    let bytes: [u8; N] =
-        decoded
-            .try_into()
-            .map_err(|v: Vec<u8>| mpc_primitives::hash::HashParseError::InvalidLength {
-                expected: N,
-                got: v.len(),
-            })?;
+    let bytes: [u8; N] = decoded.try_into().map_err(|v: Vec<u8>| {
+        mpc_primitives::hash::HashParseError::InvalidLength {
+            expected: N,
+            got: v.len(),
+        }
+    })?;
     Ok(T::from(bytes))
 }
-
 
 /// Generates a 32-byte hash newtype with hex JSON serialization and `FromStr`.
 /// Unlike the primitives crate's `hash_newtype!`, this does not include borsh or schema support.
