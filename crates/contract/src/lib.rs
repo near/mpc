@@ -1353,7 +1353,7 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let votes = self.tee_state.vote(code_hash.clone(), &participant);
+        let votes = self.tee_state.vote(code_hash, &participant);
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -1391,7 +1391,7 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let action = LauncherVoteAction::Add(launcher_hash.clone());
+        let action = LauncherVoteAction::Add(launcher_hash);
         let votes = self.tee_state.vote_launcher(action, &participant);
 
         let tee_upgrade_deadline_duration =
@@ -1429,7 +1429,7 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let action = LauncherVoteAction::Remove(launcher_hash.clone());
+        let action = LauncherVoteAction::Remove(launcher_hash);
         let votes = self.tee_state.vote_launcher(action, &participant);
 
         // Removal requires ALL participants to vote

@@ -33,7 +33,7 @@ impl CodeHashesVotes {
     ) -> u64 {
         if self
             .proposal_by_account
-            .insert(participant.clone(), proposal.clone())
+            .insert(participant.clone(), proposal)
             .is_some()
         {
             log!("removed old vote for signer");
@@ -64,7 +64,7 @@ impl CodeHashesVotes {
             .filter(|(participant_id, _)| {
                 participants.is_participant_given_participant_id(&participant_id.get())
             })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
+            .map(|(participant_id, vote)| (participant_id.clone(), *vote))
             .collect();
         CodeHashesVotes {
             proposal_by_account: remaining,
@@ -338,10 +338,7 @@ impl AllowedLauncherImages {
 
     /// Returns all allowed launcher image hashes.
     pub fn launcher_hashes(&self) -> Vec<LauncherImageHash> {
-        self.entries
-            .iter()
-            .map(|e| e.launcher_hash.clone())
-            .collect()
+        self.entries.iter().map(|e| e.launcher_hash).collect()
     }
 }
 

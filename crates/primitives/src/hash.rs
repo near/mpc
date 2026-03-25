@@ -1,5 +1,5 @@
-use alloc::{string::String, vec::Vec};
-use core::str::FromStr;
+use alloc::{format, string::String, vec::Vec};
+use core::{marker::PhantomData, str::FromStr};
 use hex::FromHexError;
 use thiserror::Error;
 
@@ -11,125 +11,258 @@ pub enum HashParseError {
     InvalidLength { expected: usize, got: usize },
 }
 
-/// Generates a hash newtype wrapping `[u8; $n]` with hex serde, borsh, `FromStr`,
-/// `Deref`, `AsRef`, `Into`, and (when the `abi` feature is active) BorshSchema / JsonSchema.
-macro_rules! hash_newtype {
+/// Marker trait binding a hash type name to a specific byte length.
+///
+/// Each concrete hash type defines a zero-sized spec struct and implements this trait
+/// for exactly one `N`. This prevents constructing a `HashDigest<S, WRONG_N>` — the
+/// compiler rejects it because the trait bound `S: HashSpec<WRONG_N>` is not satisfied.
+pub trait HashSpec<const N: usize>: borsh::BorshSerialize + borsh::BorshDeserialize {
+    const NAME: &'static str;
+}
+
+/// A fixed-size hash digest with hex serialization.
+///
+/// `S` is a zero-sized marker implementing [`HashSpec<N>`] that binds the type name
+/// to the byte length `N`. All trait implementations are generic — adding a new hash
+/// type requires only a spec struct, a trait impl, and a type alias.
+#[derive(derive_more::Deref, derive_more::AsRef, derive_more::Into)]
+pub struct HashDigest<S: HashSpec<N>, const N: usize> {
+    #[deref]
+    #[as_ref]
+    #[into]
+    bytes: [u8; N],
+    #[into(skip)]
+    _marker: PhantomData<S>,
+}
+
+// Manual impls to avoid spurious `S: Trait` bounds from derive macros.
+
+impl<S: HashSpec<N>, const N: usize> Clone for HashDigest<S, N> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S: HashSpec<N>, const N: usize> Copy for HashDigest<S, N> {}
+
+impl<S: HashSpec<N>, const N: usize> PartialEq for HashDigest<S, N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl<S: HashSpec<N>, const N: usize> Eq for HashDigest<S, N> {}
+
+impl<S: HashSpec<N>, const N: usize> PartialOrd for HashDigest<S, N> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<S: HashSpec<N>, const N: usize> Ord for HashDigest<S, N> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.bytes.cmp(&other.bytes)
+    }
+}
+
+impl<S: HashSpec<N>, const N: usize> core::hash::Hash for HashDigest<S, N> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.bytes.hash(state);
+    }
+}
+
+// -- Debug -------------------------------------------------------------------
+
+impl<S: HashSpec<N>, const N: usize> core::fmt::Debug for HashDigest<S, N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}({})", S::NAME, self.as_hex())
+    }
+}
+
+// -- Serde (hex string) ------------------------------------------------------
+
+impl<S: HashSpec<N>, const N: usize> serde::Serialize for HashDigest<S, N> {
+    fn serialize<Ser: serde::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
+        serializer.serialize_str(&hex::encode(self.bytes))
+    }
+}
+
+impl<'de, S: HashSpec<N>, const N: usize> serde::Deserialize<'de> for HashDigest<S, N> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let hex_str = <String as serde::Deserialize>::deserialize(deserializer)?;
+        let decoded = hex::decode(&hex_str).map_err(serde::de::Error::custom)?;
+        let bytes: [u8; N] = decoded.try_into().map_err(|v: Vec<u8>| {
+            serde::de::Error::custom(format!("expected {} bytes, got {}", N, v.len()))
+        })?;
+        Ok(Self::new(bytes))
+    }
+}
+
+// -- Borsh -------------------------------------------------------------------
+
+impl<S: HashSpec<N>, const N: usize> borsh::BorshSerialize for HashDigest<S, N> {
+    fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
+        self.bytes.serialize(writer)
+    }
+}
+
+impl<S: HashSpec<N>, const N: usize> borsh::BorshDeserialize for HashDigest<S, N> {
+    fn deserialize_reader<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Result<Self> {
+        let bytes = <[u8; N]>::deserialize_reader(reader)?;
+        Ok(Self::new(bytes))
+    }
+}
+
+// -- BorshSchema (behind `abi` feature) --------------------------------------
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl<S: HashSpec<N>, const N: usize> borsh::BorshSchema for HashDigest<S, N> {
+    fn declaration() -> borsh::schema::Declaration {
+        S::NAME.to_string()
+    }
+
+    fn add_definitions_recursively(
+        definitions: &mut alloc::collections::BTreeMap<
+            borsh::schema::Declaration,
+            borsh::schema::Definition,
+        >,
+    ) {
+        let byte_array_decl = format!("[u8; {}]", N);
+        definitions.insert(
+            Self::declaration(),
+            borsh::schema::Definition::Struct {
+                fields: borsh::schema::Fields::NamedFields(alloc::vec![(
+                    "bytes".into(),
+                    byte_array_decl,
+                )]),
+            },
+        );
+    }
+}
+
+// -- JsonSchema (behind `abi` feature) ---------------------------------------
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl<S: HashSpec<N>, const N: usize> schemars::JsonSchema for HashDigest<S, N> {
+    fn schema_name() -> String {
+        S::NAME.to_string()
+    }
+
+    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        let hex_len = (N * 2) as u32;
+        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(
+                schemars::schema::InstanceType::String,
+            ))),
+            string: Some(Box::new(schemars::schema::StringValidation {
+                min_length: Some(hex_len),
+                max_length: Some(hex_len),
+                pattern: Some("^[0-9a-fA-F]+$".to_string()),
+            })),
+            ..Default::default()
+        })
+    }
+}
+
+// -- From / Into / constructors ----------------------------------------------
+
+impl<S: HashSpec<N>, const N: usize> From<[u8; N]> for HashDigest<S, N> {
+    fn from(bytes: [u8; N]) -> Self {
+        Self::new(bytes)
+    }
+}
+
+impl<S: HashSpec<N>, const N: usize> HashDigest<S, N> {
+    /// Converts the hash to a hexadecimal string representation.
+    pub fn as_hex(&self) -> String {
+        hex::encode(self.as_ref())
+    }
+
+    pub fn as_bytes(&self) -> [u8; N] {
+        self.bytes
+    }
+
+    pub const fn new(bytes: [u8; N]) -> Self {
+        Self {
+            bytes,
+            _marker: PhantomData,
+        }
+    }
+}
+
+// -- FromStr -----------------------------------------------------------------
+
+impl<S: HashSpec<N>, const N: usize> FromStr for HashDigest<S, N> {
+    type Err = HashParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let decoded_hex_bytes = hex::decode(s)?;
+        let hash_bytes: [u8; N] =
+            decoded_hex_bytes
+                .try_into()
+                .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
+                    expected: N,
+                    got: v.len(),
+                })?;
+        Ok(hash_bytes.into())
+    }
+}
+
+// ============================================================================
+// define_hash! convenience macro
+// ============================================================================
+
+/// Defines a new hash type backed by [`HashDigest`].
+///
+/// Generates a zero-sized spec struct (`<Name>Spec`), implements [`HashSpec`] for it,
+/// and creates a type alias `<Name>` = `HashDigest<<Name>Spec, N>`.
+///
+/// # Example
+///
+/// ```ignore
+/// mpc_primitives::define_hash!(
+///     /// SHA-256 hash of a Bitcoin block.
+///     BitcoinBlockHash, 32
+/// );
+/// ```
+#[macro_export]
+macro_rules! define_hash {
     ($(#[$meta:meta])* $name:ident, $n:literal) => {
-        #[serde_with::serde_as]
-        #[derive(
-            Debug,
-            Clone,
-            PartialEq,
-            Eq,
-            PartialOrd,
-            Ord,
-            Hash,
-            serde::Serialize,
-            serde::Deserialize,
-            borsh::BorshSerialize,
-            borsh::BorshDeserialize,
-            derive_more::Deref,
-            derive_more::AsRef,
-            derive_more::Into,
-        )]
-        $(#[$meta])*
-        #[serde(transparent)]
-        pub struct $name {
-            #[deref]
-            #[as_ref]
-            #[into]
-            #[serde_as(as = "serde_with::hex::Hex")]
-            bytes: [u8; $n],
-        }
+        $crate::_macro_deps::paste::paste! {
+            #[doc = concat!("Spec for [`", stringify!($name), "`].")]
+            pub struct [<$name Spec>];
 
-        impl From<[u8; $n]> for $name {
-            fn from(bytes: [u8; $n]) -> Self {
-                Self::new(bytes)
-            }
-        }
-
-        impl $name {
-            /// Converts the hash to a hexadecimal string representation.
-            pub fn as_hex(&self) -> String {
-                hex::encode(self.as_ref())
+            impl $crate::_macro_deps::borsh::BorshSerialize for [<$name Spec>] {
+                fn serialize<W: $crate::_macro_deps::borsh::io::Write>(
+                    &self, _writer: &mut W,
+                ) -> $crate::_macro_deps::borsh::io::Result<()> {
+                    Ok(())
+                }
             }
 
-            pub fn as_bytes(&self) -> [u8; $n] {
-                self.bytes
+            impl $crate::_macro_deps::borsh::BorshDeserialize for [<$name Spec>] {
+                fn deserialize_reader<R: $crate::_macro_deps::borsh::io::Read>(
+                    _reader: &mut R,
+                ) -> $crate::_macro_deps::borsh::io::Result<Self> {
+                    Ok(Self)
+                }
             }
 
-            pub const fn new(bytes: [u8; $n]) -> Self {
-                Self { bytes }
-            }
-        }
-
-        impl FromStr for $name {
-            type Err = HashParseError;
-
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let decoded_hex_bytes = hex::decode(s)?;
-                let hash_bytes: [u8; $n] =
-                    decoded_hex_bytes
-                        .try_into()
-                        .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
-                            expected: $n,
-                            got: v.len(),
-                        })?;
-                Ok(hash_bytes.into())
-            }
-        }
-
-        #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-        impl borsh::BorshSchema for $name {
-            fn declaration() -> borsh::schema::Declaration {
-                alloc::format!(stringify!($name))
+            impl $crate::hash::HashSpec<$n> for [<$name Spec>] {
+                const NAME: &'static str = stringify!($name);
             }
 
-            fn add_definitions_recursively(
-                definitions: &mut alloc::collections::BTreeMap<
-                    borsh::schema::Declaration,
-                    borsh::schema::Definition,
-                >,
-            ) {
-                let byte_array_decl = alloc::format!("[u8; {}]", $n);
-                definitions.insert(
-                    Self::declaration(),
-                    borsh::schema::Definition::Struct {
-                        fields: borsh::schema::Fields::NamedFields(alloc::vec![
-                            ("bytes".into(), byte_array_decl),
-                        ]),
-                    },
-                );
-            }
-        }
-
-        #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-        impl schemars::JsonSchema for $name {
-            fn schema_name() -> String {
-                alloc::format!(stringify!($name))
-            }
-
-            fn json_schema(
-                _generator: &mut schemars::r#gen::SchemaGenerator,
-            ) -> schemars::schema::Schema {
-                let hex_len = ($n * 2) as u32;
-                schemars::schema::Schema::Object(schemars::schema::SchemaObject {
-                    instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(
-                        schemars::schema::InstanceType::String,
-                    ))),
-                    string: Some(Box::new(schemars::schema::StringValidation {
-                        min_length: Some(hex_len),
-                        max_length: Some(hex_len),
-                        pattern: Some("^[0-9a-fA-F]+$".to_string()),
-                    })),
-                    ..Default::default()
-                })
-            }
+            $(#[$meta])*
+            pub type $name = $crate::hash::HashDigest<[<$name Spec>], $n>;
         }
     };
 }
 
-hash_newtype!(
+// ============================================================================
+// Concrete hash types
+// ============================================================================
+
+define_hash!(
     /// Hash of a Docker image running in the TEE environment. Used as a proposal for a new TEE
     /// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
     /// measurement and more).
@@ -140,7 +273,7 @@ hash_newtype!(
 /// Hash of the MPC node's Docker image.
 pub type NodeImageHash = DockerImageHash;
 
-hash_newtype!(
+define_hash!(
     /// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment.
     /// It is computed from the launcher's Docker Compose template populated with the launcher image
     /// hash and the MPC node's Docker image hash.
@@ -148,7 +281,7 @@ hash_newtype!(
     32
 );
 
-hash_newtype!(
+define_hash!(
     /// Hash of the launcher Docker image itself. Voted on by participants to allow
     /// launcher upgrades without contract redeployment.
     LauncherImageHash,
@@ -164,8 +297,8 @@ mod tests {
     use borsh::BorshDeserialize;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
-    hash_newtype!(TestHash, 32);
-    hash_newtype!(TestHash48, 48);
+    define_hash!(TestHash, 32);
+    define_hash!(TestHash48, 48);
 
     #[test]
     fn test_from_bytes_array() {
