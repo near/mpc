@@ -17,6 +17,9 @@ See [updating-launcher-internal-guide.md](../../../docs/updating-launcher-intern
 ## Setup variables
 
 ### Required
+
+All three variables below must be set before running the script.
+
 ```bash
 # dstack base path — the folder containing the `vmm/src/vmm-cli.py` script.
 # If you cloned meta-dstack, this is the `dstack` subdirectory inside it
@@ -25,7 +28,7 @@ export BASE_PATH=/path/to/meta-dstack/dstack
 # external machine IP (you can use:
 #   ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1   | grep -Ev '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)'
 export MACHINE_IP=<host-ip-reachable-from-CVM>
-# the mpc docker image tag.
+# the mpc docker image tag (required).
 # 1. make sure it is available on docker hub.
 # 2. make sure that DEFAULT_IMAGE_DIGEST=sha256:<hash> in mpc/tee_launcher/launcher_docker_compose.yaml corresponds to that tag, by calling
 #   `docker pull nearone/mpc-node:$MPC_IMAGE_TAGS` and then
@@ -41,9 +44,9 @@ export VMM_RPC=http://127.0.0.1:<port>
 
 ### Optional
 
-Guest OS image (defaults to `dstack-dev-<version>`). To use the production (release) image:
+Guest OS image (defaults to `dstack-dev-0.5.8`). To use the production (release) image:
 ```bash
-export OS_IMAGE=dstack-0.5.7
+export OS_IMAGE=dstack-0.5.8
 ```
 
 If you want to use specific NEAR accounts name instead of defaults:
