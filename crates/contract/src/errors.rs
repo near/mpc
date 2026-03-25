@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use crate::primitives::domain::DomainId;
 use crate::primitives::key_state::EpochId;
+use near_account_id::AccountId;
 use near_mpc_contract_interface::types::ForeignChain;
 mod impls;
 
@@ -172,8 +173,26 @@ pub enum InvalidThreshold {
 pub enum InvalidCandidateSet {
     #[error("Set of proposed participants must contain at least `threshold` old participants.")]
     InsufficientOldParticipants,
-    #[error("Participant ids are not coherent.")]
-    IncoherentParticipantIds,
+    #[error("Existing participant {account_id} changed ID from {old_id} to {new_id}.")]
+    ParticipantIdChanged {
+        account_id: AccountId,
+        old_id: u32,
+        new_id: u32,
+    },
+    #[error("Existing participant {account_id} changed info (url or sign_pk).")]
+    ParticipantInfoChanged { account_id: AccountId },
+    #[error("New participant {account_id} reuses ID {new_id} already assigned to existing participant {existing_account_id}.")]
+    NewParticipantReusesOldId {
+        account_id: AccountId,
+        new_id: u32,
+        existing_account_id: AccountId,
+    },
+    #[error("Participant ID {id} is not less than next_id {next_id}.")]
+    ParticipantIdNotLessThanNextId { id: u32, next_id: u32 },
+    #[error("Duplicate participant IDs found.")]
+    DuplicateParticipantIds,
+    #[error("Duplicate account IDs found.")]
+    DuplicateAccountIds,
     #[error("New Participant ids need to be unique and contiguous.")]
     NewParticipantIdsNotContiguous,
     #[error("New Participant ids need to not skip any unused participant ids.")]
