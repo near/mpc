@@ -252,6 +252,13 @@ assertions_on_result_states = "warn"
 allow_attributes = "warn"
 mod_module_files = "deny"
 
+# The hash_newtype! macro uses cfg(feature = "abi") for BorshSchema/JsonSchema impls.
+# Crates that invoke the macro but don't define an "abi" feature would otherwise get
+# an "unexpected cfg" warning, which -D warnings in CI promotes to an error.
+[workspace.lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ["cfg(feature, values(\"abi\"))"]
+
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"
 

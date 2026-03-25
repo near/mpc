@@ -1,5 +1,3 @@
-use alloc::{string::String, vec::Vec};
-use core::str::FromStr;
 use hex::FromHexError;
 use thiserror::Error;
 
@@ -13,9 +11,9 @@ pub enum HashParseError {
 
 /// Generates a hash newtype wrapping `[u8; $n]` with hex serde, borsh, `FromStr`,
 /// `Deref`, `AsRef`, `Into`, and (when the `abi` feature is active) BorshSchema / JsonSchema.
+#[macro_export]
 macro_rules! hash_newtype {
     ($(#[$meta:meta])* $name:ident, $n:literal) => {
-        #[serde_with::serde_as]
         #[derive(
             Debug,
             Clone,
@@ -24,22 +22,38 @@ macro_rules! hash_newtype {
             PartialOrd,
             Ord,
             Hash,
-            serde::Serialize,
-            serde::Deserialize,
-            borsh::BorshSerialize,
-            borsh::BorshDeserialize,
-            derive_more::Deref,
-            derive_more::AsRef,
-            derive_more::Into,
+            $crate::_macro_deps::borsh::BorshSerialize,
+            $crate::_macro_deps::borsh::BorshDeserialize,
+            $crate::_macro_deps::derive_more::Deref,
+            $crate::_macro_deps::derive_more::AsRef,
+            $crate::_macro_deps::derive_more::Into,
         )]
         $(#[$meta])*
-        #[serde(transparent)]
         pub struct $name {
             #[deref]
             #[as_ref]
             #[into]
-            #[serde_as(as = "serde_with::hex::Hex")]
             bytes: [u8; $n],
+        }
+
+        impl $crate::_macro_deps::serde::Serialize for $name {
+            fn serialize<S: $crate::_macro_deps::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str(&$crate::_macro_deps::hex::encode(&self.bytes))
+            }
+        }
+
+        impl<'de> $crate::_macro_deps::serde::Deserialize<'de> for $name {
+            fn deserialize<D: $crate::_macro_deps::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let hex_str = <$crate::_macro_deps::alloc::string::String as $crate::_macro_deps::serde::Deserialize>::deserialize(deserializer)?;
+                let decoded = $crate::_macro_deps::hex::decode(&hex_str)
+                    .map_err($crate::_macro_deps::serde::de::Error::custom)?;
+                let bytes: [u8; $n] = decoded.try_into().map_err(|v: $crate::_macro_deps::alloc::vec::Vec<u8>| {
+                    $crate::_macro_deps::serde::de::Error::custom(
+                        $crate::_macro_deps::alloc::format!("expected {} bytes, got {}", $n, v.len())
+                    )
+                })?;
+                Ok(Self { bytes })
+            }
         }
 
         impl From<[u8; $n]> for $name {
@@ -50,8 +64,8 @@ macro_rules! hash_newtype {
 
         impl $name {
             /// Converts the hash to a hexadecimal string representation.
-            pub fn as_hex(&self) -> String {
-                hex::encode(self.as_ref())
+            pub fn as_hex(&self) -> $crate::_macro_deps::alloc::string::String {
+                $crate::_macro_deps::hex::encode(self.as_ref())
             }
 
             pub fn as_bytes(&self) -> [u8; $n] {
@@ -63,15 +77,15 @@ macro_rules! hash_newtype {
             }
         }
 
-        impl FromStr for $name {
-            type Err = HashParseError;
+        impl ::core::str::FromStr for $name {
+            type Err = $crate::hash::HashParseError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let decoded_hex_bytes = hex::decode(s)?;
+                let decoded_hex_bytes = $crate::_macro_deps::hex::decode(s)?;
                 let hash_bytes: [u8; $n] =
                     decoded_hex_bytes
                         .try_into()
-                        .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
+                        .map_err(|v: $crate::_macro_deps::alloc::vec::Vec<u8>| $crate::hash::HashParseError::InvalidLength {
                             expected: $n,
                             got: v.len(),
                         })?;
@@ -80,22 +94,22 @@ macro_rules! hash_newtype {
         }
 
         #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-        impl borsh::BorshSchema for $name {
-            fn declaration() -> borsh::schema::Declaration {
-                alloc::format!(stringify!($name))
+        impl $crate::_macro_deps::borsh::BorshSchema for $name {
+            fn declaration() -> $crate::_macro_deps::borsh::schema::Declaration {
+                $crate::_macro_deps::alloc::format!(stringify!($name))
             }
 
             fn add_definitions_recursively(
-                definitions: &mut alloc::collections::BTreeMap<
-                    borsh::schema::Declaration,
-                    borsh::schema::Definition,
+                definitions: &mut $crate::_macro_deps::alloc::collections::BTreeMap<
+                    $crate::_macro_deps::borsh::schema::Declaration,
+                    $crate::_macro_deps::borsh::schema::Definition,
                 >,
             ) {
-                let byte_array_decl = alloc::format!("[u8; {}]", $n);
+                let byte_array_decl = $crate::_macro_deps::alloc::format!("[u8; {}]", $n);
                 definitions.insert(
                     Self::declaration(),
-                    borsh::schema::Definition::Struct {
-                        fields: borsh::schema::Fields::NamedFields(alloc::vec![
+                    $crate::_macro_deps::borsh::schema::Definition::Struct {
+                        fields: $crate::_macro_deps::borsh::schema::Fields::NamedFields($crate::_macro_deps::alloc::vec![
                             ("bytes".into(), byte_array_decl),
                         ]),
                     },
@@ -104,20 +118,20 @@ macro_rules! hash_newtype {
         }
 
         #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-        impl schemars::JsonSchema for $name {
-            fn schema_name() -> String {
-                alloc::format!(stringify!($name))
+        impl $crate::_macro_deps::schemars::JsonSchema for $name {
+            fn schema_name() -> $crate::_macro_deps::alloc::string::String {
+                $crate::_macro_deps::alloc::format!(stringify!($name))
             }
 
             fn json_schema(
-                _generator: &mut schemars::r#gen::SchemaGenerator,
-            ) -> schemars::schema::Schema {
+                _generator: &mut $crate::_macro_deps::schemars::r#gen::SchemaGenerator,
+            ) -> $crate::_macro_deps::schemars::schema::Schema {
                 let hex_len = ($n * 2) as u32;
-                schemars::schema::Schema::Object(schemars::schema::SchemaObject {
-                    instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(
-                        schemars::schema::InstanceType::String,
+                $crate::_macro_deps::schemars::schema::Schema::Object($crate::_macro_deps::schemars::schema::SchemaObject {
+                    instance_type: Some($crate::_macro_deps::schemars::schema::SingleOrVec::Single(Box::new(
+                        $crate::_macro_deps::schemars::schema::InstanceType::String,
                     ))),
-                    string: Some(Box::new(schemars::schema::StringValidation {
+                    string: Some(Box::new($crate::_macro_deps::schemars::schema::StringValidation {
                         min_length: Some(hex_len),
                         max_length: Some(hex_len),
                         pattern: Some("^[0-9a-fA-F]+$".to_string()),
@@ -128,6 +142,8 @@ macro_rules! hash_newtype {
         }
     };
 }
+
+pub use hash_newtype;
 
 hash_newtype!(
     /// Hash of a Docker image running in the TEE environment. Used as a proposal for a new TEE
