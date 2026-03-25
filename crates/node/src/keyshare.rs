@@ -7,7 +7,6 @@ mod temporary;
 pub mod test_utils;
 
 use anyhow::Context;
-use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
 use near_mpc_contract_interface::types::{
@@ -131,7 +130,7 @@ impl KeyshareStorage {
         let epoch_id = key_id_to_generate.epoch_id;
         let permanent_same_epoch = if let Some(permanent) = permanent {
             if permanent.epoch_id() == epoch_id {
-                Self::verify_existing_keyshares_match_keyset(
+                Self::verify_existing_keyshares_are_subset_of_expected_keys(
                     permanent.keyshares(),
                     epoch_id,
                     already_generated_keys,
@@ -207,7 +206,7 @@ impl KeyshareStorage {
         if permanent.epoch_id() != keyset.epoch_id {
             return Ok(None);
         }
-        Self::verify_existing_keyshares_match_keyset(
+        Self::verify_existing_keyshares_are_subset_of_expected_keys(
             permanent.keyshares(),
             keyset.epoch_id,
             &keyset.domains,
@@ -232,56 +231,37 @@ impl KeyshareStorage {
         &self,
         keyset: &Keyset,
     ) -> anyhow::Result<LoadedKeyset> {
+        let mut domains: Vec<_> = keyset.domains.iter().collect();
+        domains.sort_by_key(|d| d.domain_id);
+
         let permanent = self._load_matching_from_permanent(keyset).await?;
+        let mut keyshares = Vec::with_capacity(domains.len());
+        let mut has_temporary = false;
 
-        // Collect domain_ids present in permanent storage
-        let permanent_domain_ids: std::collections::HashSet<DomainId> = permanent
-            .as_ref()
-            .map(|p| p.keyshares().iter().map(|k| k.key_id.domain_id).collect())
-            .unwrap_or_default();
-
-        let all_covered = keyset
-            .domains
-            .iter()
-            .all(|d| permanent_domain_ids.contains(&d.domain_id));
-        if all_covered {
-            // All domains are in permanent storage; return them sorted by domain_id
-            let mut keyshares: Vec<Keyshare> = keyset
-                .domains
-                .iter()
-                .map(|d| {
-                    permanent
-                        .as_ref()
-                        .unwrap()
-                        .keyshare_by_domain_id(d.domain_id)
-                        .unwrap()
-                        .clone()
-                })
-                .collect();
-            keyshares.sort_by_key(|k| k.key_id.domain_id);
-            return Ok(LoadedKeyset::Permanent(keyshares));
-        }
-
-        // For each keyset domain not in permanent, load from temporary
-        let mut new_keyshares: Vec<Keyshare> = Vec::new();
-        for domain in &keyset.domains {
+        for domain in domains {
             if let Some(p) = &permanent {
                 if let Some(keyshare) = p.keyshare_by_domain_id(domain.domain_id) {
-                    new_keyshares.push(keyshare.clone());
+                    keyshares.push(keyshare.clone());
                     continue;
                 }
             }
+
             let key_id = KeyEventId::new(keyset.epoch_id, domain.domain_id, domain.attempt);
             let keyshare = self
                 .temporary
                 .load_keyshare(key_id)
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {:?}", key_id))?;
-            new_keyshares.push(keyshare);
+
+            keyshares.push(keyshare);
+            has_temporary = true;
         }
-        // Sort by domain_id to return keyshares in increasing DomainId order
-        new_keyshares.sort_by_key(|k| k.key_id.domain_id);
-        Ok(LoadedKeyset::PermanentAndTemporary(new_keyshares))
+
+        if has_temporary {
+            Ok(LoadedKeyset::PermanentAndTemporary(keyshares))
+        } else {
+            Ok(LoadedKeyset::Permanent(keyshares))
+        }
     }
 
     /// Ensures that the given keyset is in permanent key storage, and then returns them.
@@ -325,7 +305,7 @@ impl KeyshareStorage {
 
     /// Helper function to verify that each existing keyshare matches a corresponding entry
     /// in the expected keyset by `domain_id` (order-independent).
-    fn verify_existing_keyshares_match_keyset(
+    fn verify_existing_keyshares_are_subset_of_expected_keys(
         existing_keyshares: &[Keyshare],
         epoch_id: EpochId,
         expected_keys: &[KeyForDomain],
@@ -404,7 +384,7 @@ impl KeyshareStorage {
         contract_keyset: &Keyset,
     ) -> anyhow::Result<()> {
         // Ensure that the backup is a perfect match for the contract keyset
-        Self::verify_existing_keyshares_match_keyset(
+        Self::verify_existing_keyshares_are_subset_of_expected_keys(
             &backup,
             contract_keyset.epoch_id,
             &contract_keyset.domains,
@@ -415,36 +395,30 @@ impl KeyshareStorage {
 
         // We load all keys we have stored in permanent or temporary storage and only draw from
         // backup in case we are missing shares.
+        let mut domains: Vec<_> = contract_keyset.domains.iter().collect();
+        domains.sort_by_key(|d| d.domain_id);
         let permanent = self._load_matching_from_permanent(contract_keyset).await?;
-        let permanent_domain_ids: std::collections::HashSet<DomainId> = permanent
-            .as_ref()
-            .map(|p| p.keyshares().iter().map(|k| k.key_id.domain_id).collect())
-            .unwrap_or_default();
-
-        let mut new_keyshares: Vec<Keyshare> = Vec::new();
-        // Add permanent keyshares first
-        if let Some(ref p) = permanent {
-            new_keyshares.extend(p.keyshares().iter().cloned());
-        }
-        // For each domain not in permanent, load from temporary or backup
-        for domain in &contract_keyset.domains {
-            if permanent_domain_ids.contains(&domain.domain_id) {
-                continue;
+        let mut new_keyshares = Vec::with_capacity(domains.len());
+        for domain in domains {
+            if let Some(p) = &permanent {
+                if let Some(keyshare) = p.keyshare_by_domain_id(domain.domain_id) {
+                    new_keyshares.push(keyshare.clone());
+                    continue;
+                }
             }
+
             let key_id =
                 KeyEventId::new(contract_keyset.epoch_id, domain.domain_id, domain.attempt);
 
-            // if we don't have the keyshare in temporary storage, we load it from the backup
-            let keyshare: Keyshare = self
+            let keyshare = self
                 .temporary
                 .load_keyshare(key_id)
                 .await?
                 .or_else(|| backup.iter().find(|share| share.key_id == key_id).cloned())
                 .ok_or_else(|| anyhow::anyhow!("missing keyshare {:?}", key_id))?;
+
             new_keyshares.push(keyshare);
         }
-        // Sort by domain_id for PermanentKeyshareData::new() invariant
-        new_keyshares.sort_by_key(|k| k.key_id.domain_id);
 
         // finally, we check that the constructed keyset matches the backup
         // Sort backup by domain_id to align with new_keyshares for comparison
