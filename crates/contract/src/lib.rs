@@ -81,6 +81,41 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
+/// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
+///
+/// A non-zero deposit is required so that the transaction must be signed by a
+/// full-access key (or a function-call access key whose `deposit` allowance is
+/// explicitly set). This prevents a **malicious frontend** from silently
+/// submitting signature requests on behalf of a user via a restricted
+/// function-call access key, because such keys cannot attach deposits by
+/// default. In other words, requiring a deposit ensures the user (or their
+/// full-access key) explicitly authorised the call.
+///
+/// See the "Deposit requirement" section in the contract README for more
+/// details.
+fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
+    let deposit = env::attached_deposit();
+    match deposit.checked_sub(minimum_deposit) {
+        None => {
+            env::panic_str(
+                &InvalidParameters::InsufficientDeposit
+                    .message(format!(
+                        "Require a deposit of {} yoctonear, found: {}",
+                        minimum_deposit.as_yoctonear(),
+                        deposit.as_yoctonear(),
+                    ))
+                    .to_string(),
+            );
+        }
+        Some(diff) => {
+            if diff > NearToken::from_yoctonear(0) {
+                log!("refund excess deposit {diff} to {predecessor}");
+                Promise::new(predecessor.clone()).transfer(diff).detach();
+            }
+        }
+    }
+}
+
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
@@ -273,29 +308,8 @@ impl MpcContract {
             );
         }
 
-        // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
 
         let request = SignatureRequest::new(
             request.domain_id,
@@ -450,28 +464,7 @@ impl MpcContract {
         }
 
         let predecessor = env::predecessor_account_id();
-        // Check deposit and refund if required
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_CKD_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_CKD_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_CKD_REQUEST_DEPOSIT, &predecessor);
 
         if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
@@ -586,29 +579,8 @@ impl MpcContract {
             );
         }
 
-        // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
 
         if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
