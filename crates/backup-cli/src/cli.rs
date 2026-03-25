@@ -137,16 +137,16 @@ mod tests {
 
     #[test]
     fn test_parse_missing_port() {
-        assert!("hostname-only".parse::<NodeAddress>().is_err());
+        "hostname-only".parse::<NodeAddress>().unwrap_err();
     }
 
     #[test]
     fn test_parse_empty_host() {
-        assert!(":8081".parse::<NodeAddress>().is_err());
+        ":8081".parse::<NodeAddress>().unwrap_err();
     }
 
     #[test]
     fn test_parse_invalid_port() {
-        assert!("host:notaport".parse::<NodeAddress>().is_err());
+        "host:notaport".parse::<NodeAddress>().unwrap_err();
     }
 }
