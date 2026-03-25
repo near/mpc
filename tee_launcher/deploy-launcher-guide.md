@@ -136,7 +136,7 @@ INTERNAL_MPC_DECENTRALIZED_STATE_SYNC=24567
 INTERNAL_MPC_MAIN_PORT=80
 
 # OS image
-OS_IMAGE=dstack-dev-0.5.7
+OS_IMAGE=dstack-dev-0.5.8
 
 # Path of the launcher docker_compose_file
 DOCKER_COMPOSE_FILE_PATH=launcher_docker_compose.yaml
