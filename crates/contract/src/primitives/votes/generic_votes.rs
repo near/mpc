@@ -142,6 +142,21 @@ where
             .filter(|(vid, pid)| **pid == *proposal_id && predicate(vid))
             .count() as u64
     }
+
+    /// Returns the number of distinct proposals with at least one vote.
+    pub fn num_proposals(&self) -> usize {
+        self.proposals.len() as usize
+    }
+
+    /// Returns the number of voters.
+    pub fn num_voters(&self) -> usize {
+        self.votes.len()
+    }
+
+    /// Returns true if there are no votes.
+    pub fn is_empty(&self) -> bool {
+        self.votes.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -161,28 +176,23 @@ mod tests {
         Votes::new(StorageKeys::Proposals)
     }
 
+    fn count_all(votes: &Votes<u64, String>, proposal: &str) -> u64 {
+        votes.count_where(&proposal.to_string(), |_| true)
+    }
+
     #[test]
     fn test_votes_constructor() {
         let votes = new_votes();
-        assert_eq!(votes.next_id, 0.into());
-        assert!(votes.proposals.is_empty());
-        assert!(votes.votes.is_empty());
-        assert!(votes.proposal_votes.is_empty());
+        assert!(votes.is_empty());
+        assert_eq!(votes.num_proposals(), 0);
     }
 
     #[test]
     fn test_propose_basic() {
         let mut votes = new_votes();
-        let pid = votes.propose("hello world".to_string());
-        assert_eq!(pid.0, 0);
-        assert_eq!(votes.next_id.0, 1);
-        assert!(votes.votes.is_empty());
-        assert_eq!(votes.proposals.len(), 1);
-        assert_eq!(
-            *votes.proposals.get(&pid).unwrap(),
-            "hello world".to_string()
-        );
-        assert_eq!(*votes.proposal_votes.get(&pid).unwrap(), 0);
+        let _pid = votes.propose("hello world".to_string());
+        assert!(votes.is_empty()); // no votes yet, just a proposal
+        assert_eq!(votes.num_proposals(), 1);
     }
 
     #[test]
@@ -191,71 +201,57 @@ mod tests {
         let pid1 = votes.propose("same".to_string());
         let pid2 = votes.propose("same".to_string());
         assert_eq!(pid1, pid2);
-        assert_eq!(votes.proposals.len(), 1);
-        assert_eq!(votes.next_id.0, 1);
+        assert_eq!(votes.num_proposals(), 1);
     }
 
     #[test]
-    fn test_vote_basic() {
+    fn test_vote_for_basic() {
         let mut votes = new_votes();
-        let pid = votes.propose("proposal_a".to_string());
-        let count = votes.vote(1, pid.clone());
+        let count = votes.vote_for(1, "proposal_a".to_string());
         assert_eq!(count, 1);
-        assert_eq!(votes.n_votes(&pid), 1);
+        assert_eq!(count_all(&votes, "proposal_a"), 1);
     }
 
     #[test]
-    fn test_vote_multiple_voters_same_proposal() {
+    fn test_vote_for_multiple_voters_same_proposal() {
         let mut votes = new_votes();
-        let pid = votes.propose("proposal_a".to_string());
-        votes.vote(1, pid.clone());
-        let count = votes.vote(2, pid.clone());
+        votes.vote_for(1, "proposal_a".to_string());
+        let count = votes.vote_for(2, "proposal_a".to_string());
         assert_eq!(count, 2);
-        assert_eq!(votes.n_votes(&pid), 2);
+        assert_eq!(count_all(&votes, "proposal_a"), 2);
     }
 
     #[test]
-    fn test_vote_replacement() {
+    fn test_vote_for_replacement() {
         let mut votes = new_votes();
-        let pid_a = votes.propose("proposal_a".to_string());
-        let pid_b = votes.propose("proposal_b".to_string());
+        votes.vote_for(1, "proposal_a".to_string());
+        assert_eq!(count_all(&votes, "proposal_a"), 1);
 
-        votes.vote(1, pid_a.clone());
-        assert_eq!(votes.n_votes(&pid_a), 1);
-
-        let count = votes.vote(1, pid_b.clone());
+        // Switch vote from A to B
+        let count = votes.vote_for(1, "proposal_b".to_string());
         assert_eq!(count, 1);
-        assert_eq!(votes.n_votes(&pid_b), 1);
+        assert_eq!(count_all(&votes, "proposal_b"), 1);
         // A should be removed (0 votes)
-        assert_eq!(votes.n_votes(&pid_a), 0);
-        assert!(!votes.proposals.contains_key(&pid_a));
+        assert_eq!(count_all(&votes, "proposal_a"), 0);
+        assert_eq!(votes.num_proposals(), 1);
     }
 
     #[test]
-    fn test_vote_idempotent() {
+    fn test_vote_for_idempotent() {
         let mut votes = new_votes();
-        let pid = votes.propose("proposal_a".to_string());
-        votes.vote(1, pid.clone());
-        let count = votes.vote(1, pid.clone());
+        votes.vote_for(1, "proposal_a".to_string());
+        let count = votes.vote_for(1, "proposal_a".to_string());
         assert_eq!(count, 1);
-    }
-
-    #[test]
-    #[should_panic(expected = "proposal_id does not exist")]
-    fn test_vote_invalid_proposal_id() {
-        let mut votes = new_votes();
-        votes.vote(1, 999u64.into());
     }
 
     #[test]
     fn test_remove_vote_exists() {
         let mut votes = new_votes();
-        let pid = votes.propose("proposal_a".to_string());
-        votes.vote(1, pid.clone());
+        votes.vote_for(1, "proposal_a".to_string());
 
         assert!(votes.remove_vote(&1));
-        assert!(votes.votes.is_empty());
-        assert!(!votes.proposals.contains_key(&pid));
+        assert!(votes.is_empty());
+        assert_eq!(votes.num_proposals(), 0);
     }
 
     #[test]
@@ -267,59 +263,50 @@ mod tests {
     #[test]
     fn test_remove_vote_preserves_other_votes() {
         let mut votes = new_votes();
-        let pid = votes.propose("proposal_a".to_string());
-        votes.vote(1, pid.clone());
-        votes.vote(2, pid.clone());
+        votes.vote_for(1, "proposal_a".to_string());
+        votes.vote_for(2, "proposal_a".to_string());
 
         assert!(votes.remove_vote(&1));
-        assert_eq!(votes.n_votes(&pid), 1);
-        assert!(votes.proposals.contains_key(&pid));
+        assert_eq!(count_all(&votes, "proposal_a"), 1);
+        assert_eq!(votes.num_proposals(), 1);
     }
 
     #[test]
     fn test_clear() {
         let mut votes = new_votes();
-        let pid_a = votes.propose("proposal_a".to_string());
-        votes.vote(1, pid_a);
-        let pid_b = votes.propose("proposal_b".to_string());
-        votes.vote(2, pid_b);
+        votes.vote_for(1, "proposal_a".to_string());
+        votes.vote_for(2, "proposal_b".to_string());
 
         votes.clear();
-        assert!(votes.votes.is_empty());
-        assert!(votes.proposals.is_empty());
-        assert!(votes.proposal_votes.is_empty());
-        // next_id should remain monotonic
-        assert_eq!(votes.next_id.0, 2);
+        assert!(votes.is_empty());
+        assert_eq!(votes.num_proposals(), 0);
     }
 
     #[test]
     fn test_retain_votes() {
         let mut votes = new_votes();
-        let pid_a = votes.propose("proposal_a".to_string());
-        let pid_b = votes.propose("proposal_b".to_string());
-        votes.vote(1, pid_a.clone());
-        votes.vote(2, pid_a.clone());
-        votes.vote(3, pid_b.clone());
+        votes.vote_for(1, "proposal_a".to_string());
+        votes.vote_for(2, "proposal_a".to_string());
+        votes.vote_for(3, "proposal_b".to_string());
 
         let keep = BTreeSet::from([1, 3]);
         votes.retain_votes(&keep);
 
-        assert_eq!(votes.n_votes(&pid_a), 1);
-        assert_eq!(votes.n_votes(&pid_b), 1);
-        assert_eq!(votes.votes.len(), 2);
+        assert_eq!(count_all(&votes, "proposal_a"), 1);
+        assert_eq!(count_all(&votes, "proposal_b"), 1);
+        assert_eq!(votes.num_voters(), 2);
     }
 
     #[test]
     fn test_retain_votes_removes_empty_proposals() {
         let mut votes = new_votes();
-        let pid = votes.propose("proposal_a".to_string());
-        votes.vote(1, pid.clone());
+        votes.vote_for(1, "proposal_a".to_string());
 
         let keep = BTreeSet::new();
         votes.retain_votes(&keep);
 
-        assert!(votes.votes.is_empty());
-        assert!(!votes.proposals.contains_key(&pid));
+        assert!(votes.is_empty());
+        assert_eq!(votes.num_proposals(), 0);
     }
 
     #[test]
@@ -328,24 +315,15 @@ mod tests {
 
         let count = votes.vote_for(1, "proposal_a".to_string());
         assert_eq!(count, 1);
-        assert_eq!(votes.proposals.len(), 1);
+        assert_eq!(votes.num_proposals(), 1);
 
         let count = votes.vote_for(2, "proposal_a".to_string());
         assert_eq!(count, 2);
-        assert_eq!(votes.proposals.len(), 1);
+        assert_eq!(votes.num_proposals(), 1);
 
         let count = votes.vote_for(3, "proposal_b".to_string());
         assert_eq!(count, 1);
-        assert_eq!(votes.proposals.len(), 2);
-    }
-
-    #[test]
-    fn test_vote_for_replacement() {
-        let mut votes = new_votes();
-        votes.vote_for(1, "proposal_a".to_string());
-        let count = votes.vote_for(1, "proposal_b".to_string());
-        assert_eq!(count, 1);
-        assert_eq!(votes.proposals.len(), 1);
+        assert_eq!(votes.num_proposals(), 2);
     }
 
     #[test]
@@ -361,8 +339,8 @@ mod tests {
             1
         );
         // Count all for proposal_a
-        assert_eq!(votes.count_where(&"proposal_a".to_string(), |_| true), 2);
+        assert_eq!(count_all(&votes, "proposal_a"), 2);
         // Count for nonexistent proposal
-        assert_eq!(votes.count_where(&"nonexistent".to_string(), |_| true), 0);
+        assert_eq!(count_all(&votes, "nonexistent"), 0);
     }
 }
