@@ -2233,7 +2233,9 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::measurements::Sha384Digest;
+    use crate::tee::measurements::{
+        KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+    };
     use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
@@ -2244,7 +2246,7 @@ mod tests {
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
-    use mpc_primitives::hash::{Hash32, Image};
+    use mpc_primitives::hash::DockerImageHash;
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::{
@@ -4452,7 +4454,7 @@ mod tests {
         Vec<near_sdk::AccountId>,
         Attestation,
         dtos::Ed25519PublicKey,
-        Hash32<Image>,
+        DockerImageHash,
         near_sdk::PublicKey,
     ) {
         let (_context, contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
@@ -4488,7 +4490,7 @@ mod tests {
     fn setup_approved_mpc_hash(
         contract: &mut MpcContract,
         participant_account_ids: &[near_sdk::AccountId],
-        mpc_hash: &Hash32<Image>,
+        mpc_hash: &DockerImageHash,
         block_timestamp_ns: u64,
     ) {
         // Add the legacy launcher image first, so that compose hashes are derived
@@ -5285,11 +5287,11 @@ mod tests {
 
     fn make_measurement(byte: u8) -> ContractExpectedMeasurements {
         ContractExpectedMeasurements {
-            mrtd: Sha384Digest::from([byte; 48]),
-            rtmr0: Sha384Digest::from([byte.wrapping_add(1); 48]),
-            rtmr1: Sha384Digest::from([byte.wrapping_add(2); 48]),
-            rtmr2: Sha384Digest::from([byte.wrapping_add(3); 48]),
-            key_provider_event_digest: Sha384Digest::from([byte.wrapping_add(4); 48]),
+            mrtd: MrtdHash::from([byte; 48]),
+            rtmr0: Rtmr0Hash::from([byte.wrapping_add(1); 48]),
+            rtmr1: Rtmr1Hash::from([byte.wrapping_add(2); 48]),
+            rtmr2: Rtmr2Hash::from([byte.wrapping_add(3); 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([byte.wrapping_add(4); 48]),
         }
     }
 
