@@ -9,7 +9,7 @@ export REUSE_NETWORK_NAME=mpc-local
 export N=2
 
 export MACHINE_IP=51.68.219.1
-export BASE_PATH=/mnt/data/barak/dstack
+export BASE_PATH=/mnt/data/barak/dstack_latest/meta-dstack/dstack
 export VMM_RPC=http://127.0.0.1:10000
 
 export MPC_IMAGE_NAME=nearone/mpc-node

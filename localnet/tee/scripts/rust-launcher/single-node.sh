@@ -124,7 +124,7 @@ LOCAL_DEBUG_PORT="${LOCAL_DEBUG_PORT:-$(find_free_port)}"
 
 # dstack
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
-OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.4}"
+OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 DISK="${DISK:-500G}"
 
@@ -132,7 +132,7 @@ DISK="${DISK:-500G}"
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
 ENV_TPL="${ENV_TPL:-$REPO_ROOT/localnet/tee/scripts/node.env.tpl}"
-CONF_TPL="${CONF_TPL:-$REPO_ROOT/localnet/tee/scripts/node.conf.localnet.toml.tpl}"
+CONF_TPL="${CONF_TPL:-$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl}"
 
 # Convert comma-separated "host:container" port string to TOML inline table array entries.
 ports_to_toml() {

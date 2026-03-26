@@ -18,10 +18,10 @@ pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_di
 pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
     include_str!("../assets/launcher_image_compose.yaml");
 
-/// Unix time as of 2026/03/20, represents a date where
+/// Unix time as of 2026/03/26, represents a date where
 /// the measurements stored in ../assets are valid. When these measurements are
 /// modified, this value should be updated as well
-pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1774018367;
+pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1774512890;
 
 pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
     let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();

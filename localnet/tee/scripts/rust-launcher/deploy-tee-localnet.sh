@@ -7,7 +7,7 @@ export NEAR_CLI_DISABLE_SPINNER=1
 # - For localnet: export NEAR_NETWORK_CONFIG=mpc-localnet (matches your near-cli config name)
 NEAR_NETWORK_CONFIG="${NEAR_NETWORK_CONFIG:-testnet}"
 # Used by curl-based RPC helpers (balance/bootnodes). Override for localnet if needed.
-NEAR_RPC_URL="${NEAR_RPC_URL:-$NEAR_RPC_URL}"
+: "${NEAR_RPC_URL:?Must set NEAR_RPC_URL (e.g. http://127.0.0.1:3030 for localnet)}"
 # MPC environment label used by templates / node config
 # Default: "testnet" when NEAR_NETWORK_CONFIG=testnet, otherwise "localnet"
 MPC_ENV="${MPC_ENV:-mpc-localnet}"
@@ -129,7 +129,7 @@ INTERNAL_STATE_SYNC_PORT=24567
 INTERNAL_MAIN_PORT=80
 INTERNAL_FUTURE_PORT=13001
 
-OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.4}"
+OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 
@@ -144,7 +144,7 @@ MODE="${MODE:-testnet}"  # testnet|localnet
 # templates live here (UPDATED for move to localnet/tee/scripts)
 ENV_TPL="$REPO_ROOT/localnet/tee/scripts/node.env.tpl"
 if [ "$MODE" = "localnet" ]; then
-  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/node.conf.localnet.toml.tpl"
+  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl"
 else
   CONF_TPL="$REPO_ROOT/localnet/tee/scripts/node.conf.tpl"
 fi
