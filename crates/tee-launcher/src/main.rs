@@ -69,6 +69,8 @@ async fn run() -> Result<(), LauncherError> {
             source,
         })?;
 
+    validate_image_name(&config.launcher_config.image_name)?;
+
     let approved_hashes_on_disk: Option<ApprovedHashes> = match std::fs::OpenOptions::new()
         .read(true)
         .write(false)
@@ -193,6 +195,21 @@ fn insert_reserved(
         }
         toml::map::Entry::Occupied(_) => Err(LauncherError::ReservedConfigKey(key.to_string())),
     }
+}
+
+/// Validate that `image_name` contains only safe characters for Docker image names.
+/// Rejects values that could inject YAML syntax (newlines, colons in unexpected places, etc.)
+/// when substituted into the compose template.
+fn validate_image_name(image_name: &str) -> Result<(), LauncherError> {
+    // Docker image names: [a-zA-Z0-9][a-zA-Z0-9._/-]*
+    let is_valid = !image_name.is_empty()
+        && image_name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'/' || b == b'-' || b == b'.' || b == b'_');
+    if !is_valid {
+        return Err(LauncherError::InvalidImageName(image_name.to_string()));
+    }
+    Ok(())
 }
 
 /// Select which image hash to use, given the approved hashes file (if present),
