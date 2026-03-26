@@ -125,16 +125,16 @@ where
 {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = prepare_dkg::<C, _>(participants_num(), threshold, &mut rng);
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let participants: Vec<_> = preps.iter().map(|(p, _)| *p).collect();
+    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps)
         .expect("Running protocol with snapshot should not have issues");
 
     // choose the real_participant at random
-    let real_participant = *preps
-        .participants
+    let real_participant = *participants
         .choose(&mut rng)
         .expect("participant list is not empty");
 
-    let real_protocol = keygen::<C>(&preps.participants, real_participant, threshold, rng)
+    let real_protocol = keygen::<C>(&participants, real_participant, threshold, rng)
         .map(|p| Box::new(p) as Box<dyn Protocol<Output = KeygenOutput<C>>>)
         .expect("Keygen should succeed");
 
