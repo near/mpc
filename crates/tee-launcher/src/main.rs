@@ -301,7 +301,7 @@ async fn get_manifest_digest(
 
     let reqwest_client = reqwest::Client::new();
 
-    // Auth token avoids Docker Hub anonymous rate limits.
+    // We need an authorization token to fetch manifests.
     let token_url = registry.token_url();
 
     let token_request_response = reqwest_client
