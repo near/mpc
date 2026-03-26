@@ -1,0 +1,12 @@
+[package]
+name = "test-port-allocator"
+version = { workspace = true }
+license = { workspace = true }
+edition = "2021"
+
+[dependencies]
+named-lock = { workspace = true }
+rand = { workspace = true }
+
+[lints]
+workspace = true
