@@ -1,0 +1,42 @@
+[package]
+name = "tee-launcher"
+readme = "README.md"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[[bin]]
+name = "tee-launcher"
+path = "src/main.rs"
+
+[features]
+external-services-tests = []
+
+[dependencies]
+backon = { workspace = true }
+clap = { workspace = true }
+dstack-sdk = { workspace = true }
+launcher-interface = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
+# Pin reqwest 0.12 with bundled webpki-roots for reproducible builds.
+# The workspace uses reqwest 0.13 which defaults to rustls-platform-verifier
+# (loads CA certs from the system), but the launcher Docker image is a minimal
+# container without system CA certs. Using rustls-tls bundles Mozilla's root
+# certs into the binary, making TLS work without any system dependencies.
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls", "json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+httpmock = { workspace = true }
+
+[lints]
+workspace = true
