@@ -8,6 +8,7 @@ use rand_core::{CryptoRngCore, SeedableRng};
 use std::{env, sync::LazyLock};
 
 use threshold_signatures::{
+    keygen, Ciphersuite, KeygenOutput,
     confidential_key_derivation::{
         self as ckd,
         ciphersuite::{Field as _, Group as _},
@@ -592,4 +593,40 @@ pub struct PreparedCkdPackage {
     pub key_packages: Vec<(Participant, ckd::KeygenOutput)>,
     pub app_id: ckd::AppId,
     pub app_pk: ckd::ElementG1,
+}
+
+/********************* DKG *********************/
+/// Used to prepare DKG keygen protocols for benchmarking
+pub fn prepare_dkg<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
+    num_participants: usize,
+    threshold: ReconstructionLowerBound,
+    rng: &mut R,
+) -> PreparedDkgPackage<C>
+where
+    threshold_signatures::Element<C>: Send,
+    threshold_signatures::Scalar<C>: Send,
+{
+    let participants = generate_participants_with_random_ids(num_participants, rng);
+    let mut protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = KeygenOutput<C>>>,
+    )> = Vec::with_capacity(num_participants);
+
+    for p in &participants {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = keygen::<C>(&participants, *p, threshold, rng_p)
+            .map(|p| Box::new(p) as Box<dyn Protocol<Output = KeygenOutput<C>>>)
+            .expect("Keygen should succeed");
+        protocols.push((*p, protocol));
+    }
+
+    PreparedDkgPackage {
+        protocols,
+        participants,
+    }
+}
+
+pub struct PreparedDkgPackage<C: Ciphersuite> {
+    pub protocols: Vec<(Participant, Box<dyn Protocol<Output = KeygenOutput<C>>>)>,
+    pub participants: Vec<Participant>,
 }
