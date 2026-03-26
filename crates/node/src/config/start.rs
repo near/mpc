@@ -280,7 +280,11 @@ pub enum ChainId {
 
 impl ChainId {
     pub fn is_localnet(&self) -> bool {
-        *self == ChainId::Localnet
+        match self {
+            ChainId::Localnet => true,
+            ChainId::Custom(s) => s == "sandbox",
+            _ => false,
+        }
     }
 }
 

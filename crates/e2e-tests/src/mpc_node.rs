@@ -170,7 +170,7 @@ impl MpcNodeSetup {
     /// The ed25519 public key formatted as `"ed25519:<base58>"`.
     pub fn p2p_public_key_str(&self) -> String {
         String::from(&Ed25519PublicKey::from(
-            &self.p2p_signing_key.verifying_key(),
+            self.p2p_signing_key.verifying_key().to_bytes(),
         ))
     }
 
