@@ -8,7 +8,6 @@ use rand_core::{CryptoRngCore, SeedableRng};
 use std::{env, sync::LazyLock};
 
 use threshold_signatures::{
-    keygen, Ciphersuite, KeygenOutput,
     confidential_key_derivation::{
         self as ckd,
         ciphersuite::{Field as _, Group as _},
@@ -22,13 +21,14 @@ use threshold_signatures::{
         robust_ecdsa, Scalar,
     },
     frost::eddsa,
+    keygen,
     participants::Participant,
     protocol::Protocol,
     test_utils::{
         ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
         MockCryptoRng, Simulator,
     },
-    MaxMalicious, ReconstructionLowerBound,
+    Ciphersuite, KeygenOutput, MaxMalicious, ReconstructionLowerBound,
 };
 
 // fix malicious number of participants
@@ -607,10 +607,8 @@ where
     threshold_signatures::Scalar<C>: Send,
 {
     let participants = generate_participants_with_random_ids(num_participants, rng);
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = KeygenOutput<C>>>,
-    )> = Vec::with_capacity(num_participants);
+    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = KeygenOutput<C>>>)> =
+        Vec::with_capacity(num_participants);
 
     for p in &participants {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());

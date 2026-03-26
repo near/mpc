@@ -13,12 +13,12 @@ use threshold_signatures::{
     confidential_key_derivation::ciphersuite::BLS12381SHA256,
     frost_ed25519::Ed25519Sha512,
     frost_secp256k1::Secp256K1Sha256,
-    keygen, Ciphersuite, Element, KeygenOutput, Scalar,
+    keygen,
     protocol::Protocol,
     test_utils::{
         run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng, Simulator,
     },
-    ReconstructionLowerBound,
+    Ciphersuite, Element, KeygenOutput, ReconstructionLowerBound, Scalar,
 };
 
 fn threshold() -> ReconstructionLowerBound {
@@ -106,7 +106,12 @@ fn bench_dkg_bls12381(c: &mut Criterion) {
     analyze_received_sizes(&sizes, true);
 }
 
-criterion_group!(benches, bench_dkg_secp256k1, bench_dkg_ed25519, bench_dkg_bls12381);
+criterion_group!(
+    benches,
+    bench_dkg_secp256k1,
+    bench_dkg_ed25519,
+    bench_dkg_bls12381
+);
 criterion_main!(benches);
 
 /****************************** Helpers ******************************/
@@ -129,14 +134,9 @@ where
         .choose(&mut rng)
         .expect("participant list is not empty");
 
-    let real_protocol = keygen::<C>(
-        &preps.participants,
-        real_participant,
-        threshold,
-        rng,
-    )
-    .map(|p| Box::new(p) as Box<dyn Protocol<Output = KeygenOutput<C>>>)
-    .expect("Keygen should succeed");
+    let real_protocol = keygen::<C>(&preps.participants, real_participant, threshold, rng)
+        .map(|p| Box::new(p) as Box<dyn Protocol<Output = KeygenOutput<C>>>)
+        .expect("Keygen should succeed");
 
     // now preparing the simulator
     let simulated_protocol =
