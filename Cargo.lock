@@ -3054,7 +3054,7 @@ dependencies = [
  "near-kit",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
- "rand_chacha 0.3.1",
+ "rand 0.8.5",
  "reqwest 0.13.2",
  "serde",
  "serde_json",

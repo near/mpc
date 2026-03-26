@@ -11,7 +11,8 @@ use near_mpc_contract_interface::types::{
     ParticipantInfo, Participants, ProtocolContractState, SignatureScheme, Threshold,
     ThresholdParameters,
 };
-use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use serde_json::json;
 
 use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
@@ -660,7 +661,7 @@ fn build_participants_from_nodes(
 }
 
 fn generate_deterministic_key(seed: u64) -> SigningKey {
-    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    let mut rng = StdRng::seed_from_u64(seed);
     SigningKey::generate(&mut rng)
 }
 
