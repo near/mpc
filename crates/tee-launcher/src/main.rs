@@ -30,6 +30,9 @@ const DOCKER_AUTH_ACCEPT_HEADER_VALUE: HeaderValue =
     HeaderValue::from_static("application/vnd.docker.distribution.manifest.v2+json");
 
 const DOCKER_CONTENT_DIGEST_HEADER: &str = "Docker-Content-Digest";
+// TODO(#2479): if we use a different registry, we need a different auth-endpoint
+const DOCKER_AUTH_TOKEN_URL: &str =
+    "https://auth.docker.io/token?service=registry.docker.io&scope=repository:";
 
 const AMD64: &str = "amd64";
 const LINUX: &str = "linux";
@@ -109,9 +112,7 @@ async fn run() -> Result<(), LauncherError> {
 
     let manifest_digest = validate_image_hash(&config.launcher_config, image_hash.clone()).await?;
 
-    let should_extend_rtmr_3 = args.platform == Platform::Tee;
-
-    if should_extend_rtmr_3 {
+    if args.platform == Platform::Tee {
         let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
         // EmitEvent with the image digest
@@ -147,12 +148,22 @@ async fn run() -> Result<(), LauncherError> {
     let mpc_config_toml =
         toml::to_string(&mpc_node_config).expect("re-serializing a toml::Table always succeeds");
 
-    std::fs::write(mpc_binary_config_path, mpc_config_toml.as_bytes()).map_err(|source| {
-        LauncherError::FileWrite {
+    // Write config atomically (temp file + rename) to avoid partial writes on crash.
+    let config_dir = mpc_binary_config_path
+        .parent()
+        .unwrap_or(std::path::Path::new("/"));
+    let mut tmp =
+        tempfile::NamedTempFile::new_in(config_dir).map_err(LauncherError::TempFileCreate)?;
+    tmp.write_all(mpc_config_toml.as_bytes())
+        .map_err(|source| LauncherError::FileWrite {
             path: mpc_binary_config_path.display().to_string(),
             source,
-        }
-    })?;
+        })?;
+    tmp.persist(mpc_binary_config_path)
+        .map_err(|e| LauncherError::FileWrite {
+            path: e.file.path().display().to_string(),
+            source: e.error,
+        })?;
 
     launch_mpc_container(
         args.platform,
@@ -179,11 +190,8 @@ fn intercept_node_config(
     Ok(node_config)
 }
 
-/// Inject launcher-controlled config section (`tee`) into the user-provided
-/// MPC node config table.  Returns an error if the user config already
-/// contains the reserved key.
 /// Insert `value` under `key` in `table`, returning an error if the key
-/// already exists.
+/// already exists. Used to inject launcher-controlled sections into user config.
 fn insert_reserved(
     table: &mut toml::Table,
     key: &str,
@@ -268,12 +276,8 @@ impl DockerRegistry {
 }
 
 impl RegistryInfo for DockerRegistry {
-    // TODO(#2479): if we use a different registry, we need a different auth-endpoint
     fn token_url(&self) -> String {
-        format!(
-            "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull",
-            self.image_name,
-        )
+        format!("{}{}:pull", DOCKER_AUTH_TOKEN_URL, self.image_name)
     }
 
     fn manifest_url(&self, tag: &str) -> Result<Url, LauncherError> {
@@ -297,7 +301,7 @@ async fn get_manifest_digest(
 
     let reqwest_client = reqwest::Client::new();
 
-    // We need an authorization token to fetch manifests.
+    // Auth token avoids Docker Hub anonymous rate limits.
     let token_url = registry.token_url();
 
     let token_request_response = reqwest_client
