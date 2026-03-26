@@ -13,6 +13,7 @@ dependencies = [
   "cargo-deny-no-advisories",
   "zizmor",
   "check-markdown-links",
+  "sandbox-image-version",
   "check",
   "check-docs",
   "clippy",
@@ -21,10 +22,7 @@ dependencies = [
 
 [tasks.check-all]
 description = "Run all checks"
-dependencies = [
-  "check-all-fast",
-  "nextest",
-]
+dependencies = ["check-all-fast", "nextest"]
 
 [tasks.check-extra]
 description = "Run extra checks"
@@ -128,6 +126,11 @@ RUSTDOCFLAGS = "-D warnings"
 [tasks.check-markdown-links]
 command = "lychee"
 args = ["--no-progress", "."]
+
+[tasks.sandbox-image-version]
+description = "Check that sandbox Docker image version matches nearcore"
+command = "bash"
+args = ["scripts/check-sandbox-image-version.sh"]
 
 [config]
 default_to_workspace = false

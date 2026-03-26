@@ -18,9 +18,11 @@ use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::port_allocator::E2ePortAllocator;
 
-const DEFAULT_SANDBOX_IMAGE: &str = "nearprotocol/sandbox:2.10.7";
+const DEFAULT_SANDBOX_IMAGE: &str = "nearprotocol/sandbox:2.11.0-rc.3";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = "ed25519:3JoAjwLppjgvxkk6kNsu5wQj3FfUJnpBKWieC73hVTpBeA6FZiCc5tfyZL3a3tHeQJegQe4qGSv8FLsYp7TYd1r6";
+// Polling interval for waiting contract state.
+const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -40,7 +42,7 @@ pub struct MpcClusterConfig {
     pub triples_to_buffer: usize,
     /// Presignature buffer size per node.
     pub presignatures_to_buffer: usize,
-    /// Docker image for the NEAR sandbox (e.g. `"nearprotocol/sandbox:2.10.7"`).
+    /// Docker image for the NEAR sandbox (e.g. `"nearprotocol/sandbox:2.11.0-rc.3"`).
     pub sandbox_image: String,
     /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.
     pub home_base: Option<PathBuf>,
@@ -160,7 +162,7 @@ impl MpcCluster {
             &ports,
         )?;
 
-        let user_accounts = create_user_accounts(&blockchain).await?;
+        let user_accounts = create_user_accounts(&blockchain, 1).await?;
 
         tracing::info!("MPC cluster is ready");
 
@@ -441,8 +443,8 @@ fn generate_node_keys(num_nodes: usize) -> (Vec<SigningKey>, Vec<SigningKey>, Ve
     let mut near_keys = Vec::new();
     let mut p2p_keys = Vec::new();
     for i in 0..num_nodes {
-        let near_key = generate_deterministic_key(i);
-        let p2p_key = generate_deterministic_key(100 + i);
+        let near_key = generate_deterministic_key(i as u64);
+        let p2p_key = generate_deterministic_key(100 + i as u64);
         node_keys.push(near_key.clone());
         near_keys.push(near_key);
         p2p_keys.push(p2p_key);
@@ -592,18 +594,20 @@ fn start_mpc_nodes(
     Ok(nodes)
 }
 
-/// Creates user accounts for test interactions. Currently only creates a single
-/// default account under SANDBOX_ROOT_ACCOUNT.
+/// Creates user accounts for test interactions under SANDBOX_ROOT_ACCOUNT.
 async fn create_user_accounts(
     blockchain: &NearBlockchain,
+    num_accounts: usize,
 ) -> anyhow::Result<HashMap<AccountId, SigningKey>> {
-    let key = generate_deterministic_key(200);
-    let account: AccountId = format!("user.{SANDBOX_ROOT_ACCOUNT}").parse()?;
-    blockchain
-        .create_account(account.as_ref(), 100, &key)
-        .await?;
     let mut map = HashMap::new();
-    map.insert(account, key);
+    for i in 0..num_accounts {
+        let key = generate_deterministic_key(200 + i as u64);
+        let account: AccountId = format!("user{i}.{SANDBOX_ROOT_ACCOUNT}").parse()?;
+        blockchain
+            .create_account(account.as_ref(), 100, &key)
+            .await?;
+        map.insert(account, key);
+    }
     Ok(map)
 }
 
@@ -615,7 +619,7 @@ fn build_participants(
     let mut list = Vec::new();
     for (i, key) in p2p_keys.iter().enumerate().take(num_nodes) {
         let account_id = ContractAccountId(format!("node{i}.{SANDBOX_ROOT_ACCOUNT}"));
-        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(key.verifying_key().to_bytes());
+        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&key.verifying_key());
         list.push((
             account_id,
             ParticipantId(i as u32),
@@ -653,14 +657,10 @@ fn build_participants_from_nodes(
     }
 }
 
-fn generate_deterministic_key(seed: usize) -> SigningKey {
-    let mut key_bytes = [0u8; 32];
-    key_bytes[0] = (seed & 0xFF) as u8;
-    key_bytes[1] = ((seed >> 8) & 0xFF) as u8;
-    for (i, byte) in key_bytes.iter_mut().enumerate().skip(2) {
-        *byte = ((seed * 31 + i * 37) & 0xFF) as u8;
-    }
-    SigningKey::from_bytes(&key_bytes)
+fn generate_deterministic_key(seed: u64) -> SigningKey {
+    use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    SigningKey::generate(&mut rng)
 }
 
 async fn wait_for_contract_state(
@@ -681,6 +681,6 @@ async fn wait_for_contract_state(
                 timeout.as_secs()
             );
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(POLL_INTERVAL).await;
     }
 }

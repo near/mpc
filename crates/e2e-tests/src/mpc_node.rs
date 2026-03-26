@@ -31,6 +31,11 @@ impl MpcNode {
         self.setup
     }
 
+    /// Kill then start. New process, same config and data directory.
+    pub fn restart(self) -> anyhow::Result<MpcNode> {
+        self.kill().start()
+    }
+
     /// Reference to the underlying setup (config, paths, ports).
     pub fn setup(&self) -> &MpcNodeSetup {
         &self.setup
@@ -165,7 +170,7 @@ impl MpcNodeSetup {
     /// The ed25519 public key formatted as `"ed25519:<base58>"`.
     pub fn p2p_public_key_str(&self) -> String {
         String::from(&Ed25519PublicKey::from(
-            self.p2p_signing_key.verifying_key().to_bytes(),
+            &self.p2p_signing_key.verifying_key(),
         ))
     }
 
@@ -382,10 +387,6 @@ impl NodePorts {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // TODO(#2560): Factor `StartConfig` out of `mpc-node` into a lightweight crate so we
