@@ -123,7 +123,9 @@ mod tests {
         let result = serde_json::from_value::<HostEntry>(json);
 
         // then
-        assert_matches!(result, Err(_));
+        assert_matches!(result, Err(e) => {
+            assert!(e.to_string().contains("invalid"), "expected IP parse error, got: {e}");
+        });
     }
 
     #[test]
@@ -173,7 +175,9 @@ mod tests {
         let result = serde_json::from_value::<PortMapping>(json);
 
         // then
-        assert_matches!(result, Err(_));
+        assert_matches!(result, Err(e) => {
+            assert!(e.to_string().contains("nonzero"), "expected nonzero port error, got: {e}");
+        });
     }
 
     #[test]
@@ -185,7 +189,9 @@ mod tests {
         let result = serde_json::from_value::<PortMapping>(json);
 
         // then
-        assert_matches!(result, Err(_));
+        assert_matches!(result, Err(e) => {
+            assert!(e.to_string().contains("u16"), "expected u16 range error, got: {e}");
+        });
     }
 
     // --- docker_compose_value output format ---
@@ -284,6 +290,8 @@ port_mappings = []
         let result = toml::from_str::<Config>(toml_str);
 
         // then
-        assert_matches!(result, Err(_));
+        assert_matches!(result, Err(e) => {
+            assert!(e.to_string().contains("mpc_node_config"), "expected missing field error, got: {e}");
+        });
     }
 }

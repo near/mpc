@@ -102,8 +102,8 @@ cargo build -p tee-launcher --release
 
 ```bash
 # Unit tests
-cargo nextest run -p tee-launcher
+cargo nextest run --cargo-profile=test-release -p tee-launcher
 
 # Integration tests (requires network access and Docker Hub)
-cargo nextest run -p tee-launcher --features external-services-tests
+cargo nextest run --cargo-profile=test-release -p tee-launcher --features external-services-tests
 ```

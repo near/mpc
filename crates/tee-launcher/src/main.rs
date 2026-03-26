@@ -22,8 +22,8 @@ mod docker_types;
 mod error;
 mod types;
 
-const COMPOSE_TEMPLATE: &str = include_str!("../mpc-node-docker-compose.template.yml");
-const COMPOSE_TEE_TEMPLATE: &str = include_str!("../mpc-node-docker-compose.tee.template.yml");
+const COMPOSE_TEMPLATE: &str = include_str!("../assets/mpc-node-docker-compose.template.yml");
+const COMPOSE_TEE_TEMPLATE: &str = include_str!("../assets/mpc-node-docker-compose.tee.template.yml");
 
 const DOCKER_AUTH_ACCEPT_HEADER_VALUE: HeaderValue =
     HeaderValue::from_static("application/vnd.docker.distribution.manifest.v2+json");
