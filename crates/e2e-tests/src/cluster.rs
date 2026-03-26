@@ -11,6 +11,7 @@ use near_mpc_contract_interface::types::{
     ParticipantInfo, Participants, ProtocolContractState, SignatureScheme, Threshold,
     ThresholdParameters,
 };
+use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
 use serde_json::json;
 
 use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
@@ -125,7 +126,8 @@ impl MpcCluster {
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;
-        let (node_keys, node_near_keys, node_p2p_keys) = generate_node_keys(config.num_nodes);
+        let (node_keys, node_near_keys, node_p2p_keys) =
+            generate_node_keys(u64::try_from(config.num_nodes).unwrap());
 
         let contract = deploy_contract(
             &blockchain,
@@ -438,13 +440,13 @@ fn create_test_dir(home_base: &Option<PathBuf>) -> anyhow::Result<tempfile::Temp
     }
 }
 
-fn generate_node_keys(num_nodes: usize) -> (Vec<SigningKey>, Vec<SigningKey>, Vec<SigningKey>) {
+fn generate_node_keys(num_nodes: u64) -> (Vec<SigningKey>, Vec<SigningKey>, Vec<SigningKey>) {
     let mut node_keys = Vec::new();
     let mut near_keys = Vec::new();
     let mut p2p_keys = Vec::new();
     for i in 0..num_nodes {
-        let near_key = generate_deterministic_key(i as u64);
-        let p2p_key = generate_deterministic_key(100 + i as u64);
+        let near_key = generate_deterministic_key(i);
+        let p2p_key = generate_deterministic_key(100 + i);
         node_keys.push(near_key.clone());
         near_keys.push(near_key);
         p2p_keys.push(p2p_key);
@@ -597,11 +599,11 @@ fn start_mpc_nodes(
 /// Creates user accounts for test interactions under SANDBOX_ROOT_ACCOUNT.
 async fn create_user_accounts(
     blockchain: &NearBlockchain,
-    num_accounts: usize,
+    num_accounts: u64,
 ) -> anyhow::Result<HashMap<AccountId, SigningKey>> {
     let mut map = HashMap::new();
     for i in 0..num_accounts {
-        let key = generate_deterministic_key(200 + i as u64);
+        let key = generate_deterministic_key(200 + i);
         let account: AccountId = format!("user{i}.{SANDBOX_ROOT_ACCOUNT}").parse()?;
         blockchain
             .create_account(account.as_ref(), 100, &key)
@@ -658,7 +660,6 @@ fn build_participants_from_nodes(
 }
 
 fn generate_deterministic_key(seed: u64) -> SigningKey {
-    use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     SigningKey::generate(&mut rng)
 }
