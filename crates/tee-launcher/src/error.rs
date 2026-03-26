@@ -15,13 +15,13 @@ pub(crate) enum LauncherError {
     #[error("Failed to get auth token from registry: {0}")]
     RegistryAuthFailed(String),
 
-    #[error("docker run failed for validated hash")]
+    #[error("docker compose up failed for validated hash")]
     DockerRunFailed {
         image_hash: DockerSha256Digest,
         inner: std::io::Error,
     },
 
-    #[error("docker run failed for validated hash")]
+    #[error("docker compose up failed for validated hash")]
     DockerRunFailedExitStatus {
         image_hash: DockerSha256Digest,
         output: String,

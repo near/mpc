@@ -46,25 +46,24 @@ port_mappings = [
 # The launcher does not interpret these fields — they are re-serialized
 # to TOML and mounted into the container at /mnt/shared/mpc-config.toml
 # for the MPC binary to consume via `start-with-config-file`.
-[mpc_config]
+[mpc_node_config]
 # ... any fields the MPC node expects
 ```
 
 ### `[launcher_config]`
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `image_tags` | `["latest"]` | Comma-separated Docker image tags to search |
-| `image_name` | `nearone/mpc-node` | Docker image name |
-| `registry` | `registry.hub.docker.com` | Docker registry hostname |
-| `rpc_request_timeout_secs` | `10` | Per-request timeout for registry API calls |
-| `rpc_request_interval_secs` | `1` | Initial retry interval for registry API calls |
-| `rpc_max_attempts` | `20` | Maximum registry API retry attempts |
-| `mpc_hash_override` | (none) | Optional: force a specific `sha256:` digest (must appear in approved list) |
+| Field | Required | Description |
+|-------|----------|-------------|
+| `image_tags` | Yes | Docker image tags to search, e.g. `["3.7.0"]` |
+| `image_name` | Yes | Docker image name, e.g. `"nearone/mpc-node"` |
+| `registry` | Yes | Docker registry hostname, e.g. `"registry.hub.docker.com"` |
+| `rpc_request_timeout_secs` | Yes | Per-request timeout for registry API calls (seconds) |
+| `rpc_request_interval_secs` | Yes | Initial retry interval for registry API calls (seconds) |
+| `rpc_max_attempts` | Yes | Maximum registry API retry attempts |
+| `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
+| `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 
-| `port_mappings` | `[]` | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
-
-### `[mpc_config]`
+### `[mpc_node_config]`
 
 Arbitrary TOML table passed through to the MPC node. The launcher writes this verbatim to `/mnt/shared/mpc-config.toml`, which the container reads on startup.
 
@@ -106,5 +105,5 @@ cargo build -p tee-launcher --release
 cargo nextest run -p tee-launcher
 
 # Integration tests (requires network access and Docker Hub)
-cargo nextest run -p tee-launcher --features integration-test
+cargo nextest run -p tee-launcher --features external-services-tests
 ```

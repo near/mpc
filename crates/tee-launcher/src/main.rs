@@ -69,23 +69,24 @@ async fn run() -> Result<(), LauncherError> {
             source,
         })?;
 
-    let approved_hashes_file = std::fs::OpenOptions::new()
+    let approved_hashes_on_disk: Option<ApprovedHashes> = match std::fs::OpenOptions::new()
         .read(true)
         .write(false)
         .open(IMAGE_DIGEST_FILE)
-        .map_err(|source| LauncherError::FileRead {
-            path: IMAGE_DIGEST_FILE.to_string(),
-            source,
-        });
-
-    let approved_hashes_on_disk: Option<ApprovedHashes> = match approved_hashes_file {
-        Err(err) => {
+    {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             tracing::warn!(
                 ?err,
                 default_image_digest = ?args.default_image_digest,
                 "approved hashes file does not exist on disk, falling back to default digest"
             );
             None
+        }
+        Err(err) => {
+            return Err(LauncherError::FileRead {
+                path: IMAGE_DIGEST_FILE.to_string(),
+                source: err,
+            });
         }
         Ok(file) => {
             let parsed: ApprovedHashes =
@@ -283,6 +284,7 @@ async fn get_manifest_digest(
 
     let token_request_response = reqwest_client
         .get(token_url)
+        .timeout(Duration::from_secs(config.rpc_request_timeout_secs))
         .send()
         .await
         .map_err(|e| LauncherError::RegistryAuthFailed(e.to_string()))?;
@@ -330,7 +332,11 @@ async fn get_manifest_digest(
 
         let request_with_retry_future = request_future
             .retry(backoff)
-            .when(|_: &reqwest::Error| true)
+            .when(|err: &reqwest::Error| {
+                err.is_timeout()
+                    || err.is_connect()
+                    || err.status().is_some_and(|s| s.is_server_error())
+            })
             .notify(|err, dur| {
                 tracing::warn!(
                     ?manifest_url,
@@ -472,7 +478,11 @@ async fn validate_image_hash(
         .trim()
         .to_string()
         .parse()
-        .expect("is valid digest");
+        .map_err(|e| {
+            ImageDigestValidationFailed::DockerInspectFailed(format!(
+                "docker inspect returned invalid image ID: {e}"
+            ))
+        })?;
 
     if pulled_image_id != image_hash {
         return Err(

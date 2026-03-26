@@ -52,19 +52,20 @@ pub(crate) struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct LauncherConfig {
-    /// Docker image tags to search (from `MPC_IMAGE_TAGS`, comma-separated).
+    /// Docker image tags to search. Set via `image_tags` in TOML, e.g. `image_tags = ["3.7.0"]`.
     pub(crate) image_tags: NonEmptyVec<String>,
-    /// Docker image name (from `MPC_IMAGE_NAME`).
+    /// Docker image name. Set via `image_name` in TOML, e.g. `"nearone/mpc-node"`.
     pub(crate) image_name: String,
-    /// Docker registry (from `MPC_REGISTRY`).
+    /// Docker registry hostname. Set via `registry` in TOML, e.g. `"registry.hub.docker.com"`.
     pub(crate) registry: String,
-    /// Per-request timeout for registry RPC calls (from `RPC_REQUEST_TIMEOUT_SECS`).
+    /// Per-request timeout for registry API calls, in seconds. Set via `rpc_request_timeout_secs`.
     pub(crate) rpc_request_timeout_secs: u64,
-    /// Delay between registry RPC retries (from `RPC_REQUEST_INTERVAL_SECS`).
+    /// Delay between registry API retries, in seconds. Set via `rpc_request_interval_secs`.
     pub(crate) rpc_request_interval_secs: u64,
-    /// Maximum registry RPC attempts (from `RPC_MAX_ATTEMPTS`).
+    /// Maximum number of registry API retry attempts. Set via `rpc_max_attempts`.
     pub(crate) rpc_max_attempts: u32,
-    /// Optional hash override that bypasses registry lookup (from `MPC_HASH_OVERRIDE`).
+    /// Optional digest override (`sha256:...`) that bypasses the approved list selection.
+    /// Must still appear in the approved hashes file if present. Set via `mpc_hash_override`.
     pub(crate) mpc_hash_override: Option<DockerSha256Digest>,
     pub(crate) port_mappings: Vec<PortMapping>,
 }
@@ -266,7 +267,7 @@ arbitrary_key = "arbitrary_value"
 
     #[test]
     fn config_rejects_missing_required_field() {
-        // given - mpc_config is missing
+        // given - mpc_node_config is missing
         let toml_str = r#"
 [launcher_config]
 image_tags = ["tag1"]
