@@ -12,8 +12,27 @@ pub enum NodeAddress {
     Host(String, u16),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum NodeAddressParseError {
+    MissingPort(String),
+    EmptyHostname(String),
+    InvalidPort(String),
+}
+
+impl fmt::Display for NodeAddressParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingPort(input) => write!(f, "expected host:port, got '{input}'"),
+            Self::EmptyHostname(input) => write!(f, "empty hostname in '{input}'"),
+            Self::InvalidPort(input) => write!(f, "invalid port in '{input}'"),
+        }
+    }
+}
+
+impl std::error::Error for NodeAddressParseError {}
+
 impl FromStr for NodeAddress {
-    type Err = String;
+    type Err = NodeAddressParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Ok(addr) = s.parse::<SocketAddr>() {
@@ -21,13 +40,13 @@ impl FromStr for NodeAddress {
         }
         let (host, port_str) = s
             .rsplit_once(':')
-            .ok_or_else(|| format!("expected host:port, got '{s}'"))?;
+            .ok_or_else(|| NodeAddressParseError::MissingPort(s.to_string()))?;
         if host.is_empty() {
-            return Err(format!("empty hostname in '{s}'"));
+            return Err(NodeAddressParseError::EmptyHostname(s.to_string()));
         }
         let port: u16 = port_str
             .parse()
-            .map_err(|_| format!("invalid port in '{s}'"))?;
+            .map_err(|_| NodeAddressParseError::InvalidPort(s.to_string()))?;
         Ok(NodeAddress::Host(host.to_string(), port))
     }
 }
@@ -136,17 +155,30 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_missing_port() {
-        "hostname-only".parse::<NodeAddress>().unwrap_err();
-    }
+    fn test_parse_errors() {
+        let cases = vec![
+            (
+                "missing port",
+                "hostname-only",
+                NodeAddressParseError::MissingPort("hostname-only".to_string()),
+            ),
+            (
+                "empty hostname",
+                ":8081",
+                NodeAddressParseError::EmptyHostname(":8081".to_string()),
+            ),
+            (
+                "invalid port",
+                "host:notaport",
+                NodeAddressParseError::InvalidPort("host:notaport".to_string()),
+            ),
+        ];
 
-    #[test]
-    fn test_parse_empty_host() {
-        ":8081".parse::<NodeAddress>().unwrap_err();
-    }
-
-    #[test]
-    fn test_parse_invalid_port() {
-        "host:notaport".parse::<NodeAddress>().unwrap_err();
+        for (name, input, want_err) in cases {
+            let err = input
+                .parse::<NodeAddress>()
+                .expect_err(&format!("expected error for case '{name}': {input}"));
+            assert_eq!(err, want_err, "case '{name}'");
+        }
     }
 }
