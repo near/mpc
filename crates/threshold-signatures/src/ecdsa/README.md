@@ -36,7 +36,7 @@ See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) for details.
 | **Threshold parameter** | `ReconstructionLowerBound` | `MaxMalicious` |
 | **Scaling** | Less efficient with many participants | Better efficiency and bandwidth |
 
-See the [benchmark analysis](../../docs/benches/model.md) for detailed performance comparisons.
+See the [benchmark analysis](../../docs/benches/results.md) for detailed performance comparisons.
 
 ## DKG
 
