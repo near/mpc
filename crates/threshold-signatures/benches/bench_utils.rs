@@ -165,10 +165,8 @@ pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>
 
     let key_packages = run_keygen(&participants, threshold, rng);
 
-    let mut protocols: Vec<(
-        _,
-        Box<dyn Protocol<Output = _ >>,
-    )> = Vec::with_capacity(participants.len());
+    let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
+        Vec::with_capacity(participants.len());
 
     for (((p, keygen_out), share0), share1) in
         key_packages.clone().into_iter().zip(shares0).zip(shares1)
@@ -455,8 +453,7 @@ pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
 ) -> FrostEd25519SigV2 {
     let num_participants = threshold.value();
     // collect all participants
-    let participants: Vec<_> =
-        result.iter().map(|(participant, _)| *participant).collect();
+    let participants: Vec<_> = result.iter().map(|(participant, _)| *participant).collect();
 
     // choose a coordinator at random
     let coordinator_index = rng.gen_range(0..num_participants);
@@ -586,8 +583,7 @@ where
     threshold_signatures::Scalar<C>: Send,
 {
     let participants = generate_participants_with_random_ids(num_participants, rng);
-    let mut protocols =
-        Vec::with_capacity(num_participants);
+    let mut protocols = Vec::with_capacity(num_participants);
 
     for p in &participants {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
