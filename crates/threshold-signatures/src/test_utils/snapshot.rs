@@ -59,11 +59,11 @@ impl ParticipantSnapshot {
 
 /// Used to store the snapshot of all the messages sent during
 /// the communication rounds of a certain protocol
-pub struct protocol_snapshot {
+pub struct ProtocolSnapshot {
     snapshots: HashMap<Participant, ParticipantSnapshot>,
 }
 
-impl protocol_snapshot {
+impl ProtocolSnapshot {
     /// Creates an empty snapshot
     pub fn new_empty(participants: Vec<Participant>) -> Self {
         let snapshots = participants

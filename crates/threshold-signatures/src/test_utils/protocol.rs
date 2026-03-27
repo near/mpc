@@ -1,7 +1,7 @@
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 use crate::protocol::{Action, Protocol};
-use crate::test_utils::{protocol_snapshot, Simulator};
+use crate::test_utils::{ProtocolSnapshot, Simulator};
 use std::collections::HashMap;
 
 use crate::participants::ParticipantList;
@@ -27,7 +27,7 @@ pub fn run_protocol<T>(
 /// Like [`run_protocol()`], except that it snapshots all the communication.
 pub fn run_protocol_and_take_snapshots<T>(
     ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
-) -> Result<(Vec<(Participant, T)>, protocol_snapshot), ProtocolError> {
+) -> Result<(Vec<(Participant, T)>, ProtocolSnapshot), ProtocolError> {
     run_protocol_common(ps, true).map(|(v, snapshot)| (v, snapshot.unwrap()))
 }
 
@@ -118,14 +118,14 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
 fn run_protocol_common<T>(
     mut ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
     take_snapshots: bool,
-) -> Result<(Vec<(Participant, T)>, Option<protocol_snapshot>), ProtocolError> {
+) -> Result<(Vec<(Participant, T)>, Option<ProtocolSnapshot>), ProtocolError> {
     let indices: HashMap<Participant, usize> =
         ps.iter().enumerate().map(|(i, (p, _))| (*p, i)).collect();
 
     let mut protocol_snapshots = {
         if take_snapshots {
             let participants: Vec<_> = ps.iter().map(|(p, _)| *p).collect();
-            Some(protocol_snapshot::new_empty(participants))
+            Some(ProtocolSnapshot::new_empty(participants))
         } else {
             None
         }
