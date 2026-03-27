@@ -64,14 +64,14 @@ fn filter_executor_function_calls(
     executor_filters: &BlockEventIdsByContractIds,
     outcome: &IndexerExecutionOutcomeWithReceipt,
 ) {
-    let execution_outcome = outcome.execution_outcome.clone();
+    let execution_outcome = &outcome.execution_outcome;
     let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = execution_outcome.outcome.status
     else {
         return;
     };
     let receipt = outcome.receipt.clone();
-    let executor_id = execution_outcome.outcome.executor_id;
-    let Some(filter_methods_for_executor) = executor_filters.filter_methods_for(&executor_id)
+    let executor_id = &execution_outcome.outcome.executor_id;
+    let Some(filter_methods_for_executor) = executor_filters.filter_methods_for(executor_id)
     else {
         return;
     };
@@ -101,12 +101,12 @@ fn filter_receipt_function_calls(
     receiver_filters: &BlockEventIdsByContractIds,
     outcome: &IndexerExecutionOutcomeWithReceipt,
 ) {
-    let receipt = outcome.receipt.clone();
+    let receipt = &outcome.receipt;
     let Some(methods_filter) = receiver_filters.filter_methods_for(&receipt.receiver_id) else {
         return;
     };
 
-    let Some((_, contract_method_name)) = try_extract_function_call_args(&receipt) else {
+    let Some((_, contract_method_name)) = try_extract_function_call_args(receipt) else {
         return;
     };
     let Some(filter_ids) = methods_filter.filter_ids_for(contract_method_name) else {

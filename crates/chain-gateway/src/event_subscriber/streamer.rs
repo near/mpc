@@ -26,13 +26,19 @@ pub(crate) async fn start(
     let (stats_tx, stats_rx) = tokio::sync::watch::channel(IndexerStats::new());
     let (block_tx, block_rx) = tokio::sync::mpsc::channel(buffer_size);
 
-    tokio::spawn(listen_blocks(
-        stream,
-        block_events,
-        stats_tx,
-        block_tx,
-        backpressure_timeout,
-    ));
+    tokio::spawn(async move {
+        if let Err(err) = listen_blocks(
+            stream,
+            block_events,
+            stats_tx,
+            block_tx,
+            backpressure_timeout,
+        )
+        .await
+        {
+            tracing::error!(target: "chain gateway", "block event listener stoppd: {err}");
+        }
+    });
     tokio::spawn(indexer_logger(stats_rx, info_fetcher));
 
     Ok(block_rx)
