@@ -40,7 +40,7 @@ pub use generation::{generate_triple, generate_triple_many, TripleGenerationOutp
 pub(crate) mod test;
 
 use serde::{Deserialize, Serialize};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::ZeroizeOnDrop;
 
 use crate::{
     ecdsa::{AffinePoint, Scalar},
@@ -69,7 +69,7 @@ pub struct TriplePub {
 /// This consists of shares of each individual part.
 ///
 /// i.e. we have a share of a, b, and c such that a * b = c.
-#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct TripleShare {
     pub a: Scalar,
     pub b: Scalar,

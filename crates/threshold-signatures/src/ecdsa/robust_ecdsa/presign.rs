@@ -349,20 +349,6 @@ fn zero_secret_polynomial(
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Shares([SerializableScalar<C>; 5]);
 
-impl Zeroize for Shares {
-    fn zeroize(&mut self) {
-        for s in &mut self.0 {
-            s.0.zeroize();
-        }
-    }
-}
-
-impl Drop for Shares {
-    fn drop(&mut self) {
-        self.zeroize();
-    }
-}
-
 impl Shares {
     /// Constructs a new Shares out of five polynomials
     pub(crate) fn new(
