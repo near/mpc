@@ -71,8 +71,7 @@ fn filter_executor_function_calls(
     };
     let receipt = outcome.receipt.clone();
     let executor_id = &execution_outcome.outcome.executor_id;
-    let Some(filter_methods_for_executor) = executor_filters.filter_methods_for(executor_id)
-    else {
+    let Some(filter_methods_for_executor) = executor_filters.filter_methods_for(executor_id) else {
         return;
     };
     let Some((args, contract_method_name)) = try_extract_function_call_args(&receipt) else {
