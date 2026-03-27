@@ -51,7 +51,7 @@ pub enum DockerDigestParseError {
     #[error("missing {SHA256_PREFIX} prefix")]
     MissingPrefix,
     #[error(transparent)]
-    InvalidHash(#[from] mpc_primitives::hash::Hash32ParseError),
+    InvalidHash(#[from] mpc_primitives::hash::HashParseError),
 }
 
 impl FromStr for DockerSha256Digest {

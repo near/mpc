@@ -189,6 +189,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::errors::ProtocolError;
     use elliptic_curve::{bigint::Uint, scalar::FromUintUnchecked};
     use rand::SeedableRng;
 
@@ -297,7 +298,10 @@ mod test {
         let proof_result =
             prove_with_nonce(&mut transcript.fork(b"party", &[1]), statement, &witness, k);
 
-        assert!(matches!(proof_result, Err(ProtocolError::IdentityElement)));
+        let Err(e) = proof_result else {
+            panic!("expected IdentityElement error");
+        };
+        assert_eq!(e, ProtocolError::IdentityElement);
     }
 
     #[test]
@@ -325,6 +329,9 @@ mod test {
             &dummy_proof,
         );
 
-        assert!(matches!(verify_result, Err(ProtocolError::IdentityElement)));
+        let Err(e) = verify_result else {
+            panic!("expected IdentityElement error");
+        };
+        assert_eq!(e, ProtocolError::IdentityElement);
     }
 }
