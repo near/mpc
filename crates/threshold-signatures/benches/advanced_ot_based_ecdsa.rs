@@ -134,13 +134,12 @@ fn bench_sign(c: &mut Criterion) {
 criterion_group!(benches, bench_triples, bench_presign, bench_sign);
 criterion_main!(benches);
 
-/****************************** Helpers ******************************/
 /// Used to simulate ot based ecdsa triples for benchmarking
 fn prepare_simulated_triples(participant_num: usize) -> PreparedSimulatedTriples {
     let mut rng = MockCryptoRng::seed_from_u64(42);
 
     let preps = ot_ecdsa_prepare_triples(participant_num, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     // choose the real_participant at random
@@ -170,7 +169,7 @@ fn prepare_simulated_triples(participant_num: usize) -> PreparedSimulatedTriples
 
     // now preparing the simulator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
     PreparedSimulatedTriples {
         participant: real_participant,
         protocol: real_protocol,
@@ -184,7 +183,7 @@ fn prepare_simulated_presign(
 ) -> PreparedSimulatedPresig {
     let mut rng = MockCryptoRng::seed_from_u64(40);
     let preps = ot_ecdsa_prepare_presign(two_triples, *RECONSTRUCTION_LOWER_BOUND, &mut rng);
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     let mut rng = MockCryptoRng::seed_from_u64(41);
@@ -211,7 +210,7 @@ fn prepare_simulated_presign(
 
     // now preparing the simulator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
 
     PreparedSimulatedPresig {
         participant: real_participant,
@@ -228,7 +227,7 @@ pub fn prepare_simulated_sign(
 ) -> PreparedSimulatedSig {
     let mut rng = MockCryptoRng::seed_from_u64(40);
     let preps = ot_ecdsa_prepare_sign(result, threshold, pk, &mut rng);
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     // choose the real_participant at random
@@ -251,7 +250,7 @@ pub fn prepare_simulated_sign(
 
     // now preparing the being the coordinator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
     PreparedSimulatedSig {
         participant: real_participant,
         protocol: real_protocol,
