@@ -11,8 +11,8 @@ abi = ["borsh/unstable__schema", "schemars"]
 borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
+paste = { workspace = true }
 serde = { workspace = true }
-serde_with = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

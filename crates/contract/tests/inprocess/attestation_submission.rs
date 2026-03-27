@@ -351,7 +351,7 @@ macro_rules! assert_allowed_docker_image_hashes {
             .contract
             .allowed_docker_image_hashes()
             .iter()
-            .map(|hash| *hash.clone())
+            .map(|hash| **hash)
             .collect();
 
         res.reverse();
