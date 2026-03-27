@@ -92,7 +92,7 @@ async fn fut_wrapper(
                     threshold,
                     me,
                     keygen_output,
-                    presignature,
+                    &presignature,
                     message,
                     randomizer,
                 )
@@ -114,7 +114,7 @@ async fn fut_wrapper(
                     me,
                     coordinator,
                     keygen_output,
-                    presignature,
+                    &presignature,
                     message,
                 )
                 .await
@@ -139,15 +139,14 @@ async fn do_sign_coordinator(
     threshold: ReconstructionLowerBound,
     me: Participant,
     keygen_output: KeygenOutput,
-    mut presignature: PresignOutput,
+    presignature: &PresignOutput,
     message: Vec<u8>,
     randomizer: Randomizer,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
     let key_package = construct_key_package(threshold, me, &keygen_output)?;
     let key_package = Zeroizing::new(key_package);
-    let signing_package =
-        SigningPackage::new(std::mem::take(&mut presignature.commitments_map), &message);
+    let signing_package = SigningPackage::new(presignature.commitments_map.clone(), &message);
     let randomized_params =
         RandomizedParams::from_randomizer(&keygen_output.public_key, randomizer);
 
@@ -207,7 +206,7 @@ async fn do_sign_participant(
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
-    mut presignature: PresignOutput,
+    presignature: &PresignOutput,
     message: Vec<u8>,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1.
@@ -231,8 +230,7 @@ async fn do_sign_participant(
 
     let key_package = construct_key_package(threshold, me, &keygen_output)?;
     let key_package = Zeroizing::new(key_package);
-    let signing_package =
-        SigningPackage::new(std::mem::take(&mut presignature.commitments_map), &message);
+    let signing_package = SigningPackage::new(presignature.commitments_map.clone(), &message);
     // nonces are zeroized when presignature drops (ZeroizeOnDrop)
     let signature_share = round2::sign(
         &signing_package,
