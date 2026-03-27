@@ -13,6 +13,6 @@ RUN \
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app
-COPY target/reproducible/tee-launcher tee-launcher
+COPY --chmod=0755 target/reproducible/tee-launcher tee-launcher
 RUN mkdir -p /app-data && mkdir -p /mnt/shared
 CMD ["/app/tee-launcher"]
