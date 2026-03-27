@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, bail};
+use bollard::Docker;
+use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
+use bollard::models::{HostConfig, PortBinding};
 
 use crate::port_allocator::E2ePortAllocator;
 
-const CONTAINER_RPC_PORT: u16 = 3030;
-const CONTAINER_NET_PORT: u16 = 3031;
+const CONTAINER_RPC_PORT: &str = "3030/tcp";
+const CONTAINER_NET_PORT: &str = "3031/tcp";
 
 /// Wraps a NEAR sandbox node for E2E tests.
 ///
@@ -16,6 +19,7 @@ const CONTAINER_NET_PORT: u16 = 3031;
 ///
 /// The container is stopped and cleaned up when this value is dropped.
 pub struct NearSandbox {
+    docker: Docker,
     container_id: String,
     rpc_port: u16,
     network_port: u16,
@@ -38,11 +42,62 @@ impl NearSandbox {
             "starting NEAR sandbox Docker container"
         );
 
-        let container_id = docker_run(rpc_port, network_port, image)?;
+        let docker =
+            Docker::connect_with_local_defaults().context("failed to connect to Docker")?;
+
+        let port_bindings = HashMap::from([
+            (
+                CONTAINER_RPC_PORT.to_string(),
+                Some(vec![PortBinding {
+                    host_port: Some(rpc_port.to_string()),
+                    ..Default::default()
+                }]),
+            ),
+            (
+                CONTAINER_NET_PORT.to_string(),
+                Some(vec![PortBinding {
+                    host_port: Some(network_port.to_string()),
+                    ..Default::default()
+                }]),
+            ),
+        ]);
+
+        let container = docker
+            .create_container(
+                Some(CreateContainerOptions::<&str> {
+                    ..Default::default()
+                }),
+                Config {
+                    image: Some(image),
+                    host_config: Some(HostConfig {
+                        port_bindings: Some(port_bindings),
+                        auto_remove: Some(true),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .await
+            .context("failed to create sandbox container")?;
+
+        let container_id = container.id;
+        docker
+            .start_container::<&str>(&container_id, None)
+            .await
+            .context("failed to start sandbox container")?;
+
         tracing::info!(container_id = %container_id, "sandbox container started");
 
         if let Err(e) = wait_for_rpc(rpc_port).await {
-            let _ = docker_rm(&container_id);
+            let _ = docker
+                .remove_container(
+                    &container_id,
+                    Some(RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                )
+                .await;
             return Err(e.context("sandbox node failed to become ready"));
         }
 
@@ -50,8 +105,8 @@ impl NearSandbox {
         std::fs::create_dir_all(&sandbox_dir)
             .with_context(|| format!("failed to create {}", sandbox_dir.display()))?;
 
-        docker_cp(&container_id, "/data/genesis.json", &sandbox_dir)?;
-        docker_cp(&container_id, "/data/node_key.json", &sandbox_dir)?;
+        copy_from_container(&docker, &container_id, "/data/genesis.json", &sandbox_dir).await?;
+        copy_from_container(&docker, &container_id, "/data/node_key.json", &sandbox_dir).await?;
 
         tracing::info!(
             rpc_url = %format!("http://127.0.0.1:{rpc_port}"),
@@ -60,6 +115,7 @@ impl NearSandbox {
         );
 
         Ok(Self {
+            docker,
             container_id,
             rpc_port,
             network_port,
@@ -103,64 +159,60 @@ impl NearSandbox {
 impl Drop for NearSandbox {
     fn drop(&mut self) {
         tracing::info!(container_id = %self.container_id, "stopping NEAR sandbox container");
-        if let Err(e) = docker_rm(&self.container_id) {
-            tracing::error!(error = %e, "failed to remove sandbox container");
-        }
+        // Best-effort synchronous removal via a blocking runtime.
+        let docker = self.docker.clone();
+        let id = self.container_id.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let _ = docker
+                    .remove_container(
+                        &id,
+                        Some(RemoveContainerOptions {
+                            force: true,
+                            ..Default::default()
+                        }),
+                    )
+                    .await;
+            });
+        })
+        .join()
+        .ok();
     }
 }
 
-fn docker_run(rpc_port: u16, network_port: u16, image: &str) -> anyhow::Result<String> {
-    let output = Command::new("docker")
-        .args([
-            "run",
-            "-d",
-            "--rm",
-            "-p",
-            &format!("{rpc_port}:{CONTAINER_RPC_PORT}"),
-            "-p",
-            &format!("{network_port}:{CONTAINER_NET_PORT}"),
-            image,
-        ])
-        .output()
-        .context("failed to execute `docker run`")?;
-    if !output.status.success() {
-        bail!(
-            "docker run failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    Ok(String::from_utf8(output.stdout)?.trim().to_string())
-}
+/// Copy a single file from a container to a host directory.
+async fn copy_from_container(
+    docker: &Docker,
+    container_id: &str,
+    container_path: &str,
+    host_dir: &Path,
+) -> anyhow::Result<()> {
+    use bollard::container::DownloadFromContainerOptions;
+    use futures::TryStreamExt;
 
-fn docker_cp(container_id: &str, container_path: &str, host_dir: &Path) -> anyhow::Result<()> {
-    let output = Command::new("docker")
-        .args([
-            "cp",
-            &format!("{container_id}:{container_path}"),
-            &host_dir.display().to_string(),
-        ])
-        .output()
-        .with_context(|| format!("failed to execute `docker cp {container_path}`"))?;
-    if !output.status.success() {
-        bail!(
-            "docker cp {container_path} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    Ok(())
-}
+    let chunks: Vec<_> = docker
+        .download_from_container(
+            container_id,
+            Some(DownloadFromContainerOptions {
+                path: container_path,
+            }),
+        )
+        .try_collect()
+        .await
+        .with_context(|| format!("failed to download {container_path}"))?;
+    let tar_bytes: Vec<u8> = chunks.into_iter().flatten().collect();
 
-fn docker_rm(container_id: &str) -> anyhow::Result<()> {
-    let output = Command::new("docker")
-        .args(["rm", "-f", container_id])
-        .output()
-        .context("failed to execute `docker rm`")?;
-    if !output.status.success() {
-        bail!(
-            "docker rm failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    let mut archive = tar::Archive::new(&tar_bytes[..]);
+    archive.unpack(host_dir).with_context(|| {
+        format!(
+            "failed to unpack {container_path} into {}",
+            host_dir.display()
+        )
+    })?;
     Ok(())
 }
 

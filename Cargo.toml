@@ -78,6 +78,7 @@ average = "0.16"
 axum = "0.8.8"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 base64 = "0.22.1"
+bollard = "0.18"
 blstrs = "0.7.1"
 borsh = { version = "1.6.0", features = ["derive"] }
 bs58 = { version = "0.5.1" }
@@ -190,6 +191,7 @@ signature = "2.2.0"
 socket2 = "0.6.3"
 subtle = "2.6.1"
 syn = "2.0"
+tar = "0.4"
 tempfile = "3.27.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"

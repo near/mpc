@@ -568,6 +568,10 @@ jobs:
           fail-on-cache-miss: true
           path: |
             target/release/mpc-node
+            target/release/backup-cli
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+            libs/nearcore/target/release/neard
 
       - name: Install build dependencies
         run: |

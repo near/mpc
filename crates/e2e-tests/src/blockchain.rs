@@ -36,12 +36,11 @@ impl NearBlockchain {
         balance_near: u64,
         key: &SigningKey,
     ) -> anyhow::Result<()> {
-        let pubkey = dalek_to_near_pubkey(key)?;
         self.root_client
             .transaction(name)
             .create_account()
             .transfer(near_kit::NearToken::from_near(balance_near as u128))
-            .add_full_access_key(pubkey)
+            .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()))
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account {name}: {e}"))?;
@@ -55,12 +54,11 @@ impl NearBlockchain {
         key: &SigningKey,
         wasm: &[u8],
     ) -> anyhow::Result<DeployedContract> {
-        let pubkey = dalek_to_near_pubkey(key)?;
         self.root_client
             .transaction(name)
             .create_account()
             .transfer(near_kit::NearToken::from_near(balance_near as u128))
-            .add_full_access_key(pubkey)
+            .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()))
             .deploy(wasm.to_vec())
             .send()
             .await
@@ -84,7 +82,7 @@ impl NearBlockchain {
     }
 
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
-        let sk = dalek_to_near_secret_key(key)?;
+        let sk = near_kit::SecretKey::Ed25519(key.to_bytes());
         let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)
             .map_err(|e| anyhow::anyhow!("failed to create signer for {account_id}: {e}"))?;
         Ok(self.root_client.with_signer(signer))
@@ -164,20 +162,4 @@ impl DeployedContract {
     pub async fn state(&self) -> anyhow::Result<ProtocolContractState> {
         self.view("state").await
     }
-}
-
-fn dalek_to_near_pubkey(key: &SigningKey) -> anyhow::Result<near_kit::PublicKey> {
-    let s = format!(
-        "ed25519:{}",
-        bs58::encode(key.verifying_key().to_bytes()).into_string()
-    );
-    s.parse().context("failed to parse NEAR public key")
-}
-
-fn dalek_to_near_secret_key(key: &SigningKey) -> anyhow::Result<near_kit::SecretKey> {
-    let s = format!(
-        "ed25519:{}",
-        bs58::encode(key.to_keypair_bytes()).into_string()
-    );
-    s.parse().context("failed to parse NEAR secret key")
 }
