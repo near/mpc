@@ -168,7 +168,9 @@ where
                     anyhow::bail!("found empty list of providers for bitcoin")
                 };
 
-                let public_node_url = bitcoin_provider_config.rpc_url.clone();
+                let public_node_url = bitcoin_provider_config
+                    .auth
+                    .resolve_url(&bitcoin_provider_config.rpc_url)?;
 
                 let http_client = foreign_chain_inspector::build_http_client(
                     public_node_url,
@@ -211,7 +213,9 @@ where
                     anyhow::bail!("found empty list of providers for abstract")
                 };
 
-                let public_node_url = abstract_provider_config.rpc_url.clone();
+                let public_node_url = abstract_provider_config
+                    .auth
+                    .resolve_url(&abstract_provider_config.rpc_url)?;
 
                 let http_client = foreign_chain_inspector::build_http_client(
                     public_node_url,
@@ -254,7 +258,9 @@ where
                     anyhow::bail!("found empty list of providers for starknet")
                 };
 
-                let rpc_url = starknet_provider_config.rpc_url.clone();
+                let rpc_url = starknet_provider_config
+                    .auth
+                    .resolve_url(&starknet_provider_config.rpc_url)?;
 
                 let http_client = foreign_chain_inspector::build_http_client(
                     rpc_url,
