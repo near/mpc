@@ -126,7 +126,7 @@ where
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = prepare_dkg::<C, _>(participants_num(), threshold, &mut rng);
     let participants: Vec<_> = preps.iter().map(|(p, _)| *p).collect();
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps)
         .expect("Running protocol with snapshot should not have issues");
 
     // choose the real_participant at random
@@ -140,7 +140,7 @@ where
 
     // now preparing the simulator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
 
     PreparedSimulatedDkg {
         participant: real_participant,

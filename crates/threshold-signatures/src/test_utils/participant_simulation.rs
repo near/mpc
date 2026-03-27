@@ -1,6 +1,6 @@
 use crate::participants::Participant;
 use crate::protocol::MessageData;
-use crate::test_utils::snapshot::ProtocolSnapshot;
+use crate::test_utils::snapshot::protocol_snapshot;
 
 pub struct Simulator {
     /// the `real_participant` we are simulating for
@@ -10,7 +10,7 @@ pub struct Simulator {
 }
 
 impl Simulator {
-    pub fn new(real_participant: Participant, protocol_snap: ProtocolSnapshot) -> Option<Self> {
+    pub fn new(real_participant: Participant, protocol_snap: protocol_snapshot) -> Option<Self> {
         if protocol_snap.number_of_participants() <= 1 {
             return None;
         }

@@ -45,7 +45,7 @@ pub use protocol::{
     run_protocol, run_protocol_and_take_snapshots, run_simulated_protocol, run_two_party_protocol,
 };
 pub use sign::{check_one_coordinator_output, run_sign};
-pub use snapshot::ProtocolSnapshot;
+pub use snapshot::protocol_snapshot;
 pub use test_generators::*;
 
 /// Checks that the list contains all None but one element
