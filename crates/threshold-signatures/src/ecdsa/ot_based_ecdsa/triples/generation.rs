@@ -261,7 +261,7 @@ async fn do_generation_many<const N: usize>(
             let my_phi_proof0 = dlog::prove_with_nonce(
                 &mut transcript.fork(b"dlog0", &me.bytes()),
                 statement0,
-                witness0,
+                &witness0,
                 my_phi_proof0_nonces[i],
             )?;
             let statement1 = dlog::Statement::<C> {
@@ -273,7 +273,7 @@ async fn do_generation_many<const N: usize>(
             let my_phi_proof1 = dlog::prove_with_nonce(
                 &mut transcript.fork(b"dlog1", &me.bytes()),
                 statement1,
-                witness1,
+                &witness1,
                 my_phi_proof1_nonces[i],
             )?;
             my_phi_proof0v.push(my_phi_proof0);
@@ -458,7 +458,7 @@ async fn do_generation_many<const N: usize>(
             let my_phi_proof = dlogeq::prove_with_nonce(
                 &mut transcript.fork(b"dlogeq0", &me.bytes()),
                 statement,
-                witness,
+                &witness,
                 my_phi_proof_nonces[i],
             )?;
             big_c_i_points.push(CoefficientCommitment::new(big_c_i));
@@ -553,7 +553,7 @@ async fn do_generation_many<const N: usize>(
         let my_l0_phi_proof = dlog::prove_with_nonce(
             &mut transcript.fork(b"dlog2", &me.bytes()),
             statement,
-            witness,
+            &witness,
             my_l0_phi_proof_nonces[i],
         )?;
         hat_big_c_i_points.push(CoefficientCommitment::new(hat_big_c_i));
