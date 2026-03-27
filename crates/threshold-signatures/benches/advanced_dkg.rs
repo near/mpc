@@ -114,7 +114,6 @@ criterion_group!(
 );
 criterion_main!(benches);
 
-/****************************** Helpers ******************************/
 /// Used to simulate DKG keygen for benchmarking
 fn prepare_simulated_dkg<C: Ciphersuite>(
     threshold: ReconstructionLowerBound,
