@@ -24,14 +24,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
+              "$ref": "#/definitions/DockerImageHash"
             }
           }
         }
@@ -44,14 +37,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
+              "$ref": "#/definitions/LauncherDockerComposeHash"
             }
           }
         }
@@ -64,14 +50,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
+              "$ref": "#/definitions/LauncherImageHash"
             }
           }
         }
@@ -1215,14 +1194,7 @@ expression: abi
             {
               "name": "launcher_hash",
               "type_schema": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/LauncherImageHash"
               }
             }
           ]
@@ -1300,14 +1272,7 @@ expression: abi
             {
               "name": "code_hash",
               "type_schema": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/DockerImageHash"
               }
             }
           ]
@@ -1407,14 +1372,7 @@ expression: abi
             {
               "name": "launcher_hash",
               "type_schema": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/LauncherImageHash"
               }
             }
           ]
@@ -1751,14 +1709,7 @@ expression: abi
             "proposal_by_account": {
               "type": "object",
               "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "maxItems": 32,
-                "minItems": 32
+                "$ref": "#/definitions/DockerImageHash"
               }
             }
           }
@@ -1913,19 +1864,24 @@ expression: abi
           ],
           "properties": {
             "key_provider_event_digest": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "mrtd": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "rtmr0": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "rtmr1": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "rtmr2": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -1954,6 +1910,12 @@ expression: abi
               "type": "string"
             }
           }
+        },
+        "DockerImageHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "DomainConfig": {
           "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nJSON deserialization accepts both `\"scheme\"` (legacy) and `\"curve\"` (new) field names. Serialization outputs `\"scheme\"` for backward compatibility with the current contract. After 3.8 is released the compat struct should be removed.",
@@ -2663,6 +2625,12 @@ expression: abi
             }
           }
         },
+        "LauncherDockerComposeHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
+        },
         "LauncherHashVotes": {
           "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
           "type": "object",
@@ -2678,6 +2646,12 @@ expression: abi
             }
           }
         },
+        "LauncherImageHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
+        },
         "LauncherVoteAction": {
           "description": "The action a participant is voting for on a launcher image hash.",
           "oneOf": [
@@ -2688,14 +2662,7 @@ expression: abi
               ],
               "properties": {
                 "Add": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
+                  "$ref": "#/definitions/LauncherImageHash"
                 }
               },
               "additionalProperties": false
@@ -2707,14 +2674,7 @@ expression: abi
               ],
               "properties": {
                 "Remove": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
+                  "$ref": "#/definitions/LauncherImageHash"
                 }
               },
               "additionalProperties": false

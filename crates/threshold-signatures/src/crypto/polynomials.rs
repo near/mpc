@@ -626,6 +626,7 @@ mod test {
     use std::ops::Neg;
 
     use super::*;
+    use crate::errors::ProtocolError;
     use crate::test_utils::{
         generate_participants, generate_participants_with_random_ids, MockCryptoRng,
     };
@@ -1353,12 +1354,17 @@ mod test {
     fn test_generate_polynomial_overflow() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         // Test with a degree that would cause an overflow in `degree + 1`
-        let result = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng);
-        assert!(matches!(result, Err(ProtocolError::IntegerOverflow)));
+        let Err(e) = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng) else {
+            panic!("expected IntegerOverflow error");
+        };
+        assert_eq!(e, ProtocolError::IntegerOverflow);
 
         // Test with a degree that is at the boundary of isize::MAX
-        let result = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng);
-        assert!(matches!(result, Err(ProtocolError::IntegerOverflow)));
+        let Err(e) = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng)
+        else {
+            panic!("expected IntegerOverflow error");
+        };
+        assert_eq!(e, ProtocolError::IntegerOverflow);
     }
 
     #[test]
