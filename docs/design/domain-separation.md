@@ -34,7 +34,7 @@ Goals:
 
 **`crates/contract/src/primitives/domain.rs`**:
 ```rust
-pub struct DomainId(pub u64);
+pub struct DistributedKeyId(pub u64);
 
 pub enum SignatureScheme {
     Secp256k1,
@@ -43,10 +43,10 @@ pub enum SignatureScheme {
     V2Secp256k1,  // robust ECDSA, not yet deployed to mainnet
 }
 
-pub struct DomainConfig {
-    pub id: DomainId,
+pub struct DistributedKeyConfig {
+    pub id: DistributedKeyId,
     pub scheme: SignatureScheme,
-    pub purpose: DomainPurpose,
+    pub purpose: KeyPurpose,
 }
 ```
 
@@ -65,7 +65,7 @@ pub struct ThresholdParameters {
 **`crates/near-mpc-contract-interface/src/types/state.rs`** mirrors the internal types:
 ```rust
 pub enum SignatureScheme { Secp256k1, Ed25519, Bls12381, V2Secp256k1 }
-pub struct DomainConfig { pub id: DomainId, pub scheme: SignatureScheme, pub purpose: Option<DomainPurpose> }
+pub struct DistributedKeyConfig { pub id: DistributedKeyId, pub scheme: SignatureScheme, pub purpose: Option<KeyPurpose> }
 pub struct ThresholdParameters { pub participants: Participants, pub threshold: Threshold }
 ```
 
@@ -75,7 +75,7 @@ The node (`crates/node/`) imports types from **both** the internal contract crat
 
 | Import source | Count | Used for |
 |---|---|---|
-| `mpc_contract::primitives::domain::{DomainId, SignatureScheme, DomainConfig}` | ~30 files | Routing to providers, keyshare storage, key events |
+| `mpc_contract::primitives::domain::{DistributedKeyId, SignatureScheme, DistributedKeyConfig}` | ~30 files | Routing to providers, keyshare storage, key events |
 | `mpc_contract::primitives::key_state::{EpochId, KeyEventId, Keyset, ...}` | ~20 files | Key lifecycle, storage, coordination |
 | `mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters}` | ~5 files | Threshold extraction for crypto protocols |
 | `mpc_contract::primitives::signature::{Payload, SignRequest, ...}` | ~8 files | Request handling, signing |
@@ -110,35 +110,28 @@ The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.
 ### 2.1 New Contract Types
 
 ```rust
-/// Updated domain configuration. Inlines the cryptographic
-/// configuration directly rather than referencing it by ID.
-pub struct DomainConfig {
-    pub id: DomainId,
-    pub key_config: KeyConfig,
-    pub purpose: DomainPurpose,
+/// Distributed key configuration. Specifies the protocol, threshold,
+/// and purpose for a single distributed key managed by the MPC network.
+pub struct DistributedKeyConfig {
+    pub id: DistributedKeyId,
+    pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
+    pub purpose: KeyPurpose,
 }
 
 /// Governs the participant set and voting rules for governance
 /// decisions (adding domains, changing parameters).
-/// Decoupled from cryptographic thresholds: `voting_threshold`
+/// Decoupled from cryptographic thresholds: `governance_threshold`
 /// controls how many participants must agree on a governance action,
-/// independent of any domain's `ReconstructionThreshold`.
+/// independent of any distributed key's `ReconstructionThreshold`.
 pub struct GovernanceBody {
     pub participants: Participants,
-    pub voting_threshold: VotingThreshold,
+    pub governance_threshold: GovernanceThreshold,
 }
 
 /// Minimum number of participant votes required to approve a
 /// governance action (resharing, adding domains, etc.).
-pub struct VotingThreshold(pub u64);
-
-/// Specifies the cryptographic configuration for a domain's key:
-/// which protocol to run and how many shares are needed to
-/// reconstruct the secret. The curve is derived from the protocol.
-pub struct KeyConfig {
-    pub protocol: Protocol,
-    pub reconstruction_threshold: ReconstructionThreshold,
-}
+pub struct GovernanceThreshold(pub u64);
 
 /// Number of shares required to reconstruct the secret key.
 /// This is the "t" in a t-of-n threshold scheme: the minimum number of
@@ -165,7 +158,7 @@ pub enum Protocol {
 
 /// Identifies the elliptic curve. Used by the contract to verify
 /// signature responses and derive public keys.
-/// Not stored in `KeyConfig` — derived from `Protocol` via `From<Protocol>`.
+/// Not stored in `DistributedKeyConfig` — derived from `Protocol` via `From<Protocol>`.
 pub enum Curve {
     Secp256k1,
     Edwards25519,  // renamed from Ed25519 for clarity
@@ -191,11 +184,11 @@ Every current protocol uniquely determines its curve (CaitSith → Secp256k1, Fr
 
 If a future protocol supports multiple curves, it can carry the curve as data in the enum variant — e.g. `NewProtocol(Curve)`. The `From` impl naturally handles this by extracting the inner value. This avoids premature generalization while keeping the extension path clean.
 
-#### Why inline `KeyConfig` in `DomainConfig`
+#### Why no separate `KeyConfig` / `ProtocolConfig` struct
 
-`KeyConfig` is inlined directly into `DomainConfig` rather than stored in a separate registry with ID indirection. With a small number of domains (currently 4), the registry approach adds complexity (ID management, separate lookups, atomicity concerns) without meaningful savings. Inlining keeps the code ergonomic: any code that has a `DomainConfig` can directly access its cryptographic configuration without a second lookup.
+Earlier iterations of this design had a separate `KeyConfig` struct containing `protocol` and `reconstruction_threshold`, nested inside `DistributedKeyConfig`. Since `DistributedKeyConfig` is the only consumer of these fields, the extra indirection adds no value — it just means an extra `.key_config.` in every access path. Flattening `protocol` and `reconstruction_threshold` directly into `DistributedKeyConfig` is simpler and equally extensible.
 
-The trade-off is that domains sharing the same config (e.g., Sign and ForeignTx both using CaitSith/Secp256k1/threshold=6) will have duplicate `KeyConfig` values. This is acceptable — the duplication is trivial in storage cost, and validation during resharing simply iterates all domains.
+Distributed keys sharing the same protocol/threshold (e.g., Sign and ForeignTx both using CaitSith/Secp256k1/threshold=6) will have duplicate field values. This is acceptable — the duplication is trivial in storage cost, and validation during resharing simply iterates all distributed keys.
 
 
 ### 2.3 Relationship to Existing Types
@@ -203,15 +196,19 @@ The trade-off is that domains sharing the same config (e.g., Sign and ForeignTx 
 | Current | Proposed | Change |
 |---|---|---|
 | `SignatureScheme` | `Protocol` (with `Curve` derived via `From`) | Protocol is the primary identifier; curve is derived |
-| `DomainConfig.scheme` | `DomainConfig.key_config` | Inlined `KeyConfig` instead of scheme |
-| `ThresholdParameters` | `GovernanceBody` (governance) + `KeyConfig.reconstruction_threshold` (crypto) | Split into two concerns |
-| `Threshold` | `VotingThreshold` + `ReconstructionThreshold`(`ActiveParticipantsThreshold` can be indirectly derived from `ReconstructionThreshold`) | Distinct newtypes for distinct purposes |
+| `DomainConfig` | `DistributedKeyConfig` | Renamed; `protocol` and `reconstruction_threshold` inlined directly (no separate `KeyConfig`) |
+| `DomainId` | `DistributedKeyId` | Renamed to match `DistributedKeyConfig` |
+| `DomainPurpose` | `KeyPurpose` | Renamed to match `DistributedKeyConfig` |
+| `DomainRegistry` | `DistributedKeyRegistry` | Renamed (with serde alias for compat) |
+| `ThresholdParameters` | `GovernanceBody` (governance) + `DistributedKeyConfig.reconstruction_threshold` (crypto) | Split into two concerns |
+| `Threshold` | `GovernanceThreshold` + `ReconstructionThreshold` (`ActiveParticipantsThreshold` can be indirectly derived from `ReconstructionThreshold`) | Distinct newtypes for distinct purposes |
 
 ### 2.4 State Structure
 
 ```rust
 pub struct RunningContractState {
-    pub domains: DomainRegistry,
+    #[serde(alias = "domains")]  // compat: accept old field name
+    pub distributed_keys: DistributedKeyRegistry,
     pub keyset: Keyset,
     pub governance: GovernanceBody,     // RENAMED from parameters, threshold is voting-only
     pub governance_votes: GovernanceVotes,  // RENAMED from parameters_votes
@@ -220,6 +217,8 @@ pub struct RunningContractState {
 }
 ```
 
+Note: `DistributedKeyRegistry` is renamed from `DomainRegistry`. Use `#[serde(alias = "DomainRegistry")]` on the type (or `#[serde(alias = "domains")]` on the field) for wire compatibility.
+
 ### 2.5 KeyEvent Changes
 
 `KeyEvent` currently carries `ThresholdParameters` to know the participant set and threshold for key generation. With the split:
@@ -227,21 +226,20 @@ pub struct RunningContractState {
 ```rust
 pub struct KeyEvent {
     pub epoch_id: EpochId,
-    pub domain: DomainConfig,
-    pub governance: GovernanceBody,          // participant set
-    pub key_config: KeyConfig,              // protocol + reconstruction threshold (curve derived from protocol)
+    pub distributed_key: DistributedKeyConfig,  // protocol + reconstruction threshold + purpose
+    pub governance: GovernanceBody,              // participant set
     pub instance: Option<KeyEventInstance>,
     pub next_attempt_id: AttemptId,
 }
 ```
 
-The `KeyEvent` needs both: `GovernanceBody` for who participates, and `KeyConfig` for the cryptographic threshold to enforce during generation/resharing.
+The `KeyEvent` needs both: `GovernanceBody` for who participates, and `DistributedKeyConfig` for the protocol and cryptographic threshold to enforce during generation/resharing.
 
 ---
 
 ## 3. Validation Logic
 
-### 3.1 KeyConfig Validation
+### 3.1 Threshold Validation
 
 #### 3.1.1 Threshold Validation per Protocol
 
@@ -250,8 +248,8 @@ Each protocol has different constraints on `ReconstructionThreshold` relative to
 ```rust
 /// Validates that the reconstruction threshold is achievable
 /// given the number of participants.
-pub fn validate_threshold(config: &KeyConfig, num_participants: u64) -> Result<(), Error> {
-    let t = config.reconstruction_threshold.0;
+pub fn validate_threshold(config: &DistributedKeyConfig, num_participants: u64) -> Result<(), Error> {
+    let t = config.reconstruction_threshold.inner();
 
     // Universal constraints
     if t < 2 {
@@ -283,34 +281,46 @@ pub fn validate_threshold(config: &KeyConfig, num_participants: u64) -> Result<(
 
 When resharing (changing participants/threshold), we need to validate that:
 1. The new governance threshold is valid for the new participant count.
-2. **Every** existing `KeyConfig`'s `reconstruction_threshold` remains achievable with the new participant set.
+2. **Every** existing distributed key's `reconstruction_threshold` remains achievable with the new participant set.
 3. Enough old participants are retained to meet both governance and cryptographic thresholds.
 
 ```rust
-/// Validates that all domains' key configs remain valid under a new participant count.
+/// Validates that all distributed keys remain valid under a new participant count.
 pub fn validate_for_participant_count(
-    domains: &DomainRegistry,
+    keys: &DistributedKeyRegistry,
     num_participants: u64,
 ) -> Result<(), Error> {
-    for domain in domains.iter() {
-        validate_threshold(&domain.key_config, num_participants).map_err(|e| {
-            Error::KeyConfigIncompatibleWithNewParticipants { domain_id: domain.id, inner: e }
+    for key in keys.iter() {
+        validate_threshold(key, num_participants).map_err(|e| {
+            Error::ThresholdIncompatibleWithNewParticipants { distributed_key_id: key.id, inner: e }
         })?;
     }
     Ok(())
 }
 
-/// Returns the minimum number of participants required across all domains.
-pub fn min_participants_required(domains: &DomainRegistry) -> u64 {
+/// Returns the minimum number of participants required across all distributed keys.
+pub fn min_participants_required(domains: &DistributedKeyRegistry) -> u64 {
     domains.iter().map(|d| {
-        match d.key_config.protocol {
-            Protocol::DamgardEtAl => 2 * d.key_config.reconstruction_threshold.0 - 1,
-            _ => d.key_config.reconstruction_threshold.0,
-        }
+        min_active_participants(&d.protocol, &d.reconstruction_threshold)
     }).max().unwrap_or(0)
 }
 
-/// Returns the valid range of reconstruction thresholds for a new key config
+/// Returns the minimum number of active participants needed to run the
+/// given protocol at the specified reconstruction threshold.
+pub fn min_active_participants(
+    protocol: &Protocol,
+    reconstruction_threshold: &ReconstructionThreshold,
+) -> u64 {
+    let t = reconstruction_threshold.inner();
+    match protocol {
+        // DamgardEtAl requires honest majority: n >= 2t - 1
+        Protocol::DamgardEtAl => 2 * t - 1,
+        // All other protocols need at least t participants
+        _ => t,
+    }
+}
+
+/// Returns the valid range of reconstruction thresholds for a new distributed key
 /// given the protocol and current participant count.
 pub fn threshold_range(
     protocol: &Protocol,
@@ -330,13 +340,13 @@ pub fn threshold_range(
 ```rust
 pub fn validate_governance(governance: &GovernanceBody) -> Result<(), Error> {
     let n = governance.participants.len() as u64;
-    let t = governance.voting_threshold.0;
-    if t < 2 { return Err(Error::VotingThresholdTooLow); }
-    if t > n { return Err(Error::VotingThresholdExceedsParticipants); }
+    let t = governance.governance_threshold.0;
+    if t < 2 { return Err(Error::GovernanceThresholdTooLow); }
+    if t > n { return Err(Error::GovernanceThresholdExceedsParticipants); }
     // Governance minimum: >= 60% (same policy as current)
     let min_relative = (3 * n).div_ceil(5);
     if t < min_relative {
-        return Err(Error::VotingThresholdBelowMinimumRelative);
+        return Err(Error::GovernanceThresholdBelowMinimumRelative);
     }
     Ok(())
 }
@@ -366,9 +376,9 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
 **Scope**: `crates/contract/src/primitives/domain.rs`, `dto_mapping.rs`, affected call sites.
 
 **Changes**:
-- Rename enum `SignatureScheme` to `Curve` and field `.scheme` to `.curve` in internal `DomainConfig`.
-- Add `#[serde(rename = "scheme")]` on `DomainConfig.curve` to keep JSON wire format identical.
-- `DomainConfigCompat` uses `#[serde(alias = "scheme")]` so both old and new JSON deserialize.
+- Rename enum `SignatureScheme` to `Curve` and field `.scheme` to `.curve` in internal `DistributedKeyConfig`.
+- Add `#[serde(rename = "scheme")]` on `DistributedKeyConfig.curve` to keep JSON wire format identical.
+- `DistributedKeyConfigCompat` uses `#[serde(alias = "scheme")]` so both old and new JSON deserialize.
 - contract-interface DTO keeps `SignatureScheme` and `scheme` field unchanged.
 - `dto_mapping.rs` bridges `Curve` <-> `dtos::SignatureScheme`.
 
@@ -418,7 +428,7 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
   }
   ```
 - Implement `From<Protocol> for Curve` to derive the curve from the protocol (see §2.1).
-- **No changes to `DomainConfig` yet** — `Protocol` exists but is not wired into state.
+- **No changes to `DistributedKeyConfig` yet** — `Protocol` exists but is not wired into state.
 - No changes to contract-interface DTO.
 
 **Borsh compat**: Removing `V2Secp256k1` (last variant, index 3) does not shift other variant indices. No stored state references it. `Protocol` is a new type, not stored yet. No migration needed.
@@ -429,65 +439,55 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
 
 ---
 
-#### PR 4 — Create `KeyConfig` struct, update `DomainConfig`
+#### PR 4 — Add `Protocol`, `ReconstructionThreshold`, update `DistributedKeyConfig`
 
 **Scope**: `crates/contract/src/primitives/domain.rs`, `crates/contract/src/dto_mapping.rs`, `crates/near-mpc-contract-interface/src/types/state.rs`.
 
-This is the most complex PR. It wires `Protocol` and `Curve` together and changes `DomainConfig`'s shape. `KeyConfig` is inlined directly into `DomainConfig` (see §2.2 rationale).
+This is the most complex PR. It wires `Protocol` and `Curve` together and changes `DistributedKeyConfig`'s shape. `protocol` and `reconstruction_threshold` are flattened directly into `DistributedKeyConfig` (see §2.2 rationale — no separate `KeyConfig` struct).
 
 **Changes (contract internals)**:
 - Add `ReconstructionThreshold(u64)` newtype.
-- Add `KeyConfig` struct:
-  ```rust
-  pub struct KeyConfig {
-      pub protocol: Protocol,
-      pub reconstruction_threshold: ReconstructionThreshold,
-  }
-  ```
-- Update `DomainConfig`:
+- Update `DistributedKeyConfig`:
   ```rust
   // Before:
-  pub struct DomainConfig { pub id: DomainId, pub curve: Curve, pub purpose: DomainPurpose }
+  pub struct DistributedKeyConfig { pub id: DistributedKeyId, pub curve: Curve, pub purpose: KeyPurpose }
   // After:
-  pub struct DomainConfig { pub id: DomainId, pub key_config: KeyConfig, pub purpose: DomainPurpose }
+  pub struct DistributedKeyConfig { pub id: DistributedKeyId, pub protocol: Protocol, pub reconstruction_threshold: ReconstructionThreshold, pub purpose: KeyPurpose }
   ```
-- `DomainConfigCompat` no longer needs to handle the old `{ "scheme": "Secp256k1" }` format for `vote_add_domains` — partner nodes will use the new format directly. `DomainConfigCompat` can be simplified or removed.
+- `DistributedKeyConfigCompat` no longer needs to handle the old `{ "scheme": "Secp256k1" }` format for `vote_add_domains` — partner nodes will use the new format directly. `DistributedKeyConfigCompat` can be simplified or removed.
 
 **Changes (contract-interface DTO)**:
-- Add new DTO types: `dtos::Protocol`, `dtos::KeyConfig`, `dtos::ReconstructionThreshold`.
-- Update `dtos::DomainConfig` to include `key_config`.
+- Add new DTO types: `dtos::Protocol`, `dtos::ReconstructionThreshold`.
+- Update `dtos::DistributedKeyConfig` to include `protocol` and `reconstruction_threshold`.
 - Add new view method `state_v2()` that returns the new DTO structure (for nodes).
 - Existing `state()` continues to return old DTO format via `dto_mapping.rs` (for external consumers: block explorers, SDK clients).
 
 **Changes (dto_mapping.rs)**:
-- Map internal `KeyConfig` to `dtos::KeyConfig` (DTO can include both `protocol` and derived `curve` for convenience).
-- Map internal `DomainConfig` to old `dtos::DomainConfig` (for `state()`) by deriving `curve` from `key_config.protocol`.
-- Map internal `DomainConfig` to new `dtos::DomainConfig` (for `state_v2()`).
+- Map internal `DistributedKeyConfig` to old `dtos::DistributedKeyConfig` (for `state()`) by deriving `curve` from `protocol`.
+- Map internal `DistributedKeyConfig` to new `dtos::DistributedKeyConfig` (for `state_v2()`).
 
-**Borsh compat**: `DomainConfig`'s Borsh layout changes (from `(DomainId, Curve, DomainPurpose)` to `(DomainId, KeyConfig, DomainPurpose)`). Requires `migrate()`:
+**Borsh compat**: `DistributedKeyConfig`'s Borsh layout changes (from `(DistributedKeyId, Curve, KeyPurpose)` to `(DistributedKeyId, Protocol, ReconstructionThreshold, KeyPurpose)`). Requires `migrate()`:
 ```rust
-fn migrate(old: OldDomainConfig) -> DomainConfig {
-    DomainConfig {
+fn migrate(old: OldDistributedKeyConfig) -> DistributedKeyConfig {
+    DistributedKeyConfig {
         id: old.id,
-        key_config: KeyConfig {
-            protocol: Protocol::from(old.curve),  // infer protocol from old curve
-            // Use global threshold as default for all existing domains
-            reconstruction_threshold: ReconstructionThreshold(old_global_threshold),
-        },
+        protocol: Protocol::from(old.curve),  // infer protocol from old curve
+        // Use global threshold as default for all existing distributed keys
+        reconstruction_threshold: ReconstructionThreshold(old_global_threshold),
         purpose: old.purpose,
     }
 }
 ```
 
-Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to infer protocol from legacy curve values. This is unambiguous for existing domains since each deployed curve maps to exactly one protocol.
+Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to infer protocol from legacy curve values. This is unambiguous for existing distributed keys since each deployed curve maps to exactly one protocol.
 
 **JSON compat**:
 - External consumers calling `state()` see unchanged JSON.
-- `vote_add_domains` uses the new `DomainConfig` JSON format directly (breaking change OK — partner-node-only function).
+- `vote_add_domains` uses the new `DistributedKeyConfig` JSON format directly (breaking change OK — partner-node-only function).
 
 **Node changes**: Minimal in this PR — node can continue using `state()`. Full node migration happens in PR 7.
 
-**Tests**: Borsh migration roundtrip tests (old state → migrate → new state → serialize → deserialize). Verify `state()` output is unchanged. Verify `state_v2()` returns new structure. Verify `vote_add_domains` accepts new `DomainConfig` JSON.
+**Tests**: Borsh migration roundtrip tests (old state → migrate → new state → serialize → deserialize). Verify `state()` output is unchanged. Verify `state_v2()` returns new structure. Verify `vote_add_domains` accepts new `DistributedKeyConfig` JSON.
 
 ---
 
@@ -495,20 +495,21 @@ Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to in
 
 **Scope**: `crates/contract/src/primitives/thresholds.rs`, `crates/contract/src/state/running.rs`, `crates/contract/src/state/key_event.rs`.
 
-**Precondition**: PR 4 landed. `KeyConfig.reconstruction_threshold` exists but is populated from the global threshold during migration.
+**Precondition**: PR 4 landed. `DistributedKeyConfig.reconstruction_threshold` exists but is populated from the global threshold during migration.
 
 **Changes**:
-- Add `KeyConfig::validate_threshold(num_participants)` with protocol-specific rules:
+- Add `validate_threshold(config: &DistributedKeyConfig, num_participants)` with protocol-specific rules:
   - CaitSith/Frost/CKD: `t <= n` (same as current).
   - DamgardEtAl: `2t - 1 <= n`.
-- Update `vote_add_domains` to validate each new domain's `KeyConfig.reconstruction_threshold` against the current participant count.
-- Update `KeyEvent` to pass per-domain threshold (from `DomainConfig.key_config`) instead of the global threshold.
-- Update resharing validation: `validate_incoming_proposal` must check that ALL existing `KeyConfig` thresholds remain achievable under the proposed new participant count.
-- Existing domains continue to have `reconstruction_threshold == global_threshold` (set during PR 4 migration). New domains can choose a different value.
+- Add `min_active_participants(protocol, reconstruction_threshold)` helper (see §3.1).
+- Update `vote_add_domains` to validate each new distributed key's `reconstruction_threshold` against the current participant count.
+- Update `KeyEvent` to pass per-key threshold (from `DistributedKeyConfig.reconstruction_threshold`) instead of the global threshold.
+- Update resharing validation: `validate_incoming_proposal` must check that ALL existing distributed keys' thresholds remain achievable under the proposed new participant count.
+- Existing distributed keys continue to have `reconstruction_threshold == global_threshold` (set during PR 4 migration). New keys can choose a different value.
 
-**Borsh compat**: No struct layout changes (threshold is already in `KeyConfig` from PR 4). No migration.
+**Borsh compat**: No struct layout changes (threshold is already in `DistributedKeyConfig` from PR 4). No migration.
 
-**Key behavioral change**: This is where `DomainConfig` gains real per-domain threshold semantics. Before this PR, the threshold in `KeyConfig` was always the global value.
+**Key behavioral change**: This is where `DistributedKeyConfig` gains real per-key threshold semantics. Before this PR, the `reconstruction_threshold` was always the global value.
 
 **Tests**: Unit tests for `validate_threshold` edge cases: DamgardEtAl with `2t-1 == n` (boundary), `2t-1 > n` (reject), `t < 2` (reject). Resharing validation tests: propose new participant set that violates one domain's threshold. Verify `vote_add_domains` rejects invalid thresholds.
 
@@ -519,17 +520,17 @@ Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to in
 **Scope**: `crates/contract/src/primitives/thresholds.rs`, `crates/contract/src/state/`.
 
 **Changes**:
-- Add `VotingThreshold(u64)` newtype.
+- Add `GovernanceThreshold(u64)` newtype.
 - Add `GovernanceBody` struct:
   ```rust
   pub struct GovernanceBody {
       pub participants: Participants,
-      pub voting_threshold: VotingThreshold,
+      pub governance_threshold: GovernanceThreshold,
   }
   ```
 - In `RunningContractState`, replace `parameters: ThresholdParameters` with `governance: GovernanceBody`.
-- Update all vote-counting logic to use `governance.voting_threshold` instead of `parameters.threshold()`.
-- `KeyEvent` retains its per-domain `KeyConfig.reconstruction_threshold` for crypto operations.
+- Update all vote-counting logic to use `governance.governance_threshold` instead of `parameters.threshold()`.
+- `KeyEvent` retains its per-key `DistributedKeyConfig.reconstruction_threshold` for crypto operations.
 - Keep `ThresholdParameters` as a private type or remove it if no longer needed.
 
 **Borsh compat**: `RunningContractState` layout changes. Requires `migrate()`:
@@ -538,7 +539,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
     RunningContractState {
         governance: GovernanceBody {
             participants: old.parameters.participants().clone(),
-            voting_threshold: VotingThreshold(old.parameters.threshold().value()),
+            governance_threshold: GovernanceThreshold(old.parameters.threshold().value()),
         },
         // ... other fields unchanged
     }
@@ -552,7 +553,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 
 **Behavioral change**: After this PR, governance votes and crypto thresholds are fully decoupled. Changing participants (`vote_new_parameters`) updates the `GovernanceBody` but does not automatically change any domain's `reconstruction_threshold`.
 
-**Tests**: Borsh migration roundtrip for `RunningContractState`. Verify `state()` maps `GovernanceBody` back to `ThresholdParameters` DTO. Verify vote-counting uses `voting_threshold`. Verify resharing still validates all per-domain thresholds.
+**Tests**: Borsh migration roundtrip for `RunningContractState`. Verify `state()` maps `GovernanceBody` back to `ThresholdParameters` DTO. Verify vote-counting uses `governance_threshold`. Verify resharing still validates all per-domain thresholds.
 
 ---
 
@@ -561,27 +562,26 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 **Scope**: `crates/node/src/coordinator.rs`, `crates/node/src/key_events.rs`, `crates/node/src/providers/`.
 
 **Changes**:
-- Node switches from `state()` to `state_v2()` for contract queries, with fallback to `state()` when `state_v2()` is not available (during Phase A of the rolling upgrade, before the contract is deployed). The fallback path constructs a synthetic `KeyConfig` from the old state:
+- Node switches from `state()` to `state_v2()` for contract queries, with fallback to `state()` when `state_v2()` is not available (during Phase A of the rolling upgrade, before the contract is deployed). The fallback path constructs a synthetic `DistributedKeyConfig` from the old state:
   ```rust
   // Fallback: old contract, state() only
-  let key_config = KeyConfig {
+  let distributed_key = DistributedKeyConfig {
+      id: old_domain_id,
       protocol: Protocol::from(old_scheme),  // infer protocol from old curve
       reconstruction_threshold: ReconstructionThreshold(global_threshold),
+      purpose: old_purpose,
   };
   ```
-- Coordinator reads per-domain `KeyConfig` from contract state instead of using global threshold.
-- Replace `translate_threshold()` hack in `robust_ecdsa.rs` with clean per-protocol derivation of active participants threshold:
+- Coordinator reads per-key `DistributedKeyConfig` from contract state instead of using global threshold.
+- Replace `translate_threshold()` hack in `robust_ecdsa.rs` with the `min_active_participants()` helper:
   ```rust
-  // Node computes required active signers from KeyConfig
-  let active_signers = match key_config.protocol {
-      Protocol::DamgardEtAl => 2 * key_config.reconstruction_threshold.inner() - 1,
-      _ => key_config.reconstruction_threshold.inner(),
-  };
+  // Node computes required active signers from DistributedKeyConfig
+  let active_signers = min_active_participants(&dk.protocol, &dk.reconstruction_threshold);
   ```
-  Note: `translate_threshold()` is still needed on the `state()` fallback path (it's effectively moved into the synthetic `KeyConfig` construction above). It can be fully removed once the old contract is guaranteed gone.
+  Note: `translate_threshold()` is still needed on the `state()` fallback path (it's effectively moved into the synthetic `DistributedKeyConfig` construction above). It can be fully removed once the old contract is guaranteed gone.
 - Provider routing uses `Protocol` enum instead of pattern-matching on `SignatureScheme`/`Curve`:
   ```rust
-  match key_config.protocol {
+  match dk.protocol {
       Protocol::CaitSith => EcdsaSignatureProvider,
       Protocol::Frost => EddsaSignatureProvider,
       Protocol::ConfidentialKeyDerivation => CKDProvider,
@@ -601,10 +601,10 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 
 **Changes**:
 - Move pure data types to `mpc-primitives`:
-  - Identity newtypes: `DomainId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`.
-  - Enums: `Curve`, `Protocol`, `DomainPurpose`.
+  - Identity newtypes: `DistributedKeyId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`.
+  - Enums: `Curve`, `Protocol`, `KeyPurpose`.
   - Request types: `Payload`, `Tweak`, `SignRequest`, `SignRequestArgs`.
-  - Threshold newtypes: `ReconstructionThreshold`, `VotingThreshold`.
+  - Threshold newtypes: `ReconstructionThreshold`, `GovernanceThreshold`.
 - `mpc-primitives` is `no_std` compatible, depends only on `borsh` + `serde`.
 - Both `mpc-contract` and `near-mpc-contract-interface` depend on `mpc-primitives` and re-export its types.
 - Update all imports across contract and node.
@@ -636,7 +636,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 PR 1 [DONE] --> PR 2 [DONE] --+--> PR 3 (delete V2Secp256k1 + add Protocol)
                                |         |
                                |         v
-                               |    PR 4 (KeyConfig + DomainConfig update + state_v2())
+                               |    PR 4 (Protocol + ReconstructionThreshold + DistributedKeyConfig update + state_v2())
                                |         |
                                |         +---> PR 5 (per-domain threshold validation)
                                |         |       |
@@ -668,12 +668,12 @@ Each technique used in the PR plan, summarized:
 | Technique | What it achieves | Example |
 |---|---|---|
 | `#[serde(rename = "old")]` on field/variant | Serializes using old name, deserializes old name | `Curve::Edwards25519` serializes as `"Ed25519"` |
-| `#[serde(alias = "old")]` on field | Deserializes both old and new name, serializes new name | `DomainConfigCompat.curve` accepts `"scheme"` |
+| `#[serde(alias = "old")]` on field | Deserializes both old and new name, serializes new name | `DistributedKeyConfigCompat.curve` accepts `"scheme"` |
 | `migrate()` in contract | Converts Borsh-stored old state to new layout on upgrade | `OldRunningContractState` to `RunningContractState` |
 | `state()` + `state_v2()` view methods | External consumers see old DTO via `state()`, nodes see new DTO via `state_v2()` | Block explorers continue to work unchanged |
 | `dto_mapping.rs` | Decouples internal type evolution from public API | Internal `GovernanceBody` maps to DTO `ThresholdParameters` |
 | Borsh variant index preservation | Adding/removing enum variants at the end is safe | Remove `V2Secp256k1` (last variant) without shifting others |
-| Breaking change on node-facing functions | Partner nodes upgrade with the contract, no compat needed | `vote_add_domains` uses new `DomainConfig` JSON directly |
+| Breaking change on node-facing functions | Partner nodes upgrade with the contract, no compat needed | `vote_add_domains` uses new `DistributedKeyConfig` JSON directly |
 
 ### 4.5 Upgrade Scenario
 
@@ -721,7 +721,7 @@ The following types are imported by the node from the contract's internals:
 **Identity types (pure newtypes, no logic)**:
 | Type | Contract location | Node usage |
 |---|---|---|
-| `DomainId(u64)` | `primitives::domain` | ~20 files: routing, storage, providers |
+| `DistributedKeyId(u64)` | `primitives::domain` | ~20 files: routing, storage, providers |
 | `EpochId(u64)` | `primitives::key_state` | ~15 files: keyshare storage, coordination |
 | `AttemptId(u64)` | `primitives::key_state` | ~8 files: key events |
 | `KeyEventId { epoch_id, domain_id, attempt_id }` | `primitives::key_state` | ~15 files: key generation, resharing |
@@ -730,12 +730,12 @@ The following types are imported by the node from the contract's internals:
 | Type | Contract location | Node usage |
 |---|---|---|
 | `SignatureScheme` | `primitives::domain` | ~12 files: provider routing, domain matching |
-| `DomainPurpose` | `primitives::domain` | ~6 files: test setup, domain creation |
+| `KeyPurpose` | `primitives::domain` | ~6 files: test setup, domain creation |
 
 **Composite types (data + some logic)**:
 | Type | Contract location | Node usage |
 |---|---|---|
-| `DomainConfig` | `primitives::domain` | ~8 files: key events, test setup |
+| `DistributedKeyConfig` | `primitives::domain` | ~8 files: key events, test setup |
 | `Keyset` | `primitives::key_state` | ~6 files: keyshare storage, migration |
 | `KeyForDomain` | `primitives::key_state` | ~5 files: keyshare management |
 | `Threshold` | `primitives::thresholds` | ~3 files: coordinator, assets |
@@ -767,9 +767,9 @@ Move pure identity/data types that both contract and node need:
 ```
 mpc-primitives/
   src/
-    domain.rs       → DomainId, Curve, Protocol, DomainPurpose
+    domain.rs       → DistributedKeyId, Curve, Protocol, KeyPurpose
     key_state.rs    → EpochId, AttemptId, KeyEventId
-    thresholds.rs   → ReconstructionThreshold, VotingThreshold
+    thresholds.rs   → ReconstructionThreshold, GovernanceThreshold
     signature.rs    → Payload, Tweak, SignRequest, SignRequestArgs
     ckd.rs          → CkdAppId, CKDRequest, CKDRequestArgs
     participants.rs → ParticipantId
@@ -788,7 +788,7 @@ Remains the public API surface for contract view calls:
 ```
 near-mpc-contract-interface/
   types/
-    state.rs        → DomainConfig, KeyConfig, GovernanceBody, ProtocolContractState (DTOs)
+    state.rs        → DistributedKeyConfig, GovernanceBody, ProtocolContractState (DTOs)
     participants.rs → Participants, ParticipantInfo (DTOs)
     config.rs       → Config, InitConfig
 ```
@@ -802,7 +802,7 @@ Internal state, business logic, validation:
 ```
 mpc-contract/
   primitives/
-    domain.rs       → DomainRegistry, AddDomainsVotes, validation logic
+    domain.rs       → DistributedKeyRegistry, AddDomainsVotes, validation logic
     key_state.rs    → KeyForDomain, Keyset (with NEAR-specific storage)
     thresholds.rs   → Validation logic (validate_threshold, etc.)
   state/            → ProtocolContractState, RunningContractState, etc.
@@ -819,7 +819,7 @@ The node should depend on:
 
 The node should **not** depend on `mpc-contract` internals. Currently, the main reasons it does are:
 
-1. **Shared newtypes** (`DomainId`, `EpochId`, etc.) — solved by moving to `mpc-primitives`.
+1. **Shared newtypes** (`DistributedKeyId`, `EpochId`, etc.) — solved by moving to `mpc-primitives`.
 2. **`ProtocolContractState` enum** — the node needs to pattern-match on contract state. This should be exposed via contract-interface DTOs (it already is).
 3. **`Keyset`, `KeyForDomain`** — used in keyshare storage. These should move to `mpc-primitives` or contract-interface.
 4. **`SignRequest`, `Payload`** — request types. Should move to `mpc-primitives`.
@@ -847,11 +847,11 @@ The node should **not** depend on `mpc-contract` internals. Currently, the main 
 
 This can be done incrementally:
 
-1. **Phase 1**: Move identity newtypes (`DomainId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`) to `mpc-primitives`. Update imports in contract and node. Leaf-level change, low risk.
+1. **Phase 1**: Move identity newtypes (`DistributedKeyId`, `EpochId`, `AttemptId`, `KeyEventId`, `ParticipantId`) to `mpc-primitives`. Update imports in contract and node. Leaf-level change, low risk.
 
-2. **Phase 2**: Move data enums (`Curve`/`SignatureScheme`, `DomainPurpose`, `Protocol`) and request types (`Payload`, `Tweak`, `SignRequest`) to `mpc-primitives`.
+2. **Phase 2**: Move data enums (`Curve`/`SignatureScheme`, `KeyPurpose`, `Protocol`) and request types (`Payload`, `Tweak`, `SignRequest`) to `mpc-primitives`.
 
-3. **Phase 3**: Move composite data types (`KeyForDomain`, `Keyset`, `DomainConfig`) to `mpc-primitives` or contract-interface. These require more care since they have associated methods in the contract.
+3. **Phase 3**: Move composite data types (`KeyForDomain`, `Keyset`, `DistributedKeyConfig`) to `mpc-primitives` or contract-interface. These require more care since they have associated methods in the contract.
 
 4. **Phase 4**: Move migration and TEE types to appropriate crates. Update node to depend only on `mpc-primitives` + `near-mpc-contract-interface`. Remove node's direct `mpc-contract` dependency.
 
@@ -868,27 +868,27 @@ NotInitialized → Running ↔ Initializing/Resharing
 
 What changes is the data carried through transitions:
 - `RunningContractState` replaces `parameters` with `governance: GovernanceBody`.
-- `KeyEvent` carries both `GovernanceBody` (who participates) and `KeyConfig` (crypto params).
-- Resharing must validate ALL `KeyConfig` thresholds against the proposed new participant set.
+- `KeyEvent` carries both `GovernanceBody` (who participates) and `DistributedKeyConfig` (protocol + threshold + purpose).
+- Resharing must validate ALL distributed keys' `reconstruction_threshold` against the proposed new participant set.
 
 ### 6.2 Vote Functions
 
 | Function | Current threshold source | Proposed threshold source |
 |---|---|---|
-| `vote_add_domains` | `ThresholdParameters.threshold` | `GovernanceBody.voting_threshold` |
-| `vote_new_parameters` | `ThresholdParameters.threshold` | `GovernanceBody.voting_threshold` |
+| `vote_add_domains` | `ThresholdParameters.threshold` | `GovernanceBody.governance_threshold` |
+| `vote_new_parameters` | `ThresholdParameters.threshold` | `GovernanceBody.governance_threshold` |
 | `vote_pk` | All participants | All participants (unchanged) |
 | `vote_reshared` | All new participants | All new participants (unchanged) |
-| `vote_cancel_resharing` | Old `ThresholdParameters.threshold` | Old `GovernanceBody.voting_threshold` |
-| `vote_cancel_keygen` | `ThresholdParameters.threshold` | `GovernanceBody.voting_threshold` |
+| `vote_cancel_resharing` | Old `ThresholdParameters.threshold` | Old `GovernanceBody.governance_threshold` |
+| `vote_cancel_keygen` | `ThresholdParameters.threshold` | `GovernanceBody.governance_threshold` |
 
 ### 6.3 Adding Domains with Different Thresholds
 
-With `KeyConfig` per domain, `vote_add_domains` must now include the full `KeyConfig` for each new domain:
+With per-key `protocol` and `reconstruction_threshold`, `vote_add_domains` must now include these fields for each new distributed key:
 
 ```rust
-// Old: vote_add_domains(Vec<DomainConfig>) where DomainConfig has scheme
-// New: vote_add_domains(Vec<DomainConfig>) where DomainConfig has key_config
+// Old: vote_add_domains(Vec<DistributedKeyConfig>) where DistributedKeyConfig has scheme
+// New: vote_add_domains(Vec<DistributedKeyConfig>) where DistributedKeyConfig has protocol + reconstruction_threshold
 ```
 
 ### 6.4 Resharing with Per-Domain Thresholds
@@ -904,13 +904,14 @@ let threshold: usize = mpc_config.participants.threshold.try_into()?;
 let threshold = ReconstructionLowerBound::from(threshold);
 
 // Proposed (clean):
-let key_config = domain_registry.key_config_for(domain_id);
-let threshold = match key_config.protocol {
+let dk = distributed_key_registry.get(distributed_key_id);
+let active_signers = min_active_participants(&dk.protocol, &dk.reconstruction_threshold);
+let threshold = match dk.protocol {
     Protocol::DamgardEtAl => {
-        let max_malicious = MaxMalicious::from(key_config.reconstruction_threshold.0 - 1);
+        let max_malicious = MaxMalicious::from(dk.reconstruction_threshold.inner() - 1);
         // Use MaxMalicious directly, no translation needed
     }
-    _ => ReconstructionLowerBound::from(key_config.reconstruction_threshold.0),
+    _ => ReconstructionLowerBound::from(dk.reconstruction_threshold.inner()),
 };
 ```
 
@@ -920,7 +921,7 @@ let threshold = match key_config.protocol {
 
 ### 7.1 Governance Threshold Validation
 
-Should the governance `VotingThreshold` be constrained relative to the cryptographic `ReconstructionThreshold`? For example, should we require `voting_threshold >= max(reconstruction_threshold for all configs)`?
+Should the governance `GovernanceThreshold` be constrained relative to the cryptographic `ReconstructionThreshold`? For example, should we require `governance_threshold >= max(reconstruction_threshold for all configs)`?
 
 If not, it is possible for a governance majority to approve a resharing that a cryptographic protocol cannot support.
 
@@ -939,7 +940,7 @@ PRs 4 and 6 each require a Borsh `migrate()` function. Should these be separate 
 For reference, every `use mpc_contract::` import in the node crate, grouped by module:
 
 **`primitives::domain`** (30+ imports):
-`DomainId`, `DomainConfig`, `SignatureScheme`, `DomainPurpose`, `AddDomainsVotes`
+`DistributedKeyId`, `DistributedKeyConfig`, `SignatureScheme`, `KeyPurpose`, `AddDomainsVotes`
 
 **`primitives::key_state`** (25+ imports):
 `EpochId`, `AttemptId`, `KeyEventId`, `KeyForDomain`, `Keyset`
