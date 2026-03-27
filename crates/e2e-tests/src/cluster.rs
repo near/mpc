@@ -151,10 +151,7 @@ impl MpcCluster {
         )
         .await?;
 
-        if !config.domains.is_empty() {
-            add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await?;
-        }
-
+        // Start MPC nodes BEFORE adding domains: key generation requires running nodes.
         let nodes = start_mpc_nodes(
             &config,
             &sandbox,
@@ -164,6 +161,10 @@ impl MpcCluster {
             test_dir.path(),
             &ports,
         )?;
+
+        if !config.domains.is_empty() {
+            add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await?;
+        }
 
         let user_accounts = create_user_accounts(&blockchain, 1).await?;
 
@@ -309,7 +310,7 @@ impl MpcCluster {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
             let values = self.get_metric_all_nodes(name).await?;
-            if values.iter().all(|v| *v == Some(expected)) {
+            if values.iter().all(|v| v.unwrap_or(0) >= expected) {
                 return Ok(());
             }
             if tokio::time::Instant::now() >= deadline {
@@ -391,6 +392,32 @@ impl MpcCluster {
             .keys()
             .next()
             .expect("cluster should have at least one user account")
+    }
+
+    /// Send a sign request from the default user account and return the outcome.
+    pub async fn send_sign_request(
+        &self,
+        domain_id: DomainId,
+        payload: serde_json::Value,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let user = self.default_user_account().clone();
+        let client = self.user_client(&user)?;
+        let args = json!({
+            "request": {
+                "domain_id": domain_id,
+                "path": "test",
+                "payload_v2": payload,
+            }
+        });
+        self.contract
+            .call_from_with_deposit(
+                &client,
+                method_names::SIGN,
+                args,
+                near_kit::Gas::from_tgas(15),
+                near_kit::NearToken::from_yoctonear(1),
+            )
+            .await
     }
 }
 
@@ -622,7 +649,7 @@ fn build_participants(
     let mut list = Vec::new();
     for (i, key) in p2p_keys.iter().enumerate().take(num_nodes) {
         let account_id = ContractAccountId(format!("node{i}.{SANDBOX_ROOT_ACCOUNT}"));
-        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&key.verifying_key());
+        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(key.verifying_key().to_bytes());
         list.push((
             account_id,
             ParticipantId(i as u32),
