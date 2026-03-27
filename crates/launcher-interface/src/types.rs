@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::{fmt, path::PathBuf};
 
-use mpc_primitives::hash::MpcDockerImageHash;
+use mpc_primitives::hash::NodeImageHash;
 use serde::{Deserialize, Serialize};
 
 const SHA256_PREFIX: &str = "sha256:";
@@ -38,7 +38,7 @@ impl ApprovedHashes {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, derive_more::From, derive_more::Deref)]
-pub struct DockerSha256Digest(MpcDockerImageHash);
+pub struct DockerSha256Digest(NodeImageHash);
 
 impl fmt::Display for DockerSha256Digest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -51,7 +51,7 @@ pub enum DockerDigestParseError {
     #[error("missing {SHA256_PREFIX} prefix")]
     MissingPrefix,
     #[error(transparent)]
-    InvalidHash(#[from] mpc_primitives::hash::Hash32ParseError),
+    InvalidHash(#[from] mpc_primitives::hash::HashParseError),
 }
 
 impl FromStr for DockerSha256Digest {
@@ -89,10 +89,10 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::{ApprovedHashes, DockerDigestParseError, DockerSha256Digest};
-    use mpc_primitives::hash::MpcDockerImageHash;
+    use mpc_primitives::hash::NodeImageHash;
 
     fn sample_digest() -> DockerSha256Digest {
-        let hash: MpcDockerImageHash = [0xab; 32].into();
+        let hash: NodeImageHash = [0xab; 32].into();
         DockerSha256Digest::from(hash)
     }
 

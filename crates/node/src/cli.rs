@@ -15,10 +15,10 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
-use mpc_primitives::hash::MpcDockerImageHash;
+use mpc_primitives::hash::NodeImageHash;
 use std::path::PathBuf;
 
-const DUMMY_ALLOWED_HASH: MpcDockerImageHash = MpcDockerImageHash::new([0; 32]);
+const DUMMY_ALLOWED_HASH: NodeImageHash = NodeImageHash::new([0; 32]);
 const ALLOWED_IMAGE_HASHES_FILE_PATH: &str = "/tmp/allowed_image_hashes.json";
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
@@ -300,7 +300,7 @@ impl ImportKeyshareCmd {
             let keyshare: PermanentKeyshareData = serde_json::from_str(&self.keyshare_json)
                 .map_err(|e| anyhow::anyhow!("Failed to parse keyshare JSON: {}", e))?;
 
-            println!("Parsed keyshare for epoch {}", keyshare.epoch_id);
+            println!("Parsed keyshare for epoch {}", keyshare.epoch_id());
 
             // Create the local storage and store the keyshare
             let home_dir = PathBuf::from(&self.home_dir);
@@ -365,7 +365,7 @@ impl ExportKeyshareCmd {
                 .load()
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("No keyshare found in {}", home_dir.display()))?;
-            let keyshare = legacy_ecdsa_key_from_keyshares(&keyshare.keyshares)?;
+            let keyshare = legacy_ecdsa_key_from_keyshares(keyshare.keyshares())?;
 
             // Print the keyshare to console
             let json = serde_json::to_string_pretty(&keyshare)
@@ -527,21 +527,24 @@ mod tests {
     use super::*;
     use crate::keyshare::permanent::LegacyRootKeyshareData;
     use k256::{AffinePoint, Scalar};
-    use mpc_contract::primitives::key_state::EpochId;
     use tempfile::TempDir;
 
     // Mock keyshare data for testing
-    fn create_test_keyshare() -> PermanentKeyshareData {
+    fn create_test_keyshare_with_epoch(epoch: u64) -> PermanentKeyshareData {
         // Create a dummy private key - this is only for testing
         let private_share = Scalar::ONE;
         // Do some computation to get non-identity public key
         let public_key = AffinePoint::GENERATOR * private_share;
 
         PermanentKeyshareData::from_legacy(&LegacyRootKeyshareData {
-            epoch: 1,
+            epoch,
             private_share,
             public_key: public_key.to_affine(),
         })
+    }
+
+    fn create_test_keyshare() -> PermanentKeyshareData {
+        create_test_keyshare_with_epoch(1)
     }
 
     #[test]
@@ -585,11 +588,8 @@ mod tests {
         let home_dir = temp_dir.path().to_string_lossy().to_string();
 
         // Create two keyshares with different epochs
-        let mut keyshare1 = create_test_keyshare();
-        keyshare1.epoch_id = EpochId::new(2); // Higher epoch
-
-        let mut keyshare2 = create_test_keyshare();
-        keyshare2.epoch_id = EpochId::new(1); // Lower epoch
+        let keyshare1 = create_test_keyshare_with_epoch(2); // Higher epoch
+        let keyshare2 = create_test_keyshare_with_epoch(1); // Lower epoch
 
         let keyshare1_json = serde_json::to_string(&keyshare1).unwrap();
         let keyshare2_json = serde_json::to_string(&keyshare2).unwrap();

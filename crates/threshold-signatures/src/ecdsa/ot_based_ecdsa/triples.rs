@@ -69,9 +69,14 @@ pub struct TriplePub {
 /// This consists of shares of each individual part.
 ///
 /// i.e. we have a share of a, b, and c such that a * b = c.
-#[derive(Clone, Debug, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct TripleShare {
     pub a: Scalar,
     pub b: Scalar,
     pub c: Scalar,
 }
+
+impl_secret_debug!(TripleShare {
+    show: [],
+    redact: [a, b, c]
+});

@@ -11,7 +11,13 @@ We use Dstack (from Phala) to orchestrate the environment and run the MPC contai
 ## Limitations and Restrictions
 
  **Important:**
-You cannot migrate an existing MPC node out of its CVM without data loss (for example: key share, P2P key). In addition, replacing or changing TDX-related hardware or dependencies (e.g., a CPU swap) may render the data unrecoverable.
+ 
+The CVM filesystem is encrypted with a hardware-bound key derived from SGX sealing, so copying the CVM or disk data to another machine will not work and may result in data loss, including loss of key shares and P2P identity keys.
+
+Platform-bound sealed data may also become unrecoverable if TDX-related hardware changes (for example, a CPU replacement).
+
+To move a node between hosts, follow the supported procedure described in the [Node Migration](./node-migration-guide.md) section, which uses the backup-cli tool to securely transfer key shares.
+
 
 ## Main difference between TEE and non TEE MPC nodes
 
@@ -133,7 +139,7 @@ All steps below assume the current user is `mpc` and the current directory is
 
    ```bash
    cd dstack
-   git checkout v0.5.7 # Should point to commit `eb97c56bc8f58dafb57f9cc4ec538a4f00bdb5b6`
+   git checkout v0.5.8 # Should point to commit `368c62e7de5d4016bd75332824aa7f2ef1d7d19e`
 
    cargo build --release -p dstack-vmm -p supervisor
    mkdir -p vmm-data
@@ -182,7 +188,7 @@ EOF
 4. **Download Guest OS images:**
 
    ```bash
-   DSTACK_VERSION=0.5.4
+   DSTACK_VERSION=0.5.8
    wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
    mkdir -p images/
    tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
@@ -246,7 +252,7 @@ Notice that some of the commands require `sudo`, so they cannot be run using the
 > **Important:** The guest OS image that runs inside the CVM must be **identical across all nodes**.  
 > The image is **measured**, and those measurements are **hardcoded in the contract**.
 
-The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.4**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
+The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.8**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
 
 If you need to **verify**, **re-download**, or **rebuild** the image, follow one of the methods below.
 
@@ -257,14 +263,14 @@ If you need to **verify**, **re-download**, or **rebuild** the image, follow one
 Use this method to retrieve the official pre-built image provided by the Dstack project.
 
 ```bash
-DSTACK_VERSION=0.5.4
+DSTACK_VERSION=0.5.8
 wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
 mkdir -p images/
 tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
 rm -f dstack-${DSTACK_VERSION}.tar.gz
 ```
 
-This ensures you are using the verified release image corresponding to version **0.5.4**.
+This ensures you are using the verified release image corresponding to version **0.5.8**.
 
 ---
 
@@ -277,7 +283,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
    ```bash
    git clone https://github.com/Dstack-TEE/meta-dstack.git
    cd meta-dstack/
-   git checkout f7c795b76faa693f218e1c255007e3a68c541d79
+   git checkout 48dd3df6f443bfe25a65701d4453fb7cf9c3dbb9
    git submodule update --init --recursive
    ```
 
@@ -285,7 +291,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
 
    - **Download the pre-built image (recommended, faster):**
      ```bash
-     ./build.sh dl 0.5.4
+     ./build.sh dl 0.5.8
      ```
 
    - **Build a reproducible image from source (slower, ~1–2 hours):**
@@ -296,7 +302,7 @@ This method is intended for advanced users who wish to inspect, rebuild, or repr
 
 ###### Verification Steps
 
-Run these commands from inside your image folder (e.g., `dstack-0.5.4`).
+Run these commands from inside your image folder (e.g., `dstack-0.5.8`).
 
 **1. Verify file hashes against expected values:**
 
@@ -307,9 +313,9 @@ set -euo pipefail
 # Hard-coded expected hashes
 declare -A EXPECTED
 EXPECTED["ovmf.fd"]="76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0"
-EXPECTED["bzImage"]="987083c434a937e47361377196644169b8d2183919c6c3ab89e251e021ab55cb"
-EXPECTED["initramfs.cpio.gz"]="fd5267f04bf95dc073c21934de552517506acde6485524834376c8a479c92fcd"
-EXPECTED["metadata.json"]="a0a8489dd9f05db9ba26b37c1a7e3c99e94fa4a3e82736b57b1c19b058a11674"
+EXPECTED["bzImage"]="2afe5b0571363fe2278a3438e337630bfeffc74bafba3d116630e2a1ef1805f3"
+EXPECTED["initramfs.cpio.gz"]="1272ab4b10db1933d02a80059fbb94b4be9eb4af8c4f79e739dfc0b0101acc40"
+EXPECTED["metadata.json"]="20fde70b9e4f31ab6ef55d8a5bf33b1734593a9e605982c510c0963d69af075b"
 
 ALL_OK=1
 for FILE in "${!EXPECTED[@]}"; do
@@ -382,7 +388,7 @@ For more details, see the [Dstack attestation guide](https://github.com/Dstack-T
 Build `dstack-mr` docker image:
 
 ```bash
-cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.4
+cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.8
 ```
 
 Create a Dockerfile file with the following contents:
@@ -422,9 +428,9 @@ Run:
 
 ```bash
 docker run --rm \
-  -v "$(pwd)":/dstack-0.5.4 \
+  -v "$(pwd)":/dstack-0.5.8 \
   dstack-mr \
-  measure -c 8 -m 64G /dstack-0.5.4/metadata.json
+  measure -c 8 -m 64G /dstack-0.5.8/metadata.json
 ```
 
 Example output:
@@ -433,8 +439,8 @@ Example output:
 Machine measurements:
 MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
 RTMR0: e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46
-RTMR1: a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8b01713d3d9937e3e0d26c15
-RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe
+RTMR1: b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f
+RTMR2: 9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f69041d8264217f3d24541580cf
 ```
 
 ---
@@ -500,7 +506,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    Ensure that the `mr_enclave` matches the expected value:
 
    ```console
-   1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
+   6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
    ```
 
  **Note**: As part of the mutual attestation between the CVM and the key provider, the CVM will check that the key provider’s `mr_enclave` matches the above hash.
@@ -578,9 +584,9 @@ RUST_LOG=mpc=debug,info
 
 NEAR_BOOT_NODES=$BOOT_NODES
 
+# telemetry,migration,debug,node-node,DSS (Decentralized Status Sync)
+PORTS=8080:8080,8079:8079,3030:3030,80:80,24567:24567
 
-# Port forwarding 
-PORTS=8080:8080,24567:24567,80:80
 
 ```
 
@@ -658,9 +664,10 @@ This creates a limitation when trying to run both **mainnet** and **testnet** no
 | Port   | Purpose                                                                 |
 |--------|-------------------------------------------------------------------------|
 | **80** | Node-to-node communication (port override convention)                   |
-| **24567** | Decentralized state sync                                               |
-| **8080** | Debug and telemetry collection, plus the new `getdata` endpoint         |
+| **24567** | Decentralized state sync                                             |
+| **8080** | Debug and telemetry collection, plus the `/public_data` endpoint       |
 | **3030** | Debug and telemetry collection                                         |
+| **8079** | Migration port                    |
 
 ### Configuring and starting the MPC binary in a CVM
 
@@ -690,7 +697,7 @@ Use the following custom settings for MPC:
    Local 3030:3030: (use public with you want the debug metrics to be available on the internet)  
    Local <dstack_agent_port>:8090: (required for access CVM information and container logs)
 
-7. Key Provider ID: (The MrEnclave for the sgx local key provider) 1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
+7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
 
 ![CVM Web Page](./attachments/VMM_web_page.png)
 

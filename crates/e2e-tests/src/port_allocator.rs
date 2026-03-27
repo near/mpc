@@ -4,7 +4,7 @@
 /// collisions when tests run in parallel via `cargo nextest`.
 ///
 /// Layout per test:
-///   - 2 cluster-level ports (sandbox RPC, sandbox network)
+///   - 2 cluster-level ports (NEAR node RPC, NEAR node network)
 ///   - 8 ports per node * MAX_NODES
 #[derive(Debug, Clone)]
 pub struct E2ePortAllocator {
@@ -30,11 +30,11 @@ impl E2ePortAllocator {
 
     // -- Cluster-level ports --
 
-    pub fn sandbox_rpc_port(&self) -> u16 {
+    pub fn near_node_rpc_port(&self) -> u16 {
         self.base()
     }
 
-    pub fn sandbox_network_port(&self) -> u16 {
+    pub fn near_node_network_port(&self) -> u16 {
         self.base() + 1
     }
 
@@ -83,7 +83,7 @@ mod tests {
         let b = E2ePortAllocator::new(1);
         // Last port of test 0 must be less than first port of test 1
         let a_last = a.near_network_port(E2ePortAllocator::MAX_NODES as usize - 1);
-        let b_first = b.sandbox_rpc_port();
+        let b_first = b.near_node_rpc_port();
         assert!(a_last < b_first, "{a_last} >= {b_first}");
     }
 

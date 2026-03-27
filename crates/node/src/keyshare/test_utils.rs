@@ -74,15 +74,12 @@ fn permanent_keyshare_from_keyshares(
     epoch_id: u64,
     keyshares: &[Keyshare],
 ) -> PermanentKeyshareData {
-    PermanentKeyshareData {
-        epoch_id: EpochId::new(epoch_id),
-        keyshares: keyshares.to_vec(),
-    }
+    PermanentKeyshareData::new(EpochId::new(epoch_id), keyshares.to_vec())
+        .expect("test keyshares should be consistent")
 }
 
-fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
-    let keys = permanent
-        .keyshares
+fn keyset_from_keyshares(epoch_id: u64, keyshares: &[Keyshare]) -> Keyset {
+    let keys = keyshares
         .iter()
         .map(|keyshare| {
             let public_key = keyshare.public_key().unwrap();
@@ -93,7 +90,7 @@ fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
             }
         })
         .collect();
-    Keyset::new(permanent.epoch_id, keys)
+    Keyset::new(EpochId::new(epoch_id), keys)
 }
 
 #[derive(Clone)]
@@ -141,7 +138,7 @@ impl KeysetBuilder {
     }
 
     pub fn keyset(&self) -> Keyset {
-        keyset_from_permanent_keyshare(&self.permanent_key_data())
+        keyset_from_keyshares(self.epoch_id, &self.keys)
     }
 
     pub fn permanent_key_data(&self) -> PermanentKeyshareData {

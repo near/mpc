@@ -21,10 +21,10 @@ BorshSchemaContainer {
                 "ThresholdParameters",
             ],
         },
-        "(AuthenticatedParticipantId, Hash32)": Tuple {
+        "(AuthenticatedParticipantId, DockerImageHash)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
-                "Hash32",
+                "DockerImageHash",
             ],
         },
         "(AuthenticatedParticipantId, LauncherVoteAction)": Tuple {
@@ -89,11 +89,11 @@ BorshSchemaContainer {
                 [
                     (
                         "launcher_hash",
-                        "Hash32",
+                        "LauncherImageHash",
                     ),
                     (
                         "compose_hashes",
-                        "Vec<Hash32>",
+                        "Vec<LauncherDockerComposeHash>",
                     ),
                 ],
             ),
@@ -123,7 +123,7 @@ BorshSchemaContainer {
                 [
                     (
                         "image_hash",
-                        "Hash32",
+                        "DockerImageHash",
                     ),
                     (
                         "added",
@@ -158,10 +158,10 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedAccountId, ThresholdParameters)",
         },
-        "BTreeMap<AuthenticatedParticipantId, Hash32>": Sequence {
+        "BTreeMap<AuthenticatedParticipantId, DockerImageHash>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, Hash32)",
+            elements: "(AuthenticatedParticipantId, DockerImageHash)",
         },
         "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>": Sequence {
             length_width: 4,
@@ -210,7 +210,7 @@ BorshSchemaContainer {
                 [
                     (
                         "proposal_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, Hash32>",
+                        "BTreeMap<AuthenticatedParticipantId, DockerImageHash>",
                     ),
                 ],
             ),
@@ -270,23 +270,70 @@ BorshSchemaContainer {
                 [
                     (
                         "mrtd",
-                        "Sha384Digest",
+                        "MrtdHash",
                     ),
                     (
                         "rtmr0",
-                        "Sha384Digest",
+                        "Rtmr0Hash",
                     ),
                     (
                         "rtmr1",
-                        "Sha384Digest",
+                        "Rtmr1Hash",
                     ),
                     (
                         "rtmr2",
-                        "Sha384Digest",
+                        "Rtmr2Hash",
                     ),
                     (
                         "key_provider_event_digest",
-                        "Sha384Digest",
+                        "KeyProviderEventDigest",
+                    ),
+                ],
+            ),
+        },
+        "Curve": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Secp256k1",
+                    "Curve__Secp256k1",
+                ),
+                (
+                    1,
+                    "Ed25519",
+                    "Curve__Ed25519",
+                ),
+                (
+                    2,
+                    "Bls12381",
+                    "Curve__Bls12381",
+                ),
+                (
+                    3,
+                    "V2Secp256k1",
+                    "Curve__V2Secp256k1",
+                ),
+            ],
+        },
+        "Curve__Bls12381": Struct {
+            fields: Empty,
+        },
+        "Curve__Ed25519": Struct {
+            fields: Empty,
+        },
+        "Curve__Secp256k1": Struct {
+            fields: Empty,
+        },
+        "Curve__V2Secp256k1": Struct {
+            fields: Empty,
+        },
+        "DockerImageHash": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 32]",
                     ),
                 ],
             ),
@@ -299,8 +346,8 @@ BorshSchemaContainer {
                         "DomainId",
                     ),
                     (
-                        "scheme",
-                        "SignatureScheme",
+                        "curve",
+                        "Curve",
                     ),
                     (
                         "purpose",
@@ -476,20 +523,6 @@ BorshSchemaContainer {
         "ForeignChain__Starknet": Struct {
             fields: Empty,
         },
-        "Hash32": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "bytes",
-                        "[u8; 32]",
-                    ),
-                    (
-                        "_marker",
-                        "()",
-                    ),
-                ],
-            ),
-        },
         "HashSet<AuthenticatedAccountId>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -615,6 +648,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "KeyProviderEventDigest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 48]",
+                    ),
+                ],
+            ),
+        },
         "Keyset": Struct {
             fields: NamedFields(
                 [
@@ -629,12 +672,32 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "LauncherDockerComposeHash": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 32]",
+                    ),
+                ],
+            ),
+        },
         "LauncherHashVotes": Struct {
             fields: NamedFields(
                 [
                     (
                         "vote_by_account",
                         "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>",
+                    ),
+                ],
+            ),
+        },
+        "LauncherImageHash": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 32]",
                     ),
                 ],
             ),
@@ -657,14 +720,14 @@ BorshSchemaContainer {
         "LauncherVoteAction__Add": Struct {
             fields: UnnamedFields(
                 [
-                    "Hash32",
+                    "LauncherImageHash",
                 ],
             ),
         },
         "LauncherVoteAction__Remove": Struct {
             fields: UnnamedFields(
                 [
-                    "Hash32",
+                    "LauncherImageHash",
                 ],
             ),
         },
@@ -784,11 +847,11 @@ BorshSchemaContainer {
                 [
                     (
                         "mpc_docker_image_hash",
-                        "Option<Hash32>",
+                        "Option<DockerImageHash>",
                     ),
                     (
                         "launcher_docker_compose_hash",
-                        "Option<Hash32>",
+                        "Option<LauncherDockerComposeHash>",
                     ),
                     (
                         "expiry_timestamp_seconds",
@@ -875,6 +938,16 @@ BorshSchemaContainer {
                 ),
             ],
         },
+        "MrtdHash": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 48]",
+                    ),
+                ],
+            ),
+        },
         "NodeAttestation": Struct {
             fields: NamedFields(
                 [
@@ -926,6 +999,21 @@ BorshSchemaContainer {
             length_range: 1..=4294967295,
             elements: "RpcProvider",
         },
+        "Option<DockerImageHash>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "DockerImageHash",
+                ),
+            ],
+        },
         "Option<EpochId>": Enum {
             tag_width: 1,
             variants: [
@@ -941,21 +1029,6 @@ BorshSchemaContainer {
                 ),
             ],
         },
-        "Option<Hash32>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "Hash32",
-                ),
-            ],
-        },
         "Option<KeyEventInstance>": Enum {
             tag_width: 1,
             variants: [
@@ -968,6 +1041,21 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "KeyEventInstance",
+                ),
+            ],
+        },
+        "Option<LauncherDockerComposeHash>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "LauncherDockerComposeHash",
                 ),
             ],
         },
@@ -1214,6 +1302,36 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "Rtmr0Hash": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 48]",
+                    ),
+                ],
+            ),
+        },
+        "Rtmr1Hash": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 48]",
+                    ),
+                ],
+            ),
+        },
+        "Rtmr2Hash": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "bytes",
+                        "[u8; 48]",
+                    ),
+                ],
+            ),
+        },
         "RunningContractState": Struct {
             fields: NamedFields(
                 [
@@ -1257,53 +1375,6 @@ BorshSchemaContainer {
                     "[u8; 32]",
                 ],
             ),
-        },
-        "Sha384Digest": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "bytes",
-                        "[u8; 48]",
-                    ),
-                ],
-            ),
-        },
-        "SignatureScheme": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Secp256k1",
-                    "SignatureScheme__Secp256k1",
-                ),
-                (
-                    1,
-                    "Ed25519",
-                    "SignatureScheme__Ed25519",
-                ),
-                (
-                    2,
-                    "Bls12381",
-                    "SignatureScheme__Bls12381",
-                ),
-                (
-                    3,
-                    "V2Secp256k1",
-                    "SignatureScheme__V2Secp256k1",
-                ),
-            ],
-        },
-        "SignatureScheme__Bls12381": Struct {
-            fields: Empty,
-        },
-        "SignatureScheme__Ed25519": Struct {
-            fields: Empty,
-        },
-        "SignatureScheme__Secp256k1": Struct {
-            fields: Empty,
-        },
-        "SignatureScheme__V2Secp256k1": Struct {
-            fields: Empty,
         },
         "StaleData": Struct {
             fields: Empty,
@@ -1397,11 +1468,11 @@ BorshSchemaContainer {
                 [
                     (
                         "mpc_image_hash",
-                        "Hash32",
+                        "DockerImageHash",
                     ),
                     (
                         "launcher_compose_hash",
-                        "Hash32",
+                        "LauncherDockerComposeHash",
                     ),
                     (
                         "expiry_timestamp_seconds",
@@ -1439,15 +1510,15 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "DomainConfig",
         },
-        "Vec<Hash32>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "Hash32",
-        },
         "Vec<KeyForDomain>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "KeyForDomain",
+        },
+        "Vec<LauncherDockerComposeHash>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "LauncherDockerComposeHash",
         },
         "Vec<u8>": Sequence {
             length_width: 4,

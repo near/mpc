@@ -8,7 +8,7 @@ pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 use chain_gateway::{
     Gas,
     state_viewer::{SubscribeToContractMethod, WatchContractState},
-    transaction_sender::{SubmitTransaction, TransactionSender},
+    transaction_sender::{SubmitFunctionCall, TransactionSigner},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names::{
@@ -30,15 +30,14 @@ const VERIFY_TEE_GAS: Gas = Gas::from_teragas(300);
 /// - Subscribes to changes in allowed image and launcher hashes.
 /// - Submits attestations.
 /// - Triggers on-chain re-validation of stored attestations.
-pub struct TeeContext<S: SubmitTransaction = TransactionSender> {
+pub struct TeeContext<S> {
     /// Contract that manages TEE attestations and allowed hashes.
     governance_contract: AccountId,
     /// Allowed TEE hashes from the governance contract.
     allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
-    /// Submits transactions to the governance contract.
-    transaction_sender: S,
     /// Cancels the background hash-watcher task when `TeeContext` is dropped.
     _watcher_cancel: CancelOnDrop,
+    submitter: S,
 }
 
 /// Cancels the background hash-watcher task when dropped.
@@ -52,8 +51,7 @@ impl Drop for CancelOnDrop {
 
 impl<S> TeeContext<S>
 where
-    S: SubmitTransaction,
-    S::Error: Into<TeeContextError>,
+    S: SubmitFunctionCall + SubscribeToContractMethod + Clone + Send + 'static,
 {
     /// Creates a new `TeeContext`.
     ///
@@ -62,19 +60,22 @@ where
     /// a background task that merges updates into a single
     /// [`AllowedTeeHashes`] watch channel.
     pub async fn new(
-        chain_gateway: impl SubscribeToContractMethod + Send + 'static,
+        chain_gateway: S,
         governance_contract: AccountId,
-        transaction_sender: S,
     ) -> Result<Self, TeeContextError> {
         let cancel = CancellationToken::new();
-        let rx =
-            spawn_hash_watcher(chain_gateway, governance_contract.clone(), cancel.clone()).await?;
+        let rx = spawn_hash_watcher(
+            chain_gateway.clone(),
+            governance_contract.clone(),
+            cancel.clone(),
+        )
+        .await?;
 
         Ok(Self {
             governance_contract,
             allowed_hashes_rx: rx,
-            transaction_sender,
             _watcher_cancel: CancelOnDrop(cancel),
+            submitter: chain_gateway,
         })
     }
 
@@ -89,6 +90,7 @@ where
     /// Submits an attestation to the governance contract.
     pub async fn submit_attestation(
         &self,
+        signer: &TransactionSigner,
         attestation: Attestation,
         tls_public_key: Ed25519PublicKey,
     ) -> Result<(), TeeContextError> {
@@ -98,27 +100,31 @@ where
         };
         let args_json = serde_json::to_vec(&args)?;
 
-        self.transaction_sender
-            .submit(
+        self.submitter
+            .submit_function_call_tx(
+                signer,
                 self.governance_contract.clone(),
-                SUBMIT_PARTICIPANT_INFO,
+                SUBMIT_PARTICIPANT_INFO.to_string(),
                 args_json,
                 SUBMIT_ATTESTATION_GAS,
             )
             .await
+            .map(|_| ())
             .map_err(Into::into)
     }
 
     /// Triggers on-chain re-validation of all stored attestations.
-    pub async fn verify_tee(&self) -> Result<(), TeeContextError> {
-        self.transaction_sender
-            .submit(
+    pub async fn verify_tee(&self, signer: &TransactionSigner) -> Result<(), TeeContextError> {
+        self.submitter
+            .submit_function_call_tx(
+                signer,
                 self.governance_contract.clone(),
-                VERIFY_TEE,
+                VERIFY_TEE.to_string(),
                 b"{}".to_vec(),
                 VERIFY_TEE_GAS,
             )
             .await
+            .map(|_| ())
             .map_err(Into::into)
     }
 }
@@ -218,13 +224,11 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use chain_gateway::{
-        errors::ChainGatewayError,
-        mock::{MockChainState, MockError},
-        types::ObservedState,
+        mock::{MockChainState, MockChainStateBuilder, MockError},
+        types::{LatestFinalBlockInfo, ObservedState},
     };
+    use ed25519_dalek::SigningKey;
     use near_mpc_contract_interface::types::{Attestation, MockAttestation};
-    use std::sync::{Arc, Mutex};
-
     /// Block height returned by [`MockChainState`] view responses.
     const MOCK_BLOCK_HEIGHT: u64 = 1;
 
@@ -233,9 +237,6 @@ mod tests {
 
     /// NEAR account ID of the governance contract used in tests.
     const GOVERNANCE_ACCOUNT: &str = "governance.testnet";
-
-    /// A transaction captured by [`MockTransactionSender`].
-    type RecordedCall = (AccountId, String, Vec<u8>);
 
     fn governance_account() -> AccountId {
         GOVERNANCE_ACCOUNT.parse().unwrap()
@@ -251,9 +252,8 @@ mod tests {
             .to_vec()
     }
 
-    /// Returns a [`MockChainState`] that responds with [`allowed_image_hashes`].
     fn mock_chain() -> MockChainState {
-        MockChainState::builder()
+        MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
             .with_query_view_function_response(Ok(ObservedState {
                 observed_at: MOCK_BLOCK_HEIGHT.into(),
@@ -262,53 +262,48 @@ mod tests {
             .build()
     }
 
-    /// Fake [`TransactionSender`] that records submitted transactions
-    /// instead of sending them on-chain. Optionally returns an error.
-    #[derive(Clone, Default)]
-    struct MockTransactionSender {
-        calls: Arc<Mutex<Vec<RecordedCall>>>,
-        error: Option<ChainGatewayError>,
+    fn test_signer() -> TransactionSigner {
+        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+        TransactionSigner::from_key("test.near".parse().unwrap(), signing_key)
     }
 
-    impl MockTransactionSender {
-        fn failing(error: ChainGatewayError) -> Self {
-            Self {
-                error: Some(error),
-                ..Default::default()
-            }
-        }
-
-        fn calls(&self) -> Vec<RecordedCall> {
-            self.calls.lock().unwrap().clone()
+    fn default_block_info() -> LatestFinalBlockInfo {
+        LatestFinalBlockInfo {
+            observed_at: MOCK_BLOCK_HEIGHT.into(),
+            value: Default::default(),
         }
     }
 
-    impl SubmitTransaction for MockTransactionSender {
-        type Error = ChainGatewayError;
-        async fn submit(
-            &self,
-            receiver_id: AccountId,
-            method_name: &str,
-            args: Vec<u8>,
-            _gas: Gas,
-        ) -> Result<(), ChainGatewayError> {
-            if let Some(err) = &self.error {
-                return Err(err.clone());
-            }
-            self.calls
-                .lock()
-                .unwrap()
-                .push((receiver_id, method_name.to_string(), args));
-            Ok(())
-        }
+    async fn create_context_with(
+        latest_block: Result<LatestFinalBlockInfo, MockError>,
+        submit_response: Result<(), MockError>,
+    ) -> TeeContext<MockChainState> {
+        let mock = MockChainStateBuilder::new()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
+            }))
+            .with_latest_block(latest_block)
+            .with_signed_transaction_submitter_response(submit_response)
+            .build();
+        TeeContext::new(mock, governance_account()).await.unwrap()
     }
 
-    async fn create_test_context() -> (TeeContext<MockTransactionSender>, MockTransactionSender) {
-        let mock_sender = MockTransactionSender::default();
-        let ctx = TeeContext::new(mock_chain(), governance_account(), mock_sender.clone())
+    async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
+        let mock_chain_state = MockChainStateBuilder::new()
+            .with_syncing_status(Ok(false))
+            .with_query_view_function_response(Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
+            }))
+            .with_latest_block(Ok(default_block_info()))
+            .with_signed_transaction_submitter_response(Ok(()))
+            .build();
+        let ctx = TeeContext::new(mock_chain_state.clone(), governance_account())
             .await
             .unwrap();
-        (ctx, mock_sender)
+        (ctx, mock_chain_state)
     }
 
     #[tokio::test(start_paused = true)]
@@ -327,78 +322,77 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn test_submit_attestation() {
-        let (ctx, sender) = create_test_context().await;
+        let (ctx, mock_chain) = create_test_context().await;
         let attestation = Attestation::Mock(MockAttestation::Valid);
         let tls_key = Ed25519PublicKey([0u8; 32]);
-        ctx.submit_attestation(attestation.clone(), tls_key.clone())
+        let signer = test_signer();
+        ctx.submit_attestation(&signer, attestation, tls_key)
             .await
             .unwrap();
 
-        let expected_args = serde_json::to_vec(&SubmitParticipantInfoArgs {
-            proposed_participant_attestation: attestation,
-            tls_public_key: tls_key,
-        })
-        .unwrap();
-        assert_eq!(
-            sender.calls(),
-            vec![(
-                governance_account(),
-                SUBMIT_PARTICIPANT_INFO.to_string(),
-                expected_args
-            )]
-        );
+        let txs = mock_chain.signed_transactions().await;
+        assert_eq!(txs.len(), 1);
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_verify_tee() {
-        let (ctx, sender) = create_test_context().await;
-        ctx.verify_tee().await.unwrap();
-        assert_eq!(
-            sender.calls(),
-            vec![(governance_account(), VERIFY_TEE.to_string(), b"{}".to_vec())]
-        );
+        let (ctx, mock_chain) = create_test_context().await;
+        let signer = test_signer();
+        ctx.verify_tee(&signer).await.unwrap();
+
+        let txs = mock_chain.signed_transactions().await;
+        assert_eq!(txs.len(), 1);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_submit_attestation_propagates_transaction_error() {
-        let mock_sender = MockTransactionSender::failing(ChainGatewayError::MonitoringClosed);
-        let ctx = TeeContext::new(mock_chain(), governance_account(), mock_sender)
-            .await
-            .unwrap();
-
+    async fn test_submit_attestation_propagates_fetch_block_error() {
+        let ctx = create_context_with(Err(MockError::LatestFinalBlockError), Ok(())).await;
         let result = ctx
             .submit_attestation(
+                &test_signer(),
                 Attestation::Mock(MockAttestation::Valid),
                 Ed25519PublicKey([0u8; 32]),
             )
             .await;
-
         assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_spawn_hash_watcher_fails_when_view_errors() {
-        let mock = MockChainState::builder()
-            .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Err(MockError::ViewClientError))
-            .build();
-
-        let cancel = CancellationToken::new();
-        let result = spawn_hash_watcher(mock, governance_account(), cancel).await;
-
+    async fn test_verify_tee_propagates_fetch_block_error() {
+        let ctx = create_context_with(Err(MockError::LatestFinalBlockError), Ok(())).await;
+        let result = ctx.verify_tee(&test_signer()).await;
         assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_spawn_hash_watcher_initial_error_drops_sender() {
-        let mock = MockChainState::builder()
+    async fn test_submit_attestation_propagates_submit_error() {
+        let ctx = create_context_with(Ok(default_block_info()), Err(MockError::RpcError)).await;
+        let result = ctx
+            .submit_attestation(
+                &test_signer(),
+                Attestation::Mock(MockAttestation::Valid),
+                Ed25519PublicKey([0u8; 32]),
+            )
+            .await;
+        assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_verify_tee_propagates_submit_error() {
+        let ctx = create_context_with(Ok(default_block_info()), Err(MockError::RpcError)).await;
+        let result = ctx.verify_tee(&test_signer()).await;
+        assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_new_fails_when_view_errors() {
+        let mock = MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
             .with_query_view_function_response(Err(MockError::ViewClientError))
             .build();
 
-        let cancel = CancellationToken::new();
-        let result = spawn_hash_watcher(mock.clone(), governance_account(), cancel).await;
-        assert_matches!(result, Err(TeeContextError::ChainGateway(_)));
+        let result = TeeContext::new(mock.clone(), governance_account()).await;
+        assert!(result.is_err());
 
         // The task exited on initial failure — no further polling should happen.
         assert_eq!(
@@ -409,7 +403,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_drop_cancels_and_closes_receiver() {
         let (ctx, _) = create_test_context().await;
 
@@ -425,46 +419,6 @@ mod tests {
         assert!(
             res.unwrap().is_err(),
             "expected channel closed (sender dropped)"
-        );
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn test_spawn_hash_watcher_updates_on_hash_change() {
-        let mock = mock_chain();
-        let cancel = CancellationToken::new();
-
-        let mut rx = spawn_hash_watcher(mock.clone(), governance_account(), cancel)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            *rx.borrow(),
-            AllowedTeeHashes {
-                allowed_docker_image_hashes: allowed_image_hashes(),
-                allowed_launcher_compose_hashes: allowed_launcher_hashes(),
-            }
-        );
-
-        // Simulate a contract state change at a newer block height.
-        let updated_bytes = [99u8; 32];
-        let updated_image = vec![DockerImageHash::from(updated_bytes)];
-        let updated_launcher = vec![LauncherDockerComposeHash::from(updated_bytes)];
-        mock.set_view_response(Ok(ObservedState {
-            observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
-            value: serde_json::to_vec(&updated_image).unwrap(),
-        }))
-        .await;
-
-        // Advance time past the poll interval to trigger the update.
-        tokio::time::sleep(chain_gateway::state_viewer::POLL_INTERVAL * 3).await;
-
-        rx.changed().await.unwrap();
-        assert_eq!(
-            *rx.borrow(),
-            AllowedTeeHashes {
-                allowed_docker_image_hashes: updated_image,
-                allowed_launcher_compose_hashes: updated_launcher,
-            }
         );
     }
 

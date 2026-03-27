@@ -33,12 +33,14 @@ pub struct PresignArguments<C: Ciphersuite> {
 ///
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct PresignOutput<C: Ciphersuite + Send + 'static> {
     /// The public nonce commitment.
     pub nonces: SigningNonces<C>,
     pub commitments_map: BTreeMap<Identifier<C>, SigningCommitments<C>>,
 }
+
+impl_secret_debug!({C: Ciphersuite + Send + 'static} PresignOutput<C> { show: [commitments_map], redact: [nonces] });
 
 /// Maximum incoming buffer entries for the FROST presign protocol.
 pub(crate) const FROST_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
