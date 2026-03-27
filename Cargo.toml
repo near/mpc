@@ -152,8 +152,8 @@ near-abi = "0.4.4"
 near-account-id = "2.5.0"
 near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.6"
+near-kit = { version = "0.7.0", default-features = false }
 near-primitives = "0.34.6"
-near-sandbox = "0.3.5"
 near-sdk = { version = "5.24.1", features = [
     "legacy",
     "unit-testing",
