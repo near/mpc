@@ -194,12 +194,14 @@ async fn do_sign_coordinator_v2(
     threshold: ReconstructionLowerBound,
     me: Participant,
     keygen_output: KeygenOutput,
-    presignature: PresignOutput,
+    mut presignature: PresignOutput,
     message: Vec<u8>,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
-    let signing_package =
-        frost_ed25519::SigningPackage::new(presignature.commitments_map, message.as_slice());
+    let signing_package = frost_ed25519::SigningPackage::new(
+        std::mem::take(&mut presignature.commitments_map),
+        message.as_slice(),
+    );
 
     let mut signature_shares: BTreeMap<frost_ed25519::Identifier, round2::SignatureShare> =
         BTreeMap::new();
@@ -328,7 +330,7 @@ fn do_sign_participant_v2(
     me: Participant,
     coordinator: Participant,
     keygen_output: &KeygenOutput,
-    presignature: PresignOutput,
+    mut presignature: PresignOutput,
     message: &[u8],
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1.
@@ -348,7 +350,8 @@ fn do_sign_participant_v2(
     // Ensures the values are zeroized on drop
     let key_package = Zeroizing::new(key_package);
 
-    let signing_package = SigningPackage::new(presignature.commitments_map, message);
+    let signing_package =
+        SigningPackage::new(std::mem::take(&mut presignature.commitments_map), message);
     let signature_share = round2::sign(&signing_package, &presignature.nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
 

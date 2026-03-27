@@ -17,7 +17,6 @@ use frost_core::serialization::SerializableScalar;
 use frost_secp256k1::{Group, Secp256K1Group};
 use rand_core::CryptoRngCore;
 use subtle::ConstantTimeEq;
-use zeroize::Zeroize;
 
 type C = Secp256K1Sha256;
 

@@ -139,14 +139,15 @@ async fn do_sign_coordinator(
     threshold: ReconstructionLowerBound,
     me: Participant,
     keygen_output: KeygenOutput,
-    presignature: PresignOutput,
+    mut presignature: PresignOutput,
     message: Vec<u8>,
     randomizer: Randomizer,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1
     let key_package = construct_key_package(threshold, me, &keygen_output)?;
     let key_package = Zeroizing::new(key_package);
-    let signing_package = SigningPackage::new(presignature.commitments_map, &message);
+    let signing_package =
+        SigningPackage::new(std::mem::take(&mut presignature.commitments_map), &message);
     let randomized_params =
         RandomizedParams::from_randomizer(&keygen_output.public_key, randomizer);
 
@@ -206,7 +207,7 @@ async fn do_sign_participant(
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
-    presignature: PresignOutput,
+    mut presignature: PresignOutput,
     message: Vec<u8>,
 ) -> Result<SignatureOption, ProtocolError> {
     // --- Round 1.
@@ -230,10 +231,16 @@ async fn do_sign_participant(
 
     let key_package = construct_key_package(threshold, me, &keygen_output)?;
     let key_package = Zeroizing::new(key_package);
-    let nonces = Zeroizing::new(presignature.nonces);
-    let signing_package = SigningPackage::new(presignature.commitments_map, &message);
-    let signature_share = round2::sign(&signing_package, &nonces, &key_package, randomizer)
-        .map_err(|_| ProtocolError::ErrorFrostSigningFailed)?;
+    let signing_package =
+        SigningPackage::new(std::mem::take(&mut presignature.commitments_map), &message);
+    // nonces are zeroized when presignature drops (ZeroizeOnDrop)
+    let signature_share = round2::sign(
+        &signing_package,
+        &presignature.nonces,
+        &key_package,
+        randomizer,
+    )
+    .map_err(|_| ProtocolError::ErrorFrostSigningFailed)?;
 
     let sign_waitpoint = chan.next_waitpoint();
     chan.send_private(sign_waitpoint, coordinator, &signature_share)?;
