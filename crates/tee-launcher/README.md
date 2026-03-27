@@ -95,7 +95,7 @@ Priority order:
 ## Building
 
 ```bash
-cargo build -p tee-launcher --release
+cargo build -p tee-launcher --profile=reproducible
 ```
 
 ## Testing

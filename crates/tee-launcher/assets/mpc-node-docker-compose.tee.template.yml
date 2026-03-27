@@ -1,6 +1,6 @@
 services:
   mpc-node:
-    image: "{{IMAGE_NAME}}@{{IMAGE}}"
+    image: "{{IMAGE_NAME}}@{{MANIFEST_DIGEST}}"
     container_name: "{{CONTAINER_NAME}}"
     security_opt:
       - no-new-privileges:true

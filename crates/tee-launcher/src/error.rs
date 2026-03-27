@@ -1,7 +1,6 @@
 use launcher_interface::types::DockerSha256Digest;
-use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub(crate) enum LauncherError {
     #[error("EmitEvent failed while extending RTMR3: {0}")]
     DstackEmitEventFailed(String),
@@ -73,7 +72,7 @@ pub(crate) enum LauncherError {
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub(crate) enum ImageDigestValidationFailed {
     #[error("manifest digest lookup failed: {0}")]
     ManifestDigestLookupFailed(String),

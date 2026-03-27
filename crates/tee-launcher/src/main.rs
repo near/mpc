@@ -9,12 +9,15 @@ use launcher_interface::types::{
 };
 use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
 
-use constants::*;
-use docker_types::*;
-use error::*;
+use constants::{
+    DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, IMAGE_DIGEST_FILE, MPC_CONFIG_SHARED_PATH,
+    MPC_CONTAINER_NAME,
+};
+use docker_types::{DockerTokenResponse, ManifestResponse};
+use error::{ImageDigestValidationFailed, LauncherError};
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
 
-use types::*;
+use types::{CliArgs, Config, LauncherConfig, Platform, PortMapping};
 use url::Url;
 
 mod constants;
@@ -293,7 +296,7 @@ impl RegistryInfo for DockerRegistry {
 }
 
 async fn get_manifest_digest(
-    registry: &dyn RegistryInfo,
+    registry: &impl RegistryInfo,
     config: &LauncherConfig,
     expected_image_digest: &DockerSha256Digest,
 ) -> Result<DockerSha256Digest, LauncherError> {
@@ -537,7 +540,7 @@ fn render_compose_file(
 
     let rendered = template
         .replace("{{IMAGE_NAME}}", image_name)
-        .replace("{{IMAGE}}", &manifest_digest.to_string())
+        .replace("{{MANIFEST_DIGEST}}", &manifest_digest.to_string())
         .replace("{{CONTAINER_NAME}}", MPC_CONTAINER_NAME)
         .replace("{{MPC_CONFIG_SHARED_PATH}}", MPC_CONFIG_SHARED_PATH)
         .replace("{{DSTACK_UNIX_SOCKET}}", DSTACK_UNIX_SOCKET)
