@@ -301,8 +301,8 @@ BorshSchemaContainer {
                 ),
                 (
                     1,
-                    "Ed25519",
-                    "Curve__Ed25519",
+                    "Edwards25519",
+                    "Curve__Edwards25519",
                 ),
                 (
                     2,
@@ -319,7 +319,7 @@ BorshSchemaContainer {
         "Curve__Bls12381": Struct {
             fields: Empty,
         },
-        "Curve__Ed25519": Struct {
+        "Curve__Edwards25519": Struct {
             fields: Empty,
         },
         "Curve__Secp256k1": Struct {

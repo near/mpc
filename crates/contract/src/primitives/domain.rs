@@ -52,7 +52,8 @@ impl Display for DomainId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Curve {
     Secp256k1,
-    Ed25519,
+    #[serde(rename = "Ed25519")]
+    Edwards25519,
     Bls12381,
     V2Secp256k1, // Robust ECDSA
 }
@@ -69,7 +70,7 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
         (purpose, curve),
         (DomainPurpose::Sign, Curve::Secp256k1)
             | (DomainPurpose::Sign, Curve::V2Secp256k1)
-            | (DomainPurpose::Sign, Curve::Ed25519)
+            | (DomainPurpose::Sign, Curve::Edwards25519)
             | (DomainPurpose::ForeignTx, Curve::Secp256k1)
             | (DomainPurpose::CKD, Curve::Bls12381)
     )
@@ -304,7 +305,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(1),
-                curve: Curve::Ed25519,
+                curve: Curve::Edwards25519,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -361,7 +362,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(2),
-                curve: Curve::Ed25519,
+                curve: Curve::Edwards25519,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
@@ -400,7 +401,7 @@ pub mod tests {
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    curve: Curve::Ed25519,
+                    curve: Curve::Edwards25519,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
@@ -417,7 +418,7 @@ pub mod tests {
             Some(DomainId(3))
         );
         assert_eq!(
-            registry.most_recent_domain_for_curve(Curve::Ed25519),
+            registry.most_recent_domain_for_curve(Curve::Edwards25519),
             Some(DomainId(2))
         );
     }
@@ -467,7 +468,7 @@ pub mod tests {
 
     #[rstest]
     #[case(Curve::Secp256k1, DomainPurpose::Sign)]
-    #[case(Curve::Ed25519, DomainPurpose::Sign)]
+    #[case(Curve::Edwards25519, DomainPurpose::Sign)]
     #[case(Curve::V2Secp256k1, DomainPurpose::Sign)]
     #[case(Curve::Bls12381, DomainPurpose::CKD)]
     fn test_infer_purpose_from_curve(#[case] curve: Curve, #[case] expected: DomainPurpose) {
@@ -478,12 +479,12 @@ pub mod tests {
     // Valid combinations
     #[case(DomainPurpose::Sign, Curve::Secp256k1, true)]
     #[case(DomainPurpose::Sign, Curve::V2Secp256k1, true)]
-    #[case(DomainPurpose::Sign, Curve::Ed25519, true)]
+    #[case(DomainPurpose::Sign, Curve::Edwards25519, true)]
     #[case(DomainPurpose::ForeignTx, Curve::Secp256k1, true)]
     #[case(DomainPurpose::CKD, Curve::Bls12381, true)]
     // Invalid combinations
     #[case(DomainPurpose::Sign, Curve::Bls12381, false)]
-    #[case(DomainPurpose::ForeignTx, Curve::Ed25519, false)]
+    #[case(DomainPurpose::ForeignTx, Curve::Edwards25519, false)]
     #[case(DomainPurpose::ForeignTx, Curve::Bls12381, false)]
     #[case(DomainPurpose::ForeignTx, Curve::V2Secp256k1, false)]
     #[case(DomainPurpose::CKD, Curve::Secp256k1, false)]
@@ -599,7 +600,7 @@ pub mod tests {
         }];
         let proposal_b = vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::Ed25519,
+            curve: Curve::Edwards25519,
             purpose: DomainPurpose::Sign,
         }];
         let mut votes = AddDomainsVotes::default();
