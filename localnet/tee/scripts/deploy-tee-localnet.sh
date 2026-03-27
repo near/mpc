@@ -6,8 +6,9 @@ export NEAR_CLI_DISABLE_SPINNER=1
 # - For testnet: NEAR_NETWORK_CONFIG=testnet (default)
 # - For localnet: export NEAR_NETWORK_CONFIG=mpc-localnet (matches your near-cli config name)
 NEAR_NETWORK_CONFIG="${NEAR_NETWORK_CONFIG:-testnet}"
-# Used by curl-based RPC helpers (balance/bootnodes). Override for localnet if needed.
-NEAR_RPC_URL="${NEAR_RPC_URL:-$NEAR_RPC_URL}"
+# Used by curl-based RPC helpers (balance/bootnodes).
+# For localnet: http://127.0.0.1:3030  For testnet: https://rpc.testnet.near.org
+: "${NEAR_RPC_URL:?Must set NEAR_RPC_URL (e.g. http://127.0.0.1:3030 for localnet)}"
 # MPC environment label used by templates / node config
 # Default: "testnet" when NEAR_NETWORK_CONFIG=testnet, otherwise "localnet"
 MPC_ENV="${MPC_ENV:-mpc-localnet}"
@@ -36,7 +37,7 @@ MPC_ENV="${MPC_ENV:-mpc-localnet}"
 : "${BASE_PATH:?Must set BASE_PATH to dstack base path (contains vmm/src/vmm-cli.py)}"
 : "${MACHINE_IP:?Must set MACHINE_IP (external IP for localnet node comms)}"
 
-: "${MPC_IMAGE_TAGS:?Must set MPC_IMAGE_TAGS (e.g. export MPC_IMAGE_TAGS=3.3.0)}"
+: "${MPC_IMAGE_TAGS:?Must set MPC_IMAGE_TAGS (e.g. export MPC_IMAGE_TAGS=3.7.0)}"
 
 # If set, use this funded testnet account instead of faucet to create/top-up the ROOT account.
 # Example: export FUNDER_ACCOUNT=barak_tee_test1.testnet
@@ -129,7 +130,7 @@ INTERNAL_STATE_SYNC_PORT=24567
 INTERNAL_MAIN_PORT=80
 INTERNAL_FUTURE_PORT=13001
 
-OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.7}"
+OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
 

@@ -81,6 +81,41 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
+/// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
+///
+/// A non-zero deposit is required so that the transaction must be signed by a
+/// full-access key (or a function-call access key whose `deposit` allowance is
+/// explicitly set). This prevents a **malicious frontend** from silently
+/// submitting signature requests on behalf of a user via a restricted
+/// function-call access key, because such keys cannot attach deposits by
+/// default. In other words, requiring a deposit ensures the user (or their
+/// full-access key) explicitly authorised the call.
+///
+/// See the "Deposit requirement" section in the contract README for more
+/// details.
+fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
+    let deposit = env::attached_deposit();
+    match deposit.checked_sub(minimum_deposit) {
+        None => {
+            env::panic_str(
+                &InvalidParameters::InsufficientDeposit
+                    .message(format!(
+                        "Require a deposit of {} yoctonear, found: {}",
+                        minimum_deposit.as_yoctonear(),
+                        deposit.as_yoctonear(),
+                    ))
+                    .to_string(),
+            );
+        }
+        Some(diff) => {
+            if diff > NearToken::from_yoctonear(0) {
+                log!("refund excess deposit {diff} to {predecessor}");
+                Promise::new(predecessor.clone()).transfer(diff).detach();
+            }
+        }
+    }
+}
+
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
@@ -273,29 +308,8 @@ impl MpcContract {
             );
         }
 
-        // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
 
         let request = SignatureRequest::new(
             request.domain_id,
@@ -450,28 +464,7 @@ impl MpcContract {
         }
 
         let predecessor = env::predecessor_account_id();
-        // Check deposit and refund if required
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_CKD_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_CKD_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_CKD_REQUEST_DEPOSIT, &predecessor);
 
         if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
@@ -586,29 +579,8 @@ impl MpcContract {
             );
         }
 
-        // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
-        let deposit = env::attached_deposit();
-
-        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
-            None => {
-                env::panic_str(
-                    &InvalidParameters::InsufficientDeposit
-                        .message(format!(
-                            "Require a deposit of {} yoctonear, found: {}",
-                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
-                            deposit.as_yoctonear(),
-                        ))
-                        .to_string(),
-                );
-            }
-            Some(diff) => {
-                if diff > NearToken::from_yoctonear(0) {
-                    log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff).detach();
-                }
-            }
-        }
+        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
 
         if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
@@ -2261,7 +2233,9 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::measurements::Sha384Digest;
+    use crate::tee::measurements::{
+        KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+    };
     use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
@@ -2272,7 +2246,7 @@ mod tests {
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
-    use mpc_primitives::hash::{Hash32, Image};
+    use mpc_primitives::hash::DockerImageHash;
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::{
@@ -2289,8 +2263,8 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use test_utils::attestation::{
-        image_digest, mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
-        VALID_ATTESTATION_TIMESTAMP,
+        image_digest, launcher_image_hash, mock_dto_dstack_attestation, near_account_key,
+        p2p_tls_key, VALID_ATTESTATION_TIMESTAMP,
     };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -2589,6 +2563,7 @@ mod tests {
             &request.path,
         );
         contract.sign(request);
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_signature_and_clean_state_on_success(
                 signature_request.clone(),
@@ -2752,6 +2727,7 @@ mod tests {
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_ck_and_clean_state_on_success(
                 ckd_request.clone(),
@@ -2852,6 +2828,7 @@ mod tests {
         contract.verify_foreign_transaction(request_args);
 
         // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_verify_foreign_tx_and_clean_state_on_success(
                 request.clone(),
@@ -3922,7 +3899,7 @@ mod tests {
 
         assert!(all_updates.updates.contains_key(&expected_update_id));
         let update = all_updates.updates.get(&expected_update_id).unwrap();
-        assert!(matches!(update, dtos::UpdateHash::Code(_)));
+        assert_matches!(update, dtos::UpdateHash::Code(_));
 
         let actual_voters: HashSet<_> = all_updates
             .votes
@@ -4393,10 +4370,7 @@ mod tests {
             MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
                 .unwrap();
 
-        assert!(matches!(
-            contract.protocol_state,
-            ProtocolContractState::Running(_)
-        ));
+        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
 
         // Get participant info for the target (last participant)
         let participant_list: Vec<_> = participants.participants().to_vec();
@@ -4480,7 +4454,7 @@ mod tests {
         Vec<near_sdk::AccountId>,
         Attestation,
         dtos::Ed25519PublicKey,
-        Hash32<Image>,
+        DockerImageHash,
         near_sdk::PublicKey,
     ) {
         let (_context, contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
@@ -4516,7 +4490,7 @@ mod tests {
     fn setup_approved_mpc_hash(
         contract: &mut MpcContract,
         participant_account_ids: &[near_sdk::AccountId],
-        mpc_hash: &Hash32<Image>,
+        mpc_hash: &DockerImageHash,
         block_timestamp_ns: u64,
     ) {
         // Add the legacy launcher image first, so that compose hashes are derived
@@ -4536,18 +4510,14 @@ mod tests {
         }
     }
 
-    /// Adds the legacy launcher image hash used in test attestation data.
+    /// Adds the launcher image hash from test attestation assets.
+    /// The hash is extracted from `test-utils/assets/launcher_image_compose.yaml`.
     fn setup_approved_launcher_hash(
         contract: &mut MpcContract,
         participant_account_ids: &[near_sdk::AccountId],
         block_timestamp_ns: u64,
     ) {
-        let launcher_hash_bytes: [u8; 32] =
-            hex::decode("84c7537a2f84d3477eac2e5ef3ba0765b5d688f86096947eea4744ce25b27054")
-                .unwrap()
-                .try_into()
-                .unwrap();
-        let launcher_hash = LauncherImageHash::from(launcher_hash_bytes);
+        let launcher_hash = launcher_image_hash();
 
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
@@ -5317,11 +5287,11 @@ mod tests {
 
     fn make_measurement(byte: u8) -> ContractExpectedMeasurements {
         ContractExpectedMeasurements {
-            mrtd: Sha384Digest::from([byte; 48]),
-            rtmr0: Sha384Digest::from([byte.wrapping_add(1); 48]),
-            rtmr1: Sha384Digest::from([byte.wrapping_add(2); 48]),
-            rtmr2: Sha384Digest::from([byte.wrapping_add(3); 48]),
-            key_provider_event_digest: Sha384Digest::from([byte.wrapping_add(4); 48]),
+            mrtd: MrtdHash::from([byte; 48]),
+            rtmr0: Rtmr0Hash::from([byte.wrapping_add(1); 48]),
+            rtmr1: Rtmr1Hash::from([byte.wrapping_add(2); 48]),
+            rtmr2: Rtmr2Hash::from([byte.wrapping_add(3); 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([byte.wrapping_add(4); 48]),
         }
     }
 

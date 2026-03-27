@@ -7,8 +7,8 @@ license.workspace = true
 [dependencies]
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
+hex = { workspace = true }
 jsonrpsee = { workspace = true }
-mpc-primitives = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

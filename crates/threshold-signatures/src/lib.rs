@@ -53,7 +53,7 @@ pub type Element<C> = frost_core::Element<C>;
 /// Generic type of key pairs
 pub struct KeygenOutput<C: Ciphersuite> {
     pub private_share: SigningShare<C>,
-    #[zeroize[skip]]
+    #[zeroize(skip)]
     pub public_key: VerifyingKey<C>,
 }
 

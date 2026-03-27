@@ -8,9 +8,9 @@ use super::ciphersuite::Ciphersuite;
 use crate::{errors::ProtocolError, participants::Participant};
 
 use serde::{Deserialize, Deserializer, Serialize};
-
 /// Polynomial structure of non-empty or non-zero coefficients
 /// Represents a polynomial with coefficients in the scalar field of the curve.
+///  TODO(#2582): Derive `ZeroizeOnDrop` for `Polynomial` structure in threshold-signatures  
 pub struct Polynomial<C: Ciphersuite> {
     /// The coefficients of our polynomial,
     /// The 0 term being the constant term of the polynomial
@@ -626,6 +626,7 @@ mod test {
     use std::ops::Neg;
 
     use super::*;
+    use crate::errors::ProtocolError;
     use crate::test_utils::{
         generate_participants, generate_participants_with_random_ids, MockCryptoRng,
     };
@@ -1353,12 +1354,17 @@ mod test {
     fn test_generate_polynomial_overflow() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         // Test with a degree that would cause an overflow in `degree + 1`
-        let result = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng);
-        assert!(matches!(result, Err(ProtocolError::IntegerOverflow)));
+        let Err(e) = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng) else {
+            panic!("expected IntegerOverflow error");
+        };
+        assert_eq!(e, ProtocolError::IntegerOverflow);
 
         // Test with a degree that is at the boundary of isize::MAX
-        let result = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng);
-        assert!(matches!(result, Err(ProtocolError::IntegerOverflow)));
+        let Err(e) = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng)
+        else {
+            panic!("expected IntegerOverflow error");
+        };
+        assert_eq!(e, ProtocolError::IntegerOverflow);
     }
 
     #[test]
