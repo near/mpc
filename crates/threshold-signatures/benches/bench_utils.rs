@@ -21,13 +21,14 @@ use threshold_signatures::{
         robust_ecdsa, Scalar,
     },
     frost::eddsa,
+    keygen,
     participants::Participant,
     protocol::Protocol,
     test_utils::{
         ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
         MockCryptoRng, Simulator,
     },
-    MaxMalicious, ReconstructionLowerBound,
+    Ciphersuite, KeygenOutput, MaxMalicious, ReconstructionLowerBound,
 };
 
 // fix malicious number of participants
@@ -164,10 +165,8 @@ pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>
 
     let key_packages = run_keygen(&participants, threshold, rng);
 
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = ot_based_ecdsa::PresignOutput>>,
-    )> = Vec::with_capacity(participants.len());
+    let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
+        Vec::with_capacity(participants.len());
 
     for (((p, keygen_out), share0), share1) in
         key_packages.clone().into_iter().zip(shares0).zip(shares1)
@@ -226,10 +225,7 @@ pub fn ot_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
         })
         .collect::<Vec<_>>();
 
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
-    )> = Vec::with_capacity(result.len());
+    let mut protocols = Vec::with_capacity(result.len());
 
     for (p, presignature) in result.clone() {
         let protocol = ot_based_ecdsa::sign::sign(
@@ -287,10 +283,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
 ) -> RobustECDSAPreparedPresig {
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = robust_ecdsa::PresignOutput>>,
-    )> = Vec::with_capacity(participants.len());
+    let mut protocols: Vec<_> = Vec::with_capacity(participants.len());
 
     for (p, keygen_out) in &key_packages {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
@@ -348,10 +341,7 @@ pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
         })
         .collect::<Vec<_>>();
 
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
-    )> = Vec::with_capacity(result.len());
+    let mut protocols = Vec::with_capacity(result.len());
 
     for (p, presignature) in result.clone() {
         let protocol = robust_ecdsa::sign::sign(
@@ -388,10 +378,7 @@ pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
 ) -> FrostEd25519PreparedPresig {
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = eddsa::PresignOutput>>,
-    )> = Vec::with_capacity(participants.len());
+    let mut protocols: Vec<_> = Vec::with_capacity(participants.len());
 
     for (p, keygen_out) in &key_packages {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
@@ -428,10 +415,7 @@ pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
     let coordinator_index = rng.gen_range(0..num_participants);
     let coordinator = participants[coordinator_index];
 
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = eddsa::SignatureOption>>,
-    )> = Vec::with_capacity(participants.len());
+    let mut protocols = Vec::with_capacity(participants.len());
 
     let mut message: [u8; 32] = [0u8; 32];
     rng.fill_bytes(&mut message);
@@ -469,17 +453,13 @@ pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
 ) -> FrostEd25519SigV2 {
     let num_participants = threshold.value();
     // collect all participants
-    let participants: Vec<Participant> =
-        result.iter().map(|(participant, _)| *participant).collect();
+    let participants: Vec<_> = result.iter().map(|(participant, _)| *participant).collect();
 
     // choose a coordinator at random
     let coordinator_index = rng.gen_range(0..num_participants);
     let coordinator = participants[coordinator_index];
 
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = eddsa::SignatureOption>>,
-    )> = Vec::with_capacity(participants.len());
+    let mut protocols = Vec::with_capacity(participants.len());
 
     let mut message: [u8; 32] = [0u8; 32];
     rng.fill_bytes(&mut message);
@@ -545,10 +525,7 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
     let coordinator_index = rng.gen_range(0..num_participants);
     let coordinator = participants[coordinator_index];
 
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = ckd::CKDOutputOption>>,
-    )> = Vec::with_capacity(participants.len());
+    let mut protocols = Vec::with_capacity(participants.len());
 
     let mut app_id: [u8; 32] = [0u8; 32];
     rng.fill_bytes(&mut app_id);
@@ -593,3 +570,30 @@ pub struct PreparedCkdPackage {
     pub app_id: ckd::AppId,
     pub app_pk: ckd::ElementG1,
 }
+
+/********************* DKG *********************/
+/// Used to prepare DKG keygen protocols for benchmarking
+pub fn prepare_dkg<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
+    num_participants: usize,
+    threshold: ReconstructionLowerBound,
+    rng: &mut R,
+) -> PreparedDkgPackage<C>
+where
+    threshold_signatures::Element<C>: Send,
+    threshold_signatures::Scalar<C>: Send,
+{
+    let participants = generate_participants_with_random_ids(num_participants, rng);
+    let mut protocols = Vec::with_capacity(num_participants);
+
+    for p in &participants {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = keygen::<C>(&participants, *p, threshold, rng_p)
+            .map(|p| Box::new(p) as Box<dyn Protocol<Output = KeygenOutput<C>>>)
+            .expect("Keygen should succeed");
+        protocols.push((*p, protocol));
+    }
+
+    protocols
+}
+
+pub type PreparedDkgPackage<C> = Vec<(Participant, Box<dyn Protocol<Output = KeygenOutput<C>>>)>;
