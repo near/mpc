@@ -8,7 +8,7 @@ use crate::types::LauncherConfig;
 
 /// Returns if the given image digest is valid (pull + manifest + digest match).
 /// Does NOT extend RTMR3 and does NOT run the container.
-pub(crate) async fn validate_image_hash(
+pub async fn validate_image_hash(
     launcher_config: &LauncherConfig,
     image_hash: DockerSha256Digest,
 ) -> Result<DockerSha256Digest, ImageDigestValidationFailed> {

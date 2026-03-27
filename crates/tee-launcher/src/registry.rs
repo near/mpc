@@ -22,19 +22,19 @@ const AMD64: &str = "amd64";
 const LINUX: &str = "linux";
 
 /// Provides the URLs needed to interact with a container registry.
-pub(crate) trait RegistryInfo {
+pub trait RegistryInfo {
     fn token_url(&self) -> String;
     fn manifest_url(&self, tag: &str) -> Result<Url, LauncherError>;
 }
 
 /// Production registry info for Docker Hub.
-pub(crate) struct DockerRegistry {
+pub struct DockerRegistry {
     registry_base_url: String,
     image_name: String,
 }
 
 impl DockerRegistry {
-    pub(crate) fn new(config: &LauncherConfig) -> Self {
+    pub fn new(config: &LauncherConfig) -> Self {
         Self {
             registry_base_url: format!("https://{}", config.registry),
             image_name: config.image_name.clone(),
@@ -59,7 +59,7 @@ impl RegistryInfo for DockerRegistry {
     }
 }
 
-pub(crate) async fn get_manifest_digest(
+pub async fn get_manifest_digest(
     registry: &impl RegistryInfo,
     config: &LauncherConfig,
     expected_image_digest: &DockerSha256Digest,

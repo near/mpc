@@ -11,7 +11,7 @@ const COMPOSE_TEMPLATE: &str = include_str!("../assets/mpc-node-docker-compose.t
 const COMPOSE_TEE_TEMPLATE: &str =
     include_str!("../assets/mpc-node-docker-compose.tee.template.yml");
 
-pub(crate) fn render_compose_file(
+pub fn render_compose_file(
     platform: Platform,
     port_mappings: &[PortMapping],
     image_name: &str,
@@ -48,7 +48,7 @@ pub(crate) fn render_compose_file(
     Ok(file)
 }
 
-pub(crate) fn launch_mpc_container(
+pub fn launch_mpc_container(
     platform: Platform,
     manifest_digest: &DockerSha256Digest,
     image_name: &str,

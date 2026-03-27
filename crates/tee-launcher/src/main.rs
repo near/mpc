@@ -3,26 +3,15 @@ use std::io::Write;
 use clap::Parser;
 use launcher_interface::types::{ApprovedHashes, TeeAuthorityConfig, TeeConfig};
 use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
-
-use compose::launch_mpc_container;
-use config::{intercept_node_config, validate_image_name};
-use constants::{
+use tee_launcher::compose::launch_mpc_container;
+use tee_launcher::config::{intercept_node_config, validate_image_name};
+use tee_launcher::constants::{
     DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, IMAGE_DIGEST_FILE, MPC_CONFIG_SHARED_PATH,
 };
-use error::LauncherError;
-use selection::select_image_hash;
-use types::{CliArgs, Config, Platform};
-use validation::validate_image_hash;
-
-mod compose;
-mod config;
-mod constants;
-mod docker_types;
-mod error;
-mod registry;
-mod selection;
-mod types;
-mod validation;
+use tee_launcher::error::LauncherError;
+use tee_launcher::selection::select_image_hash;
+use tee_launcher::types::{CliArgs, Config, Platform};
+use tee_launcher::validation::validate_image_hash;
 
 #[tokio::main]
 async fn main() {

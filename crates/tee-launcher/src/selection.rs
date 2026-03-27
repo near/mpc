@@ -10,7 +10,7 @@ use crate::error::LauncherError;
 ///   - If `override_hash` is set and appears in the approved list → use it
 ///   - If `override_hash` is set but NOT in the approved list → error
 ///   - Otherwise → use the newest approved hash (first in the list)
-pub(crate) fn select_image_hash(
+pub fn select_image_hash(
     approved_hashes: Option<&ApprovedHashes>,
     default_digest: &DockerSha256Digest,
     override_hash: Option<&DockerSha256Digest>,

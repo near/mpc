@@ -5,7 +5,7 @@ use crate::error::LauncherError;
 /// Inject launcher-controlled config section (`tee`) into the user-provided
 /// MPC node config table.  Returns an error if the user config already
 /// contains the reserved key.
-pub(crate) fn intercept_node_config(
+pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
 ) -> Result<toml::Table, LauncherError> {
@@ -36,7 +36,7 @@ fn insert_reserved(
 /// Validate that `image_name` contains only safe characters for Docker image names.
 /// Rejects values that could inject YAML syntax (newlines, colons in unexpected places, etc.)
 /// when substituted into the compose template.
-pub(crate) fn validate_image_name(image_name: &str) -> Result<(), LauncherError> {
+pub fn validate_image_name(image_name: &str) -> Result<(), LauncherError> {
     // Docker image names: [a-zA-Z0-9][a-zA-Z0-9._/-]*
     let is_valid = !image_name.is_empty()
         && image_name
