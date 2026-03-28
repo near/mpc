@@ -11,8 +11,8 @@ use crate::common::localnet::Localnet;
 /// Checks if viewing a valid contract method succeeds
 #[tokio::test]
 async fn test_view_method_contract_state() {
-    let contract_id: near_account_id::AccountId = "test-contract-view.near".parse().unwrap();
-    let localnet = Localnet::new(contract_id.clone()).await;
+    let localnet = Localnet::new().await;
+    let contract_id = localnet.contract.account_id.clone();
     let observer_gw = &localnet.observer.chain_gateway;
 
     let value: ObservedState<String> = observer_gw
@@ -27,8 +27,8 @@ async fn test_view_method_contract_state() {
 /// Checks if viewing an invalid contract method fails
 #[tokio::test]
 async fn test_view_method_nonexistent_method_returns_error() {
-    let contract_id: near_account_id::AccountId = "test-contract-view-error.near".parse().unwrap();
-    let localnet = Localnet::new(contract_id.clone()).await;
+    let localnet = Localnet::new().await;
+    let contract_id = localnet.contract.account_id.clone();
     let observer_gw = &localnet.observer.chain_gateway;
 
     let result = observer_gw
@@ -43,8 +43,8 @@ async fn test_view_method_nonexistent_method_returns_error() {
 /// Checks if subscribing to the state succeeds
 #[tokio::test]
 async fn test_subscription_receives_initial_value() {
-    let contract_id: near_account_id::AccountId = "test-contract-subscribe.near".parse().unwrap();
-    let localnet = Localnet::new(contract_id.clone()).await;
+    let localnet = Localnet::new().await;
+    let contract_id = localnet.contract.account_id.clone();
     let observer_gw = &localnet.observer.chain_gateway;
 
     {

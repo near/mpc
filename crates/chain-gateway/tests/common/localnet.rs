@@ -25,24 +25,28 @@ impl Localnet {
             .expect("block_update_receiver already taken")
     }
 
-    pub async fn new(contract_id: near_account_id::AccountId) -> Self {
-        LocalnetBuilder::new(contract_id).build().await
+    pub async fn new() -> Self {
+        LocalnetBuilder::new().build().await
     }
 }
 
 pub struct LocalnetBuilder {
-    contract_id: near_account_id::AccountId,
+    contract_id: Option<near_account_id::AccountId>,
     test_account: Option<TestAccount>,
     event_subscriber: Option<BlockEventSubscriber>,
 }
 
 impl LocalnetBuilder {
-    pub fn new(contract_id: near_account_id::AccountId) -> Self {
+    pub fn new() -> Self {
         LocalnetBuilder {
-            contract_id,
+            contract_id: None,
             event_subscriber: None,
             test_account: None,
         }
+    }
+    pub fn with_contract_id(mut self, contract_id: near_account_id::AccountId) -> Self {
+        self.contract_id = Some(contract_id);
+        self
     }
 
     pub fn with_event_subscriber(mut self, subscriber: BlockEventSubscriber) -> Self {
@@ -67,7 +71,10 @@ impl LocalnetBuilder {
     pub async fn build(self) -> Localnet {
         let validator_home = make_test_home_dir("validator.near");
         let observer_home = make_test_home_dir("observer.near");
-        let contract = test_contract(self.contract_id);
+        let contract = test_contract(
+            self.contract_id
+                .unwrap_or("default-contract-name.near".parse().unwrap()),
+        );
 
         // Start a validator node (this is what the MPC node calls the "near indexer node").
         let mut validator = LocalNodeBuilder::new("validator", validator_home)

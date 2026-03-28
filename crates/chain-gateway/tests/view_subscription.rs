@@ -15,13 +15,12 @@ use crate::common::localnet::LocalnetBuilder;
 /// Checks if subscribing to the state succeeds
 #[tokio::test]
 async fn test_subscription() {
-    let contract_id: near_account_id::AccountId =
-        "test-contract-subscription.near".parse().unwrap();
-    let localnet = LocalnetBuilder::new(contract_id.clone());
-    let (localnet, user) = localnet.with_test_account("dummy_user.near".parse().unwrap());
+    let (localnet, user) =
+        LocalnetBuilder::new().with_test_account("dummy_user.near".parse().unwrap());
     let signer = user.signer;
     let localnet = localnet.build().await;
     let observer_gw = &localnet.observer.chain_gateway;
+    let contract_id = localnet.contract.account_id.clone();
 
     let mut sub = observer_gw
         .subscribe_to_contract_method::<String>(contract_id.clone(), VIEW)
@@ -43,7 +42,7 @@ async fn test_subscription() {
     observer_gw
         .submit_function_call_tx(
             &signer,
-            contract_id.clone(),
+            contract_id,
             method,
             args,
             Gas::from_teragas(tera_gas),

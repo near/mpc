@@ -41,7 +41,7 @@ async fn setup_executor_function_call_filter() -> ExecutorFunctionCallTest {
             method_name: SET_VALUE_IN_PROMISE.to_string(),
         });
 
-    let localnet = LocalnetBuilder::new(contract_id.clone());
+    let localnet = LocalnetBuilder::new().with_contract_id(contract_id.clone());
     let (localnet, test_account) =
         localnet.with_test_account("test-subscriber-sender.near".parse().unwrap());
     let mut localnet = localnet.with_event_subscriber(subscriber).build().await;
@@ -204,7 +204,7 @@ async fn setup_receiver_function_call_filter() -> ReceiverFunctionCallTest {
         method_name: PRIVATE_SET.to_string(),
     });
 
-    let localnet = LocalnetBuilder::new(contract_id.clone());
+    let localnet = LocalnetBuilder::new().with_contract_id(contract_id.clone());
     let (localnet, test_account) =
         localnet.with_test_account("test-subscriber-sender.near".parse().unwrap());
     let mut localnet = localnet.with_event_subscriber(subscriber).build().await;
@@ -359,7 +359,7 @@ async fn test_event_subscriber_backpressure_buffer_full_closes_channel() {
         receipt_receiver_id: contract_id.clone(),
         method_name: PRIVATE_SET.to_string(),
     });
-    let localnet = LocalnetBuilder::new(contract_id.clone());
+    let localnet = LocalnetBuilder::new().with_contract_id(contract_id.clone());
     let (localnet, test_account) =
         localnet.with_test_account("test-subscriber-sender.near".parse().unwrap());
     let mut localnet = localnet.with_event_subscriber(subscriber).build().await;

@@ -19,12 +19,12 @@ use crate::common::localnet::LocalnetBuilder;
 /// sign and route the transaction.
 #[tokio::test]
 async fn test_submit_set_value_and_read_back() {
-    let contract_id: near_account_id::AccountId = "test-contract-sender.near".parse().unwrap();
-    let localnet = LocalnetBuilder::new(contract_id.clone());
+    let localnet = LocalnetBuilder::new();
     let (localnet, user) = localnet.with_test_account("dummy_user.near".parse().unwrap());
     let signer = user.signer;
     let localnet = localnet.build().await;
     let observer_gw = &localnet.observer.chain_gateway;
+    let contract_id = &localnet.contract.account_id;
 
     // Verify initial state: get_value should return DEFAULT_VALUE
     let initial: chain_gateway::types::ObservedState<String> = observer_gw
