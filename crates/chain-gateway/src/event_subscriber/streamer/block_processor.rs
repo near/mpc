@@ -135,6 +135,9 @@ fn process_block(
     let mut filtered_events = vec![];
     for shard in streamer_message.shards {
         for outcome in &shard.receipt_execution_outcomes {
+            // TODO(#2639): This matches the current behavior in the mpc-node.
+            // But we should investigate if receiver_id and executor_id are always a
+            // match. If so, we can simplify and gain a minor performance improvement.
             filter_executor_function_calls(
                 &mut filtered_events,
                 &block_events.executor_filters,
