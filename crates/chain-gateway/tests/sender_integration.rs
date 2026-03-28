@@ -1,13 +1,12 @@
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chain_gateway::state_viewer::ViewMethod;
-use chain_gateway::transaction_sender::{SubmitFunctionCall, TransactionSigner};
+use chain_gateway::Gas;
 use chain_gateway::types::NoArgs;
-use chain_gateway_test_contract::{DEFAULT_VALUE, VIEW_METHOD};
-use common::localnet::Localnet;
+use chain_gateway::{state_viewer::ViewMethod, transaction_sender::SubmitFunctionCall};
+use chain_gateway_test_contract::args::{Call, make_set_value_args};
+use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW};
 
-use super::common;
+use crate::common::localnet::LocalnetBuilder;
 
 /// This integration test uses the `ChainGateway` struct to spin up two neard nodes
 /// for a localnet. One of the nodes is an observer node (what the MPC node would be running),
@@ -20,39 +19,40 @@ use super::common;
 /// sign and route the transaction.
 #[tokio::test]
 async fn test_submit_set_value_and_read_back() {
-    let localnet = Localnet::new().await;
-    let observer = &localnet.observer;
-    let contract = &localnet.contract;
-    let contract_id = contract.account_id.clone();
+    let localnet = LocalnetBuilder::new();
+    let (localnet, user) = localnet.with_test_account("dummy_user.near".parse().unwrap());
+    let signer = user.signer;
+    let localnet = localnet.build().await;
+    let observer_gw = &localnet.observer.chain_gateway;
+    let contract_id = &localnet.contract.account_id;
 
     // Verify initial state: get_value should return DEFAULT_VALUE
-    let initial: chain_gateway::types::ObservedState<String> = observer
-        .chain_gateway
-        .view_method(contract_id.clone(), VIEW_METHOD, &NoArgs {})
+    let initial: chain_gateway::types::ObservedState<String> = observer_gw
+        .view_method(contract_id.clone(), VIEW, &NoArgs {})
         .await
         .expect("initial view call should succeed");
 
     assert_eq!(initial.value, DEFAULT_VALUE);
 
-    // Submit set_value transaction via the observer
+    // Submit set_value transaction via the observer, using a separate user account
     let new_value = "updated by sender test";
-    let args = serde_json::json!({ "value": new_value });
-    let signer = Arc::new(TransactionSigner::from_key(
-        contract_id.clone(),
-        contract.signing_key.clone(),
-    ));
+    let Call {
+        method,
+        args,
+        tera_gas,
+        ..
+    } = make_set_value_args(new_value);
 
-    observer
-        .chain_gateway
+    observer_gw
         .submit_function_call_tx(
             &signer,
             contract_id.clone(),
-            "set_value".to_string(),
-            serde_json::to_vec(&args).unwrap(),
-            near_indexer_primitives::types::Gas::from_teragas(30),
+            method,
+            args,
+            Gas::from_teragas(tera_gas),
         )
         .await
-        .expect("submit_function_call_tx should succeed");
+        .unwrap();
 
     // Poll get_value until state reflects the new value.
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -60,9 +60,8 @@ async fn test_submit_set_value_and_read_back() {
     loop {
         localnet.assert_nodes_alive();
 
-        let result: chain_gateway::types::ObservedState<String> = observer
-            .chain_gateway
-            .view_method(contract_id.clone(), VIEW_METHOD, &NoArgs {})
+        let result: chain_gateway::types::ObservedState<String> = observer_gw
+            .view_method(contract_id.clone(), VIEW, &NoArgs {})
             .await
             .expect("view call should succeed");
 

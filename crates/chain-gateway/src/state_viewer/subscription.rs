@@ -26,6 +26,8 @@ impl<Res> WatchContractState<Res> for ContractMethodSubscription<Res>
 where
     Res: DeserializeOwned + Send + Clone,
 {
+    /// The constructor marks the initial value as seen, so
+    /// `changed().await` will not fire until a genuinely new value arrives.
     async fn changed(&mut self) -> Result<(), ChainGatewayError> {
         self.inner
             .last_observed
