@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use near_indexer::IndexerExecutionOutcomeWithReceipt;
 use near_indexer_primitives::{
+    CryptoHash,
     types::FunctionArgs,
     views::{ActionView, ExecutionStatusView, ReceiptEnumView, ReceiptView},
 };
@@ -17,7 +18,7 @@ use crate::{
     },
 };
 
-use super::config::{BlockEventIdsByContractIds, BlockEvents};
+use super::config::{BlockEvents, ReceiptExecutorEventIdsByMethodNames};
 
 pub(super) async fn listen_blocks(
     mut stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
@@ -59,95 +60,17 @@ pub(super) async fn listen_blocks(
     }
 }
 
-fn filter_executor_function_calls(
-    res: &mut Vec<MatchedEvent>,
-    executor_filters: &BlockEventIdsByContractIds,
-    outcome: &IndexerExecutionOutcomeWithReceipt,
-) {
-    let execution_outcome = &outcome.execution_outcome;
-    let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = execution_outcome.outcome.status
-    else {
-        return;
-    };
-    let receipt = &outcome.receipt;
-    let executor_id = &execution_outcome.outcome.executor_id;
-    let Some(filter_methods_for_executor) = executor_filters.filter_methods_for(executor_id) else {
-        return;
-    };
-    let Some((args, contract_method_name)) = try_extract_function_call_args(receipt) else {
-        return;
-    };
-    let Some(filter_ids) = filter_methods_for_executor.filter_ids_for(contract_method_name) else {
-        return;
-    };
-    for filter_id in filter_ids {
-        res.push(MatchedEvent {
-            id: *filter_id,
-            event_data: EventData::ExecutorFunctionCallSuccessWithPromise(
-                ExecutorFunctionCallSuccessWithPromiseData {
-                    receipt_id: receipt.receipt_id,
-                    predecessor_id: receipt.predecessor_id.clone(),
-                    next_receipt_id,
-                    args_raw: args.to_vec(),
-                },
-            ),
-        });
-    }
-}
-
-fn filter_receipt_function_calls(
-    res: &mut Vec<MatchedEvent>,
-    receiver_filters: &BlockEventIdsByContractIds,
-    outcome: &IndexerExecutionOutcomeWithReceipt,
-) {
-    let receipt = &outcome.receipt;
-    let Some(methods_filter) = receiver_filters.filter_methods_for(&receipt.receiver_id) else {
-        return;
-    };
-
-    let Some((_, contract_method_name)) = try_extract_function_call_args(receipt) else {
-        return;
-    };
-    let Some(filter_ids) = methods_filter.filter_ids_for(contract_method_name) else {
-        return;
-    };
-
-    let is_success = matches!(
-        outcome.execution_outcome.outcome.status,
-        ExecutionStatusView::SuccessValue(_) | ExecutionStatusView::SuccessReceiptId(_)
-    );
-
-    for filter_id in filter_ids {
-        res.push(MatchedEvent {
-            id: *filter_id,
-            event_data: EventData::ReceiverFunctionCall(ReceiverFunctionCallData {
-                receipt_id: receipt.receipt_id,
-                is_success,
-            }),
-        });
-    }
-}
-
 fn process_block(
     streamer_message: near_indexer_primitives::StreamerMessage,
     block_events: &BlockEvents,
 ) -> BlockUpdate {
-    let mut filtered_events = vec![];
+    let mut processed_events = vec![];
     for shard in streamer_message.shards {
         for outcome in &shard.receipt_execution_outcomes {
             // TODO(#2639): This matches the current behavior in the mpc-node.
             // But we should investigate if receiver_id and executor_id are always a
             // match. If so, we can simplify and gain a minor performance improvement.
-            filter_executor_function_calls(
-                &mut filtered_events,
-                &block_events.executor_filters,
-                outcome,
-            );
-            filter_receipt_function_calls(
-                &mut filtered_events,
-                &block_events.receipt_receiver_filters,
-                outcome,
-            );
+            block_events.process_receipt(&mut processed_events, outcome);
         }
     }
     let context = BlockContext {
@@ -160,7 +83,98 @@ fn process_block(
     };
     BlockUpdate {
         context,
-        events: filtered_events,
+        events: processed_events,
+    }
+}
+
+impl BlockEvents {
+    // Constructs and appends all events matching this receipt to processed_events.
+    fn process_receipt(
+        &self,
+        processed_events: &mut Vec<MatchedEvent>,
+        outcome: &IndexerExecutionOutcomeWithReceipt,
+    ) {
+        // First, check if the executor or receiver of this receipt matches one of the events we
+        // are monitoring.
+        let execution_outcome = &outcome.execution_outcome;
+        let receipt = &outcome.receipt;
+
+        let executor_event_candidates: Option<(
+            &ReceiptExecutorEventIdsByMethodNames,
+            &CryptoHash,
+        )> = {
+            if let ExecutionStatusView::SuccessReceiptId(next_receipt_id) =
+                &execution_outcome.outcome.status
+            {
+                let executor_id = &execution_outcome.outcome.executor_id;
+                self.receipt_executor_events
+                    .get(executor_id)
+                    .map(|methods| (methods, next_receipt_id))
+            } else {
+                None
+            }
+        };
+
+        let receiver_event_candidates = self.receipt_receiver_events.get(&receipt.receiver_id);
+
+        if executor_event_candidates.is_none() && receiver_event_candidates.is_none() {
+            // This receipt does not match any of our executor or receipt receiver filters.
+            // We return early and avoid extracting function call args.
+            return;
+        }
+
+        // It does match one of our events, so now, we extract the function call args and match on
+        // the method name.
+        // Note: readabaility would be better if we extracted the methods earlier, but performance
+        // would suffer, as we would be extracting function call args for receipts that are of no
+        // interest to us.
+        let Some((args, contract_method_name)) = try_extract_function_call_args(receipt) else {
+            return;
+        };
+
+        // Extract ids of receiver events that match this receipt.
+        let receiver_event_ids =
+            receiver_event_candidates.and_then(|candidates| candidates.get(contract_method_name));
+
+        if let Some(receiver_event_ids) = receiver_event_ids {
+            let is_success = matches!(
+                execution_outcome.outcome.status,
+                ExecutionStatusView::SuccessValue(_) | ExecutionStatusView::SuccessReceiptId(_)
+            );
+
+            for event_id in receiver_event_ids {
+                processed_events.push(MatchedEvent {
+                    id: *event_id,
+                    event_data: EventData::ReceiverFunctionCall(ReceiverFunctionCallData {
+                        receipt_id: receipt.receipt_id,
+                        is_success,
+                    }),
+                });
+            }
+        }
+
+        // Extract ids of executor events that match this receipt. If we don't have any, we can
+        // retun here, as our work is done.
+        let Some((executor_event_ids, next_receipt_id)) = executor_event_candidates else {
+            return;
+        };
+        let Some(executor_event_ids) = executor_event_ids.get(contract_method_name) else {
+            return;
+        };
+
+        for event_id in executor_event_ids {
+            processed_events.push(MatchedEvent {
+                id: *event_id,
+                event_data: EventData::ExecutorFunctionCallSuccessWithPromise(
+                    ExecutorFunctionCallSuccessWithPromiseData {
+                        receipt_id: receipt.receipt_id,
+                        predecessor_id: receipt.predecessor_id.clone(),
+                        next_receipt_id: *next_receipt_id,
+                        args_raw: args.to_vec(),
+                    },
+                ),
+            });
+        }
     }
 }
 
@@ -180,7 +194,7 @@ fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArg
         return None;
     };
 
-    tracing::debug!(target: "mpc", "found `{}` function call", method_name);
+    tracing::debug!(target: "chain indexer", "found `{}` function call", method_name);
 
     Some((args, method_name))
 }

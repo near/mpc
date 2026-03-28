@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, time::Duration};
 
+use derive_more::{Deref, DerefMut};
 use near_account_id::AccountId;
 
 use crate::event_subscriber::{
@@ -15,44 +16,37 @@ pub(super) struct StreamerConfig {
 
 // helper struct for efficient access
 pub(super) struct BlockEvents {
-    pub(super) executor_filters: BlockEventIdsByContractIds,
-    pub(super) receipt_receiver_filters: BlockEventIdsByContractIds,
+    pub(super) receipt_executor_events: ReceiptExecutorEventIdsByContractIds,
+    pub(super) receipt_receiver_events: ReceiptReceiverEventIdsByContractIds,
 }
 
-// helper struct for efficient access
-pub(super) struct BlockEventIdsByContractIds(BTreeMap<AccountId, BlockEventIdsByMethodNames>);
+#[derive(Default, Deref, DerefMut)]
+pub(super) struct ReceiptReceiverEventIdsByContractIds(
+    BTreeMap<AccountId, ReceiptReceiverEventIdsByMethodNames>,
+);
 
-// helper struct for efficient access
-pub(super) struct BlockEventIdsByMethodNames(BTreeMap<String, Vec<BlockEventId>>);
+#[derive(Default, Deref, DerefMut)]
+pub(super) struct ReceiptReceiverEventIdsByMethodNames(BTreeMap<String, Vec<BlockEventId>>);
 
-impl BlockEventIdsByMethodNames {
-    pub(crate) fn filter_ids_for(&self, method_name: &str) -> Option<&Vec<BlockEventId>> {
-        self.0.get(method_name)
-    }
-}
+#[derive(Default, Deref, DerefMut)]
+pub(super) struct ReceiptExecutorEventIdsByContractIds(
+    BTreeMap<AccountId, ReceiptExecutorEventIdsByMethodNames>,
+);
 
-impl BlockEventIdsByContractIds {
-    pub(crate) fn filter_methods_for(
-        &self,
-        contract: &AccountId,
-    ) -> Option<&BlockEventIdsByMethodNames> {
-        self.0.get(contract)
-    }
-}
+#[derive(Default, Deref, DerefMut)]
+pub(super) struct ReceiptExecutorEventIdsByMethodNames(BTreeMap<String, Vec<BlockEventId>>);
 
 impl From<BlockEventSubscriber> for StreamerConfig {
     fn from(value: BlockEventSubscriber) -> Self {
-        let mut executor_filters: BTreeMap<AccountId, BTreeMap<String, Vec<BlockEventId>>> =
-            BTreeMap::new();
-        let mut receipt_receiver_filters: BTreeMap<AccountId, BTreeMap<String, Vec<BlockEventId>>> =
-            BTreeMap::new();
+        let mut receipt_executor_events = ReceiptExecutorEventIdsByContractIds::default();
+        let mut receipt_receiver_events = ReceiptReceiverEventIdsByContractIds::default();
         for (id, filter) in value.subscriptions {
             match filter {
                 BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
                     transaction_outcome_executor_id,
                     method_name,
                 } => {
-                    executor_filters
+                    receipt_executor_events
                         .entry(transaction_outcome_executor_id)
                         .or_default()
                         .entry(method_name)
@@ -63,7 +57,7 @@ impl From<BlockEventSubscriber> for StreamerConfig {
                     receipt_receiver_id,
                     method_name,
                 } => {
-                    receipt_receiver_filters
+                    receipt_receiver_events
                         .entry(receipt_receiver_id)
                         .or_default()
                         .entry(method_name)
@@ -74,18 +68,8 @@ impl From<BlockEventSubscriber> for StreamerConfig {
         }
 
         let block_events = BlockEvents {
-            executor_filters: BlockEventIdsByContractIds(
-                executor_filters
-                    .into_iter()
-                    .map(|(k, v)| (k, BlockEventIdsByMethodNames(v)))
-                    .collect(),
-            ),
-            receipt_receiver_filters: BlockEventIdsByContractIds(
-                receipt_receiver_filters
-                    .into_iter()
-                    .map(|(k, v)| (k, BlockEventIdsByMethodNames(v)))
-                    .collect(),
-            ),
+            receipt_executor_events,
+            receipt_receiver_events,
         };
 
         let buffer_size = value.buffer_size;
