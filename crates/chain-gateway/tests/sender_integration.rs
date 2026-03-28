@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 use chain_gateway::Gas;
 use chain_gateway::types::NoArgs;
 use chain_gateway::{state_viewer::ViewMethod, transaction_sender::SubmitFunctionCall};
-use chain_gateway_test_contract as test_contract;
+use chain_gateway_test_contract::args::{Call, make_set_value_args};
+use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW};
 
 use crate::common::localnet::LocalnetBuilder;
 
@@ -27,22 +28,28 @@ async fn test_submit_set_value_and_read_back() {
 
     // Verify initial state: get_value should return DEFAULT_VALUE
     let initial: chain_gateway::types::ObservedState<String> = observer_gw
-        .view_method(contract_id.clone(), test_contract::VIEW_METHOD, &NoArgs {})
+        .view_method(contract_id.clone(), VIEW, &NoArgs {})
         .await
         .expect("initial view call should succeed");
 
-    assert_eq!(initial.value, test_contract::DEFAULT_VALUE);
+    assert_eq!(initial.value, DEFAULT_VALUE);
 
     // Submit set_value transaction via the observer, using a separate user account
     let new_value = "updated by sender test";
+    let Call {
+        method,
+        args,
+        tera_gas,
+        ..
+    } = make_set_value_args(new_value);
 
     observer_gw
         .submit_function_call_tx(
             &signer,
             contract_id.clone(),
-            test_contract::SET_VALUE.to_string(),
-            serde_json::to_vec(&serde_json::json!({ "value": new_value })).unwrap(),
-            Gas::from_teragas(30),
+            method,
+            args,
+            Gas::from_teragas(tera_gas),
         )
         .await
         .unwrap();
@@ -54,7 +61,7 @@ async fn test_submit_set_value_and_read_back() {
         localnet.assert_nodes_alive();
 
         let result: chain_gateway::types::ObservedState<String> = observer_gw
-            .view_method(contract_id.clone(), test_contract::VIEW_METHOD, &NoArgs {})
+            .view_method(contract_id.clone(), VIEW, &NoArgs {})
             .await
             .expect("view call should succeed");
 

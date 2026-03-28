@@ -4,7 +4,7 @@ use chain_gateway::state_viewer::WatchContractState;
 use chain_gateway::state_viewer::{SubscribeToContractMethod, ViewMethod};
 use chain_gateway::types::NoArgs;
 use chain_gateway::types::ObservedState;
-use chain_gateway_test_contract as test_contract;
+use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW};
 
 use crate::common::localnet::Localnet;
 
@@ -16,11 +16,11 @@ async fn test_view_method_contract_state() {
     let observer_gw = &localnet.observer.chain_gateway;
 
     let value: ObservedState<String> = observer_gw
-        .view_method(contract_id, test_contract::VIEW_METHOD, &NoArgs {})
+        .view_method(contract_id, VIEW, &NoArgs {})
         .await
         .expect("view call should succeed");
 
-    assert_eq!(value.value, test_contract::DEFAULT_VALUE);
+    assert_eq!(value.value, DEFAULT_VALUE);
     localnet.shutdown().await;
 }
 
@@ -49,11 +49,11 @@ async fn test_subscription_receives_initial_value() {
 
     {
         let mut sub = observer_gw
-            .subscribe_to_contract_method::<String>(contract_id, test_contract::VIEW_METHOD)
+            .subscribe_to_contract_method::<String>(contract_id, VIEW)
             .await;
 
         let res = sub.latest().expect("subscription latest should succeed");
-        assert_eq!(res.value, test_contract::DEFAULT_VALUE);
+        assert_eq!(res.value, DEFAULT_VALUE);
     }
     localnet.shutdown().await;
 }

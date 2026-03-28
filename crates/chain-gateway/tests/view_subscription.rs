@@ -5,7 +5,10 @@ use chain_gateway::{
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::SubmitFunctionCall,
 };
-use chain_gateway_test_contract::{DEFAULT_VALUE, SET_VALUE, VIEW_METHOD};
+use chain_gateway_test_contract::{
+    args::{Call, make_set_value_args},
+    consts::{DEFAULT_VALUE, VIEW},
+};
 
 use crate::common::localnet::LocalnetBuilder;
 
@@ -21,7 +24,7 @@ async fn test_subscription() {
     let observer_gw = &localnet.observer.chain_gateway;
 
     let mut sub = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id.clone(), VIEW_METHOD)
+        .subscribe_to_contract_method::<String>(contract_id.clone(), VIEW)
         .await;
 
     let res = sub.latest().expect("subscription latest should succeed");
@@ -30,13 +33,20 @@ async fn test_subscription() {
     // Submit set_value transaction via the observer, using a separate user account
     let new_value = "updated by sender test";
 
+    let Call {
+        method,
+        args,
+        tera_gas,
+        ..
+    } = make_set_value_args(new_value);
+
     observer_gw
         .submit_function_call_tx(
             &signer,
             contract_id.clone(),
-            SET_VALUE.to_string(),
-            serde_json::to_vec(&serde_json::json!({ "value": new_value })).unwrap(),
-            Gas::from_teragas(30),
+            method,
+            args,
+            Gas::from_teragas(tera_gas),
         )
         .await
         .unwrap();

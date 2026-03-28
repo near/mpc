@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use super::common::localnet::Localnet;
+use crate::common::{accounts::TestAccount, localnet::LocalnetBuilder};
 use chain_gateway::{
     Gas,
     event_subscriber::{
@@ -12,13 +14,14 @@ use chain_gateway::{
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
 };
-use chain_gateway_test_contract as test_contract;
-use common::localnet::Localnet;
+use chain_gateway_test_contract::{
+    args::{
+        Call, make_private_set_args, make_set_value_in_promise_args,
+        make_spawn_promise_in_callback_args,
+    },
+    consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, SPAWN_PROMISE_WITH_CALLBACK, VIEW},
+};
 use rstest::rstest;
-
-use crate::common::{accounts::TestAccount, localnet::LocalnetBuilder};
-
-use super::common;
 
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
 struct ExecutorFunctionCallTest {
@@ -35,7 +38,7 @@ async fn setup_executor_function_call_filter() -> ExecutorFunctionCallTest {
     let set_value_in_promise_event_id =
         subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
             transaction_outcome_executor_id: contract_id.clone(),
-            method_name: test_contract::SET_VALUE_IN_PROMISE.to_string(),
+            method_name: SET_VALUE_IN_PROMISE.to_string(),
         });
 
     let localnet = LocalnetBuilder::new(contract_id.clone());
@@ -68,19 +71,20 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: A transaction returning a promise succeeds
-    let args = test_contract::SetValueInPromiseArgs {
-        value: "succeeded".to_string(),
-        return_error: false,
-    };
-    let args = serde_json::to_vec(&serde_json::json!({ "args": args })).unwrap();
+    let Call {
+        method,
+        args,
+        tera_gas,
+        ..
+    } = make_set_value_in_promise_args("succeeds", false);
 
     observer_gw
         .submit_function_call_tx(
             &test_account.signer,
             contract_id,
-            test_contract::SET_VALUE_IN_PROMISE.to_string(),
+            method,
             args.clone(),
-            Gas::from_teragas(test_contract::SET_VALUE_IN_PROMISE_TGAS),
+            Gas::from_teragas(tera_gas),
         )
         .await
         .unwrap();
@@ -135,24 +139,26 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
     // A transaction calls contract.SET_VALUE_IN_PROMISE but the spawned promise fails.
     // Add a backmarker to not wait indefinitely or be subject to race conditions.
     let end_marker: &str = "if you read this, you can be sure that the spawned promise has failed";
-    let args = test_contract::SetValueWithMarker {
-        successfully_spawn_promise: false,
-        end_marker: end_marker.to_string(),
-    };
-    let args = serde_json::to_vec(&serde_json::json!({ "args": args })).unwrap();
 
+    let Call {
+        method,
+        args,
+        tera_gas,
+        ..
+    } = make_spawn_promise_in_callback_args(false, end_marker);
     observer_gw
         .submit_function_call_tx(
             &test_account.signer,
             contract_id.clone(),
-            test_contract::SPAWN_PROMISE_WITH_CALLBACK.to_string(),
-            args.clone(),
-            Gas::from_teragas(test_contract::SPAWN_PROMISE_WITH_CALLBACK_TGAS),
+            method,
+            args,
+            Gas::from_teragas(tera_gas),
         )
         .await
         .unwrap();
+
     let mut watch_value = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id, test_contract::VIEW_METHOD)
+        .subscribe_to_contract_method::<String>(contract_id, VIEW)
         .await;
 
     loop {
@@ -195,7 +201,7 @@ async fn setup_receiver_function_call_filter() -> ReceiverFunctionCallTest {
     let mut subscriber = BlockEventSubscriber::new(1);
     let private_set_event_id = subscriber.subscribe(BlockEventFilter::ReceiverFunctionCall {
         receipt_receiver_id: contract_id.clone(),
-        method_name: test_contract::PRIVATE_SET.to_string(),
+        method_name: PRIVATE_SET.to_string(),
     });
 
     let localnet = LocalnetBuilder::new(contract_id.clone());
@@ -233,19 +239,20 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: the contract calls itself:
-    let args = test_contract::PrivateSetArgs {
-        value: "maybe it works, maybe it doesn't".to_string(),
-        succeeds: expect_success,
-    };
-    let args = serde_json::to_vec(&serde_json::json!({ "args": args })).unwrap();
+    let Call {
+        method,
+        args,
+        deposit: _,
+        tera_gas,
+    } = make_private_set_args("maybe it works, maybe it doesn't", expect_success);
 
     observer_gw
         .submit_function_call_tx(
             &contract_signer,
             contract_id,
-            test_contract::PRIVATE_SET.to_string(),
-            args.clone(),
-            Gas::from_teragas(test_contract::PRIVATE_SET_ARGS_TGAS),
+            method,
+            args,
+            Gas::from_teragas(tera_gas),
         )
         .await
         .unwrap();
@@ -289,19 +296,20 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: other than the contract calls it:
-    let args = test_contract::PrivateSetArgs {
-        value: "this will fail".to_string(),
-        succeeds: true,
-    };
-    let args = serde_json::to_vec(&serde_json::json!({ "args": args })).unwrap();
+    let Call {
+        method,
+        args,
+        deposit: _,
+        tera_gas,
+    } = make_private_set_args("this will fail", true);
 
     observer_gw
         .submit_function_call_tx(
             &test_account.signer,
             contract_id,
-            test_contract::PRIVATE_SET.to_string(),
-            args.clone(),
-            Gas::from_teragas(test_contract::PRIVATE_SET_ARGS_TGAS),
+            method,
+            args,
+            Gas::from_teragas(tera_gas),
         )
         .await
         .unwrap();
@@ -341,15 +349,15 @@ async fn test_event_subscriber_backpressure_buffer_full_closes_channel() {
         BlockEventSubscriber::new(1).with_backpressure_timeout(Duration::from_nanos(1));
     let _ = subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
         transaction_outcome_executor_id: contract_id.clone(),
-        method_name: test_contract::SPAWN_PROMISE_WITH_CALLBACK.to_string(),
+        method_name: SPAWN_PROMISE_WITH_CALLBACK.to_string(),
     });
     let _ = subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
         transaction_outcome_executor_id: contract_id.clone(),
-        method_name: test_contract::SET_VALUE_IN_PROMISE.to_string(),
+        method_name: SET_VALUE_IN_PROMISE.to_string(),
     });
     let _ = subscriber.subscribe(BlockEventFilter::ReceiverFunctionCall {
         receipt_receiver_id: contract_id.clone(),
-        method_name: test_contract::PRIVATE_SET.to_string(),
+        method_name: PRIVATE_SET.to_string(),
     });
     let localnet = LocalnetBuilder::new(contract_id.clone());
     let (localnet, test_account) =
@@ -360,28 +368,27 @@ async fn test_event_subscriber_backpressure_buffer_full_closes_channel() {
     const MARKER: &str = "race condition avoided";
 
     // When: We call the method, leading to the promise chain
-    let args = test_contract::SetValueWithMarker {
-        successfully_spawn_promise: true,
-        end_marker: MARKER.to_string(),
-    };
-    let args = serde_json::to_vec(&serde_json::json!({ "args": args })).unwrap();
-
+    let Call {
+        method,
+        args,
+        deposit: _,
+        tera_gas,
+    } = make_spawn_promise_in_callback_args(true, MARKER);
     let observer_gw = &localnet.observer.chain_gateway;
-
     observer_gw
         .submit_function_call_tx(
             &test_account.signer,
             contract_id.clone(),
-            test_contract::SPAWN_PROMISE_WITH_CALLBACK.to_string(),
+            method,
             args.clone(),
-            Gas::from_teragas(test_contract::SPAWN_PROMISE_WITH_CALLBACK_TGAS),
+            Gas::from_teragas(tera_gas),
         )
         .await
         .unwrap();
 
     // wait for change to take effect
     let mut watch_value = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id, test_contract::VIEW_METHOD)
+        .subscribe_to_contract_method::<String>(contract_id, VIEW)
         .await;
 
     loop {

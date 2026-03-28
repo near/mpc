@@ -4,7 +4,7 @@ use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriber;
 use chain_gateway::state_viewer::ViewMethod;
 use chain_gateway::types::{NoArgs, ObservedState};
-use chain_gateway_test_contract::VIEW_METHOD;
+use chain_gateway_test_contract::consts::VIEW;
 use ed25519_dalek::SigningKey;
 
 use super::accounts::{Contract, TestAccount, compiled_test_contract_wasm, test_contract};
@@ -110,11 +110,7 @@ impl LocalnetBuilder {
             let state: ObservedState<String> = localnet
                 .observer
                 .chain_gateway
-                .view_method(
-                    localnet.contract.account_id.clone(),
-                    VIEW_METHOD,
-                    &NoArgs {},
-                )
+                .view_method(localnet.contract.account_id.clone(), VIEW, &NoArgs {})
                 .await
                 .expect("view call should succeed during startup wait");
             if u64::from(state.observed_at) > 0 {
