@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 /// CLI arguments parsed from environment variables via clap.
 #[derive(Parser, Debug)]
 #[command(name = "tee-launcher")]
-pub(crate) struct CliArgs {
+pub struct CliArgs {
     /// Platform mode: TEE or NONTEE
     #[arg(long, env = "PLATFORM")]
-    pub(crate) platform: Platform,
+    pub platform: Platform,
 
     #[arg(long, env = "DOCKER_CONTENT_TRUST")]
     // ensure that `docker_content_trust` is enabled.
@@ -22,7 +22,7 @@ pub(crate) struct CliArgs {
 
     /// Fallback image digest when the approved-hashes file is absent
     #[arg(long, env = "DEFAULT_IMAGE_DIGEST")]
-    pub(crate) default_image_digest: DockerSha256Digest,
+    pub default_image_digest: DockerSha256Digest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -32,7 +32,7 @@ enum DockerContentTrust {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum Platform {
+pub enum Platform {
     #[value(name = "TEE")]
     Tee,
     #[value(name = "NONTEE")]
@@ -41,50 +41,51 @@ pub(crate) enum Platform {
 
 /// Typed representation of the dstack user config file (`/tapp/user_config`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Config {
-    pub(crate) launcher_config: LauncherConfig,
+pub struct Config {
+    pub launcher_config: LauncherConfig,
     /// Opaque MPC node configuration table.
     /// The launcher does not interpret these fields — they are re-serialized
     /// to a TOML string, written to a file on disk, and mounted into the
     /// container for the MPC binary to consume via `start-with-config-file`.
-    pub(crate) mpc_node_config: toml::Table,
+    pub mpc_node_config: toml::Table,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct LauncherConfig {
-    /// Docker image tags to search (from `MPC_IMAGE_TAGS`, comma-separated).
-    pub(crate) image_tags: NonEmptyVec<String>,
-    /// Docker image name (from `MPC_IMAGE_NAME`).
-    pub(crate) image_name: String,
-    /// Docker registry (from `MPC_REGISTRY`).
-    pub(crate) registry: String,
-    /// Per-request timeout for registry RPC calls (from `RPC_REQUEST_TIMEOUT_SECS`).
-    pub(crate) rpc_request_timeout_secs: u64,
-    /// Delay between registry RPC retries (from `RPC_REQUEST_INTERVAL_SECS`).
-    pub(crate) rpc_request_interval_secs: u64,
-    /// Maximum registry RPC attempts (from `RPC_MAX_ATTEMPTS`).
-    pub(crate) rpc_max_attempts: u32,
-    /// Optional hash override that bypasses registry lookup (from `MPC_HASH_OVERRIDE`).
-    pub(crate) mpc_hash_override: Option<DockerSha256Digest>,
-    pub(crate) port_mappings: Vec<PortMapping>,
+pub struct LauncherConfig {
+    /// Docker image tags to search. Set via `image_tags` in TOML, e.g. `image_tags = ["3.7.0"]`.
+    pub image_tags: NonEmptyVec<String>,
+    /// Docker image name. Set via `image_name` in TOML, e.g. `"nearone/mpc-node"`.
+    pub image_name: String,
+    /// Docker registry hostname. Set via `registry` in TOML, e.g. `"registry.hub.docker.com"`.
+    pub registry: String,
+    /// Per-request timeout for registry API calls, in seconds. Set via `rpc_request_timeout_secs`.
+    pub rpc_request_timeout_secs: u64,
+    /// Delay between registry API retries, in seconds. Set via `rpc_request_interval_secs`.
+    pub rpc_request_interval_secs: u64,
+    /// Maximum number of registry API retry attempts. Set via `rpc_max_attempts`.
+    pub rpc_max_attempts: u32,
+    /// Optional digest override (`sha256:...`) that bypasses the approved list selection.
+    /// Must still appear in the approved hashes file if present. Set via `mpc_hash_override`.
+    pub mpc_hash_override: Option<DockerSha256Digest>,
+    pub port_mappings: Vec<PortMapping>,
 }
 
 /// A `--add-host` entry: `hostname:IPv4`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HostEntry {
-    pub(crate) hostname: Host<String>,
-    pub(crate) ip: Ipv4Addr,
+pub struct HostEntry {
+    pub hostname: Host<String>,
+    pub ip: Ipv4Addr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PortMapping {
-    pub(crate) host: NonZeroU16,
-    pub(crate) container: NonZeroU16,
+pub struct PortMapping {
+    pub host: NonZeroU16,
+    pub container: NonZeroU16,
 }
 
 impl PortMapping {
     /// Returns e.g. `"11780:11780"` for use in docker-compose port lists.
-    pub(crate) fn docker_compose_value(&self) -> String {
+    pub fn docker_compose_value(&self) -> String {
         format!("{}:{}", self.host, self.container)
     }
 }
@@ -122,7 +123,9 @@ mod tests {
         let result = serde_json::from_value::<HostEntry>(json);
 
         // then
-        assert_matches!(result, Err(_));
+        assert_matches!(result, Err(e) => {
+            assert!(e.to_string().contains("invalid"), "expected IP parse error, got: {e}");
+        });
     }
 
     #[test]
@@ -172,7 +175,9 @@ mod tests {
         let result = serde_json::from_value::<PortMapping>(json);
 
         // then
-        assert_matches!(result, Err(_));
+        assert_matches!(result, Err(e) => {
+            assert!(e.to_string().contains("nonzero"), "expected nonzero port error, got: {e}");
+        });
     }
 
     #[test]
@@ -184,7 +189,9 @@ mod tests {
         let result = serde_json::from_value::<PortMapping>(json);
 
         // then
-        assert_matches!(result, Err(_));
+        assert_matches!(result, Err(e) => {
+            assert!(e.to_string().contains("u16"), "expected u16 range error, got: {e}");
+        });
     }
 
     // --- docker_compose_value output format ---
@@ -266,7 +273,7 @@ arbitrary_key = "arbitrary_value"
 
     #[test]
     fn config_rejects_missing_required_field() {
-        // given - mpc_config is missing
+        // given - mpc_node_config is missing
         let toml_str = r#"
 [launcher_config]
 image_tags = ["tag1"]
@@ -283,6 +290,8 @@ port_mappings = []
         let result = toml::from_str::<Config>(toml_str);
 
         // then
-        assert_matches!(result, Err(_));
+        assert_matches!(result, Err(e) => {
+            assert!(e.to_string().contains("mpc_node_config"), "expected missing field error, got: {e}");
+        });
     }
 }

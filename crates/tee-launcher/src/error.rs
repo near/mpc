@@ -1,13 +1,15 @@
 use launcher_interface::types::DockerSha256Digest;
-use thiserror::Error;
 
-#[derive(Error, Debug)]
-pub(crate) enum LauncherError {
+#[derive(thiserror::Error, Debug)]
+pub enum LauncherError {
     #[error("EmitEvent failed while extending RTMR3: {0}")]
     DstackEmitEventFailed(String),
 
     #[error("MPC_HASH_OVERRIDE invalid: {0}")]
     InvalidHashOverride(String),
+
+    #[error("Invalid image name (must contain only [a-zA-Z0-9/_.-]): {0}")]
+    InvalidImageName(String),
 
     #[error("Image hash not found among tags")]
     ImageHashNotFoundAmongTags,
@@ -15,13 +17,13 @@ pub(crate) enum LauncherError {
     #[error("Failed to get auth token from registry: {0}")]
     RegistryAuthFailed(String),
 
-    #[error("docker run failed for validated hash")]
+    #[error("docker compose up failed for validated hash")]
     DockerRunFailed {
         image_hash: DockerSha256Digest,
         inner: std::io::Error,
     },
 
-    #[error("docker run failed for validated hash")]
+    #[error("docker compose up failed for validated hash")]
     DockerRunFailedExitStatus {
         image_hash: DockerSha256Digest,
         output: String,
@@ -70,8 +72,8 @@ pub(crate) enum LauncherError {
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),
 }
 
-#[derive(Error, Debug)]
-pub(crate) enum ImageDigestValidationFailed {
+#[derive(thiserror::Error, Debug)]
+pub enum ImageDigestValidationFailed {
     #[error("manifest digest lookup failed: {0}")]
     ManifestDigestLookupFailed(String),
     #[error("docker pull failed for {0}")]
