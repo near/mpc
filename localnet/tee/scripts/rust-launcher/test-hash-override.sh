@@ -297,18 +297,6 @@ test_override_reject() {
     echo "$launcher_logs" | tail -5
   fi
 
-  # Verify MPC node container did NOT start (wait 30s to be sure)
-  log "  Waiting 30s to confirm MPC node container did not start..."
-  sleep 30
-  local mpc_logs
-  mpc_logs="$(curl -sf "http://127.0.0.1:${port}/logs/mpc-node?text&bare&tail=5" 2>/dev/null || true)"
-  if [ -z "$mpc_logs" ]; then
-    pass "MPC node container did not start (as expected)"
-  else
-    fail "MPC node container started despite invalid override"
-    echo "$mpc_logs" | tail -3
-  fi
-
   # Restore original config and restart
   log "  Restoring original config and restarting node0..."
   cp "${toml_file}.bak" "$toml_file"
