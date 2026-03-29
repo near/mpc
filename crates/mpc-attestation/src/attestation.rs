@@ -147,6 +147,7 @@ impl Attestation {
                         .get_single_event(MPC_IMAGE_HASH_EVENT)?
                         .event_payload;
 
+                    // TODO(#2478): decode raw bytes
                     let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload)
                         .map_err(|err| {
                             VerificationError::Custom(format!(
