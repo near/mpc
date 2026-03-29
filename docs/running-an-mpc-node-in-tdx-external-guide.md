@@ -1167,6 +1167,8 @@ Notice that the suffix of the image tag is the short version of the git hash.
   hash shown in DockerHub. For that you need to install `docker` and `jq`, and
   have the `docker` daemon running.
 
+> **Important:** The `docker inspect` command below must be run on **Linux**. On macOS, Docker Desktop returns the manifest digest instead of the config digest, which produces a different hash value.
+
 ```bash
 $ docker pull nearone/mpc-node:main-828f816
 $ docker inspect nearone/mpc-node:main-828f816 | jq -r .[0].Id
