@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use anyhow::Context;
@@ -39,6 +39,11 @@ impl MpcNode {
     /// Reference to the underlying setup (config, paths, ports).
     pub fn setup(&self) -> &MpcNodeSetup {
         &self.setup
+    }
+
+    /// Check whether the child process has already exited (crashed).
+    pub fn has_exited(&mut self) -> bool {
+        self.process.has_exited()
     }
 
     fn web_address(&self) -> String {
@@ -82,6 +87,12 @@ impl MpcNode {
 
 /// Guard that kills the child process on drop.
 struct ProcessGuard(Child);
+
+impl ProcessGuard {
+    fn has_exited(&mut self) -> bool {
+        matches!(self.0.try_wait(), Ok(Some(_)))
+    }
+}
 
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
@@ -170,7 +181,7 @@ impl MpcNodeSetup {
     /// The ed25519 public key formatted as `"ed25519:<base58>"`.
     pub fn p2p_public_key_str(&self) -> String {
         String::from(&Ed25519PublicKey::from(
-            &self.p2p_signing_key.verifying_key(),
+            self.p2p_signing_key.verifying_key().to_bytes(),
         ))
     }
 
@@ -182,6 +193,11 @@ impl MpcNodeSetup {
     /// The NEAR account ID for this node.
     pub fn account_id(&self) -> &AccountId {
         &self.signer_account_id
+    }
+
+    /// The node's home directory (logs, config, data).
+    pub fn home_dir(&self) -> &Path {
+        &self.home_dir
     }
 
     /// Deletes RocksDB files (.sst, MANIFEST, etc.) from the data directory.
