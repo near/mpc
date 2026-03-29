@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
@@ -7,13 +6,10 @@ use bollard::container::{
     Config, CreateContainerOptions, DownloadFromContainerOptions, RemoveContainerOptions,
 };
 use bollard::image::CreateImageOptions;
-use bollard::models::{HostConfig, PortBinding};
+use bollard::models::HostConfig;
 use futures::{StreamExt, TryStreamExt};
 
 use crate::port_allocator::E2ePortAllocator;
-
-const CONTAINER_RPC_PORT: &str = "3030/tcp";
-const CONTAINER_NET_PORT: &str = "3031/tcp";
 
 /// Wraps a NEAR sandbox node for E2E tests.
 ///
@@ -52,35 +48,35 @@ impl NearSandbox {
         // Ensure the image is available locally (CI runners may not have it cached).
         pull_image(&docker, image).await?;
 
-        let port_bindings = HashMap::from([
-            (
-                CONTAINER_RPC_PORT.to_string(),
-                Some(vec![PortBinding {
-                    host_port: Some(rpc_port.to_string()),
-                    ..Default::default()
-                }]),
-            ),
-            (
-                CONTAINER_NET_PORT.to_string(),
-                Some(vec![PortBinding {
-                    host_port: Some(network_port.to_string()),
-                    ..Default::default()
-                }]),
-            ),
-        ]);
+        // Use host networking so nearcore P2P works without Docker bridge
+        // NAT issues. Requires "Enable host networking" in Docker Desktop
+        // on macOS/Windows.
+        let host_config = HostConfig {
+            network_mode: Some("host".to_string()),
+            auto_remove: Some(true),
+            ..Default::default()
+        };
 
         let container = docker
             .create_container(
-                Some(CreateContainerOptions::<&str> {
+                Some(CreateContainerOptions::<String> {
                     ..Default::default()
                 }),
-                Config {
-                    image: Some(image),
-                    host_config: Some(HostConfig {
-                        port_bindings: Some(port_bindings),
-                        auto_remove: Some(true),
-                        ..Default::default()
-                    }),
+                Config::<String> {
+                    image: Some(image.to_string()),
+                    host_config: Some(host_config),
+                    entrypoint: Some(vec!["sh".to_string(), "-c".to_string()]),
+                    cmd: Some(vec![format!(
+                        concat!(
+                            "export RUST_LOG=\"neard::cli=off,near=error,stats=error,network=error\" && ",
+                            "near-sandbox --home /data init --fast ",
+                            "--account-id sandbox --test-seed sandbox --chain-id sandbox 2>/dev/null; ",
+                            "exec near-sandbox --home /data run ",
+                            "--rpc-addr 0.0.0.0:{rpc_port} --network-addr 0.0.0.0:{network_port}"
+                        ),
+                        rpc_port = rpc_port,
+                        network_port = network_port,
+                    )]),
                     ..Default::default()
                 },
             )
