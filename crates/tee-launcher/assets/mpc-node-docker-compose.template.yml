@@ -1,0 +1,18 @@
+services:
+  mpc-node:
+    image: "{{IMAGE_NAME}}@{{MANIFEST_DIGEST}}"
+    container_name: "{{CONTAINER_NAME}}"
+    security_opt:
+      - no-new-privileges:true
+    ports: {{PORTS}}
+    volumes:
+      - /tapp:/tapp:ro
+      - shared-volume:/mnt/shared
+      - mpc-data:/data
+    command: ["/app/mpc-node", "start-with-config-file", "{{MPC_CONFIG_SHARED_PATH}}"]
+
+volumes:
+  shared-volume:
+    name: shared-volume
+  mpc-data:
+    name: mpc-data

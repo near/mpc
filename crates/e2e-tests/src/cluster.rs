@@ -175,7 +175,30 @@ impl MpcCluster {
         }
 
         if !config.domains.is_empty() {
-            add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await?;
+            if let Err(e) =
+                add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await
+            {
+                // Dump the last lines of each node's stdout for diagnosis.
+                for (i, node) in nodes.iter().enumerate() {
+                    let log_path = match node {
+                        MpcNodeState::Running(n) => n.setup().home_dir().join("stdout.log"),
+                        MpcNodeState::Stopped(s) => s.home_dir().join("stdout.log"),
+                    };
+                    if let Ok(content) = std::fs::read_to_string(&log_path) {
+                        let tail: String = content
+                            .lines()
+                            .rev()
+                            .take(30)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        tracing::error!(node = i, "--- node stdout tail ---\n{tail}");
+                    }
+                }
+                return Err(e);
+            }
         }
 
         let user_accounts = create_user_accounts(&blockchain, 1).await?;
