@@ -1,16 +1,32 @@
-# How to Run: Localnet MPC TEE Deployment Script
+# How to Run: Localnet MPC TEE Deployment Script (Rust Launcher)
 
 This document explains how to run the **localnet MPC TEE scale script** to deploy and operate multiple MPC nodes inside TDX-backed CVMs on a **single server**, assuming a local NEAR network (localnet) is already running.
 
+## Quick Start
+
+```bash
+# 1. Start localnet
+rm -rf ~/.near/mpc-localnet
+neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
+cp -rf deployment/localnet/. ~/.near/mpc-localnet
+NEAR_ENV=mpc-localnet neard --home ~/.near/mpc-localnet run &
+
+# 2. Set environment variables
+source localnet/tee/scripts/rust-launcher/set-localnet-env.sh
+
+# 3. Deploy
+bash localnet/tee/scripts/rust-launcher/deploy-tee-localnet.sh
+```
+
 ---
 
-## High‑Level Description
+## High-Level Description
 
-The script automates the end‑to‑end setup of an MPC network on localnet:
+The script automates the end-to-end setup of an MPC network on localnet:
 
-- Renders per‑node configuration and environment files
+- Renders per-node TOML configuration and environment files
 - Deploys one TDX CVM per MPC node using dstack
-- Starts MPC nodes inside CVMs
+- Starts MPC nodes inside CVMs (via the Rust launcher)
 - Collects node public keys via `/public_data`
 - Generates `init_args.json` for the MPC contract
 - Adds keys to node NEAR accounts
@@ -21,77 +37,74 @@ The script automates the end‑to‑end setup of an MPC network on localnet:
 - Votes to add signing domains (all nodes vote)
 - Leaves the network ready to process `sign` requests
 
-The script is **resume‑safe** and can continue from any phase.
+The script is **resume-safe** and can continue from any phase.
 
 ---
 
 ## Prerequisites
 
-
 ### NEAR / Localnet
+
 - Local NEAR network running (`mpc-localnet`)
 
-you can do this by running:
-
 ```bash
- rm -rf ~/.near/mpc-localnet #clean up any existing localnet
+rm -rf ~/.near/mpc-localnet  # clean up any existing localnet
 neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
 cp -rf deployment/localnet/. ~/.near/mpc-localnet
 NEAR_ENV=mpc-localnet neard --home ~/.near/mpc-localnet run
 ```
 
-
 - NEAR CLI installed
-- Validator key available at:
-  ```
-  ~/.near/mpc-localnet/validator_key.json
-  ```
+- Validator key available at `~/.near/mpc-localnet/validator_key.json`
+
+### dstack
+
+- dstack VMM running (default: `http://127.0.0.1:10000`)
+- OS image available (default: `dstack-dev-0.5.8`)
 
 ### Repository
+
 - MPC repository cloned
-- Script path:
-  ```
-localnet/tee/scripts/deploy-tee-localnet.sh
-  ```
+- Script path: `localnet/tee/scripts/rust-launcher/deploy-tee-localnet.sh`
 
 ---
 
 ## Environment Variables
 
-### Required / Common Defaults
+The easiest way is to source the convenience script:
 
 ```bash
-export HOST_PROFILE=alice
-#export HOST_PROFILE=bob
+source localnet/tee/scripts/rust-launcher/set-localnet-env.sh
+```
 
+Review and adjust the values in that file before sourcing. Key variables:
 
-# Mode
-export MODE=localnet
+### Required
 
-# Network
-export MPC_NETWORK_BASE_NAME=mpc-local
-export REUSE_NETWORK_NAME=mpc-local
-export N=2
-
-# Machine / ports
+```bash
+# Machine / dstack
 export MACHINE_IP=<EXTERNAL_SERVER_IP>
-export FUTURE_BASE_PORT=13001
+export BASE_PATH=/path/to/meta-dstack/dstack  # must contain vmm/src/vmm-cli.py
 export VMM_RPC=http://127.0.0.1:10000
 
-# dstack / images
-export BASE_PATH=/path/to/dstack
+# MPC node image (must support TOML config / start-with-config-file)
 export MPC_IMAGE_NAME=nearone/mpc-node
-export MPC_IMAGE_TAGS=3.3.0
+export MPC_IMAGE_TAGS=main-9515e18
 export MPC_REGISTRY=registry.hub.docker.com
 
 # NEAR localnet
 export NEAR_NETWORK_CONFIG=mpc-localnet
 export NEAR_RPC_URL=http://127.0.0.1:3030
 export ACCOUNT_SUFFIX=.test.near
-
-# Funding (localnet validator)
 export FUNDER_ACCOUNT=test.near
 export FUNDER_PRIVATE_KEY=$(jq -r '.secret_key' ~/.near/mpc-localnet/validator_key.json)
+
+# Network
+export MODE=localnet
+export MPC_NETWORK_BASE_NAME=mpc-local
+export REUSE_NETWORK_NAME=mpc-local
+export N=2
+export MAX_NODES_TO_FUND=2
 ```
 
 ### Optional Control Variables
@@ -110,37 +123,31 @@ export FORCE_REINIT_ARGS=1
 ## Running the Script (Fresh Run)
 
 ```bash
-unset START_FROM_PHASE STOP_AFTER_PHASE
-export MODE=localnet
+source localnet/tee/scripts/rust-launcher/set-localnet-env.sh
 export RESUME=0
-
-bash localnet/tee/scripts/deploy-tee-localnet.sh
+bash localnet/tee/scripts/rust-launcher/deploy-tee-localnet.sh
 ```
 
 ---
 
 ## Common Resume Commands
 
-### Re‑render configs only
+### Re-render configs only
 ```bash
-export START_FROM_PHASE=render
-export STOP_AFTER_PHASE=render
-export RESUME=0
-bash localnet/tee/scripts/deploy-tee-localnet.sh
+export START_FROM_PHASE=render STOP_AFTER_PHASE=render RESUME=0
+bash localnet/tee/scripts/rust-launcher/deploy-tee-localnet.sh
 ```
 
 ### Resume from deploy
 ```bash
-export START_FROM_PHASE=deploy
-export RESUME=1
-bash localnet/tee/scripts/deploy-tee-localnet.sh
+export START_FROM_PHASE=deploy RESUME=1
+bash localnet/tee/scripts/rust-launcher/deploy-tee-localnet.sh
 ```
 
 ### Resume from contract initialization
 ```bash
-export START_FROM_PHASE=init_args
-export RESUME=1
-bash localnet/tee/scripts/deploy-tee-localnet.sh
+export START_FROM_PHASE=init_args RESUME=1
+bash localnet/tee/scripts/rust-launcher/deploy-tee-localnet.sh
 ```
 
 ---
@@ -154,41 +161,70 @@ All generated files are stored under:
 ```
 
 Important artifacts:
-- `node{i}.conf`, `node{i}.env`
-- `keys.json`
-- `init_args.json`
+- `node{i}.toml` — TOML config for the Rust launcher
+- `node{i}.env` — environment file for dstack deployment
+- `keys.json` — collected node public keys
+- `init_args.json` — contract initialization arguments
 
 ---
 
-## Sending a Sign Request
+## Verification
 
 After the script completes successfully:
-get state of the contract:
 
+### Check contract state
 ```bash
-near contract call-function as-read-only mpc.mpc-local.test.near state json-args {} network-config mpc-localnet now
+near contract call-function as-read-only mpc.mpc-local.test.near state \
+  json-args {} network-config mpc-localnet now
 ```
 
-get tee accounts:
+### Get TEE accounts
 ```bash
- near contract call-function as-transaction mpc.mpc-local.test.near get_tee_accounts json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-local.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc.mpc-local.test.near get_tee_accounts \
+  json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as mpc-local.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-generate sign request:
+### Check attestation (should be Dstack, not Mock)
 ```bash
-near contract call-function as-transaction    mpc.mpc-local.test.near   sign   file-args docs/localnet/args/sign_ecdsa.json   prepaid-gas '300.0 Tgas'   attached-deposit '100 yoctoNEAR'   sign-as node0.mpc-local.test.near   network-config mpc-localnet   sign-with-keychain   send
+near contract call-function as-read-only mpc.mpc-local.test.near get_attestation \
+  json-args '{"tls_public_key": "ed25519:<TLS_KEY>"}' \
+  network-config mpc-localnet now
 ```
 
+### Generate sign request
+```bash
+near contract call-function as-transaction mpc.mpc-local.test.near sign \
+  file-args docs/localnet/args/sign_ecdsa.json \
+  prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' \
+  sign-as node0.mpc-local.test.near network-config mpc-localnet \
+  sign-with-keychain send
+```
+
+### Automated verification
+
+```bash
+bash localnet/tee/scripts/rust-launcher/test-verify-and-upgrade.sh verify
+```
+
+---
+
+## Test Scripts
+
+| Script | Description |
+|--------|-------------|
+| `test-verify-and-upgrade.sh verify` | Verify cluster: state, TEE accounts, Dstack attestation, ECDSA signature |
+| `test-verify-and-upgrade.sh upgrade <tag>` | Rolling upgrade: vote new hash, restart CVMs, verify |
+| `test-hash-override.sh override <hash> <tag>` | Test `mpc_hash_override` forces specific approved hash |
+| `test-hash-override.sh override-reject` | Test launcher rejects unapproved override hash |
 
 ---
 
 ## Notes
 
-- All nodes vote for **add‑domain**
-- Node‑to‑node ports are per‑node (`13001+i`)
-- Telemetry uses port `18082` with per‑node IPs
+- All nodes vote for **add-domain**
+- Node-to-node ports are per-node (`13001+i`)
+- Telemetry uses port `18082` with per-node IPs
 - Script is designed for iterative debugging and safe restarts
-
----
-
-
+- The Rust launcher uses TOML config (not `.conf` env format like the Python launcher)
+- MPC node image must support `start-with-config-file` (commit `9515e18` or later)
