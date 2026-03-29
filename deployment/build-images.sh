@@ -105,10 +105,11 @@ fi
 build_reproducible_image() {
   local image_name=$1
   local dockerfile_path=$2
+  local context_dir="${3:-.}"
   docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
     --output type=docker,name=$image_name,rewrite-timestamp=true \
-    --progress plain -f "$dockerfile_path" .
+    --progress plain -f "$dockerfile_path" "$context_dir"
 }
 
 get_image_hash() {
@@ -119,7 +120,20 @@ get_image_hash() {
 if $USE_LAUNCHER; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
     launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
-    build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER
+
+    # Build Docker image from a minimal context to ensure reproducibility
+    # regardless of other files in the repo.
+    launcher_context=$(mktemp -d)
+    mkdir -p "$launcher_context/target/reproducible" "$launcher_context/deployment"
+    cp target/reproducible/tee-launcher "$launcher_context/target/reproducible/"
+    cp deployment/repro-sources-list.sh "$launcher_context/deployment/"
+    touch -d @"$SOURCE_DATE_EPOCH" "$launcher_context/target/reproducible/tee-launcher" \
+        "$launcher_context/deployment/repro-sources-list.sh" \
+        "$launcher_context/target/reproducible" "$launcher_context/target" \
+        "$launcher_context/deployment" "$launcher_context"
+    build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER "$launcher_context"
+    rm -rf "$launcher_context"
+
     launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
 fi
 
