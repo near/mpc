@@ -2,7 +2,7 @@
 # Script to reproducibly the docker images for the node and launcher
 #
 # Requirements: docker, docker-buildx, jq, git, find, touch
-# Extra requirements if using --node: repro-env, podman
+# Extra requirements if using --node or --launcher: repro-env, podman
 #
 # Usage:
 #   ./deployment/build-images.sh [--node] [--launcher] [--push]
@@ -61,7 +61,7 @@ require_cmds() {
 
 require_cmds docker jq git find touch
 
-if $USE_NODE; then
+if $USE_NODE || $USE_LAUNCHER; then
     require_cmds repro-env podman
 fi
 
@@ -80,7 +80,7 @@ DOCKERFILE_NODE=deployment/Dockerfile-node
 DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
 : "${NODE_GCP_IMAGE_NAME:=mpc-node-gcp}"
 
-DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
+DOCKERFILE_LAUNCHER=deployment/Dockerfile-rust-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
 
 
@@ -117,6 +117,8 @@ get_image_hash() {
 }
 
 if $USE_LAUNCHER; then
+    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
+    launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
     build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER
     launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
 fi
@@ -182,5 +184,6 @@ if $USE_NODE_GCP; then
     echo "node gcp docker image hash: $node_gcp_image_hash"
 fi
 if $USE_LAUNCHER; then
+    echo "launcher binary hash: $launcher_binary_hash"
     echo "launcher docker image hash: $launcher_image_hash"
 fi
