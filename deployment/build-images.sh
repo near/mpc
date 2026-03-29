@@ -80,7 +80,7 @@ DOCKERFILE_NODE=deployment/Dockerfile-node
 DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
 : "${NODE_GCP_IMAGE_NAME:=mpc-node-gcp}"
 
-DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
+DOCKERFILE_LAUNCHER=deployment/Dockerfile-rust-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
 
 
