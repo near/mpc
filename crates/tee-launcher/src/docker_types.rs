@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// `Debug` is manually implemented to redact the bearer token from logs.
 #[derive(Deserialize)]
-pub(crate) struct DockerTokenResponse {
-    pub(crate) token: String,
+pub struct DockerTokenResponse {
+    pub token: String,
 }
 
 impl std::fmt::Debug for DockerTokenResponse {
@@ -24,7 +24,7 @@ impl std::fmt::Debug for DockerTokenResponse {
 /// - Docker V2 / OCI manifest → single-platform manifest with a config digest
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "mediaType")]
-pub(crate) enum ManifestResponse {
+pub enum ManifestResponse {
     /// Multi-platform manifest (OCI image index).
     #[serde(rename = "application/vnd.oci.image.index.v1+json")]
     ImageIndex { manifests: Vec<ManifestEntry> },
@@ -39,20 +39,20 @@ pub(crate) enum ManifestResponse {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct ManifestEntry {
-    pub(crate) digest: String,
-    pub(crate) platform: ManifestPlatform,
+pub struct ManifestEntry {
+    pub digest: String,
+    pub platform: ManifestPlatform,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub(crate) struct ManifestPlatform {
-    pub(crate) architecture: String,
-    pub(crate) os: String,
+pub struct ManifestPlatform {
+    pub architecture: String,
+    pub os: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct ManifestConfig {
-    pub(crate) digest: DockerSha256Digest,
+pub struct ManifestConfig {
+    pub digest: DockerSha256Digest,
 }
 
 #[cfg(test)]
