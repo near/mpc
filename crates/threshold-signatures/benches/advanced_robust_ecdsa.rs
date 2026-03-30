@@ -97,7 +97,7 @@ fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = robust_ecdsa_prepare_presign(num_participants, &mut rng);
 
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     // choose the real_participant at random
@@ -131,7 +131,7 @@ fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
 
     // now preparing the simulator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
 
     PreparedPresig {
         participant: real_participant,
@@ -148,7 +148,7 @@ fn prepare_simulated_sign(
 ) -> PreparedSimulatedSig {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = robust_ecdsa_prepare_sign(result, max_malicious.into(), pk, &mut rng);
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     // collect all participants
@@ -170,7 +170,7 @@ fn prepare_simulated_sign(
 
     // now preparing the simulator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
 
     PreparedSimulatedSig {
         participant: real_participant,
