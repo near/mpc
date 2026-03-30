@@ -81,7 +81,7 @@ pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>
             },
         )
         .expect("Presigning should succeed");
-        protocols.push((p, Box::new(protocol)));
+        protocols.push((p, Box::new(protocol) as Box<dyn Protocol<Output = _>>));
     }
     OTECDSAPreparedPresig {
         protocols,

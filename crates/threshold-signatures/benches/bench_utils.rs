@@ -5,9 +5,13 @@
     clippy::indexing_slicing
 )]
 
+#[path = "bench_utils/dkg.rs"]
 mod dkg;
+#[path = "bench_utils/frost_eddsa.rs"]
 mod frost_eddsa;
+#[path = "bench_utils/ot_based_ecdsa.rs"]
 mod ot_based_ecdsa;
+#[path = "bench_utils/robust_ecdsa.rs"]
 mod robust_ecdsa;
 
 pub use dkg::*;
