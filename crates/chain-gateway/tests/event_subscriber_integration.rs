@@ -42,9 +42,12 @@ async fn setup_executor_function_call_filter() -> ExecutorFunctionCallTest {
         });
 
     let localnet = LocalnetBuilder::new().with_contract_id(contract_id.clone());
-    let (localnet, test_account) =
-        localnet.with_test_account("test-subscriber-sender.near".parse().unwrap());
-    let mut localnet = localnet.with_event_subscriber(subscriber).build().await;
+    let mut localnet = localnet
+        .with_test_account("test-subscriber-sender.near".parse().unwrap())
+        .with_event_subscriber(subscriber)
+        .build()
+        .await;
+    let test_account = localnet.take_test_account();
     let receiver = localnet.take_block_update_receiver();
     ExecutorFunctionCallTest {
         test_account,
@@ -204,13 +207,16 @@ async fn setup_receiver_function_call_filter() -> ReceiverFunctionCallTest {
         method_name: PRIVATE_SET.to_string(),
     });
 
-    let localnet = LocalnetBuilder::new().with_contract_id(contract_id.clone());
-    let (localnet, test_account) =
-        localnet.with_test_account("test-subscriber-sender.near".parse().unwrap());
-    let mut localnet = localnet.with_event_subscriber(subscriber).build().await;
+    let mut localnet = LocalnetBuilder::new()
+        .with_contract_id(contract_id.clone())
+        .with_test_account("test-subscriber-sender.near".parse().unwrap())
+        .with_event_subscriber(subscriber)
+        .build()
+        .await;
     let contract_signer =
         TransactionSigner::from_key(contract_id.clone(), localnet.contract.signing_key.clone());
     let receiver = localnet.take_block_update_receiver();
+    let test_account = localnet.take_test_account();
     ReceiverFunctionCallTest {
         test_account,
         contract_id,
@@ -359,11 +365,14 @@ async fn test_event_subscriber_backpressure_buffer_full_closes_channel() {
         receipt_receiver_id: contract_id.clone(),
         method_name: PRIVATE_SET.to_string(),
     });
-    let localnet = LocalnetBuilder::new().with_contract_id(contract_id.clone());
-    let (localnet, test_account) =
-        localnet.with_test_account("test-subscriber-sender.near".parse().unwrap());
-    let mut localnet = localnet.with_event_subscriber(subscriber).build().await;
+    let mut localnet = LocalnetBuilder::new()
+        .with_contract_id(contract_id.clone())
+        .with_test_account("test-subscriber-sender.near".parse().unwrap())
+        .with_event_subscriber(subscriber)
+        .build()
+        .await;
     let mut receiver = localnet.take_block_update_receiver();
+    let signer = localnet.take_test_account().signer;
 
     const MARKER: &str = "race condition avoided";
 
@@ -377,7 +386,7 @@ async fn test_event_subscriber_backpressure_buffer_full_closes_channel() {
     let observer_gw = &localnet.observer.chain_gateway;
     observer_gw
         .submit_function_call_tx(
-            &test_account.signer,
+            &signer,
             contract_id.clone(),
             method,
             args.clone(),

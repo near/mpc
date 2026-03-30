@@ -14,6 +14,7 @@ pub struct Localnet {
     pub validator: LocalNode,
     pub observer: LocalNode,
     pub contract: Contract,
+    pub test_account: Option<TestAccount>,
 }
 
 impl Localnet {
@@ -23,6 +24,10 @@ impl Localnet {
             .block_update_receiver
             .take()
             .expect("block_update_receiver already taken")
+    }
+
+    pub fn take_test_account(&mut self) -> TestAccount {
+        self.test_account.take().expect("expected test account")
     }
 
     pub async fn new() -> Self {
@@ -54,14 +59,11 @@ impl LocalnetBuilder {
         self
     }
 
-    pub fn with_test_account(
-        mut self,
-        test_account_id: near_account_id::AccountId,
-    ) -> (Self, TestAccount) {
+    pub fn with_test_account(mut self, test_account_id: near_account_id::AccountId) -> Self {
         let signing_key = SigningKey::from_bytes(&[3u8; 32]);
         let test_account = TestAccount::new(test_account_id, signing_key);
         self.test_account = Some(test_account.clone());
-        (self, test_account)
+        self
     }
 
     /// Build and start the two-node localnet.
@@ -81,7 +83,7 @@ impl LocalnetBuilder {
             .with_consensus_min_peers(1)
             .with_contract(contract.clone(), compiled_test_contract_wasm());
 
-        if let Some(test_account) = self.test_account {
+        if let Some(test_account) = self.test_account.clone() {
             validator = validator.with_account(test_account);
         }
 
@@ -106,6 +108,7 @@ impl LocalnetBuilder {
             validator,
             observer,
             contract,
+            test_account: self.test_account,
         };
 
         // Wait for block production: poll until the observer sees a finalized block
