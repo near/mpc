@@ -49,7 +49,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push launcher image
+      - name: Build and push Rust launcher image
         run: |
-          export LAUNCHER_IMAGE_NAME=mpc-launcher
-          ./deployment/build-images.sh --launcher --push
+          export RUST_LAUNCHER_IMAGE_NAME=mpc-launcher
+          ./deployment/build-images.sh --rust-launcher --push
