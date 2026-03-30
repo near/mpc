@@ -16,10 +16,10 @@ for automation script that will launch a TEE MPC node, collect the attestation, 
 
 ## Steps
 
-1. Change into the `crates/test_utils/assets` directory:
+1. Change into the `crates/test-utils/assets` directory:
 
    ```shell
-   cd crates/test_utils/assets
+   cd crates/test-utils/assets
    ```
 
 2. Copy the `public_data.json` file into this directory.  
