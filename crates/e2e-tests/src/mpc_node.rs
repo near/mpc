@@ -131,8 +131,8 @@ pub struct MpcNodeSetup {
     // Derived config values
     secret_store_key_hex: String,
     backup_encryption_key_hex: String,
-    triples_to_buffer: i64,
-    presignatures_to_buffer: i64,
+    triples_to_buffer: usize,
+    presignatures_to_buffer: usize,
 
     // Config file path (written on creation)
     config_path: PathBuf,
@@ -377,8 +377,8 @@ pub struct MpcNodeSetupArgs {
     pub near_signer_key: SigningKey,
     pub ports: NodePorts,
     pub mpc_contract_id: AccountId,
-    pub triples_to_buffer: i64,
-    pub presignatures_to_buffer: i64,
+    pub triples_to_buffer: usize,
+    pub presignatures_to_buffer: usize,
     /// Chain ID from the sandbox's genesis.json.
     pub chain_id: String,
     /// Path to genesis.json on the host (copied from sandbox container).
@@ -497,7 +497,7 @@ struct SyncModeBlock {
 #[derive(Serialize)]
 struct Triple {
     concurrency: usize,
-    desired_triples_to_buffer: i64,
+    desired_triples_to_buffer: usize,
     timeout_sec: u64,
     parallel_triple_generation_stagger_time_sec: u64,
 }
@@ -505,7 +505,7 @@ struct Triple {
 #[derive(Serialize)]
 struct Presignature {
     concurrency: usize,
-    desired_presignatures_to_buffer: i64,
+    desired_presignatures_to_buffer: usize,
     timeout_sec: u64,
 }
 

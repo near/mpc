@@ -24,8 +24,8 @@ const DEFAULT_SANDBOX_IMAGE: &str = "nearprotocol/sandbox:2.11.0-rc.3";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = "ed25519:3JoAjwLppjgvxkk6kNsu5wQj3FfUJnpBKWieC73hVTpBeA6FZiCc5tfyZL3a3tHeQJegQe4qGSv8FLsYp7TYd1r6";
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
-pub const DEFAULT_TRIPLES_TO_BUFFER: i64 = 10;
-pub const DEFAULT_PRESIGNATURES_TO_BUFFER: i64 = 10;
+pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 10;
+pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -42,9 +42,9 @@ pub struct MpcClusterConfig {
     /// Port seed for the port allocator (must be unique across parallel tests).
     pub port_seed: u16,
     /// Triple buffer size per node.
-    pub triples_to_buffer: i64,
+    pub triples_to_buffer: usize,
     /// Presignature buffer size per node.
-    pub presignatures_to_buffer: i64,
+    pub presignatures_to_buffer: usize,
     /// Docker image for the NEAR sandbox (e.g. `"nearprotocol/sandbox:2.11.0-rc.3"`).
     pub sandbox_image: String,
     /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.

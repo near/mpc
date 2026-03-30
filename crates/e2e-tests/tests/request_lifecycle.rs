@@ -84,7 +84,11 @@ async fn test_request_lifecycle() {
     cluster
         .wait_for_metric_all_nodes(
             "mpc_owned_num_presignatures_available",
-            |v| v >= e2e_tests::DEFAULT_PRESIGNATURES_TO_BUFFER,
+            |v| {
+                let expected = i64::try_from(e2e_tests::DEFAULT_PRESIGNATURES_TO_BUFFER)
+                    .expect("presignatures_to_buffer exceeds i64::MAX");
+                v >= expected
+            },
             Duration::from_secs(120),
         )
         .await
