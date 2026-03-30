@@ -3,9 +3,9 @@ set -euo pipefail
 export NEAR_CLI_DISABLE_SPINNER=1
 
 # NEAR network selection
-# - For testnet: NEAR_NETWORK_CONFIG=testnet (default)
-# - For localnet: export NEAR_NETWORK_CONFIG=mpc-localnet (matches your near-cli config name)
-NEAR_NETWORK_CONFIG="${NEAR_NETWORK_CONFIG:-testnet}"
+# Default is localnet since this script lives in localnet/.
+# Override for testnet: export NEAR_NETWORK_CONFIG=testnet
+NEAR_NETWORK_CONFIG="${NEAR_NETWORK_CONFIG:-mpc-localnet}"
 # Used by curl-based RPC helpers (balance/bootnodes).
 # Default is derived from NEAR_NETWORK_CONFIG; override for custom setups.
 if [ -z "${NEAR_RPC_URL:-}" ]; then
@@ -16,8 +16,7 @@ if [ -z "${NEAR_RPC_URL:-}" ]; then
   fi
 fi
 # MPC environment label used by templates / node config
-# Default: "testnet" when NEAR_NETWORK_CONFIG=testnet, otherwise "localnet"
-MPC_ENV="${MPC_ENV:-mpc-localnet}"
+MPC_ENV="${MPC_ENV:-$NEAR_NETWORK_CONFIG}"
 
 
 
