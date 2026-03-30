@@ -84,7 +84,11 @@ fi
 echo "Container started: $CONTAINER_ID"
 
 # Check if container is actually running
-sleep 60
+WAIT_SECS=60
+if $USE_RUST_LAUNCHER; then
+  WAIT_SECS=15
+fi
+sleep $WAIT_SECS
 if [ -z "$(docker ps --filter "id=$CONTAINER_ID" --format "{{.ID}}")" ]; then
   echo "=== Container inspect ==="
   docker inspect "$CONTAINER_ID" --format '{{.State.Status}} exit={{.State.ExitCode}}' 2>&1 || true
