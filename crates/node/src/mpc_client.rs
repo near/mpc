@@ -239,6 +239,8 @@ where
                         .signature_requests
                         .into_iter()
                         .map(|signature_request_from_chain| {
+                        // todo: this can be simplified. We assemble block update earlier,
+                        // decompose and re-assemble here...
                             let SignatureRequestFromChain {
                                 signature_id,
                                 receipt_id,

@@ -5,6 +5,11 @@ use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
+use chain_gateway::event_subscriber::block_events::BlockEventId;
+use chain_gateway::event_subscriber::block_events::BlockUpdate;
+use chain_gateway::event_subscriber::block_events::MatchedEvent;
+use chain_gateway::event_subscriber::subscriber::BlockEventFilter;
+use chain_gateway::event_subscriber::subscriber::BlockEventSubscriber;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::CKDRequest;
 use mpc_contract::primitives::domain::DomainId;
@@ -88,6 +93,68 @@ pub struct ChainBlockUpdate {
     pub completed_ckds: Vec<CKDId>,
     pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
+}
+
+const DEFAULT_BUFFER_SIZE: usize = 300;
+
+struct EventSubscriptions {
+    sign_request: BlockEventId,
+    sign_response: BlockEventId,
+    ckd_request: BlockEventId,
+    ckd_response: BlockEventId,
+    verify_foreign_tx_request: BlockEventId,
+    verify_foreign_tx_response: BlockEventId,
+}
+
+impl EventSubscriptions {
+    pub fn new(subscriber: &mut BlockEventSubscriber, mpc_contract_id: &AccountId) -> Self {
+        let mut subscriber = chain_gateway::event_subscriber::subscriber::BlockEventSubscriber::new(
+            DEFAULT_BUFFER_SIZE,
+        );
+        let sign_request =
+            subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
+                transaction_outcome_executor_id: mpc_contract_id.clone(),
+                method_name: SIGN.into(),
+            });
+        let sign_response = subscriber.subscribe(BlockEventFilter::ReceiverFunctionCall {
+            receipt_receiver_id: mpc_contract_id.clone(),
+            method_name: RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS.to_string(),
+        });
+        let ckd_request =
+            subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
+                transaction_outcome_executor_id: mpc_contract_id.clone(),
+                method_name: REQUEST_APP_PRIVATE_KEY.into(),
+            });
+        let ckd_response =
+            subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
+                transaction_outcome_executor_id: mpc_contract_id.clone(),
+                method_name: RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS.into(),
+            });
+        let verify_foreign_tx_request =
+            subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
+                transaction_outcome_executor_id: mpc_contract_id.clone(),
+                method_name: VERIFY_FOREIGN_TRANSACTION.into(),
+            });
+
+        let verify_foreign_tx_response =
+            subscriber.subscribe(BlockEventFilter::ReceiverFunctionCall {
+                receipt_receiver_id: mpc_contract_id.clone(),
+                method_name: RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS.to_string(),
+            });
+        Self {
+            sign_request,
+            sign_response,
+            ckd_request,
+            ckd_response,
+            verify_foreign_tx_request,
+            verify_foreign_tx_response,
+        }
+    }
+    pub fn process(&self, block_update: BlockUpdate) {
+        for MatchedEvent { id, event_data } in block_update.events {
+            if id == self.sign_request => ...
+        }
+    }
 }
 
 #[cfg(feature = "network-hardship-simulation")]

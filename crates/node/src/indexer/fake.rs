@@ -978,6 +978,8 @@ impl FakeIndexerManager {
             .unwrap()
     }
 
+    // todo: and here is the reason why we do it this way. This test needs a refactor
+
     /// Sends a signature request to the fake blockchain.
     pub fn request_signature(&self, request: SignatureRequestFromChain) {
         self.signature_request_sender.send(request).unwrap();
