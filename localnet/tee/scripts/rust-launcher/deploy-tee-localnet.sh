@@ -6,8 +6,15 @@ export NEAR_CLI_DISABLE_SPINNER=1
 # - For testnet: NEAR_NETWORK_CONFIG=testnet (default)
 # - For localnet: export NEAR_NETWORK_CONFIG=mpc-localnet (matches your near-cli config name)
 NEAR_NETWORK_CONFIG="${NEAR_NETWORK_CONFIG:-testnet}"
-# Used by curl-based RPC helpers (balance/bootnodes). Override for localnet if needed.
-: "${NEAR_RPC_URL:?Must set NEAR_RPC_URL (e.g. http://127.0.0.1:3030 for localnet)}"
+# Used by curl-based RPC helpers (balance/bootnodes).
+# Default is derived from NEAR_NETWORK_CONFIG; override for custom setups.
+if [ -z "${NEAR_RPC_URL:-}" ]; then
+  if [ "$NEAR_NETWORK_CONFIG" = "mpc-localnet" ]; then
+    NEAR_RPC_URL="http://127.0.0.1:3030"
+  else
+    NEAR_RPC_URL="https://rpc.${NEAR_NETWORK_CONFIG}.near.org"
+  fi
+fi
 # MPC environment label used by templates / node config
 # Default: "testnet" when NEAR_NETWORK_CONFIG=testnet, otherwise "localnet"
 MPC_ENV="${MPC_ENV:-mpc-localnet}"
