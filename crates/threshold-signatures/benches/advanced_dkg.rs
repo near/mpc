@@ -57,9 +57,15 @@ where
     analyze_received_sizes(&sizes, true);
 }
 
-fn bench_dkg_secp256k1(c: &mut Criterion) { bench_dkg::<Secp256K1Sha256>(c, "secp256k1"); }
-fn bench_dkg_ed25519(c: &mut Criterion) { bench_dkg::<Ed25519Sha512>(c, "ed25519"); }
-fn bench_dkg_bls12381(c: &mut Criterion) { bench_dkg::<BLS12381SHA256>(c, "bls12381"); }
+fn bench_dkg_secp256k1(c: &mut Criterion) {
+    bench_dkg::<Secp256K1Sha256>(c, "secp256k1");
+}
+fn bench_dkg_ed25519(c: &mut Criterion) {
+    bench_dkg::<Ed25519Sha512>(c, "ed25519");
+}
+fn bench_dkg_bls12381(c: &mut Criterion) {
+    bench_dkg::<BLS12381SHA256>(c, "bls12381");
+}
 
 criterion_group!(
     benches,
