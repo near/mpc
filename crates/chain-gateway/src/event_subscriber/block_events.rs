@@ -19,7 +19,7 @@ pub struct BlockContext {
     pub height: BlockHeight,
     pub prev_hash: CryptoHash,
     pub last_final_block: CryptoHash,
-    pub block_entropy: [u8; 32],
+    pub block_entropy: CryptoHash,
     pub block_timestamp_nanosec: u64,
 }
 

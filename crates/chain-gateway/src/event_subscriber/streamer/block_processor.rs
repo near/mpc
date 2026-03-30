@@ -77,7 +77,7 @@ fn process_block(
         hash: streamer_message.block.header.hash,
         height: streamer_message.block.header.height.into(),
         prev_hash: streamer_message.block.header.prev_hash,
-        block_entropy: streamer_message.block.header.random_value.into(),
+        block_entropy: streamer_message.block.header.random_value,
         block_timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
         last_final_block: streamer_message.block.header.last_final_block,
     };
