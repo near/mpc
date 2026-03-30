@@ -18,7 +18,6 @@ use crate::{
 use anyhow::{anyhow, Context};
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
-use mpc_contract::tee::proposal::NodeImageHash;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::{
@@ -134,7 +133,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let image_hash_watcher_handle = root_runtime.spawn(monitor_allowed_image_hashes(
         cancellation_token.child_token(),
-        NodeImageHash::from(config.tee.image_hash.as_bytes()),
+        (*config.tee.image_hash).clone(),
         allowed_hashes_in_contract,
         image_hash_storage,
         shutdown_signal_sender.clone(),
