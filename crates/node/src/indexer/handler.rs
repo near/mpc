@@ -63,8 +63,6 @@ pub struct SignatureRequestFromChain {
     pub receipt_id: CryptoHash,
     pub request: SignArgs,
     pub predecessor_id: AccountId,
-    pub entropy: [u8; 32],
-    pub timestamp_nanosec: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -72,9 +70,6 @@ pub struct CKDRequestFromChain {
     pub ckd_id: CKDId,
     pub receipt_id: CryptoHash,
     pub request: CKDArgs,
-    pub predecessor_id: AccountId,
-    pub entropy: [u8; 32],
-    pub timestamp_nanosec: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -82,13 +77,9 @@ pub struct VerifyForeignTxRequestFromChain {
     pub verify_foreign_tx_id: VerifyForeignTxId,
     pub receipt_id: CryptoHash,
     pub request: VerifyForeignTransactionRequestArgs,
-    pub predecessor_id: AccountId,
-    pub entropy: [u8; 32],
-    pub timestamp_nanosec: u64,
 }
 
 #[derive(Clone)]
-
 pub struct ChainBlockUpdate {
     pub block: BlockViewLite,
     pub signature_requests: Vec<SignatureRequestFromChain>,
@@ -193,11 +184,6 @@ async fn handle_message(
                                     receipt_id: receipt.receipt_id,
                                     request: sign_args,
                                     predecessor_id: receipt.predecessor_id.clone(),
-                                    entropy: streamer_message.block.header.random_value.into(),
-                                    timestamp_nanosec: streamer_message
-                                        .block
-                                        .header
-                                        .timestamp_nanosec,
                                 });
                                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                             }
@@ -210,12 +196,6 @@ async fn handle_message(
                                     ckd_id,
                                     receipt_id: receipt.receipt_id,
                                     request: ckd_args,
-                                    predecessor_id: receipt.predecessor_id.clone(),
-                                    entropy: streamer_message.block.header.random_value.into(),
-                                    timestamp_nanosec: streamer_message
-                                        .block
-                                        .header
-                                        .timestamp_nanosec,
                                 });
                                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
                             }
@@ -233,12 +213,6 @@ async fn handle_message(
                                     verify_foreign_tx_id,
                                     receipt_id: receipt.receipt_id,
                                     request: verify_foreign_tx_args,
-                                    predecessor_id: receipt.predecessor_id.clone(),
-                                    entropy: streamer_message.block.header.random_value.into(),
-                                    timestamp_nanosec: streamer_message
-                                        .block
-                                        .header
-                                        .timestamp_nanosec,
                                 });
                                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
                             }
@@ -280,6 +254,8 @@ async fn handle_message(
                 height: streamer_message.block.header.height,
                 prev_hash: streamer_message.block.header.prev_hash,
                 last_final_block: streamer_message.block.header.last_final_block,
+                entropy: streamer_message.block.header.random_value.into(),
+                timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
             },
             signature_requests,
             completed_signatures,
