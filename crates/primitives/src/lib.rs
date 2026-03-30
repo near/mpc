@@ -8,5 +8,7 @@ pub mod hash;
 /// Re-exports used by the [`define_hash!`] macro. Not part of the public API.
 #[doc(hidden)]
 pub mod _macro_deps {
-    pub use ::paste;
+    pub use ::borsh;
+    pub use ::hex;
+    pub use ::serde;
 }

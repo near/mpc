@@ -5784,15 +5784,12 @@ version = "3.7.0"
 dependencies = [
  "assert_matches",
  "borsh",
- "derive-where",
  "derive_more 2.1.1",
  "hex",
- "paste",
  "rand 0.8.5",
  "schemars 0.8.22",
  "serde",
  "serde_json",
- "serde_with",
  "thiserror 2.0.18",
 ]
 
