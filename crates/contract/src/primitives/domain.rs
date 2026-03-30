@@ -52,7 +52,6 @@ impl Display for DomainId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Curve {
     Secp256k1,
-    #[serde(rename = "Ed25519")]
     Edwards25519,
     Bls12381,
     V2Secp256k1, // Robust ECDSA
@@ -90,6 +89,39 @@ pub struct DomainConfig {
     pub purpose: DomainPurpose,
 }
 
+/// Curve variant names as they appear in the legacy JSON wire format.
+/// Maps `Edwards25519` ↔ `Ed25519`. Remove after 3.8 release.
+#[derive(serde::Serialize, serde::Deserialize)]
+enum CurveCompat {
+    Secp256k1,
+    #[serde(alias = "Edwards25519")]
+    Ed25519,
+    Bls12381,
+    V2Secp256k1,
+}
+
+impl From<Curve> for CurveCompat {
+    fn from(c: Curve) -> Self {
+        match c {
+            Curve::Secp256k1 => Self::Secp256k1,
+            Curve::Edwards25519 => Self::Ed25519,
+            Curve::Bls12381 => Self::Bls12381,
+            Curve::V2Secp256k1 => Self::V2Secp256k1,
+        }
+    }
+}
+
+impl From<CurveCompat> for Curve {
+    fn from(c: CurveCompat) -> Self {
+        match c {
+            CurveCompat::Secp256k1 => Self::Secp256k1,
+            CurveCompat::Ed25519 => Self::Edwards25519,
+            CurveCompat::Bls12381 => Self::Bls12381,
+            CurveCompat::V2Secp256k1 => Self::V2Secp256k1,
+        }
+    }
+}
+
 /// JSON-only compatibility helper for [`DomainConfig`]:
 /// - Deserializes both `"scheme"` (legacy) and `"curve"` (new) field names.
 /// - Serializes as `"scheme"` for backward compatibility with the current contract.
@@ -99,7 +131,7 @@ pub struct DomainConfig {
 struct DomainConfigCompat {
     id: DomainId,
     #[serde(alias = "curve")]
-    scheme: Curve,
+    scheme: CurveCompat,
     purpose: DomainPurpose,
 }
 
@@ -107,7 +139,7 @@ impl From<DomainConfigCompat> for DomainConfig {
     fn from(value: DomainConfigCompat) -> Self {
         Self {
             id: value.id,
-            curve: value.scheme,
+            curve: value.scheme.into(),
             purpose: value.purpose,
         }
     }
@@ -117,7 +149,7 @@ impl From<DomainConfig> for DomainConfigCompat {
     fn from(value: DomainConfig) -> Self {
         Self {
             id: value.id,
-            scheme: value.curve,
+            scheme: value.curve.into(),
             purpose: value.purpose,
         }
     }
@@ -438,6 +470,15 @@ pub mod tests {
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.curve, Curve::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
+
+        // Edwards25519 serializes as "Ed25519" via CurveCompat; remove after 3.8 release.
+        let domain_config = DomainConfig {
+            id: DomainId(1),
+            curve: Curve::Edwards25519,
+            purpose: DomainPurpose::Sign,
+        };
+        let json = serde_json::to_string(&domain_config).unwrap();
+        assert_eq!(json, r#"{"id":1,"scheme":"Ed25519","purpose":"Sign"}"#);
     }
 
     #[rstest]
@@ -455,6 +496,16 @@ pub mod tests {
         r#"{"id":1,"curve":"Bls12381","purpose":"CKD"}"#,
         Curve::Bls12381,
         DomainPurpose::CKD
+    )]
+    #[case(
+        r#"{"id":1,"scheme":"Ed25519","purpose":"Sign"}"#,
+        Curve::Edwards25519,
+        DomainPurpose::Sign
+    )]
+    #[case(
+        r#"{"id":1,"curve":"Edwards25519","purpose":"Sign"}"#,
+        Curve::Edwards25519,
+        DomainPurpose::Sign
     )]
     fn test_deserialize_scheme_and_curve_keys(
         #[case] json: &str,
