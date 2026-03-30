@@ -98,6 +98,7 @@ dcap-qvl = { version = "0.3.12", default-features = false, features = [
     "std",
     "ring",
 ] }
+derive-where = "1.6.1"
 derive_more = { version = "2.1.1", features = [
     "as_ref",
     "constructor",

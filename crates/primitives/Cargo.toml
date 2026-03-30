@@ -9,6 +9,7 @@ abi = ["borsh/unstable__schema", "schemars"]
 
 [dependencies]
 borsh = { workspace = true }
+derive-where = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 paste = { workspace = true }

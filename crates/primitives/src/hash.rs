@@ -25,50 +25,21 @@ pub trait HashSpec<const N: usize> {
 /// `S` is a zero-sized marker implementing [`HashSpec<N>`] that binds the type name
 /// to the byte length `N`. All trait implementations are generic — adding a new hash
 /// type requires only a spec struct, a trait impl, and a type alias.
-#[derive(derive_more::Deref, derive_more::AsRef, derive_more::Into)]
+#[derive(
+    derive_where::DeriveWhere,
+    derive_more::Deref,
+    derive_more::AsRef,
+    derive_more::Into,
+)]
+#[derive_where(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HashDigest<S: HashSpec<N>, const N: usize> {
     #[deref]
     #[as_ref]
     #[into]
     bytes: [u8; N],
     #[into(skip)]
+    #[derive_where(skip)]
     _marker: PhantomData<S>,
-}
-
-// Manual impls to avoid spurious `S: Trait` bounds from derive macros.
-
-impl<S: HashSpec<N>, const N: usize> Clone for HashDigest<S, N> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<S: HashSpec<N>, const N: usize> Copy for HashDigest<S, N> {}
-
-impl<S: HashSpec<N>, const N: usize> PartialEq for HashDigest<S, N> {
-    fn eq(&self, other: &Self) -> bool {
-        self.bytes == other.bytes
-    }
-}
-
-impl<S: HashSpec<N>, const N: usize> Eq for HashDigest<S, N> {}
-
-impl<S: HashSpec<N>, const N: usize> PartialOrd for HashDigest<S, N> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<S: HashSpec<N>, const N: usize> Ord for HashDigest<S, N> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.bytes.cmp(&other.bytes)
-    }
-}
-
-impl<S: HashSpec<N>, const N: usize> core::hash::Hash for HashDigest<S, N> {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.bytes.hash(state);
-    }
 }
 
 
