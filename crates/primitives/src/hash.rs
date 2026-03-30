@@ -105,11 +105,11 @@ macro_rules! define_hash {
                     $crate::_macro_deps::borsh::schema::Definition,
                 >,
             ) {
-                let byte_array_decl = alloc::format!("[u8; {}]", $n);
+                let byte_array_decl = std::format!("[u8; {}]", $n);
                 definitions.insert(
                     Self::declaration(),
                     $crate::_macro_deps::borsh::schema::Definition::Struct {
-                        fields: $crate::_macro_deps::borsh::schema::Fields::NamedFields(alloc::vec![(
+                        fields: $crate::_macro_deps::borsh::schema::Fields::NamedFields(std::vec![(
                             "bytes".into(),
                             byte_array_decl,
                         )]),
