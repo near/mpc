@@ -1,0 +1,88 @@
+home_dir = "$HOME/.near/$MPC_NODE_ID"
+
+[near_init]
+chain_id = "mpc-localnet"
+boot_nodes = "$NEAR_BOOT_NODES"
+genesis_path = "$HOME/.near/mpc-localnet/genesis.json"
+rpc_addr = "0.0.0.0:$RPC_PORT"
+network_addr = "0.0.0.0:$INDEXER_PORT"
+
+[secrets]
+secret_store_key_hex = "11111111111111111111111111111111"
+
+[tee]
+image_hash = "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0"
+latest_allowed_hash_file_path = "/tmp/LATEST_ALLOWED_HASH_FILE.txt"
+
+[tee.authority]
+type = "local"
+
+[log]
+format = "plain"
+filter = "info"
+
+[node]
+my_near_account_id = "$NEAR_ACCOUNT_ID"
+near_responder_account_id = "$NEAR_ACCOUNT_ID"
+number_of_responder_keys = 1
+web_ui = "127.0.0.1:$WEB_UI_PORT"
+migration_web_ui = "127.0.0.1:$MIGRATION_WEB_UI_PORT"
+pprof_bind_address = "127.0.0.1:$PPROF_PORT"
+cores = 4
+
+[node.triple]
+concurrency = 2
+desired_triples_to_buffer = 128
+timeout_sec = 60
+parallel_triple_generation_stagger_time_sec = 1
+
+[node.presignature]
+concurrency = 4
+desired_presignatures_to_buffer = 64
+timeout_sec = 60
+
+[node.signature]
+timeout_sec = 60
+
+[node.indexer]
+validate_genesis = false
+sync_mode = "Latest"
+concurrency = 1
+mpc_contract_id = "mpc-contract.test.near"
+finality = "optimistic"
+
+[node.ckd]
+timeout_sec = 60
+
+[node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.bitcoin.providers.public]
+api_variant = "esplora"
+rpc_url = "https://bitcoin-rpc.publicnode.com"
+
+[node.foreign_chains.bitcoin.providers.public.auth]
+kind = "none"
+
+[node.foreign_chains.abstract]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.abstract.providers.public]
+api_variant = "standard"
+rpc_url = "https://api.testnet.abs.xyz"
+
+[node.foreign_chains.abstract.providers.public.auth]
+kind = "none"
+
+[node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.starknet.providers.public]
+api_variant = "standard"
+rpc_url = "https://starknet-rpc.publicnode.com"
+
+[node.foreign_chains.starknet.providers.public.auth]
+kind = "none"
