@@ -507,14 +507,13 @@ impl BlockEventSubscriber {
 
     /// Add a subscription and get a unique identifier for it.
     /// Can be called multiple times before passing the subscriber to `ChainGateway::start()`.
-    /// The identifier can be used to match returned events to the given subscription.
+    /// The returned identifier can be used to match returned events to the given subscription.
     pub fn subscribe(&mut self, filter: BlockEventFilter) -> BlockEventId;
 }
 
 /// An identifier for a subscription, returned by `subscribe()`.
 pub struct BlockEventId(pub u64);
 
-/// Filter — can be easily extended later.
 pub enum BlockEventFilter {
     /// Filter for events where a receipt outcome was executed by `transaction_outcome_executor_id` and called `method_name`.
     ExecutorFunctionCall {

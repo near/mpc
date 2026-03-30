@@ -125,7 +125,7 @@ impl BlockEvents {
 
         // It does match one of our events, so now, we extract the function call args and match on
         // the method name.
-        // Note: readabaility would be better if we extracted the methods earlier, but performance
+        // Note: readability would be better if we extracted the methods earlier, but performance
         // would suffer, as we would be extracting function call args for receipts that are of no
         // interest to us.
         let Some((args, contract_method_name)) = try_extract_function_call_args(receipt) else {

@@ -36,7 +36,7 @@ pub(crate) async fn start(
         )
         .await
         {
-            tracing::error!(target: "chain gateway", "block event listener stoppd: {err}");
+            tracing::error!(target: "chain gateway", "block event listener stopped: {err}");
         }
     });
     tokio::spawn(indexer_logger(stats_rx, info_fetcher));
