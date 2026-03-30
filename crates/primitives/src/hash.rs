@@ -25,12 +25,7 @@ pub trait HashSpec<const N: usize> {
 /// `S` is a zero-sized marker implementing [`HashSpec<N>`] that binds the type name
 /// to the byte length `N`. All trait implementations are generic — adding a new hash
 /// type requires only a spec struct, a trait impl, and a type alias.
-#[derive(
-    derive_where::DeriveWhere,
-    derive_more::Deref,
-    derive_more::AsRef,
-    derive_more::Into,
-)]
+#[derive(derive_where::DeriveWhere, derive_more::Deref, derive_more::AsRef, derive_more::Into)]
 #[derive_where(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HashDigest<S: HashSpec<N>, const N: usize> {
     #[deref]
@@ -42,7 +37,6 @@ pub struct HashDigest<S: HashSpec<N>, const N: usize> {
     _marker: PhantomData<S>,
 }
 
-
 impl<S: HashSpec<N>, const N: usize> core::fmt::Debug for HashDigest<S, N> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // Encode hex directly into a stack buffer to avoid allocating a String.
@@ -53,7 +47,6 @@ impl<S: HashSpec<N>, const N: usize> core::fmt::Debug for HashDigest<S, N> {
         write!(f, "{}({})", S::NAME, hex_str)
     }
 }
-
 
 impl<S: HashSpec<N>, const N: usize> serde::Serialize for HashDigest<S, N> {
     fn serialize<Ser: serde::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
@@ -72,7 +65,6 @@ impl<'de, S: HashSpec<N>, const N: usize> serde::Deserialize<'de> for HashDigest
     }
 }
 
-
 impl<S: HashSpec<N>, const N: usize> borsh::BorshSerialize for HashDigest<S, N> {
     fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
         self.bytes.serialize(writer)
@@ -85,7 +77,6 @@ impl<S: HashSpec<N>, const N: usize> borsh::BorshDeserialize for HashDigest<S, N
         Ok(Self::new(bytes))
     }
 }
-
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl<S: HashSpec<N>, const N: usize> borsh::BorshSchema for HashDigest<S, N> {
@@ -112,7 +103,6 @@ impl<S: HashSpec<N>, const N: usize> borsh::BorshSchema for HashDigest<S, N> {
     }
 }
 
-
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl<S: HashSpec<N>, const N: usize> schemars::JsonSchema for HashDigest<S, N> {
     fn schema_name() -> String {
@@ -134,7 +124,6 @@ impl<S: HashSpec<N>, const N: usize> schemars::JsonSchema for HashDigest<S, N> {
         })
     }
 }
-
 
 impl<S: HashSpec<N>, const N: usize> From<[u8; N]> for HashDigest<S, N> {
     fn from(bytes: [u8; N]) -> Self {
@@ -159,7 +148,6 @@ impl<S: HashSpec<N>, const N: usize> HashDigest<S, N> {
         }
     }
 }
-
 
 impl<S: HashSpec<N>, const N: usize> FromStr for HashDigest<S, N> {
     type Err = HashParseError;
@@ -200,22 +188,6 @@ macro_rules! define_hash {
         $crate::_macro_deps::paste::paste! {
             #[doc(hidden)]
             pub struct [<$name Spec>];
-
-            impl $crate::_macro_deps::borsh::BorshSerialize for [<$name Spec>] {
-                fn serialize<W: $crate::_macro_deps::borsh::io::Write>(
-                    &self, _writer: &mut W,
-                ) -> $crate::_macro_deps::borsh::io::Result<()> {
-                    Ok(())
-                }
-            }
-
-            impl $crate::_macro_deps::borsh::BorshDeserialize for [<$name Spec>] {
-                fn deserialize_reader<R: $crate::_macro_deps::borsh::io::Read>(
-                    _reader: &mut R,
-                ) -> $crate::_macro_deps::borsh::io::Result<Self> {
-                    Ok(Self)
-                }
-            }
 
             impl $crate::hash::HashSpec<$n> for [<$name Spec>] {
                 const NAME: &'static str = stringify!($name);
