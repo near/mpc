@@ -171,6 +171,7 @@ impl EcdsaSignatureProvider {
         domain_id: DomainId,
         paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
+        id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
@@ -276,7 +277,7 @@ impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
                 presignature,
                 participants: channel.participants().to_vec(),
             },
-        );
+        )?;
         Ok(())
     }
 

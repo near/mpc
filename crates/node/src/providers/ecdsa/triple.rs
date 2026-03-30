@@ -185,6 +185,7 @@ impl EcdsaSignatureProvider {
         start: UniqueId,
         count: u32,
     ) -> anyhow::Result<()> {
+        start.validate_owned_by(channel.sender().get_leader())?;
         if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
             return Err(anyhow::anyhow!(
                 "Unsupported batch size for triple generation"
@@ -285,7 +286,7 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
             self.out_triple_store.add_unowned(
                 self.out_triple_id_start.add_to_counter(i as u32)?,
                 paired_triple,
-            );
+            )?;
         }
         Ok(())
     }

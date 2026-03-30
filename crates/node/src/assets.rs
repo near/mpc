@@ -535,15 +535,23 @@ where
         }
     }
 
-    /// Adds an unowned asset to the storage.
-    pub fn add_unowned(&self, id: UniqueId, value: T) {
+    /// Adds an unowned asset to the storage. Returns an error if the asset
+    /// already exists, to prevent a malicious leader from overwriting existing assets.
+    pub fn add_unowned(&self, id: UniqueId, value: T) -> anyhow::Result<()> {
         let key = self.make_key(id);
+        anyhow::ensure!(
+            self.db.get(self.col, &key)?.is_none(),
+            "Refusing to overwrite existing {} asset: {:?}",
+            self.col,
+            id
+        );
         let value_ser = serde_json::to_vec(&value).unwrap();
         let mut update = self.db.update();
         update.put(self.col, &key, &value_ser);
         update
             .commit()
             .expect("Unrecoverable error writing to database");
+        Ok(())
     }
 
     /// Removes an unowned asset from the storage and returns it. Returns
@@ -1079,8 +1087,8 @@ mod tests {
         let id1 = UniqueId::new(other, 1, 0);
         let id2 = UniqueId::new(other, 2, 0);
         let id3 = UniqueId::new(other, 3, 0);
-        store.add_unowned(id1, 123);
-        store.add_unowned(id2, 234);
+        store.add_unowned(id1, 123).unwrap();
+        store.add_unowned(id2, 234).unwrap();
         assert_eq!(store.num_owned(), 0); // does not affect owned
 
         assert_eq!(store.take_unowned(id1).unwrap(), 123);
@@ -1098,6 +1106,40 @@ mod tests {
         let _ = store
             .take_unowned(id1)
             .expect_err("Missing unowned item should return an error");
+    }
+
+    #[test]
+    fn test_add_unowned_rejects_overwrite() {
+        // given
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let store = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db,
+            crate::db::DBCol::Triple,
+            None,
+            ParticipantId::from_raw(42),
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
+        )
+        .unwrap();
+
+        let other = ParticipantId::from_raw(43);
+        let id = UniqueId::new(other, 1, 0);
+        store.add_unowned(id, 100).unwrap();
+
+        // when
+        let err = store
+            .add_unowned(id, 200)
+            .expect_err("Should reject overwrite of existing asset");
+
+        // then
+        assert!(
+            err.to_string().contains("Refusing to overwrite"),
+            "Unexpected error message: {}",
+            err
+        );
+        assert_eq!(store.take_unowned(id).unwrap(), 100);
     }
 
     #[test]
@@ -1123,10 +1165,10 @@ mod tests {
         store.add_owned(id1.add_to_counter(3).unwrap(), 4);
 
         let other = ParticipantId::from_raw(43);
-        store.add_unowned(UniqueId::new(other, 1, 0), 5);
-        store.add_unowned(UniqueId::new(other, 2, 0), 6);
-        store.add_unowned(UniqueId::new(other, 3, 0), 7);
-        store.add_unowned(UniqueId::new(other, 4, 0), 8);
+        store.add_unowned(UniqueId::new(other, 1, 0), 5).unwrap();
+        store.add_unowned(UniqueId::new(other, 2, 0), 6).unwrap();
+        store.add_unowned(UniqueId::new(other, 3, 0), 7).unwrap();
+        store.add_unowned(UniqueId::new(other, 4, 0), 8).unwrap();
 
         drop(store);
         let store = DistributedAssetStorage::<u32>::new(
@@ -1220,7 +1262,9 @@ mod tests {
 
             for j in 0..10 {
                 store.add_owned(UniqueId::new(myself, j, 0), 10000 + i * 100 + j);
-                store.add_unowned(UniqueId::new(other, j, 0), 20000 + i * 100 + j);
+                store
+                    .add_unowned(UniqueId::new(other, j, 0), 20000 + i * 100 + j)
+                    .unwrap();
             }
             for j in 0..10 {
                 assert_eq!(
@@ -1234,7 +1278,9 @@ mod tests {
             }
             for j in 0..10 {
                 store.add_owned(UniqueId::new(myself, 100 + j, 0), 30000 + i * 100 + j);
-                store.add_unowned(UniqueId::new(other, 100 + j, 0), 40000 + i * 100 + j);
+                store
+                    .add_unowned(UniqueId::new(other, 100 + j, 0), 40000 + i * 100 + j)
+                    .unwrap();
             }
         }
 

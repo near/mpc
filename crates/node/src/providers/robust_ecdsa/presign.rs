@@ -179,6 +179,7 @@ impl RobustEcdsaSignatureProvider {
         id: UniqueId,
         domain_id: DomainId,
     ) -> anyhow::Result<()> {
+        id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
         let number_of_participants = self.mpc_config.participants.participants.len();
@@ -277,7 +278,7 @@ impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
                 presignature,
                 participants: channel.participants().to_vec(),
             },
-        );
+        )?;
         Ok(())
     }
 
