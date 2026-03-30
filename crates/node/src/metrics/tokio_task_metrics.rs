@@ -1,6 +1,6 @@
 use prometheus::{register_counter_vec, register_int_counter_vec, CounterVec, IntCounterVec};
 use std::sync::LazyLock;
-use tokio_metrics::TaskMonitor;
+use tokio_metrics::{TaskIntervals, TaskMonitor};
 
 use crate::metrics::MONITOR_SAMPLE_DURATION;
 
@@ -170,15 +170,15 @@ impl TaskLabels {
     }
 }
 
-trait TaskMonitorProvider {
-    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)>;
+trait TaskIntervalProvider {
+    fn task_intervals(&self) -> Vec<(TaskIntervals, TaskLabels)>;
 }
 
-impl TaskMonitorProvider for EcdsaTaskMonitors {
-    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
+impl TaskIntervalProvider for EcdsaTaskMonitors {
+    fn task_intervals(&self) -> Vec<(TaskIntervals, TaskLabels)> {
         vec![
             (
-                self.make_signature_leader.clone(),
+                self.make_signature_leader.intervals(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
@@ -186,7 +186,7 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
                 ),
             ),
             (
-                self.make_signature_follower.clone(),
+                self.make_signature_follower.intervals(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
@@ -194,7 +194,7 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
                 ),
             ),
             (
-                self.triple_generation_leader.clone(),
+                self.triple_generation_leader.intervals(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     TRIPLE_GENERATION_TASK_LABEL,
@@ -202,7 +202,7 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
                 ),
             ),
             (
-                self.triple_generation_follower.clone(),
+                self.triple_generation_follower.intervals(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     TRIPLE_GENERATION_TASK_LABEL,
@@ -210,7 +210,7 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
                 ),
             ),
             (
-                self.presignature_generation_leader.clone(),
+                self.presignature_generation_leader.intervals(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     PRESIGNATURE_GENERATION_TASK_LABEL,
@@ -218,7 +218,7 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
                 ),
             ),
             (
-                self.presignature_generation_follower.clone(),
+                self.presignature_generation_follower.intervals(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     PRESIGNATURE_GENERATION_TASK_LABEL,
@@ -229,11 +229,11 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
     }
 }
 
-impl TaskMonitorProvider for RobustEcdsaTaskMonitors {
-    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
+impl TaskIntervalProvider for RobustEcdsaTaskMonitors {
+    fn task_intervals(&self) -> Vec<(TaskIntervals, TaskLabels)> {
         vec![
             (
-                self.make_signature_leader.clone(),
+                self.make_signature_leader.intervals(),
                 TaskLabels::new(
                     ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
@@ -241,7 +241,7 @@ impl TaskMonitorProvider for RobustEcdsaTaskMonitors {
                 ),
             ),
             (
-                self.make_signature_follower.clone(),
+                self.make_signature_follower.intervals(),
                 TaskLabels::new(
                     ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
@@ -249,7 +249,7 @@ impl TaskMonitorProvider for RobustEcdsaTaskMonitors {
                 ),
             ),
             (
-                self.presignature_generation_leader.clone(),
+                self.presignature_generation_leader.intervals(),
                 TaskLabels::new(
                     ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
                     PRESIGNATURE_GENERATION_TASK_LABEL,
@@ -257,7 +257,7 @@ impl TaskMonitorProvider for RobustEcdsaTaskMonitors {
                 ),
             ),
             (
-                self.presignature_generation_follower.clone(),
+                self.presignature_generation_follower.intervals(),
                 TaskLabels::new(
                     ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
                     PRESIGNATURE_GENERATION_TASK_LABEL,
@@ -268,11 +268,11 @@ impl TaskMonitorProvider for RobustEcdsaTaskMonitors {
     }
 }
 
-impl TaskMonitorProvider for EddsaTaskMonitors {
-    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
+impl TaskIntervalProvider for EddsaTaskMonitors {
+    fn task_intervals(&self) -> Vec<(TaskIntervals, TaskLabels)> {
         vec![
             (
-                self.make_signature_leader.clone(),
+                self.make_signature_leader.intervals(),
                 TaskLabels::new(
                     EDDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
@@ -280,7 +280,7 @@ impl TaskMonitorProvider for EddsaTaskMonitors {
                 ),
             ),
             (
-                self.make_signature_follower.clone(),
+                self.make_signature_follower.intervals(),
                 TaskLabels::new(
                     EDDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
@@ -292,25 +292,20 @@ impl TaskMonitorProvider for EddsaTaskMonitors {
 }
 
 pub(crate) async fn run_monitor_loop() {
-    let task_monitor_providers: [Vec<(TaskMonitor, TaskLabels)>; 3] = [
-        ECDSA_TASK_MONITORS.get_monitors(),
-        ROBUST_ECDSA_TASK_MONITORS.get_monitors(),
-        EDDSA_TASK_MONITORS.get_monitors(),
+    let task_interval_providers: [Vec<(TaskIntervals, TaskLabels)>; 3] = [
+        ECDSA_TASK_MONITORS.task_intervals(),
+        ROBUST_ECDSA_TASK_MONITORS.task_intervals(),
+        EDDSA_TASK_MONITORS.task_intervals(),
     ];
 
-    let mut task_monitors: Vec<_> = task_monitor_providers
-        .into_iter()
-        .flatten()
-        // TODO(#1841): `TaskMonitorProvider::get_monitors` should return intervals directly
-        .map(|(task_monitor, labels)| (task_monitor.intervals(), labels))
-        .collect();
+    let mut task_intervals: Vec<_> = task_interval_providers.into_iter().flatten().collect();
 
     let mut ticker = tokio::time::interval(MONITOR_SAMPLE_DURATION);
 
     loop {
         ticker.tick().await;
 
-        for (task_interval, task_labels) in task_monitors.iter_mut() {
+        for (task_interval, task_labels) in task_intervals.iter_mut() {
             let Some(metrics) = task_interval.next() else {
                 tracing::error!(
                     protocol_scheme = task_labels.protocol_scheme,
