@@ -179,14 +179,14 @@
             strictDeps = true;
 
             packages =
-              dockerTools
-              ++ llvmTools
-              ++ rustTools
-              ++ cargoTools
-              ++ pythonTools
-              ++ nearTools
-              ++ miscTools
-              ++ buildLibs;
+              dockerTools ++
+              llvmTools ++
+              rustTools ++
+              cargoTools ++
+              pythonTools ++
+              nearTools ++
+              miscTools ++
+              buildLibs;
 
             env = envCommon // envDarwin;
 

@@ -1,16 +1,14 @@
 # Run a Single MPC Node on Localnet (dstack CVM)
 
 This script:
-
 - Creates/reuses one NEAR account on localnet
-- Deploys one MPC node into dstack CVM (node is not guaranteed to be fully functional)
+- Deploys one MPC node into dstack CVM   (node is not guaranteed to be fully functional) 
 - Fetches `/public_data` and saves it to JSON
 
 It is used to generate real attestation data for testing only:
 See [updating-launcher-internal-guide.md](../../../docs/updating-launcher-internal-guide.md)
 
 ## Prerequisites
-
 - Local NEAR network running: `NEAR_ENV=mpc-localnet neard --home ~/.near/mpc-localnet run`
 - `mpc-localnet` configured in `near` CLI
 - dstack running (`http://127.0.0.1:10000`)
@@ -21,7 +19,6 @@ See [updating-launcher-internal-guide.md](../../../docs/updating-launcher-intern
 ### Required
 
 All three variables below must be set before running the script.
-
 
 ```bash
 # dstack base path — the folder containing the `vmm/src/vmm-cli.py` script.
@@ -40,9 +37,7 @@ export MPC_IMAGE_TAGS=3.7.0
 ```
 
 ### dstack port
-
 If dstack VMM is not on port 10000:
-
 ```bash
 export VMM_RPC=http://127.0.0.1:<port>
 ```
@@ -54,34 +49,26 @@ Guest OS image (defaults to `dstack-dev-0.5.8`). To use the production (release)
 export OS_IMAGE=dstack-0.5.8
 ```
 
-
 If you want to use specific NEAR accounts name instead of defaults:
-
 ```bash
 export NODE_ACCOUNT=frodo.test.near
 export CONTRACT_ACCOUNT=mpc-contract.test.near
 ```
 
 ## Run
-
 From the MPC repo root:
-
 ```bash
 bash ./localnet/tee/scripts/single-node.sh
 ```
 
 ## Output
-
 - The script prints the work directory and all assigned ports at startup
 - Public endpoint: `http://<MACHINE_IP>:<PUBLIC_DATA_PORT>/public_data`
 - Saved JSON: `<WORKDIR>/public_data.json` (path printed by the script)
 
 ## Cleanup
-
 To remove the CVM after you're done:
-
 ```bash
 BASE_PATH=/path/to/dstack bash ./localnet/tee/scripts/single-node.sh --cleanup <WORKDIR>
 ```
-
 The exact command is printed at the end of a successful run.
