@@ -86,7 +86,7 @@ pub trait SubscribeToContractMethod {
 pub trait ViewMethod {
     fn view_method<Arg, Res>(
         &self,
-        contract_id: AccountId,
+        contract_id: &AccountId,
         method_name: &str,
         args: &Arg,
     ) -> impl Future<Output = Result<ObservedState<Res>, ChainGatewayError>> + Send
@@ -156,7 +156,7 @@ impl<V: ViewRaw + Clone> SubscribeToContractMethod for V {
 impl<T: ViewRaw> ViewMethod for T {
     async fn view_method<Arg, Res>(
         &self,
-        contract_id: AccountId,
+        contract_id: &AccountId,
         method_name: &str,
         args: &Arg,
     ) -> Result<ObservedState<Res>, ChainGatewayError>
@@ -328,7 +328,7 @@ mod tests {
             .build();
 
         let result = viewer
-            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_method::<NoArgs, String>(&"a.testnet".parse().unwrap(), "m", &NoArgs {})
             .await
             .unwrap();
 
@@ -346,7 +346,7 @@ mod tests {
         let account_id: AccountId = "a.testnet".parse().unwrap();
         let method_name = "m".to_string();
         let err = viewer
-            .view_method::<NoArgs, String>(account_id.clone(), &method_name, &NoArgs {})
+            .view_method::<NoArgs, String>(&account_id.clone(), &method_name, &NoArgs {})
             .await
             .unwrap_err();
 
@@ -375,7 +375,7 @@ mod tests {
         let contract_id: AccountId = "a.testnet".parse().unwrap();
         let method_name: String = "m".into();
         let err = viewer
-            .view_method::<NoArgs, String>(contract_id, &method_name, &NoArgs {})
+            .view_method::<NoArgs, String>(&contract_id, &method_name, &NoArgs {})
             .await
             .unwrap_err();
 

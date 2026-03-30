@@ -1,4 +1,4 @@
-use super::handler::listen_blocks;
+use super::handler::{listen_blocks, EventSubscriptions};
 use super::migrations::{monitor_migrations, ContractMigrationInfo};
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
@@ -10,6 +10,8 @@ use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
+use chain_gateway::event_subscriber::subscriber::BlockEventSubscriber;
+use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
@@ -86,25 +88,21 @@ pub fn spawn_real_indexer(
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
         indexer_tokio_runtime.block_on(async {
             let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
+            // todo: default buffer size
+            let mut subscriber = BlockEventSubscriber::new(100);
+            let subscriptions =
+                EventSubscriptions::new(&mut subscriber, &mpc_indexer_config.mpc_contract_id);
+            let (gateway, handle, stream) =
+                ChainGateway::start(near_indexer_config, Some(subscriber))
+                    .await
+                    .expect("starting indexer must succeed");
 
-            let near_config = near_indexer_config
-                .load_near_config()
-                .expect("near config is present");
-
-            let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
-                .await
-                .expect("near node has started");
-
-            let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
-
-            let stream = indexer.streamer();
-
-            let indexer_state = Arc::new(IndexerState::new(
-                near_node.view_client,
-                near_node.client,
-                near_node.rpc_handler,
-                mpc_indexer_config.mpc_contract_id.clone(),
-            ));
+            //let indexer_state = Arc::new(IndexerState::new(
+            //    near_node.view_client,
+            //    near_node.client,
+            //    near_node.rpc_handler,
+            //    mpc_indexer_config.mpc_contract_id.clone(),
+            //));
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
@@ -190,27 +188,19 @@ pub fn spawn_real_indexer(
                 )
             };
 
+            let stream = stream.expect("expect stream");
             // below function runs indefinitely and only returns in case of an error.
             #[cfg(feature = "network-hardship-simulation")]
             let indexer_result = listen_blocks(
                 stream,
-                mpc_indexer_config.concurrency,
-                Arc::clone(&indexer_state.stats),
-                mpc_indexer_config.mpc_contract_id,
                 block_update_sender,
                 process_blocks_receiver,
+                subscriptions,
             )
             .await;
 
             #[cfg(not(feature = "network-hardship-simulation"))]
-            let indexer_result = listen_blocks(
-                stream,
-                mpc_indexer_config.concurrency,
-                Arc::clone(&indexer_state.stats),
-                mpc_indexer_config.mpc_contract_id,
-                block_update_sender,
-            )
-            .await;
+            let indexer_result = listen_blocks(stream, block_update_sender, subscriptions).await;
 
             if indexer_exit_sender.send(indexer_result).is_err() {
                 tracing::error!("Indexer thread could not send result back to main driver.")

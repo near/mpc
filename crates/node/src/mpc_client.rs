@@ -232,9 +232,9 @@ where
                         break;
                     };
 
-                    let entropy: [u8; 32] = block_update.block.entropy.clone().into();
-                    let timestamp_nanosec = block_update.block.timestamp_nanosec;
-                    self.client.update_indexer_height(block_update.block.height);
+                    let entropy: [u8; 32] = block_update.block.block_entropy.clone().into();
+                    let timestamp_nanosec = block_update.block.block_timestamp_nanosec;
+                    self.client.update_indexer_height(block_update.block.height.into());
                     let signature_requests = block_update
                         .signature_requests
                         .into_iter()

@@ -2,10 +2,9 @@ use super::debug::{CompletedRequest, CompletedRequests};
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
-use crate::requests::recent_blocks_tracker::{
-    BlockViewLite, CheckBlockResult, RecentBlocksTracker,
-};
+use crate::requests::recent_blocks_tracker::{CheckBlockResult, RecentBlocksTracker};
 use crate::types::{self, Request, RequestId};
+use chain_gateway::event_subscriber::block_events::BlockContext;
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
 use near_indexer_primitives::CryptoHash;
@@ -284,7 +283,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         &mut self,
         requests: Vec<RequestType>,
         completed_requests: Vec<RequestId>,
-        block: &BlockViewLite,
+        block: &BlockContext,
     ) {
         let add_result = match self.recent_blocks.add_block(
             block,

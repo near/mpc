@@ -225,8 +225,6 @@ pub struct BlockViewLite {
     pub height: u64,
     pub prev_hash: CryptoHash,
     pub last_final_block: CryptoHash,
-    pub entropy: BlockEntropy,
-    pub timestamp_nanosec: u64,
 }
 
 impl<T: Clone> RecentBlocksTracker<T> {

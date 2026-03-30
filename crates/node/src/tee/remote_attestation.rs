@@ -36,6 +36,7 @@ const BACKOFF_FACTOR: f32 = 1.5;
 /// [`TransactionSender`] to send the transaction and waits until [`TransactionStatus::Executed`]
 /// is observed.  
 pub async fn submit_remote_attestation(
+    // todo: here, you want a transaction sender an you want an MpcContractViewer
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
