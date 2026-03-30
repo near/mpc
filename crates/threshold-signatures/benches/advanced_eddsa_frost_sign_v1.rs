@@ -54,7 +54,7 @@ criterion_main!(benches);
 fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimulatedSig {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = ed25519_prepare_sign_v1(threshold, &mut rng);
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     let participants: Vec<Participant> = preps
@@ -79,7 +79,7 @@ fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimula
 
     // now preparing the simulator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
 
     PreparedSimulatedSig {
         participant: real_participant,

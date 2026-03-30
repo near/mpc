@@ -2,7 +2,7 @@
 # Script to reproducibly the docker images for the node and launcher
 #
 # Requirements: docker, docker-buildx, jq, git, find, touch
-# Extra requirements if using --node or --launcher: repro-env, podman
+# Extra requirements if using --node: repro-env, podman
 #
 # Usage:
 #   ./deployment/build-images.sh [--node] [--launcher] [--push]
@@ -13,6 +13,7 @@
 set -euo pipefail
 
 USE_LAUNCHER=false
+USE_RUST_LAUNCHER=false
 USE_NODE=false
 USE_NODE_GCP=false
 USE_PUSH=false
@@ -29,19 +30,23 @@ do
     --launcher)
       USE_LAUNCHER=true
       ;;
+    --rust-launcher)
+      USE_RUST_LAUNCHER=true
+      ;;
     --push)
       USE_PUSH=true
       ;;
     *)
       echo "Unknown parameter: $arg"
-      echo "Usage: $0 [--node] [--launcher] [--push]"
+      echo "Usage: $0 [--node] [--launcher] [--rust-launcher] [--push]"
       exit 1
       ;;
   esac
 done
 
-if ! $USE_LAUNCHER && ! $USE_NODE && ! $USE_NODE_GCP; then
+if ! $USE_LAUNCHER && ! $USE_RUST_LAUNCHER && ! $USE_NODE && ! $USE_NODE_GCP; then
     USE_LAUNCHER=true
+    USE_RUST_LAUNCHER=true
     USE_NODE=true
     USE_NODE_GCP=true
 fi
@@ -61,7 +66,7 @@ require_cmds() {
 
 require_cmds docker jq git find touch
 
-if $USE_NODE || $USE_LAUNCHER; then
+if $USE_NODE || $USE_RUST_LAUNCHER; then
     require_cmds repro-env podman
 fi
 
@@ -80,8 +85,11 @@ DOCKERFILE_NODE=deployment/Dockerfile-node
 DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
 : "${NODE_GCP_IMAGE_NAME:=mpc-node-gcp}"
 
-DOCKERFILE_LAUNCHER=deployment/Dockerfile-rust-launcher
+DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
+
+DOCKERFILE_RUST_LAUNCHER=deployment/Dockerfile-rust-launcher
+: "${RUST_LAUNCHER_IMAGE_NAME:=mpc-rust-launcher}"
 
 
 SOURCE_DATE_EPOCH=0
@@ -118,23 +126,28 @@ get_image_hash() {
 }
 
 if $USE_LAUNCHER; then
+    build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER
+    launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
+fi
+
+if $USE_RUST_LAUNCHER; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
-    launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
+    rust_launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
 
     # Build Docker image from a minimal context to ensure reproducibility
     # regardless of other files in the repo.
-    launcher_context=$(mktemp -d)
-    mkdir -p "$launcher_context/target/reproducible" "$launcher_context/deployment"
-    cp target/reproducible/tee-launcher "$launcher_context/target/reproducible/"
-    cp deployment/repro-sources-list.sh "$launcher_context/deployment/"
-    touch -d @"$SOURCE_DATE_EPOCH" "$launcher_context/target/reproducible/tee-launcher" \
-        "$launcher_context/deployment/repro-sources-list.sh" \
-        "$launcher_context/target/reproducible" "$launcher_context/target" \
-        "$launcher_context/deployment" "$launcher_context"
-    build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER "$launcher_context"
-    rm -rf "$launcher_context"
+    rust_launcher_context=$(mktemp -d)
+    mkdir -p "$rust_launcher_context/target/reproducible" "$rust_launcher_context/deployment"
+    cp target/reproducible/tee-launcher "$rust_launcher_context/target/reproducible/"
+    cp deployment/repro-sources-list.sh "$rust_launcher_context/deployment/"
+    touch -d @"$SOURCE_DATE_EPOCH" "$rust_launcher_context/target/reproducible/tee-launcher" \
+        "$rust_launcher_context/deployment/repro-sources-list.sh" \
+        "$rust_launcher_context/target/reproducible" "$rust_launcher_context/target" \
+        "$rust_launcher_context/deployment" "$rust_launcher_context"
+    build_reproducible_image $RUST_LAUNCHER_IMAGE_NAME $DOCKERFILE_RUST_LAUNCHER "$rust_launcher_context"
+    rm -rf "$rust_launcher_context"
 
-    launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
+    rust_launcher_image_hash=$(get_image_hash $RUST_LAUNCHER_IMAGE_NAME)
 fi
 
 if $USE_NODE || $USE_NODE_GCP; then
@@ -184,6 +197,13 @@ if $USE_PUSH; then
         docker tag $NODE_GCP_IMAGE_NAME nearone/$NODE_GCP_IMAGE_NAME:$image_tag
         docker push nearone/$NODE_GCP_IMAGE_NAME:$image_tag
     fi
+
+    if $USE_RUST_LAUNCHER; then
+        temp_dir=$(mktemp -d)
+        echo "using $temp_dir"
+        skopeo copy --all --dest-compress docker-daemon:$RUST_LAUNCHER_IMAGE_NAME:latest dir:$temp_dir
+        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$RUST_LAUNCHER_IMAGE_NAME:$image_tag
+    fi
 fi
 
 echo "commit hash: $GIT_COMMIT_HASH"
@@ -198,6 +218,9 @@ if $USE_NODE_GCP; then
     echo "node gcp docker image hash: $node_gcp_image_hash"
 fi
 if $USE_LAUNCHER; then
-    echo "launcher binary hash: $launcher_binary_hash"
     echo "launcher docker image hash: $launcher_image_hash"
+fi
+if $USE_RUST_LAUNCHER; then
+    echo "rust launcher binary hash: $rust_launcher_binary_hash"
+    echo "rust launcher docker image hash: $rust_launcher_image_hash"
 fi

@@ -1,4 +1,4 @@
-name: Build Docker Launcher Image
+name: Build Docker Rust Launcher Image
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,7 +12,7 @@ on:
 
 jobs:
   build-and-push-images:
-    name: "Build and push Docker launcher image with commit hash"
+    name: "Build and push Rust launcher Docker image with commit hash"
     runs-on: warp-ubuntu-2404-x64-8x
     permissions:
       contents: read
