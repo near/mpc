@@ -7,6 +7,8 @@ use crate::types::VerifyForeignTxId;
 use anyhow::Context;
 use chain_gateway::event_subscriber::block_events::BlockEventId;
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
+use chain_gateway::event_subscriber::block_events::EventData;
+use chain_gateway::event_subscriber::block_events::ExecutorFunctionCallSuccessWithPromiseData;
 use chain_gateway::event_subscriber::block_events::MatchedEvent;
 use chain_gateway::event_subscriber::subscriber::BlockEventFilter;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriber;
@@ -96,6 +98,7 @@ pub struct ChainBlockUpdate {
 }
 
 const DEFAULT_BUFFER_SIZE: usize = 300;
+
 
 struct EventSubscriptions {
     sign_request: BlockEventId,
@@ -213,16 +216,11 @@ pub(crate) async fn listen_blocks(
 }
 
 async fn handle_message(
-    streamer_message: near_indexer_primitives::StreamerMessage,
-    stats: Arc<Mutex<IndexerStats>>,
+    block: BlockUpdate,
     mpc_contract_id: &AccountId,
     block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    event_subscriptions: EventSubscriptions,
 ) -> anyhow::Result<()> {
-    let block_height = streamer_message.block.header.height;
-    let mut stats_lock = stats.lock().await;
-    stats_lock.block_heights_processing.insert(block_height);
-    drop(stats_lock);
-
     let mut signature_requests = vec![];
     let mut completed_signatures = vec![];
     let mut ckd_requests = vec![];
@@ -230,21 +228,11 @@ async fn handle_message(
     let mut verify_foreign_tx_requests = vec![];
     let mut completed_verify_foreign_txs = vec![];
 
-    for shard in streamer_message.shards {
-        for outcome in shard.receipt_execution_outcomes {
-            metrics::MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES.inc();
-            let receipt = outcome.receipt.clone();
-            let execution_outcome = outcome.execution_outcome.clone();
+    for event in block.events {
+        if event.id == event_subscriptions.sign_request {
 
-            // TODO(#950): this should improve once the issue is resolved
-            if let Some(next_receipt_id) =
-                try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
-            {
-                if let Some((args, method_name)) = try_extract_function_call_args(&receipt) {
-                    match method_name.as_str() {
-                        SIGN => {
                             if let Some((signature_id, sign_args)) =
-                                try_get_sign_args(&receipt, next_receipt_id, args, method_name)
+                                try_get_sign_args(event.event_data)
                             {
                                 signature_requests.push(SignatureRequestFromChain {
                                     signature_id,
@@ -254,8 +242,7 @@ async fn handle_message(
                                 });
                                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                             }
-                        }
-                        REQUEST_APP_PRIVATE_KEY => {
+        } else if event.id == event_subscriptions.ckd_request {
                             if let Some((ckd_id, ckd_args)) =
                                 try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
                             {
@@ -266,8 +253,7 @@ async fn handle_message(
                                 });
                                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
                             }
-                        }
-                        VERIFY_FOREIGN_TRANSACTION => {
+                        } else if event.id == event_subscriptions.verify_foreign_tx_request {
                             if let Some((verify_foreign_tx_id, verify_foreign_tx_args)) =
                                 try_get_verify_foreign_tx_args(
                                     &receipt,
@@ -283,34 +269,19 @@ async fn handle_message(
                                 });
                                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
                             }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id) {
-                if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
-                    match method_name.as_str() {
-                        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
+                        } else if event.id == event_subscriptions.sign_response {
                             completed_signatures.push(request_id);
                             metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
-                        }
-                        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
+                        } else if event.id == event_subscriptions.ckd_response {
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
-                        }
+                        } else if event.id == event_subscriptions.verify_foreign_tx_response {
                         // TODO(#1959): add this function to the contract
-                        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_verify_foreign_txs.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
                         }
-                        _ => {}
-                    }
-                }
             }
-        }
-    }
+
 
     crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
 
@@ -382,15 +353,15 @@ fn try_extract_next_receipt_id(
 }
 
 fn try_get_sign_args(
-    receipt: &ReceiptView,
-    next_receipt_id: CryptoHash,
-    args: &FunctionArgs,
-    expected_name: &String,
-) -> Option<(SignatureId, SignArgs)> {
-    let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(args) {
+    event_data: EventData,
+) -> Option<SignatureRequestFromChain > {
+    let EventData::ExecutorFunctionCallSuccessWithPromise(ExecutorFunctionCallSuccessWithPromiseData { receipt_id, predecessor_id, next_receipt_id, args_raw }) = event_data else {
+            tracing::warn!(target: "mpc", "expected ExecutorFunctionCallSuccessWithPromiseData for sign args");
+        return None};
+    let sign_args = match serde_json::from_slice::<'_, UnvalidatedSignArgs>(&args_raw) {
         Ok(parsed) => parsed,
         Err(err) => {
-            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
+            tracing::warn!(target: "mpc", %err, "failed to parse sign arguments");
             return None;
         }
     };
@@ -398,27 +369,31 @@ fn try_get_sign_args(
     let sign_request: SignRequest = match sign_args.request.try_into() {
         Ok(request) => request,
         Err(err) => {
-            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
+            tracing::warn!(target: "mpc", %err, "failed to parse sign arguments");
             return None;
         }
     };
-
     tracing::info!(
         target: "mpc",
-        receipt_id = %receipt.receipt_id,
+        receipt_id = %receipt_id,
         next_receipt_id = %next_receipt_id,
-        caller_id = receipt.predecessor_id.to_string(),
+        caller_id = predecessor_id.to_string(),
         request = ?sign_request,
-        "indexed new `{}` function call", expected_name
+        "indexed new sign function call"
     );
-    Some((
-        next_receipt_id,
-        SignArgs {
+
+        let signature_id = next_receipt_id;
+        let sign_args = SignArgs {
             payload: sign_request.payload,
             path: sign_request.path,
             domain_id: sign_request.domain_id,
-        },
-    ))
+        };
+Some(SignatureRequestFromChain {
+                                  signature_id,
+                                    receipt_id ,
+                                    request: sign_args,
+                                    predecessor_id,
+                                })
 }
 
 fn try_get_ckd_args(
