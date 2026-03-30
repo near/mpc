@@ -1,4 +1,6 @@
-use alloc::{format, string::String, vec::Vec};
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use alloc::format;
+use alloc::{string::String, vec::Vec};
 use core::{marker::PhantomData, str::FromStr};
 use hex::FromHexError;
 use thiserror::Error;
@@ -25,15 +27,20 @@ pub trait HashSpec<const N: usize> {
 /// `S` is a zero-sized marker implementing [`HashSpec<N>`] that binds the type name
 /// to the byte length `N`. All trait implementations are generic — adding a new hash
 /// type requires only a spec struct, a trait impl, and a type alias.
+#[serde_with::serde_as]
 #[derive(derive_where::DeriveWhere, derive_more::Deref, derive_more::AsRef, derive_more::Into)]
 #[derive_where(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive_where(Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct HashDigest<S: HashSpec<N>, const N: usize> {
     #[deref]
     #[as_ref]
     #[into]
+    #[serde_as(as = "serde_with::hex::Hex")]
     bytes: [u8; N],
     #[into(skip)]
     #[derive_where(skip)]
+    #[serde(skip)]
     _marker: PhantomData<S>,
 }
 
@@ -45,23 +52,6 @@ impl<S: HashSpec<N>, const N: usize> core::fmt::Debug for HashDigest<S, N> {
         hex::encode_to_slice(self.bytes, hex_buf).map_err(|_| core::fmt::Error)?;
         let hex_str = core::str::from_utf8(hex_buf).map_err(|_| core::fmt::Error)?;
         write!(f, "{}({})", S::NAME, hex_str)
-    }
-}
-
-impl<S: HashSpec<N>, const N: usize> serde::Serialize for HashDigest<S, N> {
-    fn serialize<Ser: serde::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
-        serializer.serialize_str(&hex::encode(self.bytes))
-    }
-}
-
-impl<'de, S: HashSpec<N>, const N: usize> serde::Deserialize<'de> for HashDigest<S, N> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let hex_str = <String as serde::Deserialize>::deserialize(deserializer)?;
-        let decoded = hex::decode(&hex_str).map_err(serde::de::Error::custom)?;
-        let bytes: [u8; N] = decoded.try_into().map_err(|v: Vec<u8>| {
-            serde::de::Error::custom(format!("expected {} bytes, got {}", N, v.len()))
-        })?;
-        Ok(Self::new(bytes))
     }
 }
 
@@ -137,10 +127,6 @@ impl<S: HashSpec<N>, const N: usize> HashDigest<S, N> {
         hex::encode(self.as_ref())
     }
 
-    pub fn as_bytes(&self) -> [u8; N] {
-        self.bytes
-    }
-
     pub const fn new(bytes: [u8; N]) -> Self {
         Self {
             bytes,
@@ -164,10 +150,6 @@ impl<S: HashSpec<N>, const N: usize> FromStr for HashDigest<S, N> {
         Ok(hash_bytes.into())
     }
 }
-
-// ============================================================================
-// define_hash! convenience macro
-// ============================================================================
 
 /// Defines a new hash type backed by [`HashDigest`].
 ///
@@ -198,10 +180,6 @@ macro_rules! define_hash {
         }
     };
 }
-
-// ============================================================================
-// Concrete hash types
-// ============================================================================
 
 define_hash!(
     /// Hash of a Docker image running in the TEE environment. Used as a proposal for a new TEE
@@ -438,7 +416,7 @@ mod tests {
         let hash = TestHash48::from(bytes);
 
         // Then
-        assert_eq!(hash.as_bytes(), bytes);
+        assert_eq!(*hash, bytes);
         assert_eq!(hash.as_hex(), "ab".repeat(48));
 
         let converted_back: [u8; 48] = hash.into();
