@@ -77,11 +77,9 @@ pub struct VerifyForeignTxRequestFromChain {
     pub verify_foreign_tx_id: VerifyForeignTxId,
     pub receipt_id: CryptoHash,
     pub request: VerifyForeignTransactionRequestArgs,
-    pub predecessor_id: AccountId,
 }
 
 #[derive(Clone)]
-
 pub struct ChainBlockUpdate {
     pub block: BlockViewLite,
     pub signature_requests: Vec<SignatureRequestFromChain>,
@@ -215,7 +213,6 @@ async fn handle_message(
                                     verify_foreign_tx_id,
                                     receipt_id: receipt.receipt_id,
                                     request: verify_foreign_tx_args,
-                                    predecessor_id: receipt.predecessor_id.clone(),
                                 });
                                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
                             }

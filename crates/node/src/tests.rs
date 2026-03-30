@@ -476,7 +476,6 @@ pub async fn request_verify_foreign_tx_and_await_response(
     let request = VerifyForeignTxRequestFromChain {
         verify_foreign_tx_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
-        predecessor_id: user.parse().unwrap(),
         request: VerifyForeignTransactionRequestArgs {
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [42u8; 32].into(),

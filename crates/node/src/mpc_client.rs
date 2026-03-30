@@ -302,7 +302,11 @@ where
                         .verify_foreign_tx_requests
                         .into_iter()
                         .map(|verify_foreign_tx_request_from_chain| {
-                            let VerifyForeignTxRequestFromChain { verify_foreign_tx_id, receipt_id, request, .. } = verify_foreign_tx_request_from_chain;
+                            let VerifyForeignTxRequestFromChain {
+                                verify_foreign_tx_id,
+                                receipt_id,
+                                request
+                            } = verify_foreign_tx_request_from_chain;
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
