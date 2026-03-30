@@ -1,5 +1,3 @@
-#![allow(clippy::indexing_slicing)]
-
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::seq::SliceRandom as _;
 use rand_core::SeedableRng;
@@ -31,79 +29,42 @@ fn participants_num() -> usize {
 
 type PreparedSimulatedDkg<C> = PreparedOutputs<KeygenOutput<C>>;
 
-/// Benches the DKG protocol for Secp256k1
+fn bench_dkg<C: Ciphersuite>(c: &mut Criterion, name: &str)
+where
+    Element<C>: Send,
+    Scalar<C>: Send,
+{
+    let num = participants_num();
+    let max_malicious = *MAX_MALICIOUS;
+    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
+
+    let mut group = c.benchmark_group("dkg");
+    group.sample_size(*SAMPLE_SIZE);
+    group.bench_function(
+        format!("dkg_{name}_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
+        |b| {
+            b.iter_batched(
+                || {
+                    let preps = prepare_simulated_dkg::<C>(threshold());
+                    sizes.push(preps.simulator.get_view_size());
+                    preps
+                },
+                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
+                criterion::BatchSize::SmallInput,
+            );
+        },
+    );
+    analyze_received_sizes(&sizes, true);
+}
+
 fn bench_dkg_secp256k1(c: &mut Criterion) {
-    let num = participants_num();
-    let max_malicious = *MAX_MALICIOUS;
-    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
-
-    let mut group = c.benchmark_group("dkg");
-    group.sample_size(*SAMPLE_SIZE);
-    group.bench_function(
-        format!("dkg_secp256k1_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
-        |b| {
-            b.iter_batched(
-                || {
-                    let preps = prepare_simulated_dkg::<Secp256K1Sha256>(threshold());
-                    sizes.push(preps.simulator.get_view_size());
-                    preps
-                },
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
-                criterion::BatchSize::SmallInput,
-            );
-        },
-    );
-    analyze_received_sizes(&sizes, true);
+    bench_dkg::<Secp256K1Sha256>(c, "secp256k1");
 }
-
-/// Benches the DKG protocol for Ed25519
 fn bench_dkg_ed25519(c: &mut Criterion) {
-    let num = participants_num();
-    let max_malicious = *MAX_MALICIOUS;
-    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
-
-    let mut group = c.benchmark_group("dkg");
-    group.sample_size(*SAMPLE_SIZE);
-    group.bench_function(
-        format!("dkg_ed25519_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
-        |b| {
-            b.iter_batched(
-                || {
-                    let preps = prepare_simulated_dkg::<Ed25519Sha512>(threshold());
-                    sizes.push(preps.simulator.get_view_size());
-                    preps
-                },
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
-                criterion::BatchSize::SmallInput,
-            );
-        },
-    );
-    analyze_received_sizes(&sizes, true);
+    bench_dkg::<Ed25519Sha512>(c, "ed25519");
 }
-
-/// Benches the DKG protocol for BLS12-381
 fn bench_dkg_bls12381(c: &mut Criterion) {
-    let num = participants_num();
-    let max_malicious = *MAX_MALICIOUS;
-    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
-
-    let mut group = c.benchmark_group("dkg");
-    group.sample_size(*SAMPLE_SIZE);
-    group.bench_function(
-        format!("dkg_bls12381_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
-        |b| {
-            b.iter_batched(
-                || {
-                    let preps = prepare_simulated_dkg::<BLS12381SHA256>(threshold());
-                    sizes.push(preps.simulator.get_view_size());
-                    preps
-                },
-                |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
-                criterion::BatchSize::SmallInput,
-            );
-        },
-    );
-    analyze_received_sizes(&sizes, true);
+    bench_dkg::<BLS12381SHA256>(c, "bls12381");
 }
 
 criterion_group!(

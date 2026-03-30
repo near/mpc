@@ -65,8 +65,7 @@ pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>
 
     let key_packages = run_keygen(&participants, threshold, rng);
 
-    let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
-        Vec::with_capacity(participants.len());
+    let mut protocols: Vec<_> = Vec::with_capacity(participants.len());
 
     for (((p, keygen_out), share0), share1) in
         key_packages.clone().into_iter().zip(shares0).zip(shares1)
