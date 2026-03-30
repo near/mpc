@@ -15,7 +15,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/dstack.sock:/var/run/dstack.sock
       - /tapp:/tapp:ro
-      - shared-volume:/mnt/shared:rw
+      - shared-volume:/mnt/shared:ro
 
     security_opt:
       - no-new-privileges:true
