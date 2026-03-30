@@ -29,7 +29,7 @@ done
 : "${RUST_LAUNCHER_IMAGE_NAME:=mpc-rust-launcher-nontee}"
 
 if $USE_LAUNCHER; then
-  cd "$REPO_ROOT/deployment/cvm-deployment"
+  cd "$REPO_ROOT/tee_launcher"
   export LAUNCHER_IMAGE_NAME
   docker compose -f launcher_docker_compose_nontee.yaml up -d
   sleep 10
@@ -41,7 +41,7 @@ if $USE_LAUNCHER; then
   fi
   CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
 elif $USE_RUST_LAUNCHER; then
-  cd deployment/cvm-deployment
+  cd "$REPO_ROOT/deployment/cvm-deployment"
   export RUST_LAUNCHER_IMAGE_NAME
   docker compose -f launcher_docker_compose_nontee.yaml up -d
   sleep 10

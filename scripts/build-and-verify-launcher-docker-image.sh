@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-LAUNCHER_COMPOSE="deployment/cvm-deployment/launcher_docker_compose.yaml"
+LAUNCHER_COMPOSE="tee_launcher/launcher_docker_compose.yaml"
 LAUNCHER_TEMPLATE="crates/contract/assets/launcher_docker_compose.yaml.template"
 
 ./deployment/build-images.sh --launcher
