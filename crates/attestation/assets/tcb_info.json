@@ -3,11 +3,11 @@
   "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
   "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
   "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93",
-  "rtmr3": "71b2c153fc7de62f01da8ebb0c6d5dee80a6c2e29f07679f3e6c6f9214c7f2e08314f60884a42a733227c4002847c238",
+  "rtmr3": "39ce9ebc6f4860794f665651b78396fa9576b64772926e2de447f76a516e4c9b3ad74d2887726393ff10a8baa787d3ce",
   "os_image_hash": "7d47512fda31dc5a7318f72ae1869a3c76323981eea21fc30cafd0f79668642c",
-  "compose_hash": "cb76c0dadc67fe2c817437c4c96a1be23ba9120c2ce08b346cc4daafabe58472",
+  "compose_hash": "85dfa942c16039591f3acfa1c95b121c133b35f34a6c3007863441f58f69bbba",
   "device_id": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "app_compose": "{\n    \"manifest_version\": 2,\n    \"name\": \"mpc-localnet-one-node-1774789079\",\n    \"runner\": \"docker-compose\",\n    \"docker_compose_file\": \"version: '3.8'\\n\\nservices:\\n  launcher:\\n    image: nearone/mpc-launcher@sha256:fa963f9477b62fcc031696a33a1e92cfb8f424879333f67023cd6f095e7f12e6\\n\\n    container_name: launcher\\n\\n    environment:\\n      - PLATFORM=TEE\\n      - DOCKER_CONTENT_TRUST=1\\n      - DEFAULT_IMAGE_DIGEST=sha256:6a5700fccbb3facddd1f3934f4976c4dcefc176c4aac28cd2fd035984b368980\\n\\n    volumes:\\n      - /var/run/docker.sock:/var/run/docker.sock\\n      - /var/run/dstack.sock:/var/run/dstack.sock\\n      - /tapp:/tapp:ro\\n      - shared-volume:/mnt/shared:rw\\n\\n    security_opt:\\n      - no-new-privileges:true\\n\\n    read_only: true\\n\\n    tmpfs:\\n      - /tmp\\n\\nvolumes:\\n  shared-volume:\\n    name: shared-volume\\n\",\n    \"kms_enabled\": false,\n    \"gateway_enabled\": false,\n    \"local_key_provider_enabled\": true,\n    \"key_provider_id\": \"\",\n    \"public_logs\": true,\n    \"public_sysinfo\": true,\n    \"allowed_envs\": [],\n    \"no_instance_id\": true,\n    \"secure_time\": false\n}",
+  "app_compose": "{\n    \"manifest_version\": 2,\n    \"name\": \"mpc-localnet-one-node-1774887308\",\n    \"runner\": \"docker-compose\",\n    \"docker_compose_file\": \"version: '3.8'\\n\\nservices:\\n  launcher:\\n    image: nearone/mpc-launcher@sha256:971b1b3d9cc48338993b11132154d7bc807a2b6b03e31ed07d7a1826be186314\\n\\n    container_name: launcher\\n\\n    environment:\\n      - PLATFORM=TEE\\n      - DOCKER_CONTENT_TRUST=1\\n      - DEFAULT_IMAGE_DIGEST=sha256:6a5700fccbb3facddd1f3934f4976c4dcefc176c4aac28cd2fd035984b368980\\n\\n    volumes:\\n      - /var/run/docker.sock:/var/run/docker.sock\\n      - /var/run/dstack.sock:/var/run/dstack.sock\\n      - /tapp:/tapp:ro\\n      - shared-volume:/mnt/shared:rw\\n\\n    security_opt:\\n      - no-new-privileges:true\\n\\n    read_only: true\\n\\n    tmpfs:\\n      - /tmp\\n\\nvolumes:\\n  shared-volume:\\n    name: shared-volume\\n\",\n    \"kms_enabled\": false,\n    \"gateway_enabled\": false,\n    \"local_key_provider_enabled\": true,\n    \"key_provider_id\": \"\",\n    \"public_logs\": true,\n    \"public_sysinfo\": true,\n    \"allowed_envs\": [],\n    \"no_instance_id\": true,\n    \"secure_time\": false\n}",
   "event_log": [
     {
       "imr": 0,
@@ -159,16 +159,16 @@
     {
       "imr": 3,
       "event_type": 134217729,
-      "digest": "d2d27b8bd29318382975669b85058fef1597adbcbe986591618d8391bbbf27015d488a5afbe77e9c04523f39602afa3b",
+      "digest": "e5601226cc4943ebf821545becc3e555380afa54fd710ac78d6838b90ec4c991b6ca1062e139cea3343fe42f4b51b621",
       "event": "app-id",
-      "event_payload": "cb76c0dadc67fe2c817437c4c96a1be23ba9120c"
+      "event_payload": "85dfa942c16039591f3acfa1c95b121c133b35f3"
     },
     {
       "imr": 3,
       "event_type": 134217729,
-      "digest": "7af2cfe20ed12e6550fdbb9a808034e32592493364e7d9892f9faf387484ad9f10c896c5e30d72149fb6e54171140fb3",
+      "digest": "80e700809651c7e13d12eead1e5c0dcbf1e7c1bd858267767a099f5a1a7b50392b79c8c6788713791da58426a8ad0e30",
       "event": "compose-hash",
-      "event_payload": "cb76c0dadc67fe2c817437c4c96a1be23ba9120c2ce08b346cc4daafabe58472"
+      "event_payload": "85dfa942c16039591f3acfa1c95b121c133b35f34a6c3007863441f58f69bbba"
     },
     {
       "imr": 3,
