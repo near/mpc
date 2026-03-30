@@ -1,6 +1,55 @@
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr, str::FromStr};
 
 use near_account_id::AccountId;
+
+/// A network address that can be either an IP:port or a hostname:port.
+///
+/// This type is used for CLI arguments where users may specify either an IP address
+/// or a domain name. DNS resolution is deferred to connection time.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NodeAddress {
+    Ip(SocketAddr),
+    Host(String, u16),
+}
+
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum NodeAddressParseError {
+    #[error("expected host:port, got '{0}'")]
+    MissingPort(String),
+    #[error("empty hostname in '{0}'")]
+    EmptyHostname(String),
+    #[error("invalid port in '{0}'")]
+    InvalidPort(String),
+}
+
+impl FromStr for NodeAddress {
+    type Err = NodeAddressParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(addr) = s.parse::<SocketAddr>() {
+            return Ok(NodeAddress::Ip(addr));
+        }
+        let (host, port_str) = s
+            .rsplit_once(':')
+            .ok_or_else(|| NodeAddressParseError::MissingPort(s.to_string()))?;
+        if host.is_empty() {
+            return Err(NodeAddressParseError::EmptyHostname(s.to_string()));
+        }
+        let port: u16 = port_str
+            .parse()
+            .map_err(|_| NodeAddressParseError::InvalidPort(s.to_string()))?;
+        Ok(NodeAddress::Host(host.to_string(), port))
+    }
+}
+
+impl fmt::Display for NodeAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NodeAddress::Ip(addr) => write!(f, "{addr}"),
+            NodeAddress::Host(host, port) => write!(f, "{host}:{port}"),
+        }
+    }
+}
 
 #[derive(clap::Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
@@ -48,7 +97,7 @@ pub struct RegisterArgs {
 pub struct GetKeysharesArgs {
     /// host address of the MPC node to retrieve keyshares from (`host:port`).
     #[arg(long, env)]
-    pub mpc_node_address: SocketAddr,
+    pub mpc_node_address: NodeAddress,
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
@@ -61,11 +110,51 @@ pub struct GetKeysharesArgs {
 pub struct PutKeysharesArgs {
     /// host address of the MPC node to retrieve keyshares from (`host:port`).
     #[arg(long, env)]
-    pub mpc_node_address: SocketAddr,
+    pub mpc_node_address: NodeAddress,
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
     /// hex encryption key
     #[arg(long, env)]
     pub backup_encryption_key_hex: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    use std::net::SocketAddrV4;
+
+    use rstest::rstest;
+
+    use super::*;
+
+    #[test]
+    fn test_parse_ip_address() {
+        let addr: NodeAddress = "127.0.0.1:8081".parse().unwrap();
+        assert_eq!(
+            addr,
+            NodeAddress::Ip(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8081)))
+        );
+    }
+
+    #[test]
+    fn test_parse_hostname() {
+        let addr: NodeAddress = "multichain-testnet-0.nearone.org:8081".parse().unwrap();
+        assert_eq!(
+            addr,
+            NodeAddress::Host("multichain-testnet-0.nearone.org".to_string(), 8081)
+        );
+    }
+
+    #[rstest]
+    #[case::missing_port("hostname-only", NodeAddressParseError::MissingPort("hostname-only".to_string()))]
+    #[case::empty_hostname(":8081", NodeAddressParseError::EmptyHostname(":8081".to_string()))]
+    #[case::invalid_port("host:notaport", NodeAddressParseError::InvalidPort("host:notaport".to_string()))]
+    fn test_parse_errors(#[case] input: &str, #[case] want_err: NodeAddressParseError) {
+        let err = input
+            .parse::<NodeAddress>()
+            .expect_err(&format!("expected error for: {input}"));
+        assert_eq!(err, want_err);
+    }
 }
