@@ -133,7 +133,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let image_hash_watcher_handle = root_runtime.spawn(monitor_allowed_image_hashes(
         cancellation_token.child_token(),
-        (*config.tee.image_hash).clone(),
+        *config.tee.image_hash,
         allowed_hashes_in_contract,
         image_hash_storage,
         shutdown_signal_sender.clone(),
