@@ -11,6 +11,9 @@ use futures::{StreamExt, TryStreamExt};
 
 use crate::port_allocator::E2ePortAllocator;
 
+const GENESIS_FILE: &str = "genesis.json";
+const NODE_KEY_FILE: &str = "node_key.json";
+
 /// Wraps a NEAR sandbox node for E2E tests.
 ///
 /// Starts a Docker container running `nearprotocol/sandbox`, exposes RPC and
@@ -92,7 +95,7 @@ impl NearSandbox {
         tracing::info!(container_id = %container_id, "sandbox container started");
 
         if let Err(e) = wait_for_rpc(rpc_port).await {
-            let _ = docker
+            if let Err(rm_err) = docker
                 .remove_container(
                     &container_id,
                     Some(RemoveContainerOptions {
@@ -100,7 +103,10 @@ impl NearSandbox {
                         ..Default::default()
                     }),
                 )
-                .await;
+                .await
+            {
+                tracing::error!(error = %rm_err, "failed to remove sandbox container during cleanup");
+            }
             return Err(e.context("sandbox node failed to become ready"));
         }
 
@@ -108,12 +114,24 @@ impl NearSandbox {
         std::fs::create_dir_all(&sandbox_dir)
             .with_context(|| format!("failed to create {}", sandbox_dir.display()))?;
 
-        copy_from_container(&docker, &container_id, "/data/genesis.json", &sandbox_dir).await?;
-        copy_from_container(&docker, &container_id, "/data/node_key.json", &sandbox_dir).await?;
+        copy_from_container(
+            &docker,
+            &container_id,
+            &format!("/data/{GENESIS_FILE}"),
+            &sandbox_dir,
+        )
+        .await?;
+        copy_from_container(
+            &docker,
+            &container_id,
+            &format!("/data/{NODE_KEY_FILE}"),
+            &sandbox_dir,
+        )
+        .await?;
 
         tracing::info!(
             rpc_url = %format!("http://127.0.0.1:{rpc_port}"),
-            genesis = %sandbox_dir.join("genesis.json").display(),
+            genesis = %sandbox_dir.join(GENESIS_FILE).display(),
             "NEAR sandbox ready"
         );
 
@@ -131,11 +149,11 @@ impl NearSandbox {
     }
 
     pub fn genesis_path(&self) -> PathBuf {
-        self.sandbox_dir.join("genesis.json")
+        self.sandbox_dir.join(GENESIS_FILE)
     }
 
     pub fn boot_nodes(&self) -> anyhow::Result<String> {
-        let node_key_path = self.sandbox_dir.join("node_key.json");
+        let node_key_path = self.sandbox_dir.join(NODE_KEY_FILE);
         let content = std::fs::read_to_string(&node_key_path)
             .with_context(|| format!("failed to read {}", node_key_path.display()))?;
         let parsed: serde_json::Value =
@@ -171,7 +189,7 @@ impl Drop for NearSandbox {
                 .build()
                 .unwrap();
             rt.block_on(async {
-                let _ = docker
+                if let Err(e) = docker
                     .remove_container(
                         &id,
                         Some(RemoveContainerOptions {
@@ -179,7 +197,10 @@ impl Drop for NearSandbox {
                             ..Default::default()
                         }),
                     )
-                    .await;
+                    .await
+                {
+                    tracing::error!(error = %e, "failed to remove sandbox container during drop");
+                }
             });
         })
         .join()
@@ -243,14 +264,14 @@ async fn wait_for_rpc(rpc_port: u16) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
-        match client.get(&url).send().await {
+        let err = match client.get(&url).send().await {
             Ok(resp) if resp.status().is_success() => return Ok(()),
-            _ => {
-                if tokio::time::Instant::now() >= deadline {
-                    bail!("sandbox RPC on port {rpc_port} did not become ready within 30s");
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            }
+            Ok(resp) => format!("HTTP {}", resp.status()),
+            Err(e) => e.to_string(),
+        };
+        if tokio::time::Instant::now() >= deadline {
+            bail!("sandbox RPC on port {rpc_port} did not become ready within 30s: {err}");
         }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 }

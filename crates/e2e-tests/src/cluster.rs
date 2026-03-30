@@ -23,8 +23,9 @@ use crate::port_allocator::E2ePortAllocator;
 const DEFAULT_SANDBOX_IMAGE: &str = "nearprotocol/sandbox:2.11.0-rc.3";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = "ed25519:3JoAjwLppjgvxkk6kNsu5wQj3FfUJnpBKWieC73hVTpBeA6FZiCc5tfyZL3a3tHeQJegQe4qGSv8FLsYp7TYd1r6";
-// Polling interval for waiting contract state.
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
+pub const DEFAULT_TRIPLES_TO_BUFFER: i64 = 10;
+pub const DEFAULT_PRESIGNATURES_TO_BUFFER: i64 = 10;
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -41,9 +42,9 @@ pub struct MpcClusterConfig {
     /// Port seed for the port allocator (must be unique across parallel tests).
     pub port_seed: u16,
     /// Triple buffer size per node.
-    pub triples_to_buffer: usize,
+    pub triples_to_buffer: i64,
     /// Presignature buffer size per node.
-    pub presignatures_to_buffer: usize,
+    pub presignatures_to_buffer: i64,
     /// Docker image for the NEAR sandbox (e.g. `"nearprotocol/sandbox:2.11.0-rc.3"`).
     pub sandbox_image: String,
     /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.
@@ -80,8 +81,8 @@ impl MpcClusterConfig {
             binary_paths: vec![default_mpc_binary_path()],
             contract_wasm,
             port_seed,
-            triples_to_buffer: 10,
-            presignatures_to_buffer: 10,
+            triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
+            presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
             sandbox_image: DEFAULT_SANDBOX_IMAGE.to_string(),
             home_base: None,
         }
@@ -162,43 +163,10 @@ impl MpcCluster {
             &ports,
         )?;
 
-        // Give nodes a moment to initialize, then verify they haven't crashed.
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        for (i, node) in nodes.iter_mut().enumerate() {
-            if let MpcNodeState::Running(n) = node {
-                anyhow::ensure!(
-                    !n.has_exited(),
-                    "mpc-node {i} exited early — check {}/stderr.log",
-                    n.setup().home_dir().display()
-                );
-            }
-        }
+        ensure_nodes_alive(&mut nodes).await?;
 
         if !config.domains.is_empty() {
-            if let Err(e) =
-                add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await
-            {
-                // Dump the last lines of each node's stdout for diagnosis.
-                for (i, node) in nodes.iter().enumerate() {
-                    let log_path = match node {
-                        MpcNodeState::Running(n) => n.setup().home_dir().join("stdout.log"),
-                        MpcNodeState::Stopped(s) => s.home_dir().join("stdout.log"),
-                    };
-                    if let Ok(content) = std::fs::read_to_string(&log_path) {
-                        let tail: String = content
-                            .lines()
-                            .rev()
-                            .take(30)
-                            .collect::<Vec<_>>()
-                            .into_iter()
-                            .rev()
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        tracing::error!(node = i, "--- node stdout tail ---\n{tail}");
-                    }
-                }
-                return Err(e);
-            }
+            add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await?;
         }
 
         let user_accounts = create_user_accounts(&blockchain, 1).await?;
@@ -339,18 +307,18 @@ impl MpcCluster {
     pub async fn wait_for_metric_all_nodes(
         &self,
         name: &str,
-        expected: i64,
+        predicate: impl Fn(i64) -> bool,
         timeout: Duration,
     ) -> anyhow::Result<()> {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
             let values = self.get_metric_all_nodes(name).await?;
-            if values.iter().all(|v| v.unwrap_or(0) >= expected) {
+            if values.iter().all(|v| v.is_some_and(&predicate)) {
                 return Ok(());
             }
             if tokio::time::Instant::now() >= deadline {
                 anyhow::bail!(
-                    "metric {name} did not reach {expected} on all nodes within {}s (values: {values:?})",
+                    "metric {name} predicate not satisfied on all nodes within {}s (values: {values:?})",
                     timeout.as_secs()
                 );
             }
@@ -725,6 +693,22 @@ fn build_participants_from_nodes(
 fn generate_deterministic_key(seed: u64) -> SigningKey {
     let mut rng = StdRng::seed_from_u64(seed);
     SigningKey::generate(&mut rng)
+}
+
+/// Wait briefly and verify all running nodes haven't crashed.
+async fn ensure_nodes_alive(nodes: &mut [MpcNodeState]) -> anyhow::Result<()> {
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    for (i, node) in nodes.iter_mut().enumerate() {
+        if let MpcNodeState::Running(n) = node {
+            anyhow::ensure!(
+                !n.has_exited(),
+                "mpc-node {i} exited early — check {}/{}",
+                n.setup().home_dir().display(),
+                crate::mpc_node::STDERR_LOG
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn wait_for_contract_state(

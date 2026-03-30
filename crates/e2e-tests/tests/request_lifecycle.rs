@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use e2e_tests::{MpcCluster, MpcClusterConfig};
@@ -9,26 +9,30 @@ use serde_json::json;
 
 /// Load the pre-built MPC contract WASM.
 ///
-/// Expects the WASM to be pre-optimized with `wasm-opt -Oz` so it fits within
-/// the NEAR sandbox's HTTP body limit. Build it with:
+/// Uses `MPC_CONTRACT_WASM` env var if set, otherwise falls back to the
+/// default cargo build output path. The WASM must be optimized with
+/// `wasm-opt -Oz` to fit within the sandbox's HTTP body limit.
+///
 /// ```sh
 /// cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
 /// wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
 ///   -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 /// ```
 fn load_contract_wasm() -> Vec<u8> {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let wasm_path =
-        manifest_dir.join("../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm");
+    let wasm_path: PathBuf = std::env::var("MPC_CONTRACT_WASM")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm")
+        });
 
     std::fs::read(&wasm_path).unwrap_or_else(|e| {
         panic!(
             "Failed to read contract WASM at {}: {e}\n\
              Build it first:\n  \
              cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked\n  \
-             wasm-opt -Oz {p} -o {p}",
-            wasm_path.display(),
-            p = wasm_path.display()
+             wasm-opt -Oz <path> -o <path>",
+            wasm_path.display()
         )
     })
 }
@@ -53,13 +57,13 @@ async fn test_request_lifecycle() {
         .try_init()
         .ok();
 
+    // Given: a running MPC cluster with presignatures ready.
     let contract_wasm = load_contract_wasm();
     let config = MpcClusterConfig::default_for_test(1, contract_wasm);
     let cluster = MpcCluster::start(config)
         .await
         .expect("failed to start cluster");
 
-    // Verify contract is in Running state with expected domains.
     let state = cluster
         .get_contract_state()
         .await
@@ -77,17 +81,17 @@ async fn test_request_lifecycle() {
         .collect();
     assert!(!sign_domains.is_empty(), "no Sign domains found");
 
-    // Wait for nodes to generate presignatures before sending requests.
     cluster
         .wait_for_metric_all_nodes(
             "mpc_owned_num_presignatures_available",
-            1,
+            |v| v >= e2e_tests::DEFAULT_PRESIGNATURES_TO_BUFFER,
             Duration::from_secs(120),
         )
         .await
         .expect("nodes did not generate presignatures in time");
 
-    // Send a sign request for each Sign domain.
+    // When: we send a sign request for each Sign domain.
+    // Then: each returns a valid signature matching the requested scheme.
     for domain in &sign_domains {
         let payload = match domain.scheme {
             SignatureScheme::Secp256k1 => generate_ecdsa_payload(),

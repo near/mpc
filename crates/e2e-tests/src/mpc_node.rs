@@ -15,6 +15,10 @@ const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
 const LISTEN_BLOCKS_FILE: &str = "listen_blocks";
+const START_CONFIG_FILE: &str = "start_config.toml";
+const SECRETS_FILE: &str = "secrets.json";
+pub const STDOUT_LOG: &str = "stdout.log";
+pub const STDERR_LOG: &str = "stderr.log";
 
 /// Handle to a running `mpc-node` OS process. Always represents a live process.
 /// Obtained by calling [`MpcNodeSetup::start()`].
@@ -127,8 +131,8 @@ pub struct MpcNodeSetup {
     // Derived config values
     secret_store_key_hex: String,
     backup_encryption_key_hex: String,
-    triples_to_buffer: usize,
-    presignatures_to_buffer: usize,
+    triples_to_buffer: i64,
+    presignatures_to_buffer: i64,
 
     // Config file path (written on creation)
     config_path: PathBuf,
@@ -151,7 +155,7 @@ impl MpcNodeSetup {
             )
         })?;
 
-        let config_path = args.home_dir.join("start_config.toml");
+        let config_path = args.home_dir.join(START_CONFIG_FILE);
 
         let setup = Self {
             node_index: args.node_index,
@@ -181,6 +185,8 @@ impl MpcNodeSetup {
     /// The ed25519 public key formatted as `"ed25519:<base58>"`.
     pub fn p2p_public_key_str(&self) -> String {
         String::from(&Ed25519PublicKey::from(
+            // .to_bytes() because `near-mpc-crypto-types` doesn't enable the `ed25519-dalek` feature
+            // which provides `From<&VerifyingKey>` for `Ed25519PublicKey`.
             self.p2p_signing_key.verifying_key().to_bytes(),
         ))
     }
@@ -234,9 +240,9 @@ impl MpcNodeSetup {
             "starting mpc-node"
         );
 
-        let stdout_file = std::fs::File::create(self.home_dir.join("stdout.log"))
+        let stdout_file = std::fs::File::create(self.home_dir.join(STDOUT_LOG))
             .context("failed to create stdout log")?;
-        let stderr_file = std::fs::File::create(self.home_dir.join("stderr.log"))
+        let stderr_file = std::fs::File::create(self.home_dir.join(STDERR_LOG))
             .context("failed to create stderr log")?;
 
         let child = Command::new(&self.binary_path)
@@ -270,7 +276,7 @@ impl MpcNodeSetup {
     /// Write `secrets.json` so the node uses our pre-generated keys instead of
     /// generating random ones.
     fn write_secrets_json(&self) -> anyhow::Result<()> {
-        let secrets_path = self.home_dir.join("secrets.json");
+        let secrets_path = self.home_dir.join(SECRETS_FILE);
 
         let format_key = |key: &SigningKey| -> String {
             let keypair_bytes = key.to_keypair_bytes();
@@ -371,8 +377,8 @@ pub struct MpcNodeSetupArgs {
     pub near_signer_key: SigningKey,
     pub ports: NodePorts,
     pub mpc_contract_id: AccountId,
-    pub triples_to_buffer: usize,
-    pub presignatures_to_buffer: usize,
+    pub triples_to_buffer: i64,
+    pub presignatures_to_buffer: i64,
     /// Chain ID from the sandbox's genesis.json.
     pub chain_id: String,
     /// Path to genesis.json on the host (copied from sandbox container).
@@ -491,7 +497,7 @@ struct SyncModeBlock {
 #[derive(Serialize)]
 struct Triple {
     concurrency: usize,
-    desired_triples_to_buffer: usize,
+    desired_triples_to_buffer: i64,
     timeout_sec: u64,
     parallel_triple_generation_stagger_time_sec: u64,
 }
@@ -499,7 +505,7 @@ struct Triple {
 #[derive(Serialize)]
 struct Presignature {
     concurrency: usize,
-    desired_presignatures_to_buffer: usize,
+    desired_presignatures_to_buffer: i64,
     timeout_sec: u64,
 }
 

@@ -14,6 +14,9 @@ pub struct NearBlockchain {
     rpc_url: String,
 }
 
+/// A `near_kit::Near` client bound to a specific account.
+/// Wrapped in a struct to keep `near_kit` out of the public API surface,
+/// making it easier to swap the underlying client (e.g. for testnet).
 pub struct ClientHandle {
     inner: near_kit::Near,
 }
@@ -33,13 +36,13 @@ impl NearBlockchain {
     pub async fn create_account(
         &self,
         name: &str,
-        balance_near: u64,
+        balance_near: u128,
         key: &SigningKey,
     ) -> anyhow::Result<()> {
         self.root_client
             .transaction(name)
             .create_account()
-            .transfer(near_kit::NearToken::from_near(balance_near as u128))
+            .transfer(near_kit::NearToken::from_near(balance_near))
             .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()))
             .send()
             .await
@@ -50,14 +53,14 @@ impl NearBlockchain {
     pub async fn create_account_and_deploy(
         &self,
         name: &str,
-        balance_near: u64,
+        balance_near: u128,
         key: &SigningKey,
         wasm: &[u8],
     ) -> anyhow::Result<DeployedContract> {
         self.root_client
             .transaction(name)
             .create_account()
-            .transfer(near_kit::NearToken::from_near(balance_near as u128))
+            .transfer(near_kit::NearToken::from_near(balance_near))
             .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()))
             .deploy(wasm.to_vec())
             .send()
