@@ -13,18 +13,27 @@ pub enum HashParseError {
     InvalidLength { expected: usize, got: usize },
 }
 
-/// Marker trait binding a hash type name to its display name.
-pub trait HashSpec {
-    const NAME: &'static str;
+/// Extracts a clean type name from a marker struct, stripping the module path and `Marker` suffix.
+/// E.g. `my_crate::DockerImageHashMarker` → `"DockerImageHash"`.
+fn marker_name<S: 'static>() -> &'static str {
+    let full = core::any::type_name::<S>();
+    let short = match full.rsplit_once("::") {
+        Some((_, s)) => s,
+        None => full,
+    };
+    match short.strip_suffix("Marker") {
+        Some(s) => s,
+        None => short,
+    }
 }
 
-/// A fixed-size hash digest parameterized by a [`HashSpec`] marker and byte length `N`.
+/// A fixed-size hash digest parameterized by a marker type and byte length `N`.
 #[serde_with::serde_as]
 #[derive(derive_where::DeriveWhere, derive_more::Deref, derive_more::AsRef, derive_more::Into)]
 #[derive_where(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive_where(Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct HashDigest<S: HashSpec, const N: usize> {
+pub struct Hash<S: 'static, const N: usize> {
     #[deref]
     #[as_ref]
     #[into]
@@ -36,19 +45,19 @@ pub struct HashDigest<S: HashSpec, const N: usize> {
     _marker: PhantomData<S>,
 }
 
-impl<S: HashSpec, const N: usize> core::fmt::Debug for HashDigest<S, N> {
+impl<S: 'static, const N: usize> core::fmt::Debug for Hash<S, N> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}({})", S::NAME, hex::encode(self.bytes))
+        write!(f, "{}({})", marker_name::<S>(), hex::encode(self.bytes))
     }
 }
 
-impl<S: HashSpec, const N: usize> borsh::BorshSerialize for HashDigest<S, N> {
+impl<S: 'static, const N: usize> borsh::BorshSerialize for Hash<S, N> {
     fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
         self.bytes.serialize(writer)
     }
 }
 
-impl<S: HashSpec, const N: usize> borsh::BorshDeserialize for HashDigest<S, N> {
+impl<S: 'static, const N: usize> borsh::BorshDeserialize for Hash<S, N> {
     fn deserialize_reader<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Result<Self> {
         let bytes = <[u8; N]>::deserialize_reader(reader)?;
         Ok(Self::new(bytes))
@@ -56,9 +65,9 @@ impl<S: HashSpec, const N: usize> borsh::BorshDeserialize for HashDigest<S, N> {
 }
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-impl<S: HashSpec, const N: usize> borsh::BorshSchema for HashDigest<S, N> {
+impl<S: 'static, const N: usize> borsh::BorshSchema for Hash<S, N> {
     fn declaration() -> borsh::schema::Declaration {
-        S::NAME.to_string()
+        marker_name::<S>().to_string()
     }
 
     fn add_definitions_recursively(
@@ -81,9 +90,9 @@ impl<S: HashSpec, const N: usize> borsh::BorshSchema for HashDigest<S, N> {
 }
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-impl<S: HashSpec, const N: usize> schemars::JsonSchema for HashDigest<S, N> {
+impl<S: 'static, const N: usize> schemars::JsonSchema for Hash<S, N> {
     fn schema_name() -> String {
-        S::NAME.to_string()
+        marker_name::<S>().to_string()
     }
 
     fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
@@ -102,13 +111,13 @@ impl<S: HashSpec, const N: usize> schemars::JsonSchema for HashDigest<S, N> {
     }
 }
 
-impl<S: HashSpec, const N: usize> From<[u8; N]> for HashDigest<S, N> {
+impl<S: 'static, const N: usize> From<[u8; N]> for Hash<S, N> {
     fn from(bytes: [u8; N]) -> Self {
         Self::new(bytes)
     }
 }
 
-impl<S: HashSpec, const N: usize> HashDigest<S, N> {
+impl<S: 'static, const N: usize> Hash<S, N> {
     /// Converts the hash to a hexadecimal string representation.
     pub fn as_hex(&self) -> String {
         hex::encode(self.as_ref())
@@ -122,7 +131,7 @@ impl<S: HashSpec, const N: usize> HashDigest<S, N> {
     }
 }
 
-impl<S: HashSpec, const N: usize> FromStr for HashDigest<S, N> {
+impl<S: 'static, const N: usize> FromStr for Hash<S, N> {
     type Err = HashParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -138,49 +147,25 @@ impl<S: HashSpec, const N: usize> FromStr for HashDigest<S, N> {
     }
 }
 
-/// Defines a new hash type as `HashDigest<{Name}Spec, N>`.
-#[macro_export]
-macro_rules! define_hash {
-    ($(#[$meta:meta])* $name:ident, $n:literal) => {
-        $crate::_macro_deps::paste::paste! {
-            #[doc(hidden)]
-            pub struct [<$name Spec>];
-
-            impl $crate::hash::HashSpec for [<$name Spec>] {
-                const NAME: &'static str = stringify!($name);
-            }
-
-            $(#[$meta])*
-            pub type $name = $crate::hash::HashDigest<[<$name Spec>], $n>;
-        }
-    };
-}
-
-define_hash!(
-    /// Hash of a Docker image running in the TEE environment. Used as a proposal for a new TEE
-    /// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
-    /// measurement and more).
-    DockerImageHash,
-    32
-);
+pub struct DockerImageHashMarker;
+/// Hash of a Docker image running in the TEE environment. Used as a proposal for a new TEE
+/// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
+/// measurement and more).
+pub type DockerImageHash = Hash<DockerImageHashMarker, 32>;
 
 /// Hash of the MPC node's Docker image.
 pub type NodeImageHash = DockerImageHash;
 
-define_hash!(
-    /// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment.
-    /// It is computed from the launcher's Docker Compose template populated with the launcher image
-    /// hash and the MPC node's Docker image hash.
-    LauncherDockerComposeHash,
-    32
-);
+pub struct LauncherDockerComposeHashMarker;
+/// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment.
+/// It is computed from the launcher's Docker Compose template populated with the launcher image
+/// hash and the MPC node's Docker image hash.
+pub type LauncherDockerComposeHash = Hash<LauncherDockerComposeHashMarker, 32>;
 
-define_hash!(
-    /// Hash of the launcher Docker image itself. Voted on by participants to allow
-    /// launcher upgrades without contract redeployment.
-    LauncherImageHash,
-    32
-);
+pub struct LauncherImageHashMarker;
+/// Hash of the launcher Docker image itself. Voted on by participants to allow
+/// launcher upgrades without contract redeployment.
+pub type LauncherImageHash = Hash<LauncherImageHashMarker, 32>;
 
 #[cfg(test)]
 mod tests {
@@ -191,8 +176,11 @@ mod tests {
     use borsh::BorshDeserialize;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
-    define_hash!(TestHash, 32);
-    define_hash!(TestHash48, 48);
+    struct TestHashMarker;
+    type TestHash = Hash<TestHashMarker, 32>;
+
+    struct TestHash48Marker;
+    type TestHash48 = Hash<TestHash48Marker, 48>;
 
     #[test]
     fn test_from_bytes_array() {

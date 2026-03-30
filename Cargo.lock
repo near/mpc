@@ -5787,7 +5787,6 @@ dependencies = [
  "derive-where",
  "derive_more 2.1.1",
  "hex",
- "paste",
  "rand 0.8.5",
  "schemars 0.8.22",
  "serde",

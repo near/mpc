@@ -5,26 +5,25 @@ use std::collections::BTreeMap;
 
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
-    MrtdHash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR0 TDX measurement.
-    Rtmr0Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR1 TDX measurement.
-    Rtmr1Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR2 TDX measurement.
-    Rtmr2Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the key provider event.
-    KeyProviderEventDigest, 48
-);
+pub struct MrtdHashMarker;
+/// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
+pub type MrtdHash = mpc_primitives::hash::Hash<MrtdHashMarker, 48>;
+
+pub struct Rtmr0HashMarker;
+/// SHA-384 digest of the RTMR0 TDX measurement.
+pub type Rtmr0Hash = mpc_primitives::hash::Hash<Rtmr0HashMarker, 48>;
+
+pub struct Rtmr1HashMarker;
+/// SHA-384 digest of the RTMR1 TDX measurement.
+pub type Rtmr1Hash = mpc_primitives::hash::Hash<Rtmr1HashMarker, 48>;
+
+pub struct Rtmr2HashMarker;
+/// SHA-384 digest of the RTMR2 TDX measurement.
+pub type Rtmr2Hash = mpc_primitives::hash::Hash<Rtmr2HashMarker, 48>;
+
+pub struct KeyProviderEventDigestMarker;
+/// SHA-384 digest of the key provider event.
+pub type KeyProviderEventDigest = mpc_primitives::hash::Hash<KeyProviderEventDigestMarker, 48>;
 
 /// Tracks votes for adding or removing OS measurements.
 /// Each participant can have at most one active vote at a time.

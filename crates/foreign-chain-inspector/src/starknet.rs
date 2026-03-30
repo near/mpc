@@ -2,8 +2,11 @@ use near_mpc_contract_interface::types::StarknetLog;
 
 pub mod inspector;
 
-mpc_primitives::define_hash!(StarknetBlockHash, 32);
-mpc_primitives::define_hash!(StarknetTransactionHash, 32);
+pub struct StarknetBlockHashMarker;
+pub type StarknetBlockHash = mpc_primitives::hash::Hash<StarknetBlockHashMarker, 32>;
+
+pub struct StarknetTransactionHashMarker;
+pub type StarknetTransactionHash = mpc_primitives::hash::Hash<StarknetTransactionHashMarker, 32>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StarknetExtractedValue {

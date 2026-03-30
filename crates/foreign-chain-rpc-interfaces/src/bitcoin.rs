@@ -3,8 +3,13 @@ use crate::to_rpc_params_impl;
 use jsonrpsee::core::traits::ToRpcParams;
 use serde::{Deserialize, Serialize};
 
-mpc_primitives::define_hash!(TransportBitcoinBlockHash, 32);
-mpc_primitives::define_hash!(TransportBitcoinTransactionHash, 32);
+pub struct TransportBitcoinBlockHashMarker;
+pub type TransportBitcoinBlockHash =
+    mpc_primitives::hash::Hash<TransportBitcoinBlockHashMarker, 32>;
+
+pub struct TransportBitcoinTransactionHashMarker;
+pub type TransportBitcoinTransactionHash =
+    mpc_primitives::hash::Hash<TransportBitcoinTransactionHashMarker, 32>;
 
 /// Partial RPC response for `getrawtransaction`. See link below for full spec;
 /// <https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true>

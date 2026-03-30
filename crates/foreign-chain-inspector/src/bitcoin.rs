@@ -1,7 +1,10 @@
 pub mod inspector;
 
-mpc_primitives::define_hash!(BitcoinBlockHash, 32);
-mpc_primitives::define_hash!(BitcoinTransactionHash, 32);
+pub struct BitcoinBlockHashMarker;
+pub type BitcoinBlockHash = mpc_primitives::hash::Hash<BitcoinBlockHashMarker, 32>;
+
+pub struct BitcoinTransactionHashMarker;
+pub type BitcoinTransactionHash = mpc_primitives::hash::Hash<BitcoinTransactionHashMarker, 32>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BitcoinExtractedValue {
