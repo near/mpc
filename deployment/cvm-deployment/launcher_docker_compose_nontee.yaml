@@ -6,7 +6,7 @@ services:
     environment:
       - PLATFORM=NONTEE
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:6a5700fccbb3facddd1f3934f4976c4dcefc176c4aac28cd2fd035984b368980
+      - DEFAULT_IMAGE_DIGEST=sha256:e2ef71c220158f9ee19a265d583647eedb4e0cd7ca37021fbf0ab34e3d214ed0
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
