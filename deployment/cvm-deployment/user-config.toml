@@ -2,7 +2,7 @@
 # Only needs enough for the launcher to start and pull the MPC node image.
 
 [launcher_config]
-image_tags = ["3.7.0"]
+image_tags = ["main-9515e18"]
 image_name = "nearone/mpc-node"
 registry = "registry.hub.docker.com"
 rpc_request_timeout_secs = 10
