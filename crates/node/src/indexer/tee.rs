@@ -2,12 +2,11 @@ use std::future::Future;
 use std::{sync::Arc, time::Duration};
 
 use backon::{BackoffBuilder, ExponentialBuilder};
+use chain_gateway::state_viewer::WatchContractState;
 use mpc_contract::tee::proposal::{LauncherDockerComposeHash, NodeImageHash};
 use mpc_contract::tee::tee_state::NodeId;
 use near_account_id::AccountId;
 use tokio::sync::watch;
-
-use crate::indexer::IndexerState;
 
 const ALLOWED_HASHES_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
@@ -79,12 +78,13 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
 /// a [`watch::Receiver`] that will be continuously updated with the latest
 /// allowed [`AllowedDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
-pub async fn monitor_allowed_docker_images(
+pub async fn monitor_allowed_docker_images<T>(
     sender: watch::Sender<Vec<NodeImageHash>>,
-    indexer_state: Arc<IndexerState>,
+    // todo: use WatchContractState
+    watcher: impl WatchContractState<T>,
 ) {
-    let view_client = indexer_state.view_client.clone();
-    let fetcher = { |id| view_client.get_mpc_allowed_image_hashes(id) };
+    //let view_client = indexer_state.view_client.clone();
+    //let fetcher = { |id| view_client.get_mpc_allowed_image_hashes(id) };
 
     monitor_allowed_hashes(sender, indexer_state, &fetcher).await
 }

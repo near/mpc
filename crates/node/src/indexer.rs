@@ -62,7 +62,7 @@ pub mod types;
 pub mod fake;
 
 #[derive(Clone)]
-struct MpcContractViewer<V: ViewMethod> {
+struct MpcContractViewer<V> {
     mpc_contract_id: AccountId,
     viewer: V,
 }

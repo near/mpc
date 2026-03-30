@@ -2,7 +2,7 @@ use super::handler::{listen_blocks, EventSubscriptions};
 use super::migrations::{monitor_migrations, ContractMigrationInfo};
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
-use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
+use super::{IndexerAPI, IndexerState, MpcContractViewer, RealForeignChainPolicyReader};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
@@ -11,11 +11,13 @@ use crate::indexer::tee::{
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriber;
+use chain_gateway::state_viewer::SubscribeToContractMethod;
 use chain_gateway::ChainGateway;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
 use near_indexer::Indexer;
+use near_mpc_contract_interface::method_names::ALLOWED_DOCKER_IMAGE_HASHES;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
@@ -104,11 +106,19 @@ pub fn spawn_real_indexer(
             //    mpc_indexer_config.mpc_contract_id.clone(),
             //));
 
+            let mpc_contract_id = mpc_indexer_config.mpc_contract_id.clone();
+            let contract_viewer = MpcContractViewer {
+                mpc_contract_id: mpc_contract_id.clone(),
+                viewer: gateway.clone(),
+            };
+
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
                 account_secret_key.clone(),
                 respond_config_clone,
-                Arc::clone(&indexer_state),
+                // todo: implement MpcContractViewer on ChainGateway and pass only one variable
+                contract_viewer.clone(),
+                gateway.clone(),
             );
 
             let Ok(txn_sender) = txn_sender_result else {
@@ -122,7 +132,7 @@ pub fn spawn_real_indexer(
             };
 
             let foreign_chain_policy_reader =
-                RealForeignChainPolicyReader::new(indexer_state.clone());
+                RealForeignChainPolicyReader::new(contract_viewer.clone());
             if foreign_chain_policy_reader_sender
                 .send(foreign_chain_policy_reader)
                 .is_err()
@@ -137,7 +147,11 @@ pub fn spawn_real_indexer(
                 process_blocks_receiver
             };
 
-            tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
+            // todo: spawn and monitor
+            // make a method monitor(impl WatchContractState<T>, watch::sender<T>)
+            let contract = gateway
+                .subscribe_to_contract_method(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
+                .await;
 
             tokio::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,
