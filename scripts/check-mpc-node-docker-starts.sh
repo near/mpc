@@ -3,15 +3,19 @@
 set -euo pipefail
 
 USE_LAUNCHER=false
+USE_RUST_LAUNCHER=false
 
 for arg in "$@"; do
   case "$arg" in
   --launcher)
     USE_LAUNCHER=true
     ;;
+  --rust-launcher)
+    USE_RUST_LAUNCHER=true
+    ;;
   *)
     echo "Unknown parameter: $arg"
-    echo "Usage: $0 [--node] [--launcher] [--push]"
+    echo "Usage: $0 [--launcher] [--rust-launcher]"
     exit 1
     ;;
   esac
@@ -19,6 +23,7 @@ done
 
 : "${NODE_IMAGE_NAME:=mpc-node}"
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher-nontee}"
+: "${RUST_LAUNCHER_IMAGE_NAME:=mpc-rust-launcher-nontee}"
 
 if $USE_LAUNCHER; then
   cd tee_launcher
@@ -28,6 +33,18 @@ if $USE_LAUNCHER; then
   launcher_logs=$(docker logs --tail 10 "$LAUNCHER_IMAGE_NAME" 2>&1)
   if ! echo "$launcher_logs" | grep "MPC launched successfully."; then
     echo "MPC launcher image did not start properly"
+    echo "$launcher_logs"
+    exit 1
+  fi
+  CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
+elif $USE_RUST_LAUNCHER; then
+  cd deployment/cvm-deployment
+  export RUST_LAUNCHER_IMAGE_NAME
+  docker compose -f launcher_docker_compose_nontee.yaml up -d
+  sleep 10
+  launcher_logs=$(docker logs --tail 10 "$RUST_LAUNCHER_IMAGE_NAME" 2>&1)
+  if ! echo "$launcher_logs" | grep "MPC launched successfully."; then
+    echo "Rust MPC launcher image did not start properly"
     echo "$launcher_logs"
     exit 1
   fi
@@ -74,6 +91,8 @@ echo "✅ Container started successfully"
 docker rm -f "$CONTAINER_ID"
 
 if $USE_LAUNCHER; then
+  docker compose -f launcher_docker_compose_nontee.yaml down -v --rmi local
+elif $USE_RUST_LAUNCHER; then
   docker compose -f launcher_docker_compose_nontee.yaml down -v --rmi local
 else
   rm /tmp/image-digest.bin
