@@ -291,11 +291,9 @@ pub async fn request_signature_and_await_response(
         Curve::Bls12381 => unreachable!(),
     };
     let request = SignatureRequestFromChain {
-        entropy: rand::random(),
         signature_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
         predecessor_id: user.parse().unwrap(),
-        timestamp_nanosec: rand::random(),
         request: SignArgs {
             domain_id: domain.id,
             path: "m/44'/60'/0'/0/0".to_string(),
@@ -398,9 +396,6 @@ async fn do_request_ckd_and_await_response(
     let request = CKDRequestFromChain {
         ckd_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
-        predecessor_id: user.parse().unwrap(),
-        entropy: rand::random(),
-        timestamp_nanosec: rand::random(),
         request: CKDArgs {
             app_public_key,
             domain_id: domain.id,
@@ -482,8 +477,6 @@ pub async fn request_verify_foreign_tx_and_await_response(
         verify_foreign_tx_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
         predecessor_id: user.parse().unwrap(),
-        entropy: rand::random(),
-        timestamp_nanosec: rand::random(),
         request: VerifyForeignTransactionRequestArgs {
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [42u8; 32].into(),
