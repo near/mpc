@@ -50,7 +50,7 @@ jobs:
 
   launcher-nontee-check:
     name: "MPC Launcher non-tee check"
-    runs-on: warp-ubuntu-2404-x64-8x
+    runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -67,6 +67,29 @@ jobs:
 
   docker-launcher-build-and-verify:
     name: "Build MPC Launcher Docker image and verify"
+    runs-on: warp-ubuntu-2404-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Build launcher docker image and verify its hash
+        shell: bash
+        run: |
+          ./scripts/build-and-verify-launcher-docker-image.sh
+
+  docker-rust-launcher-build-and-verify:
+    name: "Build Rust Launcher Docker image and verify"
     runs-on: warp-ubuntu-2404-x64-8x
     timeout-minutes: 60
     permissions:
@@ -98,10 +121,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
-      - name: Build launcher docker image and verify its hash
+      - name: Build Rust launcher docker image and verify its hash
         shell: bash
         run: |
-          ./scripts/build-and-verify-launcher-docker-image.sh
+          ./scripts/build-and-verify-rust-launcher-docker-image.sh
 
   mpc-unittests:
     name: "Cargo test: ${{ matrix.group }}"
@@ -482,13 +505,13 @@ jobs:
         run: |
           python3 -m venv tee_launcher/venv
           source tee_launcher/venv/bin/activate
-          cd tee_launcher
+          cd tee_launcher 
           pip install -r requirements.txt
 
       - name: Run pytest
         run: |
           source tee_launcher/venv/bin/activate
-          cd tee_launcher
+          cd tee_launcher 
           PYTHONPATH=. pytest -vsx
 
   fast-ci-checks:

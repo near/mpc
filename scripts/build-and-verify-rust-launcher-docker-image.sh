@@ -2,34 +2,29 @@
 
 set -euo pipefail
 
-./deployment/build-images.sh --launcher
+./deployment/build-images.sh --rust-launcher
 
-# Step 1: Get the built launcher image's manifest hash
+# Step 1: Get the built Rust launcher image's manifest hash
 temp_dir=$(mktemp -d)
 echo "using $temp_dir"
-# This compresses the built image to a local directory, which implicitly computes the manifest
-# digest in $temp_dir/manifest.json
-skopeo copy --all --dest-compress docker-daemon:mpc-launcher:latest dir:$temp_dir
+skopeo copy --all --dest-compress docker-daemon:mpc-rust-launcher:latest dir:$temp_dir
 built_launcher_hash=$(sha256sum $temp_dir/manifest.json | cut -d' ' -f1)
 echo "Built launcher image hash: $built_launcher_hash"
 
 # Step 2: Extract the launcher and MPC hashes from the deployment compose file
-deployed_launcher_hash=$(grep -o 'nearone/mpc-launcher@sha256:.*' tee_launcher/launcher_docker_compose.yaml | grep -o '@sha256:.*' | cut -c 9-)
-deployed_mpc_hash=$(grep 'DEFAULT_IMAGE_DIGEST=sha256:' tee_launcher/launcher_docker_compose.yaml | grep -o 'sha256:.*' | cut -c 8-)
+deployed_launcher_hash=$(grep -o 'nearone/mpc-launcher@sha256:.*' deployment/cvm-deployment/launcher_docker_compose.yaml | grep -o '@sha256:.*' | cut -c 9-)
+deployed_mpc_hash=$(grep 'DEFAULT_IMAGE_DIGEST=sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | grep -o 'sha256:.*' | cut -c 8-)
 
 # Step 3: Fill the contract template with the deployment compose hashes and compare
-# This verifies both:
-# - The template structure matches the deployment compose exactly
-# - The built launcher hash matches what's in the deployment compose
 filled_template=$(sed \
     -e "s/{{LAUNCHER_IMAGE_HASH}}/${deployed_launcher_hash}/" \
     -e "s/{{DEFAULT_IMAGE_DIGEST_HASH}}/${deployed_mpc_hash}/" \
     crates/contract/assets/launcher_docker_compose.yaml.template)
 
-if ! diff <(echo "$filled_template") tee_launcher/launcher_docker_compose.yaml > /dev/null; then
+if ! diff <(echo "$filled_template") deployment/cvm-deployment/launcher_docker_compose.yaml > /dev/null; then
     echo "Template structure verification failed"
     echo "The contract template (filled with deployment hashes) does not match the deployment compose file."
-    diff <(echo "$filled_template") tee_launcher/launcher_docker_compose.yaml || true
+    diff <(echo "$filled_template") deployment/cvm-deployment/launcher_docker_compose.yaml || true
     exit 1
 fi
 echo "Template structure verified: contract template matches deployment compose"
