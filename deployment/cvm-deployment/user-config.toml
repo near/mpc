@@ -1,6 +1,5 @@
 # Minimal config for non-TEE CI check.
-# Mirrors the Python launcher's user-config.conf settings.
-# No [near_init] section — the node handles genesis defaults internally.
+# Only needs enough for the launcher to start and pull the MPC node image.
 
 [launcher_config]
 image_tags = ["main-9515e18"]
@@ -20,8 +19,13 @@ home_dir = "/data"
 format = "plain"
 filter = "info"
 
+[mpc_node_config.near_init]
+chain_id = "testnet"
+boot_nodes = "ed25519:ERguu7jQuYk8pxNsRC6FdezvNsegBPva1GRGqjmtD7i2@10.10.10.10:24567"
+download_genesis = true
+
 [mpc_node_config.secrets]
-secret_store_key_hex = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+secret_store_key_hex = "BD399143F5B3126098B0EAA023A0E730BD399143F5B3126098B0EAA023A0E730"
 backup_encryption_key_hex = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [mpc_node_config.node]
