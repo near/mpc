@@ -71,7 +71,6 @@ impl<S: HashSpec<N>, const N: usize> core::hash::Hash for HashDigest<S, N> {
     }
 }
 
-// -- Debug -------------------------------------------------------------------
 
 impl<S: HashSpec<N>, const N: usize> core::fmt::Debug for HashDigest<S, N> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -84,7 +83,6 @@ impl<S: HashSpec<N>, const N: usize> core::fmt::Debug for HashDigest<S, N> {
     }
 }
 
-// -- Serde (hex string) ------------------------------------------------------
 
 impl<S: HashSpec<N>, const N: usize> serde::Serialize for HashDigest<S, N> {
     fn serialize<Ser: serde::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
@@ -103,7 +101,6 @@ impl<'de, S: HashSpec<N>, const N: usize> serde::Deserialize<'de> for HashDigest
     }
 }
 
-// -- Borsh -------------------------------------------------------------------
 
 impl<S: HashSpec<N>, const N: usize> borsh::BorshSerialize for HashDigest<S, N> {
     fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
@@ -118,7 +115,6 @@ impl<S: HashSpec<N>, const N: usize> borsh::BorshDeserialize for HashDigest<S, N
     }
 }
 
-// -- BorshSchema (behind `abi` feature) --------------------------------------
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl<S: HashSpec<N>, const N: usize> borsh::BorshSchema for HashDigest<S, N> {
@@ -145,7 +141,6 @@ impl<S: HashSpec<N>, const N: usize> borsh::BorshSchema for HashDigest<S, N> {
     }
 }
 
-// -- JsonSchema (behind `abi` feature) ---------------------------------------
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl<S: HashSpec<N>, const N: usize> schemars::JsonSchema for HashDigest<S, N> {
@@ -169,7 +164,6 @@ impl<S: HashSpec<N>, const N: usize> schemars::JsonSchema for HashDigest<S, N> {
     }
 }
 
-// -- From / Into / constructors ----------------------------------------------
 
 impl<S: HashSpec<N>, const N: usize> From<[u8; N]> for HashDigest<S, N> {
     fn from(bytes: [u8; N]) -> Self {
@@ -195,7 +189,6 @@ impl<S: HashSpec<N>, const N: usize> HashDigest<S, N> {
     }
 }
 
-// -- FromStr -----------------------------------------------------------------
 
 impl<S: HashSpec<N>, const N: usize> FromStr for HashDigest<S, N> {
     type Err = HashParseError;
