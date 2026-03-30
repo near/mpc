@@ -15,12 +15,11 @@ echo "Built launcher image hash: $built_launcher_hash"
 deployed_launcher_hash=$(grep -o 'nearone/mpc-launcher@sha256:.*' deployment/cvm-deployment/launcher_docker_compose.yaml | grep -o '@sha256:.*' | cut -c 9-)
 deployed_mpc_hash=$(grep 'DEFAULT_IMAGE_DIGEST=sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | grep -o 'sha256:.*' | cut -c 8-)
 
-# Step 3: Fill the Rust launcher contract template with the deployment hashes and compare
-# The Rust launcher uses a separate template (shared-volume:rw) from the Python launcher (:ro)
+# Step 3: Fill the contract template with the deployment hashes and compare
 filled_template=$(sed \
     -e "s/{{LAUNCHER_IMAGE_HASH}}/${deployed_launcher_hash}/" \
     -e "s/{{DEFAULT_IMAGE_DIGEST_HASH}}/${deployed_mpc_hash}/" \
-    crates/contract/assets/launcher_docker_compose_rust.yaml.template)
+    crates/contract/assets/launcher_docker_compose.yaml.template)
 
 if ! diff <(echo "$filled_template") deployment/cvm-deployment/launcher_docker_compose.yaml > /dev/null; then
     echo "Template structure verification failed"
