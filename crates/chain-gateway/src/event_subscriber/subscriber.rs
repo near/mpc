@@ -1,16 +1,11 @@
-use std::time::Duration;
-
 use near_account_id::AccountId;
 
 use super::block_events::BlockEventId;
-
-const DEFAULT_SEND_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct BlockEventSubscriber {
     pub(super) subscriptions: Vec<(BlockEventId, BlockEventFilter)>,
     next_id: BlockEventId,
     pub(super) buffer_size: usize,
-    pub(super) backpressure_timeout: Duration,
 }
 
 impl BlockEventSubscriber {
@@ -19,13 +14,7 @@ impl BlockEventSubscriber {
             subscriptions: vec![],
             next_id: 0.into(),
             buffer_size,
-            backpressure_timeout: DEFAULT_SEND_TIMEOUT,
         }
-    }
-
-    pub fn with_backpressure_timeout(mut self, timeout: Duration) -> Self {
-        self.backpressure_timeout = timeout;
-        self
     }
 
     /// Add a filter and get a unique identifier for it.

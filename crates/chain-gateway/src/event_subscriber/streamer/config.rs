@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::BTreeMap;
 
 use derive_more::{Deref, DerefMut};
 use near_account_id::AccountId;
@@ -11,7 +11,6 @@ use crate::event_subscriber::{
 pub(super) struct StreamerConfig {
     pub(super) block_events: BlockEvents,
     pub(super) buffer_size: usize,
-    pub(super) backpressure_timeout: Duration,
 }
 
 // helper struct for efficient access
@@ -73,11 +72,9 @@ impl From<BlockEventSubscriber> for StreamerConfig {
         };
 
         let buffer_size = value.buffer_size;
-        let backpressure_timeout = value.backpressure_timeout;
         StreamerConfig {
             block_events,
             buffer_size,
-            backpressure_timeout,
         }
     }
 }

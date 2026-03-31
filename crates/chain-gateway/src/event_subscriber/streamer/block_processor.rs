@@ -1,4 +1,3 @@
-use std::time::Duration;
 
 use near_indexer::IndexerExecutionOutcomeWithReceipt;
 use near_indexer_primitives::{
@@ -25,7 +24,6 @@ pub(super) async fn listen_blocks(
     block_events: BlockEvents,
     stats_tx: tokio::sync::watch::Sender<IndexerStats>,
     block_update_sender: tokio::sync::mpsc::Sender<BlockUpdate>,
-    backpressure_timeout: Duration,
 ) -> Result<(), ChainGatewayError> {
     let mut blocks_processed_count: u64 = 0;
     // Note: the mpc-node indexer (handler.rs) uses `buffer_unordered` for concurrent
@@ -45,13 +43,14 @@ pub(super) async fn listen_blocks(
         // requires some care on the node side, which is why we will only do so after we integrated
         // the chain-gateway struct with the node.
         let block_update = process_block(streamer_message, &block_events);
-        // Only send if we have something the consumer is interested in.
-        if !block_update.events.is_empty() {
-            tokio::time::timeout(backpressure_timeout, block_update_sender.send(block_update))
-                .await
-                .map_err(|_| ChainGatewayError::BlockEventBufferFull)?
-                .map_err(|_| ChainGatewayError::BlockEventReceiverDropped)?;
-        }
+        // Send every block. Some consumers might require this.
+        // Note that a timeout here is not requried. The `stream` channel from the nearcore indxer
+        // is of buffer size 100 and the near node will simply pause sending blocks
+        // in case the buffer is full.
+        block_update_sender
+            .send(block_update)
+            .await
+            .map_err(|_| ChainGatewayError::BlockEventReceiverDropped)?;
         blocks_processed_count = blocks_processed_count.saturating_add(1);
         stats_tx.send_modify(|s| {
             s.blocks_processed_count = blocks_processed_count;

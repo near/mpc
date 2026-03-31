@@ -19,7 +19,7 @@ use chain_gateway_test_contract::{
         Call, make_private_set_args, make_set_value_in_promise_args,
         make_spawn_promise_in_callback_args,
     },
-    consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, SPAWN_PROMISE_WITH_CALLBACK, VIEW},
+    consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW},
 };
 use rstest::rstest;
 
@@ -93,10 +93,17 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
         .unwrap();
 
     // Then: expect a matching block update
-    let BlockUpdate { events, .. } = tokio::time::timeout(EVENT_TIMEOUT, receiver.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let events = tokio::time::timeout(EVENT_TIMEOUT, async move {
+        while let Some(BlockUpdate { events, .. }) = receiver.recv().await {
+            if !events.is_empty() {
+                return Some(events);
+            }
+        }
+        None
+    })
+    .await
+    .unwrap()
+    .unwrap();
 
     assert_eq!(events.len(), 1);
 
@@ -180,14 +187,17 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
     }
 
     drop(watch_value);
-
-    assert!(
-        receiver.is_empty(),
-        "expected no executor events for a failed call, found: {:?}",
-        receiver.recv().await.unwrap()
-    );
-
+    // close the localnet, such that we no longer get events
     localnet.shutdown().await;
+
+    // Then: Ensure we didin' receive any events
+    tokio::time::timeout(EVENT_TIMEOUT, async move {
+        while let Some(BlockUpdate { events, .. }) = receiver.recv().await {
+            assert!(events.is_empty(), "did not expect logged events");
+        }
+    })
+    .await
+    .unwrap();
 }
 
 struct ReceiverFunctionCallTest {
@@ -264,10 +274,17 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
         .unwrap();
 
     // Then: expect a matching block update
-    let BlockUpdate { events, .. } = tokio::time::timeout(EVENT_TIMEOUT, receiver.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let events = tokio::time::timeout(EVENT_TIMEOUT, async move {
+        while let Some(BlockUpdate { events, .. }) = receiver.recv().await {
+            if !events.is_empty() {
+                return Some(events);
+            }
+        }
+        None
+    })
+    .await
+    .unwrap()
+    .unwrap();
 
     assert_eq!(events.len(), 1);
 
@@ -321,10 +338,17 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
         .unwrap();
 
     // Then: expect a matching block update
-    let BlockUpdate { events, .. } = tokio::time::timeout(EVENT_TIMEOUT, receiver.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let events = tokio::time::timeout(EVENT_TIMEOUT, async move {
+        while let Some(BlockUpdate { events, .. }) = receiver.recv().await {
+            if !events.is_empty() {
+                return Some(events);
+            }
+        }
+        None
+    })
+    .await
+    .unwrap()
+    .unwrap();
 
     assert_eq!(events.len(), 1);
 
@@ -339,103 +363,6 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
         panic!("expected ReceiverFunctionCall");
     };
     assert!(!is_success);
-
-    localnet.shutdown().await;
-}
-
-/// Verifies that the send-timeout circuit breaker works: when the consumer does not read from the
-/// channel and the buffer is full, `listen_blocks` exits with `BlockEventBufferFull` and the
-/// receiver channel closes.
-#[tokio::test]
-async fn test_event_subscriber_backpressure_buffer_full_closes_channel() {
-    // Given: subscribing to three events that fire in three different blocks
-    let contract_id: near_account_id::AccountId =
-        "test-backpressure-handling.near".parse().unwrap();
-    let mut subscriber =
-        BlockEventSubscriber::new(1).with_backpressure_timeout(Duration::from_nanos(1));
-    let _ = subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
-        transaction_outcome_executor_id: contract_id.clone(),
-        method_name: SPAWN_PROMISE_WITH_CALLBACK.to_string(),
-    });
-    let _ = subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
-        transaction_outcome_executor_id: contract_id.clone(),
-        method_name: SET_VALUE_IN_PROMISE.to_string(),
-    });
-    let _ = subscriber.subscribe(BlockEventFilter::ReceiverFunctionCall {
-        receipt_receiver_id: contract_id.clone(),
-        method_name: PRIVATE_SET.to_string(),
-    });
-    let mut localnet = LocalnetBuilder::new()
-        .with_contract_id(contract_id.clone())
-        .with_test_account("test-subscriber-sender.near".parse().unwrap())
-        .with_event_subscriber(subscriber)
-        .build()
-        .await;
-    let mut receiver = localnet.take_block_update_receiver();
-    let signer = localnet.take_test_account().signer;
-
-    const MARKER: &str = "race condition avoided";
-
-    // When: We call the method, leading to the promise chain
-    let Call {
-        method,
-        args,
-        deposit: _,
-        tera_gas,
-    } = make_spawn_promise_in_callback_args(true, MARKER);
-    let observer_gw = &localnet.observer.chain_gateway;
-    observer_gw
-        .submit_function_call_tx(
-            &signer,
-            contract_id.clone(),
-            method,
-            args.clone(),
-            Gas::from_teragas(tera_gas),
-        )
-        .await
-        .unwrap();
-
-    // wait for change to take effect
-    let mut watch_value = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id, VIEW)
-        .await;
-
-    loop {
-        if watch_value
-            .latest()
-            .expect("we don't expect an error")
-            .value
-            == *MARKER
-        {
-            break;
-        }
-        tokio::time::timeout(EVENT_TIMEOUT, watch_value.changed())
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    drop(watch_value);
-
-    // Then: expect the sender to drop the channel and the streamer to close
-    let mut received_blocks = 0u32;
-    let closed = tokio::time::timeout(Duration::from_secs(30), async {
-        // drain the only event that squeezed through before the timeout.
-        while receiver.recv().await.is_some() {
-            received_blocks += 1;
-        }
-    })
-    .await;
-
-    assert!(
-        closed.is_ok(),
-        "receiver channel should have closed (listen_blocks exited with BlockEventBufferFull)"
-    );
-
-    assert_eq!(
-        received_blocks, 1,
-        "buffer size was one, we only expect one block update before the stream closes"
-    );
 
     localnet.shutdown().await;
 }
