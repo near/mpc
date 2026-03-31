@@ -340,7 +340,7 @@ mod tests {
 
         let hash_constrained_attestation =
             VerifiedAttestation::Mock(MockAttestation::WithConstraints {
-                mpc_docker_image_hash: Some(allowed_hash.clone()),
+                mpc_docker_image_hash: Some(allowed_hash),
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: None,
             });
@@ -411,7 +411,7 @@ mod tests {
         let hash_constrained_attestation =
             VerifiedAttestation::Mock(MockAttestation::WithConstraints {
                 mpc_docker_image_hash: None,
-                launcher_docker_compose_hash: Some(allowed_hash.clone()),
+                launcher_docker_compose_hash: Some(allowed_hash),
                 expiry_timestamp_seconds: None,
             });
 

@@ -2754,9 +2754,9 @@ dependencies = [
 
 [[package]]
 name = "derive-where"
-version = "1.6.0"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef941ded77d15ca19b40374869ac6000af1c9f2a4c0f3d4c70926287e6364a8f"
+checksum = "d08b3a0bcc0d079199cd476b2cae8435016ec11d1c0986c6901c5ac223041534"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3607,7 +3607,6 @@ dependencies = [
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
- "hex",
  "http 1.4.0",
  "httpmock",
  "jsonrpsee",
@@ -3626,8 +3625,8 @@ version = "3.7.0"
 dependencies = [
  "derive_more 2.1.1",
  "ethereum-types",
- "hex",
  "jsonrpsee",
+ "mpc-primitives",
  "serde",
  "serde_json",
 ]
@@ -5792,7 +5791,6 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
- "serde_with",
  "thiserror 2.0.18",
 ]
 

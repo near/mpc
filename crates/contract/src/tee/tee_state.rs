@@ -1270,7 +1270,7 @@ mod tests {
             ctx.signer_account_id(account_id.clone());
             testing_env!(ctx.build());
             let auth_id = AuthenticatedParticipantId::new(&all_participants).unwrap();
-            tee_state.votes.vote(malicious_hash.clone(), &auth_id);
+            tee_state.votes.vote(malicious_hash, &auth_id);
         }
         assert_eq!(tee_state.votes.proposal_by_account.len(), 2);
 
@@ -1289,7 +1289,7 @@ mod tests {
         ctx.signer_account_id(p2_account.clone());
         testing_env!(ctx.build());
         let auth_id = AuthenticatedParticipantId::new(&new_participants).unwrap();
-        let vote_count = tee_state.votes.vote(malicious_hash.clone(), &auth_id);
+        let vote_count = tee_state.votes.vote(malicious_hash, &auth_id);
         assert_eq!(vote_count, 1, "Only the fresh vote from P2 should count");
     }
 
