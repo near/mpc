@@ -366,16 +366,6 @@ impl IndexerViewClient {
     }
 }
 
-#[cfg_attr(test, mockall::automock)]
-pub(crate) trait ReadForeignChainPolicy: Send + Sync {
-    fn get_foreign_chain_policy(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainPolicy>> + Send;
-    fn get_foreign_chain_policy_proposals(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainPolicyVotes>> + Send;
-}
-
 #[derive(Clone)]
 pub(crate) struct RealForeignChainPolicyReader {
     indexer_state: Arc<IndexerState>,
@@ -384,24 +374,6 @@ pub(crate) struct RealForeignChainPolicyReader {
 impl RealForeignChainPolicyReader {
     pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
         Self { indexer_state }
-    }
-}
-
-impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
-    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
-        self.indexer_state
-            .view_client
-            .get_foreign_chain_policy(&self.indexer_state.mpc_contract_id)
-            .await
-    }
-
-    async fn get_foreign_chain_policy_proposals(
-        &self,
-    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
-        self.indexer_state
-            .view_client
-            .get_foreign_chain_policy_proposals(&self.indexer_state.mpc_contract_id)
-            .await
     }
 }
 

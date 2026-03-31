@@ -1,17 +1,3 @@
-use anyhow::{bail, Context};
-use foreign_chain_inspector::abstract_chain::inspector::{AbstractExtractor, AbstractInspector};
-use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
-use foreign_chain_inspector::starknet::inspector::{
-    StarknetExtractor, StarknetFinality, StarknetInspector,
-};
-use foreign_chain_inspector::ForeignChainInspector;
-use foreign_chain_inspector::{self, EthereumFinality};
-use rand::seq::SliceRandom;
-use rand::SeedableRng;
-use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
-use tokio_util::time::FutureExt;
-
-use crate::config::ForeignChainsConfig;
 use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
@@ -20,10 +6,22 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
+use anyhow::{bail, Context};
+use foreign_chain_inspector::abstract_chain::inspector::{AbstractExtractor, AbstractInspector};
+use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
+use foreign_chain_inspector::starknet::inspector::{
+    StarknetExtractor, StarknetFinality, StarknetInspector,
+};
+use foreign_chain_inspector::ForeignChainInspector;
+use foreign_chain_inspector::{self, EthereumFinality};
 use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
 use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::types as dtos;
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio::time::{timeout, Duration};
+use tokio_util::time::FutureExt;
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -45,10 +43,7 @@ fn build_signature_request(
     })
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: ReadForeignChainPolicy,
-{
+impl VerifyForeignTxProvider {
     pub(super) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
@@ -136,13 +131,6 @@ where
         my_participant_index: usize,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        validate_foreign_chain_policy(
-            &self.config.foreign_chains,
-            &self.foreign_chain_policy_reader,
-            request,
-        )
-        .await?;
-
         let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(_request) => {
                 bail!("ForeignChainRpcRequest::Ethereum is unsupported")
@@ -294,58 +282,6 @@ where
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-enum ValidateForeignChainPolicyError {
-    #[error("local foreign_chains config is empty; cannot process foreign chain request")]
-    LocalConfigEmpty,
-    #[error("failed to fetch on-chain foreign chain policy")]
-    FetchOnChainPolicy(#[source] anyhow::Error),
-    #[error(
-        "local foreign chain policy does not match on-chain policy: local={local:?}, on_chain={on_chain:?}"
-    )]
-    PolicyMismatch {
-        local: dtos::ForeignChainPolicy,
-        on_chain: dtos::ForeignChainPolicy,
-    },
-    #[error("requested chain {requested:?} is not present in the on-chain foreign chain policy")]
-    ChainNotInPolicy { requested: dtos::ForeignChain },
-}
-
-async fn validate_foreign_chain_policy(
-    foreign_chains_config: &ForeignChainsConfig,
-    policy_reader: &impl ReadForeignChainPolicy,
-    request: &dtos::ForeignChainRpcRequest,
-) -> Result<(), ValidateForeignChainPolicyError> {
-    let local_policy = foreign_chains_config
-        .to_policy()
-        .ok_or(ValidateForeignChainPolicyError::LocalConfigEmpty)?;
-
-    let on_chain_policy = policy_reader
-        .get_foreign_chain_policy()
-        .await
-        .map_err(ValidateForeignChainPolicyError::FetchOnChainPolicy)?;
-
-    if on_chain_policy != local_policy {
-        return Err(ValidateForeignChainPolicyError::PolicyMismatch {
-            local: local_policy,
-            on_chain: on_chain_policy,
-        });
-    }
-
-    let requested_chain = request.chain();
-    if !on_chain_policy
-        .chains
-        .iter()
-        .any(|(chain, _)| *chain == requested_chain)
-    {
-        return Err(ValidateForeignChainPolicyError::ChainNotInPolicy {
-            requested: requested_chain,
-        });
-    }
-
-    Ok(())
-}
-
 /// Deterministically selects a provider index based on the request ID and the node's
 /// position within the participant set.
 ///
@@ -486,67 +422,5 @@ mod tests {
                 select_provider(num_providers, &request_id, i + num_providers),
             );
         }
-    }
-
-    #[tokio::test]
-    async fn validate_foreign_chain_policy__should_succeed_when_policies_match_and_chain_present() {
-        let config = bitcoin_foreign_chains_config();
-        let reader = mock_policy_reader(bitcoin_chain_policy());
-
-        validate_foreign_chain_policy(&config, &reader, &bitcoin_request())
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn validate_foreign_chain_policy__should_fail_when_chain_not_in_policy() {
-        let config = bitcoin_foreign_chains_config();
-        // On-chain policy has Bitcoin, but request is for Ethereum
-        let reader = mock_policy_reader(bitcoin_chain_policy());
-        let ethereum_request = dtos::ForeignChainRpcRequest::Ethereum(dtos::EvmRpcRequest {
-            tx_id: dtos::EvmTxId([0; 32]),
-            extractors: vec![],
-            finality: dtos::EvmFinality::Finalized,
-        });
-
-        // Policies match (both bitcoin-only), but request is for Ethereum.
-        // The policy match check passes, but the chain-in-policy check fails.
-        let result = validate_foreign_chain_policy(&config, &reader, &ethereum_request).await;
-        assert_matches!(
-            result,
-            Err(ValidateForeignChainPolicyError::ChainNotInPolicy { .. })
-        );
-    }
-
-    #[tokio::test]
-    async fn validate_foreign_chain_policy__should_fail_when_policies_mismatch() {
-        let config = bitcoin_foreign_chains_config();
-        // On-chain policy differs (different RPC URL)
-        let reader = mock_policy_reader(dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://different-provider.example.com/api".to_string(),
-                }),
-            )]),
-        });
-
-        let result = validate_foreign_chain_policy(&config, &reader, &bitcoin_request()).await;
-        assert_matches!(
-            result,
-            Err(ValidateForeignChainPolicyError::PolicyMismatch { .. })
-        );
-    }
-
-    #[tokio::test]
-    async fn validate_foreign_chain_policy__should_fail_when_local_config_empty() {
-        let config = ForeignChainsConfig::default();
-        let reader = mock_policy_reader(bitcoin_chain_policy());
-
-        let result = validate_foreign_chain_policy(&config, &reader, &bitcoin_request()).await;
-        assert_matches!(
-            result,
-            Err(ValidateForeignChainPolicyError::LocalConfigEmpty)
-        );
     }
 }

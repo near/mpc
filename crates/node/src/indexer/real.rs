@@ -123,15 +123,6 @@ pub fn spawn_real_indexer(
                 tracing::error!("Failed to send txn_sender back to main thread.")
             };
 
-            let foreign_chain_policy_reader =
-                RealForeignChainPolicyReader::new(indexer_state.clone());
-            if foreign_chain_policy_reader_sender
-                .send(foreign_chain_policy_reader)
-                .is_err()
-            {
-                tracing::error!("failed to send foreign chain policy reader back to main thread")
-            };
-
             #[cfg(feature = "network-hardship-simulation")]
             let process_blocks_receiver = {
                 let (process_blocks_sender, process_blocks_receiver) = watch::channel(true);

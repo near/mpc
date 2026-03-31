@@ -170,7 +170,6 @@ where
                                 self.keyshare_storage.clone(),
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
-                                self.indexer.foreign_chain_policy_reader.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -329,7 +328,6 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -378,15 +376,13 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        if let Err(err) = Self::maybe_vote_foreign_chain_policy(
-            &config_file,
-            &foreign_chain_policy_reader,
-            &chain_txn_sender,
-        )
-        .await
-        {
-            tracing::warn!(error = ?err, "failed to auto-vote foreign chain policy");
-        }
+        // TODO: replace with just submitting a view of the policy;
+        //
+        // if let Err(err) =
+        //     Self::maybe_vote_foreign_chain_policy(&config_file, &chain_txn_sender).await
+        // {
+        //     tracing::warn!(error = ?err, "failed to auto-vote foreign chain policy");
+        // }
 
         tracing::info!("Creating tls mesh");
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
@@ -599,7 +595,6 @@ where
 
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
-                    foreign_chain_policy_reader.clone(),
                     running_mpc_config.into(),
                     verify_foreign_tx_request_store.clone(),
                     // We are re-using the ecdsa signature provider here

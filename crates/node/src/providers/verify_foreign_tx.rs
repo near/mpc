@@ -14,9 +14,8 @@ use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::ReconstructionLowerBound;
 
-pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
+pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
-    foreign_chain_policy_reader: ForeignChainPolicyReader,
     // TODO(#2076): This field might become useful when domain separation is implemented
     #[expect(dead_code)]
     mpc_config: Arc<MpcConfig>,
@@ -24,17 +23,15 @@ pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader> {
+impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
         mpc_config: Arc<MpcConfig>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> Self {
         Self {
             config,
-            foreign_chain_policy_reader,
             mpc_config,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
@@ -56,11 +53,7 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
     }
 }
 
-impl<ForeignChainPolicyReader> SignatureProvider
-    for VerifyForeignTxProvider<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: crate::indexer::ReadForeignChainPolicy,
-{
+impl SignatureProvider for VerifyForeignTxProvider {
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
     type KeygenOutput = KeygenOutput;
