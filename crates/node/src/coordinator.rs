@@ -530,8 +530,7 @@ where
                 );
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
-                let robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
-                    HashMap::new();
+                let robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     DomainId,

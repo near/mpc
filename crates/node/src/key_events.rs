@@ -16,9 +16,7 @@ use crate::{
     },
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
-    providers::{
-        CKDProvider, EcdsaSignatureProvider, SignatureProvider,
-    },
+    providers::{CKDProvider, EcdsaSignatureProvider, SignatureProvider},
 };
 use mpc_contract::primitives::domain::{Curve, DomainConfig};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};

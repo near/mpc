@@ -12,11 +12,7 @@ use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 // Re-export for convenience
 
-const ALL_CURVES: [Curve; 3] = [
-    Curve::Secp256k1,
-    Curve::Edwards25519,
-    Curve::Bls12381,
-];
+const ALL_CURVES: [Curve; 3] = [Curve::Secp256k1, Curve::Edwards25519, Curve::Bls12381];
 pub const NUM_CURVES: usize = ALL_CURVES.len();
 
 /// Generates a valid DomainRegistry with various curves, with num_domains total.

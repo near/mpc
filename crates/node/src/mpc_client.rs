@@ -508,11 +508,12 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Secp256k1)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
+                                    Some(Curve::Secp256k1) | Some(Curve::Edwards25519) => {
+                                        Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            ckd_attempt.request.domain_id.clone()
+                                        ))
+                                    }
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
@@ -599,11 +600,12 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Bls12381)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        verify_foreign_tx_attempt.request.domain_id.clone()
-                                    )),
+                                    Some(Curve::Bls12381) | Some(Curve::Edwards25519) => {
+                                        Err(anyhow::anyhow!(
+                                            "Signature scheme is not allowed for domain: {:?}",
+                                            verify_foreign_tx_attempt.request.domain_id.clone()
+                                        ))
+                                    }
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()

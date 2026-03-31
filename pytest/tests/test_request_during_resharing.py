@@ -62,7 +62,9 @@ def test_threshold_from_previous_running_state_is_maintained():
 
 
 # TODO: re-enable when Protocol::DamgardEtAl is wired into the contract (PR 4+)
-@pytest.mark.skip(reason="V2Secp256k1 curve removed; robust ECDSA will use Protocol::DamgardEtAl")
+@pytest.mark.skip(
+    reason="V2Secp256k1 curve removed; robust ECDSA will use Protocol::DamgardEtAl"
+)
 def test_threshold_from_previous_running_state_is_maintained_robust_ecdsa_only():
     number_of_nodes = 6
     threshold = 5
