@@ -329,12 +329,9 @@ BorshSchemaContainer {
             fields: Empty,
         },
         "DockerImageHash": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "bytes",
-                        "[u8; 32]",
-                    ),
+                    "[u8; 32]",
                 ],
             ),
         },
@@ -649,12 +646,9 @@ BorshSchemaContainer {
             ),
         },
         "KeyProviderEventDigest": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "bytes",
-                        "[u8; 48]",
-                    ),
+                    "[u8; 48]",
                 ],
             ),
         },
@@ -673,12 +667,9 @@ BorshSchemaContainer {
             ),
         },
         "LauncherDockerComposeHash": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "bytes",
-                        "[u8; 32]",
-                    ),
+                    "[u8; 32]",
                 ],
             ),
         },
@@ -693,12 +684,9 @@ BorshSchemaContainer {
             ),
         },
         "LauncherImageHash": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "bytes",
-                        "[u8; 32]",
-                    ),
+                    "[u8; 32]",
                 ],
             ),
         },
@@ -939,12 +927,9 @@ BorshSchemaContainer {
             ],
         },
         "MrtdHash": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "bytes",
-                        "[u8; 48]",
-                    ),
+                    "[u8; 48]",
                 ],
             ),
         },
@@ -1303,32 +1288,23 @@ BorshSchemaContainer {
             ),
         },
         "Rtmr0Hash": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "bytes",
-                        "[u8; 48]",
-                    ),
+                    "[u8; 48]",
                 ],
             ),
         },
         "Rtmr1Hash": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "bytes",
-                        "[u8; 48]",
-                    ),
+                    "[u8; 48]",
                 ],
             ),
         },
         "Rtmr2Hash": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "bytes",
-                        "[u8; 48]",
-                    ),
+                    "[u8; 48]",
                 ],
             ),
         },
