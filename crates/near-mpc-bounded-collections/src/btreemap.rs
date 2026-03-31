@@ -101,6 +101,39 @@ impl<K: Ord + BorshDeserialize, V: BorshDeserialize> BorshDeserialize for NonEmp
 }
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl<K: Ord + borsh::BorshSchema, V: borsh::BorshSchema> borsh::BorshSchema
+    for NonEmptyBTreeMap<K, V>
+{
+    fn declaration() -> borsh::schema::Declaration {
+        format!(
+            "NonEmptyBTreeMap<{}, {}>",
+            K::declaration(),
+            V::declaration()
+        )
+    }
+
+    fn add_definitions_recursively(
+        definitions: &mut borsh::__private::maybestd::collections::BTreeMap<
+            borsh::schema::Declaration,
+            borsh::schema::Definition,
+        >,
+    ) {
+        // NonEmptyBTreeMap serializes identically to BTreeMap, but with min length 1
+        <BTreeMap<K, V> as borsh::BorshSchema>::add_definitions_recursively(definitions);
+        let btree_decl = <BTreeMap<K, V> as borsh::BorshSchema>::declaration();
+        let mut def = definitions[&btree_decl].clone();
+        if let borsh::schema::Definition::Sequence {
+            ref mut length_range,
+            ..
+        } = def
+        {
+            *length_range = 1..=*length_range.end();
+        }
+        definitions.insert(Self::declaration(), def);
+    }
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl<K: Ord + schemars::JsonSchema, V: schemars::JsonSchema> schemars::JsonSchema
     for NonEmptyBTreeMap<K, V>
 {
