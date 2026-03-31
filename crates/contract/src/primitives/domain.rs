@@ -315,8 +315,8 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
-        DomainRegistry, Participants,
+        is_valid_curve_for_purpose, AddDomainsVotes, Curve, CurveCompat, DomainConfig, DomainId,
+        DomainPurpose, DomainRegistry, Participants,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
@@ -515,6 +515,25 @@ pub mod tests {
         let config: DomainConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.curve, expected_curve);
         assert_eq!(config.purpose, expected_purpose);
+    }
+
+    #[rstest]
+    #[case("\"Secp256k1\"", Curve::Secp256k1, "\"Secp256k1\"")]
+    #[case("\"Ed25519\"", Curve::Edwards25519, "\"Ed25519\"")]
+    #[case("\"Edwards25519\"", Curve::Edwards25519, "\"Ed25519\"")]
+    #[case("\"Bls12381\"", Curve::Bls12381, "\"Bls12381\"")]
+    #[case("\"V2Secp256k1\"", Curve::V2Secp256k1, "\"V2Secp256k1\"")]
+    fn test_curve_compat_wire_format(
+        #[case] input_json: &str,
+        #[case] expected_curve: Curve,
+        #[case] expected_serialized: &str,
+    ) {
+        let compat: CurveCompat = serde_json::from_str(input_json).unwrap();
+        let curve: Curve = compat.into();
+        assert_eq!(curve, expected_curve);
+
+        let re_serialized = serde_json::to_string(&CurveCompat::from(curve)).unwrap();
+        assert_eq!(re_serialized, expected_serialized);
     }
 
     #[rstest]
