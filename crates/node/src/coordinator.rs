@@ -1,5 +1,5 @@
 use crate::assets::cleanup::{delete_stale_triples_and_presignatures, EpochData};
-use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig, SecretsConfig};
+use crate::config::{MpcConfig, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
@@ -34,6 +34,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{Curve, DomainId};
 use mpc_contract::primitives::key_state::EpochId;
+use mpc_node_config::ConfigFile;
 use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;

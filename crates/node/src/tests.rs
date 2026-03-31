@@ -14,10 +14,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use tokio::sync::{watch, RwLock};
 
-use crate::config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, ParticipantsConfig,
-    PersistentSecrets, PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
-};
+use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::fake::{FakeForeignChainPolicyReader, FakeIndexerManager};
@@ -29,6 +26,10 @@ use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+use mpc_node_config::{
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
+    SignatureConfig, SyncMode, TripleConfig,
+};
 
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;

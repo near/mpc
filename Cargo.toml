@@ -23,6 +23,7 @@ members = [
     "crates/near-mpc-sdk",
     "crates/near-mpc-signature-verifier",
     "crates/node",
+    "crates/node-config",
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
@@ -56,6 +57,7 @@ launcher-interface = { path = "crates/launcher-interface" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
+mpc-node-config = { path = "crates/node-config" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
 near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
@@ -178,7 +180,10 @@ regex = "1.12.3"
 reqwest = { version = "0.13.2", features = ["multipart", "json"] }
 rmp-serde = "1.3.1"
 rstest = { version = "0.26.1" }
-rustls = { version = "0.23.37", default-features = false, features = ["ring", "std"] }
+rustls = { version = "0.23.37", default-features = false, features = [
+    "ring",
+    "std",
+] }
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.19"
 serde_json = "1.0"
@@ -253,6 +258,9 @@ rand_core = "0.6.4"
 
 # Cannot be upgraded until we get MSVR 1.88
 time = "0.3.41"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(feature, values("abi"))'] }
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"
