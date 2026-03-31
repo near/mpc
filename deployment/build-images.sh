@@ -113,11 +113,10 @@ fi
 build_reproducible_image() {
   local image_name=$1
   local dockerfile_path=$2
-  local context_dir="${3:-.}"
   docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
     --output type=docker,name=$image_name,rewrite-timestamp=true \
-    --progress plain -f "$dockerfile_path" "$context_dir"
+    --progress plain -f "$dockerfile_path" .
 }
 
 get_image_hash() {
@@ -134,20 +133,7 @@ if $USE_RUST_LAUNCHER; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
     rust_launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
 
-    # Build from a minimal context containing only the files the Dockerfile needs.
-    # Using the full repo as context causes the image hash to change whenever any
-    # file in the repo changes, even if the launcher code is unchanged. See #2652.
-    rust_launcher_context=$(mktemp -d)
-    mkdir -p "$rust_launcher_context/target/reproducible" "$rust_launcher_context/deployment"
-    cp target/reproducible/tee-launcher "$rust_launcher_context/target/reproducible/"
-    cp deployment/repro-sources-list.sh "$rust_launcher_context/deployment/"
-    touch -d @"$SOURCE_DATE_EPOCH" "$rust_launcher_context/target/reproducible/tee-launcher" \
-        "$rust_launcher_context/deployment/repro-sources-list.sh" \
-        "$rust_launcher_context/target/reproducible" "$rust_launcher_context/target" \
-        "$rust_launcher_context/deployment" "$rust_launcher_context"
-    build_reproducible_image $RUST_LAUNCHER_IMAGE_NAME $DOCKERFILE_RUST_LAUNCHER "$rust_launcher_context"
-    rm -rf "$rust_launcher_context"
-
+    build_reproducible_image $RUST_LAUNCHER_IMAGE_NAME $DOCKERFILE_RUST_LAUNCHER
     rust_launcher_image_hash=$(get_image_hash $RUST_LAUNCHER_IMAGE_NAME)
 fi
 

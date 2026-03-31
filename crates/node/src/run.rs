@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _, ConfigFile,
-        PersistentSecrets, RespondConfig, SecretsConfig, StartConfig,
+        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
+        PersistentSecrets, RespondConfig, SecretsConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -18,7 +18,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
-use mpc_contract::tee::proposal::NodeImageHash;
+use mpc_node_config::{ConfigFile, StartConfig};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::{
@@ -134,7 +134,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let image_hash_watcher_handle = root_runtime.spawn(monitor_allowed_image_hashes(
         cancellation_token.child_token(),
-        NodeImageHash::from(config.tee.image_hash.as_bytes()),
+        *config.tee.image_hash,
         allowed_hashes_in_contract,
         image_hash_storage,
         shutdown_signal_sender.clone(),

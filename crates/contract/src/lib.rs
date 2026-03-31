@@ -284,7 +284,7 @@ impl MpcContract {
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            Curve::Ed25519 => {
+            Curve::Edwards25519 => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
             Curve::Bls12381 => {
@@ -1361,7 +1361,7 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let votes = self.tee_state.vote(code_hash.clone(), &participant);
+        let votes = self.tee_state.vote(code_hash, &participant);
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -1399,7 +1399,7 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let action = LauncherVoteAction::Add(launcher_hash.clone());
+        let action = LauncherVoteAction::Add(launcher_hash);
         let votes = self.tee_state.vote_launcher(action, &participant);
 
         let tee_upgrade_deadline_duration =
@@ -1437,7 +1437,7 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let action = LauncherVoteAction::Remove(launcher_hash.clone());
+        let action = LauncherVoteAction::Remove(launcher_hash);
         let votes = self.tee_state.vote_launcher(action, &participant);
 
         // Removal requires ALL participants to vote
@@ -2373,7 +2373,7 @@ mod tests {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
-            Curve::Ed25519 => {
+            Curve::Edwards25519 => {
                 let (pk, sk) = new_ed25519(rng);
                 (pk.into(), SharedSecretKey::Ed25519(sk))
             }
@@ -4512,9 +4512,7 @@ mod tests {
                 .block_timestamp(block_timestamp_ns)
                 .build());
 
-            contract
-                .vote_code_hash(mpc_hash.clone())
-                .expect("vote succeeds");
+            contract.vote_code_hash(*mpc_hash).expect("vote succeeds");
         }
     }
 
@@ -4535,7 +4533,7 @@ mod tests {
                 .build());
 
             contract
-                .vote_add_launcher_hash(launcher_hash.clone())
+                .vote_add_launcher_hash(launcher_hash)
                 .expect("launcher vote succeeds");
         }
     }
@@ -4829,7 +4827,7 @@ mod tests {
                 .predecessor_account_id(account_id.clone())
                 .build());
             contract
-                .vote_add_launcher_hash(launcher_hash.clone())
+                .vote_add_launcher_hash(launcher_hash)
                 .expect("vote should succeed");
         }
         assert!(
@@ -4844,7 +4842,7 @@ mod tests {
             .predecessor_account_id(account_id.clone())
             .build());
         contract
-            .vote_add_launcher_hash(launcher_hash.clone())
+            .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
 
         let allowed = contract.allowed_launcher_image_hashes();
@@ -4866,10 +4864,10 @@ mod tests {
 
         // Same participant votes twice — should count as 1 vote
         contract
-            .vote_add_launcher_hash(launcher_hash.clone())
+            .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
         contract
-            .vote_add_launcher_hash(launcher_hash.clone())
+            .vote_add_launcher_hash(launcher_hash)
             .expect("duplicate vote should succeed");
 
         assert!(
@@ -4886,14 +4884,14 @@ mod tests {
         let launcher_hash_2 = make_launcher_hash(0xDD);
 
         // Add two launcher hashes so removal of one doesn't hit the "last entry" guard
-        for hash in [&launcher_hash, &launcher_hash_2] {
+        for hash in [launcher_hash, launcher_hash_2] {
             for (account_id, _, _) in participant_list {
                 testing_env!(VMContextBuilder::new()
                     .signer_account_id(account_id.clone())
                     .predecessor_account_id(account_id.clone())
                     .build());
                 contract
-                    .vote_add_launcher_hash(hash.clone())
+                    .vote_add_launcher_hash(hash)
                     .expect("add vote should succeed");
             }
         }
@@ -4906,7 +4904,7 @@ mod tests {
                 .predecessor_account_id(account_id.clone())
                 .build());
             contract
-                .vote_remove_launcher_hash(launcher_hash.clone())
+                .vote_remove_launcher_hash(launcher_hash)
                 .expect("remove vote should succeed");
         }
         assert_eq!(
@@ -4922,7 +4920,7 @@ mod tests {
             .predecessor_account_id(account_id.clone())
             .build());
         contract
-            .vote_remove_launcher_hash(launcher_hash.clone())
+            .vote_remove_launcher_hash(launcher_hash)
             .expect("remove vote should succeed");
 
         assert_eq!(
@@ -4945,7 +4943,7 @@ mod tests {
                 .predecessor_account_id(account_id.clone())
                 .build());
             contract
-                .vote_add_launcher_hash(launcher_hash.clone())
+                .vote_add_launcher_hash(launcher_hash)
                 .expect("add vote should succeed");
         }
         assert_eq!(contract.allowed_launcher_image_hashes().len(), 1);
@@ -4957,7 +4955,7 @@ mod tests {
                 .predecessor_account_id(account_id.clone())
                 .build());
             contract
-                .vote_remove_launcher_hash(launcher_hash.clone())
+                .vote_remove_launcher_hash(launcher_hash)
                 .expect("remove vote should succeed");
         }
         assert_eq!(
@@ -4985,7 +4983,7 @@ mod tests {
                 .block_timestamp(block_ts)
                 .build());
             contract
-                .vote_code_hash(mpc_hash.clone())
+                .vote_code_hash(mpc_hash)
                 .expect("mpc vote should succeed");
         }
 
@@ -4997,7 +4995,7 @@ mod tests {
                 .block_timestamp(block_ts)
                 .build());
             contract
-                .vote_add_launcher_hash(launcher_hash.clone())
+                .vote_add_launcher_hash(launcher_hash)
                 .expect("launcher vote should succeed");
         }
 
@@ -5028,7 +5026,7 @@ mod tests {
                 .predecessor_account_id(account_id.clone())
                 .build());
             contract
-                .vote_add_launcher_hash(launcher_hash.clone())
+                .vote_add_launcher_hash(launcher_hash)
                 .expect("vote should succeed");
         }
         assert_eq!(contract.allowed_launcher_image_hashes().len(), 1);
@@ -5041,7 +5039,7 @@ mod tests {
             .predecessor_account_id(account_id.clone())
             .build());
         contract
-            .vote_add_launcher_hash(launcher_hash_2.clone())
+            .vote_add_launcher_hash(launcher_hash_2)
             .expect("vote should succeed");
 
         // Only 1 vote for hash_2, should not be added yet
@@ -5071,12 +5069,12 @@ mod tests {
             .predecessor_account_id(account_0.clone())
             .build());
         contract
-            .vote_add_launcher_hash(launcher_hash.clone())
+            .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
 
         let votes = &contract.launcher_hash_votes().vote_by_account;
         assert_eq!(votes.len(), 1);
-        let expected_action = LauncherVoteAction::Add(launcher_hash.clone());
+        let expected_action = LauncherVoteAction::Add(launcher_hash);
         assert!(votes.values().all(|v| *v == expected_action));
 
         // Second vote
@@ -5086,7 +5084,7 @@ mod tests {
             .predecessor_account_id(account_1.clone())
             .build());
         contract
-            .vote_add_launcher_hash(launcher_hash.clone())
+            .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
 
         let votes = &contract.launcher_hash_votes().vote_by_account;
@@ -5100,7 +5098,7 @@ mod tests {
             .predecessor_account_id(account_2.clone())
             .build());
         contract
-            .vote_add_launcher_hash(launcher_hash.clone())
+            .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
 
         assert!(
@@ -5129,7 +5127,7 @@ mod tests {
                 .predecessor_account_id(account.clone())
                 .build());
             contract
-                .vote_code_hash(code_hash.clone())
+                .vote_code_hash(code_hash)
                 .expect("vote should succeed");
 
             let votes = &contract.code_hash_votes().proposal_by_account;
@@ -5161,7 +5159,7 @@ mod tests {
                 .block_timestamp(block_ts)
                 .build());
             contract
-                .vote_code_hash(mpc_hash_1.clone())
+                .vote_code_hash(mpc_hash_1)
                 .expect("mpc vote should succeed");
         }
 
@@ -5173,7 +5171,7 @@ mod tests {
                 .block_timestamp(block_ts)
                 .build());
             contract
-                .vote_add_launcher_hash(launcher_hash.clone())
+                .vote_add_launcher_hash(launcher_hash)
                 .expect("launcher vote should succeed");
         }
         assert_eq!(contract.allowed_launcher_compose_hashes().len(), 1);
@@ -5187,7 +5185,7 @@ mod tests {
                 .block_timestamp(block_ts)
                 .build());
             contract
-                .vote_code_hash(mpc_hash_2.clone())
+                .vote_code_hash(mpc_hash_2)
                 .expect("mpc vote 2 should succeed");
         }
 
@@ -5226,7 +5224,7 @@ mod tests {
                     .block_timestamp(ts)
                     .build());
                 contract
-                    .vote_code_hash(hash.clone())
+                    .vote_code_hash(hash)
                     .expect("mpc vote should succeed");
             }
         };
@@ -5239,7 +5237,7 @@ mod tests {
                     .block_timestamp(ts)
                     .build());
                 contract
-                    .vote_add_launcher_hash(hash.clone())
+                    .vote_add_launcher_hash(hash)
                     .expect("launcher vote should succeed");
             }
         };
@@ -5250,12 +5248,12 @@ mod tests {
         let m2 = NodeImageHash::from([0x22; 32]);
         let m3 = NodeImageHash::from([0x33; 32]);
 
-        vote_mpc(&mut contract, m1.clone(), t0);
-        vote_launcher(&mut contract, l1.clone(), t0);
+        vote_mpc(&mut contract, m1, t0);
+        vote_launcher(&mut contract, l1, t0);
         assert_eq!(contract.allowed_launcher_compose_hashes().len(), 1);
 
         let t1 = t0 + day;
-        vote_mpc(&mut contract, m2.clone(), t1);
+        vote_mpc(&mut contract, m2, t1);
         assert_eq!(contract.allowed_launcher_compose_hashes().len(), 2);
 
         let t2 = t1 + upgrade_deadline + sec;
@@ -5270,14 +5268,14 @@ mod tests {
             "stored compose hashes persist even after MPC hash expires"
         );
 
-        vote_launcher(&mut contract, l2.clone(), t2);
+        vote_launcher(&mut contract, l2, t2);
         assert_eq!(
             contract.allowed_launcher_compose_hashes().len(),
             3,
             "L2 paired only with valid M2, not expired M1"
         );
 
-        vote_mpc(&mut contract, m3.clone(), t2);
+        vote_mpc(&mut contract, m3, t2);
         assert_eq!(
             contract.allowed_launcher_compose_hashes().len(),
             5,

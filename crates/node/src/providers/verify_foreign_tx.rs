@@ -1,12 +1,13 @@
 mod sign;
 
-use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
+use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_node_config::ConfigFile;
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};

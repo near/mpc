@@ -245,7 +245,7 @@ mod tests {
 
             let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
-                current_hash.clone(),
+                *current_hash,
                 receiver,
                 storage_mock,
                 sender_shutdown,
@@ -316,7 +316,7 @@ mod tests {
         let current_image = image_hash_1();
         let allowed_image = image_hash_2();
 
-        let allowed_list = vec![allowed_image.clone()];
+        let allowed_list = vec![allowed_image];
         let expected_non_empty = NonEmptyVec::from_vec(allowed_list.clone()).unwrap();
 
         let cancellation_token = CancellationToken::new();

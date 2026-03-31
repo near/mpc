@@ -165,7 +165,7 @@ pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::config::ConfigFile;
+    use crate::ConfigFile;
 
     #[test]
     fn config_parsing__should_succeed_when_foreign_chains_are_unset() {
