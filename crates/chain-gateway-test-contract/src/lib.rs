@@ -5,7 +5,7 @@ use args::{Call, make_private_set_args, make_set_value_in_promise_args};
 use consts::DEFAULT_VALUE;
 
 use near_sdk::{
-    Gas, Promise,
+    Promise,
     env::{self, log_str},
     near,
 };
@@ -55,13 +55,13 @@ impl Contract {
                 method,
                 args,
                 deposit,
-                tera_gas,
+                gas,
             } = make_private_set_args(&value, true);
             Ok(Promise::new(env::current_account_id()).function_call(
                 method,
                 args,
                 deposit,
-                Gas::from_tgas(tera_gas),
+                gas.into(),
             ))
         }
     }
@@ -80,13 +80,13 @@ impl Contract {
             method,
             args,
             deposit,
-            tera_gas,
+            gas,
         } = make_set_value_in_promise_args("doesn't matter", !successfully_spawn_promise);
         let promise = Promise::new(env::current_account_id()).function_call(
             method,
             args,
             deposit,
-            Gas::from_tgas(tera_gas),
+            gas.into(),
         );
 
         // spawn callback promise to mark conclusion of first promise
@@ -94,13 +94,13 @@ impl Contract {
             method,
             args,
             deposit,
-            tera_gas,
+            gas,
         } = make_private_set_args(&end_marker, true);
         let callback = Promise::new(env::current_account_id()).function_call(
             method,
             args,
             deposit,
-            Gas::from_tgas(tera_gas),
+            gas.into(),
         );
         promise.then(callback)
     }

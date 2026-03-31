@@ -1822,6 +1822,7 @@ name = "chain-gateway-test-contract"
 version = "3.7.0"
 dependencies = [
  "borsh",
+ "derive_more 2.1.1",
  "near-sdk",
  "serde_json",
 ]

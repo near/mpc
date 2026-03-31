@@ -75,10 +75,7 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
 
     // When: A transaction returning a promise succeeds
     let Call {
-        method,
-        args,
-        tera_gas,
-        ..
+        method, args, gas, ..
     } = make_set_value_in_promise_args("succeeds", false);
 
     observer_gw
@@ -87,7 +84,7 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
             contract_id,
             method,
             args.clone(),
-            Gas::from_teragas(tera_gas),
+            Gas::from_teragas(gas.into()),
         )
         .await
         .unwrap();
@@ -151,10 +148,7 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
     let end_marker: &str = "if you read this, you can be sure that the spawned promise has failed";
 
     let Call {
-        method,
-        args,
-        tera_gas,
-        ..
+        method, args, gas, ..
     } = make_spawn_promise_in_callback_args(false, end_marker);
     observer_gw
         .submit_function_call_tx(
@@ -162,7 +156,7 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
             contract_id.clone(),
             method,
             args,
-            Gas::from_teragas(tera_gas),
+            Gas::from_teragas(gas.into()),
         )
         .await
         .unwrap();
@@ -259,7 +253,7 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
         method,
         args,
         deposit: _,
-        tera_gas,
+        gas,
     } = make_private_set_args("maybe it works, maybe it doesn't", expect_success);
 
     observer_gw
@@ -268,7 +262,7 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
             contract_id,
             method,
             args,
-            Gas::from_teragas(tera_gas),
+            Gas::from_teragas(gas.into()),
         )
         .await
         .unwrap();
@@ -323,7 +317,7 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
         method,
         args,
         deposit: _,
-        tera_gas,
+        gas,
     } = make_private_set_args("this will fail", true);
 
     observer_gw
@@ -332,7 +326,7 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
             contract_id,
             method,
             args,
-            Gas::from_teragas(tera_gas),
+            Gas::from_teragas(gas.into()),
         )
         .await
         .unwrap();

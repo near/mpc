@@ -38,10 +38,7 @@ async fn test_submit_set_value_and_read_back() {
     // Submit set_value transaction via the observer, using a separate user account
     let new_value = "updated by sender test";
     let Call {
-        method,
-        args,
-        tera_gas,
-        ..
+        method, args, gas, ..
     } = make_set_value_args(new_value);
 
     observer_gw
@@ -50,7 +47,7 @@ async fn test_submit_set_value_and_read_back() {
             contract_id.clone(),
             method,
             args,
-            Gas::from_teragas(tera_gas),
+            Gas::from_teragas(gas.into()),
         )
         .await
         .unwrap();

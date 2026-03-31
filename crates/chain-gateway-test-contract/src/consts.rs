@@ -1,3 +1,5 @@
+use crate::args::TeraGas;
+
 pub const DEFAULT_VALUE: &str = "hello from test";
 
 /* Method names */
@@ -15,9 +17,10 @@ pub const SPAWN_PROMISE_WITH_CALLBACK: &str = "spawn_promise_with_callback";
 /* Gas constants */
 // teragas as u64. We don't use near_sdk::Gas on purpose, such that the near indexer can re-use
 // these constants without depending on near_sdk.
-pub const FIVE_TGAS: u64 = 5;
-pub const SET_VALUE_TGAS: u64 = FIVE_TGAS;
-pub const PRIVATE_SET_ARGS_TGAS: u64 = SET_VALUE_TGAS;
-pub const SET_VALUE_IN_PROMISE_TGAS: u64 = SET_VALUE_TGAS + FIVE_TGAS;
-pub const SPAWN_PROMISE_WITH_CALLBACK_TGAS: u64 =
-    SET_VALUE_IN_PROMISE_TGAS + SET_VALUE_TGAS + FIVE_TGAS;
+pub const FIVE_TGAS: TeraGas = TeraGas(5);
+pub const SET_VALUE_GAS: TeraGas = FIVE_TGAS;
+pub const PRIVATE_SET_ARGS_GAS: TeraGas = SET_VALUE_GAS;
+pub const SET_VALUE_IN_PROMISE_GAS: TeraGas = SET_VALUE_GAS.const_add(FIVE_TGAS);
+pub const SPAWN_PROMISE_WITH_CALLBACK_GAS: TeraGas = SET_VALUE_IN_PROMISE_GAS
+    .const_add(SET_VALUE_GAS)
+    .const_add(FIVE_TGAS);

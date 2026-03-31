@@ -34,10 +34,7 @@ async fn test_subscription() {
     let new_value = "updated by sender test";
 
     let Call {
-        method,
-        args,
-        tera_gas,
-        ..
+        method, args, gas, ..
     } = make_set_value_args(new_value);
 
     observer_gw
@@ -46,7 +43,7 @@ async fn test_subscription() {
             contract_id,
             method,
             args,
-            Gas::from_teragas(tera_gas),
+            Gas::from_teragas(gas.into()),
         )
         .await
         .unwrap();
