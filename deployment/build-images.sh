@@ -67,7 +67,7 @@ require_cmds() {
 require_cmds docker jq git find touch
 
 if $USE_NODE || $USE_RUST_LAUNCHER; then
-    require_cmds repro-env podman curl
+    require_cmds repro-env podman
 fi
 
 if ! docker buildx &>/dev/null; then
@@ -133,22 +133,7 @@ if $USE_RUST_LAUNCHER; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
     rust_launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
 
-    # Download docker-compose binary and verify its hash.
-    # This is done in the build script (not via ADD in the Dockerfile) so that the
-    # Dockerfile stays single-stage, matching the node and Python launcher patterns.
-    # A multi-stage build with ADD from URL caused non-reproducible image hashes
-    # across branches — see #2652.
-    compose_version="v2.37.0"
-    compose_sha256="e6e471b1e7bf0443592d3987dea6073f08db3e48ba0580199109aa7a44257e54"
-    compose_path="deployment/docker-compose"
-    if [ ! -f "$compose_path" ] || [ "$(sha256sum "$compose_path" | cut -d' ' -f1)" != "$compose_sha256" ]; then
-        curl -fsSL -o "$compose_path" "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64"
-        echo "${compose_sha256}  ${compose_path}" | sha256sum -c -
-    fi
-    touch -d @"$SOURCE_DATE_EPOCH" "$compose_path"
-
     build_reproducible_image $RUST_LAUNCHER_IMAGE_NAME $DOCKERFILE_RUST_LAUNCHER
-    rm -f "$compose_path"
     rust_launcher_image_hash=$(get_image_hash $RUST_LAUNCHER_IMAGE_NAME)
 fi
 

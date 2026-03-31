@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
+FROM debian:trixie-slim@sha256:26f98ccd92fd0a44d6928ce8ff8f4921b4d2f535bfa07555ee5d18f61429cf0c
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN \
@@ -7,11 +7,9 @@ RUN \
     --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
     repro-sources-list.sh && \
     apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates docker.io && \
+    apt-get install -y --no-install-recommends ca-certificates docker.io docker-compose && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
-
-COPY --chmod=0755 deployment/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app
