@@ -1049,6 +1049,16 @@ expression: abi
         }
       },
       {
+        "name": "state_v2",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ProtocolContractStateV2"
+          }
+        }
+      },
+      {
         "name": "submit_participant_info",
         "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.",
         "kind": "call",
@@ -1889,6 +1899,15 @@ expression: abi
             "Bls12381"
           ]
         },
+        "Curve2": {
+          "description": "Elliptic curve used by a distributed key.",
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Edwards25519",
+            "Bls12381"
+          ]
+        },
         "DestinationNodeInfo": {
           "type": "object",
           "required": [
@@ -1905,6 +1924,30 @@ expression: abi
             }
           }
         },
+        "DistributedKeyConfig": {
+          "description": "Distributed key configuration. Used by `state_v2()`.",
+          "type": "object",
+          "required": [
+            "id",
+            "protocol",
+            "purpose",
+            "reconstruction_threshold"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/DomainId2"
+            },
+            "protocol": {
+              "$ref": "#/definitions/Protocol"
+            },
+            "purpose": {
+              "$ref": "#/definitions/DomainPurpose"
+            },
+            "reconstruction_threshold": {
+              "$ref": "#/definitions/ReconstructionThreshold"
+            }
+          }
+        },
         "DockerImageHash": {
           "type": "string",
           "maxLength": 64,
@@ -1912,7 +1955,7 @@ expression: abi
           "pattern": "^[0-9a-fA-F]+$"
         },
         "DomainConfig": {
-          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nJSON deserialization accepts both `\"scheme\"` (legacy) and `\"curve\"` (new) field names. Serialization outputs `\"scheme\"` for backward compatibility with the current contract. After 3.8 is released the compat struct should be removed.",
+          "description": "Legacy domain configuration. Will be replaced by [`DistributedKeyConfig`].\n\nJSON deserialization accepts both `\"scheme\"` (legacy) and `\"curve\"` (new) field names. Serialization outputs `\"scheme\"` for backward compatibility with the current contract.",
           "type": "object",
           "required": [
             "curve",
@@ -1932,7 +1975,7 @@ expression: abi
           }
         },
         "DomainConfig2": {
-          "description": "Configuration for a signature domain.",
+          "description": "Configuration for a signature domain. Used by `state()` for backward compatibility with external consumers.",
           "type": "object",
           "required": [
             "id",
@@ -2405,6 +2448,44 @@ expression: abi
             }
           }
         },
+        "InitializingContractStateV2": {
+          "description": "V2 initializing state with [`DistributedKeyConfig`].",
+          "type": "object",
+          "required": [
+            "cancel_votes",
+            "distributed_keys",
+            "epoch_id",
+            "generated_keys",
+            "generating_key"
+          ],
+          "properties": {
+            "cancel_votes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            },
+            "distributed_keys": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/DistributedKeyConfig"
+              }
+            },
+            "epoch_id": {
+              "$ref": "#/definitions/EpochId2"
+            },
+            "generated_keys": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/KeyForDomain2"
+              }
+            },
+            "generating_key": {
+              "$ref": "#/definitions/KeyEventV2"
+            }
+          }
+        },
         "K256AffinePoint": {
           "description": "AffinePoint on the Secp256k1 curve",
           "type": "object",
@@ -2523,6 +2604,40 @@ expression: abi
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
+            }
+          }
+        },
+        "KeyEventV2": {
+          "description": "V2 key event with [`DistributedKeyConfig`] instead of [`DomainConfig`].",
+          "type": "object",
+          "required": [
+            "distributed_key",
+            "epoch_id",
+            "next_attempt_id",
+            "parameters"
+          ],
+          "properties": {
+            "distributed_key": {
+              "$ref": "#/definitions/DistributedKeyConfig"
+            },
+            "epoch_id": {
+              "$ref": "#/definitions/EpochId2"
+            },
+            "instance": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/KeyEventInstance"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "next_attempt_id": {
+              "$ref": "#/definitions/AttemptId2"
+            },
+            "parameters": {
+              "$ref": "#/definitions/ThresholdParameters2"
             }
           }
         },
@@ -3088,6 +3203,59 @@ expression: abi
             }
           }
         },
+        "Protocol": {
+          "description": "Threshold signature protocol, parameterized by curve.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "CaitSith"
+              ],
+              "properties": {
+                "CaitSith": {
+                  "$ref": "#/definitions/Curve2"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Frost"
+              ],
+              "properties": {
+                "Frost": {
+                  "$ref": "#/definitions/Curve2"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "ConfidentialKeyDerivation"
+              ],
+              "properties": {
+                "ConfidentialKeyDerivation": {
+                  "$ref": "#/definitions/Curve2"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "DamgardEtAl"
+              ],
+              "properties": {
+                "DamgardEtAl": {
+                  "$ref": "#/definitions/Curve2"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "ProtocolContractState": {
           "description": "The main protocol contract state enum.",
           "oneOf": [
@@ -3129,6 +3297,53 @@ expression: abi
               "properties": {
                 "Resharing": {
                   "$ref": "#/definitions/ResharingContractState"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ProtocolContractStateV2": {
+          "description": "V2 protocol state with [`DistributedKeyConfig`] throughout.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "NotInitialized"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Initializing"
+              ],
+              "properties": {
+                "Initializing": {
+                  "$ref": "#/definitions/InitializingContractStateV2"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Running"
+              ],
+              "properties": {
+                "Running": {
+                  "$ref": "#/definitions/RunningContractStateV2"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Resharing"
+              ],
+              "properties": {
+                "Resharing": {
+                  "$ref": "#/definitions/ResharingContractStateV2"
                 }
               },
               "additionalProperties": false
@@ -3336,6 +3551,12 @@ expression: abi
             }
           ]
         },
+        "ReconstructionThreshold": {
+          "description": "Number of shares required to reconstruct the secret key.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "ResharingContractState": {
           "description": "State when the contract is resharing keys to new participants.",
           "type": "object",
@@ -3364,6 +3585,37 @@ expression: abi
             },
             "resharing_key": {
               "$ref": "#/definitions/KeyEvent"
+            }
+          }
+        },
+        "ResharingContractStateV2": {
+          "description": "V2 resharing state with [`DistributedKeyConfig`].",
+          "type": "object",
+          "required": [
+            "cancellation_requests",
+            "previous_running_state",
+            "reshared_keys",
+            "resharing_key"
+          ],
+          "properties": {
+            "cancellation_requests": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
+            },
+            "previous_running_state": {
+              "$ref": "#/definitions/RunningContractStateV2"
+            },
+            "reshared_keys": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/KeyForDomain2"
+              }
+            },
+            "resharing_key": {
+              "$ref": "#/definitions/KeyEventV2"
             }
           }
         },
@@ -3412,6 +3664,47 @@ expression: abi
             },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"
+            },
+            "keyset": {
+              "$ref": "#/definitions/Keyset2"
+            },
+            "parameters": {
+              "$ref": "#/definitions/ThresholdParameters2"
+            },
+            "parameters_votes": {
+              "$ref": "#/definitions/ThresholdParametersVotes"
+            },
+            "previously_cancelled_resharing_epoch_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/EpochId2"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "RunningContractStateV2": {
+          "description": "V2 running state with [`DistributedKeyConfig`].",
+          "type": "object",
+          "required": [
+            "add_domains_votes",
+            "distributed_keys",
+            "keyset",
+            "parameters",
+            "parameters_votes"
+          ],
+          "properties": {
+            "add_domains_votes": {
+              "$ref": "#/definitions/AddDomainsVotes"
+            },
+            "distributed_keys": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/DistributedKeyConfig"
+              }
             },
             "keyset": {
               "$ref": "#/definitions/Keyset2"
