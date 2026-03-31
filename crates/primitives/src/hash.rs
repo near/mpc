@@ -119,20 +119,20 @@ macro_rules! define_hash {
         }
 
         #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-        impl schemars::JsonSchema for $name {
+        impl $crate::_macro_deps::schemars::JsonSchema for $name {
             fn schema_name() -> String {
                 stringify!($name).to_string()
             }
 
             fn json_schema(
-                _generator: &mut schemars::r#gen::SchemaGenerator,
-            ) -> schemars::schema::Schema {
+                _generator: &mut $crate::_macro_deps::schemars::r#gen::SchemaGenerator,
+            ) -> $crate::_macro_deps::schemars::schema::Schema {
                 let hex_len = ($n * 2) as u32;
-                schemars::schema::Schema::Object(schemars::schema::SchemaObject {
-                    instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(
-                        schemars::schema::InstanceType::String,
+                $crate::_macro_deps::schemars::schema::Schema::Object($crate::_macro_deps::schemars::schema::SchemaObject {
+                    instance_type: Some($crate::_macro_deps::schemars::schema::SingleOrVec::Single(Box::new(
+                        $crate::_macro_deps::schemars::schema::InstanceType::String,
                     ))),
-                    string: Some(Box::new(schemars::schema::StringValidation {
+                    string: Some(Box::new($crate::_macro_deps::schemars::schema::StringValidation {
                         min_length: Some(hex_len),
                         max_length: Some(hex_len),
                         pattern: Some("^[0-9a-fA-F]+$".to_string()),

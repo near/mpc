@@ -10,5 +10,7 @@ pub mod hash;
 pub mod _macro_deps {
     pub use ::borsh;
     pub use ::hex;
+    #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+    pub use ::schemars;
     pub use ::serde;
 }
