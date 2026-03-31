@@ -34,9 +34,10 @@ sha256:<NEW>
 
 These are what operators actually run.
 
-- `tee_launcher/launcher_docker_compose.yaml` (TEE)
-- `tee_launcher/launcher_docker_compose_nontee.yaml` (non-TEE)
-- (optional) any other compose templates used by deployment scripts
+- `deployment/cvm-deployment/launcher_docker_compose.yaml` (Rust launcher, TEE)
+- `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` (Rust launcher, non-TEE)
+- `tee_launcher/launcher_docker_compose.yaml` (Python launcher, TEE)
+- `tee_launcher/launcher_docker_compose_nontee.yaml` (Python launcher, non-TEE)
 
 Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`)
 consistent with the intended release.
