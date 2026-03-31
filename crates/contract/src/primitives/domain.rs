@@ -62,6 +62,53 @@ impl Default for Curve {
     }
 }
 
+/// Identifies the threshold signature protocol.
+/// Each variant is parameterized with a [`Curve`], making it possible
+/// for any protocol to operate over different curves in the future.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Protocol {
+    CaitSith(Curve),
+    Frost(Curve),
+    ConfidentialKeyDerivation(Curve),
+    DamgardEtAl(Curve),
+}
+
+impl Protocol {
+    pub fn curve(&self) -> Curve {
+        match self {
+            Self::CaitSith(c)
+            | Self::Frost(c)
+            | Self::ConfidentialKeyDerivation(c)
+            | Self::DamgardEtAl(c) => *c,
+        }
+    }
+
+    pub fn cait_sith() -> Self {
+        Self::CaitSith(Curve::Secp256k1)
+    }
+    pub fn frost() -> Self {
+        Self::Frost(Curve::Edwards25519)
+    }
+    pub fn ckd() -> Self {
+        Self::ConfidentialKeyDerivation(Curve::Bls12381)
+    }
+    pub fn damgard_et_al() -> Self {
+        Self::DamgardEtAl(Curve::Secp256k1)
+    }
+}
+
+/// Infers the protocol from a legacy [`Curve`] value.
+/// Each deployed curve maps to exactly one protocol, so this is unambiguous
+/// for existing domains.
+pub fn protocol_from_legacy_curve(curve: Curve) -> Protocol {
+    match curve {
+        Curve::Secp256k1 => Protocol::cait_sith(),
+        Curve::Edwards25519 => Protocol::frost(),
+        Curve::Bls12381 => Protocol::ckd(),
+    }
+}
+
 /// Returns whether the given curve is valid for the given purpose.
 pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool {
     matches!(
