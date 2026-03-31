@@ -1045,6 +1045,14 @@ impl MpcContract {
         Ok(())
     }
 
+    #[handle_result]
+    pub fn register_foreign_chain_config(
+        &mut self,
+        foreign_chain_config: dtos::NodeForeignChainRpcConfig,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
     /// Starts a new attempt to generate a key for the current domain.
     /// This only succeeds if the signer is the leader (the participant with the lowest ID).
     #[handle_result]

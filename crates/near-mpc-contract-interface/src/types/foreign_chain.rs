@@ -1,12 +1,12 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
+use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
 use std::collections::BTreeMap;
 
-use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
+use crate::types::{ParticipantId, SignatureResponse};
 
 #[derive(
     Debug,
@@ -617,6 +617,51 @@ pub struct ForeignChainPolicy {
 #[derive(
     Debug,
     Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ForeignChainConfigs {
+    pub chains:
+        BTreeMap<ForeignChain, NonEmptyBTreeMap<RpcProviderName, NonEmptyBTreeSet<ParticipantId>>>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct NodeForeignChainRpcConfig {
+    pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProviderName>>,
+}
+
+#[derive(
+    Debug,
+    Clone,
     Eq,
     PartialEq,
     Ord,
@@ -634,6 +679,25 @@ pub struct ForeignChainPolicy {
 pub struct RpcProvider {
     pub rpc_url: String,
 }
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct RpcProviderName(String);
 
 #[derive(
     Debug,
