@@ -29,6 +29,5 @@ derive_more = { workspace = true }
 near-sdk = { workspace = true }
 serde_json = { workspace = true }
 
-
 [lints]
 workspace = true
