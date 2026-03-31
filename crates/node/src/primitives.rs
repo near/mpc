@@ -75,6 +75,19 @@ impl UniqueId {
         }
     }
 
+    /// Validates that this unique ID belongs to the given participant.
+    /// Returns an error if the embedded participant ID does not match.
+    pub fn validate_owned_by(&self, expected: ParticipantId) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.participant_id() == expected,
+            "UniqueId {:?} belongs to participant {}, expected {}",
+            self,
+            self.participant_id(),
+            expected
+        );
+        Ok(())
+    }
+
     /// Add the given delta to the counter, returning a new unique ID.
     /// This is useful for generating multiple unique IDs in a row, for batched
     /// generation of multiple assets at once.
@@ -262,6 +275,38 @@ pub struct Version {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_owned_by_accepts_matching_participant() {
+        // given
+        let participant = ParticipantId::from_raw(5);
+        let id = UniqueId::new(participant, 1000, 0);
+        let id_from_batch = id.add_to_counter(42).unwrap();
+
+        // when/then
+        id.validate_owned_by(participant).unwrap();
+        id_from_batch.validate_owned_by(participant).unwrap();
+    }
+
+    #[test]
+    fn test_validate_owned_by_rejects_mismatched_participant() {
+        // given
+        let owner = ParticipantId::from_raw(5);
+        let other = ParticipantId::from_raw(99);
+        let id = UniqueId::new(owner, 1000, 0);
+
+        // when
+        let err = id
+            .validate_owned_by(other)
+            .expect_err("Should reject mismatched participant");
+
+        // then
+        assert!(
+            err.to_string().contains("expected 99"),
+            "Unexpected error message: {}",
+            err
+        );
+    }
 
     #[test]
     #[expect(non_snake_case)]
