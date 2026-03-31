@@ -187,6 +187,7 @@ pub enum DomainPurpose {
 }
 
 /// Configuration for a signature domain.
+/// Used by `state()` for backward compatibility with external consumers.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
@@ -200,6 +201,63 @@ pub struct DomainConfig {
     /// `None` when reading state from an old contract that predates domain purposes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<DomainPurpose>,
+}
+
+/// Elliptic curve used by a distributed key.
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum Curve {
+    Secp256k1,
+    Edwards25519,
+    Bls12381,
+}
+
+/// Threshold signature protocol, parameterized by curve.
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum Protocol {
+    CaitSith(Curve),
+    Frost(Curve),
+    ConfidentialKeyDerivation(Curve),
+    DamgardEtAl(Curve),
+}
+
+/// Number of shares required to reconstruct the secret key.
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ReconstructionThreshold(pub u64);
+
+/// Distributed key configuration. Used by `state_v2()`.
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct DistributedKeyConfig {
+    pub id: DomainId,
+    pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
+    pub purpose: DomainPurpose,
 }
 
 /// Registry of all signature domains.
