@@ -468,6 +468,10 @@ pub enum ProtocolContractState {
 
 /// V2 key event with [`DistributedKeyConfig`] instead of [`DomainConfig`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct KeyEventV2 {
     pub epoch_id: EpochId,
     pub distributed_key: DistributedKeyConfig,
@@ -478,6 +482,10 @@ pub struct KeyEventV2 {
 
 /// V2 initializing state with [`DistributedKeyConfig`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct InitializingContractStateV2 {
     pub distributed_keys: Vec<DistributedKeyConfig>,
     pub epoch_id: EpochId,
@@ -488,6 +496,10 @@ pub struct InitializingContractStateV2 {
 
 /// V2 running state with [`DistributedKeyConfig`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct RunningContractStateV2 {
     pub distributed_keys: Vec<DistributedKeyConfig>,
     pub keyset: Keyset,
@@ -499,6 +511,10 @@ pub struct RunningContractStateV2 {
 
 /// V2 resharing state with [`DistributedKeyConfig`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct ResharingContractStateV2 {
     pub previous_running_state: RunningContractStateV2,
     pub reshared_keys: Vec<KeyForDomain>,
@@ -508,6 +524,10 @@ pub struct ResharingContractStateV2 {
 
 /// V2 protocol state with [`DistributedKeyConfig`] throughout.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub enum ProtocolContractStateV2 {
     NotInitialized,
     Initializing(InitializingContractStateV2),
