@@ -1,30 +1,28 @@
-version: '3.8'
-
 services:
   launcher:
-    image: nearone/mpc-launcher@sha256:1f54b55bad22c45067228a9262bc6377e393ca1a07edb64e691e80704f49b74e
-
-    container_name: launcher
+    image: nearone/mpc-launcher@sha256:fa963f9477b62fcc031696a33a1e92cfb8f424879333f67023cd6f095e7f12e6
+    container_name: "${RUST_LAUNCHER_IMAGE_NAME}"
 
     environment:
-      - PLATFORM=TEE
+      - PLATFORM=NONTEE
       - DOCKER_CONTENT_TRUST=1
       - DEFAULT_IMAGE_DIGEST=sha256:6a5700fccbb3facddd1f3934f4976c4dcefc176c4aac28cd2fd035984b368980
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /var/run/dstack.sock:/var/run/dstack.sock
-      - /tapp:/tapp:ro
+      - ./user-config.toml:/tapp/user_config:ro
       - shared-volume:/mnt/shared:rw
+      - mpc-data:/data
 
     security_opt:
       - no-new-privileges:true
 
     read_only: true
-
     tmpfs:
       - /tmp
 
 volumes:
   shared-volume:
     name: shared-volume
+  mpc-data:
+    name: mpc-data
