@@ -13,6 +13,11 @@ import time
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared, constants
+
+# TODO(#2663): re-enable when Protocol::DamgardEtAl is wired into the contract
+pytestmark = pytest.mark.skip(
+    reason="V2Secp256k1 curve removed; robust ECDSA will use Protocol::DamgardEtAl"
+)
 from common_lib.shared import metrics, mpc_cluster_metrics
 from common_lib.contracts import load_parallel_sign_contract
 
