@@ -278,7 +278,7 @@ impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
                 presignature,
                 participants: channel.participants().to_vec(),
             },
-        )?;
+        );
         Ok(())
     }
 

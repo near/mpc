@@ -286,7 +286,7 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
             self.out_triple_store.add_unowned(
                 self.out_triple_id_start.add_to_counter(i as u32)?,
                 paired_triple,
-            )?;
+            );
         }
         Ok(())
     }
