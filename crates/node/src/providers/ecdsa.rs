@@ -10,7 +10,7 @@ pub mod triple;
 
 pub use triple::TripleStorage;
 
-use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
+use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -18,6 +18,7 @@ use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
 use crate::providers::SignatureProvider;
 use crate::storage::SignRequestStorage;
 use crate::tracking;
+use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
 use borsh::{BorshDeserialize, BorshSerialize};

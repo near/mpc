@@ -1,9 +1,9 @@
-use crate::config::{
-    AuthConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
-};
 use crate::p2p::testing::PortSeed;
 use crate::tests::{IntegrationTestSetup, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
+use mpc_node_config::{
+    AuthConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
+};
 use near_time::Clock;
 use std::time::Duration;
 
