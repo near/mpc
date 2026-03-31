@@ -144,45 +144,50 @@ impl ReconstructionThreshold {
     pub fn inner(&self) -> u64;
 }
 
-/// Identifies the threshold signature protocol.
-/// Each current protocol uniquely determines its curve, so `Curve`
-/// is derived via `From<Protocol>` rather than stored separately.
-/// If a future protocol supports multiple curves, it can carry
-/// the curve as data: `NewProtocol(Curve)`.
-pub enum Protocol {
-    CaitSith,                    // → Secp256k1
-    Frost,                       // → Edwards25519
-    ConfidentialKeyDerivation,   // → Bls12381
-    DamgardEtAl,                 // → Secp256k1
-}
-
 /// Identifies the elliptic curve. Used by the contract to verify
 /// signature responses and derive public keys.
-/// Not stored in `DistributedKeyConfig` — derived from `Protocol` via `From<Protocol>`.
 pub enum Curve {
     Secp256k1,
     Edwards25519,  // renamed from Ed25519 for clarity
     Bls12381,
 }
 
-impl From<Protocol> for Curve {
-    fn from(protocol: Protocol) -> Self {
-        match protocol {
-            Protocol::CaitSith | Protocol::DamgardEtAl => Curve::Secp256k1,
-            Protocol::Frost => Curve::Edwards25519,
-            Protocol::ConfidentialKeyDerivation => Curve::Bls12381,
+/// Identifies the threshold signature protocol.
+/// Each variant is parameterized with a `Curve`, making it possible
+/// for any protocol to operate over different curves in the future.
+pub enum Protocol {
+    CaitSith(Curve),
+    Frost(Curve),
+    ConfidentialKeyDerivation(Curve),
+    DamgardEtAl(Curve),
+}
+
+impl Protocol {
+    /// Extracts the curve from any protocol variant.
+    pub fn curve(&self) -> Curve {
+        match self {
+            Self::CaitSith(c)
+            | Self::Frost(c)
+            | Self::ConfidentialKeyDerivation(c)
+            | Self::DamgardEtAl(c) => *c,
         }
     }
+
+    /// Convenience constructors for current default pairings.
+    pub fn cait_sith() -> Self { Self::CaitSith(Curve::Secp256k1) }
+    pub fn frost() -> Self { Self::Frost(Curve::Edwards25519) }
+    pub fn ckd() -> Self { Self::ConfidentialKeyDerivation(Curve::Bls12381) }
+    pub fn damgard_et_al() -> Self { Self::DamgardEtAl(Curve::Secp256k1) }
 }
 ```
 
 ### 2.2 Design Rationale
 
-#### Why `Curve` is derived from `Protocol`, not stored
+#### Why `Curve` is embedded in `Protocol`, not stored separately
 
-Every current protocol uniquely determines its curve (CaitSith → Secp256k1, Frost → Edwards25519, etc.). Storing both creates a redundant field and a validation burden (`validate_curve_protocol`) to keep them consistent. Instead, `Curve` is derived via `From<Protocol>`.
+Every `Protocol` variant carries its `Curve` as data. This makes the curve-protocol relationship explicit and type-safe — there is no separate `curve` field to validate or keep in sync. The `Protocol::curve()` method provides uniform access via a single match arm with `|` binding.
 
-If a future protocol supports multiple curves, it can carry the curve as data in the enum variant — e.g. `NewProtocol(Curve)`. The `From` impl naturally handles this by extracting the inner value. This avoids premature generalization while keeping the extension path clean.
+Today each protocol uses exactly one curve, so convenience constructors (`Protocol::cait_sith()`, etc.) encode the current defaults. If a protocol later supports multiple curves, call sites simply use the variant directly — e.g. `Protocol::Frost(Curve::Secp256k1)` — with no structural changes needed.
 
 #### Why no separate `KeyConfig` / `ProtocolConfig` struct
 
@@ -195,7 +200,7 @@ Distributed keys sharing the same protocol/threshold (e.g., Sign and ForeignTx b
 
 | Current | Proposed | Change |
 |---|---|---|
-| `SignatureScheme` | `Protocol` (with `Curve` derived via `From`) | Protocol is the primary identifier; curve is derived |
+| `SignatureScheme` | `Protocol(Curve)` | Protocol is the primary identifier; curve is embedded in each variant |
 | `DomainConfig` | `DistributedKeyConfig` | Renamed; `protocol` and `reconstruction_threshold` inlined directly (no separate `KeyConfig`) |
 | `DomainId` | `DistributedKeyId` | Renamed to match `DistributedKeyConfig` |
 | `DomainPurpose` | `KeyPurpose` | Renamed to match `DistributedKeyConfig` |
@@ -261,7 +266,7 @@ pub fn validate_threshold(config: &DistributedKeyConfig, num_participants: u64) 
 
     // Protocol-specific constraints
     match config.protocol {
-        Protocol::DamgardEtAl => {
+        Protocol::DamgardEtAl(_) => {
             // DamgardEtAl works in honest majority setting
             // i.e. requires t < n/2
             if 2 * t - 1 > num_participants {
@@ -314,7 +319,7 @@ pub fn min_active_participants(
     let t = reconstruction_threshold.inner();
     match protocol {
         // DamgardEtAl requires honest majority: n >= 2t - 1
-        Protocol::DamgardEtAl => 2 * t - 1,
+        Protocol::DamgardEtAl(_) => 2 * t - 1,
         // All other protocols need at least t participants
         _ => t,
     }
@@ -328,7 +333,7 @@ pub fn threshold_range(
 ) -> Option<(u64, u64)> {
     let min = 2u64;
     let max = match protocol {
-        Protocol::DamgardEtAl => (num_participants + 1) / 2,
+        Protocol::DamgardEtAl(_) => (num_participants + 1) / 2,
         _ => num_participants,
     };
     if min > max { None } else { Some((min, max)) }
@@ -414,20 +419,21 @@ Below is the proposed PR sequence. PRs marked **[DONE]** have already landed. PR
 - Remove `V2Secp256k1` from DTO `SignatureScheme` enum.
 - Remove `is_valid_scheme_for_purpose` entry for `V2Secp256k1`.
 - Remove the `KeyshareData::V2Secp256k1` variant in the node (or gate behind a feature flag if reshare data exists in dev/testnet).
-- Update `coordinator.rs` routing: the `V2Secp256k1` match arm is removed; robust ECDSA will be routed via `Protocol::DamgardEtAl` (added below).
+- Update `coordinator.rs` routing: the `V2Secp256k1` match arm is removed; robust ECDSA will be routed via `Protocol::DamgardEtAl(_)` (added below).
 
 **Changes (add Protocol enum)**:
 - Add new enum:
   ```rust
   #[near(serializers=[borsh, json])]
   pub enum Protocol {
-      CaitSith,                    // OT-based ECDSA (current Secp256k1)
-      Frost,                       // Threshold Schnorr (current Edwards25519)
-      ConfidentialKeyDerivation,   // BLS-based CKD
-      DamgardEtAl,                 // Robust ECDSA (new)
+      CaitSith(Curve),                    // OT-based ECDSA (default: Secp256k1)
+      Frost(Curve),                       // Threshold Schnorr (default: Edwards25519)
+      ConfidentialKeyDerivation(Curve),   // BLS-based CKD (default: Bls12381)
+      DamgardEtAl(Curve),                 // Robust ECDSA (default: Secp256k1)
   }
   ```
-- Implement `From<Protocol> for Curve` to derive the curve from the protocol (see §2.1).
+- `Protocol` variants carry `Curve` as data; `Protocol::curve()` extracts it (see §2.1).
+- Add convenience constructors for current default pairings (`Protocol::cait_sith()`, etc.).
 - **No changes to `DistributedKeyConfig` yet** — `Protocol` exists but is not wired into state.
 - No changes to contract-interface DTO.
 
@@ -471,7 +477,7 @@ This is the most complex PR. It wires `Protocol` and `Curve` together and change
 fn migrate(old: OldDistributedKeyConfig) -> DistributedKeyConfig {
     DistributedKeyConfig {
         id: old.id,
-        protocol: Protocol::from(old.curve),  // infer protocol from old curve
+        protocol: protocol_from_legacy_curve(old.curve),  // infer protocol + curve from old curve
         // Use global threshold as default for all existing distributed keys
         reconstruction_threshold: ReconstructionThreshold(old_global_threshold),
         purpose: old.purpose,
@@ -479,7 +485,7 @@ fn migrate(old: OldDistributedKeyConfig) -> DistributedKeyConfig {
 }
 ```
 
-Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to infer protocol from legacy curve values. This is unambiguous for existing distributed keys since each deployed curve maps to exactly one protocol.
+Note: Migration needs a `protocol_from_legacy_curve(Curve) -> Protocol` helper to infer the protocol (with its curve) from legacy curve values. This is unambiguous for existing distributed keys since each deployed curve maps to exactly one protocol (e.g., `Curve::Secp256k1` → `Protocol::CaitSith(Curve::Secp256k1)`).
 
 **JSON compat**:
 - External consumers calling `state()` see unchanged JSON.
@@ -567,7 +573,7 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
   // Fallback: old contract, state() only
   let distributed_key = DistributedKeyConfig {
       id: old_domain_id,
-      protocol: Protocol::from(old_scheme),  // infer protocol from old curve
+      protocol: protocol_from_legacy_curve(old_scheme),  // infer protocol + curve from old curve
       reconstruction_threshold: ReconstructionThreshold(global_threshold),
       purpose: old_purpose,
   };
@@ -582,10 +588,10 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
 - Provider routing uses `Protocol` enum instead of pattern-matching on `SignatureScheme`/`Curve`:
   ```rust
   match dk.protocol {
-      Protocol::CaitSith => EcdsaSignatureProvider,
-      Protocol::Frost => EddsaSignatureProvider,
-      Protocol::ConfidentialKeyDerivation => CKDProvider,
-      Protocol::DamgardEtAl => RobustEcdsaSignatureProvider,
+      Protocol::CaitSith(_) => EcdsaSignatureProvider,
+      Protocol::Frost(_) => EddsaSignatureProvider,
+      Protocol::ConfidentialKeyDerivation(_) => CKDProvider,
+      Protocol::DamgardEtAl(_) => RobustEcdsaSignatureProvider,
   }
   ```
 
@@ -907,7 +913,7 @@ let threshold = ReconstructionLowerBound::from(threshold);
 let dk = distributed_key_registry.get(distributed_key_id);
 let active_signers = min_active_participants(&dk.protocol, &dk.reconstruction_threshold);
 let threshold = match dk.protocol {
-    Protocol::DamgardEtAl => {
+    Protocol::DamgardEtAl(_) => {
         let max_malicious = MaxMalicious::from(dk.reconstruction_threshold.inner() - 1);
         // Use MaxMalicious directly, no translation needed
     }
