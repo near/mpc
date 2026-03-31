@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _, ConfigFile,
-        PersistentSecrets, RespondConfig, SecretsConfig, StartConfig,
+        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
+        PersistentSecrets, RespondConfig, SecretsConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -18,6 +18,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
+use mpc_node_config::{ConfigFile, StartConfig};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
 use std::{

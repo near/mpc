@@ -1,6 +1,6 @@
 use tracing_subscriber::EnvFilter;
 
-use crate::config::{LogConfig, LogFormat};
+use mpc_node_config::{LogConfig, LogFormat};
 
 pub fn init_logging(log_config: &LogConfig) {
     let filter = env_filter(log_config.filter.as_deref());

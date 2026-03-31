@@ -1,4 +1,3 @@
-use crate::config::ConfigFile;
 use crate::indexer::handler::{
     CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
@@ -25,6 +24,7 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
+use mpc_node_config::ConfigFile;
 
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{Curve, DomainId};

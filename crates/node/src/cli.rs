@@ -1,10 +1,5 @@
 use crate::{
-    config::{
-        load_config_file,
-        start::{NearInitConfigExt, StartConfigExt},
-        ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat,
-        NearInitConfig, SecretsStartConfig, StartConfig,
-    },
+    config::start::{NearInitConfigExt, StartConfigExt},
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -15,6 +10,10 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
+use mpc_node_config::{
+    load_config_file, ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, LogConfig,
+    LogFormat, NearInitConfig, SecretsStartConfig, StartConfig,
+};
 use mpc_primitives::hash::NodeImageHash;
 use std::path::PathBuf;
 
@@ -390,11 +389,12 @@ mod testing {
     };
 
     use crate::{
-        config::{
-            BlockArgs, CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig,
-            PersistentSecrets, PresignatureConfig, SignatureConfig, SyncMode, TripleConfig,
-        },
+        config::PersistentSecrets,
         p2p::testing::{generate_test_p2p_configs, PortSeed},
+    };
+    use mpc_node_config::{
+        BlockArgs, CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig,
+        PresignatureConfig, SignatureConfig, SyncMode, TripleConfig,
     };
     use near_indexer_primitives::types::Finality;
     use near_sdk::AccountId;

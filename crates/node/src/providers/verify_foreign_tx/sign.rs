@@ -11,7 +11,7 @@ use rand::SeedableRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
-use crate::config::{auth_config_to_rpc_auth, ForeignChainsConfig};
+use crate::config::auth_config_to_rpc_auth;
 use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
@@ -21,6 +21,7 @@ use crate::{
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
 use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
+use mpc_node_config::ForeignChainsConfig;
 use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::types as dtos;
 use tokio::time::{timeout, Duration};
@@ -370,11 +371,11 @@ fn select_provider(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::config::{
-        BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig,
-    };
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
+    use mpc_node_config::{
+        BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig,
+    };
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use std::collections::BTreeMap;
 

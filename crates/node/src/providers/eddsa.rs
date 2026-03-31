@@ -2,7 +2,7 @@ mod key_generation;
 mod key_resharing;
 mod sign;
 
-use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
+use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::metrics::tokio_task_metrics::EDDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -13,6 +13,7 @@ use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
+use mpc_node_config::ConfigFile;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use std::collections::HashMap;
 use std::sync::Arc;

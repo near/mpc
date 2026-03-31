@@ -1,4 +1,4 @@
-use crate::config::{IndexerConfig, SyncMode};
+use mpc_node_config::{IndexerConfig, SyncMode};
 use near_indexer::near_primitives::types::Gas;
 
 pub(crate) trait IndexerConfigExt {

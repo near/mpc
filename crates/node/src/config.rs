@@ -1,4 +1,5 @@
 use crate::primitives::ParticipantId;
+use mpc_node_config::{AuthConfig, ConfigFile};
 
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -15,18 +16,6 @@ use std::{
 };
 
 pub(crate) mod start;
-
-// Re-export all types from the config crate for backwards compatibility.
-pub use mpc_node_config::load_config_file;
-pub use mpc_node_config::{
-    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, AuthConfig, BitcoinApiVariant,
-    BitcoinChainConfig, BitcoinProviderConfig, BlockArgs, CKDConfig, ChainId, ConfigFile,
-    DownloadConfigType, EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig,
-    ForeignChainsConfig, GcpStartConfig, IndexerConfig, KeygenConfig, LogConfig, LogFormat,
-    NearInitConfig, PresignatureConfig, SecretsStartConfig, SignatureConfig, SolanaApiVariant,
-    SolanaChainConfig, SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig,
-    StarknetProviderConfig, StartConfig, SyncMode, TokenConfig, TripleConfig, WebUIConfig,
-};
 
 pub type AesKey256 = [u8; 32];
 pub type AesKey128 = [u8; 16];
@@ -501,6 +490,8 @@ pub mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use mpc_node_config::ConfigFile;
+
     #[test]
     fn test_secret_gen() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
