@@ -40,7 +40,7 @@ use near_mpc_contract_interface::method_names::{
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
 use serde::Deserialize;
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
@@ -443,7 +443,7 @@ impl IndexerRpcHandler {
 /// with the indexer.
 /// TODO(#155): This would be the interface to abstract away having an indexer
 /// running in a separate process.
-pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
+pub struct IndexerAPI<TransactionSender> {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
     /// Provides block updates (signature requests and other relevant receipts).
@@ -464,6 +464,4 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
-
-    pub foreign_chain_policy_reader: ForeignChainPolicyReader,
 }

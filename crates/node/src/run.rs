@@ -5,9 +5,7 @@ use crate::{
     },
     coordinator::Coordinator,
     db::SecretDB,
-    indexer::{
-        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI, ReadForeignChainPolicy,
-    },
+    indexer::{real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI},
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,

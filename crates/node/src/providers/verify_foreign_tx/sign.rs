@@ -1,4 +1,3 @@
-use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
