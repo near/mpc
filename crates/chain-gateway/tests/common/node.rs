@@ -34,7 +34,7 @@ impl LocalNodeBuilder {
             home_dir: self.home_dir.path().to_path_buf(),
             sync_mode: near_indexer::SyncModeEnum::LatestSynced,
             await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
-            finality: Finality::Final,
+            finality: Finality::None,
             validate_genesis: true,
         };
 
