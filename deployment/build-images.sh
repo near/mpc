@@ -67,7 +67,7 @@ require_cmds() {
 require_cmds docker jq git find touch
 
 if $USE_NODE || $USE_RUST_LAUNCHER; then
-    require_cmds repro-env podman
+    require_cmds repro-env podman curl
 fi
 
 if ! docker buildx &>/dev/null; then
@@ -113,11 +113,10 @@ fi
 build_reproducible_image() {
   local image_name=$1
   local dockerfile_path=$2
-  local context_dir="${3:-.}"
   docker buildx build --builder ${buildkit_image_name} --no-cache \
     --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
     --output type=docker,name=$image_name,rewrite-timestamp=true \
-    --progress plain -f "$dockerfile_path" "$context_dir"
+    --progress plain -f "$dockerfile_path" .
 }
 
 get_image_hash() {
@@ -134,20 +133,22 @@ if $USE_RUST_LAUNCHER; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
     rust_launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
 
-    # Build from a minimal context containing only the files the Dockerfile needs.
-    # Using the full repo as context causes the image hash to change whenever any
-    # file in the repo changes, even if the launcher code is unchanged. See #2652.
-    rust_launcher_context=$(mktemp -d)
-    mkdir -p "$rust_launcher_context/target/reproducible" "$rust_launcher_context/deployment"
-    cp target/reproducible/tee-launcher "$rust_launcher_context/target/reproducible/"
-    cp deployment/repro-sources-list.sh "$rust_launcher_context/deployment/"
-    touch -d @"$SOURCE_DATE_EPOCH" "$rust_launcher_context/target/reproducible/tee-launcher" \
-        "$rust_launcher_context/deployment/repro-sources-list.sh" \
-        "$rust_launcher_context/target/reproducible" "$rust_launcher_context/target" \
-        "$rust_launcher_context/deployment" "$rust_launcher_context"
-    build_reproducible_image $RUST_LAUNCHER_IMAGE_NAME $DOCKERFILE_RUST_LAUNCHER "$rust_launcher_context"
-    rm -rf "$rust_launcher_context"
+    # Download docker-compose binary and verify its hash.
+    # This is done in the build script (not via ADD in the Dockerfile) so that the
+    # Dockerfile stays single-stage, matching the node and Python launcher patterns.
+    # A multi-stage build with ADD from URL caused non-reproducible image hashes
+    # across branches — see #2652.
+    compose_version="v2.37.0"
+    compose_sha256="e6e471b1e7bf0443592d3987dea6073f08db3e48ba0580199109aa7a44257e54"
+    compose_path="deployment/docker-compose"
+    if [ ! -f "$compose_path" ] || [ "$(sha256sum "$compose_path" | cut -d' ' -f1)" != "$compose_sha256" ]; then
+        curl -fsSL -o "$compose_path" "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64"
+        echo "${compose_sha256}  ${compose_path}" | sha256sum -c -
+    fi
+    touch -d @"$SOURCE_DATE_EPOCH" "$compose_path"
 
+    build_reproducible_image $RUST_LAUNCHER_IMAGE_NAME $DOCKERFILE_RUST_LAUNCHER
+    rm -f "$compose_path"
     rust_launcher_image_hash=$(get_image_hash $RUST_LAUNCHER_IMAGE_NAME)
 fi
 
