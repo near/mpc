@@ -205,7 +205,15 @@ pub struct DomainConfig {
 
 /// Elliptic curve used by a distributed key.
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
     BorshDeserialize,
 )]
 #[cfg_attr(
@@ -220,7 +228,15 @@ pub enum Curve {
 
 /// Threshold signature protocol, parameterized by curve.
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
     BorshDeserialize,
 )]
 #[cfg_attr(
@@ -236,7 +252,15 @@ pub enum Protocol {
 
 /// Number of shares required to reconstruct the secret key.
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
     BorshDeserialize,
 )]
 #[cfg_attr(

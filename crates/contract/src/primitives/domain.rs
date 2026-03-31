@@ -232,12 +232,21 @@ enum DomainConfigCompat {
 impl From<DomainConfigCompat> for DomainConfig {
     fn from(value: DomainConfigCompat) -> Self {
         match value {
-            DomainConfigCompat::WithProtocol { id, protocol, purpose, .. } => Self {
+            DomainConfigCompat::WithProtocol {
+                id,
+                protocol,
+                purpose,
+                ..
+            } => Self {
                 id,
                 curve: protocol.curve(),
                 purpose,
             },
-            DomainConfigCompat::Legacy { id, scheme, purpose } => Self {
+            DomainConfigCompat::Legacy {
+                id,
+                scheme,
+                purpose,
+            } => Self {
                 id,
                 curve: scheme.into(),
                 purpose,

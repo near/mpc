@@ -829,12 +829,14 @@ impl RunningContractState {
 impl IntoInterfaceType<dtos::ProtocolContractStateV2> for &ProtocolContractState {
     fn into_dto_type(self) -> dtos::ProtocolContractStateV2 {
         match self {
-            ProtocolContractState::NotInitialized => {
-                dtos::ProtocolContractStateV2::NotInitialized
-            }
+            ProtocolContractState::NotInitialized => dtos::ProtocolContractStateV2::NotInitialized,
             ProtocolContractState::Initializing(state) => {
                 let threshold = ReconstructionThreshold::new(
-                    state.generating_key.proposed_parameters().threshold().value(),
+                    state
+                        .generating_key
+                        .proposed_parameters()
+                        .threshold()
+                        .value(),
                 );
                 dtos::ProtocolContractStateV2::Initializing(dtos::InitializingContractStateV2 {
                     distributed_keys: state
@@ -861,8 +863,7 @@ impl IntoInterfaceType<dtos::ProtocolContractStateV2> for &ProtocolContractState
                 })
             }
             ProtocolContractState::Running(state) => {
-                let threshold =
-                    ReconstructionThreshold::new(state.parameters.threshold().value());
+                let threshold = ReconstructionThreshold::new(state.parameters.threshold().value());
                 dtos::ProtocolContractStateV2::Running(dtos::RunningContractStateV2 {
                     distributed_keys: state
                         .domains
