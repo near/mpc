@@ -1891,8 +1891,7 @@ expression: abi
           "enum": [
             "Secp256k1",
             "Edwards25519",
-            "Bls12381",
-            "V2Secp256k1"
+            "Bls12381"
           ]
         },
         "DestinationNodeInfo": {
@@ -3546,22 +3545,11 @@ expression: abi
         },
         "SignatureScheme": {
           "description": "Supported signature schemes.",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Secp256k1",
-                "Ed25519",
-                "Bls12381"
-              ]
-            },
-            {
-              "description": "Robust ECDSA variant.",
-              "type": "string",
-              "enum": [
-                "V2Secp256k1"
-              ]
-            }
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Ed25519",
+            "Bls12381"
           ]
         },
         "SolanaExtractor": {
