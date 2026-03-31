@@ -161,6 +161,20 @@ pub struct DomainConfig {
     pub purpose: DomainPurpose,
 }
 
+impl DomainConfig {
+    pub fn to_distributed_key_config(
+        &self,
+        threshold: ReconstructionThreshold,
+    ) -> DistributedKeyConfig {
+        DistributedKeyConfig {
+            id: self.id,
+            protocol: protocol_from_legacy_curve(self.curve),
+            reconstruction_threshold: threshold,
+            purpose: self.purpose,
+        }
+    }
+}
+
 /// Curve variant names as they appear in the legacy JSON wire format.
 /// Maps `Edwards25519` ↔ `Ed25519`. Remove after 3.8 release.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -255,6 +269,16 @@ pub struct DomainRegistry {
 impl DomainRegistry {
     pub fn domains(&self) -> &[DomainConfig] {
         &self.domains
+    }
+
+    pub fn distributed_key_configs(
+        &self,
+        threshold: ReconstructionThreshold,
+    ) -> Vec<DistributedKeyConfig> {
+        self.domains
+            .iter()
+            .map(|d| d.to_distributed_key_config(threshold))
+            .collect()
     }
 
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
