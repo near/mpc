@@ -11,7 +11,7 @@ use rand::SeedableRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
-use crate::config::ForeignChainsConfig;
+use crate::config::{auth_config_to_rpc_auth, ForeignChainsConfig};
 use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
@@ -172,7 +172,7 @@ where
 
                 let http_client = foreign_chain_inspector::build_http_client(
                     public_node_url,
-                    bitcoin_provider_config.auth.clone().try_into()?,
+                    auth_config_to_rpc_auth(bitcoin_provider_config.auth.clone())?,
                 )?;
                 let inspector = BitcoinInspector::new(http_client);
 
@@ -215,7 +215,7 @@ where
 
                 let http_client = foreign_chain_inspector::build_http_client(
                     public_node_url,
-                    abstract_provider_config.auth.clone().try_into()?,
+                    auth_config_to_rpc_auth(abstract_provider_config.auth.clone())?,
                 )?;
                 let inspector = AbstractInspector::new(http_client);
 
@@ -258,7 +258,7 @@ where
 
                 let http_client = foreign_chain_inspector::build_http_client(
                     rpc_url,
-                    starknet_provider_config.auth.clone().try_into()?,
+                    auth_config_to_rpc_auth(starknet_provider_config.auth.clone())?,
                 )?;
                 let inspector = StarknetInspector::new(http_client);
 

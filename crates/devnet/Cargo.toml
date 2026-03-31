@@ -15,10 +15,16 @@ futures = { workspace = true }
 hex = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils", "dev-utils"] }
 near-account-id = { workspace = true }
+
+# TODO(#657): use workspace versions
+near-crypto = "0.28.0"
+near-jsonrpc-client = "0.15.1"
+near-jsonrpc-primitives = "0.28.0"
 near-mpc-contract-interface = { workspace = true, features = [
     "ed25519-dalek",
     "near",
 ] }
+near-primitives = "0.28.0"
 near-sdk = { workspace = true }
 node-types = { workspace = true }
 # TODO(#658): use workspace version
@@ -30,12 +36,6 @@ serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 utilities = { workspace = true }
-
-# TODO(#657): use workspace versions
-near-crypto = "0.28.0"
-near-jsonrpc-client = "0.15.1"
-near-jsonrpc-primitives = "0.28.0"
-near-primitives = "0.28.0"
 
 [lints]
 workspace = true

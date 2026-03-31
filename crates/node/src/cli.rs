@@ -1,9 +1,9 @@
 use crate::{
     config::{
         load_config_file,
-        start::{LogConfig, LogFormat},
-        ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, NearInitConfig,
-        SecretsStartConfig, StartConfig,
+        start::{NearInitConfigExt, StartConfigExt},
+        ChainId, ConfigFile, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat,
+        NearInitConfig, SecretsStartConfig, StartConfig,
     },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,

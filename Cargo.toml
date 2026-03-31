@@ -23,6 +23,7 @@ members = [
     "crates/near-mpc-sdk",
     "crates/near-mpc-signature-verifier",
     "crates/node",
+    "crates/node-config",
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
@@ -44,36 +45,13 @@ license = "MIT"
 repository = "https://github.com/near/mpc"
 
 [workspace.dependencies]
-#workspace members
-attestation = { path = "crates/attestation" }
-chain-gateway = { path = "crates/chain-gateway" }
-chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
-contract-history = { path = "crates/contract-history" }
-foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
-foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
-include-measurements = { path = "crates/include-measurements" }
-launcher-interface = { path = "crates/launcher-interface" }
-mpc-attestation = { path = "crates/mpc-attestation" }
-mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
-mpc-node = { path = "crates/node" }
-mpc-primitives = { path = "crates/primitives", features = ["abi"] }
-mpc-tls = { path = "crates/tls" }
-near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
-near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface", version = "0.0.1" }
-near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types", version = "0.0.1" }
-near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
-near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
-node-types = { path = "crates/node-types" }
-tee-authority = { path = "crates/tee-authority" }
-test-port-allocator = { path = "crates/test-port-allocator" }
-test-utils = { path = "crates/test-utils" }
-threshold-signatures = { path = "crates/threshold-signatures" }
-utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
 anyhow = "1.0.102"
 assert_matches = "1.5.0"
 async-trait = "0.1.89"
+#workspace members
+attestation = { path = "crates/attestation" }
 auto_ops = "0.3.0"
 average = "0.16"
 axum = "0.8.8"
@@ -86,7 +64,10 @@ built = { version = "0.8", features = ["git2", "chrono"] }
 byteorder = "1.5.0"
 bytes = { version = "1.11.1" }
 cargo-near-build = "0.11.1"
+chain-gateway = { path = "crates/chain-gateway" }
+chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 clap = { version = "4.6.0", features = ["derive", "env"] }
+contract-history = { path = "crates/contract-history" }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 curve25519-dalek = { version = "4.1.3", features = [
     "group",
@@ -121,6 +102,8 @@ either = "1.15.0"
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
+foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
+foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 frost-core = { version = "2.2.0", default-features = false, features = [
     "serde",
 ] }
@@ -133,33 +116,69 @@ gcloud-sdk = { version = "0.29.0", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
 ] }
+
+# TODO(#1907): These dependencies need to be upgraded in tandem
+getrandom = "0.2.12"
 group = "0.13"
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 http = "1.4.0"
+
+## Outdated dependencies we cannot upgrade ##
+# Version 0.8.3 requires rustc 1.88
+httpmock = "0.8.2"
 humantime = "2.3.0"
 # TODO(#1299): updating this brings considerable breaking changes
 hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] }
+include-measurements = { path = "crates/include-measurements" }
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.14.0"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
 keccak = "0.1.5"
+launcher-interface = { path = "crates/launcher-interface" }
 lru = "0.16.3"
 mockall = "0.14.0"
+mpc-attestation = { path = "crates/mpc-attestation" }
+mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
+mpc-node = { path = "crates/node" }
+mpc-node-config = { path = "crates/node-config" }
+mpc-primitives = { path = "crates/primitives", features = ["abi"] }
+mpc-tls = { path = "crates/tls" }
 named-lock = "0.4.1"
 near-abi = "0.4.4"
 near-account-id = "2.5.0"
+
+# This can be removed once the workspace `utilities` crate is removed
+near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
+
+# NEAR CORE DEPENDENCIES:
+near-async = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.6"
 near-kit = { version = "0.7.0", default-features = false }
+near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
+near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface", version = "0.0.1" }
+near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types", version = "0.0.1" }
+near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
+near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-primitives = "0.34.6"
 near-sdk = { version = "5.24.1", features = [
     "legacy",
     "unit-testing",
     "unstable",
 ] }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
 near-workspaces = { version = "0.22.1" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+node-types = { path = "crates/node-types" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
@@ -167,7 +186,13 @@ pprof = { version = "0.15.0", features = [
     "flamegraph",
 ], default-features = false }
 proc-macro2 = "1.0"
+
+# This cannot be upgraded because it conflicts the prometheus version required by nearcore
+prometheus = { version = "0.13.4", default-features = false }
 quote = "1.0"
+rand = "0.8.5"
+rand_chacha = "0.3"
+rand_core = "0.6.4"
 # TODO(#2051): updating this brings considerable breaking changes
 rcgen = "0.13.2"
 # This project has been forked due to incompatibility problems with cheater detection feature activated on the original Zcash repo
@@ -177,13 +202,22 @@ reddsa = { git = "https://github.com/near/reddsa", rev = "c7cd92a55f7399d8d7f8c0
 regex = "1.12.3"
 reqwest = { version = "0.13.2", features = ["multipart", "json"] }
 rmp-serde = "1.3.1"
+
+# TODO(#690): This cannot be upgraded until nearcore does
+rocksdb = "0.21.0"
 rstest = { version = "0.26.1" }
 rustls = { version = "0.23.37", default-features = false, features = ["ring", "std"] }
+
+# This version needs to be exactly the same as in `near_sdk::schemars`
+schemars = "0.8.22"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.19"
 serde_json = "1.0"
 serde_repr = "0.1.20"
 serde_with = { version = "3.17.0", features = ["hex"] }
+
+# This is deprecated, we should find an alterantive
+serde_yaml = "0.9.34"
 serial_test = "3.4.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
@@ -191,9 +225,16 @@ signature = "2.2.0"
 socket2 = "0.6.3"
 subtle = "2.6.1"
 syn = "2.0"
+tee-authority = { path = "crates/tee-authority" }
 tempfile = "3.27.0"
 test-log = "0.2.19"
+test-port-allocator = { path = "crates/test-port-allocator" }
+test-utils = { path = "crates/test-utils" }
 thiserror = "2.0.18"
+threshold-signatures = { path = "crates/threshold-signatures" }
+
+# Cannot be upgraded until we get MSVR 1.88
+time = "0.3.41"
 tokio = { version = "1.50.0", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
@@ -210,49 +251,10 @@ tracing-subscriber = { version = "0.3.23", features = [
 ] }
 tracing-test = "0.2.6"
 url = "2"
+utilities = { path = "crates/utilities" }
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
-
-# NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-
-## Outdated dependencies we cannot upgrade ##
-# Version 0.8.3 requires rustc 1.88
-httpmock = "0.8.2"
-
-# This can be removed once the workspace `utilities` crate is removed
-near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
-
-# This cannot be upgraded because it conflicts the prometheus version required by nearcore
-prometheus = { version = "0.13.4", default-features = false }
-
-# TODO(#690): This cannot be upgraded until nearcore does
-rocksdb = "0.21.0"
-
-# This version needs to be exactly the same as in `near_sdk::schemars`
-schemars = "0.8.22"
-
-# This is deprecated, we should find an alterantive
-serde_yaml = "0.9.34"
-
-# TODO(#1907): These dependencies need to be upgraded in tandem
-getrandom = "0.2.12"
-rand = "0.8.5"
-rand_chacha = "0.3"
-rand_core = "0.6.4"
-
-# Cannot be upgraded until we get MSVR 1.88
-time = "0.3.41"
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"

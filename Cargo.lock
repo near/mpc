@@ -3066,6 +3066,10 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "launcher-interface",
+ "mpc-node-config",
+ "near-account-id 2.6.0",
+ "near-indexer-primitives",
  "near-kit",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
@@ -5713,7 +5717,6 @@ dependencies = [
  "clap",
  "derive_more 2.1.1",
  "ed25519-dalek",
- "either",
  "elliptic-curve",
  "flume",
  "foreign-chain-inspector",
@@ -5730,6 +5733,7 @@ dependencies = [
  "mockall",
  "mpc-attestation",
  "mpc-contract",
+ "mpc-node-config",
  "mpc-primitives",
  "mpc-tls",
  "near-account-id 2.6.0",
@@ -5755,7 +5759,6 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "serde_with",
  "serde_yaml",
  "serial_test",
  "sha3",
@@ -5772,11 +5775,31 @@ dependencies = [
  "tokio-rustls",
  "tokio-stream",
  "tokio-util",
- "toml 1.1.0+spec-1.1.0",
  "tower",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+ "url",
+]
+
+[[package]]
+name = "mpc-node-config"
+version = "3.7.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "clap",
+ "either",
+ "http 1.4.0",
+ "launcher-interface",
+ "near-account-id 2.6.0",
+ "near-indexer-primitives",
+ "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
+ "serde",
+ "serde_with",
+ "serde_yaml",
+ "toml 1.1.0+spec-1.1.0",
  "url",
 ]
 

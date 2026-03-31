@@ -3,20 +3,20 @@ use std::borrow::Cow;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
-use crate::config::foreign_chains::auth;
-use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
+use crate::foreign_chains::auth;
+use crate::foreign_chains::{self, ForeignChainProviderConfig};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct StarknetChainConfig {
+pub struct EthereumChainConfig {
     pub timeout_sec: u64,
     pub max_retries: u64,
-    pub providers: NonEmptyBTreeMap<String, StarknetProviderConfig>,
+    pub providers: NonEmptyBTreeMap<String, EthereumProviderConfig>,
 }
 
-impl StarknetChainConfig {
+impl EthereumChainConfig {
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
         foreign_chains::validate_chain_config(
-            "starknet",
+            "ethereum",
             self.timeout_sec,
             self.max_retries,
             &self.providers,
@@ -25,14 +25,14 @@ impl StarknetChainConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct StarknetProviderConfig {
+pub struct EthereumProviderConfig {
     pub rpc_url: String,
-    pub api_variant: StarknetApiVariant,
+    pub api_variant: EthereumApiVariant,
     #[serde(default)]
     pub auth: auth::AuthConfig,
 }
 
-impl ForeignChainProviderConfig for StarknetProviderConfig {
+impl ForeignChainProviderConfig for EthereumProviderConfig {
     fn rpc_url(&self) -> Cow<'_, str> {
         self.auth.strip_placeholder(&self.rpc_url)
     }
@@ -44,9 +44,10 @@ impl ForeignChainProviderConfig for StarknetProviderConfig {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
-pub enum StarknetApiVariant {
+pub enum EthereumApiVariant {
     Standard,
     Alchemy,
     Infura,
-    Blast,
+    Quicknode,
+    Ankr,
 }
