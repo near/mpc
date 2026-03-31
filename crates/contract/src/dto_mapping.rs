@@ -19,7 +19,10 @@ use crate::{
     crypto_shared::types::PublicKeyExtended,
     errors::{ConversionError, Error},
     primitives::{
-        domain::{AddDomainsVotes, Curve, DomainConfig, DomainId, DomainRegistry},
+        domain::{
+            AddDomainsVotes, Curve, DistributedKeyConfig, DomainConfig, DomainId, DomainRegistry,
+            Protocol, ReconstructionThreshold,
+        },
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
             KeyForDomain, Keyset,
@@ -541,6 +544,48 @@ impl IntoInterfaceType<dtos::DomainRegistry> for &DomainRegistry {
         dtos::DomainRegistry {
             domains: self.domains().iter().map(|d| d.into_dto_type()).collect(),
             next_domain_id: self.next_domain_id(),
+        }
+    }
+}
+
+// --- Distributed key types (state_v2) ---
+
+impl IntoInterfaceType<dtos::Curve> for Curve {
+    fn into_dto_type(self) -> dtos::Curve {
+        match self {
+            Curve::Secp256k1 => dtos::Curve::Secp256k1,
+            Curve::Edwards25519 => dtos::Curve::Edwards25519,
+            Curve::Bls12381 => dtos::Curve::Bls12381,
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::Protocol> for Protocol {
+    fn into_dto_type(self) -> dtos::Protocol {
+        match self {
+            Protocol::CaitSith(c) => dtos::Protocol::CaitSith(c.into_dto_type()),
+            Protocol::Frost(c) => dtos::Protocol::Frost(c.into_dto_type()),
+            Protocol::ConfidentialKeyDerivation(c) => {
+                dtos::Protocol::ConfidentialKeyDerivation(c.into_dto_type())
+            }
+            Protocol::DamgardEtAl(c) => dtos::Protocol::DamgardEtAl(c.into_dto_type()),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ReconstructionThreshold> for ReconstructionThreshold {
+    fn into_dto_type(self) -> dtos::ReconstructionThreshold {
+        dtos::ReconstructionThreshold(self.inner())
+    }
+}
+
+impl IntoInterfaceType<dtos::DistributedKeyConfig> for &DistributedKeyConfig {
+    fn into_dto_type(self) -> dtos::DistributedKeyConfig {
+        dtos::DistributedKeyConfig {
+            id: self.id.into_dto_type(),
+            protocol: self.protocol.into_dto_type(),
+            reconstruction_threshold: self.reconstruction_threshold.into_dto_type(),
+            purpose: self.purpose,
         }
     }
 }
