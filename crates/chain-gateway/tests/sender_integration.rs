@@ -4,7 +4,7 @@ use chain_gateway::Gas;
 use chain_gateway::types::NoArgs;
 use chain_gateway::{state_viewer::ViewMethod, transaction_sender::SubmitFunctionCall};
 use chain_gateway_test_contract::args::{Call, make_set_value_args};
-use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW};
+use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
 
 use crate::common::localnet::LocalnetBuilder;
 
@@ -29,7 +29,7 @@ async fn test_submit_set_value_and_read_back() {
 
     // Verify initial state: get_value should return DEFAULT_VALUE
     let initial: chain_gateway::types::ObservedState<String> = observer_gw
-        .view_method(contract_id.clone(), VIEW, &NoArgs {})
+        .view_method(contract_id.clone(), VIEW_VALUE, &NoArgs {})
         .await
         .expect("initial view call should succeed");
 
@@ -62,7 +62,7 @@ async fn test_submit_set_value_and_read_back() {
         localnet.assert_nodes_alive();
 
         let result: chain_gateway::types::ObservedState<String> = observer_gw
-            .view_method(contract_id.clone(), VIEW, &NoArgs {})
+            .view_method(contract_id.clone(), VIEW_VALUE, &NoArgs {})
             .await
             .expect("view call should succeed");
 

@@ -7,7 +7,7 @@ use chain_gateway::{
 };
 use chain_gateway_test_contract::{
     args::{Call, make_set_value_args},
-    consts::{DEFAULT_VALUE, VIEW},
+    consts::{DEFAULT_VALUE, VIEW_VALUE},
 };
 
 use crate::common::localnet::LocalnetBuilder;
@@ -24,7 +24,7 @@ async fn test_subscription() {
     let contract_id = localnet.contract.account_id.clone();
 
     let mut sub = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id.clone(), VIEW)
+        .subscribe_to_contract_method::<String>(contract_id.clone(), VIEW_VALUE)
         .await;
 
     let res = sub.latest().expect("subscription latest should succeed");

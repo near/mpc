@@ -2,7 +2,7 @@ pub const DEFAULT_VALUE: &str = "hello from test";
 
 /* Method names */
 // public view method
-pub const VIEW: &str = "view_value";
+pub const VIEW_VALUE: &str = "view_value";
 // public set method
 pub const SET_VALUE: &str = "set_value";
 // private method for setting value

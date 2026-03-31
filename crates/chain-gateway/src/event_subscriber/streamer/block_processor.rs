@@ -1,4 +1,3 @@
-
 use near_indexer::IndexerExecutionOutcomeWithReceipt;
 use near_indexer_primitives::{
     CryptoHash,

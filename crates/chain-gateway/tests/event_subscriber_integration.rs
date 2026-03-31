@@ -19,7 +19,7 @@ use chain_gateway_test_contract::{
         Call, make_private_set_args, make_set_value_in_promise_args,
         make_spawn_promise_in_callback_args,
     },
-    consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW},
+    consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW_VALUE},
 };
 use rstest::rstest;
 
@@ -168,7 +168,7 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
         .unwrap();
 
     let mut watch_value = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id, VIEW)
+        .subscribe_to_contract_method::<String>(contract_id, VIEW_VALUE)
         .await;
 
     loop {
