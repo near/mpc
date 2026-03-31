@@ -109,10 +109,9 @@ macro_rules! define_hash {
                 definitions.insert(
                     Self::declaration(),
                     $crate::_macro_deps::borsh::schema::Definition::Struct {
-                        fields: $crate::_macro_deps::borsh::schema::Fields::NamedFields(std::vec![(
-                            "bytes".into(),
+                        fields: $crate::_macro_deps::borsh::schema::Fields::UnnamedFields(std::vec![
                             byte_array_decl,
-                        )]),
+                        ]),
                     },
                 );
             }
