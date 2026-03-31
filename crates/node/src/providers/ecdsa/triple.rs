@@ -185,6 +185,7 @@ impl EcdsaSignatureProvider {
         start: UniqueId,
         count: u32,
     ) -> anyhow::Result<()> {
+        start.validate_owned_by(channel.sender().get_leader())?;
         if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
             return Err(anyhow::anyhow!(
                 "Unsupported batch size for triple generation"
