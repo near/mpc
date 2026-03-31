@@ -549,7 +549,7 @@ where
                         }
                         KeyshareData::Ed25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Ed25519);
+                            domain_to_curve.insert(domain_id, Curve::Edwards25519);
                         }
                         KeyshareData::Bls12381(data) => {
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
