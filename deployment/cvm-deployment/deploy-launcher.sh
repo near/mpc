@@ -159,7 +159,7 @@ CLI="$pythonExec $basePath/vmm/src/vmm-cli.py --url $VMM_RPC"
 
 COMPOSE_TMP=$(mktemp)
 
-cp $DOCKER_COMPOSE_FILE_PATH "$COMPOSE_TMP"
+cp "$DOCKER_COMPOSE_FILE_PATH" "$COMPOSE_TMP"
 
 subvar() {
   sed -i "s|\${$1}|${!1}|g" "$COMPOSE_TMP"
