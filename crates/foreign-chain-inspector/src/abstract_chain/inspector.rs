@@ -112,9 +112,11 @@ impl AbstractExtractor {
                 *rpc_response.block_hash.as_fixed_bytes(),
             ))),
             AbstractExtractor::Log { log_index } => {
+                let target_index = ethereum_types::U64::from(*log_index as u64);
                 let log = rpc_response
                     .logs
-                    .get(*log_index)
+                    .iter()
+                    .find(|log| log.log_index == target_index)
                     .cloned()
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
 

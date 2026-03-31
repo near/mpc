@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[tokio::test]
 async fn extract_returns_correct_value_when_finalized(
     #[values(EthereumFinality::Finalized, EthereumFinality::Safe)] finality: EthereumFinality,
-    #[values(AbstractExtractor::Log { log_index: 0 }, AbstractExtractor::BlockHash)]
+    #[values(AbstractExtractor::Log { log_index: 1 }, AbstractExtractor::BlockHash)]
     extractor: AbstractExtractor,
 ) {
     // given
@@ -311,14 +311,24 @@ async fn extract_returns_error_when_log_index_out_of_bounds() {
 }
 
 #[tokio::test]
-async fn extract_returns_correct_log_hash_for_specific_index() {
-    // given
+async fn extract_returns_correct_log_by_evm_log_index() {
+    // given: logs with block-level logIndex values (not array positions)
     let tx_id = AbstractTransactionHash::from([3; 32]);
 
-    let log_0 = test_log();
-    let log_1 = Log {
+    let log_at_index_20 = Log {
         removed: false,
-        log_index: U64([10]),
+        log_index: U64::from(20),
+        transaction_index: U64([2]),
+        transaction_hash: H256([3; 32]),
+        block_hash: H256([4; 32]),
+        block_number: U64([5]),
+        address: H160([6; 20]),
+        data: "first_log".to_string(),
+        topics: vec![H256([7; 32])],
+    };
+    let log_at_index_21 = Log {
+        removed: false,
+        log_index: U64::from(21),
         transaction_index: U64([20]),
         transaction_hash: H256([30; 32]),
         block_hash: H256([4; 32]),
@@ -327,7 +337,7 @@ async fn extract_returns_correct_log_hash_for_specific_index() {
         data: "second_log".to_string(),
         topics: vec![H256([70; 32])],
     };
-    let expected_log = log_1.clone();
+    let expected_log = log_at_index_21.clone();
 
     let block_response = GetBlockByNumberResponse {
         number: U64::from(100),
@@ -336,18 +346,18 @@ async fn extract_returns_correct_log_hash_for_specific_index() {
         block_hash: H256::from([4; 32]),
         block_number: U64::from(90),
         status: U64::one(),
-        logs: vec![log_0, log_1],
+        logs: vec![log_at_index_20, log_at_index_21],
     };
 
     let mock_client = mock_abstract_client(block_response, tx_response);
     let inspector = AbstractInspector::new(mock_client);
 
-    // when
+    // when: request log by its EVM logIndex (21), not array position (1)
     let extracted_values = inspector
         .extract(
             tx_id,
             EthereumFinality::Finalized,
-            vec![AbstractExtractor::Log { log_index: 1 }],
+            vec![AbstractExtractor::Log { log_index: 21 }],
         )
         .await
         .unwrap();
@@ -382,7 +392,13 @@ fn expected_extracted_value(
             AbstractExtractedValue::BlockHash(From::from(*tx_response.block_hash.as_fixed_bytes()))
         }
         AbstractExtractor::Log { log_index } => {
-            AbstractExtractedValue::Log(tx_response.logs[*log_index].clone())
+            let target_index = U64::from(*log_index as u64);
+            let log = tx_response
+                .logs
+                .iter()
+                .find(|log| log.log_index == target_index)
+                .expect("test log with matching log_index should exist");
+            AbstractExtractedValue::Log(log.clone())
         }
     }
 }
