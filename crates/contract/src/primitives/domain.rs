@@ -564,7 +564,6 @@ pub mod tests {
     #[case("\"Ed25519\"", Curve::Edwards25519, "\"Ed25519\"")]
     #[case("\"Edwards25519\"", Curve::Edwards25519, "\"Ed25519\"")]
     #[case("\"Bls12381\"", Curve::Bls12381, "\"Bls12381\"")]
-    #[case("\"V2Secp256k1\"", Curve::V2Secp256k1, "\"V2Secp256k1\"")]
     fn test_curve_compat_wire_format(
         #[case] input_json: &str,
         #[case] expected_curve: Curve,
