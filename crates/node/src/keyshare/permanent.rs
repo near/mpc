@@ -2,23 +2,70 @@ use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId};
+use mpc_contract::primitives::key_state::EpochId;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// The single object we persist to permanent key storage.
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Keyshares are stored in a `BTreeMap<DomainId, Keyshare>`, which enforces
+/// ordering by `DomainId` and uniqueness at the type level.
+///
+/// Serialization format is backwards-compatible: keyshares are serialized as a
+/// JSON array (`Vec<Keyshare>`) and deserialized from the same format.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermanentKeyshareData {
     epoch_id: EpochId,
-    /// These keyshares are sorted by domain_id (ascending).
+    keyshares: BTreeMap<DomainId, Keyshare>,
+}
+
+/// Serde helper for backwards-compatible serialization/deserialization.
+/// Persisted data stores keyshares as a JSON array (`Vec<Keyshare>`).
+#[derive(Serialize, Deserialize)]
+struct PermanentKeyshareDataSerde {
+    epoch_id: EpochId,
     keyshares: Vec<Keyshare>,
+}
+
+impl Serialize for PermanentKeyshareData {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let serde_repr = PermanentKeyshareDataSerde {
+            epoch_id: self.epoch_id,
+            keyshares: self.keyshares_vec(),
+        };
+        serde_repr.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PermanentKeyshareData {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let serde_repr = PermanentKeyshareDataSerde::deserialize(deserializer)?;
+        let mut map = BTreeMap::new();
+        for keyshare in serde_repr.keyshares {
+            let domain_id = keyshare.key_id.domain_id;
+            if map.insert(domain_id, keyshare).is_some() {
+                return Err(serde::de::Error::custom(format!(
+                    "duplicate domain_id {:?} in keyshares",
+                    domain_id
+                )));
+            }
+        }
+        Ok(PermanentKeyshareData {
+            epoch_id: serde_repr.epoch_id,
+            keyshares: map,
+        })
+    }
 }
 
 impl PermanentKeyshareData {
     pub fn from_legacy(legacy: &LegacyRootKeyshareData) -> Self {
+        let keyshare = Keyshare::from_legacy(legacy);
+        let mut keyshares = BTreeMap::new();
+        keyshares.insert(keyshare.key_id.domain_id, keyshare);
         Self {
             epoch_id: EpochId::new(legacy.epoch),
-            keyshares: vec![Keyshare::from_legacy(legacy)],
+            keyshares,
         }
     }
 
@@ -26,38 +73,39 @@ impl PermanentKeyshareData {
         self.epoch_id
     }
 
-    pub fn keyshares(&self) -> &[Keyshare] {
+    pub fn keyshares(&self) -> &BTreeMap<DomainId, Keyshare> {
         &self.keyshares
     }
 
+    pub fn keyshares_vec(&self) -> Vec<Keyshare> {
+        self.keyshares.values().cloned().collect()
+    }
+
     pub fn keyshare_by_domain_id(&self, domain_id: DomainId) -> Option<&Keyshare> {
-        self.keyshares
-            .iter()
-            .find(|k| k.key_id.domain_id == domain_id)
+        self.keyshares.get(&domain_id)
     }
 
     pub fn new(epoch_id: EpochId, keyshares: Vec<Keyshare>) -> anyhow::Result<Self> {
-        let is_consistent = keyshares.windows(2).all(|w| {
-            w[0].key_id.epoch_id == w[1].key_id.epoch_id
-                && w[0].key_id.domain_id < w[1].key_id.domain_id
-        });
-        if !is_consistent {
-            let key_ids: Vec<KeyEventId> = keyshares.iter().map(|share| share.key_id).collect();
-            anyhow::bail!("Inconsistent key ids: {:?}", key_ids);
-        }
-        let Some(first) = keyshares.first() else {
+        if keyshares.is_empty() {
             anyhow::bail!("Keyshares must not be empty");
-        };
-        if first.key_id.epoch_id != epoch_id {
-            anyhow::bail!(
-                "Inconsistent epoch id. Keyshares are of epoch id {}, but epoch id is {}",
-                first.key_id.epoch_id,
-                epoch_id
-            );
+        }
+        let mut map = BTreeMap::new();
+        for keyshare in keyshares {
+            if keyshare.key_id.epoch_id != epoch_id {
+                anyhow::bail!(
+                    "Inconsistent epoch id. Keyshare has epoch id {}, but expected {}",
+                    keyshare.key_id.epoch_id,
+                    epoch_id
+                );
+            }
+            let domain_id = keyshare.key_id.domain_id;
+            if map.insert(domain_id, keyshare).is_some() {
+                anyhow::bail!("Duplicate domain_id {:?} in keyshares", domain_id);
+            }
         }
         Ok(PermanentKeyshareData {
             epoch_id,
-            keyshares,
+            keyshares: map,
         })
     }
 }
@@ -155,18 +203,13 @@ impl PermanentKeyStorage {
                     existing.epoch_id().get(),
                 );
             }
-            for (existing_keyshare, new_keyshare) in
-                existing.keyshares().iter().zip(keyshare_data.keyshares())
-            {
-                let domain_ids_match =
-                    existing_keyshare.key_id.domain_id == new_keyshare.key_id.domain_id;
-                if !domain_ids_match {
+            for (domain_id, existing_keyshare) in existing.keyshares() {
+                let Some(new_keyshare) = keyshare_data.keyshares().get(domain_id) else {
                     anyhow::bail!(
-                        "Refusing to overwrite existing permanent keyshare for domain id {:?} with new permanent keyshare for different domain id {:?}",
+                        "Refusing to overwrite existing permanent keyshare for domain id {:?} with new permanent keyshares missing that domain",
                         existing_keyshare.key_id,
-                        new_keyshare.key_id
                     );
-                }
+                };
 
                 let key_ids_match = existing_keyshare.key_id == new_keyshare.key_id;
                 if is_same_epoch_id && !key_ids_match {
@@ -333,11 +376,12 @@ mod tests {
         let loaded = storage.load().await.unwrap().unwrap();
         assert_eq!(loaded.epoch_id().get(), 1);
         assert_eq!(loaded.keyshares().len(), 1);
-        assert_eq!(loaded.keyshares()[0].key_id.epoch_id.get(), 1);
-        assert_eq!(loaded.keyshares()[0].key_id.domain_id.0, 0);
-        assert_eq!(loaded.keyshares()[0].key_id.attempt_id.get(), 0);
+        let keyshare = loaded.keyshares().values().next().unwrap();
+        assert_eq!(keyshare.key_id.epoch_id.get(), 1);
+        assert_eq!(keyshare.key_id.domain_id.0, 0);
+        assert_eq!(keyshare.key_id.attempt_id.get(), 0);
         assert_eq!(
-            loaded.keyshares()[0].data,
+            keyshare.data,
             KeyshareData::Secp256k1(threshold_signatures::ecdsa::KeygenOutput {
                 private_share: SigningShare::new(legacy_data.private_share),
                 public_key: VerifyingKey::new(legacy_data.public_key.into()),

@@ -365,7 +365,7 @@ impl ExportKeyshareCmd {
                 .load()
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("No keyshare found in {}", home_dir.display()))?;
-            let keyshare = legacy_ecdsa_key_from_keyshares(keyshare.keyshares())?;
+            let keyshare = legacy_ecdsa_key_from_keyshares(&keyshare.keyshares_vec())?;
 
             // Print the keyshare to console
             let json = serde_json::to_string_pretty(&keyshare)
