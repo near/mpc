@@ -154,7 +154,7 @@ impl BlockEvents {
         }
 
         // Extract ids of executor events that match this receipt. If we don't have any, we can
-        // retun here, as our work is done.
+        // return here, as our work is done.
         let Some((executor_event_ids, next_receipt_id)) = executor_event_candidates else {
             return;
         };
