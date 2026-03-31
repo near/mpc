@@ -12,11 +12,10 @@ use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 // Re-export for convenience
 
-const ALL_CURVES: [Curve; 4] = [
+const ALL_CURVES: [Curve; 3] = [
     Curve::Secp256k1,
     Curve::Edwards25519,
     Curve::Bls12381,
-    Curve::V2Secp256k1,
 ];
 pub const NUM_CURVES: usize = ALL_CURVES.len();
 

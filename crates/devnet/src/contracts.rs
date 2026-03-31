@@ -56,7 +56,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             let mut ckd_calls_by_domain = BTreeMap::new();
             for (domain, prot_calls) in args.calls_by_domain {
                 match domain.curve {
-                    Curve::Secp256k1 | Curve::V2Secp256k1 => {
+                    Curve::Secp256k1 => {
                         ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                     Curve::Edwards25519 => {
@@ -171,7 +171,7 @@ struct ParallelSignArgsV2 {
 
 fn make_payload(curve: Curve) -> Payload {
     match curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
+        Curve::Secp256k1 => {
             Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
         }
         Curve::Edwards25519 => {

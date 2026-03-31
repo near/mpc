@@ -40,7 +40,6 @@ pub enum SignatureScheme {
     Secp256k1,
     Ed25519,
     Bls12381,
-    V2Secp256k1,  // robust ECDSA, not yet deployed to mainnet
 }
 
 pub struct DistributedKeyConfig {
@@ -64,7 +63,7 @@ pub struct ThresholdParameters {
 
 **`crates/near-mpc-contract-interface/src/types/state.rs`** mirrors the internal types:
 ```rust
-pub enum SignatureScheme { Secp256k1, Ed25519, Bls12381, V2Secp256k1 }
+pub enum SignatureScheme { Secp256k1, Ed25519, Bls12381 }
 pub struct DistributedKeyConfig { pub id: DistributedKeyId, pub scheme: SignatureScheme, pub purpose: Option<KeyPurpose> }
 pub struct ThresholdParameters { pub participants: Participants, pub threshold: Threshold }
 ```
@@ -102,7 +101,7 @@ The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.
 | Secp256k1 | CaitSith | Sign, ForeignTx | Yes |
 | Ed25519 | FROST | Sign | Yes |
 | Bls12381 | CKD | CKD | Yes |
-| Secp256k1 | DamgardEtAl (V2Secp256k1) | Sign | Ongoing |
+| Secp256k1 | DamgardEtAl | Sign | Ongoing |
 
 
 ## 2. Proposed Design

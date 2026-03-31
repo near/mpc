@@ -21,8 +21,6 @@ use super::DEFAULT_BLOCK_TIME;
 #[case(0, Curve::Secp256k1, 3)]
 #[case(1, Curve::Edwards25519, 3)]
 #[case(2, Curve::Bls12381, 3)]
-// TODO(#1946): re-enable once it is no longer flaky
-// #[case(3, Curve::V2Secp256k1, 5)]
 async fn test_key_resharing_simple(
     #[case] case: u16,
     #[case] curve: Curve,
@@ -76,7 +74,7 @@ async fn test_key_resharing_simple(
 
     // Sanity check.
     match domain.curve {
-        Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+        Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -120,7 +118,7 @@ async fn test_key_resharing_simple(
         .expect("Timeout waiting for resharing to complete");
 
     match domain.curve {
-        Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+        Curve::Secp256k1 | Curve::Edwards25519 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
