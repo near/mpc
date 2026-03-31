@@ -4,6 +4,7 @@ home_dir = "$HOME/.near/$MPC_NODE_ID"
 chain_id = "mpc-localnet"
 boot_nodes = "$NEAR_BOOT_NODES"
 genesis_path = "$HOME/.near/mpc-localnet/genesis.json"
+download_genesis = false
 rpc_addr = "0.0.0.0:$RPC_PORT"
 network_addr = "0.0.0.0:$INDEXER_PORT"
 

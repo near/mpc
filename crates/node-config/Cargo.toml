@@ -1,0 +1,27 @@
+[package]
+name = "mpc-node-config"
+edition = { workspace = true }
+version = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+either = { workspace = true, features = ["serde"] }
+http = { workspace = true }
+launcher-interface = { workspace = true }
+near-account-id = { workspace = true }
+near-indexer-primitives = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
+serde = { workspace = true }
+serde_with = { workspace = true }
+serde_yaml = { workspace = true }
+toml = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+
+[lints]
+workspace = true

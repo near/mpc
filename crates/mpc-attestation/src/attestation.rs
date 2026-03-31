@@ -147,6 +147,7 @@ impl Attestation {
                         .get_single_event(MPC_IMAGE_HASH_EVENT)?
                         .event_payload;
 
+                    // TODO(#2478): decode raw bytes
                     let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload)
                         .map_err(|err| {
                             VerificationError::Custom(format!(
@@ -340,7 +341,7 @@ mod tests {
 
         let hash_constrained_attestation =
             VerifiedAttestation::Mock(MockAttestation::WithConstraints {
-                mpc_docker_image_hash: Some(allowed_hash.clone()),
+                mpc_docker_image_hash: Some(allowed_hash),
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: None,
             });
@@ -411,7 +412,7 @@ mod tests {
         let hash_constrained_attestation =
             VerifiedAttestation::Mock(MockAttestation::WithConstraints {
                 mpc_docker_image_hash: None,
-                launcher_docker_compose_hash: Some(allowed_hash.clone()),
+                launcher_docker_compose_hash: Some(allowed_hash),
                 expiry_timestamp_seconds: None,
             });
 

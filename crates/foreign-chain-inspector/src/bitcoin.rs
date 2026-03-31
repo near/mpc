@@ -1,9 +1,7 @@
-use crate::hash::hash_newtype;
-
 pub mod inspector;
 
-hash_newtype!(BitcoinBlockHash);
-hash_newtype!(BitcoinTransactionHash);
+mpc_primitives::define_hash!(BitcoinBlockHash, 32);
+mpc_primitives::define_hash!(BitcoinTransactionHash, 32);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BitcoinExtractedValue {

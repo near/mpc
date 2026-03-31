@@ -1,5 +1,4 @@
 use alloc::{string::String, vec::Vec};
-use core::str::FromStr;
 use hex::FromHexError;
 use thiserror::Error;
 
@@ -11,92 +10,113 @@ pub enum HashParseError {
     InvalidLength { expected: usize, got: usize },
 }
 
-/// Generates a hash newtype wrapping `[u8; $n]` with hex serde, borsh, `FromStr`,
-/// `Deref`, `AsRef`, `Into`, and (when the `abi` feature is active) BorshSchema / JsonSchema.
-macro_rules! hash_newtype {
+// Helper functions called by the macro-generated impls to keep the macro body small.
+
+#[doc(hidden)]
+pub fn debug_hash(name: &str, bytes: &[u8], f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    write!(f, "{}({})", name, hex::encode(bytes))
+}
+
+#[doc(hidden)]
+pub fn serialize_hash<S: serde::Serializer>(
+    bytes: &[u8],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&hex::encode(bytes))
+}
+
+#[doc(hidden)]
+pub fn deserialize_hash<'de, const N: usize, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<[u8; N], D::Error> {
+    let hex_str = <String as serde::Deserialize>::deserialize(deserializer)?;
+    let decoded = hex::decode(&hex_str).map_err(serde::de::Error::custom)?;
+    decoded.try_into().map_err(|v: Vec<u8>| {
+        serde::de::Error::custom(alloc::format!("expected {} bytes, got {}", N, v.len()))
+    })
+}
+
+#[doc(hidden)]
+pub fn parse_hash<const N: usize>(s: &str) -> Result<[u8; N], HashParseError> {
+    let decoded = hex::decode(s)?;
+    decoded
+        .try_into()
+        .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
+            expected: N,
+            got: v.len(),
+        })
+}
+
+/// Generates a newtype hash struct wrapping `[u8; N]` with hex serde, borsh,
+/// `Debug`, `FromStr`, `Deref`, `AsRef`, `Into`, and (behind the `abi` feature)
+/// `BorshSchema` / `JsonSchema`.
+#[macro_export]
+macro_rules! define_hash {
     ($(#[$meta:meta])* $name:ident, $n:literal) => {
-        #[serde_with::serde_as]
-        #[derive(
-            Debug,
-            Clone,
-            PartialEq,
-            Eq,
-            PartialOrd,
-            Ord,
-            Hash,
-            serde::Serialize,
-            serde::Deserialize,
-            borsh::BorshSerialize,
-            borsh::BorshDeserialize,
-            derive_more::Deref,
-            derive_more::AsRef,
-            derive_more::Into,
-        )]
         $(#[$meta])*
-        #[serde(transparent)]
-        pub struct $name {
-            #[deref]
-            #[as_ref]
-            #[into]
-            #[serde_as(as = "serde_with::hex::Hex")]
-            bytes: [u8; $n],
-        }
+        #[derive(
+            Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
+            derive_more::Deref, derive_more::AsRef, derive_more::Into,
+        )]
+        pub struct $name(
+            #[deref] #[as_ref] #[into]
+            [u8; $n],
+        );
 
-        impl From<[u8; $n]> for $name {
-            fn from(bytes: [u8; $n]) -> Self {
-                Self::new(bytes)
+        impl core::fmt::Debug for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                $crate::hash::debug_hash(stringify!($name), &self.0, f)
             }
         }
 
-        impl $name {
-            /// Converts the hash to a hexadecimal string representation.
-            pub fn as_hex(&self) -> String {
-                hex::encode(self.as_ref())
-            }
-
-            pub fn as_bytes(&self) -> [u8; $n] {
-                self.bytes
-            }
-
-            pub const fn new(bytes: [u8; $n]) -> Self {
-                Self { bytes }
+        impl core::fmt::Display for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                write!(f, "{}", $crate::_macro_deps::hex::encode(self.0))
             }
         }
 
-        impl FromStr for $name {
-            type Err = HashParseError;
+        impl $crate::_macro_deps::serde::Serialize for $name {
+            fn serialize<S: $crate::_macro_deps::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                $crate::hash::serialize_hash(&self.0, serializer)
+            }
+        }
 
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let decoded_hex_bytes = hex::decode(s)?;
-                let hash_bytes: [u8; $n] =
-                    decoded_hex_bytes
-                        .try_into()
-                        .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
-                            expected: $n,
-                            got: v.len(),
-                        })?;
-                Ok(hash_bytes.into())
+        impl<'de> $crate::_macro_deps::serde::Deserialize<'de> for $name {
+            fn deserialize<D: $crate::_macro_deps::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                $crate::hash::deserialize_hash::<$n, D>(deserializer).map(Self::new)
+            }
+        }
+
+        impl $crate::_macro_deps::borsh::BorshSerialize for $name {
+            fn serialize<W: $crate::_macro_deps::borsh::io::Write>(&self, writer: &mut W) -> $crate::_macro_deps::borsh::io::Result<()> {
+                $crate::_macro_deps::borsh::BorshSerialize::serialize(&self.0, writer)
+            }
+        }
+
+        impl $crate::_macro_deps::borsh::BorshDeserialize for $name {
+            fn deserialize_reader<R: $crate::_macro_deps::borsh::io::Read>(reader: &mut R) -> $crate::_macro_deps::borsh::io::Result<Self> {
+                <[u8; $n] as $crate::_macro_deps::borsh::BorshDeserialize>::deserialize_reader(reader).map(Self::new)
             }
         }
 
         #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-        impl borsh::BorshSchema for $name {
-            fn declaration() -> borsh::schema::Declaration {
-                alloc::format!(stringify!($name))
+        impl $crate::_macro_deps::borsh::BorshSchema for $name {
+            fn declaration() -> $crate::_macro_deps::borsh::schema::Declaration {
+                stringify!($name).to_string()
             }
 
             fn add_definitions_recursively(
-                definitions: &mut alloc::collections::BTreeMap<
-                    borsh::schema::Declaration,
-                    borsh::schema::Definition,
+                definitions: &mut std::collections::BTreeMap<
+                    $crate::_macro_deps::borsh::schema::Declaration,
+                    $crate::_macro_deps::borsh::schema::Definition,
                 >,
             ) {
-                let byte_array_decl = alloc::format!("[u8; {}]", $n);
+                let byte_array_decl = std::format!("[u8; {}]", $n);
                 definitions.insert(
                     Self::declaration(),
-                    borsh::schema::Definition::Struct {
-                        fields: borsh::schema::Fields::NamedFields(alloc::vec![
-                            ("bytes".into(), byte_array_decl),
+                    $crate::_macro_deps::borsh::schema::Definition::Struct {
+                        fields: $crate::_macro_deps::borsh::schema::Fields::UnnamedFields(std::vec![
+                            byte_array_decl,
                         ]),
                     },
                 );
@@ -104,20 +124,20 @@ macro_rules! hash_newtype {
         }
 
         #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-        impl schemars::JsonSchema for $name {
+        impl $crate::_macro_deps::schemars::JsonSchema for $name {
             fn schema_name() -> String {
-                alloc::format!(stringify!($name))
+                stringify!($name).to_string()
             }
 
             fn json_schema(
-                _generator: &mut schemars::r#gen::SchemaGenerator,
-            ) -> schemars::schema::Schema {
+                _generator: &mut $crate::_macro_deps::schemars::r#gen::SchemaGenerator,
+            ) -> $crate::_macro_deps::schemars::schema::Schema {
                 let hex_len = ($n * 2) as u32;
-                schemars::schema::Schema::Object(schemars::schema::SchemaObject {
-                    instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(
-                        schemars::schema::InstanceType::String,
+                $crate::_macro_deps::schemars::schema::Schema::Object($crate::_macro_deps::schemars::schema::SchemaObject {
+                    instance_type: Some($crate::_macro_deps::schemars::schema::SingleOrVec::Single(Box::new(
+                        $crate::_macro_deps::schemars::schema::InstanceType::String,
                     ))),
-                    string: Some(Box::new(schemars::schema::StringValidation {
+                    string: Some(Box::new($crate::_macro_deps::schemars::schema::StringValidation {
                         min_length: Some(hex_len),
                         max_length: Some(hex_len),
                         pattern: Some("^[0-9a-fA-F]+$".to_string()),
@@ -126,10 +146,34 @@ macro_rules! hash_newtype {
                 })
             }
         }
+
+        impl From<[u8; $n]> for $name {
+            fn from(bytes: [u8; $n]) -> Self {
+                Self::new(bytes)
+            }
+        }
+
+        impl core::str::FromStr for $name {
+            type Err = $crate::hash::HashParseError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                $crate::hash::parse_hash::<$n>(s).map(Self::new)
+            }
+        }
+
+        impl $name {
+            pub fn as_hex(&self) -> String {
+                $crate::_macro_deps::hex::encode(self.0)
+            }
+
+            pub const fn new(bytes: [u8; $n]) -> Self {
+                Self(bytes)
+            }
+        }
     };
 }
 
-hash_newtype!(
+define_hash!(
     /// Hash of a Docker image running in the TEE environment. Used as a proposal for a new TEE
     /// code hash to add to the whitelist, together with the TEE quote (which includes the RTMR3
     /// measurement and more).
@@ -140,7 +184,7 @@ hash_newtype!(
 /// Hash of the MPC node's Docker image.
 pub type NodeImageHash = DockerImageHash;
 
-hash_newtype!(
+define_hash!(
     /// Hash of the launcher's Docker Compose file used to run the MPC node in the TEE environment.
     /// It is computed from the launcher's Docker Compose template populated with the launcher image
     /// hash and the MPC node's Docker image hash.
@@ -148,7 +192,7 @@ hash_newtype!(
     32
 );
 
-hash_newtype!(
+define_hash!(
     /// Hash of the launcher Docker image itself. Voted on by participants to allow
     /// launcher upgrades without contract redeployment.
     LauncherImageHash,
@@ -164,8 +208,8 @@ mod tests {
     use borsh::BorshDeserialize;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
-    hash_newtype!(TestHash, 32);
-    hash_newtype!(TestHash48, 48);
+    define_hash!(TestHash, 32);
+    define_hash!(TestHash48, 48);
 
     #[test]
     fn test_from_bytes_array() {
@@ -364,7 +408,7 @@ mod tests {
         let hash = TestHash48::from(bytes);
 
         // Then
-        assert_eq!(hash.as_bytes(), bytes);
+        assert_eq!(*hash, bytes);
         assert_eq!(hash.as_hex(), "ab".repeat(48));
 
         let converted_back: [u8; 48] = hash.into();

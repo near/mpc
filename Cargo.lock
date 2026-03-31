@@ -2754,9 +2754,9 @@ dependencies = [
 
 [[package]]
 name = "derive-where"
-version = "1.6.0"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef941ded77d15ca19b40374869ac6000af1c9f2a4c0f3d4c70926287e6364a8f"
+checksum = "d08b3a0bcc0d079199cd476b2cae8435016ec11d1c0986c6901c5ac223041534"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3066,6 +3066,10 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "launcher-interface",
+ "mpc-node-config",
+ "near-account-id 2.6.0",
+ "near-indexer-primitives",
  "near-kit",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
@@ -3607,7 +3611,6 @@ dependencies = [
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
- "hex",
  "http 1.4.0",
  "httpmock",
  "jsonrpsee",
@@ -3626,8 +3629,8 @@ version = "3.7.0"
 dependencies = [
  "derive_more 2.1.1",
  "ethereum-types",
- "hex",
  "jsonrpsee",
+ "mpc-primitives",
  "serde",
  "serde_json",
 ]
@@ -5713,7 +5716,6 @@ dependencies = [
  "clap",
  "derive_more 2.1.1",
  "ed25519-dalek",
- "either",
  "elliptic-curve",
  "flume",
  "foreign-chain-inspector",
@@ -5730,6 +5732,7 @@ dependencies = [
  "mockall",
  "mpc-attestation",
  "mpc-contract",
+ "mpc-node-config",
  "mpc-primitives",
  "mpc-tls",
  "near-account-id 2.6.0",
@@ -5755,7 +5758,6 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "serde_with",
  "serde_yaml",
  "serial_test",
  "sha3",
@@ -5772,11 +5774,31 @@ dependencies = [
  "tokio-rustls",
  "tokio-stream",
  "tokio-util",
- "toml 1.1.0+spec-1.1.0",
  "tower",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+ "url",
+]
+
+[[package]]
+name = "mpc-node-config"
+version = "3.7.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "clap",
+ "either",
+ "http 1.4.0",
+ "launcher-interface",
+ "near-account-id 2.6.0",
+ "near-indexer-primitives",
+ "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
+ "serde",
+ "serde_with",
+ "serde_yaml",
+ "toml 1.1.0+spec-1.1.0",
  "url",
 ]
 
@@ -5792,7 +5814,6 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
- "serde_with",
  "thiserror 2.0.18",
 ]
 
