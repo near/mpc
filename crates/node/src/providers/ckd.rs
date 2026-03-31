@@ -12,8 +12,10 @@ use threshold_signatures::confidential_key_derivation::{
 
 use threshold_signatures::ReconstructionLowerBound;
 
+use mpc_node_config::ConfigFile;
+
 use crate::{
-    config::{ConfigFile, MpcConfig, ParticipantsConfig},
+    config::{MpcConfig, ParticipantsConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
     primitives::MpcTaskId,
     providers::SignatureProvider,

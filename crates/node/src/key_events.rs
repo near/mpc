@@ -75,7 +75,7 @@ pub async fn keygen_computation_inner(
             )?);
             (KeyshareData::V2Secp256k1(keyshare), public_key)
         }
-        Curve::Ed25519 => {
+        Curve::Edwards25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
@@ -257,7 +257,7 @@ async fn resharing_computation_inner(
         }
         (
             near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),
-            Curve::Ed25519,
+            Curve::Edwards25519,
         ) => {
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare

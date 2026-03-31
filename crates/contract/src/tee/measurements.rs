@@ -5,55 +5,25 @@ use std::collections::BTreeMap;
 
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 
-/// Generates a 48-byte digest newtype with hex JSON serialization and borsh support.
-macro_rules! digest_newtype {
-    ($(#[$meta:meta])* $name:ident) => {
-        #[serde_with::serde_as]
-        #[derive(
-            Debug, Clone, PartialEq, Eq,
-            serde::Serialize, serde::Deserialize,
-            BorshSerialize, BorshDeserialize,
-        )]
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            derive(borsh::BorshSchema, schemars::JsonSchema)
-        )]
-        $(#[$meta])*
-        #[serde(transparent)]
-        pub struct $name {
-            #[serde_as(as = "serde_with::hex::Hex")]
-            bytes: [u8; 48],
-        }
-
-        impl From<[u8; 48]> for $name {
-            fn from(bytes: [u8; 48]) -> Self { Self { bytes } }
-        }
-
-        impl From<$name> for [u8; 48] {
-            fn from(h: $name) -> [u8; 48] { h.bytes }
-        }
-    };
-}
-
-digest_newtype!(
+mpc_primitives::define_hash!(
     /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
-    MrtdHash
+    MrtdHash, 48
 );
-digest_newtype!(
+mpc_primitives::define_hash!(
     /// SHA-384 digest of the RTMR0 TDX measurement.
-    Rtmr0Hash
+    Rtmr0Hash, 48
 );
-digest_newtype!(
+mpc_primitives::define_hash!(
     /// SHA-384 digest of the RTMR1 TDX measurement.
-    Rtmr1Hash
+    Rtmr1Hash, 48
 );
-digest_newtype!(
+mpc_primitives::define_hash!(
     /// SHA-384 digest of the RTMR2 TDX measurement.
-    Rtmr2Hash
+    Rtmr2Hash, 48
 );
-digest_newtype!(
+mpc_primitives::define_hash!(
     /// SHA-384 digest of the key provider event.
-    KeyProviderEventDigest
+    KeyProviderEventDigest, 48
 );
 
 /// Tracks votes for adding or removing OS measurements.
