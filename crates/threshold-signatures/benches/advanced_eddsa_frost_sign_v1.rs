@@ -49,7 +49,6 @@ fn bench_sign(c: &mut Criterion) {
 criterion_group!(benches, bench_sign);
 criterion_main!(benches);
 
-/****************************** Helpers ******************************/
 /// Used to simulate robust ecdsa signatures for benchmarking
 fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimulatedSig {
     let mut rng = MockCryptoRng::seed_from_u64(41);
