@@ -833,8 +833,9 @@ impl IntoInterfaceType<dtos::ProtocolContractStateV2> for &ProtocolContractState
                 dtos::ProtocolContractStateV2::NotInitialized
             }
             ProtocolContractState::Initializing(state) => {
-                let threshold =
-                    ReconstructionThreshold::new(state.parameters.threshold().value());
+                let threshold = ReconstructionThreshold::new(
+                    state.generating_key.proposed_parameters().threshold().value(),
+                );
                 dtos::ProtocolContractStateV2::Initializing(dtos::InitializingContractStateV2 {
                     distributed_keys: state
                         .domains

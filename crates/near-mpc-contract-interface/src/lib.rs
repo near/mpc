@@ -18,9 +18,10 @@ pub mod types {
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
         DistributedKeyConfig, DomainConfig, DomainPurpose, DomainRegistry, EpochId,
         InitializingContractState, KeyEvent, KeyEventId, KeyEventInstance, KeyForDomain, Keyset,
-        Protocol, ProtocolContractState, ProtocolContractStateV2, ReconstructionThreshold,
-        ResharingContractState, RunningContractState, SignatureScheme, Threshold,
-        ThresholdParameters, ThresholdParametersVotes,
+        InitializingContractStateV2, KeyEventV2, Protocol, ProtocolContractState,
+        ProtocolContractStateV2, ReconstructionThreshold, ResharingContractState,
+        ResharingContractStateV2, RunningContractState, RunningContractStateV2, SignatureScheme,
+        Threshold, ThresholdParameters, ThresholdParametersVotes,
     };
     pub use updates::{ProposedUpdates, UpdateHash};
 
