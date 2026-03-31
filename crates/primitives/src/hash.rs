@@ -69,6 +69,12 @@ macro_rules! define_hash {
             }
         }
 
+        impl core::fmt::Display for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                write!(f, "{}", $crate::_macro_deps::hex::encode(self.0))
+            }
+        }
+
         impl $crate::_macro_deps::serde::Serialize for $name {
             fn serialize<S: $crate::_macro_deps::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                 $crate::hash::serialize_hash(&self.0, serializer)
