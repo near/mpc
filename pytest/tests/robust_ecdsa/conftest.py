@@ -11,7 +11,7 @@ from common_lib.constants import TIMEOUT
 
 PRESIGNATURES_TO_BUFFER = 6
 
-# TODO: re-enable when Protocol::DamgardEtAl is wired into the contract (PR 4+)
+# TODO(#2663): re-enable when Protocol::DamgardEtAl is wired into the contract
 pytestmark = pytest.mark.skip(
     reason="V2Secp256k1 curve removed; robust ECDSA will use Protocol::DamgardEtAl"
 )

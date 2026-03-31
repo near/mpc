@@ -134,7 +134,6 @@ fn bench_sign(c: &mut Criterion) {
 criterion_group!(benches, bench_triples, bench_presign, bench_sign);
 criterion_main!(benches);
 
-/****************************** Helpers ******************************/
 /// Used to simulate ot based ecdsa triples for benchmarking
 fn prepare_simulated_triples(participant_num: usize) -> PreparedSimulatedTriples {
     let mut rng = MockCryptoRng::seed_from_u64(42);
