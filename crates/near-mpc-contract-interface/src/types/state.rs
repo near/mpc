@@ -442,6 +442,55 @@ pub enum ProtocolContractState {
     Resharing(ResharingContractState),
 }
 
+/// V2 key event with [`DistributedKeyConfig`] instead of [`DomainConfig`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct KeyEventV2 {
+    pub epoch_id: EpochId,
+    pub distributed_key: DistributedKeyConfig,
+    pub parameters: ThresholdParameters,
+    pub instance: Option<KeyEventInstance>,
+    pub next_attempt_id: AttemptId,
+}
+
+/// V2 initializing state with [`DistributedKeyConfig`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct InitializingContractStateV2 {
+    pub distributed_keys: Vec<DistributedKeyConfig>,
+    pub epoch_id: EpochId,
+    pub generated_keys: Vec<KeyForDomain>,
+    pub generating_key: KeyEventV2,
+    pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
+}
+
+/// V2 running state with [`DistributedKeyConfig`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RunningContractStateV2 {
+    pub distributed_keys: Vec<DistributedKeyConfig>,
+    pub keyset: Keyset,
+    pub parameters: ThresholdParameters,
+    pub parameters_votes: ThresholdParametersVotes,
+    pub add_domains_votes: AddDomainsVotes,
+    pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+/// V2 resharing state with [`DistributedKeyConfig`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResharingContractStateV2 {
+    pub previous_running_state: RunningContractStateV2,
+    pub reshared_keys: Vec<KeyForDomain>,
+    pub resharing_key: KeyEventV2,
+    pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+}
+
+/// V2 protocol state with [`DistributedKeyConfig`] throughout.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ProtocolContractStateV2 {
+    NotInitialized,
+    Initializing(InitializingContractStateV2),
+    Running(RunningContractStateV2),
+    Resharing(ResharingContractStateV2),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
