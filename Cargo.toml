@@ -80,7 +80,7 @@ axum = "0.8.8"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 base64 = "0.22.1"
 blstrs = "0.7.1"
-borsh = { version = "1.6.0", features = ["derive"] }
+borsh = { version = "1.6.1", features = ["derive"] }
 bs58 = { version = "0.5.1" }
 built = { version = "0.8", features = ["git2", "chrono"] }
 byteorder = "1.5.0"
@@ -202,7 +202,7 @@ tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
-toml = "1.0.6"
+toml = "1.1.0"
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = [
