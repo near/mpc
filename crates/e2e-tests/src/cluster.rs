@@ -622,7 +622,7 @@ fn build_participants(
     let mut list = Vec::new();
     for (i, key) in p2p_keys.iter().enumerate().take(num_nodes) {
         let account_id = ContractAccountId(format!("node{i}.{SANDBOX_ROOT_ACCOUNT}"));
-        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(key.verifying_key().to_bytes());
+        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&key.verifying_key());
         list.push((
             account_id,
             ParticipantId(i as u32),
