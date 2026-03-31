@@ -84,6 +84,8 @@ echo "Container started: $CONTAINER_ID"
 # Check if container is actually running
 WAIT_SECS=60
 if $USE_RUST_LAUNCHER; then
+  # TODO(#2661): Rust launcher path OOMs during testnet genesis download on CI runners.
+  # Reduced to 15s so the check completes before OOM. Investigate root cause.
   WAIT_SECS=15
 fi
 sleep $WAIT_SECS
