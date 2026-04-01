@@ -479,7 +479,7 @@ jobs:
 
   mpc-pytests-cache-cleanup:
     name: "MPC pytests: cache cleanup"
-    needs: mpc-pytests
+    needs: [mpc-pytests, mpc-e2e-tests]
     runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 10
     permissions:
@@ -616,18 +616,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Restore pytest binaries cache
-        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
-        with:
-          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
-          fail-on-cache-miss: true
-          path: |
-            target/release/mpc-node
-            target/release/backup-cli
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
-            libs/nearcore/target/release/neard
-
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -639,6 +627,18 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
           prefix-key: v0-rust-e2e
+
+      - name: Restore pytest binaries cache
+        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        with:
+          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
+          fail-on-cache-miss: true
+          path: |
+            target/release/mpc-node
+            target/release/backup-cli
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+            libs/nearcore/target/release/neard
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
