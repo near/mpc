@@ -1,4 +1,3 @@
-use crate::config::ConfigFile;
 use crate::indexer::handler::{
     CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
@@ -25,6 +24,7 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
+use mpc_node_config::ConfigFile;
 
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{Curve, DomainId};
@@ -231,6 +231,9 @@ where
                         // indexer is being shutdown. So just quit this task.
                         break;
                     };
+
+                    let entropy: [u8; 32] = block_update.block.entropy.clone().into();
+                    let timestamp_nanosec = block_update.block.timestamp_nanosec;
                     self.client.update_indexer_height(block_update.block.height);
                     let signature_requests = block_update
                         .signature_requests
@@ -241,8 +244,6 @@ where
                                 receipt_id,
                                 request,
                                 predecessor_id,
-                                entropy,
-                                timestamp_nanosec,
                             } = signature_request_from_chain;
                             let signature_request = SignatureRequest {
                                 id: signature_id,
@@ -274,9 +275,6 @@ where
                                 ckd_id,
                                 receipt_id,
                                 request,
-                                predecessor_id: _,
-                                entropy,
-                                timestamp_nanosec,
                             } = ckd_request_from_chain;
                             let ckd_request = CKDRequest {
                                 id: ckd_id,
@@ -304,7 +302,11 @@ where
                         .verify_foreign_tx_requests
                         .into_iter()
                         .map(|verify_foreign_tx_request_from_chain| {
-                            let VerifyForeignTxRequestFromChain { verify_foreign_tx_id, receipt_id, request, entropy, timestamp_nanosec, .. } = verify_foreign_tx_request_from_chain;
+                            let VerifyForeignTxRequestFromChain {
+                                verify_foreign_tx_id,
+                                receipt_id,
+                                request
+                            } = verify_foreign_tx_request_from_chain;
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
@@ -405,7 +407,7 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Ed25519) => {
+                                    Some(Curve::Edwards25519) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -525,7 +527,7 @@ where
                                     }
                                     Some(Curve::Secp256k1)
                                     | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Ed25519) => Err(anyhow::anyhow!(
+                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
@@ -617,7 +619,7 @@ where
                                     }
                                     Some(Curve::Bls12381)
                                     | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Ed25519) => Err(anyhow::anyhow!(
+                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
                                     )),

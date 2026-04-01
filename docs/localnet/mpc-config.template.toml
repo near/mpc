@@ -2,8 +2,10 @@ home_dir = "$HOME/.near/$MPC_NODE_ID"
 
 [near_init]
 chain_id = "mpc-localnet"
+download_genesis = false
 boot_nodes = "$NEAR_BOOT_NODES"
 genesis_path = "$HOME/.near/mpc-localnet/genesis.json"
+download_genesis = false
 rpc_addr = "0.0.0.0:$RPC_PORT"
 network_addr = "0.0.0.0:$INDEXER_PORT"
 
@@ -11,7 +13,7 @@ network_addr = "0.0.0.0:$INDEXER_PORT"
 secret_store_key_hex = "11111111111111111111111111111111"
 
 [tee]
-image_hash = "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0"
+image_hash = "sha256:8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0"
 latest_allowed_hash_file_path = "/tmp/LATEST_ALLOWED_HASH_FILE.txt"
 
 [tee.authority]

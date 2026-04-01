@@ -10,9 +10,13 @@ bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
+launcher-interface = { workspace = true }
+mpc-node-config = { workspace = true }
+near-account-id = { workspace = true }
+near-indexer-primitives = { workspace = true }
 near-kit = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
-near-mpc-crypto-types = { workspace = true }
+near-mpc-crypto-types = { workspace = true, features = ["ed25519-dalek"] }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

@@ -78,14 +78,13 @@ fn bench_sign(c: &mut Criterion) {
 criterion_group!(benches, bench_presign, bench_sign);
 criterion_main!(benches);
 
-/****************************** Helpers ******************************/
 /// Used to simulate Frost Ed25519 presignatures for benchmarking
 fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
     // Running presign a first time with snapshots
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = ed25519_prepare_presign(num_participants, &mut rng);
 
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     // choose the real_participant at random
@@ -117,7 +116,7 @@ fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
 
     // now preparing the simulator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
 
     PreparedPresig {
         participant: real_participant,
@@ -132,7 +131,7 @@ fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimula
     let preps = ed25519_prepare_presign(threshold.value(), &mut rng);
     let result = run_protocol(preps.protocols).expect("Prepare sign should not fail");
     let preps = ed25519_prepare_sign_v2(&result, preps.key_packages, threshold, &mut rng);
-    let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
+    let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
     let participants: Vec<Participant> = preps
@@ -157,7 +156,7 @@ fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimula
 
     // now preparing the simulator
     let simulated_protocol =
-        Simulator::new(real_participant, protocolsnapshot).expect("Simulator should not be empty");
+        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
 
     PreparedSimulatedSig {
         participant: real_participant,

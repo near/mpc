@@ -1173,6 +1173,12 @@ $ docker inspect nearone/mpc-node:main-828f816 | jq -r .[0].Id
 sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
 ```
 
+> **macOS:** `docker inspect` on Docker Desktop may return a different digest.
+> Use this instead:
+> ```bash
+> $ docker manifest inspect nearone/mpc-node:main-828f816 | jq -r '.config.digest'
+> ```
+
 * Download the MPC code from this repository:
 
 ```bash

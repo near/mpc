@@ -1,6 +1,6 @@
 use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
-use crate::config::{MpcConfig, PresignatureConfig};
+use crate::config::MpcConfig;
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
@@ -15,6 +15,7 @@ use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_contract::primitives::domain::DomainId;
+use mpc_node_config::PresignatureConfig;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -179,6 +180,7 @@ impl RobustEcdsaSignatureProvider {
         id: UniqueId,
         domain_id: DomainId,
     ) -> anyhow::Result<()> {
+        id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
         let number_of_participants = self.mpc_config.participants.participants.len();

@@ -103,6 +103,11 @@ name = "ckd"
 harness = false
 required-features = ["test-utils"]
 
+[[bench]]
+name = "advanced_dkg"
+harness = false
+required-features = ["test-utils"]
+
 [lints.clippy]
 mod_module_files = "deny"
 # We might revisit these exceptions in the future

@@ -1,6 +1,5 @@
 use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
-use crate::config::PresignatureConfig;
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
@@ -13,6 +12,7 @@ use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_contract::primitives::domain::DomainId;
+use mpc_node_config::PresignatureConfig;
 use near_time::Clock;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -171,6 +171,7 @@ impl EcdsaSignatureProvider {
         domain_id: DomainId,
         paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
+        id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;

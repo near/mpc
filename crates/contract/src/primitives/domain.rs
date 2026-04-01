@@ -52,7 +52,7 @@ impl Display for DomainId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Curve {
     Secp256k1,
-    Ed25519,
+    Edwards25519,
     Bls12381,
     V2Secp256k1, // Robust ECDSA
 }
@@ -69,7 +69,7 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
         (purpose, curve),
         (DomainPurpose::Sign, Curve::Secp256k1)
             | (DomainPurpose::Sign, Curve::V2Secp256k1)
-            | (DomainPurpose::Sign, Curve::Ed25519)
+            | (DomainPurpose::Sign, Curve::Edwards25519)
             | (DomainPurpose::ForeignTx, Curve::Secp256k1)
             | (DomainPurpose::CKD, Curve::Bls12381)
     )
@@ -89,6 +89,39 @@ pub struct DomainConfig {
     pub purpose: DomainPurpose,
 }
 
+/// Curve variant names as they appear in the legacy JSON wire format.
+/// Maps `Edwards25519` ↔ `Ed25519`. Remove after 3.8 release.
+#[derive(serde::Serialize, serde::Deserialize)]
+enum CurveCompat {
+    Secp256k1,
+    #[serde(alias = "Edwards25519")]
+    Ed25519,
+    Bls12381,
+    V2Secp256k1,
+}
+
+impl From<Curve> for CurveCompat {
+    fn from(c: Curve) -> Self {
+        match c {
+            Curve::Secp256k1 => Self::Secp256k1,
+            Curve::Edwards25519 => Self::Ed25519,
+            Curve::Bls12381 => Self::Bls12381,
+            Curve::V2Secp256k1 => Self::V2Secp256k1,
+        }
+    }
+}
+
+impl From<CurveCompat> for Curve {
+    fn from(c: CurveCompat) -> Self {
+        match c {
+            CurveCompat::Secp256k1 => Self::Secp256k1,
+            CurveCompat::Ed25519 => Self::Edwards25519,
+            CurveCompat::Bls12381 => Self::Bls12381,
+            CurveCompat::V2Secp256k1 => Self::V2Secp256k1,
+        }
+    }
+}
+
 /// JSON-only compatibility helper for [`DomainConfig`]:
 /// - Deserializes both `"scheme"` (legacy) and `"curve"` (new) field names.
 /// - Serializes as `"scheme"` for backward compatibility with the current contract.
@@ -98,7 +131,7 @@ pub struct DomainConfig {
 struct DomainConfigCompat {
     id: DomainId,
     #[serde(alias = "curve")]
-    scheme: Curve,
+    scheme: CurveCompat,
     purpose: DomainPurpose,
 }
 
@@ -106,7 +139,7 @@ impl From<DomainConfigCompat> for DomainConfig {
     fn from(value: DomainConfigCompat) -> Self {
         Self {
             id: value.id,
-            curve: value.scheme,
+            curve: value.scheme.into(),
             purpose: value.purpose,
         }
     }
@@ -116,7 +149,7 @@ impl From<DomainConfig> for DomainConfigCompat {
     fn from(value: DomainConfig) -> Self {
         Self {
             id: value.id,
-            scheme: value.curve,
+            scheme: value.curve.into(),
             purpose: value.purpose,
         }
     }
@@ -282,8 +315,8 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
-        DomainRegistry, Participants,
+        is_valid_curve_for_purpose, AddDomainsVotes, Curve, CurveCompat, DomainConfig, DomainId,
+        DomainPurpose, DomainRegistry, Participants,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
@@ -304,7 +337,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(1),
-                curve: Curve::Ed25519,
+                curve: Curve::Edwards25519,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -361,7 +394,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(2),
-                curve: Curve::Ed25519,
+                curve: Curve::Edwards25519,
                 purpose: DomainPurpose::Sign,
             },
             DomainConfig {
@@ -400,7 +433,7 @@ pub mod tests {
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    curve: Curve::Ed25519,
+                    curve: Curve::Edwards25519,
                     purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
@@ -417,7 +450,7 @@ pub mod tests {
             Some(DomainId(3))
         );
         assert_eq!(
-            registry.most_recent_domain_for_curve(Curve::Ed25519),
+            registry.most_recent_domain_for_curve(Curve::Edwards25519),
             Some(DomainId(2))
         );
     }
@@ -437,6 +470,15 @@ pub mod tests {
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.curve, Curve::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
+
+        // Edwards25519 serializes as "Ed25519" via CurveCompat; remove after 3.8 release.
+        let domain_config = DomainConfig {
+            id: DomainId(1),
+            curve: Curve::Edwards25519,
+            purpose: DomainPurpose::Sign,
+        };
+        let json = serde_json::to_string(&domain_config).unwrap();
+        assert_eq!(json, r#"{"id":1,"scheme":"Ed25519","purpose":"Sign"}"#);
     }
 
     #[rstest]
@@ -455,6 +497,16 @@ pub mod tests {
         Curve::Bls12381,
         DomainPurpose::CKD
     )]
+    #[case(
+        r#"{"id":1,"scheme":"Ed25519","purpose":"Sign"}"#,
+        Curve::Edwards25519,
+        DomainPurpose::Sign
+    )]
+    #[case(
+        r#"{"id":1,"curve":"Edwards25519","purpose":"Sign"}"#,
+        Curve::Edwards25519,
+        DomainPurpose::Sign
+    )]
     fn test_deserialize_scheme_and_curve_keys(
         #[case] json: &str,
         #[case] expected_curve: Curve,
@@ -466,8 +518,27 @@ pub mod tests {
     }
 
     #[rstest]
+    #[case("\"Secp256k1\"", Curve::Secp256k1, "\"Secp256k1\"")]
+    #[case("\"Ed25519\"", Curve::Edwards25519, "\"Ed25519\"")]
+    #[case("\"Edwards25519\"", Curve::Edwards25519, "\"Ed25519\"")]
+    #[case("\"Bls12381\"", Curve::Bls12381, "\"Bls12381\"")]
+    #[case("\"V2Secp256k1\"", Curve::V2Secp256k1, "\"V2Secp256k1\"")]
+    fn test_curve_compat_wire_format(
+        #[case] input_json: &str,
+        #[case] expected_curve: Curve,
+        #[case] expected_serialized: &str,
+    ) {
+        let compat: CurveCompat = serde_json::from_str(input_json).unwrap();
+        let curve: Curve = compat.into();
+        assert_eq!(curve, expected_curve);
+
+        let re_serialized = serde_json::to_string(&CurveCompat::from(curve)).unwrap();
+        assert_eq!(re_serialized, expected_serialized);
+    }
+
+    #[rstest]
     #[case(Curve::Secp256k1, DomainPurpose::Sign)]
-    #[case(Curve::Ed25519, DomainPurpose::Sign)]
+    #[case(Curve::Edwards25519, DomainPurpose::Sign)]
     #[case(Curve::V2Secp256k1, DomainPurpose::Sign)]
     #[case(Curve::Bls12381, DomainPurpose::CKD)]
     fn test_infer_purpose_from_curve(#[case] curve: Curve, #[case] expected: DomainPurpose) {
@@ -478,12 +549,12 @@ pub mod tests {
     // Valid combinations
     #[case(DomainPurpose::Sign, Curve::Secp256k1, true)]
     #[case(DomainPurpose::Sign, Curve::V2Secp256k1, true)]
-    #[case(DomainPurpose::Sign, Curve::Ed25519, true)]
+    #[case(DomainPurpose::Sign, Curve::Edwards25519, true)]
     #[case(DomainPurpose::ForeignTx, Curve::Secp256k1, true)]
     #[case(DomainPurpose::CKD, Curve::Bls12381, true)]
     // Invalid combinations
     #[case(DomainPurpose::Sign, Curve::Bls12381, false)]
-    #[case(DomainPurpose::ForeignTx, Curve::Ed25519, false)]
+    #[case(DomainPurpose::ForeignTx, Curve::Edwards25519, false)]
     #[case(DomainPurpose::ForeignTx, Curve::Bls12381, false)]
     #[case(DomainPurpose::ForeignTx, Curve::V2Secp256k1, false)]
     #[case(DomainPurpose::CKD, Curve::Secp256k1, false)]
@@ -599,7 +670,7 @@ pub mod tests {
         }];
         let proposal_b = vec![DomainConfig {
             id: DomainId(0),
-            curve: Curve::Ed25519,
+            curve: Curve::Edwards25519,
             purpose: DomainPurpose::Sign,
         }];
         let mut votes = AddDomainsVotes::default();

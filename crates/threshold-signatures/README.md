@@ -15,7 +15,7 @@ however is implemented from scratch and follows
 
 The EdDSA implementation is mainly a wrapper of the
 [Frost](https://github.com/ZcashFoundation/frost) signing functions instantiated
-with Curve25519.
+with Edwards25519.
 
 The Confidential Key Derivation (CKD) code implements a threshold protocol to
 generate deterministic keys in a confidential manner. The scheme is based on
@@ -100,7 +100,7 @@ More details can be found in
 ### Threshold EdDSA Functionalities
 
 The threshold EdDSA scheme is implemented over curve
-Curve25519. We refer to such scheme as Ed25519.
+Edwards25519. We refer to such scheme as Ed25519.
 The following functionalities are provided:
 
 1) **Distributed Key Generation (DKG)**: Same as in ECDSA.
@@ -219,7 +219,7 @@ MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- robust_ecdsa_presign_
 ```
 
 By default, the maximum number of malicious parties is 6, the latency is 0 milliseconds and the number of iterations is 15.
-The detailed numbers and analysis can be found in the [docs/benches/model.md](docs/benches/model.md) documentation.
+The detailed numbers and analysis can be found in the [docs/benches/results.md](docs/benches/results.md) documentation.
 
 In a nutshell, our results show that the Robust ECDSA scheme is better to deploy than the OT based ECDSA in terms of efficiency and network bandwidth. In fact, with 15 maximum malicious parties and 100 ms of latency, the Robust ECDSA offline phase is roughly **4.7 times** faster than the OT based ECDSA offline phase and transmits **130 times** less bytes over the network before completing.
 As for Ed25519 the online phase is relatively slow with the current implementation (which does not split the scheme into presign and sign) compared to the ECDSA. With 100ms of latency, the current implementation (no presigning) is roughly 3 times slower to serve a message signing request (online phase) than both of the ECDSA schemes due to the fact that it has 3 times more rounds.

@@ -1,11 +1,4 @@
-use crate::config::{
-    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
-    BitcoinChainConfig, BitcoinProviderConfig, CKDConfig, ConfigFile, EthereumApiVariant,
-    EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig, IndexerConfig, KeygenConfig,
-    PresignatureConfig, SecretsConfig, SignatureConfig, SolanaApiVariant, SolanaChainConfig,
-    SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
-    TripleConfig,
-};
+use crate::config::SecretsConfig;
 use crate::indexer::migrations::ContractMigrationInfo;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
@@ -18,6 +11,13 @@ use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
+use mpc_node_config::{
+    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
+    BitcoinChainConfig, BitcoinProviderConfig, CKDConfig, ConfigFile, EthereumApiVariant,
+    EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig, IndexerConfig, KeygenConfig,
+    PresignatureConfig, SignatureConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
+    StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig, TripleConfig,
+};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
@@ -499,8 +499,7 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::config::SyncMode;
-    use crate::config::{AuthConfig, TokenConfig};
+    use mpc_node_config::{AuthConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
