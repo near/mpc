@@ -4,7 +4,7 @@ use crate::sandbox::common::{init_env, SandboxTestSetup};
 use crate::sandbox::utils::consts::{ALL_CURVES, PARTICIPANT_LEN};
 use assert_matches::assert_matches;
 use near_mpc_contract_interface::method_names::{
-    GET_FOREIGN_CHAIN_POLICY_PROPOSALS, VOTE_FOREIGN_CHAIN_POLICY,
+    GET_SUPPORTED_FOREIGN_CHAINS_VOTES, VOTE_FOREIGN_CHAIN_POLICY,
 };
 use serde_json::json;
 
@@ -163,7 +163,7 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
     // And: only one Ethereum entry is stored (the last value wins).
     // Deserialize as raw JSON to avoid client-side BTreeMap deduplication hiding the result.
     let votes: serde_json::Value = contract
-        .view(GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
+        .view(GET_SUPPORTED_FOREIGN_CHAINS_VOTES)
         .await
         .unwrap()
         .json()

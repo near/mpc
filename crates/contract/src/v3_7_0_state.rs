@@ -108,6 +108,9 @@ impl From<MpcContract> for crate::MpcContract {
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {},
             metrics: value.metrics,
+
+            supported_foreign_chains: Default::default(),
+            supported_foreign_chains_votes: Default::default(),
         }
     }
 }

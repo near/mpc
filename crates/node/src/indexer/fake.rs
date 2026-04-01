@@ -61,13 +61,11 @@ pub struct FakeForeignChainPolicyReader {
 }
 
 impl ReadForeignChainPolicy for FakeForeignChainPolicyReader {
-    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
+    async fn get_supported_chains(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
         Ok(self.contract.lock().await.foreign_chain_policy().clone())
     }
 
-    async fn get_foreign_chain_policy_proposals(
-        &self,
-    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
+    async fn get_supported_chains_by_node(&self) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
         Ok(self
             .contract
             .lock()

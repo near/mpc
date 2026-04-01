@@ -33,9 +33,9 @@ use near_indexer_primitives::{
 };
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
-    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
-    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
-    STATE,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
+    GET_SUPPORTED_FOREIGN_CHAINS, GET_SUPPORTED_FOREIGN_CHAINS_VOTES, GET_TEE_ACCOUNTS,
+    MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
@@ -269,12 +269,12 @@ impl IndexerViewClient {
         }
     }
 
-    pub(crate) async fn get_foreign_chain_policy(
+    pub(crate) async fn get_supported_chains(
         &self,
         mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<dtos::ForeignChainPolicy> {
+    ) -> anyhow::Result<dtos::SupportedForeignChains> {
         let (_height, policy) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAIN_POLICY)
+            .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS)
             .await?;
         Ok(policy)
     }
@@ -284,7 +284,7 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
     ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
         let (_height, proposals) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
+            .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS_VOTES)
             .await?;
         Ok(proposals)
     }
@@ -368,12 +368,12 @@ impl IndexerViewClient {
 
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait ReadForeignChainPolicy: Send + Sync {
-    fn get_foreign_chain_policy(
+    fn get_supported_chains(
         &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainPolicy>> + Send;
-    fn get_foreign_chain_policy_proposals(
+    ) -> impl Future<Output = anyhow::Result<dtos::SupportedForeignChains>> + Send;
+    fn get_supported_chains_by_node(
         &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::ForeignChainPolicyVotes>> + Send;
+    ) -> impl Future<Output = anyhow::Result<dtos::SupportedForeignChainsVotes>> + Send;
 }
 
 #[derive(Clone)]
@@ -388,16 +388,16 @@ impl RealForeignChainPolicyReader {
 }
 
 impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
-    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
+    async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
         self.indexer_state
             .view_client
-            .get_foreign_chain_policy(&self.indexer_state.mpc_contract_id)
+            .get_supported_chains(&self.indexer_state.mpc_contract_id)
             .await
     }
 
-    async fn get_foreign_chain_policy_proposals(
+    async fn get_supported_chains_by_node(
         &self,
-    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
+    ) -> anyhow::Result<dtos::SupportedForeignChainsVotes> {
         self.indexer_state
             .view_client
             .get_foreign_chain_policy_proposals(&self.indexer_state.mpc_contract_id)

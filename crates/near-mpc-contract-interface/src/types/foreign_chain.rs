@@ -1,12 +1,12 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
-use crate::types::{ParticipantId, SignatureResponse};
 
 #[derive(
     Debug,
@@ -610,6 +610,7 @@ pub enum ForeignChain {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+#[deprecated]
 pub struct ForeignChainPolicy {
     pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
 }
@@ -627,37 +628,14 @@ pub struct ForeignChainPolicy {
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::Deref,
+    derive_more::DerefMut,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct ForeignChainConfigs {
-    pub chains:
-        BTreeMap<ForeignChain, NonEmptyBTreeMap<RpcProviderName, NonEmptyBTreeSet<ParticipantId>>>,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct NodeForeignChainRpcConfig {
-    pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProviderName>>,
-}
+pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
 
 #[derive(
     Debug,
@@ -717,8 +695,31 @@ pub struct RpcProviderName(String);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[deprecated]
 pub struct ForeignChainPolicyVotes {
     pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct SupportedForeignChainsVotes {
+    pub supported_chain_by_account: BTreeMap<AccountId, SupportedForeignChains>,
 }
 
 #[derive(

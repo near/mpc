@@ -17,7 +17,10 @@ pub mod v3_7_0_state;
 mod bench;
 mod dto_mapping;
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use crate::{
     crypto_shared::types::CKDResponse,
@@ -130,8 +133,14 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
+
+    // deprecate after next upgrade for backwards compatibility
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
+
+    supported_foreign_chains: dtos::SupportedForeignChains,
+    supported_foreign_chains_votes: SupportedForeignChainsVotes,
+
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -161,6 +170,7 @@ struct StaleData {}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
+#[deprecated]
 struct ForeignChainPolicyVotes {
     proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
 }
@@ -182,6 +192,33 @@ impl ForeignChainPolicyVotes {
 
         dtos::ForeignChainPolicyVotes {
             proposal_by_account,
+        }
+    }
+}
+
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+struct SupportedForeignChainsVotes {
+    proposal_by_account: IterableMap<dtos::AccountId, dtos::SupportedForeignChains>,
+}
+
+impl Default for SupportedForeignChainsVotes {
+    fn default() -> Self {
+        Self {
+            proposal_by_account: IterableMap::new(StorageKey::ForeignChainPolicyVotes),
+        }
+    }
+}
+
+impl SupportedForeignChainsVotes {
+    fn to_dto(&self) -> dtos::SupportedForeignChainsVotes {
+        let mut proposal_by_account = BTreeMap::new();
+        for (account_id, policy) in self.proposal_by_account.iter() {
+            proposal_by_account.insert(account_id.clone(), policy.clone());
+        }
+
+        dtos::SupportedForeignChainsVotes {
+            supported_chain_by_account: proposal_by_account,
         }
     }
 }
@@ -1046,10 +1083,19 @@ impl MpcContract {
     }
 
     #[handle_result]
+    #[allow(dead_code)]
     pub fn register_foreign_chain_config(
         &mut self,
-        foreign_chain_config: dtos::NodeForeignChainRpcConfig,
+        supported_chains_by_node: dtos::SupportedForeignChains,
     ) -> Result<(), Error> {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
+        };
+
+        let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
+        let voter = dtos::AccountId(voter.get().to_string());
+
+        // TODO: register that this nodes
         Ok(())
     }
 
@@ -1689,6 +1735,9 @@ impl MpcContract {
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
             metrics: Default::default(),
+
+            supported_foreign_chains: Default::default(),
+            supported_foreign_chains_votes: Default::default(),
         })
     }
 
@@ -1753,6 +1802,9 @@ impl MpcContract {
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
             metrics: Default::default(),
+
+            supported_foreign_chains: Default::default(),
+            supported_foreign_chains_votes: Default::default(),
         })
     }
 
@@ -1845,12 +1897,22 @@ impl MpcContract {
         dtos::Config::from(&self.config)
     }
 
+    #[deprecated]
     pub fn get_foreign_chain_policy(&self) -> dtos::ForeignChainPolicy {
         self.foreign_chain_policy.clone()
     }
 
+    #[deprecated]
     pub fn get_foreign_chain_policy_proposals(&self) -> dtos::ForeignChainPolicyVotes {
         self.foreign_chain_policy_votes.to_dto()
+    }
+
+    pub fn get_supported_foreign_chains(&self) -> &dtos::SupportedForeignChains {
+        &self.supported_foreign_chains
+    }
+
+    pub fn get_supported_foreign_chains_votes(&self) -> dtos::SupportedForeignChainsVotes {
+        self.supported_foreign_chains_votes.to_dto()
     }
 
     // contract version

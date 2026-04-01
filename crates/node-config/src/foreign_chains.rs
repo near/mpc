@@ -64,49 +64,30 @@ impl ForeignChainsConfig {
         Ok(())
     }
 
-    pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
-        if self.is_empty() {
-            return None;
+    pub fn supported_chains(&self) -> dtos::SupportedForeignChains {
+        let mut supported_chains = dtos::SupportedForeignChains::default();
+
+        if self.solana.is_some() {
+            supported_chains.insert(dtos::ForeignChain::Solana);
         }
 
-        let mut chains = BTreeMap::new();
-
-        if let Some(config) = &self.solana {
-            chains.insert(
-                dtos::ForeignChain::Solana,
-                providers_to_set(&config.providers),
-            );
+        if self.bitcoin.is_some() {
+            supported_chains.insert(dtos::ForeignChain::Bitcoin);
         }
 
-        if let Some(config) = &self.bitcoin {
-            chains.insert(
-                dtos::ForeignChain::Bitcoin,
-                providers_to_set(&config.providers),
-            );
+        if self.ethereum.is_some() {
+            supported_chains.insert(dtos::ForeignChain::Ethereum);
         }
 
-        if let Some(config) = &self.ethereum {
-            chains.insert(
-                dtos::ForeignChain::Ethereum,
-                providers_to_set(&config.providers),
-            );
+        if self.abstract_chain.is_some() {
+            supported_chains.insert(dtos::ForeignChain::Abstract);
         }
 
-        if let Some(config) = &self.abstract_chain {
-            chains.insert(
-                dtos::ForeignChain::Abstract,
-                providers_to_set(&config.providers),
-            );
+        if self.starknet.is_some() {
+            supported_chains.insert(dtos::ForeignChain::Starknet);
         }
 
-        if let Some(config) = &self.starknet {
-            chains.insert(
-                dtos::ForeignChain::Starknet,
-                providers_to_set(&config.providers),
-            );
-        }
-
-        Some(dtos::ForeignChainPolicy { chains })
+        supported_chains
     }
 }
 

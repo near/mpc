@@ -137,7 +137,7 @@ where
         my_participant_index: usize,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        validate_foreign_chain_policy(
+        chain_is_supported(
             &self.config.foreign_chains,
             &self.foreign_chain_policy_reader,
             request,
@@ -312,17 +312,16 @@ enum ValidateForeignChainPolicyError {
     ChainNotInPolicy { requested: dtos::ForeignChain },
 }
 
-async fn validate_foreign_chain_policy(
-    foreign_chains_config: &ForeignChainsConfig,
+async fn chain_is_supported(
+    local_foreign_chains_config: &ForeignChainsConfig,
     policy_reader: &impl ReadForeignChainPolicy,
     request: &dtos::ForeignChainRpcRequest,
 ) -> Result<(), ValidateForeignChainPolicyError> {
-    let local_policy = foreign_chains_config
-        .to_policy()
-        .ok_or(ValidateForeignChainPolicyError::LocalConfigEmpty)?;
+    // TODO: if it's supported on chain, it means this node also supports it locally.
+    let _supported_chains_locally = local_foreign_chains_config.supported_chains();
 
     let on_chain_policy = policy_reader
-        .get_foreign_chain_policy()
+        .get_supported_chains()
         .await
         .map_err(ValidateForeignChainPolicyError::FetchOnChainPolicy)?;
 
@@ -334,17 +333,16 @@ async fn validate_foreign_chain_policy(
     }
 
     let requested_chain = request.chain();
-    if !on_chain_policy
-        .chains
-        .iter()
-        .any(|(chain, _)| *chain == requested_chain)
-    {
-        return Err(ValidateForeignChainPolicyError::ChainNotInPolicy {
-            requested: requested_chain,
-        });
-    }
 
-    Ok(())
+    let foreign_chain_is_supported = on_chain_policy.contains(&requested_chain);
+
+    if foreign_chain_is_supported {
+        Ok(())
+    } else {
+        Err(ValidateForeignChainPolicyError::ChainNotInPolicy {
+            requested: requested_chain,
+        })
+    }
 }
 
 /// Deterministically selects a provider index based on the request ID and the node's
@@ -494,7 +492,7 @@ mod tests {
         let config = bitcoin_foreign_chains_config();
         let reader = mock_policy_reader(bitcoin_chain_policy());
 
-        validate_foreign_chain_policy(&config, &reader, &bitcoin_request())
+        chain_is_supported(&config, &reader, &bitcoin_request())
             .await
             .unwrap();
     }
@@ -512,7 +510,7 @@ mod tests {
 
         // Policies match (both bitcoin-only), but request is for Ethereum.
         // The policy match check passes, but the chain-in-policy check fails.
-        let result = validate_foreign_chain_policy(&config, &reader, &ethereum_request).await;
+        let result = chain_is_supported(&config, &reader, &ethereum_request).await;
         assert_matches!(
             result,
             Err(ValidateForeignChainPolicyError::ChainNotInPolicy { .. })
@@ -532,7 +530,7 @@ mod tests {
             )]),
         });
 
-        let result = validate_foreign_chain_policy(&config, &reader, &bitcoin_request()).await;
+        let result = chain_is_supported(&config, &reader, &bitcoin_request()).await;
         assert_matches!(
             result,
             Err(ValidateForeignChainPolicyError::PolicyMismatch { .. })
@@ -544,7 +542,7 @@ mod tests {
         let config = ForeignChainsConfig::default();
         let reader = mock_policy_reader(bitcoin_chain_policy());
 
-        let result = validate_foreign_chain_policy(&config, &reader, &bitcoin_request()).await;
+        let result = chain_is_supported(&config, &reader, &bitcoin_request()).await;
         assert_matches!(
             result,
             Err(ValidateForeignChainPolicyError::LocalConfigEmpty)

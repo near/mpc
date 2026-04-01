@@ -738,7 +738,7 @@ where
         };
 
         let on_chain_policy = foreign_chain_policy_reader
-            .get_foreign_chain_policy()
+            .get_supported_chains()
             .await
             .context("failed to fetch foreign chain policy")?;
 
@@ -763,7 +763,7 @@ where
         }
 
         let proposals = foreign_chain_policy_reader
-            .get_foreign_chain_policy_proposals()
+            .get_supported_chains_by_node()
             .await
             .context("failed to fetch foreign chain policy proposals")?;
 
