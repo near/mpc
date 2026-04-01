@@ -52,6 +52,8 @@ pub struct FakeMpcContractState {
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: dtos::ForeignChainPolicyVotes,
+    supported_foreign_chains: dtos::SupportedForeignChains,
+    supported_foreign_chains_by_node: dtos::SupportedForeignChainsVotes,
     pub migration_service: NodeMigrations,
 }
 
@@ -61,16 +63,23 @@ pub struct FakeForeignChainPolicyReader {
 }
 
 impl ReadForeignChainPolicy for FakeForeignChainPolicyReader {
-    async fn get_supported_chains(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
-        Ok(self.contract.lock().await.foreign_chain_policy().clone())
-    }
-
-    async fn get_supported_chains_by_node(&self) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
+    async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
         Ok(self
             .contract
             .lock()
             .await
-            .foreign_chain_policy_votes()
+            .supported_foreign_chains()
+            .clone())
+    }
+
+    async fn get_supported_chains_by_node(
+        &self,
+    ) -> anyhow::Result<dtos::SupportedForeignChainsVotes> {
+        Ok(self
+            .contract
+            .lock()
+            .await
+            .supported_foreign_chains_by_node()
             .clone())
     }
 }
@@ -92,6 +101,8 @@ impl FakeMpcContractState {
             pending_verify_foreign_txs: BTreeMap::new(),
             foreign_chain_policy: dtos::ForeignChainPolicy::default(),
             foreign_chain_policy_votes: dtos::ForeignChainPolicyVotes::default(),
+            supported_foreign_chains: dtos::SupportedForeignChains::default(),
+            supported_foreign_chains_by_node: dtos::SupportedForeignChainsVotes::default(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -102,6 +113,46 @@ impl FakeMpcContractState {
 
     pub fn foreign_chain_policy_votes(&self) -> &dtos::ForeignChainPolicyVotes {
         &self.foreign_chain_policy_votes
+    }
+
+    pub fn supported_foreign_chains(&self) -> &dtos::SupportedForeignChains {
+        &self.supported_foreign_chains
+    }
+
+    pub fn supported_foreign_chains_by_node(&self) -> &dtos::SupportedForeignChainsVotes {
+        &self.supported_foreign_chains_by_node
+    }
+
+    pub fn register_foreign_chain_config(
+        &mut self,
+        account_id: AccountId,
+        supported_chains: dtos::SupportedForeignChains,
+    ) {
+        let ProtocolContractState::Running(state) = &self.state else {
+            tracing::info!(
+                "register_foreign_chain_config transaction ignored because the contract is not in running state"
+            );
+            return;
+        };
+
+        let is_participant = state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .any(|(participant_id, _, _)| participant_id == &account_id);
+
+        if !is_participant {
+            tracing::info!(
+                "register_foreign_chain_config transaction ignored because signer is not a participant"
+            );
+            return;
+        }
+
+        let voter = dtos::AccountId(account_id.to_string());
+        self.supported_foreign_chains_by_node
+            .supported_chain_by_account
+            .insert(voter, supported_chains);
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
@@ -660,6 +711,13 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::VoteForeignChainPolicy(vote) => {
                         let mut contract = contract.lock().await;
                         contract.vote_foreign_chain_policy(account_id, vote.policy);
+                    }
+                    ChainSendTransactionRequest::RegisterForeignChainConfig(args) => {
+                        let mut contract = contract.lock().await;
+                        contract.register_foreign_chain_config(
+                            account_id,
+                            args.supported_chains_by_node,
+                        );
                     }
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?

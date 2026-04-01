@@ -15,9 +15,10 @@ use mpc_contract::{
 };
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
-    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
-    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
+    CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAIN_CONFIG, RESPOND, RESPOND_CKD,
+    RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
+    SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE,
+    VOTE_FOREIGN_CHAIN_POLICY, VOTE_PK, VOTE_RESHARED,
 };
 pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
@@ -186,6 +187,11 @@ pub struct ChainVoteForeignChainPolicyArgs {
 }
 
 #[derive(Serialize, Debug)]
+pub struct ChainRegisterForeignChainConfigArgs {
+    pub supported_chains_by_node: dtos::SupportedForeignChains,
+}
+
+#[derive(Serialize, Debug)]
 pub struct ChainStartReshareArgs {
     pub key_event_id: KeyEventId,
 }
@@ -214,6 +220,7 @@ pub enum ChainSendTransactionRequest {
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
     VoteForeignChainPolicy(ChainVoteForeignChainPolicyArgs),
+    RegisterForeignChainConfig(ChainRegisterForeignChainConfigArgs),
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
@@ -237,6 +244,9 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VotePk(_) => VOTE_PK,
             ChainSendTransactionRequest::VoteReshared(_) => VOTE_RESHARED,
             ChainSendTransactionRequest::VoteForeignChainPolicy(_) => VOTE_FOREIGN_CHAIN_POLICY,
+            ChainSendTransactionRequest::RegisterForeignChainConfig(_) => {
+                REGISTER_FOREIGN_CHAIN_CONFIG
+            }
             ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,
             ChainSendTransactionRequest::StartKeygen(_) => START_KEYGEN_INSTANCE,
             ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
@@ -258,6 +268,7 @@ impl ChainSendTransactionRequest {
             | Self::VotePk(_)
             | Self::VoteReshared(_)
             | Self::VoteForeignChainPolicy(_)
+            | Self::RegisterForeignChainConfig(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)

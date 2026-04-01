@@ -279,10 +279,10 @@ impl IndexerViewClient {
         Ok(policy)
     }
 
-    pub(crate) async fn get_foreign_chain_policy_proposals(
+    pub(crate) async fn get_supported_chains_by_node(
         &self,
         mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
+    ) -> anyhow::Result<dtos::SupportedForeignChainsVotes> {
         let (_height, proposals) = self
             .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS_VOTES)
             .await?;
@@ -400,7 +400,7 @@ impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
     ) -> anyhow::Result<dtos::SupportedForeignChainsVotes> {
         self.indexer_state
             .view_client
-            .get_foreign_chain_policy_proposals(&self.indexer_state.mpc_contract_id)
+            .get_supported_chains_by_node(&self.indexer_state.mpc_contract_id)
             .await
     }
 }

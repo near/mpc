@@ -653,7 +653,7 @@ foreign_chains:
     }
 
     #[test]
-    fn to_policy__strips_path_auth_placeholder_from_rpc_url() {
+    fn supported_chains__returns_solana_when_configured() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -704,15 +704,12 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let supported = config.foreign_chains.supported_chains();
 
         // Then
-        let solana_providers = policy
-            .chains
-            .get(&near_mpc_contract_interface::types::ForeignChain::Solana)
-            .unwrap();
-        let provider = solana_providers.iter().next().unwrap();
-        assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
+        assert!(supported.contains(&near_mpc_contract_interface::types::ForeignChain::Solana));
+        assert!(!supported.contains(&near_mpc_contract_interface::types::ForeignChain::Ethereum));
+        assert!(!supported.contains(&near_mpc_contract_interface::types::ForeignChain::Bitcoin));
     }
 
     #[test]
@@ -827,7 +824,7 @@ foreign_chains:
     }
 
     #[test]
-    fn to_policy__preserves_url_for_non_path_auth() {
+    fn supported_chains__returns_ethereum_when_configured() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -879,14 +876,11 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let supported = config.foreign_chains.supported_chains();
 
         // Then
-        let eth_providers = policy
-            .chains
-            .get(&near_mpc_contract_interface::types::ForeignChain::Ethereum)
-            .unwrap();
-        let provider = eth_providers.iter().next().unwrap();
-        assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
+        assert!(supported.contains(&near_mpc_contract_interface::types::ForeignChain::Ethereum));
+        assert!(!supported.contains(&near_mpc_contract_interface::types::ForeignChain::Solana));
+        assert!(!supported.contains(&near_mpc_contract_interface::types::ForeignChain::Bitcoin));
     }
 }

@@ -5,7 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::{ChainSendTransactionRequest, ChainVoteForeignChainPolicyArgs};
+use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
 use crate::indexer::{tx_sender, IndexerAPI, ReadForeignChainPolicy};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
@@ -379,7 +379,7 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        if let Err(err) = Self::maybe_vote_foreign_chain_policy(
+        if let Err(err) = Self::maybe_register_supported_foreign_chains(
             &config_file,
             &foreign_chain_policy_reader,
             &chain_txn_sender,
@@ -725,79 +725,40 @@ where
         Ok(MpcJobResult::Done)
     }
 
-    async fn maybe_vote_foreign_chain_policy(
+    async fn maybe_register_supported_foreign_chains(
         config_file: &ConfigFile,
         foreign_chain_policy_reader: &ForeignChainPolicyReader,
         chain_txn_sender: &TransactionSender,
     ) -> anyhow::Result<()> {
-        let Some(local_policy) = config_file.foreign_chains.to_policy() else {
-            tracing::info!(
-                "foreign_chains config is empty; skipping foreign chain policy auto-vote"
-            );
-            return Ok(());
-        };
+        let locally_supported_chains = config_file.foreign_chains.supported_chains();
 
-        let on_chain_policy = foreign_chain_policy_reader
-            .get_supported_chains()
-            .await
-            .context("failed to fetch foreign chain policy")?;
-
-        if on_chain_policy == local_policy {
-            tracing::info!("foreign chain policy matches local config; skipping auto-vote");
-            return Ok(());
-        }
-
-        let unsupported_chains: Vec<dtos::ForeignChain> = on_chain_policy
-            .chains
-            .keys()
-            .filter(|chain| !Self::is_supported_foreign_chain(chain))
-            .cloned()
-            .collect();
-
-        if !unsupported_chains.is_empty() {
-            tracing::warn!(
-                ?unsupported_chains,
-                "on-chain foreign chain policy contains unsupported chains; skipping auto-vote"
-            );
-            return Ok(());
-        }
-
-        let proposals = foreign_chain_policy_reader
+        let registered_by_node = foreign_chain_policy_reader
             .get_supported_chains_by_node()
             .await
-            .context("failed to fetch foreign chain policy proposals")?;
+            .context("failed to fetch supported chains by node")?;
 
         let my_account_id = dtos::AccountId(config_file.my_near_account_id.to_string());
-        if proposals
-            .proposal_by_account
+        if registered_by_node
+            .supported_chain_by_account
             .get(&my_account_id)
-            .is_some_and(|proposal| proposal == &local_policy)
+            .is_some_and(|registered| registered == &locally_supported_chains)
         {
-            tracing::info!("foreign chain policy already proposed by this node; skipping");
+            tracing::info!(
+                "supported foreign chains already registered by this node; skipping"
+            );
             return Ok(());
         }
 
         chain_txn_sender
-            .send(ChainSendTransactionRequest::VoteForeignChainPolicy(
-                ChainVoteForeignChainPolicyArgs {
-                    policy: local_policy,
+            .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
+                ChainRegisterForeignChainConfigArgs {
+                    supported_chains_by_node: locally_supported_chains,
                 },
             ))
             .await
-            .context("failed to send foreign chain policy vote")?;
+            .context("failed to send register foreign chain config")?;
 
         Ok(())
-    }
-
-    fn is_supported_foreign_chain(chain: &dtos::ForeignChain) -> bool {
-        matches!(
-            chain,
-            dtos::ForeignChain::Abstract
-                | dtos::ForeignChain::Solana
-                | dtos::ForeignChain::Bitcoin
-                | dtos::ForeignChain::Ethereum
-                | dtos::ForeignChain::Starknet
-        )
     }
 }
 

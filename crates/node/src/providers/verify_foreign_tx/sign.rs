@@ -325,13 +325,6 @@ async fn chain_is_supported(
         .await
         .map_err(ValidateForeignChainPolicyError::FetchOnChainPolicy)?;
 
-    if on_chain_policy != local_policy {
-        return Err(ValidateForeignChainPolicyError::PolicyMismatch {
-            local: local_policy,
-            on_chain: on_chain_policy,
-        });
-    }
-
     let requested_chain = request.chain();
 
     let foreign_chain_is_supported = on_chain_policy.contains(&requested_chain);
