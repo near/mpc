@@ -50,8 +50,8 @@ async fn test_subscription() {
 
     tokio::time::timeout(Duration::from_secs(30), sub.changed())
         .await
-        .expect("expect subscription to fire on change")
-        .expect("expect changed to succeed");
+        .expect("subscription should fire on change")
+        .expect("changed should ");
     let result = sub.latest().unwrap();
     assert_eq!(result.value, new_value);
 
