@@ -10,11 +10,11 @@ use crate::{errors::ChainGatewayError, primitives::FetchLatestFinalBlockInfo};
 use super::{
     block_events::BlockUpdate,
     stats::{IndexerStats, indexer_logger},
-    subscriber::BlockEventSubscriber,
+    subscriber::BlockEventSubscriptions,
 };
 
 pub(crate) async fn start(
-    block_event_subscriber: BlockEventSubscriber,
+    block_event_subscriber: BlockEventSubscriptions,
     stream: tokio::sync::mpsc::Receiver<StreamerMessage>,
     info_fetcher: impl FetchLatestFinalBlockInfo,
 ) -> Result<tokio::sync::mpsc::Receiver<BlockUpdate>, ChainGatewayError> {

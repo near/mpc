@@ -1,7 +1,7 @@
 use base64::Engine;
 use chain_gateway::{
     ChainGateway, NodeHandle,
-    event_subscriber::{block_events::BlockUpdate, subscriber::BlockEventSubscriber},
+    event_subscriber::{block_events::BlockUpdate, subscriber::BlockEventSubscriptions},
 };
 use near_indexer::near_primitives::types::Finality;
 use std::path::{Path, PathBuf};
@@ -29,7 +29,7 @@ pub(crate) struct LocalNodeBuilder {
 }
 
 impl LocalNodeBuilder {
-    pub(crate) async fn start(self, streamer_config: Option<BlockEventSubscriber>) -> LocalNode {
+    pub(crate) async fn start(self, streamer_config: Option<BlockEventSubscriptions>) -> LocalNode {
         let indexer_config = near_indexer::IndexerConfig {
             home_dir: self.home_dir.path().to_path_buf(),
             sync_mode: near_indexer::SyncModeEnum::LatestSynced,

@@ -2,15 +2,16 @@ use near_account_id::AccountId;
 
 use super::block_events::BlockEventId;
 
-pub struct BlockEventSubscriber {
-    pub(super) subscriptions: Vec<(BlockEventId, BlockEventFilter)>,
+pub struct BlockEventSubscriptions {
+    pub(super) subscriptions: Vec<(BlockEventId, BlockEventSubscription)>,
     next_id: BlockEventId,
     pub(super) buffer_size: usize,
 }
 
-impl BlockEventSubscriber {
+/// TODO(#2680): rename to subscriber
+impl BlockEventSubscriptions {
     pub fn new(buffer_size: usize) -> Self {
-        BlockEventSubscriber {
+        BlockEventSubscriptions {
             subscriptions: vec![],
             next_id: 0.into(),
             buffer_size,
@@ -19,7 +20,8 @@ impl BlockEventSubscriber {
 
     /// Add a filter and get a unique identifier for it.
     /// The identifier can be used to match a return value to the given filter.
-    pub fn subscribe(&mut self, filter: BlockEventFilter) -> BlockEventId {
+    /// TODO(#2680): directly return a stream instead of an identifier
+    pub fn subscribe(&mut self, filter: BlockEventSubscription) -> BlockEventId {
         let filter_id = self.next_id;
         self.subscriptions.push((filter_id, filter));
         self.next_id = filter_id.overflowing_add(1).0.into();
@@ -28,7 +30,7 @@ impl BlockEventSubscriber {
 }
 
 /// Filters, can be extended if necessary
-pub enum BlockEventFilter {
+pub enum BlockEventSubscription {
     /// Filters for executions of method `method_name` on `transaction_outcome_executor_id`
     /// that spawn a promise (execution status == `SuccessReceiptId`).
     ///

@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
-use chain_gateway::event_subscriber::subscriber::BlockEventSubscriber;
+use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
 use chain_gateway::state_viewer::ViewMethod;
 use chain_gateway::types::{NoArgs, ObservedState};
 use chain_gateway_test_contract::consts::VIEW_VALUE;
@@ -38,7 +38,7 @@ impl Localnet {
 pub struct LocalnetBuilder {
     contract_id: Option<near_account_id::AccountId>,
     test_account: Option<TestAccount>,
-    event_subscriber: Option<BlockEventSubscriber>,
+    event_subscriber: Option<BlockEventSubscriptions>,
 }
 
 impl LocalnetBuilder {
@@ -54,7 +54,7 @@ impl LocalnetBuilder {
         self
     }
 
-    pub fn with_event_subscriber(mut self, subscriber: BlockEventSubscriber) -> Self {
+    pub fn with_event_subscriber(mut self, subscriber: BlockEventSubscriptions) -> Self {
         self.event_subscriber = Some(subscriber);
         self
     }

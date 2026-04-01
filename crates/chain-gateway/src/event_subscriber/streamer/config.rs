@@ -5,7 +5,7 @@ use near_account_id::AccountId;
 
 use crate::event_subscriber::{
     block_events::BlockEventId,
-    subscriber::{BlockEventFilter, BlockEventSubscriber},
+    subscriber::{BlockEventSubscription, BlockEventSubscriptions},
 };
 
 pub(super) struct StreamerConfig {
@@ -35,13 +35,13 @@ pub(super) struct ReceiptExecutorEventIdsByContractIds(
 #[derive(Default, Deref, DerefMut)]
 pub(super) struct ReceiptExecutorEventIdsByMethodNames(BTreeMap<String, Vec<BlockEventId>>);
 
-impl From<BlockEventSubscriber> for StreamerConfig {
-    fn from(value: BlockEventSubscriber) -> Self {
+impl From<BlockEventSubscriptions> for StreamerConfig {
+    fn from(value: BlockEventSubscriptions) -> Self {
         let mut receipt_executor_events = ReceiptExecutorEventIdsByContractIds::default();
         let mut receipt_receiver_events = ReceiptReceiverEventIdsByContractIds::default();
         for (id, filter) in value.subscriptions {
             match filter {
-                BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
+                BlockEventSubscription::ExecutorFunctionCallSuccessWithPromise {
                     transaction_outcome_executor_id,
                     method_name,
                 } => {
@@ -52,7 +52,7 @@ impl From<BlockEventSubscriber> for StreamerConfig {
                         .or_default()
                         .push(id);
                 }
-                BlockEventFilter::ReceiverFunctionCall {
+                BlockEventSubscription::ReceiverFunctionCall {
                     receipt_receiver_id,
                     method_name,
                 } => {

@@ -10,7 +10,7 @@ use tokio::sync::mpsc::Receiver;
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
 use crate::event_subscriber;
 use crate::event_subscriber::block_events::BlockUpdate;
-use crate::event_subscriber::subscriber::BlockEventSubscriber;
+use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
@@ -100,10 +100,10 @@ impl ChainGateway {
     /// Spawns a near node with `indexer_config`.
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
-    /// Returns a stream for BlockUpdates if BlockEventSubscriber is not None.
+    /// Returns a stream for BlockUpdates if BlockEventSubscriptions is not None.
     pub async fn start(
         indexer_config: near_indexer::IndexerConfig,
-        subscriber: Option<BlockEventSubscriber>,
+        subscriber: Option<BlockEventSubscriptions>,
     ) -> Result<
         (
             ChainGateway,
@@ -228,7 +228,7 @@ fn run_node(
 /// Parameters for optionally starting the block-event streaming pipeline
 /// alongside the nearcore node.
 struct StreamerSetup {
-    subscriber: BlockEventSubscriber,
+    subscriber: BlockEventSubscriptions,
     indexer_config: near_indexer::IndexerConfig,
     near_config: NearConfig,
 }

@@ -9,7 +9,7 @@ use chain_gateway::{
             BlockEventId, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
             ReceiverFunctionCallData,
         },
-        subscriber::{BlockEventFilter, BlockEventSubscriber},
+        subscriber::{BlockEventSubscription, BlockEventSubscriptions},
     },
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
@@ -34,12 +34,13 @@ struct ExecutorFunctionCallTest {
 
 async fn setup_executor_function_call_filter() -> ExecutorFunctionCallTest {
     let contract_id: near_account_id::AccountId = "test-contract.near".parse().unwrap();
-    let mut subscriber = BlockEventSubscriber::new(1);
-    let set_value_in_promise_event_id =
-        subscriber.subscribe(BlockEventFilter::ExecutorFunctionCallSuccessWithPromise {
+    let mut subscriber = BlockEventSubscriptions::new(1);
+    let set_value_in_promise_event_id = subscriber.subscribe(
+        BlockEventSubscription::ExecutorFunctionCallSuccessWithPromise {
             transaction_outcome_executor_id: contract_id.clone(),
             method_name: SET_VALUE_IN_PROMISE.to_string(),
-        });
+        },
+    );
 
     let localnet = LocalnetBuilder::new().with_contract_id(contract_id.clone());
     let mut localnet = localnet
@@ -59,7 +60,7 @@ async fn setup_executor_function_call_filter() -> ExecutorFunctionCallTest {
 }
 
 /// Spins up a two-node localnet where the observer is started with a
-/// `BlockEventSubscriber` filtering for executor function calls.
+/// `BlockEventSubscriptions` filtering for executor function calls.
 /// Ensures happy path: successful calls are tracked.
 #[tokio::test]
 async fn test_event_subscriber_executor_function_call_success_success_calls_are_tracked() {
@@ -205,8 +206,8 @@ struct ReceiverFunctionCallTest {
 
 async fn setup_receiver_function_call_filter() -> ReceiverFunctionCallTest {
     let contract_id: near_account_id::AccountId = "test-contract.near".parse().unwrap();
-    let mut subscriber = BlockEventSubscriber::new(1);
-    let private_set_event_id = subscriber.subscribe(BlockEventFilter::ReceiverFunctionCall {
+    let mut subscriber = BlockEventSubscriptions::new(1);
+    let private_set_event_id = subscriber.subscribe(BlockEventSubscription::ReceiverFunctionCall {
         receipt_receiver_id: contract_id.clone(),
         method_name: PRIVATE_SET.to_string(),
     });
