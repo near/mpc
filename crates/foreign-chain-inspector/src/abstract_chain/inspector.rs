@@ -99,7 +99,7 @@ pub enum AbstractExtractedValue {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractor {
     BlockHash,
-    Log { log_index: usize },
+    Log { log_index: u64 },
 }
 
 impl AbstractExtractor {
@@ -112,9 +112,11 @@ impl AbstractExtractor {
                 *rpc_response.block_hash.as_fixed_bytes(),
             ))),
             AbstractExtractor::Log { log_index } => {
+                let target_index = ethereum_types::U64::from(*log_index);
                 let log = rpc_response
                     .logs
-                    .get(*log_index)
+                    .iter()
+                    .find(|log| log.log_index == target_index)
                     .cloned()
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
 
