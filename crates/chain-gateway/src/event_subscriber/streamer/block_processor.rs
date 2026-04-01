@@ -38,7 +38,7 @@ pub(super) async fn listen_blocks(
             .await
             .ok_or(ChainGatewayError::BlockEventIndexerDropped)?;
         let block_height = streamer_message.block.header.height;
-        // TODO(#2626): we can ignore blocks that are older than a specific block height. This
+        // TODO(#2626): we can ignore events from blocks that are older than a specific block height. This
         // requires some care on the node side, which is why we will only do so after we integrated
         // the chain-gateway struct with the node.
         let block_update = process_block(streamer_message, &block_events);
