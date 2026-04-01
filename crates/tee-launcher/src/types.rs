@@ -1,8 +1,6 @@
-use std::net::Ipv4Addr;
 use std::num::NonZeroU16;
 
 use launcher_interface::types::DockerSha256Digest;
-use url::Host;
 
 use clap::{Parser, ValueEnum};
 use near_mpc_bounded_collections::NonEmptyVec;
@@ -70,13 +68,6 @@ pub struct LauncherConfig {
     pub port_mappings: Vec<PortMapping>,
 }
 
-/// A `--add-host` entry: `hostname:IPv4`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HostEntry {
-    pub hostname: Host<String>,
-    pub ip: Ipv4Addr,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PortMapping {
     pub host: NonZeroU16,
@@ -93,64 +84,9 @@ impl PortMapping {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use std::net::Ipv4Addr;
     use std::num::NonZeroU16;
 
     use super::*;
-
-    // --- HostEntry deserialization ---
-
-    #[test]
-    fn host_entry_valid_deserialization() {
-        // given
-        let json = serde_json::json!({"hostname": {"Domain": "node.local"}, "ip": "192.168.1.1"});
-
-        // when
-        let result = serde_json::from_value::<HostEntry>(json);
-
-        // then
-        assert_matches!(result, Ok(entry) => {
-            assert_eq!(entry.ip, Ipv4Addr::new(192, 168, 1, 1));
-        });
-    }
-
-    #[test]
-    fn host_entry_rejects_invalid_ip() {
-        // given
-        let json = serde_json::json!({"hostname": {"Domain": "node.local"}, "ip": "not-an-ip"});
-
-        // when
-        let result = serde_json::from_value::<HostEntry>(json);
-
-        // then
-        assert_matches!(result, Err(e) => {
-            assert!(e.to_string().contains("invalid"), "expected IP parse error, got: {e}");
-        });
-    }
-
-    #[test]
-    fn host_entry_rejects_plain_string_as_hostname() {
-        // given - url::Host requires tagged variant, plain string is rejected
-        let json = serde_json::json!({"hostname": "node.local", "ip": "192.168.1.1"});
-
-        // when
-        let result = serde_json::from_value::<HostEntry>(json);
-
-        // then
-        assert_matches!(result, Err(_));
-    }
-
-    #[test]
-    fn host_entry_rejects_injection_string_as_hostname() {
-        // given
-        let json = serde_json::json!({"hostname": "--env LD_PRELOAD=hack.so", "ip": "192.168.1.1"});
-
-        // when
-        let result = serde_json::from_value::<HostEntry>(json);
-
-        // then
-        assert_matches!(result, Err(_));
-    }
 
     // --- PortMapping deserialization ---
 
