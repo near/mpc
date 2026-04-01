@@ -20,9 +20,9 @@ use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::port_allocator::E2ePortAllocator;
 
-const DEFAULT_SANDBOX_IMAGE: &str = "nearprotocol/sandbox:2.11.0-rc.3";
+const DEFAULT_SANDBOX_VERSION: &str = "2.11.0-rc.3";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
-const SANDBOX_ROOT_SECRET_KEY: &str = "ed25519:3JoAjwLppjgvxkk6kNsu5wQj3FfUJnpBKWieC73hVTpBeA6FZiCc5tfyZL3a3tHeQJegQe4qGSv8FLsYp7TYd1r6";
+const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 10;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
@@ -45,8 +45,8 @@ pub struct MpcClusterConfig {
     pub triples_to_buffer: usize,
     /// Presignature buffer size per node.
     pub presignatures_to_buffer: usize,
-    /// Docker image for the NEAR sandbox (e.g. `"nearprotocol/sandbox:2.11.0-rc.3"`).
-    pub sandbox_image: String,
+    /// Version of the `near-sandbox` binary (e.g. `"2.6.3"`, `"2.10.4"`).
+    pub sandbox_version: String,
     /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.
     pub home_base: Option<PathBuf>,
 }
@@ -83,7 +83,7 @@ impl MpcClusterConfig {
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
-            sandbox_image: DEFAULT_SANDBOX_IMAGE.to_string(),
+            sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
         }
     }
@@ -95,7 +95,7 @@ fn default_mpc_binary_path() -> PathBuf {
 
 /// A running MPC test cluster with a deployed contract and N mpc-node processes.
 ///
-/// Orchestrates the full test environment: Docker sandbox -> contract ->
+/// Orchestrates the full test environment: sandbox -> contract ->
 /// accounts -> attestations -> domains -> mpc-node processes.
 ///
 /// All nodes are killed when dropped.
@@ -112,14 +112,14 @@ pub struct MpcCluster {
 }
 
 impl MpcCluster {
-    /// Create the full cluster: start Docker sandbox, deploy contract,
+    /// Create the full cluster: start sandbox, deploy contract,
     /// create accounts, submit attestations, add domains, spawn mpc-node
     /// binaries, and wait for Running state.
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
         let ports = E2ePortAllocator::new(config.port_seed);
         let test_dir = create_test_dir(&config.home_base)?;
 
-        let sandbox = NearSandbox::start(&ports, &config.sandbox_image, test_dir.path()).await?;
+        let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
         let blockchain = NearBlockchain::new(
             &sandbox.rpc_url(),
             SANDBOX_ROOT_ACCOUNT,

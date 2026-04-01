@@ -1,13 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use anyhow::{Context, bail};
-use bollard::Docker;
-use bollard::container::{
-    Config, CreateContainerOptions, DownloadFromContainerOptions, RemoveContainerOptions,
-};
-use bollard::image::CreateImageOptions;
-use bollard::models::HostConfig;
-use futures::{StreamExt, TryStreamExt};
+use anyhow::Context;
+use near_sandbox::{Sandbox, SandboxConfig};
 
 use crate::port_allocator::E2ePortAllocator;
 
@@ -16,144 +10,59 @@ const NODE_KEY_FILE: &str = "node_key.json";
 
 /// Wraps a NEAR sandbox node for E2E tests.
 ///
-/// Starts a Docker container running `nearprotocol/sandbox`, exposes RPC and
-/// network ports, and extracts genesis.json and node_key.json so MPC node
+/// Starts a local `near-sandbox` binary process, exposes RPC and network
+/// ports, and provides access to genesis.json and node_key.json so MPC node
 /// indexers can sync blocks via P2P.
 ///
-/// The container is stopped and cleaned up when this value is dropped.
+/// The sandbox process is killed and cleaned up when this value is dropped.
 pub struct NearSandbox {
-    docker: Docker,
-    container_id: String,
-    rpc_port: u16,
+    sandbox: Sandbox,
     network_port: u16,
-    sandbox_dir: PathBuf,
 }
 
 impl NearSandbox {
-    pub async fn start(
-        ports: &E2ePortAllocator,
-        image: &str,
-        test_dir: &Path,
-    ) -> anyhow::Result<Self> {
+    pub async fn start(ports: &E2ePortAllocator, version: &str) -> anyhow::Result<Self> {
         let rpc_port = ports.near_node_rpc_port();
         let network_port = ports.near_node_network_port();
 
-        tracing::info!(
-            rpc_port,
-            network_port,
-            image,
-            "starting NEAR sandbox Docker container"
-        );
+        tracing::info!(rpc_port, network_port, version, "starting NEAR sandbox");
 
-        let docker =
-            Docker::connect_with_local_defaults().context("failed to connect to Docker")?;
-
-        // Ensure the image is available locally (CI runners may not have it cached).
-        pull_image(&docker, image).await?;
-
-        // Use host networking so nearcore P2P works without Docker bridge
-        // NAT issues. Requires "Enable host networking" in Docker Desktop
-        // on macOS/Windows.
-        let host_config = HostConfig {
-            network_mode: Some("host".to_string()),
-            auto_remove: Some(true),
+        // Set chain_id to "sandbox" so MPC nodes recognize this as a local
+        // network (is_localnet() returns true). Without this, `near-sandbox
+        // init` generates a random chain_id like "test-chain-XXXXX".
+        let config = SandboxConfig {
+            rpc_port: Some(rpc_port),
+            net_port: Some(network_port),
+            additional_genesis: Some(serde_json::json!({"chain_id": "sandbox"})),
             ..Default::default()
         };
 
-        let container = docker
-            .create_container(
-                Some(CreateContainerOptions::<String> {
-                    ..Default::default()
-                }),
-                Config::<String> {
-                    image: Some(image.to_string()),
-                    host_config: Some(host_config),
-                    entrypoint: Some(vec!["sh".to_string(), "-c".to_string()]),
-                    cmd: Some(vec![format!(
-                        concat!(
-                            "export RUST_LOG=\"neard::cli=off,near=error,stats=error,network=error\" && ",
-                            "near-sandbox --home /data init --fast ",
-                            "--account-id sandbox --test-seed sandbox --chain-id sandbox 2>/dev/null; ",
-                            "exec near-sandbox --home /data run ",
-                            "--rpc-addr 0.0.0.0:{rpc_port} --network-addr 0.0.0.0:{network_port}"
-                        ),
-                        rpc_port = rpc_port,
-                        network_port = network_port,
-                    )]),
-                    ..Default::default()
-                },
-            )
+        let sandbox = Sandbox::start_sandbox_with_config_and_version(config, version)
             .await
-            .context("failed to create sandbox container")?;
-
-        let container_id = container.id;
-        docker
-            .start_container::<&str>(&container_id, None)
-            .await
-            .context("failed to start sandbox container")?;
-
-        tracing::info!(container_id = %container_id, "sandbox container started");
-
-        if let Err(e) = wait_for_rpc(rpc_port).await {
-            if let Err(rm_err) = docker
-                .remove_container(
-                    &container_id,
-                    Some(RemoveContainerOptions {
-                        force: true,
-                        ..Default::default()
-                    }),
-                )
-                .await
-            {
-                tracing::error!(error = %rm_err, "failed to remove sandbox container during cleanup");
-            }
-            return Err(e.context("sandbox node failed to become ready"));
-        }
-
-        let sandbox_dir = test_dir.join("sandbox");
-        std::fs::create_dir_all(&sandbox_dir)
-            .with_context(|| format!("failed to create {}", sandbox_dir.display()))?;
-
-        copy_from_container(
-            &docker,
-            &container_id,
-            &format!("/data/{GENESIS_FILE}"),
-            &sandbox_dir,
-        )
-        .await?;
-        copy_from_container(
-            &docker,
-            &container_id,
-            &format!("/data/{NODE_KEY_FILE}"),
-            &sandbox_dir,
-        )
-        .await?;
+            .map_err(|e| anyhow::anyhow!("failed to start sandbox: {e}"))?;
 
         tracing::info!(
-            rpc_url = %format!("http://127.0.0.1:{rpc_port}"),
-            genesis = %sandbox_dir.join(GENESIS_FILE).display(),
+            rpc_url = %sandbox.rpc_addr,
+            genesis = %sandbox.home_dir.path().join(GENESIS_FILE).display(),
             "NEAR sandbox ready"
         );
 
         Ok(Self {
-            docker,
-            container_id,
-            rpc_port,
+            sandbox,
             network_port,
-            sandbox_dir,
         })
     }
 
     pub fn rpc_url(&self) -> String {
-        format!("http://127.0.0.1:{}", self.rpc_port)
+        self.sandbox.rpc_addr.clone()
     }
 
     pub fn genesis_path(&self) -> PathBuf {
-        self.sandbox_dir.join(GENESIS_FILE)
+        self.sandbox.home_dir.path().join(GENESIS_FILE)
     }
 
     pub fn boot_nodes(&self) -> anyhow::Result<String> {
-        let node_key_path = self.sandbox_dir.join(NODE_KEY_FILE);
+        let node_key_path = self.sandbox.home_dir.path().join(NODE_KEY_FILE);
         let content = std::fs::read_to_string(&node_key_path)
             .with_context(|| format!("failed to read {}", node_key_path.display()))?;
         let parsed: serde_json::Value =
@@ -174,104 +83,5 @@ impl NearSandbox {
             .as_str()
             .map(|s| s.to_string())
             .context("missing chain_id in genesis.json")
-    }
-}
-
-impl Drop for NearSandbox {
-    fn drop(&mut self) {
-        tracing::info!(container_id = %self.container_id, "stopping NEAR sandbox container");
-        // Best-effort synchronous removal via a blocking runtime.
-        let docker = self.docker.clone();
-        let id = self.container_id.clone();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            rt.block_on(async {
-                if let Err(e) = docker
-                    .remove_container(
-                        &id,
-                        Some(RemoveContainerOptions {
-                            force: true,
-                            ..Default::default()
-                        }),
-                    )
-                    .await
-                {
-                    tracing::error!(error = %e, "failed to remove sandbox container during drop");
-                }
-            });
-        })
-        .join()
-        .ok();
-    }
-}
-
-/// Copy a single file from a container to a host directory.
-async fn copy_from_container(
-    docker: &Docker,
-    container_id: &str,
-    container_path: &str,
-    host_dir: &Path,
-) -> anyhow::Result<()> {
-    let chunks: Vec<_> = docker
-        .download_from_container(
-            container_id,
-            Some(DownloadFromContainerOptions {
-                path: container_path,
-            }),
-        )
-        .try_collect()
-        .await
-        .with_context(|| format!("failed to download {container_path}"))?;
-    let tar_bytes: Vec<u8> = chunks.into_iter().flatten().collect();
-
-    let mut archive = tar::Archive::new(&tar_bytes[..]);
-    archive.unpack(host_dir).with_context(|| {
-        format!(
-            "failed to unpack {container_path} into {}",
-            host_dir.display()
-        )
-    })?;
-    Ok(())
-}
-
-async fn pull_image(docker: &Docker, image: &str) -> anyhow::Result<()> {
-    let mut parts = image.splitn(2, ':');
-    let from_image = parts.next().unwrap_or(image);
-    let tag = parts.next().unwrap_or("latest");
-
-    tracing::info!(image, "pulling Docker image");
-    let mut stream = docker.create_image(
-        Some(CreateImageOptions {
-            from_image,
-            tag,
-            ..Default::default()
-        }),
-        None,
-        None,
-    );
-
-    while let Some(msg) = stream.next().await {
-        msg.with_context(|| format!("failed to pull image {image}"))?;
-    }
-    Ok(())
-}
-
-async fn wait_for_rpc(rpc_port: u16) -> anyhow::Result<()> {
-    let url = format!("http://127.0.0.1:{rpc_port}/status");
-    let client = reqwest::Client::new();
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        let err = match client.get(&url).send().await {
-            Ok(resp) if resp.status().is_success() => return Ok(()),
-            Ok(resp) => format!("HTTP {}", resp.status()),
-            Err(e) => e.to_string(),
-        };
-        if tokio::time::Instant::now() >= deadline {
-            bail!("sandbox RPC on port {rpc_port} did not become ready within 30s: {err}");
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 }

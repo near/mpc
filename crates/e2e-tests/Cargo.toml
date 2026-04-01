@@ -6,7 +6,6 @@ license = { workspace = true }
 
 [dependencies]
 anyhow = { workspace = true }
-bollard = { workspace = true }
 bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures = { workspace = true }
@@ -14,11 +13,11 @@ hex = { workspace = true }
 near-kit = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-mpc-crypto-types = { workspace = true }
+near-sandbox = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tar = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
