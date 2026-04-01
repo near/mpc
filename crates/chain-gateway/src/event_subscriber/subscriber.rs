@@ -18,7 +18,6 @@ impl BlockEventSubscriber {
     }
 
     /// Add a filter and get a unique identifier for it.
-    /// Can be called multiple times before build().
     /// The identifier can be used to match a return value to the given filter.
     pub fn subscribe(&mut self, filter: BlockEventFilter) -> BlockEventId {
         let filter_id = self.next_id;
