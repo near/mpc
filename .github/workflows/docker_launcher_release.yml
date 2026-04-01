@@ -1,7 +1,7 @@
 name: Release Launcher Docker Image
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: retag-launcher-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -15,6 +15,19 @@ on:
         description: "Release tag for the image (e.g., '3.0.4')"
         required: true
         type: string
+  workflow_call:
+    inputs:
+      source-tag:
+        required: true
+        type: string
+      release-tag:
+        required: true
+        type: string
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
 
 jobs:
   retag-launcher-image:
@@ -37,17 +50,17 @@ jobs:
 
       - name: Verify source image exists
         env:
-          SOURCE_TAG: ${{ github.event.inputs.source-tag }}
+          SOURCE_TAG: ${{ inputs.source-tag }}
         run: |
           if ! skopeo inspect docker://nearone/mpc-launcher:$SOURCE_TAG > /dev/null 2>&1; then
-            echo "❌ Source image nearone/mpc-launcher:$SOURCE_TAG does not exist"
+            echo "Source image nearone/mpc-launcher:$SOURCE_TAG does not exist"
             exit 1
           fi
 
       - name: Retag image
         env:
-          SOURCE_TAG: ${{ github.event.inputs.source-tag }}
-          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
+          SOURCE_TAG: ${{ inputs.source-tag }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
         run: |
           skopeo copy \
             docker://nearone/mpc-launcher:$SOURCE_TAG \
