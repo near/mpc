@@ -493,7 +493,7 @@ The purpose of this interface is to enable easy subscription to block events. In
 
 
 Specifically, we filter for receipts that match one of the following pattern:
-- They are executed on a specific contract and call a specific method of that contract. We will call this `ExecutorFunctionCall`:
+- They are executed on a specific contract, call a specific method of that contract and successfully spawn a promise. We will call this `ExecutorFunctionCallSuccessWithPromise`:
     - in case of our MPC node, we are looking for any calls to `sign`, `request_app_private_key` or `verify_foreign_chain_transaction` of our MPC contract.
 - They are addressed to a specific contract and call a specific method of that contract. We call those `ReceiverFunctionCall`:
     - in the case of our MPC node, we are looking for calls to  `return_signature_and_clean_state_on_success`, `return_ck_and_clean_state_on_success` or `return_verify_foreign_tx_and_clean_state_on_success` that originate from the contract.
@@ -501,22 +501,22 @@ Specifically, we filter for receipts that match one of the following pattern:
 If we want this interface to be re-usable in other parts of our code, we can create a more or less generic filter interface:
 
 ```rust
-impl BlockEventSubscriber {
+impl BlockEventSubscriptions {
     /// Create a new subscriber with the given channel buffer size.
     pub fn new(buffer_size: usize) -> Self;
 
     /// Add a subscription and get a unique identifier for it.
     /// Can be called multiple times before passing the subscriber to `ChainGateway::start()`.
     /// The returned identifier can be used to match returned events to the given subscription.
-    pub fn subscribe(&mut self, filter: BlockEventFilter) -> BlockEventId;
+    pub fn subscribe(&mut self, filter: BlockEventSubscription) -> BlockEventId;
 }
 
 /// An identifier for a subscription, returned by `subscribe()`.
 pub struct BlockEventId(pub u64);
 
-pub enum BlockEventFilter {
+pub enum BlockEventSubscription {
     /// Filter for events where a receipt outcome was executed by `transaction_outcome_executor_id` and called `method_name`.
-    ExecutorFunctionCall {
+    ExecutorFunctionCallSuccessWithPromise {
         transaction_outcome_executor_id: AccountId,
         method_name: String,
     },
@@ -528,7 +528,7 @@ pub enum BlockEventFilter {
 }
 ```
 
-> **Note:** Block replay from a specific height (`SubscriptionReplay`) is planned but not yet implemented. Replay leverages the NEAR indexer's `sync_from_block_height` config option and comes essentially for free in the chain-gateway implementation — we just need to expose it through the `BlockEventSubscriber` API. See [#236](https://github.com/near/mpc/issues/236).
+> **Note:** Block replay from a specific height (`SubscriptionReplay`) is planned but not yet implemented. Replay leverages the NEAR indexer's `sync_from_block_height` config option and comes essentially for free in the chain-gateway implementation — we just need to expose it through the `BlockEventSubscriptions` API. See [#236](https://github.com/near/mpc/issues/236).
 
 The subscriber is passed to `ChainGateway::start()`, which returns an `Option<Receiver<BlockUpdate>>`:
 
@@ -539,17 +539,17 @@ let (chain_gateway, node_handle, block_update_receiver) =
 
 Example usage:
 ```rust
-let mut subscriber = BlockEventSubscriber::new(100);
+let mut subscriber = BlockEventSubscriptions::new(100);
 
 let signature_requests_id = subscriber.subscribe(
-    BlockEventFilter::ExecutorFunctionCall {
+    BlockEventSubscription::ExecutorFunctionCallSuccessWithPromise {
         transaction_outcome_executor_id: "v1.signer".parse()?,
         method_name: "sign".to_string(),
     }
 );
 
 let ckd_request_id = subscriber.subscribe(
-    BlockEventFilter::ExecutorFunctionCall {
+    BlockEventSubscription::ExecutorFunctionCallSuccessWithPromise {
         transaction_outcome_executor_id: "v1.signer".parse()?,
         method_name: "request_app_private_key".to_string(),
     }
@@ -584,7 +584,7 @@ pub struct BlockContext {
     pub height: BlockHeight,
     pub prev_hash: CryptoHash,
     pub last_final_block: CryptoHash,
-    pub block_entropy: [u8; 32],
+    pub block_entropy: CryptoHash,
     pub block_timestamp_nanosec: u64,
 }
 
@@ -597,12 +597,12 @@ pub struct MatchedEvent {
 
 /// This can be extended if required.
 pub enum EventData {
-    ExecutorFunctionCall(ExecutorFunctionCallEventWithSuccessReceiptId),
-    ReceiverFunctionCall(ReceiverFunctionCallEventData),
+    ExecutorFunctionCallSuccessWithPromise(ExecutorFunctionCallSuccessWithPromiseData),
+    ReceiverFunctionCall(ReceiverFunctionCallData),
 }
 
 /// This event is associated to a transaction that matched a specific (transaction_outcome_executor_id: AccountId, method_name: String) pattern.
-struct ExecutorFunctionCallEventWithSuccessReceiptId {
+struct ExecutorFunctionCallSuccessWithPromiseData {
     /// the receipt_id of the receipt this event came from
     receipt_id: CryptoHash,
     /// predecessor_id who signed the transaction
@@ -613,12 +613,14 @@ struct ExecutorFunctionCallEventWithSuccessReceiptId {
     args_raw: Vec<u8>,
 }
 
-/// This event is associated to a transaction that matched a specific BlockEventFilter.
-struct ReceiverFunctionCallEventData {
+/// This event is associated to a transaction that matched a specific BlockEventSubscription.
+struct ReceiverFunctionCallData {
     /// the receipt id for the matched transaction
     receipt_id: CryptoHash,
 }
 ```
+
+Note that this will be subject to changes in [#2680](https://github.com/near/mpc/issues/2680)
 
 
 ##### Transaction Sender
