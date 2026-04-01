@@ -36,15 +36,23 @@ impl TryFrom<PermanentKeyshareDataSerde> for PermanentKeyshareData {
     type Error = anyhow::Error;
 
     fn try_from(serde_repr: PermanentKeyshareDataSerde) -> Result<Self, Self::Error> {
+        let epoch_id = serde_repr.epoch_id;
         let mut map = BTreeMap::new();
         for keyshare in serde_repr.keyshares {
+            if keyshare.key_id.epoch_id != epoch_id {
+                anyhow::bail!(
+                    "Inconsistent epoch id. Keyshare has epoch id {}, but expected {}",
+                    keyshare.key_id.epoch_id,
+                    epoch_id
+                );
+            }
             let domain_id = keyshare.key_id.domain_id;
             if map.insert(domain_id, keyshare).is_some() {
                 anyhow::bail!("duplicate domain_id {:?} in keyshares", domain_id);
             }
         }
         Ok(PermanentKeyshareData {
-            epoch_id: serde_repr.epoch_id,
+            epoch_id,
             keyshares: map,
         })
     }
@@ -90,24 +98,11 @@ impl PermanentKeyshareData {
         if keyshares.is_empty() {
             anyhow::bail!("Keyshares must not be empty");
         }
-        let mut map = BTreeMap::new();
-        for keyshare in keyshares {
-            if keyshare.key_id.epoch_id != epoch_id {
-                anyhow::bail!(
-                    "Inconsistent epoch id. Keyshare has epoch id {}, but expected {}",
-                    keyshare.key_id.epoch_id,
-                    epoch_id
-                );
-            }
-            let domain_id = keyshare.key_id.domain_id;
-            if map.insert(domain_id, keyshare).is_some() {
-                anyhow::bail!("Duplicate domain_id {:?} in keyshares", domain_id);
-            }
-        }
-        Ok(PermanentKeyshareData {
+        PermanentKeyshareDataSerde {
             epoch_id,
-            keyshares: map,
-        })
+            keyshares,
+        }
+        .try_into()
     }
 }
 
