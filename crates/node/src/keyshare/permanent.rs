@@ -14,7 +14,11 @@ use std::collections::BTreeMap;
 ///
 /// Serialization format is backwards-compatible: keyshares are serialized as a
 /// JSON array (`Vec<Keyshare>`) and deserialized from the same format.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(
+    try_from = "PermanentKeyshareDataSerde",
+    into = "PermanentKeyshareDataSerde"
+)]
 pub struct PermanentKeyshareData {
     epoch_id: EpochId,
     keyshares: BTreeMap<DomainId, Keyshare>,
@@ -28,33 +32,30 @@ struct PermanentKeyshareDataSerde {
     keyshares: Vec<Keyshare>,
 }
 
-impl Serialize for PermanentKeyshareData {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let serde_repr = PermanentKeyshareDataSerde {
-            epoch_id: self.epoch_id,
-            keyshares: self.keyshares_vec(),
-        };
-        serde_repr.serialize(serializer)
-    }
-}
+impl TryFrom<PermanentKeyshareDataSerde> for PermanentKeyshareData {
+    type Error = anyhow::Error;
 
-impl<'de> Deserialize<'de> for PermanentKeyshareData {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let serde_repr = PermanentKeyshareDataSerde::deserialize(deserializer)?;
+    fn try_from(serde_repr: PermanentKeyshareDataSerde) -> Result<Self, Self::Error> {
         let mut map = BTreeMap::new();
         for keyshare in serde_repr.keyshares {
             let domain_id = keyshare.key_id.domain_id;
             if map.insert(domain_id, keyshare).is_some() {
-                return Err(serde::de::Error::custom(format!(
-                    "duplicate domain_id {:?} in keyshares",
-                    domain_id
-                )));
+                anyhow::bail!("duplicate domain_id {:?} in keyshares", domain_id);
             }
         }
         Ok(PermanentKeyshareData {
             epoch_id: serde_repr.epoch_id,
             keyshares: map,
         })
+    }
+}
+
+impl From<PermanentKeyshareData> for PermanentKeyshareDataSerde {
+    fn from(data: PermanentKeyshareData) -> Self {
+        PermanentKeyshareDataSerde {
+            epoch_id: data.epoch_id,
+            keyshares: data.keyshares.into_values().collect(),
+        }
     }
 }
 
