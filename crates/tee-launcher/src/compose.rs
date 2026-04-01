@@ -26,7 +26,8 @@ pub fn render_compose_file(
         .iter()
         .map(PortMapping::docker_compose_value)
         .collect();
-    let ports_json = serde_json::to_string(&ports).expect("port list is serializable");
+    let ports_json = serde_json::to_string(&ports)
+        .map_err(|e| LauncherError::InternalSerialize(format!("port mappings to JSON: {e}")))?;
 
     let rendered = template
         .replace("{{IMAGE_NAME}}", image_name)

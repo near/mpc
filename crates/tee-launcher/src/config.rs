@@ -9,11 +9,9 @@ pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
 ) -> Result<toml::Table, LauncherError> {
-    insert_reserved(
-        &mut node_config,
-        "tee",
-        toml::Value::try_from(tee_config).expect("tee config serializes to TOML"),
-    )?;
+    let tee_value = toml::Value::try_from(tee_config)
+        .map_err(|e| LauncherError::InternalSerialize(format!("TeeConfig to TOML: {e}")))?;
+    insert_reserved(&mut node_config, "tee", tee_value)?;
     Ok(node_config)
 }
 

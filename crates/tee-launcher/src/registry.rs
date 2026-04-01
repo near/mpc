@@ -95,7 +95,11 @@ pub async fn get_manifest_digest(
 
         let authorization_value: HeaderValue = format!("Bearer {}", token_response.token)
             .parse()
-            .expect("bearer token received from docker auth is a valid header value");
+            .map_err(|_| {
+                LauncherError::RegistryAuthFailed(
+                    "bearer token from registry is not a valid HTTP header value".to_string(),
+                )
+            })?;
 
         let headers = HeaderMap::from_iter([
             (ACCEPT, DOCKER_AUTH_ACCEPT_HEADER_VALUE),

@@ -68,6 +68,9 @@ pub enum LauncherError {
     #[error("User config contains reserved key [{0}] — remove it from mpc_node_config")]
     ReservedConfigKey(String),
 
+    #[error("Internal serialization error: {0}")]
+    InternalSerialize(String),
+
     #[error("The selected image failed digest validation: {0}")]
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),
 }

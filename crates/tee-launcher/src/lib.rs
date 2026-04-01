@@ -50,7 +50,7 @@ pub async fn run() -> Result<(), LauncherError> {
         emit_image_hash_event(&image_hash).await?;
     }
 
-    let tee_config = build_tee_config(args.platform, image_hash);
+    let tee_config = build_tee_config(args.platform, image_hash)?;
     let mpc_node_config = intercept_node_config(config.mpc_node_config, &tee_config)?;
 
     write_config_atomically(&mpc_node_config)?;
@@ -127,7 +127,10 @@ async fn emit_image_hash_event(image_hash: &DockerSha256Digest) -> Result<(), La
         .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))
 }
 
-fn build_tee_config(platform: Platform, image_hash: DockerSha256Digest) -> TeeConfig {
+fn build_tee_config(
+    platform: Platform,
+    image_hash: DockerSha256Digest,
+) -> Result<TeeConfig, LauncherError> {
     let authority = match platform {
         Platform::Tee => TeeAuthorityConfig::Dstack {
             dstack_endpoint: DSTACK_UNIX_SOCKET.to_string(),
@@ -136,18 +139,20 @@ fn build_tee_config(platform: Platform, image_hash: DockerSha256Digest) -> TeeCo
         Platform::NonTee => TeeAuthorityConfig::Local,
     };
 
-    TeeConfig {
+    Ok(TeeConfig {
         authority,
         image_hash,
         latest_allowed_hash_file_path: IMAGE_DIGEST_FILE
             .parse()
-            .expect("image digest file has a valid path"),
-    }
+            .map_err(|e| {
+                LauncherError::InternalSerialize(format!("IMAGE_DIGEST_FILE path: {e}"))
+            })?,
+    })
 }
 
 fn write_config_atomically(mpc_node_config: &toml::Table) -> Result<(), LauncherError> {
-    let mpc_config_toml =
-        toml::to_string(mpc_node_config).expect("re-serializing a toml::Table always succeeds");
+    let mpc_config_toml = toml::to_string(mpc_node_config)
+        .map_err(|e| LauncherError::InternalSerialize(format!("mpc_node_config to TOML: {e}")))?;
 
     let dest = Path::new(MPC_CONFIG_SHARED_PATH);
     let config_dir = dest.parent().unwrap_or(Path::new("/"));
