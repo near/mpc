@@ -1,5 +1,6 @@
 pub mod chain_gateway;
 pub mod errors;
+pub mod event_subscriber;
 mod near_internals_wrapper;
 pub mod primitives;
 pub mod state_viewer;
