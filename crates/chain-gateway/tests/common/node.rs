@@ -1,16 +1,20 @@
 use base64::Engine;
-use chain_gateway::{ChainGateway, NodeHandle};
+use chain_gateway::{
+    ChainGateway, NodeHandle,
+    event_subscriber::{block_events::BlockUpdate, subscriber::BlockEventSubscriptions},
+};
 use near_indexer::near_primitives::types::Finality;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-use super::contract::Contract;
+use super::accounts::{Contract, TestAccount};
 
 pub struct LocalNode {
     pub home_dir: TempDir,
     pub ports: PortsConfig,
     pub chain_gateway: ChainGateway,
     pub node_handle: NodeHandle,
+    pub block_update_receiver: Option<tokio::sync::mpsc::Receiver<BlockUpdate>>,
 }
 
 #[derive(Clone)]
@@ -25,17 +29,17 @@ pub(crate) struct LocalNodeBuilder {
 }
 
 impl LocalNodeBuilder {
-    pub(crate) async fn start(self) -> LocalNode {
+    pub(crate) async fn start(self, streamer_config: Option<BlockEventSubscriptions>) -> LocalNode {
         let indexer_config = near_indexer::IndexerConfig {
             home_dir: self.home_dir.path().to_path_buf(),
             sync_mode: near_indexer::SyncModeEnum::LatestSynced,
             await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
-            finality: Finality::Final,
+            finality: Finality::None,
             validate_genesis: true,
         };
 
-        let (chain_gateway, node_handle) =
-            chain_gateway::chain_gateway::ChainGateway::start(indexer_config)
+        let (chain_gateway, node_handle, block_update_receiver) =
+            chain_gateway::chain_gateway::ChainGateway::start(indexer_config, streamer_config)
                 .await
                 .expect("chain_gateway::start should succeed");
 
@@ -46,9 +50,9 @@ impl LocalNodeBuilder {
             ports: ports.unwrap(),
             chain_gateway,
             node_handle,
+            block_update_receiver,
         }
     }
-
     pub(crate) fn new(node_name: &str, home_dir: TempDir) -> Self {
         let account_id = format!("{}.near", node_name);
         near_indexer::indexer_init_configs(
@@ -138,66 +142,26 @@ impl LocalNodeBuilder {
     /// and AccessKey (FullAccess). This embeds the contract directly in genesis so
     /// we don't need to deploy via transaction.
     pub(crate) fn with_contract(self, contract: Contract, wasm: &[u8]) -> Self {
-        let genesis_path = self.home_dir.path().join("genesis.json");
-        let genesis_text = std::fs::read_to_string(&genesis_path).expect("read genesis.json");
-        let mut genesis: serde_json::Value =
-            serde_json::from_str(&genesis_text).expect("parse genesis.json");
-        let existing_total_supply: u128 = genesis
-            .get("total_supply")
-            .unwrap()
-            .as_str()
-            .expect("total supply should be a string")
-            .parse()
-            .expect("total spply should parse as u128");
-        let contract_amount: u128 = 10000000000000000000000000;
-        let total_supply = existing_total_supply + contract_amount;
-        *genesis.get_mut("total_supply").unwrap() = serde_json::json!(total_supply.to_string());
+        inject_genesis_account(
+            &self.home_dir.path().join("genesis.json"),
+            &contract.account_id,
+            &contract.public_key_str(),
+            Some(wasm),
+        );
+        self
+    }
 
-        let code_hash = near_indexer::near_primitives::hash::hash(wasm).to_string();
-        let code_base64 = base64::engine::general_purpose::STANDARD.encode(wasm);
-
-        let records = genesis
-            .get_mut("records")
-            .expect("genesis should have records")
-            .as_array_mut()
-            .expect("records should be an array");
-
-        // Account record
-        records.push(serde_json::json!({
-            "Account": {
-                "account_id": contract.account_id,
-                "account": {
-                    "amount": contract_amount.to_string(),
-                    "locked": "0",
-                    "code_hash": code_hash.to_string(),
-                    "storage_usage": 0,
-                    "version": "V1"
-                }
-            }
-        }));
-
-        // Contract record (code field uses base64 encoding, matching StateRecord serde)
-        records.push(serde_json::json!({
-            "Contract": {
-                "account_id": contract.account_id,
-                "code": code_base64
-            }
-        }));
-
-        // AccessKey record
-        records.push(serde_json::json!({
-            "AccessKey": {
-                "account_id": contract.account_id,
-                "public_key": contract.public_key_str(),
-                "access_key": {
-                    "nonce": 0,
-                    "permission": "FullAccess"
-                }
-            }
-        }));
-
-        let updated = serde_json::to_string_pretty(&genesis).expect("serialize genesis.json");
-        std::fs::write(&genesis_path, updated).expect("write genesis.json");
+    /// Inject a plain account (no contract code) into genesis.json before the node starts.
+    ///
+    /// Adds Account and AccessKey records. Use this for user accounts that only need
+    /// to sign transactions, not deploy code.
+    pub(crate) fn with_account(self, account: TestAccount) -> Self {
+        inject_genesis_account(
+            &self.home_dir.path().join("genesis.json"),
+            &account.account_id,
+            &account.public_key_str(),
+            None,
+        );
         self
     }
 
@@ -241,4 +205,82 @@ impl PortsConfig {
             rpc_port,
         }
     }
+}
+
+/// Shared helper for injecting an account into genesis.json.
+///
+/// When `wasm` is `Some`, the account is treated as a contract: the code hash is
+/// computed from the WASM bytes and a `Contract` record is added.
+/// When `wasm` is `None`, the account is a plain user account with default code hash.
+fn inject_genesis_account(
+    genesis_path: &Path,
+    account_id: &near_account_id::AccountId,
+    public_key_str: &str,
+    wasm: Option<&[u8]>,
+) {
+    let genesis_text = std::fs::read_to_string(genesis_path).expect("read genesis.json");
+    let mut genesis: serde_json::Value =
+        serde_json::from_str(&genesis_text).expect("parse genesis.json");
+
+    let existing_total_supply: u128 = genesis
+        .get("total_supply")
+        .unwrap()
+        .as_str()
+        .expect("total supply should be a string")
+        .parse()
+        .expect("total supply should parse as u128");
+    let amount: u128 = 10000000000000000000000000;
+    let total_supply = existing_total_supply + amount;
+    *genesis.get_mut("total_supply").unwrap() = serde_json::json!(total_supply.to_string());
+
+    let code_hash = match wasm {
+        Some(bytes) => near_indexer::near_primitives::hash::hash(bytes).to_string(),
+        None => "11111111111111111111111111111111".to_string(),
+    };
+
+    let records = genesis
+        .get_mut("records")
+        .expect("genesis should have records")
+        .as_array_mut()
+        .expect("records should be an array");
+
+    // Account record
+    records.push(serde_json::json!({
+        "Account": {
+            "account_id": account_id,
+            "account": {
+                "amount": amount.to_string(),
+                "locked": "0",
+                "code_hash": code_hash,
+                "storage_usage": 0,
+                "version": "V1"
+            }
+        }
+    }));
+
+    // Contract record (only for contract accounts)
+    if let Some(bytes) = wasm {
+        let code_base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        records.push(serde_json::json!({
+            "Contract": {
+                "account_id": account_id,
+                "code": code_base64
+            }
+        }));
+    }
+
+    // AccessKey record
+    records.push(serde_json::json!({
+        "AccessKey": {
+            "account_id": account_id,
+            "public_key": public_key_str,
+            "access_key": {
+                "nonce": 0,
+                "permission": "FullAccess"
+            }
+        }
+    }));
+
+    let updated = serde_json::to_string_pretty(&genesis).expect("serialize genesis.json");
+    std::fs::write(genesis_path, updated).expect("write genesis.json");
 }
