@@ -3,14 +3,15 @@ use anyhow::Context;
 use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::EpochId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// The single object we persist to permanent key storage.
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
 ///
-/// Keyshares are stored in a `BTreeMap<DomainId, Keyshare>`, which enforces
-/// ordering by `DomainId` and uniqueness at the type level.
+/// Keyshares are stored in a `NonEmptyBTreeMap<DomainId, Keyshare>`, which enforces
+/// ordering by `DomainId`, uniqueness, and non-emptiness at the type level.
 ///
 /// Serialization format is backwards-compatible: keyshares are serialized as a
 /// JSON array (`Vec<Keyshare>`) and deserialized from the same format.
@@ -21,7 +22,7 @@ use std::collections::BTreeMap;
 )]
 pub struct PermanentKeyshareData {
     epoch_id: EpochId,
-    keyshares: BTreeMap<DomainId, Keyshare>,
+    keyshares: NonEmptyBTreeMap<DomainId, Keyshare>,
 }
 
 /// Serde helper for backwards-compatible serialization/deserialization.
@@ -36,33 +37,16 @@ impl TryFrom<PermanentKeyshareDataSerde> for PermanentKeyshareData {
     type Error = anyhow::Error;
 
     fn try_from(serde_repr: PermanentKeyshareDataSerde) -> Result<Self, Self::Error> {
-        let epoch_id = serde_repr.epoch_id;
-        let mut map = BTreeMap::new();
-        for keyshare in serde_repr.keyshares {
-            if keyshare.key_id.epoch_id != epoch_id {
-                anyhow::bail!(
-                    "Inconsistent epoch id. Keyshare has epoch id {}, but expected {}",
-                    keyshare.key_id.epoch_id,
-                    epoch_id
-                );
-            }
-            let domain_id = keyshare.key_id.domain_id;
-            if map.insert(domain_id, keyshare).is_some() {
-                anyhow::bail!("duplicate domain_id {:?} in keyshares", domain_id);
-            }
-        }
-        Ok(PermanentKeyshareData {
-            epoch_id,
-            keyshares: map,
-        })
+        Self::new(serde_repr.epoch_id, serde_repr.keyshares)
     }
 }
 
 impl From<PermanentKeyshareData> for PermanentKeyshareDataSerde {
     fn from(data: PermanentKeyshareData) -> Self {
+        let keyshares: BTreeMap<DomainId, Keyshare> = data.keyshares.into();
         PermanentKeyshareDataSerde {
             epoch_id: data.epoch_id,
-            keyshares: data.keyshares.into_values().collect(),
+            keyshares: keyshares.into_values().collect(),
         }
     }
 }
@@ -70,8 +54,7 @@ impl From<PermanentKeyshareData> for PermanentKeyshareDataSerde {
 impl PermanentKeyshareData {
     pub fn from_legacy(legacy: &LegacyRootKeyshareData) -> Self {
         let keyshare = Keyshare::from_legacy(legacy);
-        let mut keyshares = BTreeMap::new();
-        keyshares.insert(keyshare.key_id.domain_id, keyshare);
+        let keyshares = NonEmptyBTreeMap::new(keyshare.key_id.domain_id, keyshare);
         Self {
             epoch_id: EpochId::new(legacy.epoch),
             keyshares,
@@ -95,14 +78,27 @@ impl PermanentKeyshareData {
     }
 
     pub fn new(epoch_id: EpochId, keyshares: Vec<Keyshare>) -> anyhow::Result<Self> {
-        if keyshares.is_empty() {
-            anyhow::bail!("Keyshares must not be empty");
+        let mut map = BTreeMap::new();
+        for keyshare in keyshares {
+            if keyshare.key_id.epoch_id != epoch_id {
+                anyhow::bail!(
+                    "Inconsistent epoch id. Keyshare has epoch id {}, but expected {}",
+                    keyshare.key_id.epoch_id,
+                    epoch_id
+                );
+            }
+            let domain_id = keyshare.key_id.domain_id;
+            if map.insert(domain_id, keyshare).is_some() {
+                anyhow::bail!("Duplicate domain_id {:?} in keyshares", domain_id);
+            }
         }
-        PermanentKeyshareDataSerde {
+        let keyshares = map
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Keyshares must not be empty"))?;
+        Ok(PermanentKeyshareData {
             epoch_id,
             keyshares,
-        }
-        .try_into()
+        })
     }
 }
 
