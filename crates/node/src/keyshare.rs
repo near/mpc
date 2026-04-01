@@ -131,7 +131,7 @@ impl KeyshareStorage {
         let permanent_same_epoch = if let Some(permanent) = permanent {
             if permanent.epoch_id() == epoch_id {
                 Self::verify_existing_keyshares_are_subset_of_expected_keys(
-                    permanent.keyshares(),
+                    permanent.keyshares().values(),
                     epoch_id,
                     already_generated_keys,
                 )?;
@@ -207,7 +207,7 @@ impl KeyshareStorage {
             return Ok(None);
         }
         Self::verify_existing_keyshares_are_subset_of_expected_keys(
-            permanent.keyshares(),
+            permanent.keyshares().values(),
             keyset.epoch_id,
             &keyset.domains,
         )?;
@@ -305,8 +305,8 @@ impl KeyshareStorage {
 
     /// Helper function to verify that each existing keyshare matches a corresponding entry
     /// in the expected keyset by `domain_id` (order-independent).
-    fn verify_existing_keyshares_are_subset_of_expected_keys(
-        existing_keyshares: &[Keyshare],
+    fn verify_existing_keyshares_are_subset_of_expected_keys<'a>(
+        existing_keyshares: impl IntoIterator<Item = &'a Keyshare>,
         epoch_id: EpochId,
         expected_keys: &[KeyForDomain],
     ) -> anyhow::Result<()> {
@@ -1191,8 +1191,7 @@ pub mod tests {
             .await
             .unwrap()
             .unwrap()
-            .keyshares()
-            .to_vec();
+            .keyshares_vec();
         let key_share_in_temporary_storage = storage
             .temporary
             .load_keyshare(key_1.key_id)
@@ -1221,8 +1220,7 @@ pub mod tests {
             .await
             .unwrap()
             .unwrap()
-            .keyshares()
-            .to_vec();
+            .keyshares_vec();
         let final_key_share_in_temporary_storage = storage
             .temporary
             .load_keyshare(key_1.key_id)

@@ -104,6 +104,7 @@ derive_more = { version = "2.1.1", features = [
     "as_ref",
     "constructor",
     "deref",
+    "deref_mut",
     "display",
     "from",
     "from_str",
@@ -156,6 +157,7 @@ near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.6"
 near-kit = { version = "0.7.0", default-features = false }
 near-primitives = "0.34.6"
+near-sandbox = "0.3.5"
 near-sdk = { version = "5.24.1", features = [
     "legacy",
     "unit-testing",
@@ -220,16 +222,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.0-rc.3" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88
