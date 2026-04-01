@@ -90,7 +90,6 @@ fn bench_sign(c: &mut Criterion) {
 criterion_group!(benches, bench_presign, bench_sign);
 criterion_main!(benches);
 
-/****************************** Helpers ******************************/
 /// Used to simulate robust ecdsa presignatures for benchmarking
 fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
     // Running presign a first time with snapshots

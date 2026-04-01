@@ -1,4 +1,3 @@
-use crate::config::ConfigFile;
 use crate::indexer::handler::{
     CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
@@ -25,6 +24,7 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
+use mpc_node_config::ConfigFile;
 
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{Curve, DomainId};
@@ -407,7 +407,7 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Ed25519) => {
+                                    Some(Curve::Edwards25519) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -527,7 +527,7 @@ where
                                     }
                                     Some(Curve::Secp256k1)
                                     | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Ed25519) => Err(anyhow::anyhow!(
+                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
@@ -619,7 +619,7 @@ where
                                     }
                                     Some(Curve::Bls12381)
                                     | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Ed25519) => Err(anyhow::anyhow!(
+                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
                                     )),

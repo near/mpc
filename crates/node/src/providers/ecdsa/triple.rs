@@ -1,6 +1,6 @@
 use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
-use crate::config::{MpcConfig, TripleConfig};
+use crate::config::MpcConfig;
 use crate::db::SecretDB;
 use crate::metrics;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
@@ -12,6 +12,7 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_contract::primitives::domain::DomainId;
+use mpc_node_config::TripleConfig;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use std::ops::Deref;
