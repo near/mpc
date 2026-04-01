@@ -28,6 +28,12 @@ pub async fn indexer_logger(
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(interval_secs)).await;
+        if stats_rx.has_changed().is_err() {
+            tracing::info!(
+                target: "chain gateway",
+                "indexer stats sender closed, shutting down indexer logger");
+            return;
+        }
         let stats_copy = stats_rx.borrow().clone();
 
         let block_processing_speed: f64 = (stats_copy
