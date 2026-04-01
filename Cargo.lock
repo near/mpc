@@ -1792,6 +1792,7 @@ version = "3.7.0"
 dependencies = [
  "assert_matches",
  "base64 0.22.1",
+ "cargo-near-build",
  "chain-gateway",
  "chain-gateway-test-contract",
  "derive_more 2.1.1",

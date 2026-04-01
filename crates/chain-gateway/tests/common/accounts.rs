@@ -24,7 +24,23 @@ impl Contract {
 }
 
 pub(super) fn compiled_test_contract_wasm() -> &'static [u8] {
-    chain_gateway_test_contract::compiled_wasm()
+    static CONTRACT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    CONTRACT.get_or_init(|| {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let manifest_path = manifest_dir
+            .join("../chain-gateway-test-contract/Cargo.toml")
+            .canonicalize()
+            .unwrap();
+        let opts = cargo_near_build::BuildOpts {
+            manifest_path: Some(
+                cargo_near_build::camino::Utf8PathBuf::from_path_buf(manifest_path).unwrap(),
+            ),
+            profile: Some("release-contract".to_string()),
+            ..Default::default()
+        };
+        let artifact = cargo_near_build::build_with_cli(opts).unwrap();
+        std::fs::read(artifact.canonicalize().unwrap()).unwrap()
+    })
 }
 
 #[derive(Clone)]
