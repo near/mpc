@@ -138,13 +138,7 @@ impl TryFrom<AbstractExtractor> for dtos::EvmExtractor {
     fn try_from(value: AbstractExtractor) -> Result<Self, Self::Error> {
         match value {
             AbstractExtractor::BlockHash => Ok(dtos::EvmExtractor::BlockHash),
-            AbstractExtractor::Log { log_index } => Ok(dtos::EvmExtractor::Log {
-                log_index: u64::try_from(log_index).map_err(|_| {
-                    ConversionError::IntegerOverflow {
-                        context: "EvmExtractor::Log log_index exceeds u64",
-                    }
-                })?,
-            }),
+            AbstractExtractor::Log { log_index } => Ok(dtos::EvmExtractor::Log { log_index }),
         }
     }
 }
@@ -154,13 +148,7 @@ impl TryFrom<dtos::EvmExtractor> for AbstractExtractor {
     fn try_from(value: dtos::EvmExtractor) -> Result<Self, Self::Error> {
         match value {
             dtos::EvmExtractor::BlockHash => Ok(AbstractExtractor::BlockHash),
-            dtos::EvmExtractor::Log { log_index } => Ok(AbstractExtractor::Log {
-                log_index: usize::try_from(log_index).map_err(|_| {
-                    ConversionError::IntegerOverflow {
-                        context: "EvmExtractor::Log log_index exceeds platform usize",
-                    }
-                })?,
-            }),
+            dtos::EvmExtractor::Log { log_index } => Ok(AbstractExtractor::Log { log_index }),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "EvmExtractor",
             }),

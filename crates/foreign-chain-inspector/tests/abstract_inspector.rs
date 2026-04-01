@@ -392,7 +392,7 @@ fn expected_extracted_value(
             AbstractExtractedValue::BlockHash(From::from(*tx_response.block_hash.as_fixed_bytes()))
         }
         AbstractExtractor::Log { log_index } => {
-            let target_index = U64::from(*log_index as u64);
+            let target_index = U64::from(*log_index);
             let log = tx_response
                 .logs
                 .iter()
