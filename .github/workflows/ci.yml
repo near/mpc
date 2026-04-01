@@ -642,7 +642,7 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          RUST_LOG=info,e2e_tests=debug cargo test -p e2e-tests --all-features --locked 2>&1
+          RUST_LOG=info,e2e_tests=debug cargo nextest run -p e2e-tests --all-features --locked 2>&1
         env:
           MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 

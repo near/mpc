@@ -1,4 +1,3 @@
-use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -22,9 +21,12 @@ pub struct ClientHandle {
 }
 
 impl NearBlockchain {
-    pub fn new(rpc_url: &str, root_account: &str, root_secret_key: &str) -> anyhow::Result<Self> {
-        let sk: near_kit::SecretKey = root_secret_key.parse().context("invalid root secret key")?;
-        let signer = near_kit::InMemorySigner::from_secret_key(root_account, sk)
+    pub fn new(
+        rpc_url: &str,
+        root_account: &str,
+        root_secret_key: near_kit::SecretKey,
+    ) -> anyhow::Result<Self> {
+        let signer = near_kit::InMemorySigner::from_secret_key(root_account, root_secret_key)
             .map_err(|e| anyhow::anyhow!("failed to create root signer: {e}"))?;
         let client = near_kit::Near::custom(rpc_url).signer(signer).build();
         Ok(Self {

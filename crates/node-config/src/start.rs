@@ -131,17 +131,14 @@ pub enum ChainId {
     Testnet,
     #[serde(rename = "mpc-localnet")]
     Localnet,
+    Sandbox,
     #[serde(untagged)]
     Custom(String),
 }
 
 impl ChainId {
     pub fn is_localnet(&self) -> bool {
-        match self {
-            ChainId::Localnet => true,
-            ChainId::Custom(s) => s == "sandbox",
-            _ => false,
-        }
+        matches!(self, ChainId::Localnet | ChainId::Sandbox)
     }
 
     pub fn to_init_arg(&self) -> Option<String> {
@@ -155,6 +152,7 @@ impl std::fmt::Display for ChainId {
             ChainId::Mainnet => f.write_str("mainnet"),
             ChainId::Testnet => f.write_str("testnet"),
             ChainId::Localnet => f.write_str("mpc-localnet"),
+            ChainId::Sandbox => f.write_str("sandbox"),
             ChainId::Custom(s) => f.write_str(s),
         }
     }

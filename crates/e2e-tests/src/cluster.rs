@@ -24,8 +24,10 @@ const DEFAULT_SANDBOX_VERSION: &str = "2.11.0-rc.3";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
-pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 10;
+pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
+const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
+const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -120,11 +122,11 @@ impl MpcCluster {
         let test_dir = create_test_dir(&config.home_base)?;
 
         let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
-        let blockchain = NearBlockchain::new(
-            &sandbox.rpc_url(),
-            SANDBOX_ROOT_ACCOUNT,
-            SANDBOX_ROOT_SECRET_KEY,
-        )?;
+        let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
+            .parse()
+            .context("invalid sandbox root secret key")?;
+        let blockchain =
+            NearBlockchain::new(&sandbox.rpc_url(), SANDBOX_ROOT_ACCOUNT, root_secret_key)?;
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;
@@ -413,13 +415,7 @@ impl MpcCluster {
             }
         });
         self.contract
-            .call_from_with_deposit(
-                &client,
-                method_names::SIGN,
-                args,
-                near_kit::Gas::from_tgas(15),
-                near_kit::NearToken::from_yoctonear(1),
-            )
+            .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
             .await
     }
 }
@@ -578,7 +574,7 @@ async fn add_initial_domains(
     .await
     .context("contract did not reach Initializing state after domain addition")?;
 
-    wait_for_contract_state(contract, Duration::from_secs(300), |s| {
+    wait_for_contract_state(contract, Duration::from_secs(120), |s| {
         matches!(s, ProtocolContractState::Running(_))
     })
     .await
@@ -652,7 +648,7 @@ fn build_participants(
     let mut list = Vec::new();
     for (i, key) in p2p_keys.iter().enumerate().take(num_nodes) {
         let account_id = ContractAccountId(format!("node{i}.{SANDBOX_ROOT_ACCOUNT}"));
-        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(key.verifying_key().to_bytes());
+        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&key.verifying_key());
         list.push((
             account_id,
             ParticipantId(i as u32),
