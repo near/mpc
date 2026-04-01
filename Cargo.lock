@@ -3075,6 +3075,7 @@ dependencies = [
  "near-kit",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
+ "near-sandbox",
  "rand 0.8.5",
  "reqwest 0.13.2",
  "serde",
@@ -3083,6 +3084,7 @@ dependencies = [
  "tokio",
  "toml 1.1.0+spec-1.1.0",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
