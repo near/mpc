@@ -14,7 +14,7 @@ const NODE_KEY_FILE: &str = "node_key.json";
 /// ports, and provides access to genesis.json and node_key.json so MPC node
 /// indexers can sync blocks via P2P.
 ///
-/// The sandbox process is killed and cleaned up when this value is dropped.
+/// The inner [`Sandbox`] kills the process and removes its temp directory on drop.
 pub struct NearSandbox {
     sandbox: Sandbox,
     network_port: u16,
