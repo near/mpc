@@ -308,7 +308,6 @@ mod tests {
     use crate::config::{
         BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig,
     };
-    use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use std::collections::BTreeMap;

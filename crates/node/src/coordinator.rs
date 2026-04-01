@@ -717,69 +717,71 @@ where
         Ok(MpcJobResult::Done)
     }
 
-    async fn maybe_vote_foreign_chain_policy(
-        config_file: &ConfigFile,
-        foreign_chain_policy_reader: &ForeignChainPolicyReader,
-        chain_txn_sender: &TransactionSender,
-    ) -> anyhow::Result<()> {
-        let Some(local_policy) = config_file.foreign_chains.to_policy() else {
-            tracing::info!(
-                "foreign_chains config is empty; skipping foreign chain policy auto-vote"
-            );
-            return Ok(());
-        };
+    // TODO: node should publish the chains it has configured?
 
-        let on_chain_policy = foreign_chain_policy_reader
-            .get_foreign_chain_policy()
-            .await
-            .context("failed to fetch foreign chain policy")?;
+    // async fn maybe_vote_foreign_chain_policy(
+    //     config_file: &ConfigFile,
+    //     foreign_chain_policy_reader: &ForeignChainPolicyReader,
+    //     chain_txn_sender: &TransactionSender,
+    // ) -> anyhow::Result<()> {
+    //     let Some(local_policy) = config_file.foreign_chains.to_policy() else {
+    //         tracing::info!(
+    //             "foreign_chains config is empty; skipping foreign chain policy auto-vote"
+    //         );
+    //         return Ok(());
+    //     };
 
-        if on_chain_policy == local_policy {
-            tracing::info!("foreign chain policy matches local config; skipping auto-vote");
-            return Ok(());
-        }
+    //     let on_chain_policy = foreign_chain_policy_reader
+    //         .get_foreign_chain_policy()
+    //         .await
+    //         .context("failed to fetch foreign chain policy")?;
 
-        let unsupported_chains: Vec<dtos::ForeignChain> = on_chain_policy
-            .chains
-            .keys()
-            .filter(|chain| !Self::is_supported_foreign_chain(chain))
-            .cloned()
-            .collect();
+    //     if on_chain_policy == local_policy {
+    //         tracing::info!("foreign chain policy matches local config; skipping auto-vote");
+    //         return Ok(());
+    //     }
 
-        if !unsupported_chains.is_empty() {
-            tracing::warn!(
-                ?unsupported_chains,
-                "on-chain foreign chain policy contains unsupported chains; skipping auto-vote"
-            );
-            return Ok(());
-        }
+    //     let unsupported_chains: Vec<dtos::ForeignChain> = on_chain_policy
+    //         .chains
+    //         .keys()
+    //         .filter(|chain| !Self::is_supported_foreign_chain(chain))
+    //         .cloned()
+    //         .collect();
 
-        let proposals = foreign_chain_policy_reader
-            .get_foreign_chain_policy_proposals()
-            .await
-            .context("failed to fetch foreign chain policy proposals")?;
+    //     if !unsupported_chains.is_empty() {
+    //         tracing::warn!(
+    //             ?unsupported_chains,
+    //             "on-chain foreign chain policy contains unsupported chains; skipping auto-vote"
+    //         );
+    //         return Ok(());
+    //     }
 
-        let my_account_id = dtos::AccountId(config_file.my_near_account_id.to_string());
-        if proposals
-            .proposal_by_account
-            .get(&my_account_id)
-            .is_some_and(|proposal| proposal == &local_policy)
-        {
-            tracing::info!("foreign chain policy already proposed by this node; skipping");
-            return Ok(());
-        }
+    //     let proposals = foreign_chain_policy_reader
+    //         .get_foreign_chain_policy_proposals()
+    //         .await
+    //         .context("failed to fetch foreign chain policy proposals")?;
 
-        chain_txn_sender
-            .send(ChainSendTransactionRequest::VoteForeignChainPolicy(
-                ChainVoteForeignChainPolicyArgs {
-                    policy: local_policy,
-                },
-            ))
-            .await
-            .context("failed to send foreign chain policy vote")?;
+    //     let my_account_id = dtos::AccountId(config_file.my_near_account_id.to_string());
+    //     if proposals
+    //         .proposal_by_account
+    //         .get(&my_account_id)
+    //         .is_some_and(|proposal| proposal == &local_policy)
+    //     {
+    //         tracing::info!("foreign chain policy already proposed by this node; skipping");
+    //         return Ok(());
+    //     }
 
-        Ok(())
-    }
+    //     chain_txn_sender
+    //         .send(ChainSendTransactionRequest::VoteForeignChainPolicy(
+    //             ChainVoteForeignChainPolicyArgs {
+    //                 policy: local_policy,
+    //             },
+    //         ))
+    //         .await
+    //         .context("failed to send foreign chain policy vote")?;
+
+    //     Ok(())
+    // }
 
     fn is_supported_foreign_chain(chain: &dtos::ForeignChain) -> bool {
         matches!(

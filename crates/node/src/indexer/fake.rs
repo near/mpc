@@ -5,7 +5,6 @@ use super::types::{
     ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
 };
 use super::IndexerAPI;
-use super::ReadForeignChainPolicy;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
@@ -53,28 +52,6 @@ pub struct FakeMpcContractState {
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: dtos::ForeignChainPolicyVotes,
     pub migration_service: NodeMigrations,
-}
-
-#[derive(Clone)]
-pub struct FakeForeignChainPolicyReader {
-    contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
-}
-
-impl ReadForeignChainPolicy for FakeForeignChainPolicyReader {
-    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
-        Ok(self.contract.lock().await.foreign_chain_policy().clone())
-    }
-
-    async fn get_foreign_chain_policy_proposals(
-        &self,
-    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
-        Ok(self
-            .contract
-            .lock()
-            .await
-            .foreign_chain_policy_votes()
-            .clone())
-    }
 }
 
 impl FakeMpcContractState {

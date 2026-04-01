@@ -175,12 +175,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 }
 
 #[expect(clippy::too_many_arguments)]
-async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
+async fn create_root_future<TransactionSenderImpl>(
     start_config: StartConfig,
     home_dir: PathBuf,
     config: ConfigFile,
     secrets: SecretsConfig,
-    indexer_api: IndexerAPI<TransactionSenderImpl, ForeignChainPolicyReader>,
+    indexer_api: IndexerAPI<TransactionSenderImpl>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
     // Otherwise we would not write to the same cell/lock.
@@ -189,7 +189,6 @@ async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadForeignChainPolicy + Clone + Send + Sync + 'static,
 {
     let root_task_handle = tracking::current_task();
 
