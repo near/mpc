@@ -1,12 +1,17 @@
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
+use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
+use mpc_node_config::{
+    BlockArgs, CKDConfig, ChainId, ConfigFile, IndexerConfig, KeygenConfig, LogConfig, LogFormat,
+    NearInitConfig, PresignatureConfig, SecretsStartConfig, SignatureConfig, StartConfig, SyncMode,
+    TripleConfig,
+};
+use near_indexer_primitives::types::Finality;
 use near_kit::AccountId;
 use near_mpc_crypto_types::Ed25519PublicKey;
-use serde::Serialize;
 use serde_json::json;
 
 use crate::port_allocator::E2ePortAllocator;
@@ -15,10 +20,6 @@ const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
 const LISTEN_BLOCKS_FILE: &str = "listen_blocks";
-const START_CONFIG_FILE: &str = "start_config.toml";
-const SECRETS_FILE: &str = "secrets.json";
-pub const STDOUT_LOG: &str = "stdout.log";
-pub const STDERR_LOG: &str = "stderr.log";
 
 /// Handle to a running `mpc-node` OS process. Always represents a live process.
 /// Obtained by calling [`MpcNodeSetup::start()`].
@@ -89,6 +90,8 @@ impl MpcNode {
     }
 }
 
+pub const STDERR_LOG: &str = "stderr.log";
+
 /// Guard that kills the child process on drop.
 struct ProcessGuard(Child);
 
@@ -155,7 +158,7 @@ impl MpcNodeSetup {
             )
         })?;
 
-        let config_path = args.home_dir.join(START_CONFIG_FILE);
+        let config_path = args.home_dir.join("start_config.toml");
 
         let setup = Self {
             node_index: args.node_index,
@@ -185,9 +188,7 @@ impl MpcNodeSetup {
     /// The ed25519 public key formatted as `"ed25519:<base58>"`.
     pub fn p2p_public_key_str(&self) -> String {
         String::from(&Ed25519PublicKey::from(
-            // .to_bytes() because `near-mpc-crypto-types` doesn't enable the `ed25519-dalek` feature
-            // which provides `From<&VerifyingKey>` for `Ed25519PublicKey`.
-            self.p2p_signing_key.verifying_key().to_bytes(),
+            &self.p2p_signing_key.verifying_key(),
         ))
     }
 
@@ -202,7 +203,7 @@ impl MpcNodeSetup {
     }
 
     /// The node's home directory (logs, config, data).
-    pub fn home_dir(&self) -> &Path {
+    pub fn home_dir(&self) -> &std::path::Path {
         &self.home_dir
     }
 
@@ -240,9 +241,9 @@ impl MpcNodeSetup {
             "starting mpc-node"
         );
 
-        let stdout_file = std::fs::File::create(self.home_dir.join(STDOUT_LOG))
+        let stdout_file = std::fs::File::create(self.home_dir.join("stdout.log"))
             .context("failed to create stdout log")?;
-        let stderr_file = std::fs::File::create(self.home_dir.join(STDERR_LOG))
+        let stderr_file = std::fs::File::create(self.home_dir.join("stderr.log"))
             .context("failed to create stderr log")?;
 
         let child = Command::new(&self.binary_path)
@@ -276,7 +277,7 @@ impl MpcNodeSetup {
     /// Write `secrets.json` so the node uses our pre-generated keys instead of
     /// generating random ones.
     fn write_secrets_json(&self) -> anyhow::Result<()> {
-        let secrets_path = self.home_dir.join(SECRETS_FILE);
+        let secrets_path = self.home_dir.join("secrets.json");
 
         let format_key = |key: &SigningKey| -> String {
             let keypair_bytes = key.to_keypair_bytes();
@@ -298,62 +299,68 @@ impl MpcNodeSetup {
 
     /// Build the TOML config and write it for `mpc-node start-with-config-file`.
     fn write_start_config(&self) -> anyhow::Result<()> {
-        let signer = self.signer_account_id.to_string();
+        let signer: near_account_id::AccountId = self.signer_account_id.to_string().parse()?;
+        let mpc_contract: near_account_id::AccountId = self.mpc_contract_id.to_string().parse()?;
 
         let config = StartConfig {
-            home_dir: self.home_dir.display().to_string(),
-            secrets: Secrets {
+            home_dir: self.home_dir.clone(),
+            secrets: SecretsStartConfig {
                 secret_store_key_hex: self.secret_store_key_hex.clone(),
-                backup_encryption_key_hex: self.backup_encryption_key_hex.clone(),
+                backup_encryption_key_hex: Some(self.backup_encryption_key_hex.clone()),
             },
-            tee: Tee {
-                image_hash: DUMMY_IMAGE_HASH.to_string(),
-                latest_allowed_hash_file_path: "latest_allowed_hash.txt".to_string(),
-                authority: TeeAuthority {
-                    r#type: "local".to_string(),
-                },
+            tee: TeeConfig {
+                image_hash: DUMMY_IMAGE_HASH.parse().unwrap(),
+                latest_allowed_hash_file_path: "latest_allowed_hash.txt".into(),
+                authority: TeeAuthorityConfig::Local,
             },
-            log: Log {
-                format: "plain".to_string(),
-                filter: "debug".to_string(),
+            gcp: None,
+            log: LogConfig {
+                format: LogFormat::Plain,
+                filter: Some("debug".to_string()),
             },
-            near_init: NearInit {
-                chain_id: self.chain_id.clone(),
-                boot_nodes: self.near_boot_nodes.clone(),
-                genesis_path: self.near_genesis_path.display().to_string(),
+            near_init: Some(NearInitConfig {
+                chain_id: ChainId::Custom(self.chain_id.clone()),
+                boot_nodes: Some(self.near_boot_nodes.clone()),
+                genesis_path: Some(self.near_genesis_path.clone()),
+                download_config: None,
+                download_config_url: None,
                 download_genesis: false,
-                rpc_addr: format!("0.0.0.0:{}", self.ports.near_rpc),
-                network_addr: format!("0.0.0.0:{}", self.ports.near_network),
-            },
-            node: Node {
+                download_genesis_url: None,
+                download_genesis_records_url: None,
+                rpc_addr: Some(format!("0.0.0.0:{}", self.ports.near_rpc)),
+                network_addr: Some(format!("0.0.0.0:{}", self.ports.near_network)),
+            }),
+            node: ConfigFile {
                 my_near_account_id: signer.clone(),
-                near_responder_account_id: signer.clone(),
+                near_responder_account_id: signer,
                 number_of_responder_keys: 1,
-                web_ui: format!("127.0.0.1:{}", self.ports.web_ui),
-                migration_web_ui: format!("127.0.0.1:{}", self.ports.migration_web_ui),
-                pprof_bind_address: format!("127.0.0.1:{}", self.ports.pprof),
-                cores: 4,
-                indexer: Indexer {
+                web_ui: format!("127.0.0.1:{}", self.ports.web_ui).parse()?,
+                migration_web_ui: format!("127.0.0.1:{}", self.ports.migration_web_ui).parse()?,
+                pprof_bind_address: format!("127.0.0.1:{}", self.ports.pprof).parse()?,
+                cores: Some(4),
+                indexer: IndexerConfig {
                     validate_genesis: true,
-                    concurrency: 1,
-                    mpc_contract_id: self.mpc_contract_id.to_string(),
-                    finality: "optimistic".to_string(),
-                    sync_mode: BTreeMap::from([("Block".to_string(), SyncModeBlock { height: 0 })]),
+                    concurrency: std::num::NonZeroU16::new(1).unwrap(),
+                    mpc_contract_id: mpc_contract,
+                    finality: Finality::None,
+                    sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
+                    port_override: None,
                 },
-                triple: Triple {
+                triple: TripleConfig {
                     concurrency: 2,
                     desired_triples_to_buffer: self.triples_to_buffer,
                     timeout_sec: 60,
                     parallel_triple_generation_stagger_time_sec: 1,
                 },
-                presignature: Presignature {
+                presignature: PresignatureConfig {
                     concurrency: 2,
                     desired_presignatures_to_buffer: self.presignatures_to_buffer,
                     timeout_sec: 60,
                 },
-                signature: Timeout { timeout_sec: 60 },
-                ckd: Timeout { timeout_sec: 60 },
-                keygen: Timeout { timeout_sec: 60 },
+                signature: SignatureConfig { timeout_sec: 60 },
+                ckd: CKDConfig { timeout_sec: 60 },
+                keygen: KeygenConfig { timeout_sec: 60 },
+                foreign_chains: Default::default(),
             },
         };
 
@@ -408,108 +415,4 @@ impl NodePorts {
             near_network: ports.near_network_port(index),
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// TODO(#2560): Factor `StartConfig` out of `mpc-node` into a lightweight crate so we
-// can reuse it here instead of duplicating the structure.
-//
-// Serialization types for `start_config.toml`.
-// These mirror the structure in `crates/node/src/config/start.rs` (StartConfig)
-// without pulling in the full mpc-node dependency.
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize)]
-struct StartConfig {
-    home_dir: String,
-    secrets: Secrets,
-    tee: Tee,
-    log: Log,
-    near_init: NearInit,
-    node: Node,
-}
-
-#[derive(Serialize)]
-struct Secrets {
-    secret_store_key_hex: String,
-    backup_encryption_key_hex: String,
-}
-
-#[derive(Serialize)]
-struct Tee {
-    image_hash: String,
-    latest_allowed_hash_file_path: String,
-    authority: TeeAuthority,
-}
-
-#[derive(Serialize)]
-struct Log {
-    format: String,
-    filter: String,
-}
-
-#[derive(Serialize)]
-struct TeeAuthority {
-    r#type: String,
-}
-
-#[derive(Serialize)]
-struct NearInit {
-    chain_id: String,
-    boot_nodes: String,
-    genesis_path: String,
-    download_genesis: bool,
-    rpc_addr: String,
-    network_addr: String,
-}
-
-#[derive(Serialize)]
-struct Node {
-    my_near_account_id: String,
-    near_responder_account_id: String,
-    number_of_responder_keys: usize,
-    web_ui: String,
-    migration_web_ui: String,
-    pprof_bind_address: String,
-    cores: usize,
-    indexer: Indexer,
-    triple: Triple,
-    presignature: Presignature,
-    signature: Timeout,
-    ckd: Timeout,
-    keygen: Timeout,
-}
-
-#[derive(Serialize)]
-struct Indexer {
-    validate_genesis: bool,
-    concurrency: usize,
-    mpc_contract_id: String,
-    finality: String,
-    sync_mode: BTreeMap<String, SyncModeBlock>,
-}
-
-#[derive(Serialize)]
-struct SyncModeBlock {
-    height: u64,
-}
-
-#[derive(Serialize)]
-struct Triple {
-    concurrency: usize,
-    desired_triples_to_buffer: usize,
-    timeout_sec: u64,
-    parallel_triple_generation_stagger_time_sec: u64,
-}
-
-#[derive(Serialize)]
-struct Presignature {
-    concurrency: usize,
-    desired_presignatures_to_buffer: usize,
-    timeout_sec: u64,
-}
-
-#[derive(Serialize)]
-struct Timeout {
-    timeout_sec: u64,
 }

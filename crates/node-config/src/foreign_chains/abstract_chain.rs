@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
-use crate::config::foreign_chains::auth;
-use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
+use crate::foreign_chains::auth;
+use crate::foreign_chains::{self, ForeignChainProviderConfig};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AbstractChainConfig {

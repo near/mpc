@@ -288,7 +288,7 @@ impl RunLoadtestCmd {
                         domain_config,
                     })
                 }
-                Curve::Ed25519 | Curve::Secp256k1 | Curve::V2Secp256k1 => {
+                Curve::Edwards25519 | Curve::Secp256k1 | Curve::V2Secp256k1 => {
                     ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
                         mpc_contract: mpc_account,
                         domain_config,

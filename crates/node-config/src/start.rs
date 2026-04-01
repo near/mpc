@@ -1,0 +1,165 @@
+use super::ConfigFile;
+use anyhow::Context;
+use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+/// Configuration for starting the MPC node. This is the canonical type used
+/// by the run logic. Both `StartCmd` (CLI flags) and `StartWithConfigFileCmd`
+/// (TOML file) convert into this type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartConfig {
+    pub home_dir: PathBuf,
+    /// Encryption keys and backup settings.
+    pub secrets: SecretsStartConfig,
+    /// TEE authority and image hash monitoring settings.
+    pub tee: launcher_interface::types::TeeConfig,
+    /// GCP keyshare storage settings. Optional — omit if not using GCP.
+    pub gcp: Option<GcpStartConfig>,
+    /// NEAR node initialization settings. Required for `start-with-config-file`
+    /// so the node can self-initialize when `config.json` is absent.
+    /// When using the legacy `start` command (behind `start.sh`), this is
+    /// `None` because `start.sh` already ran `mpc-node init`.
+    pub near_init: Option<NearInitConfig>,
+    /// Node configuration (indexer, protocol parameters, etc.).
+    pub node: ConfigFile,
+    pub log: LogConfig,
+}
+
+impl StartConfig {
+    pub fn from_toml_file(path: &std::path::Path) -> anyhow::Result<Self> {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read config file: {}", path.display()))?;
+        let config: Self = toml::from_str(&content)
+            .with_context(|| format!("failed to parse config file: {}", path.display()))?;
+        config
+            .node
+            .validate()
+            .context("invalid node config in config file")?;
+        Ok(config)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogConfig {
+    pub format: LogFormat,
+    /// Optional log filter directive (same syntax as `RUST_LOG`).
+    /// Examples: `"info"`, `"mpc_node=debug,info"`, `"mpc_node::indexer=trace,warn"`
+    /// Falls back to the `RUST_LOG` env var when not set.
+    pub filter: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogFormat {
+    /// Plaintext logs
+    Plain,
+    /// JSON logs
+    Json,
+}
+
+/// NEAR node initialization configuration. Controls how the NEAR node's
+/// genesis and config files are bootstrapped when they don't yet exist.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NearInitConfig {
+    pub chain_id: ChainId,
+    /// Comma-separated NEAR boot nodes.
+    pub boot_nodes: Option<String>,
+    /// Path to a local genesis file. When set the genesis is copied from this
+    /// path instead of being downloaded. Typically used for localnet.
+    pub genesis_path: Option<PathBuf>,
+    /// Whether to download the NEAR config file. Defaults to `true` for
+    /// non-localnet chains when not specified.
+    pub download_config: Option<DownloadConfigType>,
+    /// Custom URL to download the NEAR config file from.
+    pub download_config_url: Option<String>,
+    /// Whether to download the NEAR genesis file. Defaults to `true` for
+    /// non-localnet chains when not specified.
+    pub download_genesis: bool,
+    /// Custom URL to download the genesis file from.
+    pub download_genesis_url: Option<String>,
+    /// Custom URL to download the genesis records from.
+    pub download_genesis_records_url: Option<String>,
+    /// Override the NEAR node RPC listen address (e.g. "0.0.0.0:3031").
+    /// Useful when running multiple nodes on the same machine.
+    pub rpc_addr: Option<String>,
+    /// Override the NEAR node network (indexer) listen address (e.g. "0.0.0.0:24568").
+    /// Useful when running multiple nodes on the same machine.
+    pub network_addr: Option<String>,
+}
+
+/// Encryption keys needed at startup.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SecretsStartConfig {
+    /// Hex-encoded 16 byte AES key for local storage encryption.
+    pub secret_store_key_hex: String,
+    /// Hex-encoded 32 byte AES key for backup encryption.
+    /// If not provided, a key is generated and written to disk.
+    #[serde(default)]
+    pub backup_encryption_key_hex: Option<String>,
+}
+
+impl std::fmt::Debug for SecretsStartConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretsStartConfig")
+            .field("secret_store_key_hex", &"[REDACTED]")
+            .field(
+                "backup_encryption_key_hex",
+                &self
+                    .backup_encryption_key_hex
+                    .as_ref()
+                    .map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
+}
+
+/// GCP keyshare storage configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GcpStartConfig {
+    /// GCP secret ID for storing the root keyshare.
+    pub keyshare_secret_id: String,
+    /// GCP project ID.
+    pub project_id: String,
+}
+
+/// NEAR chain / network identifier.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChainId {
+    Mainnet,
+    Testnet,
+    #[serde(rename = "mpc-localnet")]
+    Localnet,
+    #[serde(untagged)]
+    Custom(String),
+}
+
+impl ChainId {
+    pub fn is_localnet(&self) -> bool {
+        *self == ChainId::Localnet
+    }
+
+    pub fn to_init_arg(&self) -> Option<String> {
+        Some(self.to_string())
+    }
+}
+
+impl std::fmt::Display for ChainId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChainId::Mainnet => f.write_str("mainnet"),
+            ChainId::Testnet => f.write_str("testnet"),
+            ChainId::Localnet => f.write_str("mpc-localnet"),
+            ChainId::Custom(s) => f.write_str(s),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadConfigType {
+    Validator,
+    RPC,
+    Archival,
+}

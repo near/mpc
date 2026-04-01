@@ -150,7 +150,7 @@ impl TestSetupBuilder {
                         .contract
                         .vote_add_domains(vec![DomainConfig {
                             id: DomainId(1),
-                            curve: Curve::Ed25519,
+                            curve: Curve::Edwards25519,
                             purpose: DomainPurpose::Sign,
                         }])
                         .unwrap();
@@ -350,8 +350,8 @@ macro_rules! assert_allowed_docker_image_hashes {
         let mut res: Vec<[u8; 32]> = $test_setup
             .contract
             .allowed_docker_image_hashes()
-            .iter()
-            .map(|hash| *hash.clone())
+            .into_iter()
+            .map(|hash| *hash)
             .collect();
 
         res.reverse();

@@ -14,10 +14,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use tokio::sync::{watch, RwLock};
 
-use crate::config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, ParticipantsConfig,
-    PersistentSecrets, PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
-};
+use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::fake::{FakeForeignChainPolicyReader, FakeIndexerManager};
@@ -29,6 +26,10 @@ use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+use mpc_node_config::{
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
+    SignatureConfig, SyncMode, TripleConfig,
+};
 
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
@@ -280,7 +281,7 @@ pub async fn request_signature_and_await_response(
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
         }
-        Curve::Ed25519 => {
+        Curve::Edwards25519 => {
             let len = rand::thread_rng().gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
@@ -291,11 +292,9 @@ pub async fn request_signature_and_await_response(
         Curve::Bls12381 => unreachable!(),
     };
     let request = SignatureRequestFromChain {
-        entropy: rand::random(),
         signature_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
         predecessor_id: user.parse().unwrap(),
-        timestamp_nanosec: rand::random(),
         request: SignArgs {
             domain_id: domain.id,
             path: "m/44'/60'/0'/0/0".to_string(),
@@ -398,9 +397,6 @@ async fn do_request_ckd_and_await_response(
     let request = CKDRequestFromChain {
         ckd_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
-        predecessor_id: user.parse().unwrap(),
-        entropy: rand::random(),
-        timestamp_nanosec: rand::random(),
         request: CKDArgs {
             app_public_key,
             domain_id: domain.id,
@@ -481,9 +477,6 @@ pub async fn request_verify_foreign_tx_and_await_response(
     let request = VerifyForeignTxRequestFromChain {
         verify_foreign_tx_id: CryptoHash(rand::random()),
         receipt_id: CryptoHash(rand::random()),
-        predecessor_id: user.parse().unwrap(),
-        entropy: rand::random(),
-        timestamp_nanosec: rand::random(),
         request: VerifyForeignTransactionRequestArgs {
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [42u8; 32].into(),
