@@ -20,11 +20,14 @@ use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::port_allocator::E2ePortAllocator;
 
-const DEFAULT_SANDBOX_IMAGE: &str = "nearprotocol/sandbox:2.11.0-rc.3";
+const DEFAULT_SANDBOX_VERSION: &str = "2.11.0";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
-const SANDBOX_ROOT_SECRET_KEY: &str = "ed25519:3JoAjwLppjgvxkk6kNsu5wQj3FfUJnpBKWieC73hVTpBeA6FZiCc5tfyZL3a3tHeQJegQe4qGSv8FLsYp7TYd1r6";
-// Polling interval for waiting contract state.
+const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
+pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
+pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
+const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
+const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -44,8 +47,8 @@ pub struct MpcClusterConfig {
     pub triples_to_buffer: usize,
     /// Presignature buffer size per node.
     pub presignatures_to_buffer: usize,
-    /// Docker image for the NEAR sandbox (e.g. `"nearprotocol/sandbox:2.11.0-rc.3"`).
-    pub sandbox_image: String,
+    /// Version of the `near-sandbox` binary (e.g. `"2.6.3"`, `"2.10.4"`).
+    pub sandbox_version: String,
     /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.
     pub home_base: Option<PathBuf>,
 }
@@ -80,9 +83,9 @@ impl MpcClusterConfig {
             binary_paths: vec![default_mpc_binary_path()],
             contract_wasm,
             port_seed,
-            triples_to_buffer: 10,
-            presignatures_to_buffer: 10,
-            sandbox_image: DEFAULT_SANDBOX_IMAGE.to_string(),
+            triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
+            presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
+            sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
         }
     }
@@ -94,7 +97,7 @@ fn default_mpc_binary_path() -> PathBuf {
 
 /// A running MPC test cluster with a deployed contract and N mpc-node processes.
 ///
-/// Orchestrates the full test environment: Docker sandbox -> contract ->
+/// Orchestrates the full test environment: sandbox -> contract ->
 /// accounts -> attestations -> domains -> mpc-node processes.
 ///
 /// All nodes are killed when dropped.
@@ -111,19 +114,19 @@ pub struct MpcCluster {
 }
 
 impl MpcCluster {
-    /// Create the full cluster: start Docker sandbox, deploy contract,
+    /// Create the full cluster: start sandbox, deploy contract,
     /// create accounts, submit attestations, add domains, spawn mpc-node
     /// binaries, and wait for Running state.
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
         let ports = E2ePortAllocator::new(config.port_seed);
         let test_dir = create_test_dir(&config.home_base)?;
 
-        let sandbox = NearSandbox::start(&ports, &config.sandbox_image, test_dir.path()).await?;
-        let blockchain = NearBlockchain::new(
-            &sandbox.rpc_url(),
-            SANDBOX_ROOT_ACCOUNT,
-            SANDBOX_ROOT_SECRET_KEY,
-        )?;
+        let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
+        let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
+            .parse()
+            .context("invalid sandbox root secret key")?;
+        let blockchain =
+            NearBlockchain::new(&sandbox.rpc_url(), SANDBOX_ROOT_ACCOUNT, root_secret_key)?;
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;
@@ -151,11 +154,8 @@ impl MpcCluster {
         )
         .await?;
 
-        if !config.domains.is_empty() {
-            add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await?;
-        }
-
-        let nodes = start_mpc_nodes(
+        // Start MPC nodes BEFORE adding domains: key generation requires running nodes.
+        let mut nodes = start_mpc_nodes(
             &config,
             &sandbox,
             &node_near_keys,
@@ -164,6 +164,12 @@ impl MpcCluster {
             test_dir.path(),
             &ports,
         )?;
+
+        ensure_nodes_alive(&mut nodes).await?;
+
+        if !config.domains.is_empty() {
+            add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await?;
+        }
 
         let user_accounts = create_user_accounts(&blockchain, 1).await?;
 
@@ -303,18 +309,18 @@ impl MpcCluster {
     pub async fn wait_for_metric_all_nodes(
         &self,
         name: &str,
-        expected: i64,
+        predicate: impl Fn(i64) -> bool,
         timeout: Duration,
     ) -> anyhow::Result<()> {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
             let values = self.get_metric_all_nodes(name).await?;
-            if values.iter().all(|v| *v == Some(expected)) {
+            if values.iter().all(|v| v.is_some_and(&predicate)) {
                 return Ok(());
             }
             if tokio::time::Instant::now() >= deadline {
                 anyhow::bail!(
-                    "metric {name} did not reach {expected} on all nodes within {}s (values: {values:?})",
+                    "metric {name} predicate not satisfied on all nodes within {}s (values: {values:?})",
                     timeout.as_secs()
                 );
             }
@@ -391,6 +397,26 @@ impl MpcCluster {
             .keys()
             .next()
             .expect("cluster should have at least one user account")
+    }
+
+    /// Send a sign request from the default user account and return the outcome.
+    pub async fn send_sign_request(
+        &self,
+        domain_id: DomainId,
+        payload: serde_json::Value,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let user = self.default_user_account().clone();
+        let client = self.user_client(&user)?;
+        let args = json!({
+            "request": {
+                "domain_id": domain_id,
+                "path": "test",
+                "payload_v2": payload,
+            }
+        });
+        self.contract
+            .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
+            .await
     }
 }
 
@@ -663,6 +689,22 @@ fn build_participants_from_nodes(
 fn generate_deterministic_key(seed: u64) -> SigningKey {
     let mut rng = StdRng::seed_from_u64(seed);
     SigningKey::generate(&mut rng)
+}
+
+/// Wait briefly and verify all running nodes haven't crashed.
+async fn ensure_nodes_alive(nodes: &mut [MpcNodeState]) -> anyhow::Result<()> {
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    for (i, node) in nodes.iter_mut().enumerate() {
+        if let MpcNodeState::Running(n) = node {
+            anyhow::ensure!(
+                !n.has_exited(),
+                "mpc-node {i} exited early — check {}/{}",
+                n.setup().home_dir().display(),
+                crate::mpc_node::STDERR_LOG
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn wait_for_contract_state(

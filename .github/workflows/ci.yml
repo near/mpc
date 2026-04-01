@@ -479,7 +479,7 @@ jobs:
 
   mpc-pytests-cache-cleanup:
     name: "MPC pytests: cache cleanup"
-    needs: mpc-pytests
+    needs: [mpc-pytests, mpc-e2e-tests]
     runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 10
     permissions:
@@ -599,6 +599,57 @@ jobs:
 
       - name: Run cargo-make fast checks
         run: cargo make check-all-fast
+
+  mpc-e2e-tests:
+    name: "MPC E2E tests"
+    needs: mpc-pytest-build
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      MPC_PYTEST_BINARIES_CACHE_KEY: mpc-pytest-binaries-${{ github.run_id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+          prefix-key: v0-rust-e2e
+
+      - name: Restore pytest binaries cache
+        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        with:
+          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
+          fail-on-cache-miss: true
+          path: |
+            target/release/mpc-node
+            target/release/backup-cli
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+            libs/nearcore/target/release/neard
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: nextest@0.9.126
+
+      - name: Run E2E tests
+        run: |
+          RUST_LOG=info,e2e_tests=debug cargo nextest run --cargo-profile=test-release -p e2e-tests --all-features --locked 2>&1
+        env:
+          MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 
   ci-extra:
     name: "Extra CI checks"

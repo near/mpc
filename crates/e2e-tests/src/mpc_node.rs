@@ -46,6 +46,11 @@ impl MpcNode {
         &self.setup
     }
 
+    /// Check whether the child process has already exited (crashed).
+    pub fn has_exited(&mut self) -> bool {
+        self.process.has_exited()
+    }
+
     fn web_address(&self) -> String {
         format!("127.0.0.1:{}", self.setup.ports.web_ui)
     }
@@ -85,8 +90,16 @@ impl MpcNode {
     }
 }
 
+pub const STDERR_LOG: &str = "stderr.log";
+
 /// Guard that kills the child process on drop.
 struct ProcessGuard(Child);
+
+impl ProcessGuard {
+    fn has_exited(&mut self) -> bool {
+        matches!(self.0.try_wait(), Ok(Some(_)))
+    }
+}
 
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
@@ -187,6 +200,11 @@ impl MpcNodeSetup {
     /// The NEAR account ID for this node.
     pub fn account_id(&self) -> &AccountId {
         &self.signer_account_id
+    }
+
+    /// The node's home directory (logs, config, data).
+    pub fn home_dir(&self) -> &std::path::Path {
+        &self.home_dir
     }
 
     /// Deletes RocksDB files (.sst, MANIFEST, etc.) from the data directory.
