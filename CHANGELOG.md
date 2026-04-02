@@ -220,6 +220,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#2691](https://github.com/near/mpc/pull/2691)(@gilcu3): Fix and simplify release automation (#2691)
 
+- [#2696](https://github.com/near/mpc/pull/2696)(@anodar): Create mpc-node release v3.8.0 (#2696)
+
 
 ## [3.7.0] - 2026-03-17
 
