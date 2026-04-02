@@ -213,16 +213,16 @@ jobs:
           ## Docker images
 
           - [nearone/mpc-node:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node/${VERSION}/)
-              Manifest digest: \`${NODE_MANIFEST}\`
-              Image ID: \`${NODE_IMAGE_ID}\`
+            Manifest digest: \`${NODE_MANIFEST}\`
+            Image ID: \`${NODE_IMAGE_ID}\`
 
           - [nearone/mpc-node-gcp:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node-gcp/${VERSION}/)
-              Manifest digest: \`${NODE_GCP_MANIFEST}\`
-              Image ID: \`${NODE_GCP_IMAGE_ID}\`
+            Manifest digest: \`${NODE_GCP_MANIFEST}\`
+            Image ID: \`${NODE_GCP_IMAGE_ID}\`
 
           - [nearone/mpc-launcher:${VERSION}](https://hub.docker.com/layers/nearone/mpc-launcher/${VERSION}/)
-              Manifest digest: \`${LAUNCHER_MANIFEST}\`
-              Image ID: \`${LAUNCHER_IMAGE_ID}\`
+            Manifest digest: \`${LAUNCHER_MANIFEST}\`
+            Image ID: \`${LAUNCHER_IMAGE_ID}\`
 
           ## MPC contract
 

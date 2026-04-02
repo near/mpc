@@ -11,7 +11,7 @@ The NEAR MPC project consists of two main components that are released together 
 ## Release Principles
 
 ### 1. Release from the `main` branch
-Releases are created by pushing a release tag on the `main` branch. The [Release workflow](/.github/workflows/release.yml) then automatically creates a draft GitHub release with all artifacts.
+Releases are created by pushing a release tag on the `main` branch. The [Release workflow](.github/workflows/release.yml) then automatically creates a draft GitHub release with all artifacts.
 
 Before creating the tag, make sure to update the version number in the workspace `Cargo.toml` file.
 
@@ -105,7 +105,7 @@ git push origin 3.1.0 # Assuming `origin` points at github.com:near/mpc.git
 
 ### 6. Edit and publish the draft GitHub release
 
-Pushing the tag in the previous step triggers the [Release workflow](/.github/workflows/release.yml), which automatically:
+Pushing the tag in the previous step triggers the [Release workflow](.github/workflows/release.yml), which automatically:
 
 1. Retags the Docker images (`mpc-launcher`, `mpc-node`, `mpc-node-gcp`) from `main-<short-sha>` to the release version.
 2. Builds the contract reproducibly and computes its SHA-256 digest.
