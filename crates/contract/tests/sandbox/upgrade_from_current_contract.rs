@@ -5,7 +5,7 @@ use crate::sandbox::{
     },
     utils::{
         consts::{
-            ALL_CURVES, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
+            ALL_PROTOCOLS, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
             GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
         },
         contract_build::{current_contract, migration_contract},
@@ -49,7 +49,7 @@ async fn test_propose_contract_max_size_upload() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_PROTOCOLS, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     // check that we can propose an update with the maximum contract size.
@@ -77,7 +77,7 @@ async fn test_propose_update_config() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_PROTOCOLS, PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
     dbg!(contract.id());
 
@@ -183,7 +183,7 @@ async fn test_propose_update_contract() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_PROTOCOLS, PARTICIPANT_LEN).await;
     propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
 }
 
@@ -193,7 +193,7 @@ async fn test_invalid_contract_deploy() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_PROTOCOLS, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
@@ -233,7 +233,7 @@ async fn test_propose_update_contract_many() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_PROTOCOLS, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     const PROPOSAL_COUNT: usize = 2;
@@ -291,7 +291,7 @@ async fn test_vote_update_gas_before_threshold() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_PROTOCOLS, PARTICIPANT_LEN).await;
 
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::PROPOSE_UPDATE)
@@ -365,7 +365,7 @@ async fn test_propose_incorrect_updates() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_PROTOCOLS, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     let dummy_config = near_mpc_contract_interface::types::InitConfig::default();
@@ -404,7 +404,7 @@ async fn many_sequential_updates() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, number_of_participants).await;
+    } = init_env(ALL_PROTOCOLS, number_of_participants).await;
     dbg!(contract.id());
     let number_of_updates = 3;
     for _ in 0..number_of_updates {
@@ -427,7 +427,7 @@ async fn only_one_vote_from_participant() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, number_of_participants).await;
+    } = init_env(ALL_PROTOCOLS, number_of_participants).await;
     dbg!(contract.id());
 
     let execution = mpc_signer_accounts[0]

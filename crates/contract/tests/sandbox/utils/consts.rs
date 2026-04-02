@@ -1,11 +1,12 @@
 use std::time::Duration;
 
-use mpc_contract::primitives::domain::Curve;
+use mpc_contract::primitives::domain::{FrostCurve, Protocol};
 use near_sdk::{Gas, NearToken};
 
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
-pub const ALL_CURVES: &[Curve; 3] = &[Curve::Secp256k1, Curve::Edwards25519, Curve::Bls12381];
+pub const ALL_PROTOCOLS: &[Protocol; 3] =
+    &[Protocol::CaitSith, Protocol::Frost(FrostCurve::Edwards25519), Protocol::Ckd];
 
 /* --- Gas constants --- */
 /// Convenience constant used only in tests. The contract itself does not require a specific

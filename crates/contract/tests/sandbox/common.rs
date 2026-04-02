@@ -11,7 +11,7 @@ use dtos::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
+        domain::{Curve, DomainConfig, DomainId, DomainPurpose, GetCurve, Protocol},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         test_utils::{bogus_ed25519_near_public_key, infer_purpose_from_curve},
@@ -260,10 +260,10 @@ pub struct SandboxTestSetup {
     pub keys: Vec<DomainKey>,
 }
 
-pub async fn init_env(curves: &[Curve], number_of_participants: usize) -> SandboxTestSetup {
-    let (public_keys, secret_keys): (Vec<_>, Vec<_>) = curves
+pub async fn init_env(protocols: &[Protocol], number_of_participants: usize) -> SandboxTestSetup {
+    let (public_keys, secret_keys): (Vec<_>, Vec<_>) = protocols
         .iter()
-        .map(|curve| make_key_for_domain(*curve))
+        .map(|protocol| make_key_for_domain(protocol.get_curve()))
         .collect();
     let (worker, contract, mpc_signer_accounts, domains) =
         init_with_candidates(public_keys, None, number_of_participants).await;
