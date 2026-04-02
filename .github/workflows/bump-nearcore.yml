@@ -22,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
+          ref: main
           submodules: recursive
           persist-credentials: false
 
@@ -49,9 +50,11 @@ jobs:
             exit 0
           fi
 
+          git push origin --delete "$BRANCH" 2>/dev/null || true
+
           sed -i "s|tag = \"$OLD_TAG\"|tag = \"$NEW_TAG\"|g" Cargo.toml
           cd libs/nearcore && git fetch origin --tags && git checkout "$NEW_TAG" && cd ../..
-          cargo generate-lockfile
+          cargo update
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
