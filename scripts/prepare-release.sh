@@ -425,7 +425,7 @@ cmd_create_tag() {
         step "Tag '${TAG}' exists locally. Pushing to ${REMOTE}..."
     else
         step "Creating tag '${TAG}' at ${merge_sha:0:7}..."
-        git tag "${TAG}" "${merge_sha}"
+        git tag -a -m "Release v${TAG}" "${TAG}" "${merge_sha}"
     fi
 
     git push "${REMOTE}" "${TAG}"
