@@ -5,8 +5,7 @@
 # Usage:  ./prepare-release.sh <command> <VERSION> [options]
 #
 # Commands:
-#   prepare        Create release branch, changelog, version bump, ABI, licenses, commit
-#   draft-pr       Push branch and open PR via gh
+#   draft-pr       Create release branch, changelog, version bump, ABI, licenses, commit, open PR
 #   wait-merge     Wait for PR to be merged (interactive prompt)
 #   wait-images    Poll DockerHub until all 3 Docker images exist for the merge commit
 #   create-tag     Verify images exist, then create and push the release tag
@@ -20,7 +19,7 @@
 #
 # Examples:
 #   ./prepare-release.sh all 3.9.0
-#   ./prepare-release.sh prepare 3.9.0
+#   ./prepare-release.sh draft-pr 3.9.0
 #   ./prepare-release.sh wait-images 3.9.0 --poll-interval 60
 #   ./prepare-release.sh status 3.9.0
 #
@@ -73,7 +72,7 @@ ensure_github_token() {
 # ─── Argument parsing ────────────────────────────────────────────────────────
 
 usage() {
-    sed -n '3,30s/^# \?//p' "$0"
+    sed -n '3,27s/^# \?//p' "$0"
     exit 1
 }
 
@@ -120,9 +119,9 @@ cd "$REPO_ROOT"
 
 # Returns the merge commit SHA on main. Tries tag first, then merged PR.
 get_merge_commit_sha() {
-    # If tag exists locally or on remote, use its commit
+    # If tag exists locally, dereference to commit (needed for annotated tags)
     local tag_sha
-    tag_sha=$(git rev-parse "refs/tags/${TAG}" 2>/dev/null || true)
+    tag_sha=$(git rev-parse "refs/tags/${TAG}^{commit}" 2>/dev/null || true)
     if [[ -n "${tag_sha}" ]]; then
         echo "${tag_sha}"
         return 0
@@ -152,7 +151,6 @@ get_pr_url() {
 }
 
 # Check if a single Docker image exists on DockerHub.
-# Returns 0 if it exists, 1 if not.
 image_exists() {
     local repo="$1" tag="$2"
     skopeo inspect "docker://nearone/${repo}:${tag}" >/dev/null 2>&1
@@ -167,19 +165,19 @@ all_images_exist() {
     return 0
 }
 
-# Print per-image status and return count of ready images.
+# Print per-image status. Sets IMAGES_READY to the count of ready images.
+IMAGES_READY=0
 print_image_status() {
     local tag="$1"
-    local ready=0
+    IMAGES_READY=0
     for repo in "${IMAGES[@]}"; do
         if image_exists "${repo}" "${tag}"; then
             printf '  \033[1;32m[OK]\033[0m nearone/%s:%s\n' "${repo}" "${tag}"
-            (( ready++ )) || true
+            (( IMAGES_READY++ )) || true
         else
             printf '  \033[1;33m[..]\033[0m nearone/%s:%s\n' "${repo}" "${tag}"
         fi
     done
-    return "${ready}"
 }
 
 # Generic polling loop.
@@ -201,105 +199,99 @@ poll_until() {
     done
 }
 
-# ─── Subcommand: prepare ─────────────────────────────────────────────────────
-
-cmd_prepare() {
-    require_cmds git-cliff cargo-about cargo-insta cargo-nextest
-    ensure_github_token
-
-    # Check if already fully done: branch exists with the release commit
-    local head_msg
-    head_msg=$(git log -1 --format=%s "refs/heads/${BRANCH}" 2>/dev/null || true)
-    if [[ "${head_msg}" == "release: v${VERSION}" ]]; then
-        info "Branch '${BRANCH}' already has release commit. Skipping prepare."
-        return 0
-    fi
-
-    info "Preparing release v${VERSION}"
-
-    # Clean working tree check
-    if ! git diff --quiet || ! git diff --cached --quiet; then
-        die "Working tree has uncommitted changes. Please commit or stash them first."
-    fi
-
-    # Branch creation / checkout
-    if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
-        step "Branch '${BRANCH}' already exists locally. Switching to it."
-        git checkout "${BRANCH}"
-    else
-        git fetch "${REMOTE}" --quiet
-        if git show-ref --verify --quiet "refs/remotes/${REMOTE}/${BRANCH}"; then
-            step "Branch '${BRANCH}' exists on remote. Checking out."
-            git checkout -b "${BRANCH}" "${REMOTE}/${BRANCH}"
-        else
-            step "Creating branch '${BRANCH}' from $(git rev-parse --short HEAD)"
-            git checkout -b "${BRANCH}"
-        fi
-    fi
-
-    # Push to remote (needed for git-cliff PR link resolution)
-    if ! git ls-remote --heads "${REMOTE}" "${BRANCH}" | grep -q .; then
-        step "Pushing '${BRANCH}' to ${REMOTE}..."
-        git push -u "${REMOTE}" "${BRANCH}"
-    fi
-
-    # Generate changelog (always — fast and deterministic)
-    step "Generating changelog..."
-    git-cliff -t "${VERSION}" > CHANGELOG.md
-
-    # Bump workspace version (idempotent)
-    local current_version
-    current_version=$(grep -Po '(?<=^version = ")[0-9]+\.[0-9]+\.[0-9]+(?=")' "${CARGO_TOML}")
-    if [[ "${current_version}" != "${VERSION}" ]]; then
-        step "Bumping workspace version: ${current_version} -> ${VERSION}"
-        sed -i "0,/^version = \"${current_version}\"/s//version = \"${VERSION}\"/" "${CARGO_TOML}"
-    else
-        step "Version already ${VERSION} in Cargo.toml."
-    fi
-
-    # ABI snapshot
-    step "Verifying contract ABI changed after version bump..."
-    if cargo nextest run --cargo-profile=test-release -p mpc-contract abi_has_not_changed 2>/dev/null; then
-        die "abi_has_not_changed test passed unexpectedly — ABI was not affected by version bump."
-    fi
-    step "Accepting updated ABI snapshot..."
-    cargo insta accept
-
-    # Third-party licenses
-    step "Regenerating third-party licenses..."
-    (cd "${REPO_ROOT}/third-party-licenses" && cargo about generate --locked -m ../Cargo.toml about.hbs > licenses.html)
-
-    # Commit (idempotent)
-    if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
-        step "No changes to commit. Already prepared."
-    else
-        git add -A
-        git commit -m "release: v${VERSION}"
-    fi
-
-    info "Prepare complete. Review the commit, then run 'draft-pr'."
-}
-
 # ─── Subcommand: draft-pr ────────────────────────────────────────────────────
 
 cmd_draft_pr() {
-    require_cmds gh
+    require_cmds git-cliff cargo-about cargo-insta cargo-nextest gh
+    ensure_github_token
 
-    # Check if PR already exists
+    # Check if already fully done: PR already exists for this branch
     local pr_number
     pr_number=$(get_pr_number)
     if [[ -n "${pr_number}" ]]; then
         local pr_url
         pr_url=$(get_pr_url)
-        info "PR already exists: ${pr_url}"
+        info "PR already exists: ${pr_url} — skipping."
         return 0
     fi
 
-    # Ensure branch is pushed with latest commits
+    # Check if branch already has the release commit (prepare done, PR not yet opened)
+    local head_msg
+    head_msg=$(git log -1 --format=%s "refs/heads/${BRANCH}" 2>/dev/null || true)
+    local need_prepare=true
+    if [[ "${head_msg}" == "release: v${VERSION}" ]]; then
+        info "Branch '${BRANCH}' already has release commit. Skipping to PR creation."
+        need_prepare=false
+    fi
+
+    if [[ "${need_prepare}" == true ]]; then
+        info "Preparing release v${VERSION}"
+
+        # Clean working tree check
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+            die "Working tree has uncommitted changes. Please commit or stash them first."
+        fi
+
+        # Branch creation / checkout
+        if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
+            step "Branch '${BRANCH}' already exists locally. Switching to it."
+            git checkout "${BRANCH}"
+        else
+            git fetch "${REMOTE}" --quiet
+            if git show-ref --verify --quiet "refs/remotes/${REMOTE}/${BRANCH}"; then
+                step "Branch '${BRANCH}' exists on remote. Checking out."
+                git checkout -b "${BRANCH}" "${REMOTE}/${BRANCH}"
+            else
+                step "Creating branch '${BRANCH}' from $(git rev-parse --short HEAD)"
+                git checkout -b "${BRANCH}"
+            fi
+        fi
+
+        # Push to remote (needed for git-cliff PR link resolution)
+        if ! git ls-remote --heads "${REMOTE}" "${BRANCH}" | grep -q .; then
+            step "Pushing '${BRANCH}' to ${REMOTE}..."
+            git push -u "${REMOTE}" "${BRANCH}"
+        fi
+
+        # Generate changelog (always — fast and deterministic)
+        step "Generating changelog..."
+        git-cliff -t "${VERSION}" > CHANGELOG.md
+
+        # Bump workspace version (idempotent)
+        local current_version
+        current_version=$(grep -Po '(?<=^version = ")[0-9]+\.[0-9]+\.[0-9]+(?=")' "${CARGO_TOML}")
+        if [[ "${current_version}" != "${VERSION}" ]]; then
+            step "Bumping workspace version: ${current_version} -> ${VERSION}"
+            sed -i "0,/^version = \"${current_version}\"/s//version = \"${VERSION}\"/" "${CARGO_TOML}"
+        else
+            step "Version already ${VERSION} in Cargo.toml."
+        fi
+
+        # ABI snapshot
+        step "Verifying contract ABI changed after version bump..."
+        if cargo nextest run --cargo-profile=test-release -p mpc-contract abi_has_not_changed 2>/dev/null; then
+            die "abi_has_not_changed test passed unexpectedly — ABI was not affected by version bump."
+        fi
+        step "Accepting updated ABI snapshot..."
+        cargo insta accept
+
+        # Third-party licenses
+        step "Regenerating third-party licenses..."
+        (cd "${REPO_ROOT}/third-party-licenses" && cargo about generate --locked -m ../Cargo.toml about.hbs > licenses.html)
+
+        # Commit (idempotent)
+        if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
+            step "No changes to commit. Already prepared."
+        else
+            git add -A
+            git commit -m "release: v${VERSION}"
+        fi
+    fi
+
+    # Push latest commits and open PR
     step "Pushing '${BRANCH}' to ${REMOTE}..."
     git push -u "${REMOTE}" "${BRANCH}"
 
-    # Create PR
     step "Creating PR..."
     gh pr create \
         --base main \
@@ -365,26 +357,30 @@ cmd_wait_images() {
     local image_tag="main-${short_sha}"
 
     info "Checking Docker images tagged '${image_tag}'..."
-    print_image_status "${image_tag}" || true
+    print_image_status "${image_tag}"
 
-    if all_images_exist "${image_tag}"; then
+    if (( IMAGES_READY == ${#IMAGES[@]} )); then
         info "All images ready."
         return 0
     fi
 
     local elapsed=0
-    while ! all_images_exist "${image_tag}"; do
+    while true; do
         if (( elapsed >= TIMEOUT )); then
             die "Timed out waiting for Docker images after ${TIMEOUT}s."
         fi
         local mins=$(( elapsed / 60 ))
         local secs=$(( elapsed % 60 ))
-        info "Not all images ready. Retrying in ${POLL_INTERVAL}s... (elapsed: ${mins}m ${secs}s)"
+        info "${IMAGES_READY}/${#IMAGES[@]} images ready. Retrying in ${POLL_INTERVAL}s... (elapsed: ${mins}m ${secs}s)"
         sleep "${POLL_INTERVAL}"
         (( elapsed += POLL_INTERVAL ))
 
         info "Checking Docker images tagged '${image_tag}'..."
-        print_image_status "${image_tag}" || true
+        print_image_status "${image_tag}"
+
+        if (( IMAGES_READY == ${#IMAGES[@]} )); then
+            break
+        fi
     done
 
     info "All images ready."
@@ -410,7 +406,7 @@ cmd_create_tag() {
 
     if ! all_images_exist "${image_tag}"; then
         info "Docker image status for '${image_tag}':"
-        print_image_status "${image_tag}" || true
+        print_image_status "${image_tag}"
         die "Not all Docker images are ready. Run 'wait-images' first."
     fi
 
@@ -434,18 +430,22 @@ cmd_create_tag() {
 
 # ─── Subcommand: wait-release ────────────────────────────────────────────────
 
+_check_release_exists() {
+    gh release view "${TAG}" --json tagName >/dev/null 2>&1
+}
+
 cmd_wait_release() {
     require_cmds gh
 
     # Check if release already exists
-    if gh release view "${TAG}" --json tagName >/dev/null 2>&1; then
+    if _check_release_exists; then
         local url
         url=$(gh release view "${TAG}" --json url --jq '.url' 2>/dev/null || true)
         info "Draft release exists: ${url}"
         return 0
     fi
 
-    poll_until "draft release for ${TAG}" gh release view "${TAG}" --json tagName
+    poll_until "draft release for ${TAG}" _check_release_exists
 
     local url
     url=$(gh release view "${TAG}" --json url --jq '.url' 2>/dev/null || true)
@@ -458,17 +458,7 @@ cmd_status() {
     info "Release v${VERSION} status:"
     echo ""
 
-    # 1. prepare
-    local head_msg
-    head_msg=$(git log -1 --format=%s "refs/heads/${BRANCH}" 2>/dev/null || \
-               git log -1 --format=%s "refs/remotes/${REMOTE}/${BRANCH}" 2>/dev/null || true)
-    if [[ "${head_msg}" == "release: v${VERSION}" ]]; then
-        printf '  \033[1;32m[x]\033[0m prepare      — Branch %s with release commit\n' "${BRANCH}"
-    else
-        printf '  \033[1;90m[ ]\033[0m prepare      — Branch not ready\n'
-    fi
-
-    # 2. draft-pr
+    # 1. draft-pr (prepare + PR creation)
     local pr_number pr_state pr_url
     pr_number=$(get_pr_number)
     if [[ -n "${pr_number}" ]]; then
@@ -476,25 +466,31 @@ cmd_status() {
         pr_url=$(get_pr_url)
         printf '  \033[1;32m[x]\033[0m draft-pr     — PR #%s (%s) %s\n' "${pr_number}" "${pr_state}" "${pr_url}"
     else
-        printf '  \033[1;90m[ ]\033[0m draft-pr     — No PR found\n'
+        local head_msg
+        head_msg=$(git log -1 --format=%s "refs/heads/${BRANCH}" 2>/dev/null || \
+                   git log -1 --format=%s "refs/remotes/${REMOTE}/${BRANCH}" 2>/dev/null || true)
+        if [[ "${head_msg}" == "release: v${VERSION}" ]]; then
+            printf '  \033[1;33m[~]\033[0m draft-pr     — Branch %s ready but PR not created\n' "${BRANCH}"
+        else
+            printf '  \033[1;90m[ ]\033[0m draft-pr     — Not started\n'
+        fi
     fi
 
-    # 3. wait-merge
-    local merge_status="PR not yet merged"
+    # 2. wait-merge
     if [[ "$(get_pr_state)" == "MERGED" ]]; then
         local merge_sha
         merge_sha=$(get_merge_commit_sha 2>/dev/null || true)
         printf '  \033[1;32m[x]\033[0m wait-merge   — Merged at %s\n' "${merge_sha:0:7}"
     else
-        printf '  \033[1;90m[ ]\033[0m wait-merge   — %s\n' "${merge_status}"
+        printf '  \033[1;90m[ ]\033[0m wait-merge   — PR not yet merged\n'
     fi
 
-    # 4. wait-images
-    local merge_sha short_sha image_tag
+    # 3. wait-images
+    local merge_sha
     merge_sha=$(get_merge_commit_sha 2>/dev/null || true)
     if [[ -n "${merge_sha}" ]]; then
-        short_sha="${merge_sha:0:7}"
-        image_tag="main-${short_sha}"
+        local short_sha="${merge_sha:0:7}"
+        local image_tag="main-${short_sha}"
         local ready=0
         for repo in "${IMAGES[@]}"; do
             image_exists "${repo}" "${image_tag}" && (( ready++ )) || true
@@ -508,7 +504,7 @@ cmd_status() {
         printf '  \033[1;90m[ ]\033[0m wait-images  — Merge commit unknown\n'
     fi
 
-    # 5. create-tag
+    # 4. create-tag
     if git ls-remote --tags "${REMOTE}" "refs/tags/${TAG}" 2>/dev/null | grep -q .; then
         printf '  \033[1;32m[x]\033[0m create-tag   — Tag %s pushed\n' "${TAG}"
     elif git tag -l "${TAG}" | grep -q .; then
@@ -517,7 +513,7 @@ cmd_status() {
         printf '  \033[1;90m[ ]\033[0m create-tag   — Tag not created\n'
     fi
 
-    # 6. wait-release
+    # 5. wait-release
     if gh release view "${TAG}" --json tagName >/dev/null 2>&1; then
         local is_draft
         is_draft=$(gh release view "${TAG}" --json isDraft --jq '.isDraft' 2>/dev/null || true)
@@ -536,7 +532,6 @@ cmd_status() {
 # ─── Subcommand: all ──────────────────────────────────────────────────────────
 
 cmd_all() {
-    cmd_prepare
     cmd_draft_pr
     cmd_wait_merge
     cmd_wait_images
@@ -549,7 +544,6 @@ cmd_all() {
 # ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 case "${COMMAND}" in
-    prepare)      cmd_prepare      ;;
     draft-pr)     cmd_draft_pr     ;;
     wait-merge)   cmd_wait_merge   ;;
     wait-images)  cmd_wait_images  ;;
