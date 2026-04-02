@@ -26,45 +26,9 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
-      - name: Resolve tags
-        id: tags
+      - name: Bump nearcore
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          CURRENT=$(grep -m1 'near/nearcore.*tag' Cargo.toml | sed 's/.*tag = "\([^"]*\)".*/\1/')
-          TARGET=${INPUT_TAG:-$(gh release view --repo near/nearcore --json tagName -q '.tagName')}
-          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
-          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
-
-      - name: Bump and create PR
-        if: steps.tags.outputs.current != steps.tags.outputs.target
-        env:
-          GH_TOKEN: ${{ github.token }}
-          OLD_TAG: ${{ steps.tags.outputs.current }}
-          NEW_TAG: ${{ steps.tags.outputs.target }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-
-          BRANCH="chore/bump-nearcore-$NEW_TAG"
-          if gh pr list --head "$BRANCH" --json number -q '.[0].number' | grep -q .; then
-            echo "PR already exists for $NEW_TAG"
-            exit 0
-          fi
-
-          git push origin --delete "$BRANCH" 2>/dev/null || true
-
-          sed -i "s|tag = \"$OLD_TAG\"|tag = \"$NEW_TAG\"|g" Cargo.toml
-          sed -i "/DEFAULT_SANDBOX_VERSION/s|\"$OLD_TAG\"|\"$NEW_TAG\"|g" crates/e2e-tests/src/cluster.rs
-          cd libs/nearcore && git fetch origin --tags && git checkout "$NEW_TAG" && cd ../..
-          cargo update -p nearcore
-          git checkout -b "$BRANCH"
-          git add Cargo.toml Cargo.lock libs/nearcore crates/e2e-tests/src/cluster.rs
-          git commit -m "chore: bump to nearcore $NEW_TAG"
-          git push origin "$BRANCH"
-          gh pr create \
-            --title "chore: bump to nearcore $NEW_TAG" \
-            --body "Automated bump from $OLD_TAG to $NEW_TAG." \
-            --base main
+          NEARCORE_TAG: ${{ inputs.tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: .github/scripts/bump-nearcore.sh
