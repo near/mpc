@@ -54,7 +54,7 @@ jobs:
 
           sed -i "s|tag = \"$OLD_TAG\"|tag = \"$NEW_TAG\"|g" Cargo.toml
           cd libs/nearcore && git fetch origin --tags && git checkout "$NEW_TAG" && cd ../..
-          cargo update
+          cargo update -p nearcore
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
