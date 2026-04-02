@@ -35,86 +35,94 @@ We follow [Semantic Versioning (SemVer)](https://semver.org/) with the following
 - **Full Backward Compatibility**: No breaking changes allowed.
 - **Bug Fixes Only**: Only bug fixes and security patches.
 
-## Automated Release Script
-
-We also have a script that automates the local steps (changelog, version bump, snapshot update, license regeneration) described below. You can find it at [`scripts/prepare-release.sh`](https://github.com/near/mpc/blob/main/scripts/prepare-release.sh). Run it with the desired version:
-
-```sh
-./scripts/prepare-release.sh 3.1.0
-```
-
-The remaining steps (opening the PR, creating the tag, and publishing the release) still need to be done manually.
-
 ## How to make a release
 
-In practice when making a release, you need to do the following things:
+The release script automates the full process end-to-end. Run it with:
 
-1. Update the changelog.
-2. Bump the crate versions.
-3. Update license versions.
-4. Open and merge a PR with the changes.
-5. Create the release tag.
-6. Edit and publish the draft GitHub release.
+```sh
+./scripts/prepare-release.sh all 3.1.0
+```
 
-The following sections will walk you through the steps of doing this for the `3.1.0` release.
-Replace this with whatever release version you're making.
+This runs all steps in sequence. If interrupted or if any step fails, re-running the same command
+will skip completed steps and resume from where it left off.
 
-### 1. Update the changelog
-We use `git-cliff` to maintain the changelog.
-Installation instructions can be found [here](https://git-cliff.org/docs/installation/).
+You can also run individual steps:
 
-> ⚠️ Ensure your current branch is pushed to GitHub (e.g. `origin`). Otherwise `git-cliff` will not be able to resolve PR links in the generated notes.
+```sh
+./scripts/prepare-release.sh prepare 3.1.0      # Branch, changelog, version bump, ABI, licenses, commit
+./scripts/prepare-release.sh draft-pr 3.1.0      # Push branch and open PR
+./scripts/prepare-release.sh wait-merge 3.1.0    # Wait for PR to be merged (interactive prompt)
+./scripts/prepare-release.sh wait-images 3.1.0   # Poll DockerHub until images exist for the merge commit
+./scripts/prepare-release.sh create-tag 3.1.0    # Verify images, create and push the release tag
+./scripts/prepare-release.sh wait-release 3.1.0  # Poll until the draft GitHub release is created
+./scripts/prepare-release.sh status 3.1.0        # Show which steps are done/pending
+```
 
-For typical releases, the following command should be sufficient.
+### Step details
+
+#### 1. `prepare` — Local release preparation
+Creates a `release/v3.1.0` branch, generates the changelog with `git-cliff`, bumps the workspace
+version in `Cargo.toml`, updates the contract ABI snapshot, regenerates third-party licenses, and
+commits all changes. Requires: `git-cliff`, `cargo-about`, `cargo-insta`, `cargo-nextest`.
+
+#### 2. `draft-pr` — Open a pull request
+Pushes the release branch and opens a PR against `main` via `gh`. Requires: `gh`.
+
+#### 3. `wait-merge` — Wait for the PR to be merged
+Prints the PR URL and prompts you to press Enter after you've reviewed and merged it.
+Verifies the merge before continuing. Requires: `gh`.
+
+#### 4. `wait-images` — Wait for Docker images
+Polls DockerHub (via `skopeo`) until all three images (`mpc-node`, `mpc-node-gcp`, `mpc-launcher`)
+are published with the `main-<short-sha>` tag corresponding to the merge commit.
+These images are built by CI when commits land on `main`. Requires: `skopeo`.
+
+#### 5. `create-tag` — Create the release tag
+Verifies Docker images exist, then creates and pushes the release tag pointing at the merge commit
+on `main`. This triggers the [Release workflow](.github/workflows/release.yml). Requires: `gh`, `skopeo`.
+
+#### 6. `wait-release` — Wait for the draft release
+Polls until the Release workflow creates the draft GitHub release. Requires: `gh`.
+
+#### 7. Publish the release (manual)
+Once the draft release is created, go to the [releases page](https://github.com/near/mpc/releases),
+review and edit it as needed, then publish.
+
+### Options
+
+```
+--poll-interval SECONDS   Polling interval for wait commands (default: 30)
+--timeout SECONDS         Max polling time before giving up (default: 3600)
+```
+
+<details>
+<summary>Manual alternative (if the script or workflow is unavailable)</summary>
+
+#### Update the changelog
 ```sh
 git-cliff -t 3.1.0 > CHANGELOG.md
 ```
+> ⚠️ Ensure your current branch is pushed to GitHub (e.g. `origin`). Otherwise `git-cliff` will not be able to resolve PR links in the generated notes.
 
-Note: The tag doesn't have to have been created yet.
-
-### 2. Bump the crate versions
-To bump the crate versions, just update the `version` field in `Cargo.toml`.
-After this, the `Cargo.lock` file and contract ABI snapshot tests must be updated.
-This can be done by running the snapshot test and reviewing the new snapshot with cargo insta.
-
+#### Bump the crate versions
+Update the `version` field in `Cargo.toml`, then update the ABI snapshot:
 ```sh
 cargo nextest run -p mpc-contract abi_has_not_changed
 cargo insta review
 ```
 
-### 3. Update license versions
-Follow the [how-to-regenerate](https://github.com/near/mpc/tree/main/third-party-licenses#how-to-regenerate) guide, to update the license versions.
+#### Update license versions
+Follow the [how-to-regenerate](https://github.com/near/mpc/tree/main/third-party-licenses#how-to-regenerate) guide.
 
-### 4. Open and merge a PR with the changelog and version bumps
-At this point it's appropriate to open a PR with the changelog and crate and license version changes.
-See [the 3.0.6 PR](https://github.com/near/mpc/pull/1549) for reference.
-Once approved, merge it to `main` before creating the release tag.
-
-### 5. Create the release tag
-Once the changelog and crate versions have been bumped on latest `main`
-we're ready to create the release tag.
-
+#### Create the release tag
 Before pushing the tag, verify that the Docker images for the tagged commit have already been published by the CI pipeline (e.g. `main-<short-sha>` tags on Docker Hub). The Release workflow retags these existing images, so it will fail if they don't exist yet.
-
-You can create the tag directly in GitHub, but I prefer to do it locally:
 
 ```sh
 git tag 3.1.0
-git push origin 3.1.0 # Assuming `origin` points at github.com:near/mpc.git
+git push origin 3.1.0
 ```
 
-### 6. Edit and publish the draft GitHub release
-
-Pushing the tag in the previous step triggers the [Release workflow](.github/workflows/release.yml), which automatically:
-
-1. Retags the Docker images (`mpc-launcher`, `mpc-node`, `mpc-node-gcp`) from `main-<short-sha>` to the release version.
-2. Builds the contract reproducibly and computes its SHA-256 digest.
-3. Creates a **draft** GitHub release with the changelog, Docker image digests, and the contract artifact attached.
-
-Once the workflow completes, go to the [releases page](https://github.com/near/mpc/releases), review and edit the draft as needed, then publish it.
-
-<details>
-<summary>Manual alternative (if the workflow is unavailable)</summary>
+#### Docker image retagging (if the Release workflow is unavailable)
 
 To create the launcher and MPC node docker images, use the following workflows:
 
