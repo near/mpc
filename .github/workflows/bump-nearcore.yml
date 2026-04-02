@@ -9,6 +9,9 @@ on:
         description: 'Nearcore tag (leave empty for latest release)'
         required: false
 
+concurrency:
+  group: bump-nearcore
+
 permissions:
   contents: write
   pull-requests: write
@@ -17,7 +20,7 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           submodules: recursive
 
@@ -25,9 +28,10 @@ jobs:
         id: tags
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           CURRENT=$(grep -m1 'near/nearcore.*tag' Cargo.toml | sed 's/.*tag = "\([^"]*\)".*/\1/')
-          TARGET=${GITHUB_EVENT_INPUTS_TAG:-$(gh release view --repo near/nearcore --json tagName -q '.tagName')}
+          TARGET=${INPUT_TAG:-$(gh release view --repo near/nearcore --json tagName -q '.tagName')}
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "target=$TARGET" >> "$GITHUB_OUTPUT"
 
