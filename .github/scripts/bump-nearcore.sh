@@ -24,7 +24,7 @@ if [[ "$CURRENT_TAG" == "$NEW_TAG" ]]; then
 fi
 
 BRANCH="chore/bump-nearcore-$NEW_TAG"
-if gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --json number -q '.[0].number' | grep -q .; then
+if gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --limit 1 --json number -q '.[].number' | grep -q .; then
   echo "PR already exists for $NEW_TAG"
   exit 0
 fi
