@@ -1,0 +1,60 @@
+name: Bump nearcore
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Nearcore tag (leave empty for latest release)'
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Resolve tags
+        id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT=$(grep -m1 'near/nearcore.*tag' Cargo.toml | sed 's/.*tag = "\([^"]*\)".*/\1/')
+          TARGET=${GITHUB_EVENT_INPUTS_TAG:-$(gh release view --repo near/nearcore --json tagName -q '.tagName')}
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Bump and create PR
+        if: steps.tags.outputs.current != steps.tags.outputs.target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD_TAG: ${{ steps.tags.outputs.current }}
+          NEW_TAG: ${{ steps.tags.outputs.target }}
+        run: |
+          BRANCH="chore/bump-nearcore-$NEW_TAG"
+          if gh pr list --head "$BRANCH" --json number -q '.[0].number' | grep -q .; then
+            echo "PR already exists for $NEW_TAG"
+            exit 0
+          fi
+
+          sed -i "s|tag = \"$OLD_TAG\"|tag = \"$NEW_TAG\"|g" Cargo.toml
+          cd libs/nearcore && git fetch origin --tags && git checkout "$NEW_TAG" && cd ../..
+          cargo generate-lockfile
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add Cargo.toml Cargo.lock libs/nearcore
+          git commit -m "chore: bump to nearcore $NEW_TAG"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "chore: bump to nearcore $NEW_TAG" \
+            --body "Automated bump from $OLD_TAG to $NEW_TAG." \
+            --base main
