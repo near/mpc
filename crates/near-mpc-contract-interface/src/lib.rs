@@ -15,11 +15,13 @@ pub mod types {
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
-        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
-        DomainConfig, DomainPurpose, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
-        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState,
-        ResharingContractState, RunningContractState, SignatureScheme, Threshold,
-        ThresholdParameters, ThresholdParametersVotes,
+        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
+        DistributedKeyConfig, DomainConfig, DomainPurpose, DomainRegistry, EpochId,
+        InitializingContractState, InitializingContractStateV2, KeyEvent, KeyEventId,
+        KeyEventInstance, KeyEventV2, KeyForDomain, Keyset, Protocol, ProtocolContractState,
+        ProtocolContractStateV2, ReconstructionThreshold, ResharingContractState,
+        ResharingContractStateV2, RunningContractState, RunningContractStateV2, SignatureScheme,
+        Threshold, ThresholdParameters, ThresholdParametersVotes,
     };
     pub use updates::{ProposedUpdates, UpdateHash};
 

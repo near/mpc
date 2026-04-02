@@ -19,7 +19,10 @@ use crate::{
     crypto_shared::types::PublicKeyExtended,
     errors::{ConversionError, Error},
     primitives::{
-        domain::{AddDomainsVotes, Curve, DomainConfig, DomainId, DomainRegistry},
+        domain::{
+            AddDomainsVotes, Curve, DistributedKeyConfig, DomainConfig, DomainId, DomainRegistry,
+            Protocol, ReconstructionThreshold,
+        },
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
             KeyForDomain, Keyset,
@@ -545,6 +548,48 @@ impl IntoInterfaceType<dtos::DomainRegistry> for &DomainRegistry {
     }
 }
 
+// --- Distributed key types (state_v2) ---
+
+impl IntoInterfaceType<dtos::Curve> for Curve {
+    fn into_dto_type(self) -> dtos::Curve {
+        match self {
+            Curve::Secp256k1 => dtos::Curve::Secp256k1,
+            Curve::Edwards25519 => dtos::Curve::Edwards25519,
+            Curve::Bls12381 => dtos::Curve::Bls12381,
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::Protocol> for Protocol {
+    fn into_dto_type(self) -> dtos::Protocol {
+        match self {
+            Protocol::CaitSith(c) => dtos::Protocol::CaitSith(c.into_dto_type()),
+            Protocol::Frost(c) => dtos::Protocol::Frost(c.into_dto_type()),
+            Protocol::ConfidentialKeyDerivation(c) => {
+                dtos::Protocol::ConfidentialKeyDerivation(c.into_dto_type())
+            }
+            Protocol::DamgardEtAl(c) => dtos::Protocol::DamgardEtAl(c.into_dto_type()),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ReconstructionThreshold> for ReconstructionThreshold {
+    fn into_dto_type(self) -> dtos::ReconstructionThreshold {
+        dtos::ReconstructionThreshold(self.inner())
+    }
+}
+
+impl IntoInterfaceType<dtos::DistributedKeyConfig> for &DistributedKeyConfig {
+    fn into_dto_type(self) -> dtos::DistributedKeyConfig {
+        dtos::DistributedKeyConfig {
+            id: self.id.into_dto_type(),
+            protocol: self.protocol.into_dto_type(),
+            reconstruction_threshold: self.reconstruction_threshold.into_dto_type(),
+            purpose: self.purpose,
+        }
+    }
+}
+
 // --- PublicKeyExtended ---
 
 impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
@@ -758,6 +803,122 @@ impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
             }
             ProtocolContractState::Resharing(state) => {
                 dtos::ProtocolContractState::Resharing(state.into_dto_type())
+            }
+        }
+    }
+}
+
+// --- V2 contract state types (state_v2) ---
+
+impl RunningContractState {
+    fn key_event_into_v2_dto(
+        key_event: &KeyEvent,
+        threshold: ReconstructionThreshold,
+    ) -> dtos::KeyEventV2 {
+        dtos::KeyEventV2 {
+            epoch_id: key_event.epoch_id().into_dto_type(),
+            distributed_key: (&key_event.domain().to_distributed_key_config(threshold))
+                .into_dto_type(),
+            parameters: key_event.proposed_parameters().into_dto_type(),
+            instance: key_event.instance().as_ref().map(|i| i.into_dto_type()),
+            next_attempt_id: key_event.next_attempt_id().into_dto_type(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ProtocolContractStateV2> for &ProtocolContractState {
+    fn into_dto_type(self) -> dtos::ProtocolContractStateV2 {
+        match self {
+            ProtocolContractState::NotInitialized => dtos::ProtocolContractStateV2::NotInitialized,
+            ProtocolContractState::Initializing(state) => {
+                let threshold = ReconstructionThreshold::new(
+                    state
+                        .generating_key
+                        .proposed_parameters()
+                        .threshold()
+                        .value(),
+                );
+                dtos::ProtocolContractStateV2::Initializing(dtos::InitializingContractStateV2 {
+                    distributed_keys: state
+                        .domains
+                        .distributed_key_configs(threshold)
+                        .iter()
+                        .map(|d| d.into_dto_type())
+                        .collect(),
+                    epoch_id: state.epoch_id.into_dto_type(),
+                    generated_keys: state
+                        .generated_keys
+                        .iter()
+                        .map(|k| k.into_dto_type())
+                        .collect(),
+                    generating_key: RunningContractState::key_event_into_v2_dto(
+                        &state.generating_key,
+                        threshold,
+                    ),
+                    cancel_votes: state
+                        .cancel_votes
+                        .iter()
+                        .map(|p| p.into_dto_type())
+                        .collect(),
+                })
+            }
+            ProtocolContractState::Running(state) => {
+                let threshold = ReconstructionThreshold::new(state.parameters.threshold().value());
+                dtos::ProtocolContractStateV2::Running(dtos::RunningContractStateV2 {
+                    distributed_keys: state
+                        .domains
+                        .distributed_key_configs(threshold)
+                        .iter()
+                        .map(|d| d.into_dto_type())
+                        .collect(),
+                    keyset: (&state.keyset).into_dto_type(),
+                    parameters: (&state.parameters).into_dto_type(),
+                    parameters_votes: (&state.parameters_votes).into_dto_type(),
+                    add_domains_votes: (&state.add_domains_votes).into_dto_type(),
+                    previously_cancelled_resharing_epoch_id: state
+                        .previously_cancelled_resharing_epoch_id
+                        .map(|e| e.into_dto_type()),
+                })
+            }
+            ProtocolContractState::Resharing(state) => {
+                let threshold = ReconstructionThreshold::new(
+                    state.previous_running_state.parameters.threshold().value(),
+                );
+                dtos::ProtocolContractStateV2::Resharing(dtos::ResharingContractStateV2 {
+                    previous_running_state: dtos::RunningContractStateV2 {
+                        distributed_keys: state
+                            .previous_running_state
+                            .domains
+                            .distributed_key_configs(threshold)
+                            .iter()
+                            .map(|d| d.into_dto_type())
+                            .collect(),
+                        keyset: (&state.previous_running_state.keyset).into_dto_type(),
+                        parameters: (&state.previous_running_state.parameters).into_dto_type(),
+                        parameters_votes: (&state.previous_running_state.parameters_votes)
+                            .into_dto_type(),
+                        add_domains_votes: (&state.previous_running_state.add_domains_votes)
+                            .into_dto_type(),
+                        previously_cancelled_resharing_epoch_id: state
+                            .previous_running_state
+                            .previously_cancelled_resharing_epoch_id
+                            .map(|e| e.into_dto_type()),
+                    },
+                    reshared_keys: state
+                        .reshared_keys
+                        .iter()
+                        .map(|k| k.into_dto_type())
+                        .collect(),
+                    resharing_key: RunningContractState::key_event_into_v2_dto(
+                        &state.resharing_key,
+                        threshold,
+                    ),
+                    cancellation_requests: state
+                        .cancellation_requests
+                        .iter()
+                        .map(|a| a.into_dto_type())
+                        .collect(),
+                })
             }
         }
     }

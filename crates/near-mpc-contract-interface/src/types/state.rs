@@ -187,6 +187,7 @@ pub enum DomainPurpose {
 }
 
 /// Configuration for a signature domain.
+/// Used by `state()` for backward compatibility with external consumers.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
@@ -200,6 +201,87 @@ pub struct DomainConfig {
     /// `None` when reading state from an old contract that predates domain purposes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<DomainPurpose>,
+}
+
+/// Elliptic curve used by a distributed key.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum Curve {
+    Secp256k1,
+    Edwards25519,
+    Bls12381,
+}
+
+/// Threshold signature protocol, parameterized by curve.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum Protocol {
+    CaitSith(Curve),
+    Frost(Curve),
+    ConfidentialKeyDerivation(Curve),
+    DamgardEtAl(Curve),
+}
+
+/// Number of shares required to reconstruct the secret key.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ReconstructionThreshold(pub u64);
+
+/// Distributed key configuration. Used by `state_v2()`.
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct DistributedKeyConfig {
+    pub id: DomainId,
+    pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
+    pub purpose: DomainPurpose,
 }
 
 /// Registry of all signature domains.
@@ -382,6 +464,75 @@ pub enum ProtocolContractState {
     Initializing(InitializingContractState),
     Running(RunningContractState),
     Resharing(ResharingContractState),
+}
+
+/// V2 key event with [`DistributedKeyConfig`] instead of [`DomainConfig`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct KeyEventV2 {
+    pub epoch_id: EpochId,
+    pub distributed_key: DistributedKeyConfig,
+    pub parameters: ThresholdParameters,
+    pub instance: Option<KeyEventInstance>,
+    pub next_attempt_id: AttemptId,
+}
+
+/// V2 initializing state with [`DistributedKeyConfig`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct InitializingContractStateV2 {
+    pub distributed_keys: Vec<DistributedKeyConfig>,
+    pub epoch_id: EpochId,
+    pub generated_keys: Vec<KeyForDomain>,
+    pub generating_key: KeyEventV2,
+    pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
+}
+
+/// V2 running state with [`DistributedKeyConfig`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct RunningContractStateV2 {
+    pub distributed_keys: Vec<DistributedKeyConfig>,
+    pub keyset: Keyset,
+    pub parameters: ThresholdParameters,
+    pub parameters_votes: ThresholdParametersVotes,
+    pub add_domains_votes: AddDomainsVotes,
+    pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+/// V2 resharing state with [`DistributedKeyConfig`].
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ResharingContractStateV2 {
+    pub previous_running_state: RunningContractStateV2,
+    pub reshared_keys: Vec<KeyForDomain>,
+    pub resharing_key: KeyEventV2,
+    pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+}
+
+/// V2 protocol state with [`DistributedKeyConfig`] throughout.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum ProtocolContractStateV2 {
+    NotInitialized,
+    Initializing(InitializingContractStateV2),
+    Running(RunningContractStateV2),
+    Resharing(ResharingContractStateV2),
 }
 
 #[cfg(test)]

@@ -98,6 +98,23 @@ impl Protocol {
     }
 }
 
+/// Number of shares required to reconstruct the secret key.
+/// This is the "t" in a t-of-n threshold scheme: the minimum number of
+/// key shares that must be combined to recover the secret.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReconstructionThreshold(u64);
+
+impl ReconstructionThreshold {
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub fn inner(&self) -> u64 {
+        self.0
+    }
+}
+
 /// Infers the protocol from a legacy [`Curve`] value.
 /// Each deployed curve maps to exactly one protocol, so this is unambiguous
 /// for existing domains.
@@ -120,11 +137,21 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
     )
 }
 
-/// Describes the configuration of a domain: the domain ID and the curve it uses.
+/// Distributed key configuration. Specifies the protocol, threshold,
+/// and purpose for a single distributed key managed by the MPC network.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistributedKeyConfig {
+    pub id: DomainId,
+    pub protocol: Protocol,
+    pub reconstruction_threshold: ReconstructionThreshold,
+    pub purpose: DomainPurpose,
+}
+
+/// Legacy domain configuration. Will be replaced by [`DistributedKeyConfig`].
 ///
 /// JSON deserialization accepts both `"scheme"` (legacy) and `"curve"` (new) field names.
 /// Serialization outputs `"scheme"` for backward compatibility with the current contract.
-/// After 3.8 is released the compat struct should be removed.
 #[near(serializers=[borsh, json])]
 #[serde(from = "DomainConfigCompat", into = "DomainConfigCompat")]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +159,20 @@ pub struct DomainConfig {
     pub id: DomainId,
     pub curve: Curve,
     pub purpose: DomainPurpose,
+}
+
+impl DomainConfig {
+    pub fn to_distributed_key_config(
+        &self,
+        threshold: ReconstructionThreshold,
+    ) -> DistributedKeyConfig {
+        DistributedKeyConfig {
+            id: self.id,
+            protocol: protocol_from_legacy_curve(self.curve),
+            reconstruction_threshold: threshold,
+            purpose: self.purpose,
+        }
+    }
 }
 
 /// Curve variant names as they appear in the legacy JSON wire format.
@@ -164,32 +205,59 @@ impl From<CurveCompat> for Curve {
     }
 }
 
-/// JSON-only compatibility helper for [`DomainConfig`]:
-/// - Deserializes both `"scheme"` (legacy) and `"curve"` (new) field names.
-/// - Serializes as `"scheme"` for backward compatibility with the current contract.
+/// JSON compatibility helper for [`DomainConfig`].
 ///
-/// After 3.8 is released this compat struct should be removed.
+/// Accepts both the legacy format (`scheme`/`curve` field) and the new
+/// `DistributedKeyConfig` format (`protocol` + `reconstruction_threshold`).
+/// Serializes as the legacy format for backward compatibility.
+///
+/// Variant order matters: serde tries `WithProtocol` first (untagged).
 #[derive(serde::Serialize, serde::Deserialize)]
-struct DomainConfigCompat {
-    id: DomainId,
-    #[serde(alias = "curve")]
-    scheme: CurveCompat,
-    purpose: DomainPurpose,
+#[serde(untagged)]
+enum DomainConfigCompat {
+    WithProtocol {
+        id: DomainId,
+        protocol: Protocol,
+        reconstruction_threshold: ReconstructionThreshold,
+        purpose: DomainPurpose,
+    },
+    Legacy {
+        id: DomainId,
+        #[serde(alias = "curve")]
+        scheme: CurveCompat,
+        purpose: DomainPurpose,
+    },
 }
 
 impl From<DomainConfigCompat> for DomainConfig {
     fn from(value: DomainConfigCompat) -> Self {
-        Self {
-            id: value.id,
-            curve: value.scheme.into(),
-            purpose: value.purpose,
+        match value {
+            DomainConfigCompat::WithProtocol {
+                id,
+                protocol,
+                purpose,
+                ..
+            } => Self {
+                id,
+                curve: protocol.curve(),
+                purpose,
+            },
+            DomainConfigCompat::Legacy {
+                id,
+                scheme,
+                purpose,
+            } => Self {
+                id,
+                curve: scheme.into(),
+                purpose,
+            },
         }
     }
 }
 
 impl From<DomainConfig> for DomainConfigCompat {
     fn from(value: DomainConfig) -> Self {
-        Self {
+        Self::Legacy {
             id: value.id,
             scheme: value.curve.into(),
             purpose: value.purpose,
@@ -210,6 +278,16 @@ pub struct DomainRegistry {
 impl DomainRegistry {
     pub fn domains(&self) -> &[DomainConfig] {
         &self.domains
+    }
+
+    pub fn distributed_key_configs(
+        &self,
+        threshold: ReconstructionThreshold,
+    ) -> Vec<DistributedKeyConfig> {
+        self.domains
+            .iter()
+            .map(|d| d.to_distributed_key_config(threshold))
+            .collect()
     }
 
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.

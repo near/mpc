@@ -1779,6 +1779,10 @@ impl MpcContract {
         (&self.protocol_state).into_dto_type()
     }
 
+    pub fn state_v2(&self) -> near_mpc_contract_interface::types::ProtocolContractStateV2 {
+        (&self.protocol_state).into_dto_type()
+    }
+
     pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {
         self.metrics.clone()
     }
