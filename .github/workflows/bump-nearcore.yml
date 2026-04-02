@@ -56,7 +56,7 @@ jobs:
 
           git push origin --delete "$BRANCH" 2>/dev/null || true
 
-          perl -pi -e 's/tag = "\Q$ENV{OLD_TAG}\E"/tag = "$ENV{NEW_TAG}"/g' Cargo.toml
+          sed -i "s|tag = \"$OLD_TAG\"|tag = \"$NEW_TAG\"|g" Cargo.toml
           cd libs/nearcore && git fetch origin --tags && git checkout "$NEW_TAG" && cd ../..
           cargo update -p nearcore
           git checkout -b "$BRANCH"
