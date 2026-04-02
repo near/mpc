@@ -8,24 +8,14 @@ on:
   push:
     tags:
       - '*.*.*'
-  pull_request:
-    branches:
-      - main
-    types:
-      - closed
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   release-info:
     name: "Extract release info"
-    if: >-
-      github.event_name == 'push'
-      || (github.event.pull_request.merged == true
-          && startsWith(github.event.pull_request.head.ref, 'release/v'))
     runs-on: warp-ubuntu-2404-x64-2x
-    permissions:
-      contents: write
 
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -36,38 +26,18 @@ jobs:
       - name: Extract version
         id: version
         env:
-          EVENT: ${{ github.event_name }}
           TAG_REF: ${{ github.ref }}
           TAG_SHA: ${{ github.sha }}
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          if [[ "$EVENT" == "push" ]]; then
-            VERSION="${TAG_REF#refs/tags/v}"
-            SHA="$TAG_SHA"
-          else
-            VERSION="${BRANCH#release/v}"
-            SHA="$PR_SHA"
-          fi
+          VERSION="${TAG_REF#refs/tags/}"
+          VERSION="${VERSION#v}"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
             echo "::error::Invalid semver: $VERSION"
             exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "short-sha=${SHA::7}" >> "$GITHUB_OUTPUT"
-
-      - name: Create tag
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.tag }}
-          SHA: ${{ github.event.pull_request.merge_commit_sha }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
-            --method POST \
-            -f ref="refs/tags/$TAG" \
-            -f sha="$SHA"
+          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short-sha=${TAG_SHA::7}" >> "$GITHUB_OUTPUT"
 
   retag-launcher:
     name: "Retag mpc-launcher"
@@ -145,8 +115,6 @@ jobs:
     name: "Build contract"
     needs: release-info
     runs-on: warp-ubuntu-2404-x64-16x
-    permissions:
-      contents: read
 
     outputs:
       contract-hash: ${{ steps.contract-hash.outputs.sha256 }}
@@ -245,16 +213,16 @@ jobs:
           ## Docker images
 
           - [nearone/mpc-node:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node/${VERSION}/)
-              Manifest digest: \`${NODE_MANIFEST}\`
-              Image ID: \`${NODE_IMAGE_ID}\`
+            Manifest digest: \`${NODE_MANIFEST}\`
+            Image ID: \`${NODE_IMAGE_ID}\`
 
           - [nearone/mpc-node-gcp:${VERSION}](https://hub.docker.com/layers/nearone/mpc-node-gcp/${VERSION}/)
-              Manifest digest: \`${NODE_GCP_MANIFEST}\`
-              Image ID: \`${NODE_GCP_IMAGE_ID}\`
+            Manifest digest: \`${NODE_GCP_MANIFEST}\`
+            Image ID: \`${NODE_GCP_IMAGE_ID}\`
 
           - [nearone/mpc-launcher:${VERSION}](https://hub.docker.com/layers/nearone/mpc-launcher/${VERSION}/)
-              Manifest digest: \`${LAUNCHER_MANIFEST}\`
-              Image ID: \`${LAUNCHER_IMAGE_ID}\`
+            Manifest digest: \`${LAUNCHER_MANIFEST}\`
+            Image ID: \`${LAUNCHER_IMAGE_ID}\`
 
           ## MPC contract
 
