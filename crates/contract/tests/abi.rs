@@ -1,19 +1,13 @@
 fn compile_project() -> (Vec<u8>, serde_json::Value) {
-    let project_path = std::fs::canonicalize("./").unwrap();
-
-    let cargo_opts = cargo_near_build::BuildOpts {
-        manifest_path: Some(
-            cargo_near_build::camino::Utf8PathBuf::from_path_buf(project_path.join("Cargo.toml"))
-                .unwrap(),
-        ),
+    let opts = cargo_near_build::BuildOpts {
         features: Some("abi".to_string()),
         profile: Some("release-contract".to_string()),
         ..Default::default()
     };
 
-    let compile_artifact = cargo_near_build::build_with_cli(cargo_opts).unwrap();
+    let contract_path =
+        test_utils::contract_build::build_contract_path("crates/contract/Cargo.toml", None, opts);
 
-    let contract_path = compile_artifact.canonicalize().unwrap();
     let wasm = std::fs::read(&contract_path).unwrap();
     let abi_path = contract_path
         .parent()
