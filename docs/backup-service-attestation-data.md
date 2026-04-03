@@ -37,7 +37,6 @@ pub struct BackupServiceInfo {
     /// Ed25519 public key for mutual TLS authentication with MPC nodes
     pub public_key: Ed25519PublicKey,
     /// TDX attestation quote (Dstack variant only — Mock is rejected)
-    #[serializer(borsh)]
     pub attestation: Attestation,
 }
 ```
