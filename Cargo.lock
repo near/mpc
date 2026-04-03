@@ -1757,6 +1757,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "test-port-allocator",
+ "test-utils",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -5570,7 +5571,6 @@ dependencies = [
  "digest 0.10.7",
  "ecdsa",
  "elliptic-curve",
- "fs2",
  "futures",
  "getrandom 0.2.17",
  "hex",
@@ -5703,7 +5703,6 @@ dependencies = [
  "tee-authority",
  "tempfile",
  "test-log",
- "test-utils",
  "thiserror 2.0.18",
  "threshold-signatures",
  "time",
@@ -11039,6 +11038,7 @@ dependencies = [
 name = "test-utils"
 version = "3.8.0"
 dependencies = [
+ "cargo-near-build",
  "hex",
  "mpc-attestation",
  "mpc-primitives",
