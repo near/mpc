@@ -1,3 +1,4 @@
+use fs2::FileExt;
 use std::path::{Path, PathBuf};
 
 /// Returns the workspace root directory.
@@ -10,7 +11,27 @@ fn workspace_root() -> PathBuf {
 /// Uses `cargo near build non-reproducible-wasm` under the hood. The caller
 /// is responsible for setting all fields in `opts` (manifest_path, out_dir,
 /// profile, features, etc.).
+///
+/// An exclusive file lock serializes concurrent builds that target the same
+/// output directory (e.g. when nextest runs sandbox tests in parallel).
 pub fn build_contract_path(opts: cargo_near_build::BuildOpts) -> PathBuf {
+    // Serialize builds per output directory to avoid contention when nextest
+    // runs many test processes in parallel.
+    let _lock = opts.out_dir.as_ref().map(|out_dir| {
+        let lock_path = workspace_root().join(format!("{out_dir}.build.lock"));
+        let lockfile = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .expect("Failed to open build lockfile");
+        lockfile
+            .lock_exclusive()
+            .expect("Failed to lock build file");
+        lockfile
+    });
+
     let artifact = cargo_near_build::build_with_cli(opts).expect("cargo near build failed");
     artifact.canonicalize().unwrap()
 }
