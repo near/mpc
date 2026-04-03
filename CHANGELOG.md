@@ -5,6 +5,222 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.8.0] - 2026-04-02
+
+### 🚀 Features
+
+- [#2464](https://github.com/near/mpc/pull/2464)(@kevindeforth): Chain gateway transaction sender (#2464)
+
+- [#2483](https://github.com/near/mpc/pull/2483)(@gilcu3): Added ckd public verification support in the contract (#2483)
+
+- [#2500](https://github.com/near/mpc/pull/2500)(@DSharifi): *(node)* Allow configuration of logging through configuration file (#2500)
+
+- [#2495](https://github.com/near/mpc/pull/2495)(@gilcu3): Integrate CKD public verifiability in the node (#2495)
+
+- [#2447](https://github.com/near/mpc/pull/2447)(@barakeinav1): Add voting mechanism for expected OS measurements (#2447)
+
+- [#2505](https://github.com/near/mpc/pull/2505)(@pbeza): Add `tee-context` crate (#2505)
+
+- [#2448](https://github.com/near/mpc/pull/2448)(@barakeinav1): Check OS measurements during attestation re-verification (#2448)
+
+- [#2527](https://github.com/near/mpc/pull/2527)(@anodar): Add e2e-tests crate skeleton with port allocator (#2527)
+
+- [#2601](https://github.com/near/mpc/pull/2601)(@anodar): Support hostnames in backup-cli (#2601)
+
+- [#2621](https://github.com/near/mpc/pull/2621)(@barakeinav1): Add Rust tee-launcher crate (#2621)
+
+- [#2667](https://github.com/near/mpc/pull/2667)(@DSharifi): Implement BorshSchema for NonEmptyBTreeMap (#2667)
+
+- [#2625](https://github.com/near/mpc/pull/2625)(@kevindeforth): Chain-gateway block event subscriber (#2625)
+
+
+### 🐛 Bug Fixes
+
+- [#2431](https://github.com/near/mpc/pull/2431)(@anodar): Downgrade "peer closed connection without TLS close_notify" errors to debug (#2431)
+
+- [#2348](https://github.com/near/mpc/pull/2348)(@SimonRastikian): Threshold signatures sensitive types print custom debug message (#2348)
+
+- [#2567](https://github.com/near/mpc/pull/2567)(@gilcu3): Cleanup stale votes after resharing (#2567)
+
+- [#2574](https://github.com/near/mpc/pull/2574)(@gilcu3): Remove rename scheme from DomainConfig (#2574)
+
+- [#2549](https://github.com/near/mpc/pull/2549)(@barakeinav1): Set 0o600 permissions on secret files (#2549)
+
+- [#2579](https://github.com/near/mpc/pull/2579)(@gilcu3): Use CKDOutput type both for sender and receiver (#2579)
+
+- [#2585](https://github.com/near/mpc/pull/2585)(@gilcu3): Add more informative error messages for participant sets (#2585)
+
+- [#2417](https://github.com/near/mpc/pull/2417)(@SimonRastikian): Improving security by adding zeroization to the secret cryptography material (#2417)
+
+- [#2646](https://github.com/near/mpc/pull/2646)(@gilcu3): Ensure asset id origins are validated before use (#2646)
+
+- [#2636](https://github.com/near/mpc/pull/2636)(@Copilot): Update stale localnet config template (#2636)
+
+- [#2678](https://github.com/near/mpc/pull/2678)(@netrome): Log index lookup finds logs with matching .log_index fields (#2678)
+
+
+### 💼 Other
+
+- [#2640](https://github.com/near/mpc/pull/2640)(@barakeinav1): Add CI and build support for Rust launcher (#2640)
+
+- [#2665](https://github.com/near/mpc/pull/2665)(@gilcu3): Make rust launcher docker build reproducible (#2665)
+
+- [#2668](https://github.com/near/mpc/pull/2668)(@gilcu3): Use debian trixie for rust launcher image (#2668)
+
+
+### 🚜 Refactor
+
+- [#2494](https://github.com/near/mpc/pull/2494)(@anodar): Deduplicate dependencies in check-all target (#2494)
+
+- [#2535](https://github.com/near/mpc/pull/2535)(@pbeza): *(tee-context)* Address post-merge review feedback from #2505 (#2535)
+
+- [#2540](https://github.com/near/mpc/pull/2540)(@pbeza): Rename `MpcDockerImageHash` to `NodeImageHash` (#2540)
+
+- [#2396](https://github.com/near/mpc/pull/2396)(@SimonRastikian): Changing SignatureScheme into Curve (#2396)
+
+- [#2553](https://github.com/near/mpc/pull/2553)(@kevindeforth): Simplify `TeeContext` by removing `SubmitTransaction` indirection (#2553)
+
+- [#2564](https://github.com/near/mpc/pull/2564)(@pbeza): Generalize `Hash32<T>` to `Hash<T, N>` and replace `Sha384Digest` (#2564)
+
+- [#2584](https://github.com/near/mpc/pull/2584)(@pbeza): Replace `assert!(matches!(...))` with `assert_matches!` and enforce in CI (#2584)
+
+- [#2489](https://github.com/near/mpc/pull/2489)(@kevindeforth): Start chain-gateway in dedicated multi-threaded tokio runtime + transaction sender integration test (#2489)
+
+- [#2633](https://github.com/near/mpc/pull/2633)(@gilcu3): Split main.rs in tee-launcher crate (#2633)
+
+- [#2645](https://github.com/near/mpc/pull/2645)(@DSharifi): Use tokio `TaskInterval` type (#2645)
+
+- [#2619](https://github.com/near/mpc/pull/2619)(@pbeza): Unify duplicate hash newtype macros into a single generic `HashDigest<S, N>` type in `primitives` (#2619)
+
+- [#2664](https://github.com/near/mpc/pull/2664)(@anodar): Extract StartConfig from mpc-node into a lightweight config crate (#2664)
+
+- [#2409](https://github.com/near/mpc/pull/2409)(@SimonRastikian): Renaming Ed25519 to Edwards25519 (#2409)
+
+- [#2634](https://github.com/near/mpc/pull/2634)(@SimonRastikian): Improve crypto code without banners (#2634)
+
+- [#2681](https://github.com/near/mpc/pull/2681)(@barakeinav1): Remove unused HostEntry struct from tee-launcher (#2681)
+
+
+### 📚 Documentation
+
+- [#2472](https://github.com/near/mpc/pull/2472)(@DSharifi): Update releases.md to reflect current release process (#2472)
+
+- [#2484](https://github.com/near/mpc/pull/2484)(@barakeinav1): Add vote_add_launcher_hash to deployment scripts and guides (#2484)
+
+- [#2269](https://github.com/near/mpc/pull/2269)(@barakeinav1): AES transport key provisioning design (#2269)
+
+- [#2488](https://github.com/near/mpc/pull/2488)(@barakeinav1): Add OS measurement voting to TEE setup flows (#2488)
+
+- [#2427](https://github.com/near/mpc/pull/2427)(@barakeinav1): Update migration guide after testnet migration. (#2427)
+
+- [#2446](https://github.com/near/mpc/pull/2446)(@anodar): Add design doc for Rust E2E test infrastructure (pytest deprecation) (#2446)
+
+- [#2577](https://github.com/near/mpc/pull/2577)(@gilcu3): Update after public verifiability CKD (#2577)
+
+- [#2522](https://github.com/near/mpc/pull/2522)(@SimonRastikian): Designing domain separation (#2522)
+
+- [#2642](https://github.com/near/mpc/pull/2642)(@barakeinav1): Warn that docker inspect must run on Linux for hash verification (#2642)
+
+
+### ⚡ Performance
+
+- [#2644](https://github.com/near/mpc/pull/2644)(@kevindeforth): *(mpc-node)* Do not send duplicate values between threads (#2644)
+
+- [#2623](https://github.com/near/mpc/pull/2623)(@SimonRastikian): DKG benchmarks implementations (#2623)
+
+
+### 🧪 Testing
+
+- [#2503](https://github.com/near/mpc/pull/2503)(@gilcu3): Add pytest for ckd public verifiability (#2503)
+
+- [#2528](https://github.com/near/mpc/pull/2528)(@anodar): Implement mpc node manager (#2528)
+
+- [#2545](https://github.com/near/mpc/pull/2545)(@barakeinav1): Extract launcher image hash from test assets and improve attestation docs (#2545)
+
+- [#2589](https://github.com/near/mpc/pull/2589)(@anodar): Implement MPC cluster orchestration for Rust E2E tests (#2589)
+
+- [#2590](https://github.com/near/mpc/pull/2590)(@anodar): Implement NearSandbox, NearBlockchain and request lifecycle test (#2590)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#2473](https://github.com/near/mpc/pull/2473)(@DSharifi): Use `.cliffignore` file for ignoring commits with `git-cliff` (#2473)
+
+- [#2475](https://github.com/near/mpc/pull/2475)(@gilcu3): Move vscode extension recommendations to doc (#2475)
+
+- [#2457](https://github.com/near/mpc/pull/2457)(@DSharifi): Create interface crate for types shared between rust launcher and node (#2457)
+
+- [#2477](https://github.com/near/mpc/pull/2477)(@gilcu3): Move CKDRequestArgs to the contract interface (#2477)
+
+- [#2481](https://github.com/near/mpc/pull/2481)(@gilcu3): Cleanup migration after 3.7.0 release (#2481)
+
+- [#2499](https://github.com/near/mpc/pull/2499)(@DSharifi): Move TEE config into launcher-interface and enforce image hash file (#2499)
+
+- [#2504](https://github.com/near/mpc/pull/2504)(@DSharifi): Parallelize pytests in separate runners to speed up CI (#2504)
+
+- [#2509](https://github.com/near/mpc/pull/2509)(@gilcu3): Prevent unbounded growth of rust cache (#2509)
+
+- [#2513](https://github.com/near/mpc/pull/2513)(@gilcu3): Allow failed pytest jobs to re-run (#2513)
+
+- [#2510](https://github.com/near/mpc/pull/2510)(@gilcu3): Optimize runners used for pytests (#2510)
+
+- [#2518](https://github.com/near/mpc/pull/2518)(@DSharifi): Move reproducible build of contract as separate task (#2518)
+
+- [#2525](https://github.com/near/mpc/pull/2525)(@gilcu3): Update to nearcore 2.11.0-rc.3 (#2525)
+
+- [#2530](https://github.com/near/mpc/pull/2530)(@gilcu3): Parallelize cargo test (#2530)
+
+- [#2531](https://github.com/near/mpc/pull/2531)(@gilcu3): Rust tests should not use same cache key (#2531)
+
+- [#2534](https://github.com/near/mpc/pull/2534)(@gilcu3): Fix phala test filter (#2534)
+
+- [#2537](https://github.com/near/mpc/pull/2537)(@anodar): Add comment on Code Style regarding checked operations in tests and allow local claude md (#2537)
+
+- [#2550](https://github.com/near/mpc/pull/2550)(@barakeinav1): Bump rustls-webpki to fix RUSTSEC-2026-0049 (#2550)
+
+- [#2556](https://github.com/near/mpc/pull/2556)(@barakeinav1): Bump tar to fix RUSTSEC-2026-0067/0068 (#2556)
+
+- [#2557](https://github.com/near/mpc/pull/2557)(@gilcu3): Bump reqwest to 0.13 (#2557)
+
+- [#2552](https://github.com/near/mpc/pull/2552)(@barakeinav1): Update dstack OS image 0.5.4 to 0.5.7 (#2552)
+
+- [#2566](https://github.com/near/mpc/pull/2566)(@gilcu3): Cache cleanup should not delete cargo binary (#2566)
+
+- [#2559](https://github.com/near/mpc/pull/2559)(@dependabot[bot]): Bump quinn-proto from 0.11.13 to 0.11.14 (#2559)
+
+- [#2568](https://github.com/near/mpc/pull/2568)(@dependabot[bot]): Bump the rust-minor-and-patch group with 4 updates (#2568)
+
+- [#2569](https://github.com/near/mpc/pull/2569)(@dependabot[bot]): Bump gcloud-sdk from 0.28.5 to 0.29.0 (#2569)
+
+- [#2578](https://github.com/near/mpc/pull/2578)(@anodar): Bump MAX_GAS_FOR_THRESHOLD_VOTE from 178 to 180 (#2578)
+
+- [#2573](https://github.com/near/mpc/pull/2573)(@barakeinav1): Update dstack OS image to 0.5.8 and gramine key provider (#2573)
+
+- [#2437](https://github.com/near/mpc/pull/2437)(@gilcu3): Force usage of constructor for PermanentKeyshareData (#2437)
+
+- [#2593](https://github.com/near/mpc/pull/2593)(@gilcu3): Make sure docs explain why we have deposits, handle deposits in a single function (#2593)
+
+- [#2586](https://github.com/near/mpc/pull/2586)(@barakeinav1): Usability improvements for testing scripts (#2586)
+
+- [#2620](https://github.com/near/mpc/pull/2620)(@dependabot[bot]): Bump requests from 2.32.4 to 2.33.0 in /tee_launcher in the pip group across 1 directory (#2620)
+
+- [#2653](https://github.com/near/mpc/pull/2653)(@dependabot[bot]): Bump the rust-minor-and-patch group with 2 updates (#2653)
+
+- [#2563](https://github.com/near/mpc/pull/2563)(@barakeinav1): Add localnet TEE scripts for Rust launcher (#2563)
+
+- [#2658](https://github.com/near/mpc/pull/2658)(@barakeinav1): Add Rust launcher configs, docs, and templates (#2658)
+
+- [#2669](https://github.com/near/mpc/pull/2669)(@gilcu3): Use BTreeMap for permanent keyshare data (#2669)
+
+- [#2591](https://github.com/near/mpc/pull/2591)(@gilcu3): Bump to nearcore 2.11 (#2591)
+
+- [#2689](https://github.com/near/mpc/pull/2689)(@gilcu3): Fix e2e tests, cache being overwritten (#2689)
+
+- [#2674](https://github.com/near/mpc/pull/2674)(@gilcu3): Automatic draft release creation on tag push (#2674)
+
+- [#2691](https://github.com/near/mpc/pull/2691)(@gilcu3): Fix and simplify release automation (#2691)
+
+
 ## [3.7.0] - 2026-03-17
 
 ### 🚀 Features
@@ -100,6 +316,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2468](https://github.com/near/mpc/pull/2468)(@DSharifi): Bump nearcore to 2.11.0-rc.2 (#2468)
 
 - [#2465](https://github.com/near/mpc/pull/2465)(@dependabot[bot]): Bump the rust-minor-and-patch group with 3 updates (#2465)
+
+- [#2466](https://github.com/near/mpc/pull/2466)(@DSharifi): Update changelog and bump workspace crates to 3.7.0 (#2466)
 
 
 ## [3.6.0] - 2026-03-05

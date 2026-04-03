@@ -81,7 +81,7 @@ impl LocalnetBuilder {
         // Start a validator node (this is what the MPC node calls the "near indexer node").
         let mut validator = LocalNodeBuilder::new("validator", validator_home)
             .with_consensus_min_peers(1)
-            .with_contract(contract.clone(), compiled_test_contract_wasm());
+            .with_contract(contract.clone(), &compiled_test_contract_wasm());
 
         if let Some(test_account) = self.test_account.clone() {
             validator = validator.with_account(test_account);

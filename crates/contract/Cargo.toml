@@ -108,7 +108,6 @@ cargo-near-build = { workspace = true }
 contract-history = { workspace = true }
 digest = { workspace = true }
 ecdsa = { workspace = true }
-fs2 = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
