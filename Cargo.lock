@@ -11039,7 +11039,6 @@ name = "test-utils"
 version = "3.8.0"
 dependencies = [
  "cargo-near-build",
- "fs2",
  "hex",
  "mpc-attestation",
  "mpc-primitives",
