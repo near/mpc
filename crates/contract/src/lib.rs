@@ -26,6 +26,7 @@ use crate::{
     primitives::{
         ckd::{app_public_key_check, ckd_output_check, CKDRequest},
         domain::AddDomainsVotes,
+        generic_votes::Votes,
     },
     state::ContractNotInitialized,
     storage_keys::StorageKey,
@@ -51,9 +52,8 @@ use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
-    env, log, near,
-    store::{IterableMap, LookupMap},
-    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
+    env, log, near, store::LookupMap, AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise,
+    PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -131,7 +131,7 @@ pub struct MpcContract {
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: dtos::ForeignChainPolicy,
-    foreign_chain_policy_votes: ForeignChainPolicyVotes,
+    foreign_chain_policy_votes: Votes<dtos::AccountId, dtos::ForeignChainPolicy>,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -158,33 +158,6 @@ pub struct MpcContract {
     derive(borsh::BorshSchema)
 )]
 struct StaleData {}
-
-#[near(serializers=[borsh])]
-#[derive(Debug)]
-struct ForeignChainPolicyVotes {
-    proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
-}
-
-impl Default for ForeignChainPolicyVotes {
-    fn default() -> Self {
-        Self {
-            proposal_by_account: IterableMap::new(StorageKey::ForeignChainPolicyVotes),
-        }
-    }
-}
-
-impl ForeignChainPolicyVotes {
-    fn to_dto(&self) -> dtos::ForeignChainPolicyVotes {
-        let mut proposal_by_account = BTreeMap::new();
-        for (account_id, policy) in self.proposal_by_account.iter() {
-            proposal_by_account.insert(account_id.clone(), policy.clone());
-        }
-
-        dtos::ForeignChainPolicyVotes {
-            proposal_by_account,
-        }
-    }
-}
 
 impl MpcContract {
     pub(crate) fn public_key_extended(
@@ -1015,31 +988,19 @@ impl MpcContract {
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let voter = dtos::AccountId(voter.get().to_string());
 
-        if self
-            .foreign_chain_policy_votes
-            .proposal_by_account
-            .insert(voter, policy.clone())
-            .is_some()
-        {
-            log!("removed old vote for signer");
-        }
-
-        let total_votes = running_state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .filter(|(account_id, _, _)| {
-                self.foreign_chain_policy_votes
-                    .proposal_by_account
-                    .get(&dtos::AccountId(account_id.to_string()))
-                    .is_some_and(|prop| prop == &policy)
-            })
-            .count();
+        let voter_set = self.foreign_chain_policy_votes.vote(voter, policy.clone());
+        let total_votes = voter_set.count_for(|v| {
+            running_state
+                .parameters
+                .participants()
+                .participants()
+                .iter()
+                .any(|(account_id, _, _)| v.0 == *account_id)
+        });
 
         if total_votes == running_state.parameters.participants().len() {
             self.foreign_chain_policy = policy;
-            self.foreign_chain_policy_votes.proposal_by_account.clear();
+            self.foreign_chain_policy_votes.clear();
         }
 
         Ok(())
@@ -1674,7 +1635,7 @@ impl MpcContract {
             ),
             proposed_updates: ProposedUpdates::default(),
             foreign_chain_policy: Default::default(),
-            foreign_chain_policy_votes: Default::default(),
+            foreign_chain_policy_votes: Votes::new(StorageKey::ForeignChainPolicyVotesV2),
             config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
             accept_requests: true,
@@ -1739,7 +1700,7 @@ impl MpcContract {
             ),
             proposed_updates: Default::default(),
             foreign_chain_policy: Default::default(),
-            foreign_chain_policy_votes: Default::default(),
+            foreign_chain_policy_votes: Votes::new(StorageKey::ForeignChainPolicyVotesV2),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -1842,7 +1803,9 @@ impl MpcContract {
     }
 
     pub fn get_foreign_chain_policy_proposals(&self) -> dtos::ForeignChainPolicyVotes {
-        self.foreign_chain_policy_votes.to_dto()
+        dtos::ForeignChainPolicyVotes {
+            proposal_by_account: self.foreign_chain_policy_votes.votes_by_voter(),
+        }
     }
 
     // contract version
@@ -3289,7 +3252,7 @@ mod tests {
                 accept_requests: true,
                 proposed_updates: Default::default(),
                 foreign_chain_policy: Default::default(),
-                foreign_chain_policy_votes: Default::default(),
+                foreign_chain_policy_votes: Votes::new(StorageKey::ForeignChainPolicyVotesV2),
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
@@ -4779,8 +4742,7 @@ mod tests {
         let non_participant = gen_account_id();
         contract
             .foreign_chain_policy_votes
-            .proposal_by_account
-            .insert(dtos::AccountId(non_participant.to_string()), policy.clone());
+            .vote(dtos::AccountId(non_participant.to_string()), policy.clone());
         let _env = Environment::new(None, Some(first_account.clone()), None);
 
         // When

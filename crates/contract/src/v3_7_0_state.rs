@@ -13,6 +13,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, store::LookupMap};
 
+use near_sdk::store::IterableMap;
+
 use crate::{
     node_migrations::NodeMigrations,
     primitives::{
@@ -29,7 +31,7 @@ use crate::{
         tee_state::NodeAttestation,
     },
     update::ProposedUpdates,
-    Config, ForeignChainPolicyVotes, StaleData,
+    Config, StaleData,
 };
 
 /// Previous TeeState layout — without `allowed_measurements` and `measurement_votes` fields.
@@ -40,6 +42,11 @@ struct OldTeeState {
     votes: CodeHashesVotes,
     launcher_votes: LauncherHashVotes,
     stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldForeignChainPolicyVotes {
+    proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize, Eq, Ord, PartialEq, PartialOrd)]
@@ -58,7 +65,7 @@ pub struct MpcContract {
         LookupMap<dtos::VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: dtos::ForeignChainPolicy,
-    foreign_chain_policy_votes: ForeignChainPolicyVotes,
+    foreign_chain_policy_votes: OldForeignChainPolicyVotes,
     config: Config,
     tee_state: OldTeeState,
     accept_requests: bool,
@@ -101,7 +108,16 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
             foreign_chain_policy: value.foreign_chain_policy,
-            foreign_chain_policy_votes: value.foreign_chain_policy_votes,
+            foreign_chain_policy_votes: {
+                let mut votes = crate::primitives::generic_votes::Votes::new(
+                    StorageKey::ForeignChainPolicyVotesV2,
+                );
+                for (voter, proposal) in value.foreign_chain_policy_votes.proposal_by_account.iter()
+                {
+                    votes.vote(voter.clone(), proposal.clone());
+                }
+                votes
+            },
             config: value.config,
             tee_state: new_tee_state,
             accept_requests: value.accept_requests,
