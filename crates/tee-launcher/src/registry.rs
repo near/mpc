@@ -81,8 +81,9 @@ pub async fn get_manifest_digest(
             }
         };
 
-        match try_match_manifest(&manifest, &manifest_digest, expected_image_digest) {
-            Ok(digest) => {
+        match check_config_digest(&manifest, expected_image_digest) {
+            Ok(()) => {
+                let digest = parse_manifest_digest(&manifest_digest)?;
                 tracing::info!(
                     ?tag,
                     %manifest_digest,
@@ -111,15 +112,14 @@ pub async fn get_manifest_digest(
     Err(LauncherError::ImageHashNotFoundAmongTags)
 }
 
-/// Checks whether a fetched manifest's config digest matches the expected image digest.
+/// Checks whether a manifest's config digest matches the expected image digest.
 ///
-/// Returns `Ok(manifest_digest)` if the config digest matches, or
+/// Returns `Ok(())` if the config digest matches, or
 /// `Err(ConfigDigestMismatch)` / `Err(RegistryResponseParse)` otherwise.
-fn try_match_manifest(
+fn check_config_digest(
     manifest: &OciImageManifest,
-    manifest_digest: &str,
     expected_image_digest: &DockerSha256Digest,
-) -> Result<DockerSha256Digest, LauncherError> {
+) -> Result<(), LauncherError> {
     let config_digest: DockerSha256Digest = manifest.config.digest.parse().map_err(|_| {
         LauncherError::RegistryResponseParse(format!(
             "invalid config digest: {}",
@@ -134,10 +134,12 @@ fn try_match_manifest(
         });
     }
 
-    manifest_digest.parse().map_err(|_| {
-        LauncherError::RegistryResponseParse(format!(
-            "failed to parse manifest digest: {manifest_digest}"
-        ))
+    Ok(())
+}
+
+fn parse_manifest_digest(digest: &str) -> Result<DockerSha256Digest, LauncherError> {
+    digest.parse().map_err(|_| {
+        LauncherError::RegistryResponseParse(format!("failed to parse manifest digest: {digest}"))
     })
 }
 
@@ -199,31 +201,27 @@ mod tests {
     }
 
     #[test]
-    fn try_match_manifest_returns_digest_on_match() {
+    fn check_config_digest_succeeds_on_match() {
         // given
         let expected = digest('a');
         let manifest = manifest_with_config_digest(&expected);
-        let manifest_digest = digest('b').to_string();
 
         // when
-        let result = try_match_manifest(&manifest, &manifest_digest, &expected);
+        let result = check_config_digest(&manifest, &expected);
 
         // then
-        assert_matches!(result, Ok(d) => {
-            assert_eq!(d, digest('b'));
-        });
+        assert_matches!(result, Ok(()));
     }
 
     #[test]
-    fn try_match_manifest_errors_on_mismatch() {
+    fn check_config_digest_errors_on_mismatch() {
         // given
         let expected = digest('a');
         let actual = digest('f');
         let manifest = manifest_with_config_digest(&actual);
-        let manifest_digest = digest('b').to_string();
 
         // when
-        let result = try_match_manifest(&manifest, &manifest_digest, &expected);
+        let result = check_config_digest(&manifest, &expected);
 
         // then
         assert_matches!(result, Err(LauncherError::ConfigDigestMismatch { expected: e, actual: a }) => {
@@ -233,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn try_match_manifest_errors_on_invalid_config_digest() {
+    fn check_config_digest_errors_on_invalid_config_digest() {
         // given
         let expected = digest('a');
         let manifest = OciImageManifest {
@@ -245,7 +243,7 @@ mod tests {
         };
 
         // when
-        let result = try_match_manifest(&manifest, "sha256:unused", &expected);
+        let result = check_config_digest(&manifest, &expected);
 
         // then
         assert_matches!(result, Err(LauncherError::RegistryResponseParse(msg)) => {
@@ -254,15 +252,25 @@ mod tests {
     }
 
     #[test]
-    fn try_match_manifest_errors_on_invalid_manifest_digest() {
-        // given
-        let expected = digest('a');
-        let manifest = manifest_with_config_digest(&expected);
+    fn parse_manifest_digest_succeeds_for_valid_sha256() {
+        let input = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let result = parse_manifest_digest(input);
+        assert_matches!(result, Ok(d) => {
+            assert_eq!(d.to_string(), input);
+        });
+    }
 
-        // when
-        let result = try_match_manifest(&manifest, "not-a-valid-digest", &expected);
+    #[test]
+    fn parse_manifest_digest_rejects_missing_prefix() {
+        let result = parse_manifest_digest("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assert_matches!(result, Err(LauncherError::RegistryResponseParse(msg)) => {
+            assert!(msg.contains("failed to parse manifest digest"), "unexpected message: {msg}");
+        });
+    }
 
-        // then
+    #[test]
+    fn parse_manifest_digest_rejects_invalid_format() {
+        let result = parse_manifest_digest("not-a-valid-digest");
         assert_matches!(result, Err(LauncherError::RegistryResponseParse(msg)) => {
             assert!(msg.contains("failed to parse manifest digest"), "unexpected message: {msg}");
         });
