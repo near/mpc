@@ -2781,20 +2781,24 @@ expression: abi
                       "minimum": 0.0
                     },
                     "launcher_docker_compose_hash": {
-                      "default": null,
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/LauncherDockerComposeHash"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "mpc_docker_image_hash": {
-                      "default": null,
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/DockerImageHash"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }
@@ -3448,6 +3452,12 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
+        "Sha384Digest": {
+          "type": "string",
+          "maxLength": 96,
+          "minLength": 96,
+          "pattern": "^[0-9a-fA-F]+$"
+        },
         "SignRequestArgs": {
           "type": "object",
           "required": [
@@ -3966,8 +3976,11 @@ expression: abi
             },
             "launcher_compose_hash": {
               "description": "The digest of the launcher compose file running.",
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+              "allOf": [
+                {
+                  "$ref": "#/definitions/LauncherDockerComposeHash"
+                }
+              ]
             },
             "measurements": {
               "description": "The OS measurements that were verified during initial attestation.",
@@ -3979,8 +3992,11 @@ expression: abi
             },
             "mpc_image_hash": {
               "description": "The digest of the MPC image running.",
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DockerImageHash"
+                }
+              ]
             }
           }
         },
@@ -3995,24 +4011,19 @@ expression: abi
           ],
           "properties": {
             "key_provider_event_digest": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+              "$ref": "#/definitions/Sha384Digest"
             },
             "mrtd": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+              "$ref": "#/definitions/Sha384Digest"
             },
             "rtmr0": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+              "$ref": "#/definitions/Sha384Digest"
             },
             "rtmr1": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+              "$ref": "#/definitions/Sha384Digest"
             },
             "rtmr2": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+              "$ref": "#/definitions/Sha384Digest"
             }
           }
         },
