@@ -43,6 +43,10 @@ jobs:
         if: always()
         run: cargo test -p contract-history --features external-services-tests --profile test-release --locked
 
+      - name: Run tee-launcher registry tests
+        if: always()
+        run: cargo nextest run -p tee-launcher --features external-services-tests --cargo-profile test-release --locked
+
       - name: Run tee-authority tests
         if: always()
         run: cargo test -p tee-authority --features external-services-tests --profile test-release --locked test_upload_quote_for_collateral_with_phala_endpoint

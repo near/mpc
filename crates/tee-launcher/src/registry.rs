@@ -1,209 +1,105 @@
-use std::collections::VecDeque;
 use std::time::Duration;
 
 use backon::{ExponentialBuilder, Retryable};
 use launcher_interface::types::DockerSha256Digest;
-use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
-use url::Url;
+use oci_client::client::{ClientConfig, ClientProtocol};
+use oci_client::errors::OciDistributionError;
+use oci_client::manifest::OciImageManifest;
+use oci_client::secrets::RegistryAuth;
+use oci_client::{Client, Reference};
 
-use crate::docker_types::{DockerTokenResponse, ManifestResponse};
 use crate::error::LauncherError;
 use crate::types::LauncherConfig;
 
-const DOCKER_AUTH_ACCEPT_HEADER_VALUE: HeaderValue =
-    HeaderValue::from_static("application/vnd.docker.distribution.manifest.v2+json");
-
-const DOCKER_CONTENT_DIGEST_HEADER: &str = "Docker-Content-Digest";
-// TODO(#2479): if we use a different registry, we need a different auth-endpoint
-const DOCKER_AUTH_TOKEN_URL: &str =
-    "https://auth.docker.io/token?service=registry.docker.io&scope=repository:";
-
-const AMD64: &str = "amd64";
-const LINUX: &str = "linux";
-
-/// Provides the URLs needed to interact with a container registry.
-pub trait RegistryInfo {
-    fn token_url(&self) -> String;
-    fn manifest_url(&self, tag: &str) -> Result<Url, LauncherError>;
+/// Creates an OCI registry client configured for the launcher's use case.
+pub fn create_registry_client(request_timeout: Duration) -> Client {
+    let config = ClientConfig {
+        protocol: ClientProtocol::Https,
+        platform_resolver: Some(Box::new(oci_client::client::linux_amd64_resolver)),
+        read_timeout: Some(request_timeout),
+        connect_timeout: Some(request_timeout),
+        ..Default::default()
+    };
+    Client::new(config)
 }
 
-/// Production registry info for Docker Hub.
-pub struct DockerRegistry {
-    registry_base_url: String,
-    image_name: String,
-}
-
-impl DockerRegistry {
-    pub fn new(config: &LauncherConfig) -> Self {
-        Self {
-            registry_base_url: format!("https://{}", config.registry),
-            image_name: config.image_name.clone(),
-        }
-    }
-}
-
-impl RegistryInfo for DockerRegistry {
-    fn token_url(&self) -> String {
-        format!("{}{}:pull", DOCKER_AUTH_TOKEN_URL, self.image_name)
-    }
-
-    fn manifest_url(&self, tag: &str) -> Result<Url, LauncherError> {
-        let url_string = format!(
-            "{}/v2/{}/manifests/{tag}",
-            self.registry_base_url, self.image_name
-        );
-
-        url_string
-            .parse()
-            .map_err(|_| LauncherError::InvalidManifestUrl(url_string))
-    }
-}
-
+/// Resolves the manifest digest for an image that matches the expected config digest.
+///
+/// Iterates over all configured image tags and returns the manifest digest of
+/// the first tag whose config digest matches `expected_image_digest`.
+/// Multi-platform image indices are resolved to `amd64/linux` automatically.
 pub async fn get_manifest_digest(
-    registry: &impl RegistryInfo,
+    client: &Client,
     config: &LauncherConfig,
     expected_image_digest: &DockerSha256Digest,
 ) -> Result<DockerSha256Digest, LauncherError> {
-    let mut tags: VecDeque<String> = config.image_tags.iter().cloned().collect();
+    let auth = RegistryAuth::Anonymous;
 
-    let reqwest_client = reqwest::Client::new();
-
-    // We need an authorization token to fetch manifests.
-    let token_url = registry.token_url();
-
-    let token_request_response = reqwest_client
-        .get(token_url)
-        .timeout(Duration::from_secs(config.rpc_request_timeout_secs))
-        .send()
-        .await
-        .map_err(|e| LauncherError::RegistryAuthFailed(e.to_string()))?;
-
-    let status = token_request_response.status();
-    if !status.is_success() {
-        return Err(LauncherError::RegistryAuthFailed(format!(
-            "token request returned non-success status: {status}"
-        )));
-    }
-
-    let token_response: DockerTokenResponse = token_request_response
-        .json()
-        .await
-        .map_err(|e| LauncherError::RegistryAuthFailed(e.to_string()))?;
-
-    while let Some(tag) = tags.pop_front() {
-        let manifest_url = registry.manifest_url(&tag)?;
-
-        let authorization_value: HeaderValue = format!("Bearer {}", token_response.token)
+    for tag in config.image_tags.iter() {
+        let reference: Reference = format!("{}/{}:{}", config.registry, config.image_name, tag)
             .parse()
-            .expect("bearer token received from docker auth is a valid header value");
+            .map_err(|e: oci_client::ParseError| {
+                LauncherError::InvalidImageReference(e.to_string())
+            })?;
 
-        let headers = HeaderMap::from_iter([
-            (ACCEPT, DOCKER_AUTH_ACCEPT_HEADER_VALUE),
-            (AUTHORIZATION, authorization_value),
-        ]);
-
-        let request_timeout = Duration::from_secs(config.rpc_request_timeout_secs);
         let backoff = ExponentialBuilder::default()
             .with_min_delay(Duration::from_secs(config.rpc_request_interval_secs))
             .with_factor(1.5)
             .with_max_delay(Duration::from_secs(60))
             .with_max_times(config.rpc_max_attempts as usize);
 
-        let request_future = || async {
-            reqwest_client
-                .get(manifest_url.clone())
-                .headers(headers.clone())
-                .timeout(request_timeout)
-                .send()
-                .await?
-                .error_for_status()
+        let pull_future = || {
+            let auth = &auth;
+            let reference = &reference;
+            async move { client.pull_image_manifest(reference, auth).await }
         };
 
-        let request_with_retry_future = request_future
+        let result = pull_future
             .retry(backoff)
-            .when(|err: &reqwest::Error| {
-                err.is_timeout()
-                    || err.is_connect()
-                    || err.status().is_some_and(|s| s.is_server_error())
-            })
+            .when(|err: &OciDistributionError| is_retryable(err))
             .notify(|err, dur| {
                 tracing::warn!(
-                    ?manifest_url,
+                    %reference,
                     ?dur,
                     ?err,
                     "failed to fetch manifest, retrying"
                 );
-            });
+            })
+            .await;
 
-        let Ok(resp) = request_with_retry_future.await else {
-            tracing::warn!(
-                ?manifest_url,
-                "exceeded max RPC attempts. \
-                Will continue in the hopes of finding the matching image hash among remaining tags"
-            );
-            continue;
+        let (manifest, manifest_digest) = match result {
+            Ok(value) => value,
+            Err(err) => {
+                let launcher_err = oci_error_to_launcher_error(err);
+                tracing::warn!(
+                    %reference,
+                    error = %launcher_err,
+                    "failed to fetch manifest. \
+                    Will continue in the hopes of finding the matching image hash among remaining tags"
+                );
+                continue;
+            }
         };
 
-        let response_headers = resp.headers().clone();
-        let manifest: ManifestResponse = resp
-            .json()
-            .await
-            .map_err(|e| LauncherError::RegistryResponseParse(e.to_string()))?;
-
-        match manifest {
-            ManifestResponse::ImageIndex { manifests } => {
-                let platform_digests: Vec<_> = manifests
-                    .iter()
-                    .filter(|m| m.platform.architecture == AMD64 && m.platform.os == LINUX)
-                    .map(|m| m.digest.as_str())
-                    .collect();
+        match try_match_manifest(&manifest, &manifest_digest, expected_image_digest) {
+            Ok(digest) => {
                 tracing::info!(
                     ?tag,
-                    ?platform_digests,
-                    "received multi-platform image index, queuing amd64/linux manifests"
-                );
-                manifests
-                    .into_iter()
-                    .filter(|manifest| {
-                        manifest.platform.architecture == AMD64 && manifest.platform.os == LINUX
-                    })
-                    .for_each(|manifest| tags.push_back(manifest.digest));
-            }
-            ManifestResponse::DockerV2 { config } | ManifestResponse::OciManifest { config } => {
-                if config.digest != *expected_image_digest {
-                    tracing::warn!(
-                        ?tag,
-                        actual_config_digest = %config.digest,
-                        expected_config_digest = %expected_image_digest,
-                        "config digest mismatch, skipping tag"
-                    );
-                    continue;
-                }
-
-                let Some(content_digest) = response_headers
-                    .get(DOCKER_CONTENT_DIGEST_HEADER)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string())
-                else {
-                    tracing::warn!(
-                        ?tag,
-                        "manifest matched but Docker-Content-Digest header missing, skipping"
-                    );
-                    continue;
-                };
-
-                tracing::info!(
-                    ?tag,
-                    %content_digest,
+                    %manifest_digest,
                     "config digest matched, resolved manifest digest"
                 );
-                return content_digest.parse().map_err(|_| {
-                    LauncherError::RegistryResponseParse(format!(
-                        "failed to parse manifest digest: {}",
-                        content_digest
-                    ))
-                });
+                return Ok(digest);
             }
+            Err(LauncherError::ConfigDigestMismatch { expected, actual }) => {
+                tracing::warn!(
+                    ?tag,
+                    actual_config_digest = %actual,
+                    expected_config_digest = %expected,
+                    "config digest mismatch, skipping tag"
+                );
+                continue;
+            }
+            Err(e) => return Err(e),
         }
     }
 
@@ -215,11 +111,67 @@ pub async fn get_manifest_digest(
     Err(LauncherError::ImageHashNotFoundAmongTags)
 }
 
+/// Checks whether a fetched manifest's config digest matches the expected image digest.
+///
+/// Returns `Ok(manifest_digest)` if the config digest matches, or
+/// `Err(ConfigDigestMismatch)` / `Err(RegistryResponseParse)` otherwise.
+fn try_match_manifest(
+    manifest: &OciImageManifest,
+    manifest_digest: &str,
+    expected_image_digest: &DockerSha256Digest,
+) -> Result<DockerSha256Digest, LauncherError> {
+    let config_digest: DockerSha256Digest = manifest.config.digest.parse().map_err(|_| {
+        LauncherError::RegistryResponseParse(format!(
+            "invalid config digest: {}",
+            manifest.config.digest
+        ))
+    })?;
+
+    if config_digest != *expected_image_digest {
+        return Err(LauncherError::ConfigDigestMismatch {
+            expected: expected_image_digest.clone(),
+            actual: config_digest,
+        });
+    }
+
+    manifest_digest.parse().map_err(|_| {
+        LauncherError::RegistryResponseParse(format!(
+            "failed to parse manifest digest: {manifest_digest}"
+        ))
+    })
+}
+
+fn is_retryable(err: &OciDistributionError) -> bool {
+    matches!(
+        err,
+        OciDistributionError::ServerError { .. } | OciDistributionError::RequestError(_)
+    )
+}
+
+fn oci_error_to_launcher_error(err: OciDistributionError) -> LauncherError {
+    match err {
+        OciDistributionError::AuthenticationFailure(msg) => LauncherError::RegistryAuthFailed(msg),
+        OciDistributionError::UnauthorizedError { url } => {
+            LauncherError::RegistryAuthFailed(format!("unauthorized: {url}"))
+        }
+        OciDistributionError::ImageManifestNotFoundError(msg) => {
+            LauncherError::ManifestNotFound(msg)
+        }
+        OciDistributionError::ServerError {
+            code, url, message, ..
+        } => LauncherError::RegistryServerError(format!("{code} {url}: {message}")),
+        OciDistributionError::RequestError(err) => {
+            LauncherError::RegistryRequestFailed(err.to_string())
+        }
+        other => LauncherError::RegistryError(other.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use httpmock::prelude::*;
     use launcher_interface::types::DockerSha256Digest;
+    use oci_client::manifest::{OciDescriptor, OciImageManifest};
 
     use super::*;
 
@@ -232,227 +184,133 @@ mod tests {
         .unwrap()
     }
 
-    fn sample_digest() -> DockerSha256Digest {
-        digest('a')
-    }
-
-    struct MockRegistry {
-        base_url: String,
-        image_name: String,
-    }
-
-    impl RegistryInfo for MockRegistry {
-        fn token_url(&self) -> String {
-            format!("{}/token", self.base_url)
-        }
-
-        fn manifest_url(&self, tag: &str) -> Result<Url, LauncherError> {
-            let raw = format!("{}/v2/{}/manifests/{tag}", self.base_url, self.image_name);
-            raw.parse()
-                .map_err(|_| LauncherError::InvalidManifestUrl(raw))
+    fn manifest_with_config_digest(config_digest: &DockerSha256Digest) -> OciImageManifest {
+        OciImageManifest {
+            config: OciDescriptor {
+                digest: config_digest.to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
         }
     }
 
-    fn mock_launcher_config(tag: &str) -> LauncherConfig {
-        LauncherConfig {
-            image_tags: near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![tag.into()])
-                .unwrap(),
-            image_name: "test/image".into(),
-            registry: "unused".into(),
-            rpc_request_timeout_secs: 5,
-            rpc_request_interval_secs: 1,
-            rpc_max_attempts: 1,
-            mpc_hash_override: None,
-            port_mappings: vec![],
-        }
-    }
-
-    fn mock_registry(server: &MockServer) -> MockRegistry {
-        MockRegistry {
-            base_url: server.base_url(),
-            image_name: "test/image".into(),
-        }
-    }
-
-    #[tokio::test]
-    async fn get_manifest_digest_resolves_docker_v2() {
+    #[test]
+    fn try_match_manifest_returns_digest_on_match() {
         // given
-        let server = MockServer::start();
-        let expected_image_digest = sample_digest();
-        let manifest_digest = digest('b');
-
-        server.mock(|when, then| {
-            when.method(GET).path("/token");
-            then.status(200)
-                .json_body(serde_json::json!({ "token": "test-token" }));
-        });
-
-        let manifest_body = serde_json::json!({
-            "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
-            "config": { "digest": expected_image_digest.to_string() }
-        });
-
-        server.mock(|when, then| {
-            when.method(GET).path("/v2/test/image/manifests/v1.0");
-            then.status(200)
-                .header("Docker-Content-Digest", manifest_digest.to_string())
-                .json_body(manifest_body);
-        });
-
-        let registry = mock_registry(&server);
-        let config = mock_launcher_config("v1.0");
+        let expected = digest('a');
+        let manifest = manifest_with_config_digest(&expected);
+        let manifest_digest = digest('b').to_string();
 
         // when
-        let result = get_manifest_digest(&registry, &config, &expected_image_digest).await;
+        let result = try_match_manifest(&manifest, &manifest_digest, &expected);
 
         // then
         assert_matches!(result, Ok(d) => {
-            assert_eq!(d, manifest_digest);
+            assert_eq!(d, digest('b'));
         });
     }
 
-    #[tokio::test]
-    async fn get_manifest_digest_follows_image_index_to_amd64_manifest() {
+    #[test]
+    fn try_match_manifest_errors_on_mismatch() {
         // given
-        let server = MockServer::start();
-        let expected_image_digest = sample_digest();
-        let manifest_digest = digest('c');
-        let amd64_ref = "sha256:amd64ref";
-
-        server.mock(|when, then| {
-            when.method(GET).path("/token");
-            then.status(200)
-                .json_body(serde_json::json!({ "token": "test-token" }));
-        });
-
-        // First request: image index pointing to amd64 manifest
-        server.mock(|when, then| {
-            when.method(GET).path("/v2/test/image/manifests/latest");
-            then.status(200).json_body(serde_json::json!({
-                "mediaType": "application/vnd.oci.image.index.v1+json",
-                "manifests": [
-                    {
-                        "digest": amd64_ref,
-                        "platform": { "architecture": "amd64", "os": "linux" }
-                    },
-                    {
-                        "digest": "sha256:armref",
-                        "platform": { "architecture": "arm64", "os": "linux" }
-                    }
-                ]
-            }));
-        });
-
-        // Second request: the resolved amd64 manifest
-        server.mock(|when, then| {
-            when.method(GET)
-                .path(format!("/v2/test/image/manifests/{amd64_ref}"));
-            then.status(200)
-                .header("Docker-Content-Digest", manifest_digest.to_string())
-                .json_body(serde_json::json!({
-                    "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
-                    "config": { "digest": expected_image_digest.to_string() }
-                }));
-        });
-
-        let registry = mock_registry(&server);
-        let config = mock_launcher_config("latest");
+        let expected = digest('a');
+        let actual = digest('f');
+        let manifest = manifest_with_config_digest(&actual);
+        let manifest_digest = digest('b').to_string();
 
         // when
-        let result = get_manifest_digest(&registry, &config, &expected_image_digest).await;
+        let result = try_match_manifest(&manifest, &manifest_digest, &expected);
 
         // then
-        assert_matches!(result, Ok(d) => {
-            assert_eq!(d, manifest_digest);
+        assert_matches!(result, Err(LauncherError::ConfigDigestMismatch { expected: e, actual: a }) => {
+            assert_eq!(e, expected);
+            assert_eq!(a, actual);
         });
     }
 
-    #[tokio::test]
-    async fn get_manifest_digest_skips_mismatched_config_digest() {
+    #[test]
+    fn try_match_manifest_errors_on_invalid_config_digest() {
         // given
-        let server = MockServer::start();
-        let expected_image_digest = sample_digest();
-        let wrong_digest = digest('f');
-
-        server.mock(|when, then| {
-            when.method(GET).path("/token");
-            then.status(200)
-                .json_body(serde_json::json!({ "token": "test-token" }));
-        });
-
-        server.mock(|when, then| {
-            when.method(GET).path("/v2/test/image/manifests/v1.0");
-            then.status(200)
-                .header("Docker-Content-Digest", "sha256:doesntmatter")
-                .json_body(serde_json::json!({
-                    "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
-                    "config": { "digest": wrong_digest.to_string() }
-                }));
-        });
-
-        let registry = mock_registry(&server);
-        let config = mock_launcher_config("v1.0");
+        let expected = digest('a');
+        let manifest = OciImageManifest {
+            config: OciDescriptor {
+                digest: "not-a-valid-digest".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         // when
-        let result = get_manifest_digest(&registry, &config, &expected_image_digest).await;
+        let result = try_match_manifest(&manifest, "sha256:unused", &expected);
 
         // then
-        assert_matches!(result, Err(LauncherError::ImageHashNotFoundAmongTags));
+        assert_matches!(result, Err(LauncherError::RegistryResponseParse(msg)) => {
+            assert!(msg.contains("invalid config digest"), "unexpected message: {msg}");
+        });
     }
 
-    #[tokio::test]
-    async fn get_manifest_digest_errors_on_auth_failure() {
+    #[test]
+    fn try_match_manifest_errors_on_invalid_manifest_digest() {
         // given
-        let server = MockServer::start();
-
-        server.mock(|when, then| {
-            when.method(GET).path("/token");
-            then.status(403);
-        });
-
-        let registry = mock_registry(&server);
-        let config = mock_launcher_config("v1.0");
+        let expected = digest('a');
+        let manifest = manifest_with_config_digest(&expected);
 
         // when
-        let result = get_manifest_digest(&registry, &config, &sample_digest()).await;
+        let result = try_match_manifest(&manifest, "not-a-valid-digest", &expected);
 
         // then
-        assert_matches!(result, Err(LauncherError::RegistryAuthFailed(_)));
+        assert_matches!(result, Err(LauncherError::RegistryResponseParse(msg)) => {
+            assert!(msg.contains("failed to parse manifest digest"), "unexpected message: {msg}");
+        });
     }
 
-    #[tokio::test]
-    async fn get_manifest_digest_missing_content_digest_header_skips_tag() {
-        // given
-        let server = MockServer::start();
-        let expected_image_digest = sample_digest();
+    #[rstest::rstest]
+    #[case::server_error(
+        OciDistributionError::ServerError { code: 500, url: "https://example.com".into(), message: "internal".into() },
+        true
+    )]
+    #[case::auth_failure(OciDistributionError::AuthenticationFailure("bad creds".into()), false)]
+    #[case::unauthorized(OciDistributionError::UnauthorizedError { url: "https://example.com".into() }, false)]
+    #[case::manifest_not_found(OciDistributionError::ImageManifestNotFoundError("missing".into()), false)]
+    #[case::generic(OciDistributionError::GenericError(Some("something".into())), false)]
+    fn is_retryable_cases(#[case] err: OciDistributionError, #[case] expected: bool) {
+        assert_eq!(is_retryable(&err), expected);
+    }
 
-        server.mock(|when, then| {
-            when.method(GET).path("/token");
-            then.status(200)
-                .json_body(serde_json::json!({ "token": "test-token" }));
-        });
-
-        // Manifest matches but no Docker-Content-Digest header
-        server.mock(|when, then| {
-            when.method(GET).path("/v2/test/image/manifests/v1.0");
-            then.status(200).json_body(serde_json::json!({
-                "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
-                "config": { "digest": expected_image_digest.to_string() }
-            }));
-        });
-
-        let registry = mock_registry(&server);
-        let config = mock_launcher_config("v1.0");
-
-        // when
-        let result = get_manifest_digest(&registry, &config, &expected_image_digest).await;
-
-        // then - tag is skipped, no more tags → error
-        assert_matches!(result, Err(LauncherError::ImageHashNotFoundAmongTags));
+    #[rstest::rstest]
+    #[case::auth_failure(
+        OciDistributionError::AuthenticationFailure("token expired".into()),
+        "RegistryAuthFailed"
+    )]
+    #[case::unauthorized(
+        OciDistributionError::UnauthorizedError { url: "https://registry.example.com/v2/".into() },
+        "RegistryAuthFailed"
+    )]
+    #[case::manifest_not_found(
+        OciDistributionError::ImageManifestNotFoundError("no such tag".into()),
+        "ManifestNotFound"
+    )]
+    #[case::server_error(
+        OciDistributionError::ServerError { code: 503, url: "https://registry.example.com".into(), message: "unavailable".into() },
+        "RegistryServerError"
+    )]
+    #[case::generic_fallback(
+        OciDistributionError::GenericError(Some("something weird".into())),
+        "RegistryError"
+    )]
+    fn oci_error_mapping(#[case] err: OciDistributionError, #[case] expected_variant: &str) {
+        let result = oci_error_to_launcher_error(err);
+        let debug = format!("{result:?}");
+        assert!(
+            debug.starts_with(expected_variant),
+            "expected {expected_variant}, got: {debug}"
+        );
     }
 }
 
-/// Tests requiring network access and Docker Hub.
+/// Tests requiring network access and external registries.
+///
+/// Run with: `cargo nextest run --cargo-profile=test-release -p tee-launcher --features external-services-tests`
 #[cfg(all(test, feature = "external-services-tests"))]
 mod integration_tests {
     use assert_matches::assert_matches;
@@ -461,43 +319,79 @@ mod integration_tests {
     use super::*;
     use crate::validation::validate_image_hash;
 
-    //     # Dockerfile
-    // FROM alpine@sha256:765942a4039992336de8dd5db680586e1a206607dd06170ff0a37267a9e01958
-    // CMD ["true"]
-    // TODO: Look into reusing this image, as its small and will be faster on  CI
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-    const TEST_DIGEST: &str =
+    const NEARONE_TESTING_DIGEST: &str =
         "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372";
-    const TEST_TAG: &str = "83b52da4e2270c688cdd30da04f6b9d3565f25bb";
-    const TEST_IMAGE_NAME: &str = "nearone/testing";
-    const TEST_REGISTRY: &str = "registry.hub.docker.com";
+    const NEARONE_TESTING_TAG: &str = "83b52da4e2270c688cdd30da04f6b9d3565f25bb";
 
-    fn test_launcher_config() -> LauncherConfig {
+    /// alpine:3.21.3 amd64/linux config digest (shared across Docker Hub, ECR Public, GCR mirror).
+    const ALPINE_CONFIG_DIGEST: &str =
+        "sha256:aded1e1a5b3705116fa0a92ba074a5e0b0031647d9c315983ccba2ee5428ec8b";
+    const ALPINE_TAG: &str = "3.21.3";
+
+    /// ghcr.io/linuxserver/baseimage-alpine:3.21 amd64/linux config digest.
+    const GHCR_ALPINE_CONFIG_DIGEST: &str =
+        "sha256:9412ced37d82f91223266bcc1e0a9e05ce7f7d06d4f4fd41e86149be2a37d091";
+    const GHCR_ALPINE_TAG: &str = "3.21";
+
+    fn launcher_config(registry: &str, image_name: &str, tag: &str) -> LauncherConfig {
         LauncherConfig {
-            image_tags: near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![TEST_TAG.into()])
+            image_tags: near_mpc_bounded_collections::NonEmptyVec::from_vec(vec![tag.into()])
                 .unwrap(),
-            image_name: TEST_IMAGE_NAME.into(),
-            registry: TEST_REGISTRY.into(),
-            rpc_request_timeout_secs: 10,
+            image_name: image_name.into(),
+            registry: registry.into(),
+            rpc_request_timeout_secs: 30,
             rpc_request_interval_secs: 1,
-            rpc_max_attempts: 20,
+            rpc_max_attempts: 3,
             mpc_hash_override: None,
             port_mappings: vec![],
         }
     }
 
+    #[rstest::rstest]
+    #[case::docker_hub_nearone(
+        "registry.hub.docker.com",
+        "nearone/testing",
+        NEARONE_TESTING_TAG,
+        NEARONE_TESTING_DIGEST
+    )]
+    #[case::docker_hub_alpine(
+        "registry.hub.docker.com",
+        "library/alpine",
+        ALPINE_TAG,
+        ALPINE_CONFIG_DIGEST
+    )]
+    #[case::ghcr(
+        "ghcr.io",
+        "linuxserver/baseimage-alpine",
+        GHCR_ALPINE_TAG,
+        GHCR_ALPINE_CONFIG_DIGEST
+    )]
+    #[case::ecr_public(
+        "public.ecr.aws",
+        "docker/library/alpine",
+        ALPINE_TAG,
+        ALPINE_CONFIG_DIGEST
+    )]
+    #[case::gcr_mirror("mirror.gcr.io", "library/alpine", ALPINE_TAG, ALPINE_CONFIG_DIGEST)]
     #[tokio::test]
-    async fn get_manifest_digest_resolves_known_image() {
+    async fn resolves_manifest_digest(
+        #[case] registry: &str,
+        #[case] image_name: &str,
+        #[case] tag: &str,
+        #[case] config_digest: &str,
+    ) {
         // given
-        let config = test_launcher_config();
-        let expected_digest: DockerSha256Digest = TEST_DIGEST.parse().unwrap();
+        let config = launcher_config(registry, image_name, tag);
+        let expected: DockerSha256Digest = config_digest.parse().unwrap();
+        let client = create_registry_client(REQUEST_TIMEOUT);
 
         // when
-        let registry = DockerRegistry::new(&config);
-        let result = get_manifest_digest(&registry, &config, &expected_digest).await;
+        let result = get_manifest_digest(&client, &config, &expected).await;
 
         // then
-        assert!(result.is_ok(), "get_manifest_digest failed: {result:?}");
+        assert!(result.is_ok(), "{registry} failed: {result:?}");
     }
 
     // `validate_image_hash` compares the output of `docker inspect .ID` against
@@ -508,11 +402,15 @@ mod integration_tests {
     #[tokio::test]
     async fn validate_image_hash_succeeds_for_known_image() {
         // given
-        let config = test_launcher_config();
-        let expected_digest: DockerSha256Digest = TEST_DIGEST.parse().unwrap();
+        let config = launcher_config(
+            "registry.hub.docker.com",
+            "nearone/testing",
+            NEARONE_TESTING_TAG,
+        );
+        let expected: DockerSha256Digest = NEARONE_TESTING_DIGEST.parse().unwrap();
 
         // when
-        let result = validate_image_hash(&config, expected_digest).await;
+        let result = validate_image_hash(&config, expected).await;
 
         // then
         assert_matches!(result, Ok(_));
