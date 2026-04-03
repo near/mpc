@@ -11,7 +11,7 @@ pub enum LauncherError {
     #[error("Invalid image name (must contain only [a-zA-Z0-9/_.-]): {0}")]
     InvalidImageName(String),
 
-    #[error("Image hash not found among tags")]
+    #[error("No matching image digest found (some tags may have been skipped due to fetch errors)")]
     ImageHashNotFoundAmongTags,
 
     #[error("config digest mismatch: expected {expected}, got {actual}")]
@@ -20,7 +20,7 @@ pub enum LauncherError {
         actual: DockerSha256Digest,
     },
 
-    #[error("Failed to get auth token from registry: {0}")]
+    #[error("Registry authentication/authorization failed: {0}")]
     RegistryAuthFailed(String),
 
     #[error("Manifest not found: {0}")]

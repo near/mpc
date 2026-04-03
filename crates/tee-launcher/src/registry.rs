@@ -70,7 +70,7 @@ pub async fn get_manifest_digest(
         let (manifest, manifest_digest) = match result {
             Ok(value) => value,
             Err(err) => {
-                let launcher_err = oci_error_to_launcher_error(err);
+                let launcher_err = LauncherError::from(err);
                 tracing::warn!(
                     %reference,
                     error = %launcher_err,
@@ -148,22 +148,26 @@ fn is_retryable(err: &OciDistributionError) -> bool {
     )
 }
 
-fn oci_error_to_launcher_error(err: OciDistributionError) -> LauncherError {
-    match err {
-        OciDistributionError::AuthenticationFailure(msg) => LauncherError::RegistryAuthFailed(msg),
-        OciDistributionError::UnauthorizedError { url } => {
-            LauncherError::RegistryAuthFailed(format!("unauthorized: {url}"))
+impl From<OciDistributionError> for LauncherError {
+    fn from(err: OciDistributionError) -> Self {
+        match err {
+            OciDistributionError::AuthenticationFailure(msg) => {
+                LauncherError::RegistryAuthFailed(msg)
+            }
+            OciDistributionError::UnauthorizedError { url } => {
+                LauncherError::RegistryAuthFailed(format!("unauthorized: {url}"))
+            }
+            OciDistributionError::ImageManifestNotFoundError(msg) => {
+                LauncherError::ManifestNotFound(msg)
+            }
+            OciDistributionError::ServerError {
+                code, url, message, ..
+            } => LauncherError::RegistryServerError(format!("{code} {url}: {message}")),
+            OciDistributionError::RequestError(err) => {
+                LauncherError::RegistryRequestFailed(err.to_string())
+            }
+            other => LauncherError::RegistryError(other.to_string()),
         }
-        OciDistributionError::ImageManifestNotFoundError(msg) => {
-            LauncherError::ManifestNotFound(msg)
-        }
-        OciDistributionError::ServerError {
-            code, url, message, ..
-        } => LauncherError::RegistryServerError(format!("{code} {url}: {message}")),
-        OciDistributionError::RequestError(err) => {
-            LauncherError::RegistryRequestFailed(err.to_string())
-        }
-        other => LauncherError::RegistryError(other.to_string()),
     }
 }
 
@@ -299,7 +303,7 @@ mod tests {
         "RegistryError"
     )]
     fn oci_error_mapping(#[case] err: OciDistributionError, #[case] expected_variant: &str) {
-        let result = oci_error_to_launcher_error(err);
+        let result = LauncherError::from(err);
         let debug = format!("{result:?}");
         assert!(
             debug.starts_with(expected_variant),
