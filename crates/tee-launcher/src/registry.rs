@@ -262,7 +262,9 @@ mod tests {
 
     #[test]
     fn parse_manifest_digest_rejects_missing_prefix() {
-        let result = parse_manifest_digest("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let result = parse_manifest_digest(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
         assert_matches!(result, Err(LauncherError::RegistryResponseParse(msg)) => {
             assert!(msg.contains("failed to parse manifest digest"), "unexpected message: {msg}");
         });
