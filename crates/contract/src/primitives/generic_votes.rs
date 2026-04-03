@@ -11,6 +11,7 @@ use near_sdk::{near, store::IterableMap, IntoStorageKey};
 /// - Each voter has at most one active vote.
 /// - Each proposal has at least one vote.
 #[near(serializers=[borsh])]
+#[derive(Debug)]
 pub struct Votes<V, P>
 where
     V: VoterBounds,
@@ -88,6 +89,23 @@ where
             self.proposal_registry.remove(proposal);
         }
     }
+
+    pub fn clear(&mut self) {
+        self.retain_votes(|_| false);
+    }
+
+    pub fn votes_by_voter(&self) -> BTreeMap<V, P> {
+        self.vote_registry
+            .votes_by_voter
+            .iter()
+            .filter_map(|(voter, pid)| {
+                self.proposal_registry
+                    .proposals_by_id
+                    .get(pid)
+                    .map(|proposal| (voter.clone(), proposal.clone()))
+            })
+            .collect()
+    }
 }
 
 #[near(serializers=[borsh])]
@@ -108,6 +126,7 @@ impl ProposalId {
 /// `id_by_proposal` and `proposals_by_id` are inverse of one another.
 /// `next_id` is the next ID to assign (monotonically increasing).
 #[near(serializers=[borsh])]
+#[derive(Debug)]
 struct ProposalRegistry<T>
 where
     T: ProposalBounds,
@@ -155,6 +174,7 @@ where
 /// Tracks which voter voted for which proposal. `votes_by_voter` and `votes_by_proposal`
 /// are kept in sync — every entry in one has a corresponding entry in the other.
 #[near(serializers=[borsh])]
+#[derive(Debug)]
 struct VoteRegistry<V>
 where
     V: VoterBounds,
@@ -248,6 +268,7 @@ where
 /// Maps proposal IDs to the set of voters. An entry exists only if at least one voter
 /// has voted for that proposal (no empty entries).
 #[near(serializers=[borsh])]
+#[derive(Debug)]
 struct VotesByProposal<V>(BTreeMap<ProposalId, VoterSet<V>>)
 where
     V: VoterBounds;
@@ -287,6 +308,7 @@ where
 /// The set of voters who voted for a particular proposal. Always non-empty when stored
 /// inside `VotesByProposal`.
 #[near(serializers=[borsh])]
+#[derive(Debug)]
 pub struct VoterSet<V>(BTreeSet<V>)
 where
     V: VoterBounds;
