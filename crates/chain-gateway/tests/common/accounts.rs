@@ -24,11 +24,10 @@ impl Contract {
 }
 
 pub(super) fn compiled_test_contract_wasm() -> Vec<u8> {
-    test_utils::contract_build::build_contract(
+    test_utils::contract_build::ContractBuilder::new(
         "crates/chain-gateway-test-contract/Cargo.toml",
-        None,
-        &[],
     )
+    .build()
 }
 
 #[derive(Clone)]

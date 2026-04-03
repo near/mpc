@@ -1,12 +1,18 @@
 fn compile_project() -> (Vec<u8>, serde_json::Value) {
+    let project_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let to_utf8 = |p: std::path::PathBuf| {
+        cargo_near_build::camino::Utf8PathBuf::from_path_buf(p).expect("path must be valid UTF-8")
+    };
+
     let opts = cargo_near_build::BuildOpts {
+        manifest_path: Some(to_utf8(project_dir.join("Cargo.toml"))),
+        out_dir: Some(to_utf8(project_dir.join("../../target/near/contract"))),
         features: Some("abi".to_string()),
         profile: Some("release-contract".to_string()),
         ..Default::default()
     };
 
-    let contract_path =
-        test_utils::contract_build::build_contract_path("crates/contract/Cargo.toml", None, opts);
+    let contract_path = test_utils::contract_build::build_contract_path(opts);
 
     let wasm = std::fs::read(&contract_path).unwrap();
     let abi_path = contract_path
