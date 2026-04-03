@@ -23,6 +23,9 @@ pub mod types {
     };
     pub use updates::{ProposedUpdates, UpdateHash};
 
+    // Re-export hash types used in attestation DTO fields
+    pub use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};
+
     // Re-export crypto types from near-mpc-crypto-types
     pub use near_mpc_crypto_types::{
         Bls12381G1PublicKey, Bls12381G2PublicKey, CryptoConversionError, Ed25519PublicKey,
