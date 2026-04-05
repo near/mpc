@@ -12,7 +12,40 @@ use mpc_attestation::{
 };
 use reqwest::{Url, multipart::Form};
 use serde::Deserialize;
+use thiserror::Error;
 use tracing::error;
+
+/// Errors that can occur during TEE attestation generation.
+#[derive(Debug, Error)]
+pub enum AttestationError {
+    /// Failed to get attestation info from the dstack client.
+    #[error("dstack client info failed: {0:#}")]
+    DstackClientInfo(#[source] anyhow::Error),
+
+    /// Failed to convert dstack TcbInfo to the node's TcbInfo format.
+    #[error("TCB info conversion failed: {0:#}")]
+    TcbInfoConversion(#[source] anyhow::Error),
+
+    /// Failed to request a TDX quote from the dstack client.
+    #[error("TDX quote generation failed: {0:#}")]
+    QuoteGeneration(#[source] anyhow::Error),
+
+    /// Failed to decode the hex-encoded TDX quote.
+    #[error("TDX quote decoding failed: {0:#}")]
+    QuoteDecode(#[source] anyhow::Error),
+
+    /// The collateral upload service (e.g. Phala) failed. This is a transient
+    /// error — the node can continue without attestation and retry later.
+    #[error("collateral service error: {0:#}")]
+    CollateralUpload(#[source] anyhow::Error),
+}
+
+impl AttestationError {
+    /// Returns true if the error is potentially recoverable (transient service issue).
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, AttestationError::CollateralUpload(_))
+    }
+}
 
 /// The maximum duration to wait for retrying request to Phala's endpoint.
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
@@ -68,7 +101,7 @@ impl TeeAuthority {
     pub async fn generate_attestation(
         &self,
         report_data: ReportData,
-    ) -> anyhow::Result<Attestation> {
+    ) -> Result<Attestation, AttestationError> {
         match self {
             TeeAuthority::Local(config) => {
                 let create_valid_attestation = config.generate_valid_attestations;
@@ -91,26 +124,34 @@ impl TeeAuthority {
         &self,
         config: &DstackTeeAuthorityConfig,
         report_data: ReportData,
-    ) -> anyhow::Result<Attestation> {
+    ) -> Result<Attestation, AttestationError> {
         let client = DstackClient::new(Some(config.dstack_endpoint.as_str()));
 
-        let client_info_response =
-            get_with_backoff(|| client.info(), "dstack client info", None).await?;
-        let tcb_info = client_info_response.tcb_info.try_into()?;
+        let client_info_response = get_with_backoff(|| client.info(), "dstack client info", None)
+            .await
+            .map_err(AttestationError::DstackClientInfo)?;
+        let tcb_info = client_info_response
+            .tcb_info
+            .try_into()
+            .map_err(|e| AttestationError::TcbInfoConversion(anyhow::anyhow!("{e}")))?;
 
         let quote = get_with_backoff(
             || client.get_quote(report_data.to_bytes().into()),
             "dstack client tdx quote",
             None,
         )
-        .await?
+        .await
+        .map_err(AttestationError::QuoteGeneration)?
         .quote;
 
         let collateral = self
             .upload_quote_for_collateral(&config.quote_upload_url, &quote)
-            .await?;
+            .await
+            .map_err(AttestationError::CollateralUpload)?;
 
-        let quote: QuoteBytes = hex::decode(quote)?.into();
+        let quote: QuoteBytes = hex::decode(&quote)
+            .map_err(|e| AttestationError::QuoteDecode(e.into()))?
+            .into();
 
         Ok(Attestation::Dstack(DstackAttestation::new(
             quote, collateral, tcb_info,
@@ -186,20 +227,25 @@ where
     };
 
     // Loop until we have a response or exceed max retries
+    let mut attempt = 0u32;
     loop {
+        attempt += 1;
         match operation().await {
             Ok(response) => return Ok(response),
             Err(err) => match backoff.next() {
                 Some(duration) => {
-                    error!(?err, "{description} failed. retrying in: {:?}", duration);
+                    error!(
+                        ?err,
+                        attempt, "{description} failed. retrying in: {:?}", duration
+                    );
                     tokio::time::sleep(duration).await;
                 }
                 None => {
                     let retry_msg = match max_retries {
-                        Some(retries) => format!("after {} retries", retries),
+                        Some(retries) => format!("after {retries} retries"),
                         None => "and backoff returned None with unlimited retries".to_string(),
                     };
-                    error!(?err, "{description} failed {retry_msg}");
+                    error!(?err, attempt, "{description} failed {retry_msg}");
                     return Err(err);
                 }
             },
@@ -225,6 +271,23 @@ mod tests {
 
     #[cfg(feature = "external-services-tests")]
     use test_utils::attestation::quote;
+
+    #[test]
+    fn test_attestation_error_recoverability() {
+        let infra_errors = [
+            AttestationError::DstackClientInfo(anyhow::anyhow!("connection refused")),
+            AttestationError::TcbInfoConversion(anyhow::anyhow!("parse error")),
+            AttestationError::QuoteGeneration(anyhow::anyhow!("timeout")),
+            AttestationError::QuoteDecode(anyhow::anyhow!("invalid hex")),
+        ];
+        for e in &infra_errors {
+            assert!(!e.is_recoverable(), "expected fatal: {e}");
+        }
+
+        let recoverable =
+            AttestationError::CollateralUpload(anyhow::anyhow!("service unavailable"));
+        assert!(recoverable.is_recoverable());
+    }
 
     use test_utils::attestation::{account_key, p2p_tls_key};
 
