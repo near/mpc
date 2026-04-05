@@ -4,7 +4,7 @@ use chain_gateway::state_viewer::WatchContractState;
 use chain_gateway::state_viewer::{SubscribeToContractMethod, ViewMethod};
 use chain_gateway::types::NoArgs;
 use chain_gateway::types::ObservedState;
-use chain_gateway_test_contract::{DEFAULT_VALUE, VIEW_METHOD};
+use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
 
 use crate::common::localnet::Localnet;
 
@@ -12,12 +12,11 @@ use crate::common::localnet::Localnet;
 #[tokio::test]
 async fn test_view_method_contract_state() {
     let localnet = Localnet::new().await;
-    let contract_account_id = localnet.contract.account_id.clone();
+    let contract_id = localnet.contract.account_id.clone();
+    let observer_gw = &localnet.observer.chain_gateway;
 
-    let value: ObservedState<String> = localnet
-        .observer
-        .chain_gateway
-        .view_method(contract_account_id, VIEW_METHOD, &NoArgs {})
+    let value: ObservedState<String> = observer_gw
+        .view_method(contract_id, VIEW_VALUE, &NoArgs {})
         .await
         .expect("view call should succeed");
 
@@ -29,12 +28,11 @@ async fn test_view_method_contract_state() {
 #[tokio::test]
 async fn test_view_method_nonexistent_method_returns_error() {
     let localnet = Localnet::new().await;
-    let contract_account_id = localnet.contract.account_id.clone();
+    let contract_id = localnet.contract.account_id.clone();
+    let observer_gw = &localnet.observer.chain_gateway;
 
-    let result = localnet
-        .observer
-        .chain_gateway
-        .view_method::<NoArgs, String>(contract_account_id, "nonexistent", &NoArgs {})
+    let result = observer_gw
+        .view_method::<NoArgs, String>(contract_id, "nonexistent", &NoArgs {})
         .await;
 
     let err = result.expect_err("calling a nonexistent method should fail");
@@ -46,13 +44,12 @@ async fn test_view_method_nonexistent_method_returns_error() {
 #[tokio::test]
 async fn test_subscription_receives_initial_value() {
     let localnet = Localnet::new().await;
-    let contract_account_id = localnet.contract.account_id.clone();
+    let contract_id = localnet.contract.account_id.clone();
+    let observer_gw = &localnet.observer.chain_gateway;
 
     {
-        let mut sub = localnet
-            .observer
-            .chain_gateway
-            .subscribe_to_contract_method::<String>(contract_account_id, VIEW_METHOD)
+        let mut sub = observer_gw
+            .subscribe_to_contract_method::<String>(contract_id, VIEW_VALUE)
             .await;
 
         let res = sub.latest().expect("subscription latest should succeed");

@@ -133,18 +133,11 @@ impl TryFrom<dtos::BitcoinExtractedValue> for BitcoinExtractedValue {
     }
 }
 
-impl TryFrom<AbstractExtractor> for dtos::EvmExtractor {
-    type Error = ConversionError;
-    fn try_from(value: AbstractExtractor) -> Result<Self, Self::Error> {
+impl From<AbstractExtractor> for dtos::EvmExtractor {
+    fn from(value: AbstractExtractor) -> Self {
         match value {
-            AbstractExtractor::BlockHash => Ok(dtos::EvmExtractor::BlockHash),
-            AbstractExtractor::Log { log_index } => Ok(dtos::EvmExtractor::Log {
-                log_index: u64::try_from(log_index).map_err(|_| {
-                    ConversionError::IntegerOverflow {
-                        context: "EvmExtractor::Log log_index exceeds u64",
-                    }
-                })?,
-            }),
+            AbstractExtractor::BlockHash => dtos::EvmExtractor::BlockHash,
+            AbstractExtractor::Log { log_index } => dtos::EvmExtractor::Log { log_index },
         }
     }
 }
@@ -154,13 +147,7 @@ impl TryFrom<dtos::EvmExtractor> for AbstractExtractor {
     fn try_from(value: dtos::EvmExtractor) -> Result<Self, Self::Error> {
         match value {
             dtos::EvmExtractor::BlockHash => Ok(AbstractExtractor::BlockHash),
-            dtos::EvmExtractor::Log { log_index } => Ok(AbstractExtractor::Log {
-                log_index: usize::try_from(log_index).map_err(|_| {
-                    ConversionError::IntegerOverflow {
-                        context: "EvmExtractor::Log log_index exceeds platform usize",
-                    }
-                })?,
-            }),
+            dtos::EvmExtractor::Log { log_index } => Ok(AbstractExtractor::Log { log_index }),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "EvmExtractor",
             }),
@@ -366,7 +353,7 @@ mod tests {
     #[test]
     fn abstract_extractor_block_hash_roundtrip() {
         let inspector = AbstractExtractor::BlockHash;
-        let contract = dtos::EvmExtractor::try_from(inspector.clone()).unwrap();
+        let contract = dtos::EvmExtractor::from(inspector.clone());
         let back = AbstractExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -374,7 +361,7 @@ mod tests {
     #[test]
     fn abstract_extractor_log_roundtrip() {
         let inspector = AbstractExtractor::Log { log_index: 5 };
-        let contract = dtos::EvmExtractor::try_from(inspector.clone()).unwrap();
+        let contract = dtos::EvmExtractor::from(inspector.clone());
         assert_matches!(contract, dtos::EvmExtractor::Log { log_index: 5 });
         let back = AbstractExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
