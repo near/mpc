@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 USE_LAUNCHER=false
 USE_RUST_LAUNCHER=false
+USE_LOCAL_IMAGE=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -16,9 +17,12 @@ for arg in "$@"; do
   --rust-launcher)
     USE_RUST_LAUNCHER=true
     ;;
+  --use-local-image)
+    USE_LOCAL_IMAGE=true
+    ;;
   *)
     echo "Unknown parameter: $arg"
-    echo "Usage: $0 [--launcher] [--rust-launcher]"
+    echo "Usage: $0 [--launcher] [--rust-launcher] [--use-local-image]"
     exit 1
     ;;
   esac
@@ -42,8 +46,19 @@ if $USE_LAUNCHER; then
   CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
 elif $USE_RUST_LAUNCHER; then
   cd "$REPO_ROOT/deployment/cvm-deployment"
-  export RUST_LAUNCHER_IMAGE_NAME
-  docker compose -f launcher_docker_compose_nontee.yaml up -d
+  if $USE_LOCAL_IMAGE; then
+    # Use the locally built image instead of pulling from Docker Hub.
+    # This ensures the runtime test uses the same image that was just built. See #2704.
+    docker tag mpc-rust-launcher:latest nearone/mpc-launcher:ci-local
+    # Create a temporary compose that references the local tag
+    sed 's|nearone/mpc-launcher@sha256:[a-f0-9]*|nearone/mpc-launcher:ci-local|' \
+      launcher_docker_compose_nontee.yaml > /tmp/launcher_nontee_local.yaml
+    export RUST_LAUNCHER_IMAGE_NAME
+    docker compose -f /tmp/launcher_nontee_local.yaml up -d
+  else
+    export RUST_LAUNCHER_IMAGE_NAME
+    docker compose -f launcher_docker_compose_nontee.yaml up -d
+  fi
   sleep 10
   launcher_logs=$(docker logs --tail 10 "$RUST_LAUNCHER_IMAGE_NAME" 2>&1)
   if ! echo "$launcher_logs" | grep "MPC launched successfully."; then
