@@ -90,13 +90,14 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let attestation = match tee_authority.generate_attestation(report_data).await {
         Ok(att) => {
             tracing::info!("TEE attestation generated successfully");
-            att
+            Some(att)
         }
         Err(e) => {
-            tracing::error!("TEE attestation failed, falling back to Mock: {:#}", e);
-            mpc_attestation::attestation::Attestation::Mock(
-                mpc_attestation::attestation::MockAttestation::Valid,
-            )
+            tracing::error!(
+                "TEE attestation failed: {:#}. Node will continue without attestation.",
+                e
+            );
+            None
         }
     };
 
@@ -113,7 +114,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             root_task_handle.clone(),
             debug_request_sender.clone(),
             node_config.web_ui,
-            static_web_data(&secrets, Some(attestation)),
+            static_web_data(&secrets, attestation),
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
