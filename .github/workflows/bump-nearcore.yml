@@ -1,0 +1,34 @@
+name: Bump nearcore
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Nearcore tag (leave empty for latest release)'
+        required: false
+
+concurrency:
+  group: bump-nearcore
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: main
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Bump nearcore
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEARCORE_TAG: ${{ inputs.tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: .github/scripts/bump-nearcore.sh

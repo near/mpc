@@ -11,8 +11,7 @@ The NEAR MPC project consists of two main components that are released together 
 ## Release Principles
 
 ### 1. Release from the `main` branch
-Releases are created by making a release tag on the `main` branch, followed by the manual steps outlined in the
-[GitHub release documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository#creating-a-release).
+Releases are created by pushing a release tag on the `main` branch. The [Release workflow](.github/workflows/release.yml) then automatically creates a draft GitHub release with all artifacts.
 
 Before creating the tag, make sure to update the version number in the workspace `Cargo.toml` file.
 
@@ -44,7 +43,7 @@ We also have a script that automates the local steps (changelog, version bump, s
 ./scripts/prepare-release.sh 3.1.0
 ```
 
-The remaining steps (creating the tag, release artifacts, and GitHub release) still need to be done manually.
+The remaining steps (opening the PR, creating the tag, and publishing the release) still need to be done manually.
 
 ## How to make a release
 
@@ -52,10 +51,10 @@ In practice when making a release, you need to do the following things:
 
 1. Update the changelog.
 2. Bump the crate versions.
-3. Update license versions
-4. Create the release tag.
-5. Create release artifacts.
-6. Create the release on GitHub.
+3. Update license versions.
+4. Open and merge a PR with the changes.
+5. Create the release tag.
+6. Edit and publish the draft GitHub release.
 
 The following sections will walk you through the steps of doing this for the `3.1.0` release.
 Replace this with whatever release version you're making.
@@ -86,27 +85,36 @@ cargo insta review
 ### 3. Update license versions
 Follow the [how-to-regenerate](https://github.com/near/mpc/tree/main/third-party-licenses#how-to-regenerate) guide, to update the license versions.
 
-### 4. Open a PR with the changelog and version bumps
+### 4. Open and merge a PR with the changelog and version bumps
 At this point it's appropriate to open a PR with the changelog and crate and license version changes.
 See [the 3.0.6 PR](https://github.com/near/mpc/pull/1549) for reference.
+Once approved, merge it to `main` before creating the release tag.
 
 ### 5. Create the release tag
 Once the changelog and crate versions have been bumped on latest `main`
 we're ready to create the release tag.
-You can do this directly in GitHub, but I prefer to do it locally:
+
+Before pushing the tag, verify that the Docker images for the tagged commit have already been published by the CI pipeline (e.g. `main-<short-sha>` tags on Docker Hub). The Release workflow retags these existing images, so it will fail if they don't exist yet.
+
+You can create the tag directly in GitHub, but I prefer to do it locally:
 
 ```sh
 git tag 3.1.0
 git push origin 3.1.0 # Assuming `origin` points at github.com:near/mpc.git
 ```
 
-### 6. Create the release artifacts
-Once the tag has been pushed the following release artifacts should be created:
+### 6. Edit and publish the draft GitHub release
 
-1. The launcher and MPC node docker images.
-2. The contract.
+Pushing the tag in the previous step triggers the [Release workflow](.github/workflows/release.yml), which automatically:
 
-For small patches we can omit publishing the contract if there are no changes to it.
+1. Retags the Docker images (`mpc-launcher`, `mpc-node`, `mpc-node-gcp`) from `main-<short-sha>` to the release version.
+2. Builds the contract reproducibly and computes its SHA-256 digest.
+3. Creates a **draft** GitHub release with the changelog, Docker image digests, and the contract artifact attached.
+
+Once the workflow completes, go to the [releases page](https://github.com/near/mpc/releases), review and edit the draft as needed, then publish it.
+
+<details>
+<summary>Manual alternative (if the workflow is unavailable)</summary>
 
 To create the launcher and MPC node docker images, use the following workflows:
 
@@ -115,7 +123,7 @@ To create the launcher and MPC node docker images, use the following workflows:
 
 Note: the **Node** workflow should be run twice, for `nearone/mpc-node-gcp` and `nearone/mpc-node` images.
 
-Both of these work the same way. They take an existing image and re-tags it with the provided tag.
+Both of these work the same way. They take an existing image and retag it with the provided tag.
 
 Run these workflows with the source image tag `main-<short-commit-hash>` using the short commit hash
 as the release tag.
@@ -127,17 +135,13 @@ Or, you can find this exact tag at docker hub.
 For example for the node image, visit the [nearone/mpc-node-gcp](https://hub.docker.com/r/nearone/mpc-node-gcp/tags)
 page and find the image associated with the commit at the release tag.
 
-
-We don't have a workflow to build and publish the contract yet, so this is easiest to build
-locally using the normal command:
+Build the contract locally:
 
 ```sh
 cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 ```
 
-Naturally using reproducible builds.
-
-After this we should rename the contract and compress this into a `.tar.gz` archive.
+Rename and compress the contract into a `.tar.gz` archive:
 
 ```sh
 cd target/near/mpc_contract/
@@ -152,17 +156,10 @@ To get the digest of the MPC contract:
 sha256sum mpc-contract-v3.1.0.wasm
 ```
 
-### 7. Create the release on GitHub
-Now we should be all set to create the actual release on Github.
+Then create the release from the [release page](https://github.com/near/mpc/releases) — click "Draft a new release",
+paste the relevant changelog entries, add Docker image links, and attach the contract artifact.
 
-From the [release page](https://github.com/near/mpc/releases) click "Draft a new release",
-write some sentences about the release and paste the relevant changelog entries to it.
-
-Then, add the appropriate links to the docker images and attach the contract in the UI.
-
-Look at previous releases for reference.
-
-Once it looks good, click "publish release" and enjoy.
+</details>
 
 Note: When you want to roll this release out to testnet and mainnet,
 you can use the same re-tagging action to re-tag the released images as `nearone/mpc-node-gcp:testnet-release`
