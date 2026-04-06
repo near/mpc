@@ -92,7 +92,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             tracing::info!("TEE attestation generated successfully");
             Some(att)
         }
-        Err(e) if e.is_recoverable() => {
+        Err(e @ tee_authority::tee_authority::AttestationError::CollateralUpload(_)) => {
             tracing::error!(
                 "TEE attestation failed: {e}. \
                  Node will continue without attestation and retry periodically.",

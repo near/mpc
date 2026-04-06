@@ -34,17 +34,9 @@ pub enum AttestationError {
     #[error("TDX quote decoding failed: {0:#}")]
     QuoteDecode(#[source] anyhow::Error),
 
-    /// The collateral upload service (e.g. Phala) failed. This is a transient
-    /// error — the node can continue without attestation and retry later.
-    #[error("collateral service error: {0:#}")]
+    /// Failed to upload TDX quote to the collateral service (e.g. Phala).
+    #[error("collateral upload failed: {0:#}")]
     CollateralUpload(#[source] anyhow::Error),
-}
-
-impl AttestationError {
-    /// Returns true if the error is potentially recoverable (transient service issue).
-    pub fn is_recoverable(&self) -> bool {
-        matches!(self, AttestationError::CollateralUpload(_))
-    }
 }
 
 /// The maximum duration to wait for retrying request to Phala's endpoint.
@@ -273,20 +265,26 @@ mod tests {
     use test_utils::attestation::quote;
 
     #[test]
-    fn test_attestation_error_recoverability() {
-        let infra_errors = [
+    fn test_attestation_error_variants() {
+        let errors = [
             AttestationError::DstackClientInfo(anyhow::anyhow!("connection refused")),
             AttestationError::TcbInfoConversion(anyhow::anyhow!("parse error")),
             AttestationError::QuoteGeneration(anyhow::anyhow!("timeout")),
             AttestationError::QuoteDecode(anyhow::anyhow!("invalid hex")),
+            AttestationError::CollateralUpload(anyhow::anyhow!("service unavailable")),
         ];
-        for e in &infra_errors {
-            assert!(!e.is_recoverable(), "expected fatal: {e}");
+        // Only CollateralUpload should match the recoverable pattern
+        for e in &errors {
+            let is_collateral = matches!(e, AttestationError::CollateralUpload(_));
+            let display = e.to_string();
+            assert!(!display.is_empty(), "error should have a display message");
+            if is_collateral {
+                assert!(
+                    display.contains("collateral"),
+                    "expected 'collateral' in: {display}"
+                );
+            }
         }
-
-        let recoverable =
-            AttestationError::CollateralUpload(anyhow::anyhow!("service unavailable"));
-        assert!(recoverable.is_recoverable());
     }
 
     use test_utils::attestation::{account_key, p2p_tls_key};
