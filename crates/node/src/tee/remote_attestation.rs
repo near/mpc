@@ -158,8 +158,8 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
             .await
         {
             Ok(att) => att,
-            Err(e @ tee_authority::tee_authority::AttestationError::CollateralUpload(_)) => {
-                tracing::warn!("TEE attestation failed: {e}. Will retry next interval.");
+            Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+                tracing::warn!("TEE attestation failed: {e:#}. Will retry next interval.");
                 continue;
             }
             Err(e) => {
@@ -245,8 +245,8 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 .await
             {
                 Ok(att) => att,
-                Err(e @ tee_authority::tee_authority::AttestationError::CollateralUpload(_)) => {
-                    tracing::warn!("TEE attestation failed: {e}. Will retry on next change.");
+                Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+                    tracing::warn!("TEE attestation failed: {e:#}. Will retry on next change.");
                     continue;
                 }
                 Err(e) => {

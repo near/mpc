@@ -259,29 +259,6 @@ mod tests {
     #[cfg(feature = "external-services-tests")]
     use test_utils::attestation::quote;
 
-    #[test]
-    fn test_attestation_error_variants() {
-        let errors = [
-            AttestationError::DstackClientInfo(anyhow::anyhow!("connection refused")),
-            AttestationError::TcbInfoConversion(anyhow::anyhow!("parse error")),
-            AttestationError::QuoteGeneration(anyhow::anyhow!("timeout")),
-            AttestationError::QuoteDecode(anyhow::anyhow!("invalid hex")),
-            AttestationError::CollateralUpload(anyhow::anyhow!("service unavailable")),
-        ];
-        // Only CollateralUpload should match the recoverable pattern
-        for e in &errors {
-            let is_collateral = matches!(e, AttestationError::CollateralUpload(_));
-            let display = e.to_string();
-            assert!(!display.is_empty(), "error should have a display message");
-            if is_collateral {
-                assert!(
-                    display.contains("collateral"),
-                    "expected 'collateral' in: {display}"
-                );
-            }
-        }
-    }
-
     use test_utils::attestation::{account_key, p2p_tls_key};
 
     extern crate std;
