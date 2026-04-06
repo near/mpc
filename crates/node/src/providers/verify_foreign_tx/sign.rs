@@ -511,6 +511,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[expect(deprecated, reason = "regression test of to be deprecated API")]
     async fn validate_foreign_chain_policy__should_fail_when_policies_mismatch() {
         let config = bitcoin_foreign_chains_config();
         // On-chain policy differs (different RPC URL)

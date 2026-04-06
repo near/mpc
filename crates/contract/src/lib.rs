@@ -1,4 +1,9 @@
 #![doc = include_str!("../README.md")]
+#![expect(
+    deprecated,
+    reason = "Deprecation of foreign TX types. Applied on module level 
+    as the expect doesn't apply on the derivations"
+)]
 
 pub mod config;
 pub mod crypto_shared;
@@ -17,10 +22,7 @@ pub mod v3_7_0_state;
 mod bench;
 mod dto_mapping;
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    time::Duration,
-};
+use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
     crypto_shared::types::CKDResponse,
@@ -135,7 +137,9 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
 
     // deprecate after next upgrade for backwards compatibility
+    #[deprecated]
     foreign_chain_policy: dtos::ForeignChainPolicy,
+    #[deprecated]
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
 
     supported_foreign_chains: dtos::SupportedForeignChains,
@@ -170,11 +174,13 @@ struct StaleData {}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-#[deprecated]
+#[deprecated(since = "3.10.0")]
+#[expect(deprecated)]
 struct ForeignChainPolicyVotes {
     proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
 }
 
+#[expect(deprecated)]
 impl Default for ForeignChainPolicyVotes {
     fn default() -> Self {
         Self {
@@ -183,6 +189,7 @@ impl Default for ForeignChainPolicyVotes {
     }
 }
 
+#[expect(deprecated)]
 impl ForeignChainPolicyVotes {
     fn to_dto(&self) -> dtos::ForeignChainPolicyVotes {
         let mut proposal_by_account = BTreeMap::new();
@@ -1041,6 +1048,8 @@ impl MpcContract {
     /// Propose a new foreign chain policy.
     /// If all current participants vote for the exact same policy, it is applied.
     #[handle_result]
+    #[deprecated(since = "3.10.0")]
+    #[expect(deprecated)]
     pub fn vote_foreign_chain_policy(
         &mut self,
         policy: dtos::ForeignChainPolicy,
@@ -1083,17 +1092,16 @@ impl MpcContract {
     }
 
     #[handle_result]
-    #[allow(dead_code)]
     pub fn register_foreign_chain_config(
         &mut self,
-        supported_chains_by_node: dtos::SupportedForeignChains,
+        _supported_chains_by_node: dtos::SupportedForeignChains,
     ) -> Result<(), Error> {
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
 
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let voter = dtos::AccountId(voter.get().to_string());
+        let _voter = dtos::AccountId(voter.get().to_string());
 
         // TODO: register that this nodes
         Ok(())
@@ -1714,6 +1722,7 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
+        #[expect(deprecated)]
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -2484,6 +2493,7 @@ mod tests {
         (context, contract, sk)
     }
 
+    #[expect(deprecated, reason = "regression test of to be deprecated API")]
     fn bitcoin_foreign_chain_policy() -> dtos::ForeignChainPolicy {
         dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
@@ -2809,6 +2819,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(deprecated, reason = "regression test of to be deprecated API")]
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -2877,6 +2888,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(deprecated, reason = "regression test of to be deprecated API")]
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -2956,6 +2968,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "not present in the active foreign chain policy")]
+    #[expect(deprecated, reason = "regression test of to be deprecated API")]
     fn verify_foreign_tx__should_reject_chain_not_in_policy() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -3360,6 +3373,8 @@ mod tests {
                 proposed_updates: Default::default(),
                 foreign_chain_policy: Default::default(),
                 foreign_chain_policy_votes: Default::default(),
+                supported_foreign_chains: Default::default(),
+                supported_foreign_chains_votes: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
@@ -4747,6 +4762,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(deprecated, reason = "regression test of to be deprecated API")]
     fn vote_foreign_chain_policy__should_store_vote_for_participant() {
         // Given
         let running_state = gen_running_state(1);
@@ -4789,6 +4805,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(deprecated, reason = "regression test of to be deprecated API")]
     fn vote_foreign_chain_policy__should_apply_policy_after_unanimous_votes() {
         // Given
         let running_state = gen_running_state(1);
@@ -4827,6 +4844,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(deprecated, reason = "regression test of to be deprecated API")]
     fn vote_foreign_chain_policy__should_ignore_votes_from_non_participants() {
         // Given
         let running_state = gen_running_state(1);
