@@ -65,9 +65,6 @@ pub struct LauncherConfig {
     /// Optional digest override (`sha256:...`) that bypasses the approved list selection.
     /// Must still appear in the approved hashes file if present. Set via `mpc_hash_override`.
     pub mpc_hash_override: Option<DockerSha256Digest>,
-    /// Optional override for the TDX quote collateral endpoint URL.
-    /// Defaults to Phala's endpoint if not set. Set via `quote_upload_url` in TOML.
-    pub quote_upload_url: Option<String>,
     pub port_mappings: Vec<PortMapping>,
 }
 

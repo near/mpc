@@ -121,27 +121,28 @@ curl http://localhost:8082/health
 
 The MPC node's `quote_upload_url` must point to the proxy. Since the node runs inside a CVM, it cannot reach `localhost` on the host -- use the host's external IP instead.
 
-### Via launcher TOML config (recommended)
+### Via node TOML config (recommended)
 
-Add `quote_upload_url` to the `[launcher_config]` section of the dstack user config:
+Add `quote_upload_url` to the `[mpc_node_config]` section of the dstack user config:
 
 ```toml
-[launcher_config]
-# ... existing fields ...
+[mpc_node_config]
+home_dir = "/data"
 quote_upload_url = "http://<HOST_IP>:8082/api/v1/attestations/verify"
 ```
 
-If `quote_upload_url` is omitted, the launcher falls back to Phala's endpoint.
+If `quote_upload_url` is omitted, the node falls back to Phala's endpoint (set by the launcher in the `[tee]` section).
 
 ### Via localnet test template
 
-The localnet config template at `localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl` already includes:
+The localnet config template at `localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl` has a commented-out example:
 
 ```toml
-quote_upload_url = "http://${MACHINE_IP}:8082/api/v1/attestations/verify"
+[mpc_node_config]
+# quote_upload_url = "http://${MACHINE_IP}:8082/api/v1/attestations/verify"
 ```
 
-This is substituted with `MACHINE_IP` at deploy time.
+Uncomment and set `MACHINE_IP` to enable the local proxy.
 
 ## API
 

@@ -24,6 +24,11 @@ pub struct StartConfig {
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
     pub log: LogConfig,
+    /// Optional override for the TDX quote collateral endpoint URL.
+    /// When set, overrides the URL injected by the launcher in the `[tee]` section.
+    /// Example: `"http://51.68.219.1:8082/api/v1/attestations/verify"`
+    #[serde(default)]
+    pub quote_upload_url: Option<String>,
 }
 
 impl StartConfig {

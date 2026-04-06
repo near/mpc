@@ -144,6 +144,7 @@ impl StartCmd {
                 format: log_format,
                 filter: std::env::var("RUST_LOG").ok(),
             },
+            quote_upload_url: None,
         }
     }
 }
