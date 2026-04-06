@@ -478,7 +478,20 @@ mod tests {
     }
 
     /// Test that the local PCCS proxy (scripts/local-pccs-proxy.py) returns valid collateral.
-    /// Requires the proxy to be running on localhost:8082.
+    ///
+    /// Requires the proxy to be running. Set `LOCAL_PCCS_PROXY_URL` to override the default
+    /// (`http://localhost:8082/api/v1/attestations/verify`).
+    ///
+    /// Example:
+    /// ```sh
+    /// # Start the proxy (pointing at the local Intel PCCS):
+    /// python3 scripts/local-pccs-proxy.py --port 8082 --pccs-url https://localhost:8081
+    ///
+    /// # Run this test:
+    /// LOCAL_PCCS_PROXY_URL=http://localhost:8082/api/v1/attestations/verify \
+    ///   cargo test -p tee-authority --features external-services-tests \
+    ///     --profile test-release test_upload_quote_for_collateral_with_local_pccs_proxy
+    /// ```
     #[tokio::test]
     #[cfg(feature = "external-services-tests")]
     async fn test_upload_quote_for_collateral_with_local_pccs_proxy() {
@@ -489,9 +502,11 @@ mod tests {
         .expect("Is valid json")
         .encode_hex();
 
-        let local_pccs_url: Url = "http://localhost:8082/api/v1/attestations/verify"
+        let default_url = "http://localhost:8082/api/v1/attestations/verify";
+        let local_pccs_url: Url = std::env::var("LOCAL_PCCS_PROXY_URL")
+            .unwrap_or_else(|_| default_url.to_string())
             .parse()
-            .expect("Valid URL");
+            .expect("LOCAL_PCCS_PROXY_URL must be a valid URL");
 
         let tee_authority = TeeAuthority::Dstack(DstackTeeAuthorityConfig::default());
 
