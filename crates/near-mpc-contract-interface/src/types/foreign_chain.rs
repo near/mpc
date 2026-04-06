@@ -1,3 +1,9 @@
+#![expect(
+    deprecated,
+    reason = "Deprecation of foreign TX types. Applied on module level 
+    as the expect doesn't apply on the derivations"
+)]
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use serde::{Deserialize, Serialize};
@@ -592,6 +598,7 @@ pub enum ForeignChain {
     Starknet,
 }
 
+#[deprecated(since = "3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -610,11 +617,11 @@ pub enum ForeignChain {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-#[deprecated]
 pub struct ForeignChainPolicy {
     pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
 }
 
+#[deprecated(since = "3.10.0")]
 #[derive(
     Debug,
     Clone,
