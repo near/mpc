@@ -18,23 +18,18 @@ use tracing::error;
 /// Errors that can occur during TEE attestation generation.
 #[derive(Debug, Error)]
 pub enum AttestationError {
-    /// Failed to get attestation info from the dstack client.
     #[error("dstack client info failed: {0:#}")]
     DstackClientInfo(#[source] anyhow::Error),
 
-    /// Failed to convert dstack TcbInfo to the node's TcbInfo format.
     #[error("TCB info conversion failed: {0:#}")]
     TcbInfoConversion(#[source] anyhow::Error),
 
-    /// Failed to request a TDX quote from the dstack client.
     #[error("TDX quote generation failed: {0:#}")]
     QuoteGeneration(#[source] anyhow::Error),
 
-    /// Failed to decode the hex-encoded TDX quote.
     #[error("TDX quote decoding failed: {0:#}")]
     QuoteDecode(#[source] anyhow::Error),
 
-    /// Failed to upload TDX quote to the collateral service (e.g. Phala).
     #[error("collateral upload failed: {0:#}")]
     CollateralUpload(#[source] anyhow::Error),
 }
