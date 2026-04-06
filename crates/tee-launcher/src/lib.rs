@@ -50,7 +50,11 @@ pub async fn run() -> Result<(), LauncherError> {
         emit_image_hash_event(&image_hash).await?;
     }
 
-    let tee_config = build_tee_config(args.platform, image_hash);
+    let tee_config = build_tee_config(
+        args.platform,
+        image_hash,
+        config.launcher_config.quote_upload_url.as_deref(),
+    );
     let mpc_node_config = intercept_node_config(config.mpc_node_config, &tee_config)?;
 
     write_config_atomically(&mpc_node_config)?;
@@ -127,11 +131,17 @@ async fn emit_image_hash_event(image_hash: &DockerSha256Digest) -> Result<(), La
         .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))
 }
 
-fn build_tee_config(platform: Platform, image_hash: DockerSha256Digest) -> TeeConfig {
+fn build_tee_config(
+    platform: Platform,
+    image_hash: DockerSha256Digest,
+    quote_upload_url: Option<&str>,
+) -> TeeConfig {
     let authority = match platform {
         Platform::Tee => TeeAuthorityConfig::Dstack {
             dstack_endpoint: DSTACK_UNIX_SOCKET.to_string(),
-            quote_upload_url: DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL.to_string(),
+            quote_upload_url: quote_upload_url
+                .unwrap_or(DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL)
+                .to_string(),
         },
         Platform::NonTee => TeeAuthorityConfig::Local,
     };

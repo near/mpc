@@ -263,6 +263,7 @@ mod tests {
             rpc_request_interval_secs: 1,
             rpc_max_attempts: 1,
             mpc_hash_override: None,
+            quote_upload_url: None,
             port_mappings: vec![],
         }
     }
@@ -482,6 +483,7 @@ mod integration_tests {
             rpc_request_interval_secs: 1,
             rpc_max_attempts: 20,
             mpc_hash_override: None,
+            quote_upload_url: None,
             port_mappings: vec![],
         }
     }
