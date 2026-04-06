@@ -5,6 +5,7 @@ registry = "${MPC_REGISTRY}"
 rpc_request_timeout_secs = 10
 rpc_request_interval_secs = 1
 rpc_max_attempts = 20
+quote_upload_url = "http://${MACHINE_IP}:8082/api/v1/attestations/verify"
 port_mappings = [
 ${PORTS_TOML}]
 
