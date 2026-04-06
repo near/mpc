@@ -137,7 +137,7 @@ gcloud-sdk = { version = "0.29.0", default-features = false, features = [
 ] }
 group = "0.13"
 hex = { version = "0.4.3", features = ["serde"] }
-hkdf = "0.12.4"
+hkdf = "0.13.0"
 http = "1.4.0"
 humantime = "2.3.0"
 # TODO(#1299): updating this brings considerable breaking changes
