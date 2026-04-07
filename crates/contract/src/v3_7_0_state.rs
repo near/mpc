@@ -158,4 +158,88 @@ mod tests {
             );
         }
     }
+
+    #[expect(deprecated)]
+    fn make_policy(chains: Vec<dtos::ForeignChain>) -> dtos::ForeignChainPolicy {
+        use near_mpc_bounded_collections::NonEmptyBTreeSet;
+        dtos::ForeignChainPolicy {
+            chains: chains
+                .into_iter()
+                .map(|chain| {
+                    (
+                        chain,
+                        NonEmptyBTreeSet::new(dtos::RpcProvider {
+                            rpc_url: "https://rpc.example.com".to_string(),
+                        }),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    #[expect(deprecated)]
+    #[test]
+    fn test_migration_derives_supported_foreign_chains_from_policy() {
+        let policy = make_policy(vec![
+            dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Ethereum,
+        ]);
+
+        let supported: dtos::SupportedForeignChains = policy
+            .chains
+            .iter()
+            .map(|(foreign_chain, _rpc)| foreign_chain)
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into();
+
+        assert!(supported.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(supported.contains(&dtos::ForeignChain::Ethereum));
+        assert_eq!(supported.len(), 2);
+    }
+
+    #[expect(deprecated)]
+    #[test]
+    fn test_migration_derives_empty_supported_foreign_chains_from_empty_policy() {
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeMap::new(),
+        };
+
+        let supported: dtos::SupportedForeignChains = policy
+            .chains
+            .iter()
+            .map(|(foreign_chain, _rpc)| foreign_chain)
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into();
+
+        assert!(supported.is_empty());
+    }
+
+    #[expect(deprecated)]
+    #[test]
+    fn test_migration_supported_foreign_chains_preserves_all_chain_keys() {
+        let all_chains = vec![
+            dtos::ForeignChain::Solana,
+            dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Ethereum,
+            dtos::ForeignChain::Base,
+            dtos::ForeignChain::Bnb,
+            dtos::ForeignChain::Arbitrum,
+        ];
+        let policy = make_policy(all_chains.clone());
+
+        let supported: dtos::SupportedForeignChains = policy
+            .chains
+            .iter()
+            .map(|(foreign_chain, _rpc)| foreign_chain)
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into();
+
+        assert_eq!(supported.len(), all_chains.len());
+        for chain in &all_chains {
+            assert!(supported.contains(chain));
+        }
+    }
 }
