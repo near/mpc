@@ -160,6 +160,7 @@ jobs:
             extra-tools: true
           - group: "other"
             nextest-args: "--profile=ci-other"
+            extra-tools: true
 
     steps:
       - name: Checkout repository

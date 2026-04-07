@@ -20,7 +20,6 @@ use validation::validate_image_hash;
 pub mod compose;
 pub mod config;
 pub mod constants;
-pub mod docker_types;
 pub mod error;
 pub mod registry;
 pub mod selection;

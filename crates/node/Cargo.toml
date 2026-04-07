@@ -70,7 +70,6 @@ sha3 = { workspace = true }
 socket2 = { workspace = true }
 tee-authority = { workspace = true }
 tempfile = { workspace = true }
-test-utils = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true }
 time = { workspace = true }
