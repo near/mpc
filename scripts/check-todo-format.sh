@@ -15,14 +15,14 @@ INVALID_TODOS=$(git ls-files -z "${CHECKED_EXTENSIONS[@]}" | \
     grep -vE ":.*(TODO\(#[0-9]+\):|TODO:)" || true)
 
 # Files/patterns excluded from the check (contain "todo" in identifiers, not as TODO comments).
-EXCLUDED_PATTERNS=(
-    "$(basename "$0")"
-    "check-todo-closed-issues"
-    "todo-format-check.ya\?ml"
-    "CHANGELOG.md"
+EXCLUDE_ARGS=(
+    -e "$(basename "$0")"
+    -e "check-todo-closed-issues"
+    -e "todo-format-check.yml"
+    -e "todo-format-check.yaml"
+    -e "CHANGELOG.md"
 )
-EXCLUDE_REGEX=$(IFS='|'; echo "${EXCLUDED_PATTERNS[*]}")
-INVALID_TODOS=$(echo "$INVALID_TODOS" | grep -vE "$EXCLUDE_REGEX" || true)
+INVALID_TODOS=$(echo "$INVALID_TODOS" | grep -vF "${EXCLUDE_ARGS[@]}" || true)
 
 if [ -n "$INVALID_TODOS" ]; then
     echo "❌ Found TODO comments not matching the required format"
