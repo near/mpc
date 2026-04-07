@@ -98,7 +98,7 @@ command = "bash"
 args = ["scripts/check-todo-format.sh"]
 
 [tasks.todo-closed-issues]
-description = "Check that TODO(#NNN) comments don't reference closed issues"
+description = "Check that TODOs for issues closed by the current PR are removed"
 command = "bash"
 args = ["scripts/check-todo-closed-issues.sh"]
 
