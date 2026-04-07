@@ -601,6 +601,11 @@ jobs:
       - name: Run cargo-make fast checks
         run: cargo make check-all-fast
 
+      # Non-blocking: closing an issue shouldn't break CI.
+      - name: Check TODOs referencing closed issues
+        continue-on-error: true
+        run: bash scripts/check-todo-closed-issues.sh
+
   mpc-e2e-tests:
     name: "MPC E2E tests"
     needs: mpc-pytest-build

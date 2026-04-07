@@ -146,7 +146,6 @@ impl AllowedMeasurements {
     }
 
     /// Creates from a list of entries (for migration).
-    /// TODO(#2434): remove after migration is deployed
     pub fn from_entries(entries: Vec<ContractExpectedMeasurements>) -> Self {
         Self { entries }
     }

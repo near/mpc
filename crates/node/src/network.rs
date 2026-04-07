@@ -869,9 +869,7 @@ pub mod testing {
             Ok(())
         }
 
-        fn send_indexer_height(&self, _height: crate::primitives::IndexerHeightMessage) {
-            // TODO(#226): Test this.
-        }
+        fn send_indexer_height(&self, _height: crate::primitives::IndexerHeightMessage) {}
 
         async fn wait_for_ready(
             &self,

@@ -452,7 +452,7 @@ where
 
     /// Generates an ID that won't conflict with existing ones, and reserves it
     /// so that the next call to the same function will return a different one.
-    /// TODO(#10): This reservation does not persist across restarts, leading to
+    /// Note: this reservation does not persist across restarts, leading to
     /// the assumption that the clock moves forward at least a second across
     /// restarts.
     pub fn generate_and_reserve_id(&self) -> UniqueId {

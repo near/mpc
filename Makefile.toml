@@ -97,6 +97,11 @@ args = ["scripts/check-kebab-case-files.sh"]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
 
+[tasks.todo-closed-issues]
+description = "Check that TODO(#NNN) comments don't reference closed issues"
+command = "bash"
+args = ["scripts/check-todo-closed-issues.sh"]
+
 [tasks.assert-matches]
 description = "Check for assert!(matches!(...)) — use assert_matches!() instead"
 command = "bash"

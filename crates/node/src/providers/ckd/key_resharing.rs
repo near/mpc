@@ -27,11 +27,7 @@ impl CKDProvider {
             my_share,
             public_key,
         }
-        .perform_leader_centric_computation(
-            channel,
-            // TODO(#195): Move timeout here instead of in Coordinator.
-            std::time::Duration::from_secs(60),
-        )
+        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
         .await?;
         tracing::info!("Key resharing completed");
 

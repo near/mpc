@@ -23,8 +23,6 @@ updates:
       - dependency-name: "hyper"
       # TODO(#2051): updating this brings considerable breaking changes
       - dependency-name: "rcgen"
-      # TODO(#2053): upgrading this leads to errors
-      - dependency-name: "reqwest"
       ## Outdated dependencies we cannot upgrade ##
       # Version 0.8.3 requires rustc 1.88
       - dependency-name: "httpmock"
@@ -36,13 +34,13 @@ updates:
       - dependency-name: "schemars"
       # This is deprecated, we should find an alterantive
       - dependency-name: "serde_yaml"
-      # TODO(#1907): These dependencies need to be upgraded in tandem
+      # These dependencies need to be upgraded in tandem
       - dependency-name: "getrandom"
-      # TODO(#1907): These dependencies need to be upgraded in tandem
+      # These dependencies need to be upgraded in tandem
       - dependency-name: "rand"
-      # TODO(#1907): These dependencies need to be upgraded in tandem
+      # These dependencies need to be upgraded in tandem
       - dependency-name: "rand_chacha"
-      # TODO(#1907): These dependencies need to be upgraded in tandem
+      # These dependencies need to be upgraded in tandem
       - dependency-name: "rand_core"
       # Cannot be upgraded until we get MSVR 1.88
       - dependency-name: "time"

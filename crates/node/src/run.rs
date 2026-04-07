@@ -60,7 +60,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
-    // TODO(#1296): Decide if the MPC responder account is actually needed
+    // TODO(#2102): Decide if the MPC responder account is actually needed
     let respond_config = RespondConfig::from_parts(&node_config, &persistent_secrets);
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {

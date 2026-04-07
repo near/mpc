@@ -18,7 +18,6 @@ use threshold_signatures::ReconstructionLowerBound;
 pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
     foreign_chain_policy_reader: ForeignChainPolicyReader,
-    // TODO(#2076): This field might become useful when domain separation is implemented
     #[expect(dead_code)]
     mpc_config: Arc<MpcConfig>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
