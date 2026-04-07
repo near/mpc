@@ -199,6 +199,12 @@ define_hash!(
     32
 );
 
+define_hash!(
+    /// A SHA-384 digest used for TDX measurements (MRTD, RTMRs, event digests).
+    Sha384Digest,
+    48
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
