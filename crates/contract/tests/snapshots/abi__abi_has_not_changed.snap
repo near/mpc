@@ -328,6 +328,26 @@ expression: abi
         }
       },
       {
+        "name": "get_supported_foreign_chains",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/SupportedForeignChains"
+          }
+        }
+      },
+      {
+        "name": "get_supported_foreign_chains_votes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/SupportedForeignChainsVotes"
+          }
+        }
+      },
+      {
         "name": "get_tee_accounts",
         "doc": " Returns all accounts that have TEE attestations stored in the contract.\n Note: This includes both current protocol participants and accounts that may have\n submitted TEE information but are not currently part of the active participant set.",
         "kind": "view",
@@ -727,6 +747,27 @@ expression: abi
               "name": "backup_service_info",
               "type_schema": {
                 "$ref": "#/definitions/BackupServiceInfo"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "register_foreign_chain_config",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "supported_chains_by_node",
+              "type_schema": {
+                "$ref": "#/definitions/SupportedForeignChains"
               }
             }
           ]
@@ -2170,7 +2211,21 @@ expression: abi
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
+        "ForeignChain": {
+          "type": "string",
+          "enum": [
+            "Solana",
+            "Bitcoin",
+            "Ethereum",
+            "Base",
+            "Bnb",
+            "Arbitrum",
+            "Abstract",
+            "Starknet"
+          ]
+        },
         "ForeignChainPolicy": {
+          "deprecated": true,
           "type": "object",
           "required": [
             "chains"
@@ -2185,6 +2240,7 @@ expression: abi
           }
         },
         "ForeignChainPolicyVotes": {
+          "deprecated": true,
           "type": "object",
           "required": [
             "proposal_by_account"
@@ -3369,6 +3425,7 @@ expression: abi
           }
         },
         "RpcProvider": {
+          "deprecated": true,
           "type": "object",
           "required": [
             "rpc_url"
@@ -3742,6 +3799,27 @@ expression: abi
         },
         "StarknetTxId": {
           "$ref": "#/definitions/StarknetFelt"
+        },
+        "SupportedForeignChains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ForeignChain"
+          },
+          "uniqueItems": true
+        },
+        "SupportedForeignChainsVotes": {
+          "type": "object",
+          "required": [
+            "supported_chains_by_account"
+          ],
+          "properties": {
+            "supported_chains_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/SupportedForeignChains"
+              }
+            }
+          }
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",
