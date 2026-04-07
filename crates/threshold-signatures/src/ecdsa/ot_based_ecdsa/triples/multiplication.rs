@@ -164,6 +164,14 @@ pub(super) async fn multiplication_many<const N: usize>(
             "N must be greater than 0".to_string(),
         ));
     }
+    if sid.len() != N || av_iv.len() != N || bv_iv.len() != N {
+        return Err(ProtocolError::AssertionFailed(format!(
+            "input vectors must have length N={N}, got sid={}, av_iv={}, bv_iv={}",
+            sid.len(),
+            av_iv.len(),
+            bv_iv.len(),
+        )));
+    }
     let sid_arc = Arc::new(sid);
     let av_iv_arc = Arc::new(av_iv);
     let bv_iv_arc = Arc::new(bv_iv);
@@ -185,12 +193,21 @@ pub(super) async fn multiplication_many<const N: usize>(
                     let precomputed_sender_package =
                         MultiplicationSenderRandomPackage::generate_random_package(&mut rng);
                     Box::pin(async move {
+                        let sid_i = sid_arc.get(i).ok_or_else(|| {
+                            ProtocolError::AssertionFailed("sid index out of bounds".to_string())
+                        })?;
+                        let av_i = av_iv_arc.get(i).ok_or_else(|| {
+                            ProtocolError::AssertionFailed("av_iv index out of bounds".to_string())
+                        })?;
+                        let bv_i = bv_iv_arc.get(i).ok_or_else(|| {
+                            ProtocolError::AssertionFailed("bv_iv index out of bounds".to_string())
+                        })?;
                         #[allow(clippy::large_futures)]
                         multiplication_sender(
                             chan,
-                            sid_arc[i].as_ref(),
-                            &av_iv_arc[i],
-                            &bv_iv_arc[i],
+                            sid_i.as_ref(),
+                            av_i,
+                            bv_i,
                             precomputed_sender_package,
                         )
                         .await
@@ -199,11 +216,20 @@ pub(super) async fn multiplication_many<const N: usize>(
                     let precomputed_receiver_package =
                         MultiplicationReceiverRandomPackage::generate_random_package(&mut rng);
                     Box::pin(async move {
+                        let sid_i = sid_arc.get(i).ok_or_else(|| {
+                            ProtocolError::AssertionFailed("sid index out of bounds".to_string())
+                        })?;
+                        let av_i = av_iv_arc.get(i).ok_or_else(|| {
+                            ProtocolError::AssertionFailed("av_iv index out of bounds".to_string())
+                        })?;
+                        let bv_i = bv_iv_arc.get(i).ok_or_else(|| {
+                            ProtocolError::AssertionFailed("bv_iv index out of bounds".to_string())
+                        })?;
                         multiplication_receiver(
                             chan,
-                            sid_arc[i].as_ref(),
-                            &av_iv_arc[i],
-                            &bv_iv_arc[i],
+                            sid_i.as_ref(),
+                            av_i,
+                            bv_i,
                             precomputed_receiver_package,
                         )
                         .await
@@ -213,13 +239,11 @@ pub(super) async fn multiplication_many<const N: usize>(
             tasks.push(fut);
         }
     }
-    let mut outs = vec![];
-    for i in 0..N {
-        let av_i = &av_iv_arc.as_slice()[i];
-        let bv_i = &bv_iv_arc.as_slice()[i];
-        let out = *av_i * *bv_i;
-        outs.push(out);
-    }
+    let mut outs: Vec<Scalar> = av_iv_arc
+        .iter()
+        .zip(bv_iv_arc.iter())
+        .map(|(av_i, bv_i)| *av_i * *bv_i)
+        .collect();
 
     let mut results = futures::future::try_join_all(tasks)
         .await?

@@ -149,11 +149,19 @@ pub async fn batch_random_ot_sender_many<const N: usize>(
             let wait0 = chan.next_waitpoint();
             let big_x_i_verkey_v: Vec<CoefficientCommitment> = chan.recv(wait0).await?;
 
+            if big_x_i_verkey_v.len() < N {
+                return Err(ProtocolError::AssertionFailed(format!(
+                    "received vector of length {}, expected at least {N}",
+                    big_x_i_verkey_v.len(),
+                )));
+            }
+
             let mut ret = vec![];
-            for (j, big_x_i_verkey_v_j) in big_x_i_verkey_v.iter().enumerate().take(N) {
-                let y = &yv_arc.as_slice()[j];
-                let big_y_verkey = &big_y_verkey_v_arc.as_slice()[j];
-                let big_z = &big_z_v_arc.as_slice()[j];
+            for (big_x_i_verkey_v_j, ((y, big_y_verkey), big_z)) in big_x_i_verkey_v
+                .iter()
+                .take(N)
+                .zip(yv_arc.iter().zip(big_y_verkey_v_arc.iter()).zip(big_z_v_arc.iter()))
+            {
                 let y_big_x_i = big_x_i_verkey_v_j.value() * *y;
                 let big_k0 = hash(
                     i,
@@ -180,8 +188,14 @@ pub async fn batch_random_ot_sender_many<const N: usize>(
         reshaped_outs.push(Vec::new());
     }
     for outsi in outs {
-        for j in 0..N {
-            reshaped_outs[j].push(outsi[j]);
+        if outsi.len() < N {
+            return Err(ProtocolError::AssertionFailed(format!(
+                "task output has length {}, expected at least {N}",
+                outsi.len(),
+            )));
+        }
+        for (reshaped, val) in reshaped_outs.iter_mut().zip(outsi.iter()) {
+            reshaped.push(*val);
         }
     }
     let outs = reshaped_outs;
@@ -231,12 +245,10 @@ pub(super) async fn batch_random_ot_receiver(
 
     let out = delta
         .bits()
+        .zip(x.iter())
         .enumerate()
-        .map(|(i, d_i)| {
+        .map(|(i, (d_i, &x_i))| {
             let mut chan = chan.child(i as u64);
-            // Step 4
-            // let x_i = Secp256K1ScalarField::random(&mut rng);
-            let x_i = x[i];
             let mut big_x_i = ProjectivePoint::GENERATOR * x_i;
             big_x_i.conditional_assign(&(big_x_i + big_y), d_i);
 
@@ -262,6 +274,7 @@ pub(super) async fn batch_random_ot_receiver(
 }
 
 #[allow(dead_code)]
+#[allow(clippy::too_many_lines)]
 pub async fn batch_random_ot_receiver_many<const N: usize>(
     mut chan: PrivateChannel,
     mut rng: impl CryptoRngCore,
@@ -271,6 +284,13 @@ pub async fn batch_random_ot_receiver_many<const N: usize>(
     let wait0 = chan.next_waitpoint();
     // deserialization prevents receiving the identity
     let big_y_verkey_v: Vec<CoefficientCommitment> = chan.recv(wait0).await?;
+
+    if big_y_verkey_v.len() < N {
+        return Err(ProtocolError::AssertionFailed(format!(
+            "received big_y_verkey_v of length {}, expected at least {N}",
+            big_y_verkey_v.len(),
+        )));
+    }
 
     let mut big_y_v = vec![];
     let mut deltav = vec![];
@@ -285,13 +305,14 @@ pub async fn batch_random_ot_receiver_many<const N: usize>(
     let big_y_verkey_v_arc = Arc::new(big_y_verkey_v);
 
     // inner is batch, outer is bits
-    let mut choices: Vec<Vec<_>> = Vec::new();
-    for _ in deltav[0].bits() {
-        choices.push(Vec::new());
-    }
+    let first_delta = deltav.first().ok_or_else(|| {
+        ProtocolError::AssertionFailed("deltav must be non-empty".to_string())
+    })?;
+    let num_bits = first_delta.bits().count();
+    let mut choices: Vec<Vec<_>> = (0..num_bits).map(|_| Vec::new()).collect();
     for deltavj in deltav.iter().take(N) {
-        for (i, d_i) in deltavj.bits().enumerate() {
-            choices[i].push(d_i);
+        for (choice_vec, d_i) in choices.iter_mut().zip(deltavj.bits()) {
+            choice_vec.push(d_i);
         }
     }
     // wrap in arc
@@ -307,36 +328,35 @@ pub async fn batch_random_ot_receiver_many<const N: usize>(
         let hashv = {
             let mut x_i_v = Vec::new();
             let mut big_x_i_v = Vec::new();
-            for j in 0..N {
-                let d_i = d_i_v[j];
+            for (d_i, big_y) in d_i_v.iter().take(N).zip(big_y_v_arc.iter()) {
                 // Step 4
                 let x_i = Secp256K1ScalarField::random(&mut rng);
                 let mut big_x_i = ProjectivePoint::GENERATOR * x_i;
-                big_x_i.conditional_assign(&(big_x_i + big_y_v_arc[j]), d_i);
+                big_x_i.conditional_assign(&(big_x_i + big_y), *d_i);
                 x_i_v.push(x_i);
                 big_x_i_v.push(big_x_i);
             }
             // Step 6
             let wait0 = chan.next_waitpoint();
 
-            let mut big_x_i_verkey_v = Vec::new();
-            for big_x_i_verkey in &big_x_i_v {
-                big_x_i_verkey_v.push(CoefficientCommitment::new(*big_x_i_verkey));
-            }
+            let big_x_i_verkey_v: Vec<_> = big_x_i_v
+                .iter()
+                .map(|p| CoefficientCommitment::new(*p))
+                .collect();
             chan.send(wait0, &big_x_i_verkey_v)?;
 
             // Step 5
             let mut hashv = Vec::new();
-            for j in 0..N {
-                let big_x_i_verkey = big_x_i_verkey_v[j];
-                let big_y_verkey = big_y_verkey_v_arc[j];
-                let big_y = big_y_v_arc[j];
-                let x_i = x_i_v[j];
+            for ((big_x_i_verkey, big_y_verkey), (big_y, x_i)) in big_x_i_verkey_v
+                .iter()
+                .zip(big_y_verkey_v_arc.iter())
+                .zip(big_y_v_arc.iter().zip(x_i_v.iter()))
+            {
                 hashv.push(hash(
                     i,
-                    &big_x_i_verkey,
-                    &big_y_verkey,
-                    &CoefficientCommitment::new(big_y * x_i),
+                    big_x_i_verkey,
+                    big_y_verkey,
+                    &CoefficientCommitment::new(*big_y * *x_i),
                 )?);
             }
             hashv
@@ -350,19 +370,23 @@ pub async fn batch_random_ot_receiver_many<const N: usize>(
         reshaped_outs.push(Vec::new());
     }
     for outsi in &outs {
-        for j in 0..N {
-            reshaped_outs[j].push(outsi[j]);
+        if outsi.len() < N {
+            return Err(ProtocolError::AssertionFailed(format!(
+                "task output has length {}, expected at least {N}",
+                outsi.len(),
+            )));
+        }
+        for (reshaped, val) in reshaped_outs.iter_mut().zip(outsi.iter()) {
+            reshaped.push(*val);
         }
     }
     let outs = reshaped_outs;
     let mut ret = Vec::new();
-    for j in 0..N {
-        let delta = deltav[j];
-        let out = &outs[j];
+    for (delta, out) in deltav.iter().zip(outs.iter()).take(N) {
         let big_k: BitMatrix = out.iter().copied().collect();
         let h = SquareBitMatrix::try_from(big_k);
         let h = h.map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
-        ret.push((delta, h));
+        ret.push((*delta, h));
     }
     Ok(ret)
 }

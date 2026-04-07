@@ -63,13 +63,16 @@ pub async fn mta_sender(
     let wait1 = chan.next_waitpoint();
     let (chi1, seed): (SerializableScalar<Secp256>, [u8; 32]) = chan.recv(wait1).await?;
 
-    let mut alpha = delta[0] * chi1.0;
+    let (first_delta, rest_delta) = delta
+        .split_first()
+        .ok_or_else(|| ProtocolError::AssertionFailed("delta must be non-empty".to_string()))?;
+    let mut alpha = *first_delta * chi1.0;
 
     let mut prng = TranscriptRng::new(&seed);
-    for &delta_i in &delta[1..] {
+    for delta_i in rest_delta {
         let chi_i =
             <<Secp256 as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut prng);
-        alpha += delta_i * chi_i;
+        alpha += *delta_i * chi_i;
     }
 
     Ok(-alpha)
@@ -94,6 +97,11 @@ pub async fn mta_receiver(
     // Step 3
     let wait0 = chan.next_waitpoint();
     let c: MTAScalars = chan.recv(wait0).await?;
+    if tv.is_empty() {
+        return Err(ProtocolError::AssertionFailed(
+            "tv must be non-empty".to_owned(),
+        ));
+    }
     if c.len() != tv.len() {
         return Err(ProtocolError::AssertionFailed(
             "length of c was incorrect".to_owned(),
@@ -116,7 +124,12 @@ pub async fn mta_receiver(
         chi1 += Scalar::conditional_select(&chi_i, &(-chi_i), *t_i);
     }
     chi1 = b - chi1;
-    chi1.conditional_assign(&(-chi1), tv[0].0);
+    // tv is validated non-empty above
+    let tv0_choice = tv
+        .first()
+        .expect("tv validated non-empty above")
+        .0;
+    chi1.conditional_assign(&(-chi1), tv0_choice);
 
     // Step 5
     let mut beta = chi1
