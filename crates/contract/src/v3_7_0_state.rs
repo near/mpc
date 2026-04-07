@@ -10,6 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, store::LookupMap};
 
@@ -29,7 +30,7 @@ use crate::{
         tee_state::NodeAttestation,
     },
     update::ProposedUpdates,
-    Config, ForeignChainPolicyVotes, StaleData,
+    Config, ForeignChainPolicyVotes, ForeignChainSupport, IntoInterfaceType, StaleData,
 };
 
 /// Previous TeeState layout — without `allowed_measurements` and `measurement_votes` fields.
@@ -69,7 +70,7 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
-        let crate::ProtocolContractState::Running(_running_state) = &value.protocol_state else {
+        let crate::ProtocolContractState::Running(running_state) = &value.protocol_state else {
             env::panic_str("Contract must be in running state when migrating.");
         };
 
@@ -94,13 +95,24 @@ impl From<MpcContract> for crate::MpcContract {
 
         let foreign_chain_policy = value.foreign_chain_policy;
 
-        let supported_foreign_chains = foreign_chain_policy
-            .chains
+        let mut supported_foreign_chains_votes = ForeignChainSupport::default();
+
+        let participant_account_ids: NonEmptyBTreeSet<_> = running_state
+            .parameters
+            .participants()
+            .participants()
             .iter()
-            .map(|(foreign_chain, _rpc)| foreign_chain)
             .cloned()
+            .map(|(account_id, _, _)| account_id.into_dto_type())
             .collect::<BTreeSet<_>>()
-            .into();
+            .try_into()
+            .expect("participant set is not empty");
+
+        for (foreign_chain, _rpc) in foreign_chain_policy.chains.iter() {
+            supported_foreign_chains_votes
+                .votes_per_chain
+                .insert(*foreign_chain, participant_account_ids.clone());
+        }
 
         Self {
             protocol_state: value.protocol_state,
@@ -118,8 +130,6 @@ impl From<MpcContract> for crate::MpcContract {
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {},
             metrics: value.metrics,
-
-            supported_foreign_chains,
             supported_foreign_chains_votes: Default::default(),
         }
     }
