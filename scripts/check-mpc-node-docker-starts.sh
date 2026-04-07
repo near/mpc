@@ -102,7 +102,8 @@ docker rm -f "$CONTAINER_ID"
 if $USE_LAUNCHER; then
   docker compose -f launcher_docker_compose_nontee.yaml down -v --rmi local
 elif $USE_RUST_LAUNCHER; then
-  docker compose -f launcher_docker_compose_nontee.yaml down -v --rmi local
+  docker compose -f launcher_docker_compose_nontee_local.yaml down -v --rmi local
+  rm -f launcher_docker_compose_nontee_local.yaml
 else
   rm /tmp/image-digest.bin
 fi
