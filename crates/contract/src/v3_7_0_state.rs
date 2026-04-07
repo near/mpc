@@ -10,7 +10,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, store::LookupMap};
 
@@ -95,23 +94,23 @@ impl From<MpcContract> for crate::MpcContract {
 
         let foreign_chain_policy = value.foreign_chain_policy;
 
-        let mut supported_foreign_chains_votes = ForeignChainSupport::default();
+        let mut foreign_chain_support = ForeignChainSupport::default();
 
-        let participant_account_ids: NonEmptyBTreeSet<_> = running_state
+        let participant_account_ids = running_state
             .parameters
             .participants()
             .participants()
             .iter()
             .cloned()
-            .map(|(account_id, _, _)| account_id.into_dto_type())
-            .collect::<BTreeSet<_>>()
-            .try_into()
-            .expect("participant set is not empty");
+            .map(|(account_id, _, _)| account_id.into_dto_type());
 
-        for (foreign_chain, _rpc) in foreign_chain_policy.chains.iter() {
-            supported_foreign_chains_votes
+        let supported_foreign_chains: BTreeSet<dtos::ForeignChain> =
+            foreign_chain_policy.chains.keys().copied().collect();
+
+        for account_id in participant_account_ids {
+            foreign_chain_support
                 .votes_per_chain
-                .insert(*foreign_chain, participant_account_ids.clone());
+                .insert(account_id, supported_foreign_chains.clone().into());
         }
 
         Self {
@@ -197,9 +196,8 @@ mod tests {
 
         let supported: dtos::SupportedForeignChains = policy
             .chains
-            .iter()
-            .map(|(foreign_chain, _rpc)| foreign_chain)
-            .cloned()
+            .keys()
+            .copied()
             .collect::<BTreeSet<_>>()
             .into();
 
@@ -217,8 +215,7 @@ mod tests {
 
         let supported: dtos::SupportedForeignChains = policy
             .chains
-            .iter()
-            .map(|(foreign_chain, _rpc)| foreign_chain)
+            .keys()
             .cloned()
             .collect::<BTreeSet<_>>()
             .into();
@@ -241,8 +238,7 @@ mod tests {
 
         let supported: dtos::SupportedForeignChains = policy
             .chains
-            .iter()
-            .map(|(foreign_chain, _rpc)| foreign_chain)
+            .keys()
             .cloned()
             .collect::<BTreeSet<_>>()
             .into();

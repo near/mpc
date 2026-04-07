@@ -730,7 +730,7 @@ pub struct ForeignChainPolicyVotes {
     derive(schemars::JsonSchema)
 )]
 pub struct SupportedForeignChainsVotes {
-    pub supported_chain_by_account: BTreeMap<ForeignChain, NonEmptyBTreeSet<AccountId>>,
+    pub supported_chains_by_account: BTreeMap<AccountId, SupportedForeignChains>,
 }
 
 #[derive(

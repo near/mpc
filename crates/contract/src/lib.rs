@@ -51,7 +51,6 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types::{
     self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
@@ -61,7 +60,7 @@ use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
     env, log, near,
-    store::{iterable_map, IterableMap, LookupMap},
+    store::{IterableMap, LookupMap},
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
@@ -209,7 +208,7 @@ impl ForeignChainPolicyVotes {
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 struct ForeignChainSupport {
-    votes_per_chain: IterableMap<dtos::ForeignChain, NonEmptyBTreeSet<dtos::AccountId>>,
+    votes_per_chain: IterableMap<dtos::AccountId, dtos::SupportedForeignChains>,
 }
 
 impl Default for ForeignChainSupport {
@@ -222,14 +221,14 @@ impl Default for ForeignChainSupport {
 
 impl ForeignChainSupport {
     fn to_dto(&self) -> dtos::SupportedForeignChainsVotes {
-        let supported_chain_by_account = self
+        let supported_chains_by_account = self
             .votes_per_chain
             .iter()
-            .map(|(foreign_chain, accounts)| (foreign_chain.clone(), accounts.clone()))
+            .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
             .collect();
 
         dtos::SupportedForeignChainsVotes {
-            supported_chain_by_account,
+            supported_chains_by_account,
         }
     }
 }
@@ -1108,25 +1107,9 @@ impl MpcContract {
             AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let account_id = authenticated_voter.get().into_dto_type();
 
-        // // remove all votes not in the supported chains
-        // for supported_chain_entry in self.supported_foreign_chains_votes.votes_per_chain.
-
-        // for foreign_chain in supported_chains_by_node.iter() {
-        //     let voter = voter.clone();
-        //     let foreign_chain_entry = self
-        //         .supported_foreign_chains_votes
-        //         .votes_per_chain
-        //         .entry(*foreign_chain);
-
-        //     match foreign_chain_entry {
-        //         iterable_map::Entry::Occupied(mut occupied_entry) => {
-        //             occupied_entry.get_mut().insert(voter);
-        //         }
-        //         iterable_map::Entry::Vacant(vacant_entry) => {
-        //             vacant_entry.insert(NonEmptyBTreeSet::new(voter));
-        //         }
-        //     };
-        // }
+        self.supported_foreign_chains_votes
+            .votes_per_chain
+            .insert(account_id, supported_chains_by_node);
 
         Ok(())
     }
@@ -1945,9 +1928,22 @@ impl MpcContract {
             .map(|(account_id, _, _)| account_id.clone().into_dto_type())
             .collect::<BTreeSet<_>>();
 
-        self.supported_foreign_chains_votes
-            .votes_per_chain
-            .iter()
+        let mut foreign_chain_to_node_mapping: BTreeMap<
+            &dtos::ForeignChain,
+            BTreeSet<dtos::AccountId>,
+        > = BTreeMap::new();
+
+        for (account_id, chains) in self.supported_foreign_chains_votes.votes_per_chain.iter() {
+            for chain in chains.iter() {
+                foreign_chain_to_node_mapping
+                    .entry(chain)
+                    .or_default()
+                    .insert(account_id.clone());
+            }
+        }
+
+        foreign_chain_to_node_mapping
+            .into_iter()
             .filter_map(|(foreign_chain, nodes_supporting_chain)| {
                 let all_active_nodes_supports_chain =
                     nodes_supporting_chain.is_superset(&active_participant_account_ids);
