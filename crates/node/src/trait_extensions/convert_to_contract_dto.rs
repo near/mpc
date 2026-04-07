@@ -48,8 +48,8 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::MockAttestati
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
             } => near_mpc_contract_interface::types::MockAttestation::WithConstraints {
-                mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
-                launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
+                mpc_docker_image_hash,
+                launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
             },
         }
@@ -67,7 +67,7 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::DstackAttesta
         } = self;
 
         near_mpc_contract_interface::types::DstackAttestation {
-            quote: quote.into(),
+            quote: Vec::from(quote).into(),
             collateral: collateral.into_contract_interface_type(),
             tcb_info: tcb_info.into_contract_interface_type(),
         }
@@ -92,14 +92,14 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::Collateral> f
 
         near_mpc_contract_interface::types::Collateral {
             pck_crl_issuer_chain,
-            root_ca_crl,
-            pck_crl,
+            root_ca_crl: root_ca_crl.into(),
+            pck_crl: pck_crl.into(),
             tcb_info_issuer_chain,
             tcb_info,
-            tcb_info_signature,
+            tcb_info_signature: tcb_info_signature.into(),
             qe_identity_issuer_chain,
             qe_identity,
-            qe_identity_signature,
+            qe_identity_signature: qe_identity_signature.into(),
             pck_certificate_chain,
         }
     }
