@@ -666,3 +666,5 @@ jobs:
 
       - name: Check TODOs for issues closed by this PR
         run: bash scripts/check-todo-closed-issues.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
