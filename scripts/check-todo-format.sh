@@ -16,10 +16,8 @@ INVALID_TODOS=$(git ls-files -z "${CHECKED_EXTENSIONS[@]}" | \
 
 # Files/patterns excluded from the check (contain "todo" in identifiers, not as TODO comments).
 EXCLUDE_ARGS=(
-    -e "$(basename "$0")"
+    -e "check-todo-format"
     -e "check-todo-closed-issues"
-    -e "todo-format-check.yml"
-    -e "todo-format-check.yaml"
     -e "CHANGELOG.md"
 )
 INVALID_TODOS=$(echo "$INVALID_TODOS" | grep -vF "${EXCLUDE_ARGS[@]}" || true)
