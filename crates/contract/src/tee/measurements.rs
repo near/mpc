@@ -1,9 +1,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::{ExpectedMeasurements, Measurements};
 use near_sdk::{log, near};
-use std::collections::BTreeMap;
 
-use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
+use crate::primitives::{
+    key_state::AuthenticatedParticipantId,
+    votes::{ProposalHashEncoding, Votes},
+};
 
 mpc_primitives::define_hash!(
     /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
@@ -26,72 +28,21 @@ mpc_primitives::define_hash!(
     KeyProviderEventDigest, 48
 );
 
-/// Tracks votes for adding or removing OS measurements.
-/// Each participant can have at most one active vote at a time.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MeasurementVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
-}
-
-impl MeasurementVotes {
-    /// Casts a vote for the given action and returns the total number of participants
-    /// who have voted for the same action. Replaces any previous vote by this participant.
-    pub fn vote(
-        &mut self,
-        action: MeasurementVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .vote_by_account
-            .insert(participant.clone(), action.clone())
-            .is_some()
-        {
-            log!("removed old measurement vote for signer");
-        }
-        let total = self.count_votes(&action);
-        log!("total measurement votes for action: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given action.
-    fn count_votes(&self, action: &MeasurementVoteAction) -> u64 {
-        u64::try_from(
-            self.vote_by_account
-                .values()
-                .filter(|a| *a == action)
-                .count(),
-        )
-        .expect("participant count should not overflow u64")
-    }
-
-    /// Clears all measurement votes.
-    pub fn clear_votes(&mut self) {
-        self.vote_by_account.clear();
-    }
-
-    /// Returns a new `MeasurementVotes` containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .vote_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
-            .collect();
-        MeasurementVotes {
-            vote_by_account: remaining,
-        }
-    }
-}
+/// TODO(#2955): Store by AccountId, not ParticipantId
+pub type MeasurementVotes = Votes<AuthenticatedParticipantId>;
 
 /// The action a participant is voting for on an OS measurement set.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MeasurementVoteAction {
     Add(ContractExpectedMeasurements),
     Remove(ContractExpectedMeasurements),
+}
+
+impl ProposalHashEncoding for MeasurementVoteAction {
+    fn bytes_for_hash(&self) -> Vec<u8> {
+        borsh::to_vec(self).expect("borsh serialiation must succeed")
+    }
 }
 
 /// Collection of allowed OS measurements. Managed via voting (add requires threshold,
@@ -154,6 +105,8 @@ impl AllowedMeasurements {
     Clone,
     PartialEq,
     Eq,
+    Ord,
+    PartialOrd,
     serde::Serialize,
     serde::Deserialize,
     BorshSerialize,

@@ -22,4 +22,10 @@ pub enum StorageKey {
     PendingCKDRequestsV2,
     SupportedForeignChainsVotes,
     PendingSignatureRequestsV3,
+    LauncherHashVotesByProposal,
+    LauncherHashVotesByVoter,
+    MeasurementVotesByProposal,
+    MeasurementVotesByVoter,
+    CodeHashVotesByProposal,
+    CodeHashVotesByVoter,
 }
