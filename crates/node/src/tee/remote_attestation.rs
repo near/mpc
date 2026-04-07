@@ -221,43 +221,24 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     );
 
     let mut was_available = initially_available;
-    let mut needs_retry = false;
-    let retry_delay = Duration::from_secs(60);
     let report_data: ReportData =
         ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
 
-    loop {
-        // Wait for a contract change, or a retry timer if we have a pending retry.
-        if needs_retry {
-            tokio::select! {
-                result = tee_accounts_receiver.changed() => {
-                    if result.is_err() { break; }
-                }
-                _ = tokio::time::sleep(retry_delay) => {
-                    // Timer fired — retry attestation below.
-                }
-            }
-        } else if tee_accounts_receiver.changed().await.is_err() {
-            break;
-        }
-
+    while tee_accounts_receiver.changed().await.is_ok() {
         let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
 
         tracing::debug!(
             %node_account_id,
             is_available,
             was_available,
-            needs_retry,
             "TEE attestation status check"
         );
 
-        if (was_available && !is_available) || needs_retry {
-            if !needs_retry {
-                tracing::warn!(
-                    %node_account_id,
-                    "TEE attestation removed from contract, resubmitting"
-                );
-            }
+        if was_available && !is_available {
+            tracing::warn!(
+                %node_account_id,
+                "TEE attestation removed from contract, resubmitting"
+            );
 
             let fresh_attestation = match tee_authority
                 .generate_attestation(report_data.clone())
@@ -266,10 +247,9 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 Ok(att) => att,
                 Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
                     tracing::warn!(
-                        "TEE attestation failed: {e:#}. Will retry in {}s.",
-                        retry_delay.as_secs()
+                        "TEE attestation failed: {e:#}. \
+                         Periodic attestation task will retry.",
                     );
-                    needs_retry = true;
                     was_available = is_available;
                     continue;
                 }
@@ -292,7 +272,6 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 &allowed_launcher_compose_hashes_in_contract,
             )
             .await?;
-            needs_retry = false;
         }
 
         was_available = is_available;
