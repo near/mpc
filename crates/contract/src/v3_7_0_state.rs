@@ -7,7 +7,7 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types as dtos;
@@ -92,6 +92,16 @@ impl From<MpcContract> for crate::MpcContract {
             measurement_votes: Default::default(),
         };
 
+        let foreign_chain_policy = value.foreign_chain_policy;
+
+        let supported_foreign_chains = foreign_chain_policy
+            .chains
+            .iter()
+            .map(|(foreign_chain, _rpc)| foreign_chain)
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into();
+
         Self {
             protocol_state: value.protocol_state,
             pending_signature_requests: value.pending_signature_requests,
@@ -100,7 +110,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
-            foreign_chain_policy: value.foreign_chain_policy,
+            foreign_chain_policy,
             foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             config: value.config,
             tee_state: new_tee_state,
@@ -109,7 +119,7 @@ impl From<MpcContract> for crate::MpcContract {
             stale_data: crate::StaleData {},
             metrics: value.metrics,
 
-            supported_foreign_chains: Default::default(),
+            supported_foreign_chains,
             supported_foreign_chains_votes: Default::default(),
         }
     }
