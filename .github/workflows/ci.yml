@@ -129,7 +129,7 @@ jobs:
       - name: Run Rust launcher non-TEE runtime check
         shell: bash
         run: |
-          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher --use-local-image
+          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
 
   mpc-unittests:
     name: "Cargo test: ${{ matrix.group }}"
