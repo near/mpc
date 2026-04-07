@@ -32,12 +32,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-
-      - name: Clear cache for fresh rebuild
-        if: github.event_name == 'schedule'
-        run: |
-          cargo clean
-          rm -rf ~/.cargo
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
