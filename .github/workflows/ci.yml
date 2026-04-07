@@ -120,6 +120,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Build Rust launcher docker image and verify its hash
         shell: bash
@@ -167,12 +168,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
           prefix-key: v0-rust-tests-${{ matrix.group }}
-
-      - name: Clear cache for fresh rebuild
-        if: github.event_name == 'schedule'
-        run: |
-          cargo clean
-          rm -rf ~/.cargo/registry ~/.cargo/git
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -227,12 +223,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-
-      - name: Clear cache for fresh rebuild
-        if: github.event_name == 'schedule'
-        run: |
-          cargo clean
-          rm -rf ~/.cargo/registry ~/.cargo/git
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install build dependencies
         run: |
@@ -536,12 +527,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-
-      - name: Clear cache for fresh rebuild
-        if: github.event_name == 'schedule'
-        run: |
-          cargo clean
-          rm -rf ~/.cargo/registry ~/.cargo/git
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install ruff
         uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
@@ -616,6 +602,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
           prefix-key: v0-rust-e2e
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Restore pytest binaries cache
         uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
