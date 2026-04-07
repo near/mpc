@@ -157,10 +157,13 @@ pub async fn batch_random_ot_sender_many<const N: usize>(
             }
 
             let mut ret = vec![];
-            for (big_x_i_verkey_v_j, ((y, big_y_verkey), big_z)) in big_x_i_verkey_v
-                .iter()
-                .take(N)
-                .zip(yv_arc.iter().zip(big_y_verkey_v_arc.iter()).zip(big_z_v_arc.iter()))
+            for (big_x_i_verkey_v_j, ((y, big_y_verkey), big_z)) in
+                big_x_i_verkey_v.iter().take(N).zip(
+                    yv_arc
+                        .iter()
+                        .zip(big_y_verkey_v_arc.iter())
+                        .zip(big_z_v_arc.iter()),
+                )
             {
                 let y_big_x_i = big_x_i_verkey_v_j.value() * *y;
                 let big_k0 = hash(
@@ -305,9 +308,9 @@ pub async fn batch_random_ot_receiver_many<const N: usize>(
     let big_y_verkey_v_arc = Arc::new(big_y_verkey_v);
 
     // inner is batch, outer is bits
-    let first_delta = deltav.first().ok_or_else(|| {
-        ProtocolError::AssertionFailed("deltav must be non-empty".to_string())
-    })?;
+    let first_delta = deltav
+        .first()
+        .ok_or_else(|| ProtocolError::AssertionFailed("deltav must be non-empty".to_string()))?;
     let num_bits = first_delta.bits().count();
     let mut choices: Vec<Vec<_>> = (0..num_bits).map(|_| Vec::new()).collect();
     for deltavj in deltav.iter().take(N) {

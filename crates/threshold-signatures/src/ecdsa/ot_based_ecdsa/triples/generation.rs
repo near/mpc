@@ -339,18 +339,34 @@ async fn do_generation_many<const N: usize>(
             recv_from_others::<PolynomialCommitmentsMessageMany<N>>(&chan, wait2, &participants, me)
                 .await?
         {
-            for (((((((all_commitments, their_big_e), their_big_f), their_big_l),
-                their_randomizer), their_phi_proof0), their_phi_proof1),
-                (big_e_j_zero, ((big_e, big_f), big_l))) in
-                all_commitments_vec.iter()
-                    .zip(their.big_e_v.iter())
-                    .zip(their.big_f_v.iter())
-                    .zip(their.big_l_v.iter())
-                    .zip(their.randomizer_v.iter())
-                    .zip(their.phi_proof0_v.iter())
-                    .zip(their.phi_proof1_v.iter())
-                    .zip(big_e_j_zero_v.iter_mut()
-                        .zip(big_e_v.iter_mut().zip(big_f_v.iter_mut()).zip(big_l_v.iter_mut())))
+            for (
+                (
+                    (
+                        (
+                            (((all_commitments, their_big_e), their_big_f), their_big_l),
+                            their_randomizer,
+                        ),
+                        their_phi_proof0,
+                    ),
+                    their_phi_proof1,
+                ),
+                (big_e_j_zero, ((big_e, big_f), big_l)),
+            ) in all_commitments_vec
+                .iter()
+                .zip(their.big_e_v.iter())
+                .zip(their.big_f_v.iter())
+                .zip(their.big_l_v.iter())
+                .zip(their.randomizer_v.iter())
+                .zip(their.phi_proof0_v.iter())
+                .zip(their.phi_proof1_v.iter())
+                .zip(
+                    big_e_j_zero_v.iter_mut().zip(
+                        big_e_v
+                            .iter_mut()
+                            .zip(big_f_v.iter_mut())
+                            .zip(big_l_v.iter_mut()),
+                    ),
+                )
             {
                 if their_big_e.degree() != threshold.value() - 1
                     || their_big_f.degree() != threshold.value() - 1
@@ -416,8 +432,10 @@ async fn do_generation_many<const N: usize>(
             )>(&chan, wait3, &participants, me)
             .await?
         {
-            for ((a_i, b_i), (a_j_i, b_j_i)) in
-                a_i_v.iter_mut().zip(b_i_v.iter_mut()).zip(a_j_i_v.iter().zip(b_j_i_v.iter()))
+            for ((a_i, b_i), (a_j_i, b_j_i)) in a_i_v
+                .iter_mut()
+                .zip(b_i_v.iter_mut())
+                .zip(a_j_i_v.iter().zip(b_j_i_v.iter()))
             {
                 *a_i += &a_j_i.0;
                 *b_i += &b_j_i.0;
@@ -616,8 +634,10 @@ async fn do_generation_many<const N: usize>(
         }
     }
 
-    for ((big_l, hat_big_c), big_c) in
-        big_l_v.iter_mut().zip(hat_big_c_v.iter()).zip(big_c_v.iter())
+    for ((big_l, hat_big_c), big_c) in big_l_v
+        .iter_mut()
+        .zip(hat_big_c_v.iter())
+        .zip(big_c_v.iter())
     {
         // Spec 5.3
         big_l.set_non_identity_constant(CoefficientCommitment::new(*hat_big_c))?;

@@ -125,10 +125,7 @@ pub async fn mta_receiver(
     }
     chi1 = b - chi1;
     // tv is validated non-empty above
-    let tv0_choice = tv
-        .first()
-        .expect("tv validated non-empty above")
-        .0;
+    let tv0_choice = tv.first().expect("tv validated non-empty above").0;
     chi1.conditional_assign(&(-chi1), tv0_choice);
 
     // Step 5
