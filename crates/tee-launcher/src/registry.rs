@@ -327,9 +327,11 @@ mod tests {
 /// Run with: `cargo nextest run --cargo-profile=test-release -p tee-launcher --features external-services-tests`
 #[cfg(all(test, feature = "external-services-tests"))]
 mod integration_tests {
+    use assert_matches::assert_matches;
     use launcher_interface::types::DockerSha256Digest;
 
     use super::*;
+    use crate::validation::validate_image_hash;
 
     const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -413,9 +415,6 @@ mod integration_tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn validate_image_hash_succeeds_for_known_image() {
-        use assert_matches::assert_matches;
-        use crate::validation::validate_image_hash;
-
         // given
         let config = launcher_config(
             "registry.hub.docker.com",
