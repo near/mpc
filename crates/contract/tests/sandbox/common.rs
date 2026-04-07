@@ -537,11 +537,6 @@ pub async fn execute_key_generation_and_add_random_state(
             curve: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         },
-        DomainConfig {
-            id: 2.into(),
-            curve: Curve::Edwards25519,
-            purpose: DomainPurpose::Sign,
-        },
     ];
     let domain_keys =
         call_contract_key_generation(&domains_to_add, accounts, contract, EPOCH_ID).await;

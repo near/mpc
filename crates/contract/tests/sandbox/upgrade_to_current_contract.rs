@@ -346,19 +346,15 @@ async fn upgrade_allows_new_request_types(
 
     let first_available_domain_id = injected_contract_state.domain_keys.len() as u64;
 
-    // 2. Add new domains
-    let domains_to_add = [
-        DomainConfig {
-            id: first_available_domain_id.into(),
-            curve: Curve::Bls12381,
-            purpose: DomainPurpose::CKD,
-        },
-        DomainConfig {
-            id: (first_available_domain_id + 1).into(),
-            curve: Curve::Edwards25519,
-            purpose: DomainPurpose::Sign,
-        },
-    ];
+    // Add a CKD domain (the new post-upgrade functionality being tested).
+    // A single domain keeps the total block count within the 200-block
+    // yield timeout for pending sign requests.  Edwards25519 signing is
+    // already covered by the pre-upgrade domains.
+    let domains_to_add = [DomainConfig {
+        id: first_available_domain_id.into(),
+        curve: Curve::Bls12381,
+        purpose: DomainPurpose::CKD,
+    }];
 
     const EPOCH_ID: u64 = 0;
     let added_domain_keys =
