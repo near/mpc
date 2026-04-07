@@ -113,17 +113,6 @@ impl Protocol {
     }
 }
 
-/// Infers the protocol from a legacy [`Curve`] value.
-/// Each deployed curve maps to exactly one protocol, so this is unambiguous
-/// for existing domains.
-pub fn protocol_from_legacy_curve(curve: Curve) -> Protocol {
-    match curve {
-        Curve::Secp256k1 => Protocol::CaitSith,
-        Curve::Edwards25519 => Protocol::frost(),
-        Curve::Bls12381 => Protocol::Ckd,
-    }
-}
-
 /// Returns whether the given curve is valid for the given purpose.
 pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool {
     matches!(
@@ -372,7 +361,7 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_curve_for_purpose, protocol_from_legacy_curve, AddDomainsVotes, Curve,
+        is_valid_curve_for_purpose, AddDomainsVotes, Curve,
         CurveCompat, DomainConfig, DomainId, DomainPurpose, DomainRegistry, FrostCurve, GetCurve,
         Participants, Protocol,
     };
@@ -383,6 +372,17 @@ pub mod tests {
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
+
+    /// Infers the protocol from a legacy [`Curve`] value.
+    /// Each deployed curve maps to exactly one protocol, so this is unambiguous
+    /// for existing domains.
+    fn protocol_from_legacy_curve(curve: Curve) -> Protocol {
+        match curve {
+            Curve::Secp256k1 => Protocol::CaitSith,
+            Curve::Edwards25519 => Protocol::frost(),
+            Curve::Bls12381 => Protocol::Ckd,
+        }
+    }
 
     #[test]
     fn test_add_domains() {
