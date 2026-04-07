@@ -34,8 +34,7 @@ use near_indexer_primitives::{
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    GET_SUPPORTED_FOREIGN_CHAINS, GET_SUPPORTED_FOREIGN_CHAINS_VOTES, GET_TEE_ACCOUNTS,
-    MIGRATION_INFO, STATE,
+    GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
@@ -279,16 +278,6 @@ impl IndexerViewClient {
         Ok(policy)
     }
 
-    pub(crate) async fn get_supported_chains_by_node(
-        &self,
-        mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<dtos::SupportedForeignChainsVotes> {
-        let (_height, proposals) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS_VOTES)
-            .await?;
-        Ok(proposals)
-    }
-
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
         let block_query = near_client::GetBlock(BlockReference::Finality(Finality::Final));
         self.view_client
@@ -371,9 +360,6 @@ pub(crate) trait ReadForeignChainPolicy: Send + Sync {
     fn get_supported_chains(
         &self,
     ) -> impl Future<Output = anyhow::Result<dtos::SupportedForeignChains>> + Send;
-    fn get_supported_chains_by_node(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::SupportedForeignChainsVotes>> + Send;
 }
 
 #[derive(Clone)]
@@ -392,15 +378,6 @@ impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
         self.indexer_state
             .view_client
             .get_supported_chains(&self.indexer_state.mpc_contract_id)
-            .await
-    }
-
-    async fn get_supported_chains_by_node(
-        &self,
-    ) -> anyhow::Result<dtos::SupportedForeignChainsVotes> {
-        self.indexer_state
-            .view_client
-            .get_supported_chains_by_node(&self.indexer_state.mpc_contract_id)
             .await
     }
 }

@@ -69,17 +69,6 @@ impl ReadForeignChainPolicy for FakeForeignChainPolicyReader {
             .supported_foreign_chains()
             .clone())
     }
-
-    async fn get_supported_chains_by_node(
-        &self,
-    ) -> anyhow::Result<dtos::SupportedForeignChainsVotes> {
-        Ok(self
-            .contract
-            .lock()
-            .await
-            .supported_foreign_chains_by_node()
-            .clone())
-    }
 }
 
 impl FakeMpcContractState {
@@ -139,7 +128,7 @@ impl FakeMpcContractState {
 
         let voter = dtos::AccountId(account_id.to_string());
         self.supported_foreign_chains_by_node
-            .supported_chain_by_account
+            .supported_chains_by_account
             .insert(voter, supported_chains);
     }
 

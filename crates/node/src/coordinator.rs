@@ -5,7 +5,6 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::{ChainRegisterSupportedForeignChains, ChainSendTransactionRequest};
 use crate::indexer::{tx_sender, IndexerAPI, ReadForeignChainPolicy};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
@@ -29,13 +28,11 @@ use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
-use anyhow::Context;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{Curve, DomainId};
 use mpc_contract::primitives::key_state::EpochId;
 use mpc_node_config::ConfigFile;
-use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -379,16 +376,6 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        if let Err(err) = Self::maybe_register_supported_foreign_chains(
-            &config_file,
-            &foreign_chain_policy_reader,
-            &chain_txn_sender,
-        )
-        .await
-        {
-            tracing::warn!(error = ?err, "failed to auto-vote foreign chain policy");
-        }
-
         tracing::info!("Creating tls mesh");
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let sender = Arc::new(sender);
@@ -723,40 +710,6 @@ where
             .await?;
         }
         Ok(MpcJobResult::Done)
-    }
-
-    async fn maybe_register_supported_foreign_chains(
-        config_file: &ConfigFile,
-        foreign_chain_policy_reader: &ForeignChainPolicyReader,
-        chain_txn_sender: &TransactionSender,
-    ) -> anyhow::Result<()> {
-        let locally_supported_chains = config_file.foreign_chains.supported_chains();
-
-        let registered_by_node = foreign_chain_policy_reader
-            .get_supported_chains_by_node()
-            .await
-            .context("failed to fetch supported chains by node")?;
-
-        let my_account_id = dtos::AccountId(config_file.my_near_account_id.to_string());
-        if registered_by_node
-            .supported_chain_by_account
-            .get(&my_account_id)
-            .is_some_and(|registered| registered == &locally_supported_chains)
-        {
-            tracing::info!("supported foreign chains already registered by this node; skipping");
-            return Ok(());
-        }
-
-        chain_txn_sender
-            .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
-                ChainRegisterSupportedForeignChains {
-                    supported_chains_by_node: locally_supported_chains,
-                },
-            ))
-            .await
-            .context("failed to send register foreign chain config")?;
-
-        Ok(())
     }
 }
 
