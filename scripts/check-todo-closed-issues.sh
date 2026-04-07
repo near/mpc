@@ -13,8 +13,8 @@ EXCLUDE_PATTERNS=(
 
 # Extract unique issue numbers from TODO(#NNN) comments across all tracked files.
 EXCLUDE_REGEX=$(IFS='|'; echo "${EXCLUDE_PATTERNS[*]}")
-ISSUE_NUMBERS=$(git ls-files -z | grep -zvE "$EXCLUDE_REGEX" | \
-    xargs -0 grep -hoE 'TODO\(#[0-9]+\)' 2>/dev/null | \
+ISSUE_NUMBERS=$(git ls-files | grep -vE "$EXCLUDE_REGEX" | \
+    xargs grep -hoE 'TODO\(#[0-9]+\)' 2>/dev/null | \
     grep -oE '[0-9]+' | sort -un || true)
 
 if [ -z "$ISSUE_NUMBERS" ]; then
@@ -58,8 +58,8 @@ echo ""
 for num in $CLOSED; do
     echo "  #${num} (closed):"
     # Print all file:line locations containing this TODO reference.
-    git ls-files -z | \
-        xargs -0 grep -Hn "TODO(#${num})" 2>/dev/null | sed 's/^/    /' || true
+    git ls-files | grep -vE "$EXCLUDE_REGEX" | \
+        xargs grep -Hn "TODO(#${num})" 2>/dev/null | sed 's/^/    /' || true
     echo ""
 done
 
