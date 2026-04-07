@@ -2,7 +2,7 @@
 pub mod method_names;
 pub mod types {
     pub use attestation::{
-        AppCompose, Attestation, Collateral, DstackAttestation, EventLog, MockAttestation,
+        AppCompose, Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation,
         SubmitParticipantInfoArgs, TcbInfo, VerifiedAttestation, VerifiedDstackAttestation,
         VerifiedMeasurements,
     };
@@ -22,6 +22,9 @@ pub mod types {
         ThresholdParameters, ThresholdParametersVotes,
     };
     pub use updates::{ProposedUpdates, UpdateHash};
+
+    // Re-export hash types used in attestation DTO fields
+    pub use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};
 
     // Re-export crypto types from near-mpc-crypto-types
     pub use near_mpc_crypto_types::{

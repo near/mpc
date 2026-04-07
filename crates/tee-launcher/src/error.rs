@@ -11,11 +11,32 @@ pub enum LauncherError {
     #[error("Invalid image name (must contain only [a-zA-Z0-9/_.-]): {0}")]
     InvalidImageName(String),
 
-    #[error("Image hash not found among tags")]
+    #[error("No matching image digest found (some tags may have been skipped due to fetch errors)")]
     ImageHashNotFoundAmongTags,
 
-    #[error("Failed to get auth token from registry: {0}")]
+    #[error("config digest mismatch: expected {expected}, got {actual}")]
+    ConfigDigestMismatch {
+        expected: DockerSha256Digest,
+        actual: DockerSha256Digest,
+    },
+
+    #[error("Registry authentication/authorization failed: {0}")]
     RegistryAuthFailed(String),
+
+    #[error("Manifest not found: {0}")]
+    ManifestNotFound(String),
+
+    #[error("Registry server error: {0}")]
+    RegistryServerError(String),
+
+    #[error("Registry request failed: {0}")]
+    RegistryRequestFailed(String),
+
+    #[error("Registry error: {0}")]
+    RegistryError(String),
+
+    #[error("Invalid image reference: {0}")]
+    InvalidImageReference(String),
 
     #[error("docker compose up failed for validated hash")]
     DockerRunFailed {
@@ -56,14 +77,8 @@ pub enum LauncherError {
         source: toml::de::Error,
     },
 
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-
     #[error("Registry response parse error: {0}")]
     RegistryResponseParse(String),
-
-    #[error("Invalid manifest URL: {0}")]
-    InvalidManifestUrl(String),
 
     #[error("User config contains reserved key [{0}] — remove it from mpc_node_config")]
     ReservedConfigKey(String),

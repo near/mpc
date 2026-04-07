@@ -1,9 +1,10 @@
 use std::process::Command;
+use std::time::Duration;
 
 use launcher_interface::types::DockerSha256Digest;
 
 use crate::error::ImageDigestValidationFailed;
-use crate::registry::{DockerRegistry, get_manifest_digest};
+use crate::registry::{create_registry_client, get_manifest_digest};
 use crate::types::LauncherConfig;
 
 /// Returns if the given image digest is valid (pull + manifest + digest match).
@@ -12,8 +13,9 @@ pub async fn validate_image_hash(
     launcher_config: &LauncherConfig,
     image_hash: DockerSha256Digest,
 ) -> Result<DockerSha256Digest, ImageDigestValidationFailed> {
-    let registry = DockerRegistry::new(launcher_config);
-    let manifest_digest = get_manifest_digest(&registry, launcher_config, &image_hash)
+    let timeout = Duration::from_secs(launcher_config.rpc_request_timeout_secs);
+    let client = create_registry_client(timeout);
+    let manifest_digest = get_manifest_digest(&client, launcher_config, &image_hash)
         .await
         .map_err(|e| ImageDigestValidationFailed::ManifestDigestLookupFailed(e.to_string()))?;
     let image_name = &launcher_config.image_name;
