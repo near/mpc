@@ -499,7 +499,34 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/LauncherHashVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "array",
+                  "items": [
+                    {
+                      "$ref": "#/definitions/ProposalHash"
+                    },
+                    {
+                      "$ref": "#/definitions/LauncherVoteAction"
+                    }
+                  ],
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/AuthenticatedParticipantId2"
+                  },
+                  "uniqueItems": true
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            }
           }
         }
       },
@@ -1589,6 +1616,14 @@ expression: abi
           "allOf": [
             {
               "$ref": "#/definitions/ParticipantId2"
+            }
+          ]
+        },
+        "AuthenticatedParticipantId2": {
+          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ParticipantId"
             }
           ]
         },
@@ -2775,21 +2810,6 @@ expression: abi
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "LauncherHashVotes": {
-          "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/LauncherVoteAction"
-              }
-            }
-          }
-        },
         "LauncherImageHash": {
           "type": "string",
           "maxLength": 64,
@@ -3224,6 +3244,12 @@ expression: abi
               "$ref": "#/definitions/SignatureResponse"
             }
           }
+        },
+        "ProposalHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "ProposedUpdates": {
           "type": "object",

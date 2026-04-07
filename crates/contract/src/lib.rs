@@ -11,7 +11,6 @@ pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
-
 pub mod v3_8_1_state;
 
 #[cfg(feature = "bench-contract-methods")]
@@ -68,9 +67,10 @@ use primitives::{
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
+    votes::types::{ProposalHash, ProposalId},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
-use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
+use tee::proposal::CodeHashesVotes;
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
@@ -1427,10 +1427,22 @@ impl MpcContract {
         let action = LauncherVoteAction::Add(launcher_hash);
         let votes = self.tee_state.vote_launcher(action, &participant);
 
+        let num_votes = votes.count_for(|authenticated_participant_id| {
+            threshold_parameters
+                .participants()
+                .is_participant_given_participant_id(&authenticated_participant_id.get())
+        });
+
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        if votes >= self.threshold()?.value() {
+        if num_votes
+            >= self
+                .threshold()?
+                .value()
+                .try_into()
+                .expect("expect cast from u64 to usize for threshold to succeed")
+        {
             let added = self
                 .tee_state
                 .add_launcher_image(launcher_hash, tee_upgrade_deadline_duration);
@@ -1464,10 +1476,15 @@ impl MpcContract {
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = LauncherVoteAction::Remove(launcher_hash);
         let votes = self.tee_state.vote_launcher(action, &participant);
+        let num_votes = votes.count_for(|authenticated_participant_id| {
+            threshold_parameters
+                .participants()
+                .is_participant_given_participant_id(&authenticated_participant_id.get())
+        });
 
         // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().len() as u64;
-        if votes >= total_participants {
+        let total_participants = threshold_parameters.participants().len();
+        if num_votes >= total_participants {
             let removed = self.tee_state.remove_launcher_image(&launcher_hash);
             log!("launcher hash remove result: {}", removed);
         }
@@ -1897,8 +1914,16 @@ impl MpcContract {
     }
 
     /// Returns the current launcher hash votes, showing each participant's vote.
-    pub fn launcher_hash_votes(&self) -> LauncherHashVotes {
-        self.tee_state.launcher_votes.clone()
+    pub fn launcher_hash_votes(
+        &self,
+    ) -> BTreeMap<
+        ProposalId,
+        (
+            (ProposalHash, LauncherVoteAction),
+            BTreeSet<AuthenticatedParticipantId>,
+        ),
+    > {
+        self.tee_state.launcher_votes.snapshot()
     }
 
     /// Returns the current code hash votes, showing each participant's vote.
@@ -2378,7 +2403,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::errors::NodeMigrationError;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
@@ -2400,6 +2424,7 @@ mod tests {
     };
     use crate::tee::proposal::{get_docker_compose_hash, LauncherVoteAction};
     use crate::tee::tee_state::NodeId;
+    use crate::{errors::NodeMigrationError, primitives::votes::types::PROPOSAL_HASH_BYTES};
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
@@ -5551,10 +5576,10 @@ mod tests {
         let participant_list = participants.participants();
         let launcher_hash = make_launcher_hash(0xCC);
 
-        assert!(contract.launcher_hash_votes().vote_by_account.is_empty());
+        assert!(contract.launcher_hash_votes().is_empty());
 
         // First vote
-        let (account_0, _, _) = &participant_list[0];
+        let (account_0, p_id_0, _) = &participant_list[0];
         testing_env!(VMContextBuilder::new()
             .signer_account_id(account_0.clone())
             .predecessor_account_id(account_0.clone())
@@ -5563,13 +5588,29 @@ mod tests {
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
 
-        let votes = &contract.launcher_hash_votes().vote_by_account;
-        assert_eq!(votes.len(), 1);
+        let auth_p_id_0 = AuthenticatedParticipantId::new(&participants).unwrap();
+        assert_eq!(auth_p_id_0.get(), *p_id_0);
+
         let expected_action = LauncherVoteAction::Add(launcher_hash);
-        assert!(votes.values().all(|v| *v == expected_action));
+        let expected_hash: [u8; PROPOSAL_HASH_BYTES] =
+            sha2::Sha256::digest(borsh::to_vec(&expected_action).unwrap()).into();
+        let expected_hash = ProposalHash::new(expected_hash);
+        {
+            let votes = contract.launcher_hash_votes();
+            assert_eq!(
+                votes,
+                BTreeMap::from([(
+                    0.into(),
+                    (
+                        (expected_hash, expected_action.clone()),
+                        BTreeSet::from([auth_p_id_0.clone()])
+                    )
+                )])
+            );
+        }
 
         // Second vote
-        let (account_1, _, _) = &participant_list[1];
+        let (account_1, p_id_1, _) = &participant_list[1];
         testing_env!(VMContextBuilder::new()
             .signer_account_id(account_1.clone())
             .predecessor_account_id(account_1.clone())
@@ -5578,9 +5619,21 @@ mod tests {
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
 
-        let votes = &contract.launcher_hash_votes().vote_by_account;
-        assert_eq!(votes.len(), 2);
-        assert!(votes.values().all(|v| *v == expected_action));
+        let auth_p_id_1 = AuthenticatedParticipantId::new(&participants).unwrap();
+        assert_eq!(auth_p_id_1.get(), *p_id_1);
+        {
+            let votes = contract.launcher_hash_votes();
+            assert_eq!(
+                votes,
+                BTreeMap::from([(
+                    0.into(),
+                    (
+                        (expected_hash, expected_action.clone()),
+                        BTreeSet::from([auth_p_id_0, auth_p_id_1])
+                    )
+                )])
+            );
+        }
 
         // Third vote reaches threshold — votes should be cleared
         let (account_2, _, _) = &participant_list[2];
@@ -5593,7 +5646,7 @@ mod tests {
             .expect("vote should succeed");
 
         assert!(
-            contract.launcher_hash_votes().vote_by_account.is_empty(),
+            contract.launcher_hash_votes().is_empty(),
             "votes should be cleared after threshold reached"
         );
     }
