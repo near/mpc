@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use crate::primitives::{
     key_state::AuthenticatedParticipantId, participants::Participants, time::Timestamp,
+    votes::Votes,
 };
 
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
@@ -74,71 +75,13 @@ impl CodeHashesVotes {
 
 /// The action a participant is voting for on a launcher image hash.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum LauncherVoteAction {
     Add(LauncherImageHash),
     Remove(LauncherImageHash),
 }
 
-/// Tracks votes for adding or removing launcher image hashes.
-/// Each participant can have at most one active vote at a time.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct LauncherHashVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
-}
-
-impl LauncherHashVotes {
-    /// Casts a vote for the given action and returns the total number of participants
-    /// who have voted for the same action. Replaces any previous vote by this participant.
-    pub fn vote(
-        &mut self,
-        action: LauncherVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .vote_by_account
-            .insert(participant.clone(), action.clone())
-            .is_some()
-        {
-            log!("removed old launcher vote for signer");
-        }
-        let total = self.count_votes(&action);
-        log!("total launcher votes for action: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given action.
-    fn count_votes(&self, action: &LauncherVoteAction) -> u64 {
-        u64::try_from(
-            self.vote_by_account
-                .values()
-                .filter(|a| *a == action)
-                .count(),
-        )
-        .expect("participant count should not overflow u64")
-    }
-
-    /// Clears all launcher votes.
-    pub fn clear_votes(&mut self) {
-        self.vote_by_account.clear();
-    }
-
-    /// Returns a new `LauncherHashVotes` containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .vote_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
-            .collect();
-        LauncherHashVotes {
-            vote_by_account: remaining,
-        }
-    }
-}
+pub type LauncherHashVotes = Votes<AuthenticatedParticipantId, LauncherVoteAction>;
 
 /// An allowed Docker image configuration entry containing the MPC image hash
 /// and when it was added to the allowlist.

@@ -16,14 +16,14 @@ use near_sdk::{env, store::LookupMap};
 use crate::{
     node_migrations::NodeMigrations,
     primitives::{
-        domain::DomainId,
+        ckd::CKDRequest,
         key_state::AuthenticatedParticipantId,
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
     storage_keys::StorageKey,
     tee::{
-        measurements::{AllowedMeasurements, ContractExpectedMeasurements},
+        measurements::{AllowedMeasurements, ContractExpectedMeasurements, MeasurementVotes},
         proposal::{
             AllowedDockerImageHashes, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
             LauncherVoteAction,
@@ -47,20 +47,15 @@ struct OldTeeState {
     votes: CodeHashesVotes,
     launcher_votes: OldLauncherHashVotes,
     stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
-}
-
-#[derive(Debug, BorshSerialize, BorshDeserialize, Eq, Ord, PartialEq, PartialOrd)]
-pub struct OldCKDRequest {
-    pub app_public_key: dtos::Bls12381G1PublicKey,
-    pub app_id: dtos::CkdAppId,
-    pub domain_id: DomainId,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: MeasurementVotes,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
-    pending_ckd_requests: LookupMap<OldCKDRequest, YieldIndex>,
+    pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     pending_verify_foreign_tx_requests:
         LookupMap<dtos::VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
