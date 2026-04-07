@@ -43,6 +43,31 @@ pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 *
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
 
+    // Log startup info
+    tracing::info!("{}", *crate::MPC_VERSION_STRING);
+    tracing::info!(
+        account_id = %config.node.my_near_account_id,
+        contract_id = %config.node.indexer.mpc_contract_id,
+        home_dir = %config.home_dir.display(),
+        web_ui = %config.node.web_ui,
+        "starting MPC node"
+    );
+    tracing::info!(
+        tee_authority = %match &config.tee.authority {
+            launcher_interface::types::TeeAuthorityConfig::Dstack { .. } => "dstack",
+            launcher_interface::types::TeeAuthorityConfig::Local => "local",
+        },
+        image_hash = %config.tee.image_hash,
+        "TEE config"
+    );
+    if let Some(ref near_init) = config.near_init {
+        tracing::info!(
+            chain_id = %near_init.chain_id,
+            download_genesis = near_init.download_genesis,
+            "NEAR init config"
+        );
+    }
+
     let root_runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(1)

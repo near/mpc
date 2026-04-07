@@ -65,23 +65,6 @@ jobs:
         run: |
           ./scripts/check-mpc-node-docker-starts.sh --launcher
 
-  rust-launcher-nontee-check:
-    name: "MPC Rust Launcher non-tee check"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Check mpc-node docker image can initialize through the Rust launcher and start
-        run: |
-          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
-
   docker-launcher-build-and-verify:
     name: "Build MPC Launcher Docker image and verify"
     runs-on: warp-ubuntu-2404-x64-2x
@@ -143,6 +126,11 @@ jobs:
         shell: bash
         run: |
           ./scripts/build-and-verify-rust-launcher-docker-image.sh
+
+      - name: Run Rust launcher non-TEE runtime check
+        shell: bash
+        run: |
+          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
 
   mpc-unittests:
     name: "Cargo test: ${{ matrix.group }}"
