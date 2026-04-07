@@ -97,20 +97,10 @@ impl FakeMpcContractState {
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
             pending_verify_foreign_txs: BTreeMap::new(),
-            foreign_chain_policy: dtos::ForeignChainPolicy::default(),
-            foreign_chain_policy_votes: dtos::ForeignChainPolicyVotes::default(),
             supported_foreign_chains: dtos::SupportedForeignChains::default(),
             supported_foreign_chains_by_node: dtos::SupportedForeignChainsVotes::default(),
             migration_service: NodeMigrations::default(),
         }
-    }
-
-    pub fn foreign_chain_policy(&self) -> &dtos::ForeignChainPolicy {
-        &self.foreign_chain_policy
-    }
-
-    pub fn foreign_chain_policy_votes(&self) -> &dtos::ForeignChainPolicyVotes {
-        &self.foreign_chain_policy_votes
     }
 
     pub fn supported_foreign_chains(&self) -> &dtos::SupportedForeignChains {
@@ -323,57 +313,6 @@ impl FakeMpcContractState {
                     "vote_reshared transaction ignored because the contract is not in resharing state"
                 );
             }
-        }
-    }
-
-    pub fn vote_foreign_chain_policy(
-        &mut self,
-        account_id: AccountId,
-        policy: dtos::ForeignChainPolicy,
-    ) {
-        let ProtocolContractState::Running(state) = &self.state else {
-            tracing::info!(
-                "vote_foreign_chain_policy transaction ignored because the contract is not in running state"
-            );
-            return;
-        };
-
-        let is_participant = state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .any(|(participant_id, _, _)| participant_id == &account_id);
-
-        if !is_participant {
-            tracing::info!(
-                "vote_foreign_chain_policy transaction ignored because signer is not a participant"
-            );
-            return;
-        }
-
-        let voter = dtos::AccountId(account_id.to_string());
-        let _previous = self
-            .foreign_chain_policy_votes
-            .proposal_by_account
-            .insert(voter, policy.clone());
-
-        let total_votes = state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .filter(|(participant_id, _, _)| {
-                self.foreign_chain_policy_votes
-                    .proposal_by_account
-                    .get(&dtos::AccountId(participant_id.to_string()))
-                    .is_some_and(|prop| prop == &policy)
-            })
-            .count();
-
-        if total_votes == state.parameters.participants().len() {
-            self.foreign_chain_policy = policy;
-            self.foreign_chain_policy_votes.proposal_by_account.clear();
         }
     }
 
@@ -706,11 +645,7 @@ impl FakeIndexerCore {
                         let mut contract = contract.lock().await;
                         contract.vote_reshared(account_id, reshared.key_event_id);
                     }
-                    ChainSendTransactionRequest::VoteForeignChainPolicy(vote) => {
-                        let mut contract = contract.lock().await;
-                        contract.vote_foreign_chain_policy(account_id, vote.policy);
-                    }
-                    ChainSendTransactionRequest::RegisterForeignChainConfig(args) => {
+                    ChainSendTransactionRequest::RegisterSupportedForeignChains(args) => {
                         let mut contract = contract.lock().await;
                         contract.register_foreign_chain_config(
                             account_id,

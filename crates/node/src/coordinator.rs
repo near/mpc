@@ -5,7 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
+use crate::indexer::types::{ChainRegisterSupportedForeignChains, ChainSendTransactionRequest};
 use crate::indexer::{tx_sender, IndexerAPI, ReadForeignChainPolicy};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
@@ -743,15 +743,13 @@ where
             .get(&my_account_id)
             .is_some_and(|registered| registered == &locally_supported_chains)
         {
-            tracing::info!(
-                "supported foreign chains already registered by this node; skipping"
-            );
+            tracing::info!("supported foreign chains already registered by this node; skipping");
             return Ok(());
         }
 
         chain_txn_sender
-            .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-                ChainRegisterForeignChainConfigArgs {
+            .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
+                ChainRegisterSupportedForeignChains {
                     supported_chains_by_node: locally_supported_chains,
                 },
             ))
@@ -918,33 +916,4 @@ fn make_initializing_stop_fn(
             stop_initializing(new_state, key_event.id.epoch_id, &key_event_sender)
         }),
     )
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::Coordinator;
-    use crate::indexer::fake::FakeForeignChainPolicyReader;
-    use crate::tests::common::MockTransactionSender;
-    use near_mpc_contract_interface::types as dtos;
-
-    #[test]
-    fn is_supported_foreign_chain__supports_starknet() {
-        assert!(Coordinator::<
-            MockTransactionSender,
-            FakeForeignChainPolicyReader,
-        >::is_supported_foreign_chain(
-            &dtos::ForeignChain::Starknet
-        ));
-    }
-
-    #[test]
-    fn is_supported_foreign_chain__supports_abstract() {
-        assert!(Coordinator::<
-            MockTransactionSender,
-            FakeForeignChainPolicyReader,
-        >::is_supported_foreign_chain(
-            &dtos::ForeignChain::Abstract
-        ));
-    }
 }

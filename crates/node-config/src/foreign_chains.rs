@@ -1,8 +1,8 @@
+use std::borrow::Cow;
 use std::collections::BTreeSet;
-use std::{borrow::Cow, collections::BTreeMap};
 
 use anyhow::Context;
-use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
@@ -89,14 +89,6 @@ impl ForeignChainsConfig {
 
         supported_chains
     }
-}
-
-fn providers_to_set<P: ForeignChainProviderConfig>(
-    providers: &NonEmptyBTreeMap<String, P>,
-) -> NonEmptyBTreeSet<dtos::RpcProvider> {
-    providers.map_to_set(|_name, provider| dtos::RpcProvider {
-        rpc_url: provider.rpc_url().trim().to_string(),
-    })
 }
 
 pub(crate) trait ForeignChainProviderConfig {

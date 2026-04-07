@@ -297,17 +297,8 @@ where
 
 #[derive(Debug, thiserror::Error)]
 enum ValidateForeignChainPolicyError {
-    #[error("local foreign_chains config is empty; cannot process foreign chain request")]
-    LocalConfigEmpty,
     #[error("failed to fetch on-chain foreign chain policy")]
     FetchOnChainPolicy(#[source] anyhow::Error),
-    #[error(
-        "local foreign chain policy does not match on-chain policy: local={local:?}, on_chain={on_chain:?}"
-    )]
-    PolicyMismatch {
-        local: dtos::ForeignChainPolicy,
-        on_chain: dtos::ForeignChainPolicy,
-    },
     #[error("requested chain {requested:?} is not present in the on-chain foreign chain policy")]
     ChainNotInPolicy { requested: dtos::ForeignChain },
 }
@@ -367,8 +358,6 @@ mod tests {
     use mpc_node_config::{
         BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig,
     };
-    use near_mpc_bounded_collections::NonEmptyBTreeSet;
-    use std::collections::BTreeMap;
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -397,21 +386,14 @@ mod tests {
         }
     }
 
-    fn bitcoin_chain_policy() -> dtos::ForeignChainPolicy {
-        dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://blockstream.info/api".to_string(),
-                }),
-            )]),
-        }
+    fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
+        std::collections::BTreeSet::from([dtos::ForeignChain::Bitcoin]).into()
     }
 
-    fn mock_policy_reader(policy: dtos::ForeignChainPolicy) -> MockReadForeignChainPolicy {
+    fn mock_policy_reader(policy: dtos::SupportedForeignChains) -> MockReadForeignChainPolicy {
         let mut reader = MockReadForeignChainPolicy::new();
         reader
-            .expect_get_foreign_chain_policy()
+            .expect_get_supported_chains()
             .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
         reader
     }
@@ -507,39 +489,6 @@ mod tests {
         assert_matches!(
             result,
             Err(ValidateForeignChainPolicyError::ChainNotInPolicy { .. })
-        );
-    }
-
-    #[tokio::test]
-    #[expect(deprecated, reason = "regression test of to be deprecated API")]
-    async fn validate_foreign_chain_policy__should_fail_when_policies_mismatch() {
-        let config = bitcoin_foreign_chains_config();
-        // On-chain policy differs (different RPC URL)
-        let reader = mock_policy_reader(dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://different-provider.example.com/api".to_string(),
-                }),
-            )]),
-        });
-
-        let result = chain_is_supported(&config, &reader, &bitcoin_request()).await;
-        assert_matches!(
-            result,
-            Err(ValidateForeignChainPolicyError::PolicyMismatch { .. })
-        );
-    }
-
-    #[tokio::test]
-    async fn validate_foreign_chain_policy__should_fail_when_local_config_empty() {
-        let config = ForeignChainsConfig::default();
-        let reader = mock_policy_reader(bitcoin_chain_policy());
-
-        let result = chain_is_supported(&config, &reader, &bitcoin_request()).await;
-        assert_matches!(
-            result,
-            Err(ValidateForeignChainPolicyError::LocalConfigEmpty)
         );
     }
 }

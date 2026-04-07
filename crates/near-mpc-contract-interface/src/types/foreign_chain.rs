@@ -621,7 +621,6 @@ pub struct ForeignChainPolicy {
     pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
 }
 
-#[deprecated(since = "3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -635,6 +634,7 @@ pub struct ForeignChainPolicy {
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::From,
     derive_more::Deref,
     derive_more::DerefMut,
 )]
@@ -644,6 +644,7 @@ pub struct ForeignChainPolicy {
 )]
 pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
 
+#[deprecated(since = "3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -684,6 +685,7 @@ pub struct RpcProvider {
 )]
 pub struct RpcProviderName(String);
 
+#[deprecated(since = "3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -702,7 +704,6 @@ pub struct RpcProviderName(String);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-#[deprecated]
 pub struct ForeignChainPolicyVotes {
     pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
 }
@@ -720,6 +721,8 @@ pub struct ForeignChainPolicyVotes {
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::Deref,
+    derive_more::From,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
