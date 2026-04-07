@@ -36,7 +36,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
 
     let number_of_participants: usize = 3;
     let (_, contract, accounts, _) =
-        init_with_candidates(vec![], Some(init_config), number_of_participants).await;
+        init_with_candidates(vec![], None, Some(init_config), number_of_participants).await;
 
     let execution = accounts[0]
         .call(contract.id(), method_names::PROPOSE_UPDATE)
@@ -97,8 +97,13 @@ async fn contract_configuration_can_be_set_on_initialization() {
     };
 
     let number_of_participants: usize = 2;
-    let (_, contract, _, _) =
-        init_with_candidates(vec![], Some(init_config.clone()), number_of_participants).await;
+    let (_, contract, _, _) = init_with_candidates(
+        vec![],
+        None,
+        Some(init_config.clone()),
+        number_of_participants,
+    )
+    .await;
 
     let stored_config: near_mpc_contract_interface::types::InitConfig = contract
         .view(method_names::CONFIG)

@@ -14,7 +14,9 @@ use crate::sandbox::{
 use anyhow::Result;
 use mpc_contract::{
     errors::InvalidState,
-    primitives::{domain::Protocol, participants::Participants, test_utils::bogus_ed25519_public_key},
+    primitives::{
+        domain::Protocol, participants::Participants, test_utils::bogus_ed25519_public_key,
+    },
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::method_names;

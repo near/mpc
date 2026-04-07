@@ -14,7 +14,9 @@ use mpc_contract::{
         domain::{Curve, DomainConfig, DomainId, DomainPurpose, GetCurve, Protocol},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        test_utils::{bogus_ed25519_near_public_key, infer_purpose_from_curve},
+        test_utils::{
+            bogus_ed25519_near_public_key, infer_purpose_from_curve, infer_purpose_from_protocol,
+        },
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
@@ -181,8 +183,10 @@ pub struct DomainPublicKey {
 }
 
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
+/// If `purposes` is provided, each entry overrides the default purpose for the corresponding key.
 pub async fn init_with_candidates(
     pks: Vec<dtos::PublicKey>,
+    purposes: Option<&[DomainPurpose]>,
     init_config: Option<dtos::InitConfig>,
     number_of_participants: usize,
 ) -> (
@@ -208,7 +212,9 @@ pub async fn init_with_candidates(
                     dtos::PublicKey::Bls12381(_) => Curve::Bls12381,
                 };
                 let key: PublicKeyExtended = pk.try_into().unwrap();
-                let purpose = infer_purpose_from_curve(curve);
+                let purpose = purposes
+                    .map(|p| p[i])
+                    .unwrap_or_else(|| infer_purpose_from_curve(curve));
                 ret_domains.push(DomainPublicKey {
                     public_key: key.clone(),
                     config: DomainConfig {
@@ -265,8 +271,12 @@ pub async fn init_env(protocols: &[Protocol], number_of_participants: usize) -> 
         .iter()
         .map(|protocol| make_key_for_domain(protocol.get_curve()))
         .collect();
+    let purposes: Vec<DomainPurpose> = protocols
+        .iter()
+        .map(|p| infer_purpose_from_protocol(*p))
+        .collect();
     let (worker, contract, mpc_signer_accounts, domains) =
-        init_with_candidates(public_keys, None, number_of_participants).await;
+        init_with_candidates(public_keys, Some(&purposes), None, number_of_participants).await;
     let keys = domains
         .into_iter()
         .zip(secret_keys.into_iter())

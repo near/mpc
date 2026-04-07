@@ -518,7 +518,7 @@ async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
     let (worker, contract, mpc_signer_accounts, _) =
-        init_with_candidates(vec![], None, PARTICIPANT_LEN).await;
+        init_with_candidates(vec![], None, None, PARTICIPANT_LEN).await;
 
     let participants = assert_running_return_participants(&contract)
         .await
@@ -539,7 +539,7 @@ async fn update_from_current_contract_to_migration_contract() {
 async fn migration_function_rejects_external_callers() {
     let number_of_participants: usize = 2;
     let (_worker, contract, mpc_signer_accounts, _) =
-        init_with_candidates(vec![], None, number_of_participants).await;
+        init_with_candidates(vec![], None, None, number_of_participants).await;
 
     let execution_error = mpc_signer_accounts[0]
         .call(contract.id(), method_names::MIGRATE)
