@@ -39,7 +39,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.7.0"
+version = "3.8.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -129,7 +129,6 @@ frost-core = { version = "2.2.0", default-features = false, features = [
 ] }
 frost-ed25519 = { version = "2.2.0", default-features = false }
 frost-secp256k1 = { version = "2.2.0", default-features = false }
-fs2 = "0.4.3"
 futures = "0.3.32"
 futures-lite = "2.6.1"
 gcloud-sdk = { version = "0.29.0", default-features = false, features = [
@@ -165,6 +164,7 @@ near-sdk = { version = "5.24.1", features = [
 ] }
 near-workspaces = { version = "0.22.1" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
+oci-client = { version = "0.16", default-features = false, features = ["rustls-tls"] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
     "cpp",

@@ -37,6 +37,7 @@ rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 test-port-allocator = { workspace = true }
+test-utils = { workspace = true }
 
 [[test]]
 name = "test"

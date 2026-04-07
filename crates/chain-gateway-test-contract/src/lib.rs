@@ -10,10 +10,6 @@ use near_sdk::{
     near,
 };
 
-pub fn compiled_wasm() -> &'static [u8] {
-    include_bytes!("../res/chain_gateway_test_contract.wasm")
-}
-
 #[derive(Debug)]
 #[near(contract_state)]
 pub struct Contract {
