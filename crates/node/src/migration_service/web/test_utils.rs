@@ -5,7 +5,7 @@ use std::{
 
 use aes_gcm::{Aes256Gcm, KeyInit};
 use ed25519_dalek::SigningKey;
-use mpc_contract::node_migrations::BackupServiceInfo;
+use near_mpc_contract_interface::types::BackupServiceInfo;
 use rand::rngs::OsRng;
 use tempfile::TempDir;
 use tokio::sync::{watch, RwLock};

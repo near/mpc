@@ -478,7 +478,15 @@ pub fn auth_config_to_rpc_auth(
 #[cfg(test)]
 pub mod tests {
     use assert_matches::assert_matches;
-    use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
+    fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
+        let signing_key = ed25519_dalek::SigningKey::generate(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        near_sdk::PublicKey::from_parts(
+            near_sdk::CurveType::ED25519,
+            verifying_key.as_bytes().as_slice().into(),
+        )
+        .unwrap()
+    }
     use rand::{
         distributions::{Alphanumeric, Uniform},
         rngs::OsRng,

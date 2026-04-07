@@ -1,7 +1,7 @@
 use derive_more::From;
 use itertools::Itertools;
 use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
-use mpc_contract::tee::proposal::NodeImageHash;
+use mpc_primitives::hash::NodeImageHash;
 use near_mpc_bounded_collections::NonEmptyVec;
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;

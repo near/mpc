@@ -5,7 +5,7 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -35,25 +35,25 @@ async fn test_basic_multidomain() {
     let mut domains = vec![
         DomainConfig {
             id: DomainId(0),
-            curve: Curve::Secp256k1,
-            purpose: DomainPurpose::Sign,
+            scheme: SignatureScheme::Secp256k1,
+            purpose: Some(DomainPurpose::Sign),
         },
         DomainConfig {
             id: DomainId(1),
-            curve: Curve::Edwards25519,
-            purpose: DomainPurpose::Sign,
+            scheme: SignatureScheme::Ed25519,
+            purpose: Some(DomainPurpose::Sign),
         },
         DomainConfig {
             id: DomainId(2),
-            curve: Curve::Bls12381,
-            purpose: DomainPurpose::CKD,
+            scheme: SignatureScheme::Bls12381,
+            purpose: Some(DomainPurpose::CKD),
         },
     ];
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
-        contract.add_domains(domains.clone());
+        contract.add_domains(super::to_contract_domain_configs(&domains));
     }
 
     let _runs = setup
@@ -73,8 +73,10 @@ async fn test_basic_multidomain() {
 
     tracing::info!("requesting signature");
     for domain in &domains {
-        match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+        match domain.scheme {
+            SignatureScheme::Secp256k1
+            | SignatureScheme::Ed25519
+            | SignatureScheme::V2Secp256k1 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -84,7 +86,7 @@ async fn test_basic_multidomain() {
                 .await
                 .is_some());
             }
-            Curve::Bls12381 => {
+            SignatureScheme::Bls12381 => {
                 assert!(request_ckd_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -99,24 +101,24 @@ async fn test_basic_multidomain() {
     let new_domains = vec![
         DomainConfig {
             id: DomainId(3),
-            curve: Curve::Edwards25519,
-            purpose: DomainPurpose::Sign,
+            scheme: SignatureScheme::Ed25519,
+            purpose: Some(DomainPurpose::Sign),
         },
         DomainConfig {
             id: DomainId(4),
-            curve: Curve::Secp256k1,
-            purpose: DomainPurpose::Sign,
+            scheme: SignatureScheme::Secp256k1,
+            purpose: Some(DomainPurpose::Sign),
         },
         DomainConfig {
             id: DomainId(5),
-            curve: Curve::Bls12381,
-            purpose: DomainPurpose::CKD,
+            scheme: SignatureScheme::Bls12381,
+            purpose: Some(DomainPurpose::CKD),
         },
     ];
 
     {
         let mut contract = setup.indexer.contract_mut().await;
-        contract.add_domains(new_domains.clone());
+        contract.add_domains(super::to_contract_domain_configs(&new_domains));
         domains.extend(new_domains.clone());
     }
     setup
@@ -138,8 +140,10 @@ async fn test_basic_multidomain() {
         .expect("must not exceed timeout");
 
     for domain in &domains {
-        match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+        match domain.scheme {
+            SignatureScheme::Secp256k1
+            | SignatureScheme::Ed25519
+            | SignatureScheme::V2Secp256k1 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -149,7 +153,7 @@ async fn test_basic_multidomain() {
                 .await
                 .is_some());
             }
-            Curve::Bls12381 => {
+            SignatureScheme::Bls12381 => {
                 assert!(request_ckd_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -185,8 +189,10 @@ async fn test_basic_multidomain() {
         .expect("must not exceed timeout");
 
     for domain in &domains {
-        match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+        match domain.scheme {
+            SignatureScheme::Secp256k1
+            | SignatureScheme::Ed25519
+            | SignatureScheme::V2Secp256k1 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -196,7 +202,7 @@ async fn test_basic_multidomain() {
                 .await
                 .is_some());
             }
-            Curve::Bls12381 => {
+            SignatureScheme::Bls12381 => {
                 assert!(request_ckd_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),

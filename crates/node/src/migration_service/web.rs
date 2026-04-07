@@ -12,7 +12,7 @@ pub mod types;
 mod tests {
 
     use ed25519_dalek::SigningKey;
-    use mpc_contract::node_migrations::BackupServiceInfo;
+    use near_mpc_contract_interface::types::BackupServiceInfo;
     use rand::rngs::OsRng;
     use rand::SeedableRng as _;
 

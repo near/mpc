@@ -1,7 +1,7 @@
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
 
 use hyper::{service::service_fn, Body, Response, StatusCode};
-use mpc_contract::primitives::key_state::Keyset;
+use near_mpc_contract_interface::types::Keyset;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
@@ -221,7 +221,7 @@ mod tests {
     use near_mpc_contract_interface::types::Ed25519PublicKey;
 
     use ed25519_dalek::SigningKey;
-    use mpc_contract::node_migrations::BackupServiceInfo;
+    use near_mpc_contract_interface::types::BackupServiceInfo;
     use tokio::sync::watch;
 
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {

@@ -5,7 +5,7 @@ use crate::protocol::run_protocol;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::types::SignatureId;
 use anyhow::Context;
-use mpc_contract::primitives::signature::Tweak;
+use near_mpc_contract_interface::types::Tweak;
 use rand::rngs::OsRng;
 use std::time::Duration;
 use threshold_signatures::frost::eddsa::sign::sign;

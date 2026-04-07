@@ -7,8 +7,7 @@ use crate::tests::{
 };
 use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
-use mpc_contract::state::ProtocolContractState;
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
 use near_time::Clock;
 
 /// Runs a cluster of 3 nodes, but with only 2 participants.
@@ -48,14 +47,14 @@ async fn test_changing_participant_set_test_keyshare_import() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
-        purpose: DomainPurpose::Sign,
+        scheme: SignatureScheme::Secp256k1,
+        purpose: Some(DomainPurpose::Sign),
     };
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(initial_participants);
-        contract.add_domains(vec![domain.clone()]);
+        contract.add_domains(super::to_contract_domain_configs(&[domain.clone()]));
     }
 
     let _runs = setup
@@ -88,11 +87,11 @@ async fn test_changing_participant_set_test_keyshare_import() {
     {
         // we move the keyset from the first node to the last node.
         let contract = setup.indexer.contract_mut().await;
-        let ProtocolContractState::Running(running) = &contract.state else {
+        let mpc_contract::state::ProtocolContractState::Running(running) = &contract.state else {
             panic!("done");
         };
-        let keyset = &running.keyset;
-        let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, keyset)
+        let keyset = super::to_interface_keyset(&running.keyset);
+        let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, &keyset)
             .await
             .unwrap();
 
@@ -100,7 +99,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         std::fs::create_dir_all(&home_dir_last).unwrap();
         let key_storage_config = make_key_storage_config(home_dir_last, local_encryption_key_last);
         let mut keystore = key_storage_config.create().await.unwrap();
-        keystore.import_backup(keyshares, keyset).await.unwrap();
+        keystore.import_backup(keyshares, &keyset).await.unwrap();
     }
 
     // finally, change the participant info. Remove the first node and insert the last node.

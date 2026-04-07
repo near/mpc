@@ -20,10 +20,10 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
 use mpc_node_config::ForeignChainsConfig;
 use near_indexer_primitives::CryptoHash;
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -33,12 +33,10 @@ fn build_signature_request(
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
     let payload_hash: [u8; 32] = foreign_tx_payload.compute_msg_hash()?.into();
-    let payload_bytes =
-        Bytes::new(payload_hash.to_vec()).map_err(|err| anyhow::format_err!("{err}"))?;
     Ok(SignatureRequest {
         id: request.id,
         receipt_id: request.receipt_id,
-        payload: Payload::Ecdsa(payload_bytes),
+        payload: Payload::from_legacy_ecdsa(payload_hash),
         tweak: Tweak::new([0u8; 32]),
         entropy: request.entropy,
         timestamp_nanosec: request.timestamp_nanosec,

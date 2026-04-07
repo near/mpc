@@ -1,7 +1,6 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
+use near_mpc_contract_interface::types::{DomainId, EpochId, KeyEventId, KeyForDomain, Keyset};
 use rand::{CryptoRng, RngCore, SeedableRng};
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::test_utils::TestGenerators;
@@ -79,18 +78,41 @@ fn permanent_keyshare_from_keyshares(
 }
 
 fn keyset_from_keyshares(epoch_id: u64, keyshares: &[Keyshare]) -> Keyset {
+    use near_mpc_contract_interface::types::{PublicKey, PublicKeyExtended};
     let keys = keyshares
         .iter()
         .map(|keyshare| {
             let public_key = keyshare.public_key().unwrap();
+            let key = match public_key {
+                PublicKey::Secp256k1(pk) => {
+                    let near_pk = near_sdk::PublicKey::from(pk);
+                    PublicKeyExtended::Secp256k1 {
+                        near_public_key: near_pk.to_string(),
+                    }
+                }
+                PublicKey::Ed25519(pk) => {
+                    let edwards_point = pk.0;
+                    let near_pk = near_sdk::PublicKey::from(pk);
+                    PublicKeyExtended::Ed25519 {
+                        near_public_key_compressed: near_pk.to_string(),
+                        edwards_point,
+                    }
+                }
+                PublicKey::Bls12381(pk) => PublicKeyExtended::Bls12381 {
+                    public_key: PublicKey::Bls12381(pk),
+                },
+            };
             KeyForDomain {
                 domain_id: keyshare.key_id.domain_id,
-                key: public_key.try_into().unwrap(),
+                key,
                 attempt: keyshare.key_id.attempt_id,
             }
         })
         .collect();
-    Keyset::new(EpochId::new(epoch_id), keys)
+    Keyset {
+        epoch_id: EpochId::new(epoch_id),
+        domains: keys,
+    }
 }
 
 #[derive(Clone)]

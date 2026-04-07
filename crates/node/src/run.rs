@@ -17,9 +17,9 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use mpc_attestation::report_data::ReportDataV1;
-use mpc_contract::state::ProtocolContractState;
 use mpc_node_config::{ConfigFile, StartConfig};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use near_time::Clock;
 use std::{
     collections::BTreeMap,

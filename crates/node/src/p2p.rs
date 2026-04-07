@@ -1049,8 +1049,7 @@ mod tests {
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_contract::primitives::domain::DomainId;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use near_mpc_contract_interface::types::{AttemptId, DomainId, EpochId, KeyEventId};
     use rand::Rng;
     use std::time::Duration;
     use tokio::time::timeout;

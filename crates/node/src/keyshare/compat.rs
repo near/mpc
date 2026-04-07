@@ -1,7 +1,6 @@
 use super::permanent::LegacyRootKeyshareData;
 use super::{Keyshare, KeyshareData};
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+use near_mpc_contract_interface::types::{AttemptId, DomainId, EpochId, KeyEventId};
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::frost_core::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;

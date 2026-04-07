@@ -1,9 +1,8 @@
 use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::EpochId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_contract_interface::types::{DomainId, EpochId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -261,7 +260,7 @@ mod tests {
     use crate::keyshare::{Keyshare, KeyshareData};
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
-    use mpc_contract::primitives::key_state::EpochId;
+    use near_mpc_contract_interface::types::EpochId;
     use rand::SeedableRng as _;
     use threshold_signatures::frost_secp256k1::keys::SigningShare;
     use threshold_signatures::frost_secp256k1::VerifyingKey;
