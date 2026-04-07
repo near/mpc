@@ -136,10 +136,10 @@ pub struct MpcContract {
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
 
-    // deprecate after next upgrade for backwards compatibility
-    #[deprecated]
+    // deprecate post 3.9.0 upgrade to maintain backwards compatibility with nodes
+    #[deprecated(since = "3.10.0")]
     foreign_chain_policy: dtos::ForeignChainPolicy,
-    #[deprecated]
+    #[deprecated(since = "3.10.0")]
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
 
     supported_foreign_chains: dtos::SupportedForeignChains,
@@ -1906,12 +1906,12 @@ impl MpcContract {
         dtos::Config::from(&self.config)
     }
 
-    #[deprecated]
+    #[deprecated(since = "3.10.0")]
     pub fn get_foreign_chain_policy(&self) -> dtos::ForeignChainPolicy {
         self.foreign_chain_policy.clone()
     }
 
-    #[deprecated]
+    #[deprecated(since = "3.10.0")]
     pub fn get_foreign_chain_policy_proposals(&self) -> dtos::ForeignChainPolicyVotes {
         self.foreign_chain_policy_votes.to_dto()
     }
