@@ -1,4 +1,4 @@
-use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry};
+use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry, Protocol};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -148,5 +148,15 @@ pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
     match curve {
         Curve::Bls12381 => DomainPurpose::CKD,
         _ => DomainPurpose::Sign,
+    }
+}
+
+/// Infer a default purpose from the protocol.
+pub fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
+    match protocol {
+        Protocol::CaitSith => DomainPurpose::Sign,
+        Protocol::Frost(_) => DomainPurpose::Sign,
+        Protocol::Ckd => DomainPurpose::CKD,
+        Protocol::DamgardEtAl => DomainPurpose::ForeignTx,
     }
 }
