@@ -330,7 +330,7 @@ mod integration_tests {
     use launcher_interface::types::DockerSha256Digest;
 
     #[cfg(target_os = "linux")]
-    use {assert_matches::assert_matches, validation::validate_image_hash};
+    use {crate::validation::validate_image_hash, assert_matches::assert_matches};
 
     use super::*;
 
