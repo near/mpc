@@ -4,8 +4,9 @@ set -euo pipefail
 # PR-focused check: when a PR claims to close issue #Y, verify that no
 # TODO(#Y) comments remain in the codebase.
 
-OWNER="near"
-REPO="mpc"
+REPO_SLUG="${GITHUB_REPOSITORY:-near/mpc}"
+OWNER="${REPO_SLUG%%/*}"
+REPO="${REPO_SLUG#*/}"
 
 # Determine PR number
 PR_NUMBER="${PR_NUMBER:-}"
@@ -36,12 +37,14 @@ CLOSING_ISSUES_JSON=$(gh api graphql \
     -F pr="$PR_NUMBER" \
     -f query="$QUERY")
 
-# Extract issue numbers from the GraphQL closingIssuesReferences.
-# This field captures both body keywords (Closes/Fixes/Resolves) and
-# manually linked issues via the GitHub UI.
-ALL_ISSUES=$(echo "$CLOSING_ISSUES_JSON" | jq -r \
+# Extract issue numbers from closingIssuesReferences (captures both body
+# keywords like Closes/Fixes/Resolves and manually linked issues)
+if ! ALL_ISSUES=$(echo "$CLOSING_ISSUES_JSON" | jq -r \
     '.data.repository.pullRequest.closingIssuesReferences.nodes[].number' \
-    2>/dev/null | sort -un || true)
+    | sort -un); then
+    echo "Failed to parse GitHub API response"
+    exit 1
+fi
 
 if [[ -z "$ALL_ISSUES" ]]; then
     echo "PR #$PR_NUMBER does not close any issues. Skipping TODO check."
