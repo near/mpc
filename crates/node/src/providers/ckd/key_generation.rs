@@ -71,7 +71,7 @@ mod tests {
     use threshold_signatures::confidential_key_derivation::KeygenOutput;
     use threshold_signatures::frost_core::Group;
     use threshold_signatures::participants::Participant;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
     use threshold_signatures::ReconstructionLowerBound;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
@@ -79,7 +79,7 @@ mod tests {
     #[tokio::test]
     async fn ckd_test_key_generation() {
         start_root_task_with_periodic_dump(async move {
-            let participants_ids = into_participant_ids(&TestGenerators::new(4, 3.into()));
+            let participants_ids = into_participant_ids(&generate_participants(4));
             let results = run_test_clients(
                 participants_ids.clone(),
                 run_keygen_client,
