@@ -145,7 +145,7 @@ jobs:
           - group: "node"
             nextest-args: "-p mpc-node"
           - group: "contract"
-            nextest-args: "-p mpc-contract"
+            nextest-args: "--profile=ci-contract -p mpc-contract"
             extra-tools: true
             runner: warp-ubuntu-2404-x64-32x
           - group: "other"

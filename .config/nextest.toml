@@ -1,11 +1,11 @@
 # Limit sandbox test parallelism to avoid resource contention and flaky timeouts.
 # Each sandbox test spins up its own NEAR sandbox instance, so running too many
-# concurrently causes request timeouts under load.
+# concurrently causes request timeouts on CI.
 [test-groups.contract-sandbox]
-max-threads = 8
+max-threads = 16
 
-[profile.default]
-[[profile.default.overrides]]
+[profile.ci-contract]
+[[profile.ci-contract.overrides]]
 filter = 'package(mpc-contract) and test(/sandbox/)'
 test-group = 'contract-sandbox'
 
