@@ -85,5 +85,6 @@ async fn supported_foreign_chains_auto_vote_on_startup__should_apply_local_polic
         contract.supported_foreign_chains(),
         &expected_supported_chains
     );
-    assert!(contract.supported_foreign_chains_by_node().is_empty());
+    // Each node registered its supported chains, so the votes map should not be empty
+    assert!(!contract.supported_foreign_chains_by_node().is_empty());
 }

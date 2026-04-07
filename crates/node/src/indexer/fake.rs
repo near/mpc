@@ -130,6 +130,34 @@ impl FakeMpcContractState {
         self.supported_foreign_chains_by_node
             .supported_chains_by_account
             .insert(voter, supported_chains);
+
+        // Derive supported_foreign_chains as intersection of all active participants' votes
+        let active_participant_account_ids: BTreeSet<dtos::AccountId> = state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .map(|(id, _, _)| dtos::AccountId(id.to_string()))
+            .collect();
+
+        let mut chain_to_supporters: BTreeMap<dtos::ForeignChain, BTreeSet<dtos::AccountId>> =
+            BTreeMap::new();
+        for (voter_id, chains) in &self.supported_foreign_chains_by_node.supported_chains_by_account
+        {
+            for chain in chains.iter() {
+                chain_to_supporters
+                    .entry(*chain)
+                    .or_default()
+                    .insert(voter_id.clone());
+            }
+        }
+
+        self.supported_foreign_chains = chain_to_supporters
+            .into_iter()
+            .filter(|(_, supporters)| supporters.is_superset(&active_participant_account_ids))
+            .map(|(chain, _)| chain)
+            .collect::<BTreeSet<_>>()
+            .into();
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {

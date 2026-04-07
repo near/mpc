@@ -304,13 +304,10 @@ enum ValidateForeignChainPolicyError {
 }
 
 async fn chain_is_supported(
-    local_foreign_chains_config: &ForeignChainsConfig,
+    _local_foreign_chains_config: &ForeignChainsConfig,
     policy_reader: &impl ReadForeignChainPolicy,
     request: &dtos::ForeignChainRpcRequest,
 ) -> Result<(), ValidateForeignChainPolicyError> {
-    // TODO: if it's supported on chain, it means this node also supports it locally.
-    let _supported_chains_locally = local_foreign_chains_config.supported_chains();
-
     let on_chain_policy = policy_reader
         .get_supported_chains()
         .await
