@@ -1,3 +1,12 @@
+[test-groups.e2e]
+# E2E tests each spawn a NEAR sandbox + multiple MPC node processes.
+# Limit parallelism to avoid overwhelming the machine.
+max-threads = 10
+
+[[profile.default.overrides]]
+filter = 'package(e2e-tests) and not test(/^port_allocator/)'
+test-group = 'e2e'
+
 # Limit sandbox test parallelism to avoid resource contention and flaky timeouts.
 # Each sandbox test spins up its own NEAR sandbox instance, so running too many
 # concurrently causes request timeouts on CI.
