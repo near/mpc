@@ -7,7 +7,7 @@ use blstrs::{G1Projective, Scalar};
 use e2e_tests::{MpcCluster, MpcClusterConfig};
 use group::Group;
 use near_mpc_contract_interface::types::{
-    CKDAppPublicKey, ProtocolContractState, RunningContractState,
+    CKDAppPublicKey, DomainPurpose, ProtocolContractState, RunningContractState, SignatureScheme,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -127,4 +127,40 @@ pub fn generate_eddsa_payload() -> serde_json::Value {
 pub fn generate_ckd_app_public_key() -> CKDAppPublicKey {
     let point = G1Projective::generator() * Scalar::from(42u64);
     CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey::from(&point))
+}
+
+pub async fn send_sign_request(cluster: &e2e_tests::MpcCluster, running: &RunningContractState) {
+    let domain = running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
+        .expect("no Secp256k1 Sign domain");
+    let outcome = cluster
+        .send_sign_request(domain.id, generate_ecdsa_payload())
+        .await
+        .expect("sign request failed");
+    assert!(
+        outcome.is_success(),
+        "sign request failed: {:?}",
+        outcome.failure_message()
+    );
+}
+
+pub async fn send_ckd_request(cluster: &e2e_tests::MpcCluster, running: &RunningContractState) {
+    let domain = running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.purpose == Some(DomainPurpose::CKD))
+        .expect("no CKD domain");
+    let outcome = cluster
+        .send_ckd_request(domain.id, generate_ckd_app_public_key())
+        .await
+        .expect("ckd request failed");
+    assert!(
+        outcome.is_success(),
+        "ckd request failed: {:?}",
+        outcome.failure_message()
+    );
 }

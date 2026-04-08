@@ -1,6 +1,6 @@
 mod common;
 
-use near_mpc_contract_interface::types::{DomainPurpose, ProtocolContractState, SignatureScheme};
+use near_mpc_contract_interface::types::ProtocolContractState;
 
 /// Tests resharing cancellation and retry.
 ///
@@ -96,8 +96,8 @@ async fn test_cancellation_of_resharing() {
 
     // Verify liveness after cancellation.
     for _ in 0..3 {
-        send_sign_request(&cluster, running).await;
-        send_ckd_request(&cluster, running).await;
+        common::send_sign_request(&cluster, running).await;
+        common::send_ckd_request(&cluster, running).await;
     }
 
     // Retry resharing using node 5 (running since startup, fully synced)
@@ -124,49 +124,7 @@ async fn test_cancellation_of_resharing() {
 
     // Final liveness check.
     for _ in 0..3 {
-        send_sign_request(&cluster, running).await;
-        send_ckd_request(&cluster, running).await;
+        common::send_sign_request(&cluster, running).await;
+        common::send_ckd_request(&cluster, running).await;
     }
-}
-
-async fn send_sign_request(
-    cluster: &e2e_tests::MpcCluster,
-    running: &near_mpc_contract_interface::types::RunningContractState,
-) {
-    let domain = running
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
-        .expect("no Secp256k1 Sign domain");
-    let outcome = cluster
-        .send_sign_request(domain.id, common::generate_ecdsa_payload())
-        .await
-        .expect("sign request failed");
-    assert!(
-        outcome.is_success(),
-        "sign request failed: {:?}",
-        outcome.failure_message()
-    );
-}
-
-async fn send_ckd_request(
-    cluster: &e2e_tests::MpcCluster,
-    running: &near_mpc_contract_interface::types::RunningContractState,
-) {
-    let domain = running
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.purpose == Some(DomainPurpose::CKD))
-        .expect("no CKD domain");
-    let outcome = cluster
-        .send_ckd_request(domain.id, common::generate_ckd_app_public_key())
-        .await
-        .expect("ckd request failed");
-    assert!(
-        outcome.is_success(),
-        "ckd request failed: {:?}",
-        outcome.failure_message()
-    );
 }

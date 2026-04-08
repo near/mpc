@@ -1,6 +1,6 @@
 mod common;
 
-use near_mpc_contract_interface::types::{AttemptId, DomainPurpose, SignatureScheme};
+use near_mpc_contract_interface::types::AttemptId;
 
 /// Port of pytest `test_key_event::test_single_domain`.
 ///
@@ -22,8 +22,8 @@ async fn test_key_resharing() {
     assert_eq!(running.parameters.participants.participants.len(), 2);
 
     // Send sign + CKD requests to verify liveness.
-    send_sign_request(&cluster, &running).await;
-    send_ckd_request(&cluster, &running).await;
+    common::send_sign_request(&cluster, &running).await;
+    common::send_ckd_request(&cluster, &running).await;
 
     // Resharing 1: expand from 2 → 4 nodes, threshold 3.
     tracing::info!("resharing 1: expanding to 4 nodes, threshold 3");
@@ -33,8 +33,8 @@ async fn test_key_resharing() {
         .expect("resharing 1 failed");
     let running = get_running_state(&cluster).await;
     assert_eq!(running.parameters.participants.participants.len(), 4);
-    send_sign_request(&cluster, &running).await;
-    send_ckd_request(&cluster, &running).await;
+    common::send_sign_request(&cluster, &running).await;
+    common::send_ckd_request(&cluster, &running).await;
 
     // Resharing 2: shrink to nodes [1,2,3] (drop node 0), threshold 3.
     tracing::info!("resharing 2: dropping node 0");
@@ -44,7 +44,7 @@ async fn test_key_resharing() {
         .expect("resharing 2 failed");
     let running = get_running_state(&cluster).await;
     assert_eq!(running.parameters.participants.participants.len(), 3);
-    send_sign_request(&cluster, &running).await;
+    common::send_sign_request(&cluster, &running).await;
 
     // Resharing 3: add node 4 (has been running and syncing since startup)
     // to replace the dropped node 0. Back to 4 participants, threshold 3.
@@ -55,8 +55,8 @@ async fn test_key_resharing() {
         .expect("resharing 3 failed");
     let running = get_running_state(&cluster).await;
     assert_eq!(running.parameters.participants.participants.len(), 4);
-    send_ckd_request(&cluster, &running).await;
-    send_sign_request(&cluster, &running).await;
+    common::send_ckd_request(&cluster, &running).await;
+    common::send_sign_request(&cluster, &running).await;
 
     // Resharing 4: increase threshold to 4 (all participants required).
     tracing::info!("resharing 4: increasing threshold to 4");
@@ -76,8 +76,8 @@ async fn test_key_resharing() {
             key.domain_id
         );
     }
-    send_sign_request(&cluster, &running).await;
-    send_ckd_request(&cluster, &running).await;
+    common::send_sign_request(&cluster, &running).await;
+    common::send_ckd_request(&cluster, &running).await;
 }
 
 async fn get_running_state(
@@ -91,46 +91,4 @@ async fn get_running_state(
         near_mpc_contract_interface::types::ProtocolContractState::Running(r) => r,
         other => panic!("expected Running, got: {other:?}"),
     }
-}
-
-async fn send_sign_request(
-    cluster: &e2e_tests::MpcCluster,
-    running: &near_mpc_contract_interface::types::RunningContractState,
-) {
-    let domain = running
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
-        .expect("no Secp256k1 Sign domain");
-    let outcome = cluster
-        .send_sign_request(domain.id, common::generate_ecdsa_payload())
-        .await
-        .expect("sign request failed");
-    assert!(
-        outcome.is_success(),
-        "sign request failed: {:?}",
-        outcome.failure_message()
-    );
-}
-
-async fn send_ckd_request(
-    cluster: &e2e_tests::MpcCluster,
-    running: &near_mpc_contract_interface::types::RunningContractState,
-) {
-    let domain = running
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.purpose == Some(DomainPurpose::CKD))
-        .expect("no CKD domain");
-    let outcome = cluster
-        .send_ckd_request(domain.id, common::generate_ckd_app_public_key())
-        .await
-        .expect("ckd request failed");
-    assert!(
-        outcome.is_success(),
-        "ckd request failed: {:?}",
-        outcome.failure_message()
-    );
 }
