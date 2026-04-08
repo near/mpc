@@ -15,23 +15,25 @@ use threshold_signatures::{
 
 use super::{PreparedPresig, MAX_MALICIOUS};
 
-/// Used to prepare ed25519 presignatures for benchmarking
-pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
-    num_participants: usize,
+/// Build presign protocol instances for all participants.
+pub fn ed25519_build_presign_protocols<R: CryptoRngCore + SeedableRng + Send + 'static>(
+    participants: &[Participant],
+    key_packages: &[(Participant, eddsa::KeygenOutput)],
+    threshold: ReconstructionLowerBound,
     rng: &mut R,
-) -> FrostEd25519PreparedPresig {
-    let participants = generate_participants_with_random_ids(num_participants, rng);
-    let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
-    let mut protocols: Vec<_> = Vec::with_capacity(participants.len());
-
-    for (p, keygen_out) in &key_packages {
+) -> Vec<(
+    Participant,
+    Box<dyn Protocol<Output = eddsa::PresignOutput>>,
+)> {
+    let mut protocols = Vec::with_capacity(participants.len());
+    for (p, keygen_out) in key_packages {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
         let protocol = eddsa::presign(
-            &participants,
+            participants,
             *p,
             &eddsa::PresignArguments {
                 keygen_out: keygen_out.clone(),
-                threshold: (*MAX_MALICIOUS + 1).into(),
+                threshold,
             },
             rng_p,
         )
@@ -39,6 +41,18 @@ pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
         .expect("Presignature should succeed");
         protocols.push((*p, protocol));
     }
+    protocols
+}
+
+/// Used to prepare ed25519 presignatures for benchmarking
+pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+    num_participants: usize,
+    rng: &mut R,
+) -> FrostEd25519PreparedPresig {
+    let participants = generate_participants_with_random_ids(num_participants, rng);
+    let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
+    let threshold = ReconstructionLowerBound::from(*MAX_MALICIOUS + 1);
+    let protocols = ed25519_build_presign_protocols(&participants, &key_packages, threshold, rng);
     FrostEd25519PreparedPresig {
         protocols,
         key_packages,
