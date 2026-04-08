@@ -107,7 +107,7 @@ mod tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
-    use rand::SeedableRng as _;
+    use rand::{Rng as _, SeedableRng as _};
     use std::sync::Arc;
     use threshold_signatures::frost_ed25519::Ed25519Sha512;
     use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
@@ -126,7 +126,7 @@ mod tests {
                 .into_iter()
                 .collect();
         let mut new_participants = into_participant_ids(&participants);
-        new_participants.push(ParticipantId::from_raw(rand::random()));
+        new_participants.push(ParticipantId::from_raw(rng.gen()));
 
         let key_resharing_client_runner =
             move |client: Arc<MeshNetworkClient>,
