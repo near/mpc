@@ -81,3 +81,8 @@ pub const CODE_HASH_VOTES: &str = "code_hash_votes";
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
+
+#[deprecated]
+pub const GET_FOREIGN_CHAIN_POLICY: &str = "get_foreign_chain_policy";
+#[deprecated]
+pub const GET_FOREIGN_CHAIN_POLICY_PROPOSALS: &str = "get_foreign_chain_policy_proposals";

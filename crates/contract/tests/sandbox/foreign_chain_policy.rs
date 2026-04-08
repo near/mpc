@@ -8,6 +8,9 @@ use near_mpc_contract_interface::method_names::{
 };
 use serde_json::json;
 
+#[expect(deprecated, reason = "regression test of to be deprecated API")]
+use near_mpc_contract_interface::method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS;
+
 #[tokio::test]
 async fn vote_foreign_chain_policy__should_reject_empty_rpc_providers() {
     // Given: a running contract with participants
@@ -72,6 +75,7 @@ async fn vote_foreign_chain_policy_accepts_valid_policy() {
     );
 }
 
+#[expect(deprecated, reason = "regression test of to be deprecated API")]
 #[tokio::test]
 async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
     // Given: a running contract with participants
@@ -110,7 +114,7 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
     // And: the stored vote contains only unique entries.
     // Deserialize as raw JSON to avoid client-side BTreeSet deduplication hiding the result.
     let votes: serde_json::Value = contract
-        .view("get_foreign_chain_policy_proposals")
+        .view(GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
         .await
         .unwrap()
         .json()
@@ -125,6 +129,7 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
     );
 }
 
+#[expect(deprecated, reason = "regression test of to be deprecated API")]
 #[tokio::test]
 async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
     // Given: a running contract with participants
@@ -163,7 +168,7 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
     // And: only one Ethereum entry is stored (the last value wins).
     // Deserialize as raw JSON to avoid client-side BTreeMap deduplication hiding the result.
     let votes: serde_json::Value = contract
-        .view("get_foreign_chain_policy_proposals")
+        .view(GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
         .await
         .unwrap()
         .json()
