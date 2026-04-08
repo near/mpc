@@ -14,11 +14,7 @@ impl CKDProvider {
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
         let key = KeyGenerationComputation { threshold }
-            .perform_leader_centric_computation(
-                channel,
-                // TODO(#195): Move timeout here instead of in Coordinator.
-                std::time::Duration::from_secs(60),
-            )
+            .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
             .await?;
         tracing::info!("CKD key generation completed");
 

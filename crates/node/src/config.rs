@@ -317,7 +317,6 @@ impl PersistentSecrets {
         );
         let secrets = if let Some(secrets) = Self::maybe_get_existing(home_dir)? {
             tracing::debug!("p2p and near account secret key already exists. Using existing.");
-            // TODO(#534): consistent number of keys
             secrets
         } else {
             tracing::debug!("p2p and near account secret key not found. Generating...");
@@ -418,9 +417,6 @@ pub struct RespondConfig {
 
 impl RespondConfig {
     pub fn from_parts(config: &ConfigFile, secrets: &PersistentSecrets) -> Self {
-        // TODO(#1296): Decide if the MPC responder account is actually needed
-        // updated as part PR #1270 as temporary solution.
-        // using main account for responding.
         Self {
             account_id: config.my_near_account_id.clone(),
             access_keys: vec![secrets.near_signer_key.clone()],
