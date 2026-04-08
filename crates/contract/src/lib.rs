@@ -597,11 +597,8 @@ impl MpcContract {
         }
 
         let requested_chain = request.request.chain();
-        if !self
-            .foreign_chain_policy
-            .chains
-            .contains_key(&requested_chain)
-        {
+        let supported_chains = self.get_supported_foreign_chains();
+        if !supported_chains.contains(&requested_chain) {
             env::panic_str(
                 &InvalidParameters::ChainNotInPolicy {
                     requested: requested_chain,
@@ -2328,7 +2325,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[expect(non_snake_case)]
 mod tests {
     use std::{
-        collections::{BTreeMap, HashSet},
+        collections::{BTreeMap, BTreeSet, HashSet},
         panic,
         str::FromStr,
     };
@@ -2532,18 +2529,25 @@ mod tests {
         (context, contract, sk)
     }
 
-    #[expect(
-        deprecated,
-        reason = "regression test of API that will be deprecated in #2712"
-    )]
-    fn bitcoin_foreign_chain_policy() -> dtos::ForeignChainPolicy {
-        dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://btc.example.com".to_string(),
-                }),
-            )]),
+
+    /// Register the given foreign chains as supported by all active participants.
+    fn register_supported_chains(
+        contract: &mut MpcContract,
+        chains: impl IntoIterator<Item = dtos::ForeignChain>,
+    ) {
+        let supported: dtos::SupportedForeignChains = chains.into_iter().collect::<BTreeSet<_>>().into();
+        let participants: Vec<_> = contract
+            .protocol_state
+            .active_participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        for account_id in participants {
+            let _env = Environment::new(None, Some(account_id), None);
+            contract
+                .register_foreign_chain_config(supported.clone())
+                .expect("register should succeed");
         }
     }
 
@@ -2861,16 +2865,13 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        deprecated,
-        reason = "regression test of API that will be deprecated in #2712"
-    )]
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, secret_key) =
+        let (context, mut contract, secret_key) =
             basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
-        contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2933,16 +2934,13 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        deprecated,
-        reason = "regression test of API that will be deprecated in #2712"
-    )]
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _secret_key) =
+        let (context, mut contract, _secret_key) =
             basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
-        contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
@@ -3016,24 +3014,14 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "not present in the active foreign chain policy")]
-    #[expect(
-        deprecated,
-        reason = "regression test of API that will be deprecated in #2712"
-    )]
     fn verify_foreign_tx__should_reject_chain_not_in_policy() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
+        let (context, mut contract, _sk) =
             basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
-        // Policy has Solana but not Bitcoin
-        contract.foreign_chain_policy = dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Solana,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://sol.example.com".to_string(),
-                }),
-            )]),
-        };
+        // Supported chains has Solana but not Bitcoin
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Solana]);
+        testing_env!(context.clone());
 
         // When - requesting Bitcoin which is not in the policy
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
