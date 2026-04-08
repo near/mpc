@@ -56,7 +56,7 @@ echo "PR #$PR_NUMBER closes issues: $(echo "$ALL_ISSUES" | tr '\n' ' ')"
 # Check for remaining TODO(#NNN) references
 FOUND_STALE=0
 for issue_num in $ALL_ISSUES; do
-    MATCHES=$(git ls-files | xargs grep -Hn "TODO(#${issue_num})" 2>/dev/null || true)
+    MATCHES=$(git ls-files -z | xargs -0 grep -HnF "TODO(#${issue_num})" 2>/dev/null || true)
     if [[ -n "$MATCHES" ]]; then
         if [[ $FOUND_STALE -eq 0 ]]; then
             echo ""
