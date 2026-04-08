@@ -7,9 +7,9 @@ use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, DomainConfig, DomainId, DomainPurpose, ParticipantId,
-    ParticipantInfo, Participants, ProtocolContractState, SignatureScheme, Threshold,
-    ThresholdParameters,
+    AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
+    EpochId, ParticipantId, ParticipantInfo, Participants, ProtocolContractState, SignatureScheme,
+    Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -24,6 +24,7 @@ const DEFAULT_SANDBOX_VERSION: &str = "2.11.0";
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
+const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
@@ -51,6 +52,11 @@ pub struct MpcClusterConfig {
     pub sandbox_version: String,
     /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.
     pub home_base: Option<PathBuf>,
+    /// Number of nodes to include in the initial participant set.
+    /// Defaults to `num_nodes` (all nodes participate from the start).
+    /// Set lower to start extra nodes that are not yet participants
+    /// (useful for resharing and attestation tests).
+    pub initial_participants: usize,
 }
 
 impl MpcClusterConfig {
@@ -87,6 +93,7 @@ impl MpcClusterConfig {
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
             sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
+            initial_participants: 3,
         }
     }
 }
@@ -149,7 +156,7 @@ impl MpcCluster {
             &node_near_keys,
             &node_p2p_keys,
             config.threshold,
-            config.num_nodes,
+            config.initial_participants,
             &ports,
         )
         .await?;
@@ -168,7 +175,9 @@ impl MpcCluster {
         ensure_nodes_alive(&mut nodes).await?;
 
         if !config.domains.is_empty() {
-            add_initial_domains(&blockchain, &contract, &node_near_keys, &config.domains).await?;
+            // Only participants can vote to add domains.
+            let participant_keys = &node_near_keys[..config.initial_participants];
+            add_initial_domains(&blockchain, &contract, participant_keys, &config.domains).await?;
         }
 
         let user_accounts = create_user_accounts(&blockchain, 1).await?;
@@ -187,14 +196,15 @@ impl MpcCluster {
         })
     }
 
+    /// Kill specific nodes. `node_keys` is not affected — indices are stable
+    /// because remove+insert preserves the position.
     pub fn kill_nodes(&mut self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
-            if idx >= self.nodes.len() {
-                anyhow::bail!(
-                    "node index {idx} out of bounds (have {} nodes)",
-                    self.nodes.len()
-                );
-            }
+            anyhow::ensure!(
+                idx < self.nodes.len(),
+                "node index {idx} out of bounds (have {} nodes)",
+                self.nodes.len()
+            );
             let state = self.nodes.remove(idx);
             let new_state = match state {
                 MpcNodeState::Running(node) => MpcNodeState::Stopped(node.kill()),
@@ -223,6 +233,51 @@ impl MpcCluster {
         Ok(())
     }
 
+    /// Reset stopped nodes to a clean state and start them, waiting for each
+    /// node's health endpoint before returning. This ensures the node's web
+    /// server and indexer are running before proceeding.
+    pub async fn reset_and_start_nodes(&mut self, indices: &[usize]) -> anyhow::Result<()> {
+        for &idx in indices {
+            let state = self.nodes.remove(idx);
+            let new_state = match state {
+                MpcNodeState::Stopped(setup) => {
+                    setup.reset_mpc_state()?;
+                    MpcNodeState::Running(setup.start()?)
+                }
+                MpcNodeState::Running(node) => {
+                    tracing::warn!(node = idx, "node already running");
+                    MpcNodeState::Running(node)
+                }
+            };
+            self.nodes.insert(idx, new_state);
+        }
+
+        // Wait for all restarted nodes to be healthy.
+        let client = reqwest::Client::new();
+        for &idx in indices {
+            let node = match &self.nodes[idx] {
+                MpcNodeState::Running(n) => n,
+                _ => continue,
+            };
+            let url = format!("http://{}/health", node.web_address());
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+            loop {
+                if let Ok(resp) = client.get(&url).send().await {
+                    if resp.status() == 200 {
+                        tracing::info!(node = idx, "restarted node is healthy");
+                        break;
+                    }
+                }
+                anyhow::ensure!(
+                    tokio::time::Instant::now() < deadline,
+                    "node {idx} health check did not pass after reset"
+                );
+                tokio::time::sleep(HEALTH_POLL_INTERVAL).await;
+            }
+        }
+        Ok(())
+    }
+
     pub fn kill_all(&mut self) -> anyhow::Result<()> {
         let indices: Vec<usize> = (0..self.nodes.len()).collect();
         self.kill_nodes(&indices)
@@ -238,6 +293,11 @@ impl MpcCluster {
         timeout: Duration,
     ) -> anyhow::Result<()> {
         wait_for_contract_state(&self.contract, timeout, predicate).await
+    }
+
+    /// Query all accounts that have TEE attestations stored in the contract.
+    pub async fn get_tee_accounts(&self) -> anyhow::Result<Vec<serde_json::Value>> {
+        self.contract.view(method_names::GET_TEE_ACCOUNTS).await
     }
 
     pub async fn add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
@@ -258,41 +318,154 @@ impl MpcCluster {
         .await
     }
 
+    /// Vote for resharing and wait until the contract enters Resharing state.
+    /// Does NOT wait for resharing to complete — use `start_resharing_and_wait`.
     pub async fn start_resharing(
         &self,
         new_participants: &[usize],
         new_threshold: usize,
     ) -> anyhow::Result<()> {
+        self.wait_for_participant_attestations(new_participants)
+            .await?;
+
         let state = self.get_contract_state().await?;
-        let epoch_id = match &state {
-            ProtocolContractState::Running(r) => r.keyset.epoch_id,
+        let (prospective_epoch_id, current_participants) = match &state {
+            ProtocolContractState::Running(r) => {
+                let base = r
+                    .previously_cancelled_resharing_epoch_id
+                    .unwrap_or(r.keyset.epoch_id);
+                (EpochId(base.0 + 1), &r.parameters.participants)
+            }
             _ => anyhow::bail!("cannot reshare: contract not in Running state"),
         };
 
         let participants =
-            build_participants_from_nodes(new_participants, &self.nodes, &self.ports);
+            build_participants_from_nodes(new_participants, &self.nodes, current_participants);
         let proposal = ThresholdParameters {
             threshold: Threshold(new_threshold as u64),
             participants,
         };
 
-        self.call_from_all_nodes_concurrently(
-            method_names::VOTE_NEW_PARAMETERS,
-            json!({ "prospective_epoch_id": epoch_id, "proposal": proposal }),
-        )
-        .await?;
+        tracing::info!(?prospective_epoch_id, new_threshold, "voting for resharing");
+        let args = json!({ "prospective_epoch_id": prospective_epoch_id, "proposal": proposal });
+        self.vote_resharing(current_participants, args).await?;
 
         self.wait_for_state(
             |s| matches!(s, ProtocolContractState::Resharing(_)),
             Duration::from_secs(30),
         )
-        .await?;
+        .await
+    }
 
+    /// Full resharing: vote, wait for Resharing, then wait for Running.
+    pub async fn start_resharing_and_wait(
+        &self,
+        new_participants: &[usize],
+        new_threshold: usize,
+    ) -> anyhow::Result<()> {
+        self.start_resharing(new_participants, new_threshold)
+            .await?;
         self.wait_for_state(
             |s| matches!(s, ProtocolContractState::Running(_)),
-            Duration::from_secs(120),
+            Duration::from_secs(180),
         )
         .await
+    }
+
+    /// Poll until all proposed participants have TEE attestations on-chain.
+    async fn wait_for_participant_attestations(
+        &self,
+        node_indices: &[usize],
+    ) -> anyhow::Result<()> {
+        let required: Vec<String> = node_indices
+            .iter()
+            .map(|&idx| self.nodes[idx].account_id().to_string())
+            .collect();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+        loop {
+            let tee_accounts = self.get_tee_accounts().await?;
+            let have: std::collections::HashSet<String> = tee_accounts
+                .iter()
+                .filter_map(|v| v.get("account_id")?.as_str().map(String::from))
+                .collect();
+            if required.iter().all(|a| have.contains(a)) {
+                return Ok(());
+            }
+            anyhow::ensure!(
+                tokio::time::Instant::now() < deadline,
+                "not all proposed participants have TEE attestations (need: {required:?}, have: {have:?})"
+            );
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+    }
+
+    /// Vote for resharing from all running nodes: current participants first,
+    /// then candidates. The contract requires threshold participant votes
+    /// before candidates can vote.
+    async fn vote_resharing(
+        &self,
+        current_participants: &Participants,
+        args: serde_json::Value,
+    ) -> anyhow::Result<()> {
+        let current_accounts: std::collections::HashSet<_> = current_participants
+            .participants
+            .iter()
+            .map(|(a, _, _)| a.0.clone())
+            .collect();
+
+        let mut participants_first: Vec<usize> = Vec::new();
+        let mut candidates_second: Vec<usize> = Vec::new();
+        for (i, node) in self.nodes.iter().enumerate() {
+            if !matches!(node, MpcNodeState::Running(_)) {
+                continue;
+            }
+            let acct: &str = node.account_id().as_ref();
+            if current_accounts.contains(acct) {
+                participants_first.push(i);
+            } else {
+                candidates_second.push(i);
+            }
+        }
+
+        for i in participants_first.iter().chain(candidates_second.iter()) {
+            let node = &self.nodes[*i];
+            let key = &self.node_keys[*i];
+            let client = self
+                .blockchain
+                .client_for_voting(node.account_id().as_ref(), key)?;
+            let outcome = self
+                .contract
+                .call_from(&client, method_names::VOTE_NEW_PARAMETERS, args.clone())
+                .await
+                .with_context(|| format!("node {i} failed to send resharing vote"))?;
+            if !outcome.is_success() {
+                tracing::warn!(
+                    node = i,
+                    failure = ?outcome.failure_message(),
+                    "resharing vote failed"
+                );
+            } else {
+                tracing::debug!(node = i, "resharing vote succeeded");
+            }
+        }
+        Ok(())
+    }
+
+    /// Vote to cancel an active resharing from a specific node.
+    /// Returns the execution outcome so callers can check success/failure.
+    pub async fn vote_cancel_resharing_from(
+        &self,
+        node_index: usize,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let node = &self.nodes[node_index];
+        let key = &self.node_keys[node_index];
+        let client = self
+            .blockchain
+            .client_for_voting(node.account_id().as_ref(), key)?;
+        self.contract
+            .call_from(&client, method_names::VOTE_CANCEL_RESHARING, json!({}))
+            .await
+            .with_context(|| format!("node {node_index} failed to send cancel resharing vote"))
     }
 
     pub async fn get_metric_all_nodes(&self, name: &str) -> anyhow::Result<Vec<Option<i64>>> {
@@ -324,7 +497,7 @@ impl MpcCluster {
                     timeout.as_secs()
                 );
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(HEALTH_POLL_INTERVAL).await;
         }
     }
 
@@ -416,6 +589,32 @@ impl MpcCluster {
         });
         self.contract
             .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
+            .await
+    }
+
+    /// Send a CKD (Confidential Key Derivation) request from the default user account.
+    pub async fn send_ckd_request(
+        &self,
+        domain_id: DomainId,
+        app_public_key: CKDAppPublicKey,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let user = self.default_user_account().clone();
+        let client = self.user_client(&user)?;
+        let args = json!({
+            "request": {
+                "domain_id": domain_id,
+                "derivation_path": "test",
+                "app_public_key": app_public_key,
+            }
+        });
+        self.contract
+            .call_from_with_deposit(
+                &client,
+                method_names::REQUEST_APP_PRIVATE_KEY,
+                args,
+                SIGN_GAS,
+                SIGN_DEPOSIT,
+            )
             .await
     }
 }
@@ -520,10 +719,15 @@ async fn init_contract(
         participants,
     };
 
-    tracing::info!(threshold, "initializing contract");
-    contract
+    tracing::info!(threshold, num_nodes, "initializing contract");
+    let outcome = contract
         .call(method_names::INIT, json!({ "parameters": params }))
         .await?;
+    anyhow::ensure!(
+        outcome.is_success(),
+        "init failed: {:?}",
+        outcome.failure_message()
+    );
 
     for (i, (near_key, p2p_key)) in near_keys.iter().zip(p2p_keys.iter()).enumerate() {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
@@ -568,7 +772,7 @@ async fn add_initial_domains(
             .with_context(|| format!("node {i} failed to vote add domains"))?;
     }
 
-    wait_for_contract_state(contract, Duration::from_secs(60), |s| {
+    wait_for_contract_state(contract, Duration::from_secs(30), |s| {
         matches!(s, ProtocolContractState::Initializing(_))
     })
     .await
@@ -664,24 +868,38 @@ fn build_participants(
     }
 }
 
+/// Build a participant list for resharing, preserving existing IDs for nodes
+/// that are already participants and assigning new IDs to newcomers.
 fn build_participants_from_nodes(
     indices: &[usize],
     nodes: &[MpcNodeState],
-    _ports: &E2ePortAllocator,
+    current: &Participants,
 ) -> Participants {
+    let mut next_id = current.next_id;
     let mut list = Vec::new();
-    for (new_idx, &old_idx) in indices.iter().enumerate() {
+    for &node_idx in indices {
+        let account = ContractAccountId(nodes[node_idx].account_id().to_string());
+        let id = current
+            .participants
+            .iter()
+            .find(|(a, _, _)| *a == account)
+            .map(|(_, id, _)| *id)
+            .unwrap_or_else(|| {
+                let id = next_id;
+                next_id = ParticipantId(next_id.0 + 1);
+                id
+            });
         list.push((
-            ContractAccountId(nodes[old_idx].account_id().to_string()),
-            ParticipantId(new_idx as u32),
+            account,
+            id,
             ParticipantInfo {
-                url: nodes[old_idx].p2p_url(),
-                sign_pk: nodes[old_idx].p2p_public_key_str(),
+                url: nodes[node_idx].p2p_url(),
+                sign_pk: nodes[node_idx].p2p_public_key_str(),
             },
         ));
     }
     Participants {
-        next_id: ParticipantId(indices.len() as u32),
+        next_id,
         participants: list,
     }
 }
