@@ -17,9 +17,6 @@ pub const ALL_CURVES: &[Curve; 4] = &[
 /// gas attachment; in practice, nodes usually attach the maximum available gas. For testing,
 /// we use this constant to attach a fixed amount to each call and detect if gas usage
 /// increases unexpectedly in the future.
-///
-/// Gas was bumped from 22 to 34 in https://github.com/near/mpc/pull/1559 due to the high cost
-/// of `self.protocol_state = new_state` in the vote_reshard contract call.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_CANCEL_KEYGEN: Gas = Gas::from_tgas(5);

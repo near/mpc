@@ -1,6 +1,6 @@
 mod sign;
 
-use crate::config::{MpcConfig, ParticipantsConfig};
+use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
@@ -18,8 +18,6 @@ use threshold_signatures::ReconstructionLowerBound;
 pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
     foreign_chain_policy_reader: ForeignChainPolicyReader,
-    #[expect(dead_code)]
-    mpc_config: Arc<MpcConfig>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -28,14 +26,12 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
     pub fn new(
         config: Arc<ConfigFile>,
         foreign_chain_policy_reader: ForeignChainPolicyReader,
-        mpc_config: Arc<MpcConfig>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> Self {
         Self {
             config,
             foreign_chain_policy_reader,
-            mpc_config,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
         }

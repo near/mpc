@@ -468,6 +468,7 @@ impl IndexerRpcHandler {
 /// API to interact with the indexer. Can be replaced by a dummy implementation.
 /// The MPC node implementation needs this and only this to be able to interact
 /// with the indexer.
+/// TODO(#592): abstract away having an indexer running in a separate process
 pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
