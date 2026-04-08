@@ -7,7 +7,7 @@ RUN \
     --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
     repro-sources-list.sh && \
     apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates docker.io docker-compose && \
+    apt-get install -y --no-install-recommends ca-certificates docker-cli docker-compose && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
