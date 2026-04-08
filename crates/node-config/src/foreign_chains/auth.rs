@@ -174,14 +174,20 @@ mod tests {
 
     #[test]
     fn resolve_url__returns_original_for_none_auth() {
+        // Given
         let auth = AuthConfig::None;
         let url = "https://rpc.example.com";
+
+        // When
         let result = auth.resolve_url(url).unwrap();
+
+        // Then
         assert_eq!(result, url);
     }
 
     #[test]
     fn resolve_url__returns_original_for_header_auth() {
+        // Given
         let auth = AuthConfig::Header {
             name: http::HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
@@ -190,12 +196,17 @@ mod tests {
             },
         };
         let url = "https://rpc.example.com/v2/";
+
+        // When
         let result = auth.resolve_url(url).unwrap();
+
+        // Then
         assert_eq!(result, url);
     }
 
     #[test]
     fn resolve_url__substitutes_placeholder_for_path_auth() {
+        // Given
         let auth = AuthConfig::Path {
             placeholder: "{api_key}".to_string(),
             token: TokenConfig::Val {
@@ -203,12 +214,17 @@ mod tests {
             },
         };
         let url = "https://abstract-mainnet.g.alchemy.com/v2/{api_key}";
+
+        // When
         let result = auth.resolve_url(url).unwrap();
+
+        // Then
         assert_eq!(result, "https://abstract-mainnet.g.alchemy.com/v2/my-secret-key");
     }
 
     #[test]
     fn resolve_url__returns_original_for_query_auth() {
+        // Given
         let auth = AuthConfig::Query {
             name: "api_key".to_string(),
             token: TokenConfig::Val {
@@ -216,7 +232,11 @@ mod tests {
             },
         };
         let url = "https://rpc.example.com";
+
+        // When
         let result = auth.resolve_url(url).unwrap();
+
+        // Then
         assert_eq!(result, url);
     }
 }
