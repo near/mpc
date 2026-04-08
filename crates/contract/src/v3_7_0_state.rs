@@ -137,6 +137,7 @@ impl From<MpcContract> for crate::MpcContract {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use near_mpc_bounded_collections::NonEmptyBTreeSet;
 
     #[test]
     fn test_migration_seeds_measurements_from_defaults() {
@@ -170,7 +171,6 @@ mod tests {
 
     #[expect(deprecated)]
     fn make_policy(chains: Vec<dtos::ForeignChain>) -> dtos::ForeignChainPolicy {
-        use near_mpc_bounded_collections::NonEmptyBTreeSet;
         dtos::ForeignChainPolicy {
             chains: chains
                 .into_iter()
