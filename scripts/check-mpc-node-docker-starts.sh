@@ -7,7 +7,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 USE_LAUNCHER=false
 USE_RUST_LAUNCHER=false
-
 for arg in "$@"; do
   case "$arg" in
   --launcher)
@@ -42,8 +41,14 @@ if $USE_LAUNCHER; then
   CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
 elif $USE_RUST_LAUNCHER; then
   cd "$REPO_ROOT/deployment/cvm-deployment"
+  # Use the locally built image instead of pulling from Docker Hub.
+  # This ensures the runtime test uses the same image that was just built. See #2704.
+  docker tag mpc-rust-launcher:latest nearone/mpc-launcher:ci-local
+  # Create a temporary compose in the same directory (so relative volume mounts work)
+  sed 's|nearone/mpc-launcher@sha256:[a-f0-9]*|nearone/mpc-launcher:ci-local|' \
+    launcher_docker_compose_nontee.yaml > launcher_docker_compose_nontee_local.yaml
   export RUST_LAUNCHER_IMAGE_NAME
-  docker compose -f launcher_docker_compose_nontee.yaml up -d
+  docker compose -f launcher_docker_compose_nontee_local.yaml up -d
   sleep 10
   launcher_logs=$(docker logs --tail 10 "$RUST_LAUNCHER_IMAGE_NAME" 2>&1)
   if ! echo "$launcher_logs" | grep "MPC launched successfully."; then
@@ -83,11 +88,6 @@ echo "Container started: $CONTAINER_ID"
 
 # Check if container is actually running
 WAIT_SECS=60
-if $USE_RUST_LAUNCHER; then
-  # TODO(#2661): Rust launcher path OOMs during testnet genesis download on CI runners.
-  # Reduced to 15s so the check completes before OOM. Investigate root cause.
-  WAIT_SECS=15
-fi
 sleep $WAIT_SECS
 if [ -z "$(docker ps --filter "id=$CONTAINER_ID" --format "{{.ID}}")" ]; then
   docker logs --tail 100 "$CONTAINER_ID" 2>&1
@@ -102,7 +102,8 @@ docker rm -f "$CONTAINER_ID"
 if $USE_LAUNCHER; then
   docker compose -f launcher_docker_compose_nontee.yaml down -v --rmi local
 elif $USE_RUST_LAUNCHER; then
-  docker compose -f launcher_docker_compose_nontee.yaml down -v --rmi local
+  docker compose -f launcher_docker_compose_nontee_local.yaml down -v --rmi local
+  rm -f launcher_docker_compose_nontee_local.yaml
 else
   rm /tmp/image-digest.bin
 fi

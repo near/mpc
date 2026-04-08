@@ -67,6 +67,26 @@ port_mappings = [
 
 Arbitrary TOML table passed through to the MPC node. The launcher writes this verbatim to `/mnt/shared/mpc-config.toml`, which the container reads on startup.
 
+## Supported Registries
+
+The launcher uses the [OCI Distribution Specification](https://github.com/opencontainers/distribution-spec) for registry communication. Auth endpoints are discovered automatically via the `WWW-Authenticate` challenge on `/v2/`, so there is no hard-coded auth URL.
+
+Any OCI-compliant registry hosting **public images** works out of the box. Set the `registry` field in `[launcher_config]` to the registry hostname:
+
+| Registry | `registry` value | Example `image_name` |
+|----------|-----------------|---------------------|
+| Docker Hub | `registry.hub.docker.com` | `nearone/mpc-node` |
+| GitHub Container Registry | `ghcr.io` | `myorg/mpc-node` |
+| Google Artifact Registry | `us-docker.pkg.dev` | `my-project/my-repo/mpc-node` |
+| Amazon ECR Public | `public.ecr.aws` | `myalias/mpc-node` |
+| Azure Container Registry | `myregistry.azurecr.io` | `mpc-node` |
+| Self-hosted (Harbor, etc.) | `registry.example.com` | `myproject/mpc-node` |
+
+### Limitations
+
+- **Only public (anonymous-pull) images are supported.** The launcher does not accept registry credentials. Private registry support would require adding a credential source (e.g., environment variables, Docker config, or cloud credential helpers).
+- Multi-platform images are resolved to `linux/amd64` automatically.
+
 ## Image Hash Selection
 
 Priority order:

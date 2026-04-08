@@ -2,11 +2,35 @@ use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 
-type Sha256Digest = [u8; 32];
+/// A variable-length byte vector serialized as a hex string in JSON.
+#[serde_as]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::Deref,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[serde(transparent)]
+pub struct HexVec(#[serde_as(as = "Hex")] pub Vec<u8>);
 
 #[expect(clippy::large_enum_variant)]
 #[derive(
@@ -54,7 +78,6 @@ pub enum VerifiedAttestation {
     Mock(MockAttestation),
 }
 
-#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -74,20 +97,15 @@ pub enum VerifiedAttestation {
 )]
 pub struct VerifiedDstackAttestation {
     /// The digest of the MPC image running.
-    #[serde_as(as = "Hex")]
-    pub mpc_image_hash: Sha256Digest,
+    pub mpc_image_hash: NodeImageHash,
     /// The digest of the launcher compose file running.
-    #[serde_as(as = "Hex")]
-    pub launcher_compose_hash: Sha256Digest,
+    pub launcher_compose_hash: LauncherDockerComposeHash,
     /// Unix time stamp for when this attestation expires.
     pub expiry_timestamp_seconds: u64,
     /// The OS measurements that were verified during initial attestation.
     pub measurements: VerifiedMeasurements,
 }
 
-type Sha384Digest = [u8; 48];
-
-#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -106,19 +124,13 @@ type Sha384Digest = [u8; 48];
     derive(schemars::JsonSchema)
 )]
 pub struct VerifiedMeasurements {
-    #[serde_as(as = "Hex")]
     pub mrtd: Sha384Digest,
-    #[serde_as(as = "Hex")]
     pub rtmr0: Sha384Digest,
-    #[serde_as(as = "Hex")]
     pub rtmr1: Sha384Digest,
-    #[serde_as(as = "Hex")]
     pub rtmr2: Sha384Digest,
-    #[serde_as(as = "Hex")]
     pub key_provider_event_digest: Sha384Digest,
 }
 
-#[serde_as]
 #[derive(
     Clone,
     Eq,
@@ -137,13 +149,11 @@ pub struct VerifiedMeasurements {
     derive(schemars::JsonSchema)
 )]
 pub struct DstackAttestation {
-    #[serde_as(as = "Hex")]
-    pub quote: Vec<u8>,
+    pub quote: HexVec,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
 }
 
-#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -168,16 +178,13 @@ pub enum MockAttestation {
     Invalid,
     /// Pass validation depending on the set constraints
     WithConstraints {
-        #[serde_as(as = "Option<Hex>")]
-        mpc_docker_image_hash: Option<Sha256Digest>,
-        #[serde_as(as = "Option<Hex>")]
-        launcher_docker_compose_hash: Option<Sha256Digest>,
+        mpc_docker_image_hash: Option<NodeImageHash>,
+        launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
         /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
     },
 }
 
-#[serde_as]
 #[derive(
     Debug,
     Clone,
@@ -197,18 +204,14 @@ pub enum MockAttestation {
 )]
 pub struct Collateral {
     pub pck_crl_issuer_chain: String,
-    #[serde_as(as = "Hex")]
-    pub root_ca_crl: Vec<u8>,
-    #[serde_as(as = "Hex")]
-    pub pck_crl: Vec<u8>,
+    pub root_ca_crl: HexVec,
+    pub pck_crl: HexVec,
     pub tcb_info_issuer_chain: String,
     pub tcb_info: String,
-    #[serde_as(as = "Hex")]
-    pub tcb_info_signature: Vec<u8>,
+    pub tcb_info_signature: HexVec,
     pub qe_identity_issuer_chain: String,
     pub qe_identity: String,
-    #[serde_as(as = "Hex")]
-    pub qe_identity_signature: Vec<u8>,
+    pub qe_identity_signature: HexVec,
     pub pck_certificate_chain: Option<String>,
 }
 

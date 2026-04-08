@@ -5,6 +5,7 @@ license = { workspace = true }
 edition = "2021"
 
 [dependencies]
+cargo-near-build = { workspace = true }
 hex = { workspace = true }
 mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
