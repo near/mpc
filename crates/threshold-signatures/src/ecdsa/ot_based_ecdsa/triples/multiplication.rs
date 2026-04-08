@@ -100,9 +100,7 @@ struct MultiplicationReceiverRandomPackage {
 }
 
 impl MultiplicationReceiverRandomPackage {
-    fn generate_random_package(
-        rng: &mut impl CryptoRngCore,
-    ) -> Result<Self, ProtocolError> {
+    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Result<Self, ProtocolError> {
         let y = batch_random_ot_sender_helper(rng);
         // This value must coincide with params.batch_size in `multiplication_receiver`
         let batch_size = 2 * (BITS + SECURITY_PARAMETER);
