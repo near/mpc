@@ -87,6 +87,24 @@ impl MpcNode {
         Ok(None)
     }
 
+    /// Create a marker file that tells the MPC node a key event attempt was
+    /// already started. The node reads these on startup to determine which
+    /// attempt ID to use next.
+    pub fn reserve_key_event_attempt(
+        &self,
+        epoch_id: u64,
+        domain_id: u64,
+        attempt_id: u64,
+    ) -> anyhow::Result<()> {
+        let dir = self.setup.home_dir.join("temporary_keys");
+        std::fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create {}", dir.display()))?;
+        let path = dir.join(format!("started_{epoch_id}_{domain_id}_{attempt_id}"));
+        std::fs::File::create(&path)
+            .with_context(|| format!("failed to create {}", path.display()))?;
+        Ok(())
+    }
+
     /// Writes a flag file that controls block ingestion. Requires the
     /// `network-hardship-simulation` feature on the mpc-node binary.
     pub fn set_block_ingestion(&self, active: bool) -> anyhow::Result<()> {
