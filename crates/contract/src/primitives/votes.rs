@@ -31,7 +31,7 @@ where
     V: VoterBounds,
     P: ProposalBounds,
 {
-    /// Constructs a enw Votes struct. Prpoosals will be stored in an iterable map under
+    /// Constructs a new Votes struct. Proposals will be stored in an iterable map under
     /// `storage_key`.
     pub fn new(storage_key: impl IntoStorageKey) -> Self {
         Self {
@@ -48,7 +48,7 @@ where
         let proposal_id = self.proposal_registry.register(proposal);
         let votes = self
             .vote_for(voter, proposal_id)
-            .expect("proposal id is expect do exist");
+            .expect("proposal id must exist");
         (proposal_id, votes)
     }
 
