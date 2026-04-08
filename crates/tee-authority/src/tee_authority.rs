@@ -131,6 +131,8 @@ impl TeeAuthority {
         let upload_tdx_quote = async || {
             let form = Form::new().text("hex", tdx_quote.to_string());
 
+            tracing::info!("Uploading TDX quote to {}", quote_upload_url);
+
             let response = reqwest_client
                 .post(quote_upload_url.clone())
                 .multipart(form)
@@ -138,6 +140,7 @@ impl TeeAuthority {
                 .await?;
 
             let status = response.status();
+            tracing::info!("Phala response status: {}", status);
 
             if status != StatusCode::OK {
                 bail!(
@@ -147,7 +150,29 @@ impl TeeAuthority {
                 );
             }
 
-            Ok(response.json::<UploadResponse>().await?)
+            // Debug: dump raw response before parsing
+            let response_text = response.text().await?;
+            tracing::info!("Phala response length: {} bytes", response_text.len());
+            // Dump first 500 and last 500 chars
+            let len = response_text.len();
+            tracing::info!("Phala response start: {}", &response_text[..len.min(500)]);
+            if len > 500 {
+                tracing::info!("Phala response end: {}", &response_text[len.saturating_sub(500)..]);
+            }
+
+            // Try to parse - if it fails, show the error with context
+            let parsed: Result<UploadResponse, _> = serde_json::from_str(&response_text);
+            match parsed {
+                Ok(p) => Ok(p),
+                Err(e) => {
+                    let col = e.column();
+                    let start = col.saturating_sub(100);
+                    let end = len.min(col + 100);
+                    tracing::error!("Failed to parse UploadResponse: {}", e);
+                    tracing::error!("Response around column {} (chars {}..{}): {}", col, start, end, &response_text[start..end]);
+                    bail!("error decoding response body\n\nCaused by:\n    {}", e)
+                }
+            }
         };
 
         let upload_response =
