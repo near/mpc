@@ -63,7 +63,7 @@ mod tests {
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
     use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
@@ -71,7 +71,7 @@ mod tests {
     async fn test_key_generation() {
         start_root_task_with_periodic_dump(async move {
             let results = run_test_clients(
-                into_participant_ids(&TestGenerators::new(4, 3.into())),
+                into_participant_ids(&generate_participants(4)),
                 run_keygen_client,
             )
             .await

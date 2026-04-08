@@ -103,11 +103,12 @@ mod tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
-    use rand::SeedableRng as _;
+    use rand::{Rng as _, SeedableRng as _};
     use std::sync::Arc;
+    use threshold_signatures::confidential_key_derivation::BLS12381SHA256;
     use threshold_signatures::frost_core::Group;
     use threshold_signatures::participants::Participant;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
     use threshold_signatures::ReconstructionLowerBound;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
@@ -117,11 +118,14 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         const THRESHOLD: usize = 3;
         const NUM_PARTICIPANTS: usize = 4;
-        let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD.into());
-        let keygens = gen.make_ckd_keygens(&mut rng);
-        let old_participants = into_participant_ids(&gen);
-        let mut new_participants = into_participant_ids(&gen);
-        new_participants.push(ParticipantId::from_raw(rand::random()));
+        let participants = generate_participants_with_random_ids(NUM_PARTICIPANTS, &mut rng);
+        let keygens: std::collections::HashMap<_, _> =
+            run_keygen::<BLS12381SHA256, _>(&participants, THRESHOLD, &mut rng)
+                .into_iter()
+                .collect();
+        let old_participants = into_participant_ids(&participants);
+        let mut new_participants = into_participant_ids(&participants);
+        new_participants.push(ParticipantId::from_raw(rng.gen()));
 
         let key_resharing_client_runner =
             move |client: Arc<MeshNetworkClient>,
