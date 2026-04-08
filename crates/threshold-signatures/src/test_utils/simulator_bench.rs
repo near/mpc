@@ -6,6 +6,16 @@ use std::time::{Duration, Instant};
 use crate::participants::Participant;
 use crate::protocol::{Action, Protocol};
 
+// Discrete-event protocol simulator.
+//
+// All participants share a single global timeline starting at t=0.
+// Each participant tracks its position on this timeline via a clock (in ns).
+// The clock advances in two ways:
+//   - Computation: wall-clock time of each poke() call is added.
+//   - Waiting: on message receipt, clock = max(clock, arrival_time).
+// Messages are delivered via a priority queue ordered by arrival_time,
+// where arrival_time = sender_clock + latency at the time of sending.
+
 /// Model for generating per-message network latency.
 /// Extensible to statistical distributions (normal, log-normal, etc.).
 pub enum LatencyModel {
