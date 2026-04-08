@@ -336,24 +336,16 @@ def foreign_tx_validation_cluster():
     )
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
-    # Wait for the foreign chain policy to be applied (unanimous auto-vote).
-    expected_policy = foreign_chains.normalize_policy(
-        {
-            "chains": {
-                "Bitcoin": [{"rpc_url": bitcoin_mock_rpc_url}],
-                "Abstract": [{"rpc_url": abstract_mock_rpc_url}],
-                "Starknet": [{"rpc_url": starknet_mock_rpc_url}],
-            }
-        }
-    )
+    # Wait for the supported foreign chains to be registered by all nodes.
+    expected_chains = sorted(["Abstract", "Bitcoin", "Starknet"])
 
-    def policy_applied() -> bool:
-        policy = cluster.view_contract_function("get_foreign_chain_policy")
-        return foreign_chains.normalize_policy(policy) == expected_policy
+    def supported_chains_registered() -> bool:
+        chains = cluster.view_contract_function("get_supported_foreign_chains")
+        return sorted(chains) == expected_chains
 
     utils.wait_until(
-        policy_applied,
-        description="foreign chain policy applied after unanimous voting",
+        supported_chains_registered,
+        description="supported foreign chains registered by all nodes",
         timeout_sec=30,
     )
 
