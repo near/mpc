@@ -153,7 +153,7 @@ impl Strobe128 {
     fn begin_op(&mut self, flags: u8, more: bool) {
         // Check if we're continuing an operation
         if more {
-            assert_eq!(
+            debug_assert_eq!(
                 self.cur_flags, flags,
                 "You tried to continue op {:#b} but changed flags to {:#b}",
                 self.cur_flags, flags,
@@ -162,7 +162,7 @@ impl Strobe128 {
         }
 
         // Skip adjusting direction information (we just use AD, PRF)
-        assert_eq!(
+        debug_assert_eq!(
             flags & FLAG_T,
             0u8,
             "You used the T flag, which this implementation doesn't support"

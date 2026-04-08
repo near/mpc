@@ -100,14 +100,16 @@ struct MultiplicationReceiverRandomPackage {
 }
 
 impl MultiplicationReceiverRandomPackage {
-    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Self {
+    fn generate_random_package(
+        rng: &mut impl CryptoRngCore,
+    ) -> Result<Self, ProtocolError> {
         let y = batch_random_ot_sender_helper(rng);
         // This value must coincide with params.batch_size in `multiplication_receiver`
         let batch_size = 2 * (BITS + SECURITY_PARAMETER);
-        let b = random_ot_extension_receiver_helper(batch_size, rng);
+        let b = random_ot_extension_receiver_helper(batch_size, rng)?;
         let seed0 = mta_receiver_random_helper(rng);
         let seed1 = mta_receiver_random_helper(rng);
-        Self::new(y, b, seed0, seed1)
+        Ok(Self::new(y, b, seed0, seed1))
     }
 }
 
@@ -214,7 +216,7 @@ pub(super) async fn multiplication_many<const N: usize>(
                     })
                 } else {
                     let precomputed_receiver_package =
-                        MultiplicationReceiverRandomPackage::generate_random_package(&mut rng);
+                        MultiplicationReceiverRandomPackage::generate_random_package(&mut rng)?;
                     Box::pin(async move {
                         let sid_i = sid_arc.get(i).ok_or_else(|| {
                             ProtocolError::AssertionFailed("sid index out of bounds".to_string())
