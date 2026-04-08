@@ -5,6 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
+use crate::indexer::types::{ChainRegisterSupportedForeignChains, ChainSendTransactionRequest};
 use crate::indexer::{tx_sender, IndexerAPI, ReadForeignChainPolicy};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
@@ -375,6 +376,19 @@ where
             tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
+
+        // Register locally supported foreign chains with the contract.
+        let locally_supported_chains = config_file.foreign_chains.supported_chains();
+        if let Err(err) = chain_txn_sender
+            .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
+                ChainRegisterSupportedForeignChains {
+                    supported_chains_by_node: locally_supported_chains,
+                },
+            ))
+            .await
+        {
+            tracing::warn!(error = ?err, "failed to send register supported foreign chains");
+        }
 
         tracing::info!("Creating tls mesh");
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;

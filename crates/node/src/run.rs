@@ -6,10 +6,7 @@ use crate::{
     coordinator::Coordinator,
     db::SecretDB,
     indexer::{
-        real::spawn_real_indexer,
-        tx_sender::TransactionSender,
-        types::{ChainRegisterSupportedForeignChains, ChainSendTransactionRequest},
-        IndexerAPI, ReadForeignChainPolicy,
+        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI, ReadForeignChainPolicy,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
@@ -269,18 +266,6 @@ where
             );
         }
     });
-
-    // submit supported foreign chains
-    let locally_supported_chains = config.foreign_chains.supported_chains();
-    indexer_api
-        .txn_sender
-        .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
-            ChainRegisterSupportedForeignChains {
-                supported_chains_by_node: locally_supported_chains,
-            },
-        ))
-        .await
-        .context("failed to send register foreign chain config")?;
 
     // Spawn TEE attestation monitoring task
     let tx_sender_clone = indexer_api.txn_sender.clone();
