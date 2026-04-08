@@ -1,0 +1,104 @@
+mod common;
+
+use near_mpc_contract_interface::types::{DomainPurpose, ProtocolContractState, SignatureScheme};
+
+/// Tests that signature and CKD requests are processed using the previous
+/// running state's threshold while resharing is in progress.
+///
+/// Setup: 4 nodes, 2 initial participants (threshold 2). Begin resharing to
+/// all 4 with threshold 4, then kill node 3 so resharing can't complete.
+/// Requests should still succeed using the old threshold of 2.
+#[tokio::test]
+async fn test_request_during_resharing() {
+    let (mut cluster, running) =
+        common::setup_cluster(common::REQUEST_DURING_RESHARING_PORT_SEED, |c| {
+            c.num_nodes = 4;
+            c.initial_participants = 2;
+            c.triples_to_buffer = 2;
+            c.presignatures_to_buffer = 2;
+        })
+        .await;
+
+    // Begin resharing to all 4 nodes with threshold 4 — don't wait for completion.
+    tracing::info!("beginning resharing to 4 nodes, threshold 4");
+    cluster
+        .begin_resharing(&[0, 1, 2, 3], 4)
+        .await
+        .expect("begin_resharing failed");
+
+    // Kill node 3 so resharing is stuck (needs all 4 for threshold 4).
+    tracing::info!("killing node 3 to block resharing");
+    cluster.kill_nodes(&[3]).expect("failed to kill node 3");
+
+    // Verify we're stuck in Resharing state.
+    let state = cluster
+        .get_contract_state()
+        .await
+        .expect("failed to get state");
+    assert!(
+        matches!(state, ProtocolContractState::Resharing(_)),
+        "expected Resharing state, got: {state:?}"
+    );
+
+    // Send sign requests — should succeed using old threshold (2).
+    let sign_domain = running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
+        .expect("no Secp256k1 Sign domain");
+
+    for i in 0..3 {
+        tracing::info!(i, "sending sign request during resharing");
+        let outcome = cluster
+            .send_sign_request(sign_domain.id, common::generate_ecdsa_payload())
+            .await
+            .expect("sign request failed");
+        assert!(
+            outcome.is_success(),
+            "sign request {i} failed: {:?}",
+            outcome.failure_message()
+        );
+    }
+
+    // Verify state is still Resharing after sign requests.
+    let state = cluster
+        .get_contract_state()
+        .await
+        .expect("failed to get state");
+    assert!(
+        matches!(state, ProtocolContractState::Resharing(_)),
+        "expected Resharing after sign requests, got: {state:?}"
+    );
+
+    // Send CKD requests — should also succeed with old threshold.
+    let ckd_domain = running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.purpose == Some(DomainPurpose::CKD))
+        .expect("no CKD domain");
+
+    for i in 0..3 {
+        tracing::info!(i, "sending CKD request during resharing");
+        let outcome = cluster
+            .send_ckd_request(ckd_domain.id, common::generate_ckd_app_public_key())
+            .await
+            .expect("ckd request failed");
+        assert!(
+            outcome.is_success(),
+            "ckd request {i} failed: {:?}",
+            outcome.failure_message()
+        );
+    }
+
+    // Verify state is still Resharing after CKD requests.
+    let state = cluster
+        .get_contract_state()
+        .await
+        .expect("failed to get state");
+    assert!(
+        matches!(state, ProtocolContractState::Resharing(_)),
+        "expected Resharing after CKD requests, got: {state:?}"
+    );
+}

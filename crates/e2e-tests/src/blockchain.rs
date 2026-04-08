@@ -3,6 +3,8 @@ use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
+const DEFAULT_CALL_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
 /// Wraps a `near_kit::Near` client signed as the root/funder account.
@@ -86,6 +88,32 @@ impl NearBlockchain {
         &self.rpc_url
     }
 
+    /// Create a client that fetches a fresh nonce from the blockchain,
+    /// bypassing the global nonce cache. Used when MPC node processes have
+    /// been sending transactions from the same account, making the cached
+    /// nonce stale.
+    ///
+    /// Works by appending a unique fragment to the RPC URL — the nonce cache
+    /// is keyed by `(url, account, pubkey)`, so a different URL forces a
+    /// fresh fetch. The `#` fragment is not sent to the server.
+    pub fn client_for_voting(
+        &self,
+        account_id: &str,
+        key: &SigningKey,
+    ) -> anyhow::Result<ClientHandle> {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let url = format!("{}#vote-{id}", self.rpc_url);
+        let sk = near_kit::SecretKey::Ed25519(key.to_bytes());
+        let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)
+            .map_err(|e| anyhow::anyhow!("failed to create voting signer for {account_id}: {e}"))?;
+        let client = near_kit::Near::custom(&url)
+            .signer(signer)
+            .max_nonce_retries(10)
+            .build();
+        Ok(ClientHandle { inner: client })
+    }
+
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
         let sk = near_kit::SecretKey::Ed25519(key.to_bytes());
         let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)
@@ -105,15 +133,18 @@ impl DeployedContract {
         &self.contract_id
     }
 
-    pub async fn call(&self, method: &str, args: serde_json::Value) -> anyhow::Result<()> {
+    pub async fn call(
+        &self,
+        method: &str,
+        args: serde_json::Value,
+    ) -> anyhow::Result<FinalExecutionOutcome> {
         self.client
             .call(&self.contract_id, method)
             .args(args)
-            .gas(near_kit::Gas::from_tgas(300))
+            .gas(DEFAULT_CALL_GAS)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))?;
-        Ok(())
+            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
 
     pub async fn call_from(
@@ -121,18 +152,15 @@ impl DeployedContract {
         client: &ClientHandle,
         method: &str,
         args: serde_json::Value,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<FinalExecutionOutcome> {
         client
             .inner
             .call(&self.contract_id, method)
             .args(args)
-            .gas(near_kit::Gas::from_tgas(300))
+            .gas(DEFAULT_CALL_GAS)
             .send()
             .await
-            .map_err(|e| {
-                anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}")
-            })?;
-        Ok(())
+            .map_err(|e| anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}"))
     }
 
     pub async fn call_from_with_deposit(

@@ -2992,9 +2992,11 @@ name = "e2e-tests"
 version = "3.8.0"
 dependencies = [
  "anyhow",
+ "blstrs",
  "bs58 0.5.1",
  "ed25519-dalek",
  "futures",
+ "group",
  "hex",
  "launcher-interface",
  "mpc-node-config",

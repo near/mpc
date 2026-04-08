@@ -1,2 +1,11 @@
+[test-groups.e2e]
+# E2E tests each spawn a NEAR sandbox + multiple MPC node processes.
+# Limit parallelism to avoid overwhelming the machine.
+max-threads = 10
+
+[[profile.default.overrides]]
+filter = 'package(e2e-tests) and not test(/^port_allocator/)'
+test-group = 'e2e'
+
 [profile.ci-other]
 default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_upload_quote_for_collateral_with_phala_endpoint)'
