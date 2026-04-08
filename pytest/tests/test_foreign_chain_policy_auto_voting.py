@@ -66,9 +66,9 @@ def test_supported_foreign_chains_requires_all_participants(
 
     # Wait for at least two nodes to register their supported chains.
     def partial_registrations_visible() -> bool:
-        votes = cluster.view_contract_function(
-            "get_supported_foreign_chains_votes"
-        )["supported_chains_by_account"]
+        votes = cluster.view_contract_function("get_supported_foreign_chains_votes")[
+            "supported_chains_by_account"
+        ]
         supported = cluster.view_contract_function("get_supported_foreign_chains")
         # Two nodes registered Solana, but it's not yet supported (node 3 hasn't registered it).
         return len(votes) >= 2 and "Solana" not in supported
@@ -79,9 +79,9 @@ def test_supported_foreign_chains_requires_all_participants(
     )
 
     supported = cluster.view_contract_function("get_supported_foreign_chains")
-    assert (
-        "Solana" not in supported
-    ), "Solana should not be supported when not all participants registered it"
+    assert "Solana" not in supported, (
+        "Solana should not be supported when not all participants registered it"
+    )
 
     # Have node 3 register Solana support directly on the contract.
     cluster.call_contract_function_with_account_assert_success(
