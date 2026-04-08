@@ -104,6 +104,7 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
     lost_assets_cluster.send_and_await_signature_requests(presignatures_available)
 
 
+# Requires MPC node binary with enabled network-hardship-simulation feature
 @pytest.mark.no_atexit_cleanup
 def test_cleanup_lagging_node(lost_assets_cluster: MpcCluster):
     """
