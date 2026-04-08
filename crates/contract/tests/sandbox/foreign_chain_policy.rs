@@ -8,7 +8,10 @@ use near_mpc_contract_interface::method_names::{
 };
 use serde_json::json;
 
-#[expect(deprecated, reason = "regression test of to be deprecated API")]
+#[expect(
+    deprecated,
+    reason = "regression test of API that will be deprecated in #2712"
+)]
 use near_mpc_contract_interface::method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS;
 
 #[tokio::test]
@@ -75,7 +78,10 @@ async fn vote_foreign_chain_policy_accepts_valid_policy() {
     );
 }
 
-#[expect(deprecated, reason = "regression test of to be deprecated API")]
+#[expect(
+    deprecated,
+    reason = "regression test of API that will be deprecated in #2712"
+)]
 #[tokio::test]
 async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
     // Given: a running contract with participants
@@ -129,7 +135,10 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
     );
 }
 
-#[expect(deprecated, reason = "regression test of to be deprecated API")]
+#[expect(
+    deprecated,
+    reason = "regression test of API that will be deprecated in #2712"
+)]
 #[tokio::test]
 async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
     // Given: a running contract with participants

@@ -2532,7 +2532,10 @@ mod tests {
         (context, contract, sk)
     }
 
-    #[expect(deprecated, reason = "regression test of to be deprecated API")]
+    #[expect(
+        deprecated,
+        reason = "regression test of API that will be deprecated in #2712"
+    )]
     fn bitcoin_foreign_chain_policy() -> dtos::ForeignChainPolicy {
         dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
@@ -2858,7 +2861,10 @@ mod tests {
     }
 
     #[test]
-    #[expect(deprecated, reason = "regression test of to be deprecated API")]
+    #[expect(
+        deprecated,
+        reason = "regression test of API that will be deprecated in #2712"
+    )]
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -2927,7 +2933,10 @@ mod tests {
     }
 
     #[test]
-    #[expect(deprecated, reason = "regression test of to be deprecated API")]
+    #[expect(
+        deprecated,
+        reason = "regression test of API that will be deprecated in #2712"
+    )]
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -3007,7 +3016,10 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "not present in the active foreign chain policy")]
-    #[expect(deprecated, reason = "regression test of to be deprecated API")]
+    #[expect(
+        deprecated,
+        reason = "regression test of API that will be deprecated in #2712"
+    )]
     fn verify_foreign_tx__should_reject_chain_not_in_policy() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -4800,7 +4812,10 @@ mod tests {
     }
 
     #[test]
-    #[expect(deprecated, reason = "regression test of to be deprecated API")]
+    #[expect(
+        deprecated,
+        reason = "regression test of API that will be deprecated in #2712"
+    )]
     fn vote_foreign_chain_policy__should_store_vote_for_participant() {
         // Given
         let running_state = gen_running_state(1);
@@ -4843,7 +4858,10 @@ mod tests {
     }
 
     #[test]
-    #[expect(deprecated, reason = "regression test of to be deprecated API")]
+    #[expect(
+        deprecated,
+        reason = "regression test of API that will be deprecated in #2712"
+    )]
     fn vote_foreign_chain_policy__should_apply_policy_after_unanimous_votes() {
         // Given
         let running_state = gen_running_state(1);
@@ -4882,7 +4900,10 @@ mod tests {
     }
 
     #[test]
-    #[expect(deprecated, reason = "regression test of to be deprecated API")]
+    #[expect(
+        deprecated,
+        reason = "regression test of API that will be deprecated in #2712"
+    )]
     fn vote_foreign_chain_policy__should_ignore_votes_from_non_participants() {
         // Given
         let running_state = gen_running_state(1);
