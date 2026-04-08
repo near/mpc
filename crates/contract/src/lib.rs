@@ -140,9 +140,9 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
 
     // deprecate post 3.9.0 upgrade to maintain backwards compatibility with nodes
-    #[deprecated(since = "3.10.0")]
+    #[deprecated(note = "will be removed in 3.10.0")]
     foreign_chain_policy: dtos::ForeignChainPolicy,
-    #[deprecated(since = "3.10.0")]
+    #[deprecated(note = "will be removed in 3.10.0")]
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
 
     supported_foreign_chains_votes: ForeignChainSupport,
@@ -176,7 +176,7 @@ struct StaleData {}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-#[deprecated(since = "3.10.0")]
+#[deprecated(note = "will be removed in 3.10.0")]
 #[expect(deprecated)]
 struct ForeignChainPolicyVotes {
     proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
@@ -1048,7 +1048,7 @@ impl MpcContract {
     /// Propose a new foreign chain policy.
     /// If all current participants vote for the exact same policy, it is applied.
     #[handle_result]
-    #[deprecated(since = "3.10.0")]
+    #[deprecated(note = "will be removed in 3.10.0")]
     #[expect(deprecated)]
     pub fn vote_foreign_chain_policy(
         &mut self,
@@ -1906,12 +1906,12 @@ impl MpcContract {
         dtos::Config::from(&self.config)
     }
 
-    #[deprecated(since = "3.10.0")]
+    #[deprecated(note = "will be removed in 3.10.0")]
     pub fn get_foreign_chain_policy(&self) -> dtos::ForeignChainPolicy {
         self.foreign_chain_policy.clone()
     }
 
-    #[deprecated(since = "3.10.0")]
+    #[deprecated(note = "will be removed in 3.10.0")]
     pub fn get_foreign_chain_policy_proposals(&self) -> dtos::ForeignChainPolicyVotes {
         self.foreign_chain_policy_votes.to_dto()
     }
@@ -2529,13 +2529,13 @@ mod tests {
         (context, contract, sk)
     }
 
-
     /// Register the given foreign chains as supported by all active participants.
     fn register_supported_chains(
         contract: &mut MpcContract,
         chains: impl IntoIterator<Item = dtos::ForeignChain>,
     ) {
-        let supported: dtos::SupportedForeignChains = chains.into_iter().collect::<BTreeSet<_>>().into();
+        let supported: dtos::SupportedForeignChains =
+            chains.into_iter().collect::<BTreeSet<_>>().into();
         let participants: Vec<_> = contract
             .protocol_state
             .active_participants()

@@ -82,7 +82,7 @@ pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
 
-#[deprecated(since = "3.10.0")]
+#[deprecated(note = "will be removed in 3.10.0")]
 pub const GET_FOREIGN_CHAIN_POLICY: &str = "get_foreign_chain_policy";
-#[deprecated(since = "3.10.0")]
+#[deprecated(note = "will be removed in 3.10.0")]
 pub const GET_FOREIGN_CHAIN_POLICY_PROPOSALS: &str = "get_foreign_chain_policy_proposals";

@@ -599,7 +599,7 @@ pub enum ForeignChain {
     Starknet,
 }
 
-#[deprecated(since = "3.10.0")]
+#[deprecated(note = "will be removed in 3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -645,7 +645,7 @@ pub struct ForeignChainPolicy {
 )]
 pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
 
-#[deprecated(since = "3.10.0")]
+#[deprecated(note = "will be removed in 3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -667,7 +667,7 @@ pub struct RpcProvider {
     pub rpc_url: String,
 }
 
-#[deprecated(since = "3.10.0")]
+#[deprecated(note = "will be removed in 3.10.0")]
 #[derive(
     Debug,
     Clone,
