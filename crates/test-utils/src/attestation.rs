@@ -4,6 +4,7 @@ use mpc_attestation::{
     tcb_info::TcbInfo,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use near_mpc_contract_interface::types::HexVec;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -105,7 +106,7 @@ pub fn mock_dstack_attestation() -> Attestation {
 }
 
 pub fn mock_dto_dstack_attestation() -> near_mpc_contract_interface::types::Attestation {
-    let quote = quote().into();
+    let quote = HexVec::from(Vec::from(quote()));
     let collateral_json_string = include_str!("../assets/collateral.json");
     let collateral = serde_json::from_str(collateral_json_string).unwrap();
 

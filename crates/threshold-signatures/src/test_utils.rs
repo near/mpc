@@ -15,7 +15,6 @@ mod presign;
 mod protocol;
 mod sign;
 mod snapshot;
-pub mod test_generators;
 
 use crate::crypto::polynomials::Polynomial;
 use crate::errors::ProtocolError;
@@ -46,7 +45,6 @@ pub use protocol::{
 };
 pub use sign::{check_one_coordinator_output, run_sign};
 pub use snapshot::ProtocolSnapshot;
-pub use test_generators::*;
 
 /// Checks that the list contains all None but one element
 /// and verifies such element belongs to the coordinator

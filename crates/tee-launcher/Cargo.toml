@@ -23,6 +23,7 @@ dstack-sdk = { workspace = true }
 launcher-interface = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 oci-client = { workspace = true }
+rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
