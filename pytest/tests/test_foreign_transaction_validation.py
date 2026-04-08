@@ -337,11 +337,12 @@ def foreign_tx_validation_cluster():
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     # Wait for the supported foreign chains to be registered by all nodes.
-    expected_chains = sorted(["Abstract", "Bitcoin", "Starknet"])
+    expected_chains = ["Abstract", "Bitcoin", "Starknet"]
 
     def supported_chains_registered() -> bool:
         chains = cluster.view_contract_function("get_supported_foreign_chains")
-        return sorted(chains) == expected_chains
+        print("chains observed on contract", chains)
+        return sorted(chains) == sorted(expected_chains)
 
     utils.wait_until(
         supported_chains_registered,
