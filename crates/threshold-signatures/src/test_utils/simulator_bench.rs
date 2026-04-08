@@ -85,22 +85,17 @@ impl SimulationMetrics {
         self.virtual_time_elapsed as f64 / 1_000_000.0
     }
 
+    /// Assert that sent counts match between runs. Received counts are not
+    /// checked because protocols using threshold-based echo-broadcast may
+    /// consume a variable number of messages depending on delivery order.
     pub fn assert_deterministic(&self, other: &Self, label: &str) {
         assert_eq!(
             self.total_messages_sent, other.total_messages_sent,
             "{label}: total_messages_sent changed"
         );
         assert_eq!(
-            self.total_messages_received, other.total_messages_received,
-            "{label}: total_messages_received changed"
-        );
-        assert_eq!(
             self.total_bytes_sent, other.total_bytes_sent,
             "{label}: total_bytes_sent changed"
-        );
-        assert_eq!(
-            self.total_bytes_received, other.total_bytes_received,
-            "{label}: total_bytes_received changed"
         );
     }
 }
