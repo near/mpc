@@ -666,6 +666,7 @@ jobs:
           persist-credentials: false
 
       - name: Check TODOs for issues closed by this PR
-        run: bash scripts/check-todo-closed-issues.sh
+        run: bash .github/scripts/check-todo-closed-issues.sh
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}

@@ -8,15 +8,8 @@ REPO_SLUG="${GITHUB_REPOSITORY:-near/mpc}"
 OWNER="${REPO_SLUG%%/*}"
 REPO="${REPO_SLUG#*/}"
 
-# Determine PR number
-PR_NUMBER="${PR_NUMBER:-}"
-if [[ -z "$PR_NUMBER" ]]; then
-    # GITHUB_REF is "refs/pull/<number>/merge" on pull_request events.
-    PR_NUMBER=$(echo "${GITHUB_REF:-}" | grep -oE 'refs/pull/([0-9]+)/' | grep -oE '[0-9]+' || true)
-fi
-
-if [[ -z "$PR_NUMBER" ]]; then
-    echo "Could not determine PR number. Skipping TODO check."
+if [[ -z "${PR_NUMBER:-}" ]]; then
+    echo "PR_NUMBER is not set. Skipping TODO check."
     exit 0
 fi
 
