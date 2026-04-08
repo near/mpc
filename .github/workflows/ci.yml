@@ -651,21 +651,3 @@ jobs:
 
       - name: Run cargo-make extra checks
         run: cargo make check-extra
-
-  check-todo-closed-issues:
-    name: "Check TODOs for issues closed by this PR"
-    if: github.event_name == 'pull_request'
-    runs-on: warp-ubuntu-2404-x64-2x
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Check TODOs for issues closed by this PR
-        run: bash scripts/check-todo-closed-issues.sh
-        env:
-          GH_TOKEN: ${{ github.token }}
