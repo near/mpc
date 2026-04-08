@@ -6,11 +6,9 @@ license = { workspace = true }
 
 [dependencies]
 anyhow = { workspace = true }
-blstrs = { workspace = true }
 bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures = { workspace = true }
-group = { workspace = true }
 hex = { workspace = true }
 launcher-interface = { workspace = true }
 mpc-node-config = { workspace = true }
@@ -30,6 +28,8 @@ toml = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+blstrs = { workspace = true }
+group = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [lints]

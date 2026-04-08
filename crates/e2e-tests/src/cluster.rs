@@ -92,7 +92,7 @@ impl MpcClusterConfig {
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
             sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
-            initial_participants: 0, // 0 = all nodes; resolved by setup_cluster
+            initial_participants: 3,
         }
     }
 }
@@ -195,14 +195,15 @@ impl MpcCluster {
         })
     }
 
+    /// Kill specific nodes. `node_keys` is not affected — indices are stable
+    /// because remove+insert preserves the position.
     pub fn kill_nodes(&mut self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
-            if idx >= self.nodes.len() {
-                anyhow::bail!(
-                    "node index {idx} out of bounds (have {} nodes)",
-                    self.nodes.len()
-                );
-            }
+            anyhow::ensure!(
+                idx < self.nodes.len(),
+                "node index {idx} out of bounds (have {} nodes)",
+                self.nodes.len()
+            );
             let state = self.nodes.remove(idx);
             let new_state = match state {
                 MpcNodeState::Running(node) => MpcNodeState::Stopped(node.kill()),
@@ -317,47 +318,18 @@ impl MpcCluster {
     }
 
     /// Vote for resharing and wait until the contract enters Resharing state.
-    /// Does NOT wait for resharing to complete — use [`start_resharing`] for the full flow.
-    ///
-    /// Waits for all proposed participants to have TEE attestations before
-    /// voting, ensuring that re-added nodes are fully synced.
-    pub async fn begin_resharing(
+    /// Does NOT wait for resharing to complete — use `start_resharing_and_wait`.
+    pub async fn start_resharing(
         &self,
         new_participants: &[usize],
         new_threshold: usize,
     ) -> anyhow::Result<()> {
-        // Wait for all proposed participants to have attestations on-chain.
-        // This is critical for re-added nodes that need to re-submit after restart.
-        let required_accounts: Vec<String> = new_participants
-            .iter()
-            .map(|&idx| self.nodes[idx].account_id().to_string())
-            .collect();
-        // 120s to account for fresh nodes syncing their indexer from genesis.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
-        loop {
-            let tee_accounts = self.get_tee_accounts().await?;
-            let tee_account_ids: std::collections::HashSet<String> = tee_accounts
-                .iter()
-                .filter_map(|v| v.get("account_id")?.as_str().map(String::from))
-                .collect();
-            if required_accounts
-                .iter()
-                .all(|a| tee_account_ids.contains(a))
-            {
-                break;
-            }
-            anyhow::ensure!(
-                tokio::time::Instant::now() < deadline,
-                "not all proposed participants have TEE attestations (need: {required_accounts:?}, have: {tee_account_ids:?})"
-            );
-            tokio::time::sleep(Duration::from_millis(200)).await;
-        }
+        self.wait_for_participant_attestations(new_participants)
+            .await?;
 
         let state = self.get_contract_state().await?;
         let (prospective_epoch_id, current_participants) = match &state {
             ProtocolContractState::Running(r) => {
-                // Mirror the contract's prospective_epoch_id() logic:
-                // if a resharing was previously cancelled, continue from that epoch.
                 let base = r
                     .previously_cancelled_resharing_epoch_id
                     .unwrap_or(r.keyset.epoch_id);
@@ -366,40 +338,8 @@ impl MpcCluster {
             _ => anyhow::bail!("cannot reshare: contract not in Running state"),
         };
 
-        // Build new participant list, preserving existing IDs for nodes that
-        // are already participants. New nodes get IDs starting from next_id.
-        let mut next_id = current_participants.next_id;
-        let mut list = Vec::new();
-        for &node_idx in new_participants {
-            let account = ContractAccountId(self.nodes[node_idx].account_id().to_string());
-            let existing_id = current_participants
-                .participants
-                .iter()
-                .find(|(a, _, _)| *a == account)
-                .map(|(_, id, _)| *id);
-            let id = match existing_id {
-                Some(id) => id,
-                None => {
-                    let id = next_id;
-                    next_id = ParticipantId(next_id.0 + 1);
-                    id
-                }
-            };
-            list.push((
-                account,
-                id,
-                ParticipantInfo {
-                    url: self.nodes[node_idx].p2p_url(),
-                    sign_pk: self.nodes[node_idx].p2p_public_key_str(),
-                },
-            ));
-        }
-        let participants = Participants {
-            next_id,
-            participants: list,
-        };
-
-        tracing::debug!(?participants, "proposed participants for resharing");
+        let participants =
+            build_participants_from_nodes(new_participants, &self.nodes, current_participants);
         let proposal = ThresholdParameters {
             threshold: Threshold(new_threshold as u64),
             participants,
@@ -407,14 +347,71 @@ impl MpcCluster {
 
         tracing::info!(?prospective_epoch_id, new_threshold, "voting for resharing");
         let args = json!({ "prospective_epoch_id": prospective_epoch_id, "proposal": proposal });
+        self.vote_resharing(current_participants, args).await?;
 
-        // Vote from current participants first, then candidates. The contract
-        // requires threshold participant votes before candidates can vote.
+        self.wait_for_state(
+            |s| matches!(s, ProtocolContractState::Resharing(_)),
+            Duration::from_secs(30),
+        )
+        .await
+    }
+
+    /// Full resharing: vote, wait for Resharing, then wait for Running.
+    pub async fn start_resharing_and_wait(
+        &self,
+        new_participants: &[usize],
+        new_threshold: usize,
+    ) -> anyhow::Result<()> {
+        self.start_resharing(new_participants, new_threshold)
+            .await?;
+        self.wait_for_state(
+            |s| matches!(s, ProtocolContractState::Running(_)),
+            Duration::from_secs(180),
+        )
+        .await
+    }
+
+    /// Poll until all proposed participants have TEE attestations on-chain.
+    async fn wait_for_participant_attestations(
+        &self,
+        node_indices: &[usize],
+    ) -> anyhow::Result<()> {
+        let required: Vec<String> = node_indices
+            .iter()
+            .map(|&idx| self.nodes[idx].account_id().to_string())
+            .collect();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+        loop {
+            let tee_accounts = self.get_tee_accounts().await?;
+            let have: std::collections::HashSet<String> = tee_accounts
+                .iter()
+                .filter_map(|v| v.get("account_id")?.as_str().map(String::from))
+                .collect();
+            if required.iter().all(|a| have.contains(a)) {
+                return Ok(());
+            }
+            anyhow::ensure!(
+                tokio::time::Instant::now() < deadline,
+                "not all proposed participants have TEE attestations (need: {required:?}, have: {have:?})"
+            );
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
+    /// Vote for resharing from all running nodes: current participants first,
+    /// then candidates. The contract requires threshold participant votes
+    /// before candidates can vote.
+    async fn vote_resharing(
+        &self,
+        current_participants: &Participants,
+        args: serde_json::Value,
+    ) -> anyhow::Result<()> {
         let current_accounts: std::collections::HashSet<_> = current_participants
             .participants
             .iter()
             .map(|(a, _, _)| a.0.clone())
             .collect();
+
         let mut participants_first: Vec<usize> = Vec::new();
         let mut candidates_second: Vec<usize> = Vec::new();
         for (i, node) in self.nodes.iter().enumerate() {
@@ -456,27 +453,7 @@ impl MpcCluster {
                 tracing::debug!(node = i, "resharing vote succeeded");
             }
         }
-
-        self.wait_for_state(
-            |s| matches!(s, ProtocolContractState::Resharing(_)),
-            Duration::from_secs(30),
-        )
-        .await
-    }
-
-    /// Full resharing: vote, wait for Resharing state, then wait for Running state.
-    pub async fn start_resharing(
-        &self,
-        new_participants: &[usize],
-        new_threshold: usize,
-    ) -> anyhow::Result<()> {
-        self.begin_resharing(new_participants, new_threshold)
-            .await?;
-        self.wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            Duration::from_secs(180),
-        )
-        .await
+        Ok(())
     }
 
     /// Vote to cancel an active resharing from a specific node.
@@ -898,6 +875,42 @@ fn build_participants(
     }
     Participants {
         next_id: ParticipantId(num_nodes as u32),
+        participants: list,
+    }
+}
+
+/// Build a participant list for resharing, preserving existing IDs for nodes
+/// that are already participants and assigning new IDs to newcomers.
+fn build_participants_from_nodes(
+    indices: &[usize],
+    nodes: &[MpcNodeState],
+    current: &Participants,
+) -> Participants {
+    let mut next_id = current.next_id;
+    let mut list = Vec::new();
+    for &node_idx in indices {
+        let account = ContractAccountId(nodes[node_idx].account_id().to_string());
+        let id = current
+            .participants
+            .iter()
+            .find(|(a, _, _)| *a == account)
+            .map(|(_, id, _)| *id)
+            .unwrap_or_else(|| {
+                let id = next_id;
+                next_id = ParticipantId(next_id.0 + 1);
+                id
+            });
+        list.push((
+            account,
+            id,
+            ParticipantInfo {
+                url: nodes[node_idx].p2p_url(),
+                sign_pk: nodes[node_idx].p2p_public_key_str(),
+            },
+        ));
+    }
+    Participants {
+        next_id,
         participants: list,
     }
 }

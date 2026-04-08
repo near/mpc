@@ -12,6 +12,7 @@ use near_mpc_contract_interface::types::{
 async fn test_robust_ecdsa() {
     let (cluster, running) = common::setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
         c.num_nodes = 6;
+        c.initial_participants = 6;
         c.threshold = 5;
         c.domains = vec![DomainConfig {
             id: DomainId(0),

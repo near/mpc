@@ -22,9 +22,9 @@ async fn test_cancellation_of_resharing() {
     // Begin resharing to 5 nodes [0..5], threshold 3.
     tracing::info!("beginning resharing to nodes 0-4, threshold 3");
     cluster
-        .begin_resharing(&[0, 1, 2, 3, 4], 3)
+        .start_resharing(&[0, 1, 2, 3, 4], 3)
         .await
-        .expect("begin_resharing failed");
+        .expect("start_resharing failed");
 
     // Kill node 4 so resharing can't complete.
     tracing::info!("killing node 4 to block resharing");
@@ -104,7 +104,7 @@ async fn test_cancellation_of_resharing() {
     // instead of the killed node 4.
     tracing::info!("retrying resharing with node 5 instead of killed node 4");
     cluster
-        .start_resharing(&[0, 1, 2, 3, 5], 3)
+        .start_resharing_and_wait(&[0, 1, 2, 3, 5], 3)
         .await
         .expect("retry resharing failed");
 

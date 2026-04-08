@@ -102,7 +102,7 @@ impl NearBlockchain {
         key: &SigningKey,
     ) -> anyhow::Result<ClientHandle> {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let url = format!("{}#vote-{id}", self.rpc_url);
         let sk = near_kit::SecretKey::Ed25519(key.to_bytes());
         let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)

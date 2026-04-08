@@ -51,11 +51,6 @@ pub async fn setup_cluster(
     let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
     configure(&mut config);
 
-    // initial_participants=0 is a sentinel meaning "all nodes participate".
-    if config.initial_participants == 0 {
-        config.initial_participants = config.num_nodes;
-    }
-
     let initial_participants = config.initial_participants;
     let presignatures_to_buffer = config.presignatures_to_buffer;
     let cluster = MpcCluster::start(config)
