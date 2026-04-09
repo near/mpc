@@ -18,83 +18,6 @@ use crate::protocol::{Action, Protocol};
 // Messages are delivered via a priority queue ordered by arrival_time,
 // where arrival_time = sender_clock + latency at the time of sending.
 
-/// Extensible to statistical distributions (normal, log-normal, etc.).
-pub enum LatencyModel {
-    /// Fixed one-way latency in nanoseconds.
-    Fixed(u64),
-}
-
-impl LatencyModel {
-    pub fn sample(&self) -> u64 {
-        match self {
-            Self::Fixed(ns) => *ns,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SimulationMetrics {
-    pub total_bytes_sent: u64,
-    pub total_bytes_received: u64,
-    pub total_messages_sent: u64,
-    pub total_messages_received: u64,
-    pub bytes_sent_per_participant: HashMap<Participant, u64>,
-    pub bytes_received_per_participant: HashMap<Participant, u64>,
-    /// max(all participant clocks) in ns, includes network latency + computation time.
-    pub virtual_time_elapsed: u64,
-}
-
-impl SimulationMetrics {
-    #[allow(clippy::cast_precision_loss)]
-    pub fn virtual_time_ms(&self) -> f64 {
-        self.virtual_time_elapsed as f64 / 1_000_000.0
-    }
-
-    /// Assert that sent counts match between runs. Received counts are not
-    /// checked because protocols using threshold-based echo-broadcast may
-    /// consume a variable number of messages depending on delivery order.
-    pub fn assert_deterministic(&self, other: &Self, label: &str) {
-        assert_eq!(
-            self.total_messages_sent, other.total_messages_sent,
-            "{label}: total_messages_sent changed"
-        );
-        assert_eq!(
-            self.total_bytes_sent, other.total_bytes_sent,
-            "{label}: total_bytes_sent changed"
-        );
-    }
-}
-
-impl std::fmt::Display for SimulationMetrics {
-    #[allow(clippy::cast_precision_loss)]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let n = self.bytes_sent_per_participant.len().max(1) as f64;
-        writeln!(
-            f,
-            "Total messages: {} sent, {} received",
-            self.total_messages_sent, self.total_messages_received
-        )?;
-        writeln!(
-            f,
-            "Avg messages/participant: {:.0} sent, {:.0} received",
-            self.total_messages_sent as f64 / n,
-            self.total_messages_received as f64 / n
-        )?;
-        writeln!(
-            f,
-            "Total bytes: {} sent, {} received",
-            self.total_bytes_sent, self.total_bytes_received
-        )?;
-        writeln!(
-            f,
-            "Avg bytes/participant: {:.0} sent, {:.0} received",
-            self.total_bytes_sent as f64 / n,
-            self.total_bytes_received as f64 / n
-        )?;
-        Ok(())
-    }
-}
-
 pub fn run_simulation<T>(
     mut protocols: Vec<(Participant, impl Protocol<Output = T>)>,
     latency_model: &LatencyModel,
@@ -223,6 +146,83 @@ pub fn bench_simulation(name: &str, run: &dyn Fn() -> SimulationMetrics, samples
     println!("=== {name} ===");
     print!("{first_metrics}");
     println!("Virtual time: avg {avg:.3} ms, min {min:.3} ms, max {max:.3} ms");
+}
+
+/// Extensible to statistical distributions (normal, log-normal, etc.).
+pub enum LatencyModel {
+    /// Fixed one-way latency in nanoseconds.
+    Fixed(u64),
+}
+
+impl LatencyModel {
+    pub fn sample(&self) -> u64 {
+        match self {
+            Self::Fixed(ns) => *ns,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SimulationMetrics {
+    pub total_bytes_sent: u64,
+    pub total_bytes_received: u64,
+    pub total_messages_sent: u64,
+    pub total_messages_received: u64,
+    pub bytes_sent_per_participant: HashMap<Participant, u64>,
+    pub bytes_received_per_participant: HashMap<Participant, u64>,
+    /// max(all participant clocks) in ns, includes network latency + computation time.
+    pub virtual_time_elapsed: u64,
+}
+
+impl SimulationMetrics {
+    #[allow(clippy::cast_precision_loss)]
+    pub fn virtual_time_ms(&self) -> f64 {
+        self.virtual_time_elapsed as f64 / 1_000_000.0
+    }
+
+    /// Assert that sent counts match between runs. Received counts are not
+    /// checked because protocols using threshold-based echo-broadcast may
+    /// consume a variable number of messages depending on delivery order.
+    pub fn assert_deterministic(&self, other: &Self, label: &str) {
+        assert_eq!(
+            self.total_messages_sent, other.total_messages_sent,
+            "{label}: total_messages_sent changed"
+        );
+        assert_eq!(
+            self.total_bytes_sent, other.total_bytes_sent,
+            "{label}: total_bytes_sent changed"
+        );
+    }
+}
+
+impl std::fmt::Display for SimulationMetrics {
+    #[allow(clippy::cast_precision_loss)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = self.bytes_sent_per_participant.len().max(1) as f64;
+        writeln!(
+            f,
+            "Total messages: {} sent, {} received",
+            self.total_messages_sent, self.total_messages_received
+        )?;
+        writeln!(
+            f,
+            "Avg messages/participant: {:.0} sent, {:.0} received",
+            self.total_messages_sent as f64 / n,
+            self.total_messages_received as f64 / n
+        )?;
+        writeln!(
+            f,
+            "Total bytes: {} sent, {} received",
+            self.total_bytes_sent, self.total_bytes_received
+        )?;
+        writeln!(
+            f,
+            "Avg bytes/participant: {:.0} sent, {:.0} received",
+            self.total_bytes_sent as f64 / n,
+            self.total_bytes_received as f64 / n
+        )?;
+        Ok(())
+    }
 }
 
 /// - `NUM_PARTICIPANTS` (default: 7)
