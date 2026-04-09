@@ -113,6 +113,22 @@ impl From<MpcContract> for crate::MpcContract {
                 .insert(account_id, supported_foreign_chains.clone().into());
         }
 
+        // Overlay pending votes: if a participant had proposed a different policy,
+        // merge their proposed chains into their baseline so their intent is preserved.
+        for (voter_account_id, proposed_policy) in
+            value.foreign_chain_policy_votes.proposal_by_account.iter()
+        {
+            let voter_proposed_chains: BTreeSet<dtos::ForeignChain> =
+                proposed_policy.chains.keys().copied().collect();
+            foreign_chain_support
+                .votes_per_chain
+                .entry(voter_account_id.clone())
+                .and_modify(|existing| {
+                    existing.extend(voter_proposed_chains.clone());
+                })
+                .or_insert_with(|| voter_proposed_chains.into());
+        }
+
         Self {
             protocol_state: value.protocol_state,
             pending_signature_requests: value.pending_signature_requests,

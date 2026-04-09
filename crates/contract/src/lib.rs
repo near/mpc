@@ -5013,6 +5013,54 @@ mod tests {
         assert_eq!(supported.len(), 2);
     }
 
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "regression test of API that will be deprecated in #2712"
+    )]
+    fn vote_foreign_chain_policy__should_overwrite_previously_registered_chains() {
+        // Given — all participants have registered Bitcoin support
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+
+        // When — first participant votes a policy with Ethereum (not Bitcoin)
+        let policy_with_ethereum = dtos::ForeignChainPolicy {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Ethereum,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://eth.example.com".to_string(),
+                }),
+            )]),
+        };
+        let first_account = participants[0].0.clone();
+        let _env = Environment::new(None, Some(first_account.clone()), None);
+        contract
+            .vote_foreign_chain_policy(policy_with_ethereum)
+            .expect("vote should succeed");
+
+        // Then — their registered chains are now only Ethereum (overwritten, not merged)
+        let votes = contract.get_supported_foreign_chains_votes();
+        let first_voter = dtos::AccountId(first_account.to_string());
+        let registered = votes
+            .supported_chains_by_account
+            .get(&first_voter)
+            .expect("voter should have registered chains");
+        assert!(registered.contains(&dtos::ForeignChain::Ethereum));
+        assert!(!registered.contains(&dtos::ForeignChain::Bitcoin));
+        assert_eq!(registered.len(), 1);
+
+        // And — Bitcoin is no longer unanimously supported (first participant dropped it)
+        let supported = contract.get_supported_foreign_chains();
+        assert!(!supported.contains(&dtos::ForeignChain::Bitcoin));
+    }
+
     fn make_launcher_hash(byte: u8) -> LauncherImageHash {
         LauncherImageHash::from([byte; 32])
     }
