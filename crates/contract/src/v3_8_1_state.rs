@@ -72,11 +72,10 @@ impl From<MpcContract> for crate::MpcContract {
         for (voter_account_id, proposed_policy) in
             value.foreign_chain_policy_votes.proposal_by_account.iter()
         {
-            foreign_chain_support
-                .votes_per_chain
-                .entry(voter_account_id.clone())
-                .or_default()
-                .extend(proposed_policy.chains.clone());
+            foreign_chain_support.votes_per_chain.insert(
+                voter_account_id.clone(),
+                proposed_policy.chains.clone().into(),
+            );
         }
         Self {
             protocol_state: value.protocol_state,
