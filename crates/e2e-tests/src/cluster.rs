@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
+use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
@@ -293,20 +294,20 @@ impl MpcCluster {
         };
         let client = reqwest::Client::new();
         let url = format!("http://{}/health", node.web_address());
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
-        loop {
-            if let Ok(resp) = client.get(&url).send().await {
-                if resp.status() == 200 {
-                    tracing::info!(node = idx, "node is healthy");
-                    return Ok(());
-                }
-            }
-            anyhow::ensure!(
-                tokio::time::Instant::now() < deadline,
-                "node {idx} did not become healthy within 120s"
-            );
-            tokio::time::sleep(POLL_INTERVAL).await;
-        }
+        (|| async {
+            let ok = matches!(client.get(&url).send().await, Ok(r) if r.status() == 200);
+            anyhow::ensure!(ok, "not yet healthy");
+            tracing::info!(node = idx, "node is healthy");
+            Ok(())
+        })
+        // 120s deadline: 120_000ms / 500ms = 240 attempts
+        .retry(
+            ConstantBuilder::default()
+                .with_delay(POLL_INTERVAL)
+                .with_max_times(240),
+        )
+        .await
+        .with_context(|| format!("node {idx} did not become healthy within 120s"))
     }
 
     /// Query all accounts that have TEE attestations stored in the contract.
@@ -395,22 +396,21 @@ impl MpcCluster {
             .iter()
             .map(|&idx| self.nodes[idx].account_id().to_string())
             .collect();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
-        loop {
+        (|| async {
             let tee_accounts = self.get_tee_accounts().await?;
             let have: std::collections::HashSet<String> = tee_accounts
                 .iter()
                 .filter_map(|v| v.get("account_id")?.as_str().map(String::from))
                 .collect();
-            if required.iter().all(|a| have.contains(a)) {
-                return Ok(());
-            }
             anyhow::ensure!(
-                tokio::time::Instant::now() < deadline,
+                required.iter().all(|a| have.contains(a)),
                 "not all proposed participants have TEE attestations (need: {required:?}, have: {have:?})"
             );
-            tokio::time::sleep(POLL_INTERVAL).await;
-        }
+            Ok(())
+        })
+        // 120s deadline: 120_000ms / 500ms = 240 attempts
+        .retry(ConstantBuilder::default().with_delay(POLL_INTERVAL).with_max_times(240))
+        .await
     }
 
     /// Vote for resharing from all running nodes: current participants first,
@@ -497,20 +497,28 @@ impl MpcCluster {
         predicate: impl Fn(i64) -> bool,
         timeout: Duration,
     ) -> anyhow::Result<()> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
+        // timeout / 500ms attempts
+        let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
+        (|| async {
             let values = self.get_metric_all_nodes(name).await?;
-            if values.iter().all(|v| v.is_some_and(&predicate)) {
-                return Ok(());
-            }
-            if tokio::time::Instant::now() >= deadline {
-                anyhow::bail!(
-                    "metric {name} predicate not satisfied on all nodes within {}s (values: {values:?})",
-                    timeout.as_secs()
-                );
-            }
-            tokio::time::sleep(POLL_INTERVAL).await;
-        }
+            anyhow::ensure!(
+                values.iter().all(|v| v.is_some_and(&predicate)),
+                "metric {name} predicate not satisfied on all nodes (values: {values:?})"
+            );
+            Ok(())
+        })
+        .retry(
+            ConstantBuilder::default()
+                .with_delay(POLL_INTERVAL)
+                .with_max_times(max_times),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "metric {name} predicate not satisfied within {}s",
+                timeout.as_secs()
+            )
+        })
     }
 
     pub fn wipe_db(&self, indices: &[usize]) -> anyhow::Result<()> {
@@ -960,19 +968,28 @@ async fn wait_for_contract_state(
     timeout: Duration,
     predicate: impl Fn(&ProtocolContractState) -> bool,
 ) -> anyhow::Result<()> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
+    // timeout / 500ms attempts
+    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
+    (|| async {
         match contract.state().await {
-            Ok(state) if predicate(&state) => return Ok(()),
-            Ok(_) => {}
-            Err(e) => tracing::debug!(error = %e, "failed to query contract state (retrying)"),
+            Ok(state) if predicate(&state) => Ok(()),
+            Ok(_) => anyhow::bail!("predicate not yet satisfied"),
+            Err(e) => {
+                tracing::debug!(error = %e, "failed to query contract state (retrying)");
+                Err(e)
+            }
         }
-        if tokio::time::Instant::now() >= deadline {
-            anyhow::bail!(
-                "contract state predicate not satisfied within {}s",
-                timeout.as_secs()
-            );
-        }
-        tokio::time::sleep(POLL_INTERVAL).await;
-    }
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(POLL_INTERVAL)
+            .with_max_times(max_times),
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "contract state predicate not satisfied within {}s",
+            timeout.as_secs()
+        )
+    })
 }

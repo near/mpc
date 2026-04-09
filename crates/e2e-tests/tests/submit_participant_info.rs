@@ -1,6 +1,6 @@
 use crate::common;
 
-use std::time::Duration;
+use backon::{ConstantBuilder, Retryable};
 
 /// Tests that non-participant MPC nodes automatically submit their TEE
 /// attestations to the contract after startup.
@@ -18,26 +18,25 @@ async fn test_submit_participant_info() {
         .await;
 
     // Poll until all 4 nodes have TEE attestations in the contract.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-    loop {
-        let tee_accounts = cluster
-            .get_tee_accounts()
-            .await
-            .expect("failed to query TEE accounts");
-
-        if tee_accounts.len() >= 4 {
-            tracing::info!(
-                count = tee_accounts.len(),
-                "all nodes submitted attestations"
-            );
-            return;
-        }
-
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "timed out waiting for all 4 nodes to submit attestations, only {} found",
+    (|| async {
+        let tee_accounts = cluster.get_tee_accounts().await?;
+        anyhow::ensure!(
+            tee_accounts.len() == 4,
+            "only {}/4 nodes have submitted attestations",
             tee_accounts.len()
         );
-        tokio::time::sleep(common::POLL_INTERVAL).await;
-    }
+        tracing::info!(
+            count = tee_accounts.len(),
+            "all nodes submitted attestations"
+        );
+        Ok::<_, anyhow::Error>(())
+    })
+    // 30s deadline: 30_000ms / 500ms = 60 attempts
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(60),
+    )
+    .await
+    .expect("timed out waiting for all 4 nodes to submit attestations");
 }

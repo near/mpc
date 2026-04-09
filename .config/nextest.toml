@@ -1,6 +1,3 @@
-[[profile.default.overrides]]
-filter = 'package(e2e-tests) and not test(/^port_allocator/)'
-
 # Limit sandbox test parallelism to avoid resource contention and flaky timeouts.
 # Each sandbox test spins up its own NEAR sandbox instance, so running too many
 # concurrently causes request timeouts on CI.

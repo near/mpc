@@ -1,3 +1,5 @@
+#![expect(non_snake_case)]
+
 use crate::common;
 
 use near_mpc_contract_interface::types::{
@@ -6,7 +8,8 @@ use near_mpc_contract_interface::types::{
 use rand::SeedableRng;
 
 #[tokio::test]
-async fn test_sign_request_per_scheme() {
+async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
+    // given
     let (cluster, running) =
         common::setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
@@ -19,7 +22,6 @@ async fn test_sign_request_per_scheme() {
     assert!(!sign_domains.is_empty(), "no Sign domains found");
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-    // Send a sign request for each Sign domain and verify the signature scheme matches.
     for domain in &sign_domains {
         let payload = match domain.scheme {
             SignatureScheme::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
@@ -27,12 +29,14 @@ async fn test_sign_request_per_scheme() {
             _ => continue,
         };
 
+        // when
         tracing::info!(domain_id = ?domain.id, scheme = ?domain.scheme, "sending sign request");
         let outcome = cluster
             .send_sign_request(domain.id, payload)
             .await
             .expect("sign request transaction failed");
 
+        // then
         assert!(
             outcome.is_success(),
             "sign request for domain {:?} failed: {:?}",
@@ -57,7 +61,8 @@ async fn test_sign_request_per_scheme() {
 }
 
 #[tokio::test]
-async fn test_robust_ecdsa() {
+async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
+    // given
     let (cluster, running) = common::setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
         c.num_nodes = 6;
         c.initial_participant_indices = (0..6).collect();
@@ -80,11 +85,14 @@ async fn test_robust_ecdsa() {
         .expect("no V2Secp256k1 domain found");
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+
+    // when
     let outcome = cluster
         .send_sign_request(domain.id, common::generate_ecdsa_payload(&mut rng))
         .await
         .expect("sign request transaction failed");
 
+    // then
     assert!(
         outcome.is_success(),
         "V2Secp256k1 sign request failed: {:?}",
