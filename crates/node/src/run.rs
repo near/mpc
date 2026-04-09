@@ -112,7 +112,23 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     )
     .into();
 
-    let attestation = tee_authority.generate_attestation(report_data).await?;
+    // TODO(#2723): add metrics for attestation generation success/failure
+    let attestation = match tee_authority.generate_attestation(report_data).await {
+        Ok(att) => {
+            tracing::info!("TEE attestation generated successfully");
+            Some(att)
+        }
+        Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+            tracing::error!(
+                error = ?e,
+                "TEE attestation failed. Node will continue without attestation and retry periodically",
+            );
+            None
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
+        }
+    };
 
     // Create communication channels and runtime
     let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
@@ -127,7 +143,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             root_task_handle.clone(),
             debug_request_sender.clone(),
             node_config.web_ui,
-            static_web_data(&secrets, Some(attestation)),
+            static_web_data(&secrets, attestation),
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
