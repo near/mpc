@@ -103,7 +103,7 @@ impl FakeMpcContractState {
     pub fn register_foreign_chain_config(
         &mut self,
         account_id: AccountId,
-        supported_chains: dtos::SupportedForeignChains,
+        foreign_chain_configuration: dtos::ForeignChainConfiguration,
     ) {
         let ProtocolContractState::Running(state) = &self.state else {
             tracing::info!(
@@ -129,7 +129,7 @@ impl FakeMpcContractState {
         let voter = dtos::AccountId(account_id.to_string());
         self.supported_foreign_chains_by_node
             .supported_chains_by_account
-            .insert(voter, supported_chains);
+            .insert(voter, foreign_chain_configuration);
 
         // Derive supported_foreign_chains as intersection of all active participants' votes
         let active_participant_account_ids: BTreeSet<dtos::AccountId> = state
@@ -146,7 +146,7 @@ impl FakeMpcContractState {
             .supported_foreign_chains_by_node
             .supported_chains_by_account
         {
-            for chain in chains.iter() {
+            for (chain, _rpcs) in chains.iter() {
                 chain_to_supporters
                     .entry(*chain)
                     .or_default()
@@ -668,7 +668,7 @@ impl FakeIndexerCore {
                         let mut contract = contract.lock().await;
                         contract.register_foreign_chain_config(
                             account_id,
-                            args.supported_chains_by_node,
+                            args.foreign_chain_configuration,
                         );
                     }
                     ChainSendTransactionRequest::StartKeygen(start) => {

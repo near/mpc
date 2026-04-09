@@ -5,7 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::{ChainRegisterSupportedForeignChains, ChainSendTransactionRequest};
+use crate::indexer::types::{ChainRegisterForeignChainConfiguration, ChainSendTransactionRequest};
 use crate::indexer::{tx_sender, IndexerAPI, ReadForeignChainPolicy};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
@@ -378,11 +378,11 @@ where
         };
 
         // Register locally supported foreign chains with the contract.
-        let locally_supported_chains = config_file.foreign_chains.supported_chains();
+        let locally_supported_chains = config_file.foreign_chains.to_dto();
         if let Err(err) = chain_txn_sender
             .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
-                ChainRegisterSupportedForeignChains {
-                    supported_chains_by_node: locally_supported_chains,
+                ChainRegisterForeignChainConfiguration {
+                    foreign_chain_configuration: locally_supported_chains,
                 },
             ))
             .await

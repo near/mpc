@@ -1,8 +1,8 @@
-use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use anyhow::Context;
-use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
@@ -64,31 +64,54 @@ impl ForeignChainsConfig {
         Ok(())
     }
 
-    pub fn supported_chains(&self) -> dtos::SupportedForeignChains {
-        let mut supported_chains = dtos::SupportedForeignChains::default();
+    pub fn to_dto(&self) -> dtos::ForeignChainConfiguration {
+        let mut chains = BTreeMap::new();
 
-        if self.solana.is_some() {
-            supported_chains.insert(dtos::ForeignChain::Solana);
+        if let Some(config) = &self.solana {
+            chains.insert(
+                dtos::ForeignChain::Solana,
+                providers_to_set(&config.providers),
+            );
         }
 
-        if self.bitcoin.is_some() {
-            supported_chains.insert(dtos::ForeignChain::Bitcoin);
+        if let Some(config) = &self.bitcoin {
+            chains.insert(
+                dtos::ForeignChain::Bitcoin,
+                providers_to_set(&config.providers),
+            );
         }
 
-        if self.ethereum.is_some() {
-            supported_chains.insert(dtos::ForeignChain::Ethereum);
+        if let Some(config) = &self.ethereum {
+            chains.insert(
+                dtos::ForeignChain::Ethereum,
+                providers_to_set(&config.providers),
+            );
         }
 
-        if self.abstract_chain.is_some() {
-            supported_chains.insert(dtos::ForeignChain::Abstract);
+        if let Some(config) = &self.abstract_chain {
+            chains.insert(
+                dtos::ForeignChain::Abstract,
+                providers_to_set(&config.providers),
+            );
         }
 
-        if self.starknet.is_some() {
-            supported_chains.insert(dtos::ForeignChain::Starknet);
+        if let Some(config) = &self.starknet {
+            chains.insert(
+                dtos::ForeignChain::Starknet,
+                providers_to_set(&config.providers),
+            );
         }
 
-        supported_chains
+        chains.into()
     }
+}
+
+fn providers_to_set<P: ForeignChainProviderConfig>(
+    providers: &NonEmptyBTreeMap<String, P>,
+) -> NonEmptyBTreeSet<dtos::RpcProvider> {
+    providers.map_to_set(|_name, provider| dtos::RpcProvider {
+        rpc_url: provider.rpc_url().trim().to_string(),
+    })
 }
 
 pub(crate) trait ForeignChainProviderConfig {
@@ -645,7 +668,7 @@ foreign_chains:
     }
 
     #[test]
-    fn supported_chains__returns_solana_when_configured() {
+    fn to_policy__strips_path_auth_placeholder_from_rpc_url() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -696,12 +719,14 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let supported = config.foreign_chains.supported_chains();
+        let foreign_chain_config = config.foreign_chains.to_dto();
 
         // Then
-        assert!(supported.contains(&near_mpc_contract_interface::types::ForeignChain::Solana));
-        assert!(!supported.contains(&near_mpc_contract_interface::types::ForeignChain::Ethereum));
-        assert!(!supported.contains(&near_mpc_contract_interface::types::ForeignChain::Bitcoin));
+        let solana_providers = foreign_chain_config
+            .get(&near_mpc_contract_interface::types::ForeignChain::Solana)
+            .unwrap();
+        let provider = solana_providers.iter().next().unwrap();
+        assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
     }
 
     #[test]
@@ -816,7 +841,7 @@ foreign_chains:
     }
 
     #[test]
-    fn supported_chains__returns_ethereum_when_configured() {
+    fn to_policy__preserves_url_for_non_path_auth() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -868,11 +893,13 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let supported = config.foreign_chains.supported_chains();
+        let foreign_chain_config = config.foreign_chains.to_dto();
 
         // Then
-        assert!(supported.contains(&near_mpc_contract_interface::types::ForeignChain::Ethereum));
-        assert!(!supported.contains(&near_mpc_contract_interface::types::ForeignChain::Solana));
-        assert!(!supported.contains(&near_mpc_contract_interface::types::ForeignChain::Bitcoin));
+        let eth_providers = foreign_chain_config
+            .get(&near_mpc_contract_interface::types::ForeignChain::Ethereum)
+            .unwrap();
+        let provider = eth_providers.iter().next().unwrap();
+        assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
     }
 }

@@ -321,8 +321,8 @@ async fn chain_is_supported(
     let requested_chain = request.chain();
 
     let foreign_chain_is_supported_locally = local_foreign_chains_config
-        .supported_chains()
-        .contains(&requested_chain);
+        .to_dto()
+        .contains_key(&requested_chain);
     let foreign_chain_is_supported_on_chain =
         on_chain_foreign_chains_support.contains(&requested_chain);
 

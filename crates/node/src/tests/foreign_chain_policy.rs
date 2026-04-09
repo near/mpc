@@ -4,7 +4,9 @@ use crate::tracking::AutoAbortTask;
 use mpc_node_config::{
     AuthConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
 };
+use near_mpc_contract_interface::types::ForeignChain;
 use near_time::Clock;
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 #[tokio::test]
@@ -50,7 +52,7 @@ async fn supported_foreign_chains_auto_vote_on_startup__should_apply_local_polic
         config.config.foreign_chains = foreign_chains.clone();
     }
 
-    let expected_supported_chains = foreign_chains.supported_chains();
+    let expected_supported_chains = BTreeSet::from([ForeignChain::Solana]).into();
 
     {
         let mut contract = setup.indexer.contract_mut().await;

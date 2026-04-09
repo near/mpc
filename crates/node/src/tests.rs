@@ -23,7 +23,7 @@ use crate::indexer::handler::{
     VerifyForeignTxRequestFromChain,
 };
 use crate::indexer::tx_sender::TransactionSender;
-use crate::indexer::types::{ChainRegisterSupportedForeignChains, ChainSendTransactionRequest};
+use crate::indexer::types::{ChainRegisterForeignChainConfiguration, ChainSendTransactionRequest};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
@@ -145,12 +145,12 @@ impl OneNodeTestConfig {
                 .unwrap();
 
                 // Register supported foreign chains (mirrors run.rs behavior)
-                let locally_supported_chains = self.config.foreign_chains.supported_chains();
+                let locally_supported_chains = self.config.foreign_chains.to_dto();
                 self.indexer
                     .txn_sender
                     .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
-                        ChainRegisterSupportedForeignChains {
-                            supported_chains_by_node: locally_supported_chains,
+                        ChainRegisterForeignChainConfiguration {
+                            foreign_chain_configuration: locally_supported_chains,
                         },
                     ))
                     .await?;

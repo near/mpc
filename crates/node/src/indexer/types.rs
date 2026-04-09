@@ -181,8 +181,8 @@ pub struct ChainVoteResharedArgs {
 }
 
 #[derive(Serialize, Debug)]
-pub struct ChainRegisterSupportedForeignChains {
-    pub supported_chains_by_node: dtos::SupportedForeignChains,
+pub struct ChainRegisterForeignChainConfiguration {
+    pub foreign_chain_configuration: dtos::ForeignChainConfiguration,
 }
 
 #[derive(Serialize, Debug)]
@@ -213,7 +213,7 @@ pub enum ChainSendTransactionRequest {
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
-    RegisterSupportedForeignChains(ChainRegisterSupportedForeignChains),
+    RegisterSupportedForeignChains(ChainRegisterForeignChainConfiguration),
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
