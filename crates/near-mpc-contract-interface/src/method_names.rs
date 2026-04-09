@@ -70,6 +70,8 @@ pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
+pub const GET_FOREIGN_CHAIN_POLICY: &str = "get_foreign_chain_policy";
+pub const GET_FOREIGN_CHAIN_POLICY_PROPOSALS: &str = "get_foreign_chain_policy_proposals";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";
 pub const GET_SUPPORTED_FOREIGN_CHAINS_VOTES: &str = "get_supported_foreign_chains_votes";
@@ -81,6 +83,3 @@ pub const CODE_HASH_VOTES: &str = "code_hash_votes";
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
-
-pub const GET_FOREIGN_CHAIN_POLICY: &str = "get_foreign_chain_policy";
-pub const GET_FOREIGN_CHAIN_POLICY_PROPOSALS: &str = "get_foreign_chain_policy_proposals";
