@@ -15,16 +15,17 @@ use threshold_signatures::{
 
 use super::{PreparedPresig, MAX_MALICIOUS};
 
-/// Build presign protocol instances for all participants.
+pub type PresignProtocols = Vec<(
+    Participant,
+    Box<dyn Protocol<Output = eddsa::PresignOutput>>,
+)>;
+
 pub fn ed25519_build_presign_protocols<R: CryptoRngCore + SeedableRng + Send + 'static>(
     participants: &[Participant],
     key_packages: &[(Participant, eddsa::KeygenOutput)],
     threshold: ReconstructionLowerBound,
     rng: &mut R,
-) -> Vec<(
-    Participant,
-    Box<dyn Protocol<Output = eddsa::PresignOutput>>,
-)> {
+) -> PresignProtocols {
     let mut protocols = Vec::with_capacity(participants.len());
     for (p, keygen_out) in key_packages {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
