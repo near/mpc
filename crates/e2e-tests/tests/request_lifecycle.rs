@@ -1,6 +1,7 @@
 mod common;
 
 use near_mpc_contract_interface::types::{DomainPurpose, SignatureResponse, SignatureScheme};
+use rand::SeedableRng;
 
 #[tokio::test]
 async fn test_request_lifecycle() {
@@ -15,11 +16,12 @@ async fn test_request_lifecycle() {
         .collect();
     assert!(!sign_domains.is_empty(), "no Sign domains found");
 
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     // Send a sign request for each Sign domain and verify the signature scheme matches.
     for domain in &sign_domains {
         let payload = match domain.scheme {
-            SignatureScheme::Secp256k1 => common::generate_ecdsa_payload(),
-            SignatureScheme::Ed25519 => common::generate_eddsa_payload(),
+            SignatureScheme::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
+            SignatureScheme::Ed25519 => common::generate_eddsa_payload(&mut rng),
             _ => continue,
         };
 

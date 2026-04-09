@@ -21,6 +21,8 @@ const DUMMY_IMAGE_HASH: &str =
 
 const LISTEN_BLOCKS_FILE: &str = "listen_blocks";
 
+const TEMP_KEYS_FILE: &str = "temporary_keys";
+
 /// Handle to a running `mpc-node` OS process. Always represents a live process.
 /// Obtained by calling [`MpcNodeSetup::start()`].
 /// The child process is killed automatically when this value is dropped.
@@ -94,7 +96,7 @@ impl MpcNode {
         domain_id: u64,
         attempt_id: u64,
     ) -> anyhow::Result<()> {
-        let dir = self.setup.home_dir.join("temporary_keys");
+        let dir = self.setup.home_dir.join(TEMP_KEYS_FILE);
         std::fs::create_dir_all(&dir)
             .with_context(|| format!("failed to create {}", dir.display()))?;
         let path = dir.join(format!("started_{epoch_id}_{domain_id}_{attempt_id}"));
@@ -229,10 +231,11 @@ impl MpcNodeSetup {
         &self.home_dir
     }
 
-    /// Reset the node's MPC state while preserving NEAR indexer data.
-    /// Removes keyshares, temporary keys, and RocksDB state, but keeps the
-    /// NEAR chain data (`data/`, `config.json`, `genesis.json`, `node_key.json`)
-    /// so the node can resume syncing quickly after restart.
+    /// Fully reset the node by wiping its home directory.
+    /// SIGKILL can leave NEAR indexer data in a corrupted state that prevents
+    /// restart, so the entire home directory is removed and recreated. The NEAR
+    /// indexer will re-init from genesis_path/boot_nodes in start_config.toml
+    /// and sync from block 0.
     ///
     /// Re-writes secrets.json and start_config.toml from the saved setup.
     pub fn reset_mpc_state(&self) -> anyhow::Result<()> {
@@ -275,7 +278,7 @@ impl MpcNodeSetup {
         }
 
         // Also clean temporary key event state to avoid stale resharing data.
-        let temp_keys = self.home_dir.join("temporary_keys");
+        let temp_keys = self.home_dir.join(TEMP_KEYS_FILE);
         if temp_keys.exists() {
             std::fs::remove_dir_all(&temp_keys)
                 .with_context(|| format!("failed to remove {}", temp_keys.display()))?;

@@ -51,11 +51,10 @@ pub struct MpcClusterConfig {
     pub sandbox_version: String,
     /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.
     pub home_base: Option<PathBuf>,
-    /// Number of nodes to include in the initial participant set.
-    /// Defaults to `num_nodes` (all nodes participate from the start).
-    /// Set lower to start extra nodes that are not yet participants
-    /// (useful for resharing and attestation tests).
-    pub initial_participants: usize,
+    /// Indices (into the node array) of nodes that are initial participants.
+    /// Defaults to all nodes. Set to a subset to start extra non-participant
+    /// nodes (useful for resharing and attestation tests).
+    pub initial_participant_indices: Vec<usize>,
 }
 
 impl MpcClusterConfig {
@@ -92,7 +91,7 @@ impl MpcClusterConfig {
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
             sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
-            initial_participants: 3,
+            initial_participant_indices: (0..3_usize).collect(),
         }
     }
 }
@@ -155,7 +154,7 @@ impl MpcCluster {
             &node_near_keys,
             &node_p2p_keys,
             config.threshold,
-            config.initial_participants,
+            &config.initial_participant_indices,
             &ports,
         )
         .await?;
@@ -175,8 +174,14 @@ impl MpcCluster {
 
         if !config.domains.is_empty() {
             // Only participants can vote to add domains.
-            let participant_keys = &node_near_keys[..config.initial_participants];
-            add_initial_domains(&blockchain, &contract, participant_keys, &config.domains).await?;
+            add_initial_domains(
+                &blockchain,
+                &contract,
+                &node_near_keys,
+                &config.initial_participant_indices,
+                &config.domains,
+            )
+            .await?;
         }
 
         let user_accounts = create_user_accounts(&blockchain, 1).await?;
@@ -252,27 +257,8 @@ impl MpcCluster {
         }
 
         // Wait for all restarted nodes to be healthy.
-        let client = reqwest::Client::new();
         for &idx in indices {
-            let node = match &self.nodes[idx] {
-                MpcNodeState::Running(n) => n,
-                _ => continue,
-            };
-            let url = format!("http://{}/health", node.web_address());
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
-            loop {
-                if let Ok(resp) = client.get(&url).send().await {
-                    if resp.status() == 200 {
-                        tracing::info!(node = idx, "restarted node is healthy");
-                        break;
-                    }
-                }
-                anyhow::ensure!(
-                    tokio::time::Instant::now() < deadline,
-                    "node {idx} health check did not pass after reset"
-                );
-                tokio::time::sleep(POLL_INTERVAL).await;
-            }
+            self.wait_for_node_healthy(idx).await?;
         }
         Ok(())
     }
@@ -292,6 +278,31 @@ impl MpcCluster {
         timeout: Duration,
     ) -> anyhow::Result<()> {
         wait_for_contract_state(&self.contract, timeout, predicate).await
+    }
+
+    /// Wait until the node at `idx` responds with HTTP 200 on its `/health` endpoint.
+    /// Returns an error if the node is not running or does not become healthy within 120 seconds.
+    pub async fn wait_for_node_healthy(&self, idx: usize) -> anyhow::Result<()> {
+        let node = match &self.nodes[idx] {
+            MpcNodeState::Running(n) => n,
+            _ => anyhow::bail!("node {idx} is not running"),
+        };
+        let client = reqwest::Client::new();
+        let url = format!("http://{}/health", node.web_address());
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+        loop {
+            if let Ok(resp) = client.get(&url).send().await {
+                if resp.status() == 200 {
+                    tracing::info!(node = idx, "node is healthy");
+                    return Ok(());
+                }
+            }
+            anyhow::ensure!(
+                tokio::time::Instant::now() < deadline,
+                "node {idx} did not become healthy within 120s"
+            );
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
     }
 
     /// Query all accounts that have TEE attestations stored in the contract.
@@ -709,16 +720,20 @@ async fn init_contract(
     near_keys: &[SigningKey],
     p2p_keys: &[SigningKey],
     threshold: usize,
-    num_nodes: usize,
+    participant_indices: &[usize],
     ports: &E2ePortAllocator,
 ) -> anyhow::Result<()> {
-    let participants = build_participants(num_nodes, p2p_keys, ports);
+    let participants = build_participants(participant_indices, p2p_keys, ports);
     let params = ThresholdParameters {
         threshold: Threshold(threshold as u64),
         participants,
     };
 
-    tracing::info!(threshold, num_nodes, "initializing contract");
+    tracing::info!(
+        threshold,
+        num_participants = participant_indices.len(),
+        "initializing contract"
+    );
     let outcome = contract
         .call(method_names::INIT, json!({ "parameters": params }))
         .await?;
@@ -728,11 +743,11 @@ async fn init_contract(
         outcome.failure_message()
     );
 
-    for (i, (near_key, p2p_key)) in near_keys.iter().zip(p2p_keys.iter()).enumerate() {
+    for &i in participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
-        let client = blockchain.client_for(&account, near_key)?;
+        let client = blockchain.client_for(&account, &near_keys[i])?;
         let pubkey =
-            near_mpc_crypto_types::Ed25519PublicKey::from(p2p_key.verifying_key().to_bytes());
+            near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
         contract
             .call_from(
                 &client,
@@ -757,14 +772,15 @@ async fn add_initial_domains(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
     near_keys: &[SigningKey],
+    participant_indices: &[usize],
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
     tracing::info!(count = domains.len(), "adding domains");
     let args = json!({ "domains": domains });
 
-    for (i, key) in near_keys.iter().enumerate() {
+    for &i in participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
-        let client = blockchain.client_for(&account, key)?;
+        let client = blockchain.client_for(&account, &near_keys[i])?;
         contract
             .call_from(&client, method_names::VOTE_ADD_DOMAINS, args.clone())
             .await
@@ -844,17 +860,17 @@ async fn create_user_accounts(
 }
 
 fn build_participants(
-    num_nodes: usize,
+    indices: &[usize],
     p2p_keys: &[SigningKey],
     ports: &E2ePortAllocator,
 ) -> Participants {
     let mut list = Vec::new();
-    for (i, key) in p2p_keys.iter().enumerate().take(num_nodes) {
+    for (participant_id, &i) in indices.iter().enumerate() {
         let account_id = ContractAccountId(format!("node{i}.{SANDBOX_ROOT_ACCOUNT}"));
-        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&key.verifying_key());
+        let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&p2p_keys[i].verifying_key());
         list.push((
             account_id,
-            ParticipantId(i as u32),
+            ParticipantId(participant_id as u32),
             ParticipantInfo {
                 url: format!("http://127.0.0.1:{}", ports.p2p_port(i)),
                 sign_pk: String::from(&pubkey),
@@ -862,7 +878,7 @@ fn build_participants(
         ));
     }
     Participants {
-        next_id: ParticipantId(num_nodes as u32),
+        next_id: ParticipantId(indices.len() as u32),
         participants: list,
     }
 }

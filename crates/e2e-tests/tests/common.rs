@@ -34,7 +34,7 @@ pub const ROBUST_ECDSA_PORT_SEED: u16 = 7;
 /// // Custom 4-node cluster with 2 initial participants:
 /// setup_cluster(SEED, |c| {
 ///     c.num_nodes = 4;
-///     c.initial_participants = 2;
+///     c.initial_participant_indices = vec![0, 1];
 /// }).await;
 /// ```
 pub async fn setup_cluster(
@@ -53,23 +53,46 @@ pub async fn setup_cluster(
     let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
     configure(&mut config);
 
-    let initial_participants = config.initial_participants;
+    let initial_participant_indices = config.initial_participant_indices.clone();
     let presignatures_to_buffer = config.presignatures_to_buffer;
     let cluster = MpcCluster::start(config)
         .await
         .expect("failed to start cluster");
 
-    let state = cluster
+    cluster
+        .wait_for_state(
+            |s| matches!(s, ProtocolContractState::Running(_)),
+            Duration::from_secs(120),
+        )
+        .await
+        .expect("cluster did not reach Running state");
+    let running = match cluster
         .get_contract_state()
         .await
-        .expect("failed to get contract state");
-    let running = match state {
+        .expect("failed to get contract state")
+    {
         ProtocolContractState::Running(r) => r,
         other => panic!("expected Running state, got: {other:?}"),
     };
 
-    // Only wait for presignatures on initial participant nodes —
-    // non-participant nodes don't generate presignatures.
+    wait_for_presignatures(
+        &cluster,
+        &initial_participant_indices,
+        presignatures_to_buffer,
+    )
+    .await;
+
+    (cluster, running)
+}
+
+/// Wait until the first `participant_count` nodes each have at least
+/// `presignatures_to_buffer` presignatures available.
+/// Non-participant nodes are excluded because they don't generate presignatures.
+pub async fn wait_for_presignatures(
+    cluster: &MpcCluster,
+    participant_indices: &[usize],
+    presignatures_to_buffer: usize,
+) {
     let expected = i64::try_from(presignatures_to_buffer).expect("presignatures exceeds i64::MAX");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
     loop {
@@ -77,7 +100,7 @@ pub async fn setup_cluster(
             .get_metric_all_nodes("mpc_owned_num_presignatures_available")
             .await
             .expect("failed to get metrics");
-        let participant_values: Vec<_> = values.iter().take(initial_participants).collect();
+        let participant_values: Vec<_> = participant_indices.iter().map(|&i| values[i]).collect();
         if participant_values
             .iter()
             .all(|v| v.is_some_and(|v| v >= expected))
@@ -90,8 +113,6 @@ pub async fn setup_cluster(
         );
         tokio::time::sleep(POLL_INTERVAL).await;
     }
-
-    (cluster, running)
 }
 
 pub fn load_contract_wasm() -> Vec<u8> {
@@ -105,22 +126,21 @@ pub fn load_contract_wasm() -> Vec<u8> {
     std::fs::read(&wasm_path).unwrap_or_else(|e| {
         panic!(
             "Failed to read contract WASM at {}: {e}\n\
-             Build it first:\n  \
-             cargo build -p mpc-contract --target=wasm32-unknown-unknown \
-             --profile=release-contract --locked\n  \
-             wasm-opt -Oz <path> -o <path>",
+             Build it first: cargo make build-contract-wasm",
             wasm_path.display()
         )
     })
 }
 
-pub fn generate_ecdsa_payload() -> serde_json::Value {
-    let bytes: [u8; 32] = rand::random();
+pub fn generate_ecdsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
+    let mut bytes = [0u8; 32];
+    rng.fill(&mut bytes);
     json!({ "Ecdsa": hex::encode(bytes) })
 }
 
-pub fn generate_eddsa_payload() -> serde_json::Value {
-    let bytes: [u8; 32] = rand::random();
+pub fn generate_eddsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
+    let mut bytes = [0u8; 32];
+    rng.fill(&mut bytes);
     json!({ "Eddsa": hex::encode(bytes) })
 }
 

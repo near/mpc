@@ -3,7 +3,7 @@ use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
-const DEFAULT_CALL_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -141,7 +141,7 @@ impl DeployedContract {
         self.client
             .call(&self.contract_id, method)
             .args(args)
-            .gas(DEFAULT_CALL_GAS)
+            .gas(MAX_GAS)
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
@@ -157,7 +157,7 @@ impl DeployedContract {
             .inner
             .call(&self.contract_id, method)
             .args(args)
-            .gas(DEFAULT_CALL_GAS)
+            .gas(MAX_GAS)
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}"))

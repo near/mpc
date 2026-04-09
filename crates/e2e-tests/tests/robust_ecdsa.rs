@@ -3,6 +3,7 @@ mod common;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, SignatureResponse, SignatureScheme,
 };
+use rand::SeedableRng;
 
 /// Tests that V2Secp256k1 (robust ECDSA) signing works end-to-end.
 ///
@@ -12,7 +13,7 @@ use near_mpc_contract_interface::types::{
 async fn test_robust_ecdsa() {
     let (cluster, running) = common::setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
         c.num_nodes = 6;
-        c.initial_participants = 6;
+        c.initial_participant_indices = (0..6).collect();
         c.threshold = 5;
         c.domains = vec![DomainConfig {
             id: DomainId(0),
@@ -31,10 +32,11 @@ async fn test_robust_ecdsa() {
         .find(|d| d.scheme == SignatureScheme::V2Secp256k1)
         .expect("no V2Secp256k1 domain found");
 
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for i in 0..3 {
         tracing::info!(i, "sending V2Secp256k1 sign request");
         let outcome = cluster
-            .send_sign_request(v2_domain.id, common::generate_ecdsa_payload())
+            .send_sign_request(v2_domain.id, common::generate_ecdsa_payload(&mut rng))
             .await
             .expect("sign request transaction failed");
 
