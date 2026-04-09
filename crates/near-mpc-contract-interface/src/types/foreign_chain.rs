@@ -1,9 +1,3 @@
-#![expect(
-    deprecated,
-    reason = "Deprecation of foreign TX types. Applied on module level 
-    as the expect doesn't apply on the derivations"
-)]
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use serde::{Deserialize, Serialize};
@@ -599,7 +593,6 @@ pub enum ForeignChain {
     Starknet,
 }
 
-#[deprecated(note = "will be removed in 3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -690,7 +683,6 @@ pub struct RpcProvider {
     pub rpc_url: String,
 }
 
-#[deprecated(note = "will be removed in 3.10.0")]
 #[derive(
     Debug,
     Clone,

@@ -104,7 +104,6 @@ mod test {
 
     use super::*;
 
-    #[expect(deprecated)]
     fn make_policy(chains: Vec<dtos::ForeignChain>) -> dtos::ForeignChainPolicy {
         dtos::ForeignChainPolicy {
             chains: chains
@@ -121,7 +120,6 @@ mod test {
         }
     }
 
-    #[expect(deprecated)]
     #[test]
     fn test_migration_derives_supported_foreign_chains_from_policy() {
         let policy = make_policy(vec![
@@ -141,7 +139,6 @@ mod test {
         assert_eq!(supported.len(), 2);
     }
 
-    #[expect(deprecated)]
     #[test]
     fn test_migration_derives_empty_supported_foreign_chains_from_empty_policy() {
         let policy = dtos::ForeignChainPolicy {
@@ -158,7 +155,6 @@ mod test {
         assert!(supported.is_empty());
     }
 
-    #[expect(deprecated)]
     #[test]
     fn test_migration_supported_foreign_chains_preserves_all_chain_keys() {
         let all_chains = vec![
