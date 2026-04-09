@@ -55,18 +55,22 @@ impl ThresholdParameters {
     /// - threshold must be at least 60% of the number of shares (rounded upwards).
     pub fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
         if k.value() > n_shares {
-            return Err(InvalidThreshold::MaxRequirementFailed
-                .message(format!("cannot exceed {}, found {:?}", n_shares, k)));
+            return Err(InvalidThreshold::MaxRequirementFailed {
+                max: n_shares,
+                found: k.value(),
+            }
+            .into());
         }
         if k.value() < MIN_THRESHOLD_ABSOLUTE {
             return Err(InvalidThreshold::MinAbsRequirementFailed.into());
         }
         let percentage_bound = (3 * n_shares).div_ceil(5); // minimum 60%
         if k.value() < percentage_bound {
-            return Err(InvalidThreshold::MinRelRequirementFailed.message(format!(
-                "require at least {}, found {:?}",
-                percentage_bound, k
-            )));
+            return Err(InvalidThreshold::MinRelRequirementFailed {
+                required: percentage_bound,
+                found: k.value(),
+            }
+            .into());
         }
         Ok(())
     }
