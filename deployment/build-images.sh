@@ -181,18 +181,22 @@ if $USE_PUSH; then
 
     if $USE_NODE; then
         temp_dir=$(mktemp -d)
-        skopeo copy --all --dest-compress docker-daemon:$NODE_IMAGE_NAME:latest dir:$temp_dir
-        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$NODE_IMAGE_NAME:$image_tag
-        node_manifest_digest="sha256:$(sha256sum $temp_dir/manifest.json | cut -d' ' -f1)"
-        rm -rf "$temp_dir"
+        trap 'rm -rf -- "$temp_dir"' EXIT
+        skopeo copy --all --dest-compress "docker-daemon:$NODE_IMAGE_NAME:latest" "dir:$temp_dir"
+        skopeo copy --preserve-digests "dir:$temp_dir" "docker://docker.io/nearone/$NODE_IMAGE_NAME:$image_tag"
+        node_manifest_digest="sha256:$(sha256sum "$temp_dir/manifest.json" | cut -d' ' -f1)"
+        rm -rf -- "$temp_dir"
+        trap - EXIT
     fi
 
     if $USE_NODE_GCP; then
         temp_dir=$(mktemp -d)
-        skopeo copy --all --dest-compress docker-daemon:$NODE_GCP_IMAGE_NAME:latest dir:$temp_dir
-        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$NODE_GCP_IMAGE_NAME:$image_tag
-        node_gcp_manifest_digest="sha256:$(sha256sum $temp_dir/manifest.json | cut -d' ' -f1)"
-        rm -rf "$temp_dir"
+        trap 'rm -rf -- "$temp_dir"' EXIT
+        skopeo copy --all --dest-compress "docker-daemon:$NODE_GCP_IMAGE_NAME:latest" "dir:$temp_dir"
+        skopeo copy --preserve-digests "dir:$temp_dir" "docker://docker.io/nearone/$NODE_GCP_IMAGE_NAME:$image_tag"
+        node_gcp_manifest_digest="sha256:$(sha256sum "$temp_dir/manifest.json" | cut -d' ' -f1)"
+        rm -rf -- "$temp_dir"
+        trap - EXIT
     fi
 
     if $USE_RUST_LAUNCHER; then
