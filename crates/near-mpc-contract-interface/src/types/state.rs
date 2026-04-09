@@ -156,8 +156,6 @@ pub enum SignatureScheme {
     Secp256k1,
     Ed25519,
     Bls12381,
-    /// Robust ECDSA variant.
-    V2Secp256k1,
 }
 
 /// The purpose that a domain serves.

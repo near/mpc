@@ -16,9 +16,7 @@ use crate::{
     },
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
-    providers::{
-        CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
-    },
+    providers::{CKDProvider, EcdsaSignatureProvider, SignatureProvider},
 };
 use mpc_contract::primitives::domain::{Curve, DomainConfig};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
@@ -66,14 +64,6 @@ pub async fn keygen_computation_inner(
                 keyshare.public_key.to_element().to_affine(),
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
-        }
-        Curve::V2Secp256k1 => {
-            let keyshare =
-                RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
-                keyshare.public_key.to_element().to_affine(),
-            )?);
-            (KeyshareData::V2Secp256k1(keyshare), public_key)
         }
         Curve::Edwards25519 => {
             let keyshare =
@@ -232,28 +222,6 @@ async fn resharing_computation_inner(
             )
             .await?;
             KeyshareData::Secp256k1(res)
-        }
-        (
-            near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Curve::V2Secp256k1,
-        ) => {
-            let pk = k256::PublicKey::try_from(&inner_public_key)?;
-            let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
-            let my_share = existing_keyshare
-                .map(|keyshare| match keyshare.data {
-                    KeyshareData::V2Secp256k1(data) => Ok(data.private_share),
-                    _ => Err(anyhow::anyhow!("Expected ecdsa keyshare!")),
-                })
-                .transpose()?;
-            let res = RobustEcdsaSignatureProvider::run_key_resharing_client(
-                args.new_threshold,
-                my_share,
-                public_key,
-                &args.old_participants,
-                channel,
-            )
-            .await?;
-            KeyshareData::V2Secp256k1(res)
         }
         (
             near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),

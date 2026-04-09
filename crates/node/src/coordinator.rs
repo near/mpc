@@ -531,8 +531,7 @@ where
                 );
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
-                let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
-                    HashMap::new();
+                let robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     DomainId,
@@ -554,10 +553,6 @@ where
                         KeyshareData::Bls12381(data) => {
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
                             domain_to_curve.insert(domain_id, Curve::Bls12381);
-                        }
-                        KeyshareData::V2Secp256k1(data) => {
-                            robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::V2Secp256k1);
                         }
                     }
                 }

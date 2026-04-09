@@ -54,7 +54,6 @@ pub enum Curve {
     Secp256k1,
     Edwards25519,
     Bls12381,
-    V2Secp256k1, // Robust ECDSA
 }
 
 impl Default for Curve {
@@ -63,12 +62,62 @@ impl Default for Curve {
     }
 }
 
+/// Provides the elliptic curve associated with a type.
+pub trait GetCurve {
+    fn get_curve(self) -> Curve;
+}
+
+/// Curves supported by the FROST protocol.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrostCurve {
+    Edwards25519,
+    // Secp256k1,
+}
+
+impl GetCurve for FrostCurve {
+    fn get_curve(self) -> Curve {
+        match self {
+            Self::Edwards25519 => Curve::Edwards25519,
+        }
+    }
+}
+
+/// Identifies the threshold signature protocol.
+/// Fixed-curve protocols are unit variants; multi-curve protocols carry
+/// a protocol-specific curve enum.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Protocol {
+    CaitSith,
+    Frost(FrostCurve),
+    Ckd,
+    DamgardEtAl,
+    // RedDSA(RedDSACurve),
+}
+
+impl GetCurve for Protocol {
+    fn get_curve(self) -> Curve {
+        match self {
+            Self::CaitSith => Curve::Secp256k1,
+            Self::Frost(c) => c.get_curve(),
+            Self::Ckd => Curve::Bls12381,
+            Self::DamgardEtAl => Curve::Secp256k1,
+        }
+    }
+}
+
+impl Protocol {
+    pub fn frost() -> Self {
+        Self::Frost(FrostCurve::Edwards25519)
+    }
+}
+
 /// Returns whether the given curve is valid for the given purpose.
 pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool {
     matches!(
         (purpose, curve),
         (DomainPurpose::Sign, Curve::Secp256k1)
-            | (DomainPurpose::Sign, Curve::V2Secp256k1)
             | (DomainPurpose::Sign, Curve::Edwards25519)
             | (DomainPurpose::ForeignTx, Curve::Secp256k1)
             | (DomainPurpose::CKD, Curve::Bls12381)
@@ -97,7 +146,6 @@ enum CurveCompat {
     #[serde(alias = "Edwards25519")]
     Ed25519,
     Bls12381,
-    V2Secp256k1,
 }
 
 impl From<Curve> for CurveCompat {
@@ -106,7 +154,6 @@ impl From<Curve> for CurveCompat {
             Curve::Secp256k1 => Self::Secp256k1,
             Curve::Edwards25519 => Self::Ed25519,
             Curve::Bls12381 => Self::Bls12381,
-            Curve::V2Secp256k1 => Self::V2Secp256k1,
         }
     }
 }
@@ -117,7 +164,6 @@ impl From<CurveCompat> for Curve {
             CurveCompat::Secp256k1 => Self::Secp256k1,
             CurveCompat::Ed25519 => Self::Edwards25519,
             CurveCompat::Bls12381 => Self::Bls12381,
-            CurveCompat::V2Secp256k1 => Self::V2Secp256k1,
         }
     }
 }
@@ -316,7 +362,7 @@ impl AddDomainsVotes {
 pub mod tests {
     use super::{
         is_valid_curve_for_purpose, AddDomainsVotes, Curve, CurveCompat, DomainConfig, DomainId,
-        DomainPurpose, DomainRegistry, Participants,
+        DomainPurpose, DomainRegistry, FrostCurve, GetCurve, Participants, Protocol,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
@@ -325,6 +371,17 @@ pub mod tests {
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
+
+    /// Infers the protocol from a legacy [`Curve`] value.
+    /// Each deployed curve maps to exactly one protocol, so this is unambiguous
+    /// for existing domains.
+    fn protocol_from_legacy_curve(curve: Curve) -> Protocol {
+        match curve {
+            Curve::Secp256k1 => Protocol::CaitSith,
+            Curve::Edwards25519 => Protocol::frost(),
+            Curve::Bls12381 => Protocol::Ckd,
+        }
+    }
 
     #[test]
     fn test_add_domains() {
@@ -352,7 +409,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(3),
-                curve: Curve::V2Secp256k1,
+                curve: Curve::Secp256k1,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -404,7 +461,7 @@ pub mod tests {
             },
             DomainConfig {
                 id: DomainId(4),
-                curve: Curve::V2Secp256k1,
+                curve: Curve::Secp256k1,
                 purpose: DomainPurpose::Sign,
             },
         ];
@@ -522,7 +579,6 @@ pub mod tests {
     #[case("\"Ed25519\"", Curve::Edwards25519, "\"Ed25519\"")]
     #[case("\"Edwards25519\"", Curve::Edwards25519, "\"Ed25519\"")]
     #[case("\"Bls12381\"", Curve::Bls12381, "\"Bls12381\"")]
-    #[case("\"V2Secp256k1\"", Curve::V2Secp256k1, "\"V2Secp256k1\"")]
     fn test_curve_compat_wire_format(
         #[case] input_json: &str,
         #[case] expected_curve: Curve,
@@ -539,7 +595,6 @@ pub mod tests {
     #[rstest]
     #[case(Curve::Secp256k1, DomainPurpose::Sign)]
     #[case(Curve::Edwards25519, DomainPurpose::Sign)]
-    #[case(Curve::V2Secp256k1, DomainPurpose::Sign)]
     #[case(Curve::Bls12381, DomainPurpose::CKD)]
     fn test_infer_purpose_from_curve(#[case] curve: Curve, #[case] expected: DomainPurpose) {
         assert_eq!(infer_purpose_from_curve(curve), expected);
@@ -548,7 +603,6 @@ pub mod tests {
     #[rstest]
     // Valid combinations
     #[case(DomainPurpose::Sign, Curve::Secp256k1, true)]
-    #[case(DomainPurpose::Sign, Curve::V2Secp256k1, true)]
     #[case(DomainPurpose::Sign, Curve::Edwards25519, true)]
     #[case(DomainPurpose::ForeignTx, Curve::Secp256k1, true)]
     #[case(DomainPurpose::CKD, Curve::Bls12381, true)]
@@ -556,7 +610,6 @@ pub mod tests {
     #[case(DomainPurpose::Sign, Curve::Bls12381, false)]
     #[case(DomainPurpose::ForeignTx, Curve::Edwards25519, false)]
     #[case(DomainPurpose::ForeignTx, Curve::Bls12381, false)]
-    #[case(DomainPurpose::ForeignTx, Curve::V2Secp256k1, false)]
     #[case(DomainPurpose::CKD, Curve::Secp256k1, false)]
     fn test_valid_curve_purpose_combinations(
         #[case] purpose: DomainPurpose,
@@ -686,5 +739,32 @@ pub mod tests {
         assert_eq!(remaining.proposal_by_account.len(), 2);
         assert_eq!(remaining.proposal_by_account[&auth_ids[0]], proposal_a);
         assert_eq!(remaining.proposal_by_account[&auth_ids[1]], proposal_b);
+    }
+
+    #[rstest]
+    #[case(Protocol::CaitSith, Curve::Secp256k1)]
+    #[case(Protocol::Frost(FrostCurve::Edwards25519), Curve::Edwards25519)]
+    #[case(Protocol::Ckd, Curve::Bls12381)]
+    #[case(Protocol::DamgardEtAl, Curve::Secp256k1)]
+    fn test_protocol_get_curve(#[case] protocol: Protocol, #[case] expected: Curve) {
+        assert_eq!(protocol.get_curve(), expected);
+    }
+
+    #[test]
+    fn test_frost_curve_get_curve() {
+        assert_eq!(FrostCurve::Edwards25519.get_curve(), Curve::Edwards25519);
+    }
+
+    #[test]
+    fn test_frost_convenience_constructor() {
+        assert_eq!(Protocol::frost(), Protocol::Frost(FrostCurve::Edwards25519));
+    }
+
+    #[rstest]
+    #[case(Curve::Secp256k1, Protocol::CaitSith)]
+    #[case(Curve::Edwards25519, Protocol::Frost(FrostCurve::Edwards25519))]
+    #[case(Curve::Bls12381, Protocol::Ckd)]
+    fn test_protocol_from_legacy_curve(#[case] curve: Curve, #[case] expected: Protocol) {
+        assert_eq!(protocol_from_legacy_curve(curve), expected);
     }
 }

@@ -14,7 +14,7 @@ use crate::sandbox::{
 };
 use anyhow::Result;
 use mpc_contract::{
-    primitives::{domain::Curve, participants::Participants, thresholds::ThresholdParameters},
+    primitives::{domain::Protocol, participants::Participants, thresholds::ThresholdParameters},
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
@@ -33,7 +33,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Protocol::CaitSith], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -149,7 +149,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Protocol::CaitSith], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;

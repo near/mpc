@@ -74,7 +74,7 @@ async fn test_basic_multidomain() {
     tracing::info!("requesting signature");
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -139,7 +139,7 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
@@ -186,7 +186,7 @@ async fn test_basic_multidomain() {
 
     for domain in &domains {
         match domain.curve {
-            Curve::Secp256k1 | Curve::Edwards25519 | Curve::V2Secp256k1 => {
+            Curve::Secp256k1 | Curve::Edwards25519 => {
                 assert!(request_signature_and_await_response(
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),

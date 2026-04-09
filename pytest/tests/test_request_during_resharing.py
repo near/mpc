@@ -17,6 +17,8 @@ Test scenario:
 import pathlib
 import sys
 
+import pytest
+
 from common_lib.contract_state import ProtocolState
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -59,6 +61,10 @@ def test_threshold_from_previous_running_state_is_maintained():
     )
 
 
+# TODO(#2663): re-enable when Protocol::DamgardEtAl is wired into the contract
+@pytest.mark.skip(
+    reason="V2Secp256k1 curve removed; robust ECDSA will use Protocol::DamgardEtAl"
+)
 def test_threshold_from_previous_running_state_is_maintained_robust_ecdsa_only():
     number_of_nodes = 6
     threshold = 5

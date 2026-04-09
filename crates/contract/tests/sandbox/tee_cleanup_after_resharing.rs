@@ -13,7 +13,7 @@ use crate::sandbox::{
 use anyhow::Result;
 use mpc_contract::{
     primitives::{
-        domain::Curve, participants::Participants, test_utils::bogus_ed25519_near_public_key,
+        domain::Protocol, participants::Participants, test_utils::bogus_ed25519_near_public_key,
         thresholds::ThresholdParameters,
     },
     tee::tee_state::NodeId,
@@ -36,7 +36,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Protocol::CaitSith], PARTICIPANT_LEN).await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;

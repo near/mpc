@@ -1,4 +1,4 @@
-use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry};
+use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry, Protocol};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -12,12 +12,7 @@ use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 // Re-export for convenience
 
-const ALL_CURVES: [Curve; 4] = [
-    Curve::Secp256k1,
-    Curve::Edwards25519,
-    Curve::Bls12381,
-    Curve::V2Secp256k1,
-];
+const ALL_CURVES: [Curve; 3] = [Curve::Secp256k1, Curve::Edwards25519, Curve::Bls12381];
 pub const NUM_CURVES: usize = ALL_CURVES.len();
 
 /// Generates a valid DomainRegistry with various curves, with num_domains total.
@@ -153,5 +148,15 @@ pub fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
     match curve {
         Curve::Bls12381 => DomainPurpose::CKD,
         _ => DomainPurpose::Sign,
+    }
+}
+
+/// Infer a default purpose from the protocol.
+pub fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
+    match protocol {
+        Protocol::CaitSith => DomainPurpose::Sign,
+        Protocol::Frost(_) => DomainPurpose::Sign,
+        Protocol::Ckd => DomainPurpose::CKD,
+        Protocol::DamgardEtAl => DomainPurpose::ForeignTx,
     }
 }

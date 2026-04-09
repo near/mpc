@@ -522,7 +522,6 @@ impl IntoInterfaceType<dtos::SignatureScheme> for Curve {
             Curve::Secp256k1 => dtos::SignatureScheme::Secp256k1,
             Curve::Edwards25519 => dtos::SignatureScheme::Ed25519,
             Curve::Bls12381 => dtos::SignatureScheme::Bls12381,
-            Curve::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
         }
     }
 }
