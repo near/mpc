@@ -44,7 +44,7 @@ pub async fn run() -> Result<(), LauncherError> {
         config.launcher_config.mpc_hash_override.as_ref(),
     )?;
 
-    pull_and_verify(&config.launcher_config.image_name, &manifest_digest)?;
+    pull_and_verify(&config.launcher_config.image, &manifest_digest)?;
 
     if args.platform == Platform::Tee {
         emit_image_hash_event(&manifest_digest).await?;
@@ -58,7 +58,7 @@ pub async fn run() -> Result<(), LauncherError> {
     launch_mpc_container(
         args.platform,
         &manifest_digest,
-        &config.launcher_config.image_name,
+        &config.launcher_config.image,
         &config.launcher_config.port_mappings,
     )?;
 
@@ -79,7 +79,7 @@ fn load_config() -> Result<Config, LauncherError> {
             source,
         })?;
 
-    validate_image_name(&config.launcher_config.image_name)?;
+    validate_image_name(&config.launcher_config.image)?;
 
     Ok(config)
 }

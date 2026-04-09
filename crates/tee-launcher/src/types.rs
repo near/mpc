@@ -3,7 +3,6 @@ use std::num::NonZeroU16;
 use launcher_interface::types::DockerSha256Digest;
 
 use clap::{Parser, ValueEnum};
-use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 
 /// CLI arguments parsed from environment variables via clap.
@@ -50,18 +49,9 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
-    /// Docker image tags to search. Set via `image_tags` in TOML, e.g. `image_tags = ["3.7.0"]`.
-    pub image_tags: NonEmptyVec<String>,
-    /// Docker image name. Set via `image_name` in TOML, e.g. `"nearone/mpc-node"`.
-    pub image_name: String,
-    /// Docker registry hostname. Set via `registry` in TOML, e.g. `"registry.hub.docker.com"`.
-    pub registry: String,
-    /// Per-request timeout for registry API calls, in seconds. Set via `rpc_request_timeout_secs`.
-    pub rpc_request_timeout_secs: u64,
-    /// Delay between registry API retries, in seconds. Set via `rpc_request_interval_secs`.
-    pub rpc_request_interval_secs: u64,
-    /// Maximum number of registry API retry attempts. Set via `rpc_max_attempts`.
-    pub rpc_max_attempts: u32,
+    /// Full Docker image reference, including registry if not Docker Hub.
+    /// Examples: `"nearone/mpc-node"` (Docker Hub), `"ghcr.io/nearone/mpc-node"`.
+    pub image: String,
     /// Optional digest override (`sha256:...`) that bypasses the approved list selection.
     /// Must still appear in the approved hashes file if present. Set via `mpc_hash_override`.
     pub mpc_hash_override: Option<DockerSha256Digest>,
@@ -154,13 +144,7 @@ mod tests {
         // given
         let toml_str = r#"
 [launcher_config]
-image_tags = ["tag1"]
-image_name = "nearone/mpc-node"
-registry = "registry.hub.docker.com"
-rpc_request_timeout_secs = 10
-rpc_request_interval_secs = 1
-rpc_max_attempts = 20
-
+image = "nearone/mpc-node"
 port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_node_config]
@@ -173,9 +157,30 @@ some_opaque_field = true
 
         // then
         assert_matches!(result, Ok(config) => {
-            assert_eq!(config.launcher_config.image_name, "nearone/mpc-node");
+            assert_eq!(config.launcher_config.image, "nearone/mpc-node");
             assert_eq!(config.mpc_node_config["home_dir"].as_str(), Some("/data"));
             assert_eq!(config.mpc_node_config["some_opaque_field"].as_bool(), Some(true));
+        });
+    }
+
+    #[test]
+    fn config_deserializes_with_registry_prefix() {
+        // given
+        let toml_str = r#"
+[launcher_config]
+image = "ghcr.io/nearone/mpc-node"
+port_mappings = []
+
+[mpc_node_config]
+home_dir = "/data"
+"#;
+
+        // when
+        let result = toml::from_str::<Config>(toml_str);
+
+        // then
+        assert_matches!(result, Ok(config) => {
+            assert_eq!(config.launcher_config.image, "ghcr.io/nearone/mpc-node");
         });
     }
 
@@ -184,13 +189,7 @@ some_opaque_field = true
         // given
         let toml_str = r#"
 [launcher_config]
-image_tags = ["tag1"]
-image_name = "nearone/mpc-node"
-registry = "registry.hub.docker.com"
-rpc_request_timeout_secs = 10
-rpc_request_interval_secs = 1
-rpc_max_attempts = 20
-
+image = "nearone/mpc-node"
 port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_node_config]
@@ -212,13 +211,7 @@ arbitrary_key = "arbitrary_value"
         // given - mpc_node_config is missing
         let toml_str = r#"
 [launcher_config]
-image_tags = ["tag1"]
-image_name = "nearone/mpc-node"
-registry = "registry.hub.docker.com"
-rpc_request_timeout_secs = 10
-rpc_request_interval_secs = 1
-rpc_max_attempts = 20
-
+image = "nearone/mpc-node"
 port_mappings = []
 "#;
 
