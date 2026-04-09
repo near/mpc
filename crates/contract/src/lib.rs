@@ -1204,6 +1204,7 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
+        // TODO(#2769): clean up supported foreign chain votes from non participants
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
