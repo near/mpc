@@ -1,5 +1,6 @@
 ---
 source: crates/contract/tests/abi.rs
+assertion_line: 47
 expression: abi
 ---
 {
@@ -1913,7 +1914,7 @@ expression: abi
           "pattern": "^[0-9a-fA-F]+$"
         },
         "DomainConfig": {
-          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nJSON deserialization accepts both `\"scheme\"` (legacy) and `\"curve\"` (new) field names. Serialization outputs `\"scheme\"` for backward compatibility with the current contract. After 3.8 is released the compat struct should be removed.",
+          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.",
           "type": "object",
           "required": [
             "curve",
