@@ -95,8 +95,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         }
         Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
             tracing::error!(
-                "TEE attestation failed: {e:#}. \
-                 Node will continue without attestation and retry periodically.",
+                error = ?e,
+                "TEE attestation failed. Node will continue without attestation and retry periodically",
             );
             None
         }
