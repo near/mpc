@@ -153,9 +153,19 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     loop {
         interval_ticker.tick().await;
 
-        let fresh_attestation = tee_authority
+        let fresh_attestation = match tee_authority
             .generate_attestation(report_data.clone())
-            .await?;
+            .await
+        {
+            Ok(att) => att,
+            Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+                tracing::warn!(error = ?e, "TEE attestation failed, will retry next interval");
+                continue;
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
+            }
+        };
         let allowed_image_hashes_in_contract = allowed_image_hashes_in_contract.borrow().clone();
         let allowed_launcher_compose_hashes_in_contract =
             allowed_launcher_compose_hashes_in_contract.borrow().clone();
@@ -230,9 +240,25 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 "TEE attestation removed from contract, resubmitting"
             );
 
-            let fresh_attestation = tee_authority
+            let fresh_attestation = match tee_authority
                 .generate_attestation(report_data.clone())
-                .await?;
+                .await
+            {
+                Ok(att) => att,
+                Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+                    tracing::warn!(
+                        error = ?e,
+                        "TEE attestation failed, periodic attestation task will retry",
+                    );
+                    was_available = is_available;
+                    continue;
+                }
+                Err(e) => {
+                    return Err(
+                        anyhow::anyhow!(e).context("TEE attestation failed, cannot continue")
+                    );
+                }
+            };
             let allowed_image_hashes_in_contract =
                 allowed_image_hashes_in_contract.borrow().clone();
             let allowed_launcher_compose_hashes_in_contract =
