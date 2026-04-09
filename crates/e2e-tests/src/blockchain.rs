@@ -54,6 +54,32 @@ impl NearBlockchain {
         Ok(())
     }
 
+    /// Create an account with two full-access keys in a single transaction.
+    /// Used for node accounts that need a separate voting key so that test votes
+    /// never disturb the MPC node's own nonce sequence.
+    pub async fn create_account_with_extra_key(
+        &self,
+        name: &str,
+        balance_near: u128,
+        primary_key: &SigningKey,
+        extra_key: &SigningKey,
+    ) -> anyhow::Result<()> {
+        self.root_client
+            .transaction(name)
+            .create_account()
+            .transfer(near_kit::NearToken::from_near(balance_near))
+            .add_full_access_key(near_kit::PublicKey::Ed25519(
+                primary_key.verifying_key().to_bytes(),
+            ))
+            .add_full_access_key(near_kit::PublicKey::Ed25519(
+                extra_key.verifying_key().to_bytes(),
+            ))
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to create account {name}: {e}"))?;
+        Ok(())
+    }
+
     pub async fn create_account_and_deploy(
         &self,
         name: &str,
@@ -86,32 +112,6 @@ impl NearBlockchain {
 
     pub fn rpc_url(&self) -> &str {
         &self.rpc_url
-    }
-
-    /// Create a client that fetches a fresh nonce from the blockchain,
-    /// bypassing the global nonce cache. Used when MPC node processes have
-    /// been sending transactions from the same account, making the cached
-    /// nonce stale.
-    ///
-    /// Works by appending a unique fragment to the RPC URL — the nonce cache
-    /// is keyed by `(url, account, pubkey)`, so a different URL forces a
-    /// fresh fetch. The `#` fragment is not sent to the server.
-    pub fn client_for_voting(
-        &self,
-        account_id: &str,
-        key: &SigningKey,
-    ) -> anyhow::Result<ClientHandle> {
-        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let url = format!("{}#vote-{id}", self.rpc_url);
-        let sk = near_kit::SecretKey::Ed25519(key.to_bytes());
-        let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)
-            .map_err(|e| anyhow::anyhow!("failed to create voting signer for {account_id}: {e}"))?;
-        let client = near_kit::Near::custom(&url)
-            .signer(signer)
-            .max_nonce_retries(10)
-            .build();
-        Ok(ClientHandle { inner: client })
     }
 
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
