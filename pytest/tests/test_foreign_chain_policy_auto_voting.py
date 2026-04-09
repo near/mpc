@@ -35,6 +35,14 @@ FOREIGN_CHAINS_CONFIG = {
     }
 }
 
+FOREIGN_CHAINS_CONFIG_DTO = {
+    "Solana": [
+        {
+            "rpc_url": "https://rpc.public.example.com",
+        }
+    ],
+}
+
 
 @pytest.fixture(scope="module")
 def foreign_chain_registration_cluster():
@@ -87,7 +95,9 @@ def test_supported_foreign_chains_requires_all_participants(
     cluster.call_contract_function_with_account_assert_success(
         mpc_nodes[2],
         "register_foreign_chain_config",
-        {"supported_chains_by_node": ["Solana"]},
+        {
+            "foreign_chain_configuration": FOREIGN_CHAINS_CONFIG_DTO,
+        },
     )
 
     def solana_supported() -> bool:
