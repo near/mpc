@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -13,12 +11,14 @@ use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
-
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
+#[allow(dead_code)]
 pub const KEY_RESHARING_PORT_SEED: u16 = 3;
+#[allow(dead_code)]
 pub const REQUEST_DURING_RESHARING_PORT_SEED: u16 = 4;
 pub const SUBMIT_PARTICIPANT_INFO_PORT_SEED: u16 = 5;
+#[allow(dead_code)]
 pub const CANCELLATION_OF_RESHARING_PORT_SEED: u16 = 6;
 pub const ROBUST_ECDSA_PORT_SEED: u16 = 7;
 

@@ -3,6 +3,7 @@ name = "e2e-tests"
 edition = { workspace = true }
 version = { workspace = true }
 license = { workspace = true }
+autotests = false
 
 [dependencies]
 anyhow = { workspace = true }
@@ -31,6 +32,10 @@ tracing = { workspace = true }
 blstrs = { workspace = true }
 group = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[[test]]
+name = "e2e"
+path = "tests/e2e.rs"
 
 [lints]
 workspace = true

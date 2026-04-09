@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, SignatureResponse, SignatureScheme,
