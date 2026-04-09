@@ -14,7 +14,7 @@ use serde_json::json;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
-pub const REQUEST_LIFECYCLE_PORT_SEED: u16 = 1;
+pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
 pub const KEY_RESHARING_PORT_SEED: u16 = 3;
 pub const REQUEST_DURING_RESHARING_PORT_SEED: u16 = 4;
