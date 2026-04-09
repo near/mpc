@@ -341,7 +341,6 @@ def foreign_tx_validation_cluster():
 
     def supported_chains_registered() -> bool:
         chains = cluster.view_contract_function("get_supported_foreign_chains")
-        print("supported chains observed on contract", chains)
         return sorted(chains) == sorted(expected_chains)
 
     utils.wait_until(
