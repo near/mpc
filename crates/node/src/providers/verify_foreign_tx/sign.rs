@@ -299,10 +299,12 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-enum ValidateForeignChainPolicyError {
+enum ForeignChainSupportError {
     #[error("failed to fetch on-chain foreign chain policy")]
     FetchOnChainPolicy(#[source] anyhow::Error),
-    #[error("requested chain {requested:?} is not present in the list of supported foreign chains")]
+    #[error(
+        "requested chain {requested:?} is not present in the list of supported foreign chains"
+    )]
     ChainNotSupported { requested: dtos::ForeignChain },
 }
 
@@ -310,11 +312,11 @@ async fn chain_is_supported(
     local_foreign_chains_config: &ForeignChainsConfig,
     policy_reader: &impl ReadForeignChainPolicy,
     request: &dtos::ForeignChainRpcRequest,
-) -> Result<(), ValidateForeignChainPolicyError> {
+) -> Result<(), ForeignChainSupportError> {
     let on_chain_foreign_chains_support = policy_reader
         .get_supported_chains()
         .await
-        .map_err(ValidateForeignChainPolicyError::FetchOnChainPolicy)?;
+        .map_err(ForeignChainSupportError::FetchOnChainPolicy)?;
 
     let requested_chain = request.chain();
 
@@ -330,7 +332,7 @@ async fn chain_is_supported(
     if foreign_chain_is_supported {
         Ok(())
     } else {
-        Err(ValidateForeignChainPolicyError::ChainNotSupported {
+        Err(ForeignChainSupportError::ChainNotSupported {
             requested: requested_chain,
         })
     }
@@ -495,7 +497,7 @@ mod tests {
         let result = chain_is_supported(&config, &reader, &ethereum_request).await;
         assert_matches!(
             result,
-            Err(ValidateForeignChainPolicyError::ChainNotSupported { .. })
+            Err(ForeignChainSupportError::ChainNotSupported { .. })
         );
     }
 }
