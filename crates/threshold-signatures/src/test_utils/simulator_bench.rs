@@ -282,34 +282,13 @@ impl BenchConfig {
     }
 }
 
+// Field order matters: derived Ord compares fields top-to-bottom.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct PendingMessage {
     arrival_time: u64,
     from: Participant,
     to: Participant,
     data: Vec<u8>,
-}
-
-impl PartialEq for PendingMessage {
-    fn eq(&self, other: &Self) -> bool {
-        self.arrival_time == other.arrival_time && self.from == other.from && self.to == other.to
-    }
-}
-
-impl Eq for PendingMessage {}
-
-impl PartialOrd for PendingMessage {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for PendingMessage {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.arrival_time
-            .cmp(&other.arrival_time)
-            .then_with(|| self.from.cmp(&other.from))
-            .then_with(|| self.to.cmp(&other.to))
-    }
 }
 
 struct ParticipantState {
