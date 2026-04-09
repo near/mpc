@@ -6,14 +6,15 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 use near_mpc_contract_interface::types::Bls12381G1PublicKey;
-// TODO(#1057): all these types should come from mpc_contract
 
+// TODO(#1057): all these types should come from mpc_contract
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum Payload {
     Ecdsa(String),
     Eddsa(String),
 }
+
 #[derive(Serialize)]
 pub struct SignRequest {
     pub path: String,

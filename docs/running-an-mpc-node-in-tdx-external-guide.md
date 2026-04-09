@@ -99,8 +99,12 @@ The instructions are based on the [dstack deployment guide](https://github.com/D
 
 ```bash
 sudo apt update
-sudo apt install build-essential qemu-system docker.io
+sudo apt install build-essential qemu-system-x86=1:8.2.2* docker.io
 ```
+
+> **Note:** The QEMU version is pinned to **8.2.2** because TDX attestation measurements
+> (MRTD/RTMR0) depend on the QEMU version. Using a different version will produce different
+> measurements and attestation might fail.
 
 * Create `mpc` user and installation folder
 
@@ -426,11 +430,23 @@ docker build . -t dstack-mr
 
 Run:
 
+> **Important:** MRTD and RTMR0 depend on the QEMU version installed on the TDX host.
+> The `dstack-mr` tool must be told this version via `--qemu-version`, otherwise it
+> produces incorrect MRTD/RTMR0 values.
+>
+> The MPC contract is tested and verified with **QEMU 8.2.2**.
+> Verify your version:
+> ```bash
+> qemu-system-x86_64 --version
+> # Expected: QEMU emulator version 8.2.2
+> ```
+> If your version is not **8.2.2**, attestation might fail.
+
 ```bash
 docker run --rm \
   -v "$(pwd)":/dstack-0.5.8 \
   dstack-mr \
-  measure -c 8 -m 64G /dstack-0.5.8/metadata.json
+  measure -c 8 -m 64G --qemu-version 8.2.2 /dstack-0.5.8/metadata.json
 ```
 
 Example output:

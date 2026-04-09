@@ -565,7 +565,7 @@ mod tests {
     use near_time::{Duration, FakeClock};
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
 
     /// Generates a ckd request for testing, brute-forcing the ckd ID until the leader
     /// selection order starts with the given.
@@ -678,8 +678,7 @@ mod tests {
     #[test_log::test]
     fn test_pending_ckd_requests_leader_retry() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -776,8 +775,7 @@ mod tests {
     #[test_log::test]
     fn test_pending_signature_requests_leader_retry() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -875,8 +873,7 @@ mod tests {
     #[test_log::test]
     fn test_pending_ckd_requests_abort_after_maximum_attempts() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -912,8 +909,7 @@ mod tests {
     #[test_log::test]
     fn test_pending_signature_requests_abort_after_maximum_attempts() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -950,8 +946,7 @@ mod tests {
     #[test_log::test]
     fn test_pending_ckd_requests_discard_old_and_non_canonical_requests() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1029,8 +1024,7 @@ mod tests {
     #[test_log::test]
     fn test_pending_signature_requests_discard_old_and_non_canonical_requests() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1109,8 +1103,7 @@ mod tests {
     #[test_log::test]
     fn test_pending_ckd_requests_fallback_leader() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1191,8 +1184,7 @@ mod tests {
     #[test_log::test]
     fn test_pending_signature_requests_fallback_leader() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1274,8 +1266,7 @@ mod tests {
     #[test_log::test]
     fn test_ckd_request_latency_debug() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1318,8 +1309,7 @@ mod tests {
     #[test_log::test]
     fn test_signature_request_latency_debug() {
         let clock = FakeClock::default();
-        let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
+        let participants = into_participant_ids(&generate_participants(4));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 

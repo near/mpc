@@ -106,8 +106,7 @@ pub async fn run_protocol<T>(
 
             // Batch-send the messages. This is a useful optimization as cait-sith tends to ask us
             // to send many messages at once to the same recipient.
-            // TODO(#21): maybe we can fix the cait-sith protocol to not ask us to send so many
-            // messages in the first place.
+            // TODO(#2752): reduce message count upstream (https://github.com/Near-One/cait-sith/issues/4)
             for (p, messages) in messages_to_send {
                 if messages.is_empty() {
                     continue;
