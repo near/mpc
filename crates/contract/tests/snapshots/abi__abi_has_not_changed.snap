@@ -765,9 +765,9 @@ expression: abi
           "serialization_type": "json",
           "args": [
             {
-              "name": "supported_chains_by_node",
+              "name": "foreign_chain_configuration",
               "type_schema": {
-                "$ref": "#/definitions/SupportedForeignChains"
+                "$ref": "#/definitions/ForeignChainConfiguration"
               }
             }
           ]
@@ -2224,6 +2224,12 @@ expression: abi
             "Starknet"
           ]
         },
+        "ForeignChainConfiguration": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/NonEmptyBTreeSet_RpcProvider"
+          }
+        },
         "ForeignChainPolicy": {
           "deprecated": true,
           "type": "object",
@@ -3429,7 +3435,6 @@ expression: abi
           }
         },
         "RpcProvider": {
-          "deprecated": true,
           "type": "object",
           "required": [
             "rpc_url"
@@ -3826,7 +3831,7 @@ expression: abi
             "supported_chains_by_account": {
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/SupportedForeignChains"
+                "$ref": "#/definitions/ForeignChainConfiguration"
               }
             }
           }

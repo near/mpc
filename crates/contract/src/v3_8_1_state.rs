@@ -7,8 +7,6 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
-use std::collections::BTreeSet;
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, store::LookupMap};
@@ -61,13 +59,12 @@ impl From<MpcContract> for crate::MpcContract {
             .cloned()
             .map(|(account_id, _, _)| account_id.into_dto_type());
 
-        let supported_foreign_chains: BTreeSet<dtos::ForeignChain> =
-            foreign_chain_policy.chains.keys().copied().collect();
+        let current_on_chain_policy = foreign_chain_policy.chains.clone();
 
         for account_id in participant_account_ids {
             foreign_chain_support
                 .votes_per_chain
-                .insert(account_id, supported_foreign_chains.clone().into());
+                .insert(account_id, current_on_chain_policy.clone().into());
         }
 
         // Overlay pending votes: if a participant had proposed a different policy,
@@ -75,15 +72,11 @@ impl From<MpcContract> for crate::MpcContract {
         for (voter_account_id, proposed_policy) in
             value.foreign_chain_policy_votes.proposal_by_account.iter()
         {
-            let voter_proposed_chains: BTreeSet<dtos::ForeignChain> =
-                proposed_policy.chains.keys().copied().collect();
             foreign_chain_support
                 .votes_per_chain
                 .entry(voter_account_id.clone())
-                .and_modify(|existing| {
-                    existing.extend(voter_proposed_chains.clone());
-                })
-                .or_insert_with(|| voter_proposed_chains.into());
+                .or_default()
+                .extend(proposed_policy.chains.clone());
         }
         Self {
             protocol_state: value.protocol_state,
@@ -106,7 +99,7 @@ impl From<MpcContract> for crate::MpcContract {
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
 

@@ -1,11 +1,15 @@
 #![allow(non_snake_case)]
 
+use std::collections::BTreeMap;
+
 use crate::sandbox::common::{init_env, SandboxTestSetup};
 use crate::sandbox::utils::consts::{ALL_CURVES, PARTICIPANT_LEN};
 use assert_matches::assert_matches;
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names::{
     REGISTER_FOREIGN_CHAIN_CONFIG, VOTE_FOREIGN_CHAIN_POLICY,
 };
+use near_mpc_contract_interface::types as dtos;
 use serde_json::json;
 
 #[expect(
@@ -209,11 +213,27 @@ async fn register_foreign_chain_config__stores_and_returns_supported_chains() {
     } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     // When: ALL participants register the same supported chains
+    let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
+        (
+            dtos::ForeignChain::Bitcoin,
+            NonEmptyBTreeSet::new(dtos::RpcProvider {
+                rpc_url: "https://btc.example.com".to_string(),
+            }),
+        ),
+        (
+            dtos::ForeignChain::Starknet,
+            NonEmptyBTreeSet::new(dtos::RpcProvider {
+                rpc_url: "https://starknet.example.com".to_string(),
+            }),
+        ),
+    ])
+    .into();
+
     for account in &mpc_signer_accounts {
         let result = account
             .call(contract.id(), REGISTER_FOREIGN_CHAIN_CONFIG)
             .args_json(json!({
-                "supported_chains_by_node": ["Bitcoin", "Starknet"]
+                "foreign_chain_configuration": foreign_chain_configuration
             }))
             .transact()
             .await
@@ -248,10 +268,26 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
     } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     // When: first participant registers Bitcoin + Starknet
+    let bitcoin_and_starknet: dtos::ForeignChainConfiguration = BTreeMap::from([
+        (
+            dtos::ForeignChain::Bitcoin,
+            NonEmptyBTreeSet::new(dtos::RpcProvider {
+                rpc_url: "https://btc.example.com".to_string(),
+            }),
+        ),
+        (
+            dtos::ForeignChain::Starknet,
+            NonEmptyBTreeSet::new(dtos::RpcProvider {
+                rpc_url: "https://starknet.example.com".to_string(),
+            }),
+        ),
+    ])
+    .into();
+
     let result = mpc_signer_accounts[0]
         .call(contract.id(), REGISTER_FOREIGN_CHAIN_CONFIG)
         .args_json(json!({
-            "supported_chains_by_node": ["Bitcoin", "Starknet"]
+            "foreign_chain_configuration": bitcoin_and_starknet
         }))
         .transact()
         .await
@@ -260,11 +296,19 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
     assert_matches!(result, Ok(_));
 
     // And: remaining participants register only Bitcoin
+    let bitcoin_only: dtos::ForeignChainConfiguration = BTreeMap::from([(
+        dtos::ForeignChain::Bitcoin,
+        NonEmptyBTreeSet::new(dtos::RpcProvider {
+            rpc_url: "https://btc.example.com".to_string(),
+        }),
+    )])
+    .into();
+
     for account in &mpc_signer_accounts[1..] {
         let result = account
             .call(contract.id(), REGISTER_FOREIGN_CHAIN_CONFIG)
             .args_json(json!({
-                "supported_chains_by_node": ["Bitcoin"]
+                "foreign_chain_configuration": bitcoin_only
             }))
             .transact()
             .await
@@ -297,10 +341,18 @@ async fn register_foreign_chain_config__returns_empty_when_not_all_registered() 
     } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     // When: only one participant registers
+    let bitcoin_only: dtos::ForeignChainConfiguration = BTreeMap::from([(
+        dtos::ForeignChain::Bitcoin,
+        NonEmptyBTreeSet::new(dtos::RpcProvider {
+            rpc_url: "https://btc.example.com".to_string(),
+        }),
+    )])
+    .into();
+
     let result = mpc_signer_accounts[0]
         .call(contract.id(), REGISTER_FOREIGN_CHAIN_CONFIG)
         .args_json(json!({
-            "supported_chains_by_node": ["Bitcoin"]
+            "foreign_chain_configuration": bitcoin_only
         }))
         .transact()
         .await
