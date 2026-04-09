@@ -302,28 +302,35 @@ where
 enum ValidateForeignChainPolicyError {
     #[error("failed to fetch on-chain foreign chain policy")]
     FetchOnChainPolicy(#[source] anyhow::Error),
-    #[error("requested chain {requested:?} is not present in the on-chain foreign chain policy")]
-    ChainNotInPolicy { requested: dtos::ForeignChain },
+    #[error("requested chain {requested:?} is not present in the list of supported foreign chains")]
+    ChainNotSupported { requested: dtos::ForeignChain },
 }
 
 async fn chain_is_supported(
-    _local_foreign_chains_config: &ForeignChainsConfig,
+    local_foreign_chains_config: &ForeignChainsConfig,
     policy_reader: &impl ReadForeignChainPolicy,
     request: &dtos::ForeignChainRpcRequest,
 ) -> Result<(), ValidateForeignChainPolicyError> {
-    let on_chain_policy = policy_reader
+    let on_chain_foreign_chains_support = policy_reader
         .get_supported_chains()
         .await
         .map_err(ValidateForeignChainPolicyError::FetchOnChainPolicy)?;
 
     let requested_chain = request.chain();
 
-    let foreign_chain_is_supported = on_chain_policy.contains(&requested_chain);
+    let foreign_chain_is_supported_locally = local_foreign_chains_config
+        .supported_chains()
+        .contains(&requested_chain);
+    let foreign_chain_is_supported_on_chain =
+        on_chain_foreign_chains_support.contains(&requested_chain);
+
+    let foreign_chain_is_supported =
+        foreign_chain_is_supported_locally && foreign_chain_is_supported_on_chain;
 
     if foreign_chain_is_supported {
         Ok(())
     } else {
-        Err(ValidateForeignChainPolicyError::ChainNotInPolicy {
+        Err(ValidateForeignChainPolicyError::ChainNotSupported {
             requested: requested_chain,
         })
     }
@@ -488,7 +495,7 @@ mod tests {
         let result = chain_is_supported(&config, &reader, &ethereum_request).await;
         assert_matches!(
             result,
-            Err(ValidateForeignChainPolicyError::ChainNotInPolicy { .. })
+            Err(ValidateForeignChainPolicyError::ChainNotSupported { .. })
         );
     }
 }
