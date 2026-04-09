@@ -29,6 +29,18 @@ ignore = [
   "RUSTSEC-2026-0002", # TODO(#1730): Remove once nearcore updates to a fixed version
   "RUSTSEC-2026-0009", # TODO(#1999): Remove once MSVR is bumped to 1.88
   "RUSTSEC-2023-0089", # atomic-polyfill is unmaintained
+  # TODO(#1730): Remove once nearcore updates to a fixed version
+  "RUSTSEC-2026-0085",
+  "RUSTSEC-2026-0086",
+  "RUSTSEC-2026-0087",
+  "RUSTSEC-2026-0088",
+  "RUSTSEC-2026-0089",
+  "RUSTSEC-2026-0091",
+  "RUSTSEC-2026-0092",
+  "RUSTSEC-2026-0093",
+  "RUSTSEC-2026-0094",
+  "RUSTSEC-2026-0095",
+  "RUSTSEC-2026-0096",
 ]
 
 [bans]
@@ -48,5 +60,5 @@ skip-tree = [
 unknown-git = "deny"
 allow-git = [
   "https://github.com/near/nearcore",
-  "https://github.com/near/reddsa"
+  "https://github.com/near/reddsa",
 ]
