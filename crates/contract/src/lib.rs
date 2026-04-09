@@ -3026,7 +3026,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "not present in the active foreign chain policy")]
+    #[should_panic(expected = "Requested foreign chain, Bitcoin, is not supported.")]
     fn verify_foreign_tx__should_reject_chain_not_in_policy() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
