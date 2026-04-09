@@ -70,6 +70,10 @@ if $USE_NODE || $USE_RUST_LAUNCHER; then
     require_cmds repro-env podman
 fi
 
+if $USE_PUSH; then
+    require_cmds skopeo
+fi
+
 if ! docker buildx &>/dev/null; then
   die "Please install docker-buildx"
 fi
@@ -176,13 +180,19 @@ if $USE_PUSH; then
     fi
 
     if $USE_NODE; then
-        docker tag $NODE_IMAGE_NAME nearone/$NODE_IMAGE_NAME:$image_tag
-        docker push nearone/$NODE_IMAGE_NAME:$image_tag
+        temp_dir=$(mktemp -d)
+        skopeo copy --all --dest-compress docker-daemon:$NODE_IMAGE_NAME:latest dir:$temp_dir
+        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$NODE_IMAGE_NAME:$image_tag
+        node_manifest_digest="sha256:$(sha256sum $temp_dir/manifest.json | cut -d' ' -f1)"
+        rm -rf "$temp_dir"
     fi
 
     if $USE_NODE_GCP; then
-        docker tag $NODE_GCP_IMAGE_NAME nearone/$NODE_GCP_IMAGE_NAME:$image_tag
-        docker push nearone/$NODE_GCP_IMAGE_NAME:$image_tag
+        temp_dir=$(mktemp -d)
+        skopeo copy --all --dest-compress docker-daemon:$NODE_GCP_IMAGE_NAME:latest dir:$temp_dir
+        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$NODE_GCP_IMAGE_NAME:$image_tag
+        node_gcp_manifest_digest="sha256:$(sha256sum $temp_dir/manifest.json | cut -d' ' -f1)"
+        rm -rf "$temp_dir"
     fi
 
     if $USE_RUST_LAUNCHER; then
@@ -200,9 +210,15 @@ if $USE_NODE || $USE_NODE_GCP; then
 fi
 if $USE_NODE; then
     echo "node docker image hash: $node_image_hash"
+    if $USE_PUSH; then
+        echo "node manifest digest: $node_manifest_digest"
+    fi
 fi
 if $USE_NODE_GCP; then
     echo "node gcp docker image hash: $node_gcp_image_hash"
+    if $USE_PUSH; then
+        echo "node gcp manifest digest: $node_gcp_manifest_digest"
+    fi
 fi
 if $USE_LAUNCHER; then
     echo "launcher docker image hash: $launcher_image_hash"
