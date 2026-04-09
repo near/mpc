@@ -243,9 +243,7 @@ near account add-key $FRODO_ACCOUNT grant-function-call-access \
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
   --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
   use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config testnet sign-with-keychain send
-```
 
-```bash
 near account add-key $SAM_ACCOUNT grant-function-call-access \
   --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \
   use-manually-provided-public-key "$SAM_PUBKEY" network-config testnet sign-with-keychain send

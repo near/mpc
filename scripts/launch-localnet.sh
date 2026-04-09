@@ -176,8 +176,8 @@ EOF
     NODE_RESPONDER_KEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_responder_public_keys[0]")
 
     NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names $NODE_METHODS use-manually-provided-public-key $NODE_PUBKEY network-config mpc-localnet sign-with-keychain send" && \
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names $NODE_METHODS use-manually-provided-public-key $NODE_RESPONDER_KEY network-config mpc-localnet sign-with-keychain send" &
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names \"$NODE_METHODS\" use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" && \
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance '1 NEAR' --contract-account-id mpc-contract.test.near --function-names \"$NODE_METHODS\" use-manually-provided-public-key \"$NODE_RESPONDER_KEY\" network-config mpc-localnet sign-with-keychain send" &
     pids_adding_keys+=($!)
   done
 
