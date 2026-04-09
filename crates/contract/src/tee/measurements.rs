@@ -144,12 +144,6 @@ impl AllowedMeasurements {
             .map(ExpectedMeasurements::from)
             .collect()
     }
-
-    /// Creates from a list of entries (for migration).
-    /// TODO(#2757): remove after v3.8 migration is deployed
-    pub fn from_entries(entries: Vec<ContractExpectedMeasurements>) -> Self {
-        Self { entries }
-    }
 }
 
 /// On-chain representation of expected TDX measurements.
