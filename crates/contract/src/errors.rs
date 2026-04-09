@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::primitives::domain::DomainId;
 use crate::primitives::key_state::EpochId;
 use near_account_id::AccountId;
@@ -10,10 +8,10 @@ mod impls;
 pub enum NodeMigrationError {
     #[error("Node dose not have an ongoing recovery")]
     MigrationNotFound,
-    #[error("The transaction was submitted by a different public key than expected.")]
-    AccountPublicKeyMismatch,
-    #[error("The submitted keyset differs from the expected keyset.")]
-    KeysetMismatch,
+    #[error("The transaction was submitted by a different public key than expected. Found: {found}, expected: {expected}")]
+    AccountPublicKeyMismatch { found: String, expected: String },
+    #[error("The submitted keyset differs from the expected keyset. Found: {found}, expected: {expected}")]
+    KeysetMismatch { found: String, expected: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -42,8 +40,11 @@ pub enum SignError {
 pub enum RespondError {
     #[error("The provided signature is invalid.")]
     InvalidSignature,
-    #[error("The provided signature scheme does not match the requestued key's scheme")]
-    SignatureSchemeMismatch,
+    #[error("The provided signature scheme does not match. MPC response: {mpc_scheme}, user request: {user_scheme}")]
+    SignatureSchemeMismatch {
+        mpc_scheme: String,
+        user_scheme: String,
+    },
     #[error("The provided domain was not found.")]
     DomainNotFound,
     #[error("The provided tweak is not on the curve of the public key.")]
@@ -96,10 +97,10 @@ pub enum VoteError {
 pub enum InvalidParameters {
     #[error("Malformed payload.")]
     MalformedPayload,
-    #[error("Attached deposit is lower than required.")]
-    InsufficientDeposit,
-    #[error("Provided gas is lower than required.")]
-    InsufficientGas,
+    #[error("Attached deposit is lower than required. Attached: {attached}, required: {required}")]
+    InsufficientDeposit { attached: u128, required: u128 },
+    #[error("Provided gas is lower than required. Provided: {provided}, required: {required}")]
+    InsufficientGas { provided: String, required: String },
     #[error("This sign request has timed out, was completed, or never existed.")]
     RequestNotFound,
     #[error("Update not found.")]
@@ -119,14 +120,18 @@ pub enum InvalidParameters {
     NextDomainIdMismatch,
     #[error("Invalid domain ID.")]
     InvalidDomainId,
+    #[error("Domain curve {curve:?} is not compatible with this operation")]
+    IncompatibleDomainCurve {
+        curve: crate::primitives::domain::Curve,
+    },
     #[error("Domain {domain_id} has purpose {actual:?}, but this method requires {expected:?}.")]
     WrongDomainPurpose {
         domain_id: DomainId,
         expected: crate::primitives::domain::DomainPurpose,
         actual: crate::primitives::domain::DomainPurpose,
     },
-    #[error("Invalid TEE Remote Attestation.")]
-    InvalidTeeRemoteAttestation,
+    #[error("Invalid TEE Remote Attestation: {reason}")]
+    InvalidTeeRemoteAttestation { reason: String },
     #[error("Invalid app public key.")]
     InvalidAppPublicKey,
     #[error("The provided TLS key is not valid.")]
@@ -147,24 +152,24 @@ pub enum InvalidState {
     ProtocolStateNotInitializing,
     #[error("Protocol state is not running, nor resharing.")]
     ProtocolStateNotRunningNorResharing,
-    #[error("Unexpected protocol state.")]
-    UnexpectedProtocolState,
+    #[error("Unexpected protocol state: {state_name}")]
+    UnexpectedProtocolState { state_name: &'static str },
     #[error("Cannot load in contract due to missing state")]
     ContractStateIsMissing,
     #[error("Participant index out of range")]
     ParticipantIndexOutOfRange,
-    #[error("Not a participant")]
-    NotParticipant,
+    #[error("Not a participant: {account_id}")]
+    NotParticipant { account_id: AccountId },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum InvalidThreshold {
     #[error("Threshold does not meet the minimum absolute requirement")]
     MinAbsRequirementFailed,
-    #[error("Threshold does not meet the minimum relative requirement")]
-    MinRelRequirementFailed,
-    #[error("Threshold must not exceed number of participants")]
-    MaxRequirementFailed,
+    #[error("Threshold does not meet the minimum relative requirement: require at least {required}, found {found}")]
+    MinRelRequirementFailed { required: u64, found: u64 },
+    #[error("Threshold must not exceed number of participants: max {max}, found {found}")]
+    MaxRequirementFailed { max: u64, found: u64 },
     #[error("Key event threshold must match the number of participants")]
     DKGThresholdFailed,
 }
@@ -203,8 +208,8 @@ pub enum InvalidCandidateSet {
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum ConversionError {
-    #[error("Data conversion error.")]
-    DataConversion,
+    #[error("Data conversion error: {reason}")]
+    DataConversion { reason: String },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -271,23 +276,10 @@ pub enum ErrorKind {
     NodeMigrationError(#[from] NodeMigrationError),
 }
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-enum ErrorRepr {
-    #[error("{0}")]
-    Simple(ErrorKind),
-    #[error("{message}")]
-    Message {
-        kind: ErrorKind,
-        message: Cow<'static, str>,
-    },
-}
-
 /// Error type that this contract will make use of for all the errors
 /// returned from this library
 #[derive(Debug, PartialEq, Eq)]
-pub struct Error {
-    repr: ErrorRepr,
-}
+pub struct Error(ErrorKind);
 
 impl near_sdk::FunctionError for Error {
     fn panic(&self) -> ! {

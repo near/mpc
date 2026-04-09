@@ -15,13 +15,10 @@ use crate::sandbox::{
 };
 use assert_matches::assert_matches;
 use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
-use mpc_contract::{
-    errors::InvalidParameters,
-    primitives::{
-        domain::{Curve, DomainConfig, DomainPurpose},
-        test_utils::infer_purpose_from_curve,
-        thresholds::{Threshold, ThresholdParameters},
-    },
+use mpc_contract::primitives::{
+    domain::{Curve, DomainConfig, DomainPurpose},
+    test_utils::infer_purpose_from_curve,
+    thresholds::{Threshold, ThresholdParameters},
 };
 use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
@@ -793,8 +790,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
             .expect_err("calling `vote_new_parameters` must fail when one participant has invalid TEE status.");
 
         let error_message = call_result.to_string();
-        let expected_error_message = InvalidParameters::InvalidTeeRemoteAttestation.to_string();
-        assert!(error_message.contains(&expected_error_message));
+        assert!(error_message.contains("Invalid TEE Remote Attestation"));
     }
 
     let state: ProtocolContractState = get_state(&contract).await;

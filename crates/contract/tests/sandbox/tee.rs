@@ -12,9 +12,8 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use mpc_contract::{
-    errors::InvalidState,
-    primitives::{domain::Curve, participants::Participants, test_utils::bogus_ed25519_public_key},
+use mpc_contract::primitives::{
+    domain::Curve, participants::Participants, test_utils::bogus_ed25519_public_key,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::method_names;
@@ -154,9 +153,8 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
             "vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list"
         );
     };
-    let expected = format!("{:?}", InvalidState::NotParticipant);
     let err_str = format!("{:?}", err);
-    assert!(err_str.contains(&expected));
+    assert!(err_str.contains("NotParticipant"));
     Ok(())
 }
 
