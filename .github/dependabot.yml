@@ -23,8 +23,6 @@ updates:
       - dependency-name: "hyper"
       # TODO(#2051): updating this brings considerable breaking changes
       - dependency-name: "rcgen"
-      # TODO(#2053): upgrading this leads to errors
-      - dependency-name: "reqwest"
       ## Outdated dependencies we cannot upgrade ##
       # Version 0.8.3 requires rustc 1.88
       - dependency-name: "httpmock"

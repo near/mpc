@@ -23,19 +23,11 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
-use near_sdk::NearToken;
-use near_workspaces::{
-    network::Sandbox,
-    operations::TransactionStatus,
-    result::{ExecutionFinalResult, ExecutionSuccess},
-    types::AccessKeyPermission,
-    AccessKey, Contract,
-};
+use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
-use std::{collections::BTreeSet, task::Poll, time::Duration};
-use tokio::time::timeout;
+use std::collections::BTreeSet;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -75,44 +67,13 @@ pub async fn gen_account(worker: &Worker<Sandbox>) -> (Account, AccountId) {
 }
 
 /// Create `amount` accounts and return them along with the candidate info.
-/// This creates accounts async, but as this is not supported by
-/// near_workspaces, hence the way to do so is very low level
 pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Account>, Participants) {
-    let root_account = worker.root_account().unwrap();
     let mut accounts = Vec::with_capacity(amount);
     let mut account_ids = Vec::with_capacity(amount);
-    let mut account_creation_transactions = Vec::with_capacity(amount);
     for _ in 0..amount {
-        let (account_id, sk) = worker.generate_dev_account_credentials();
-        let account_id = format!("{}.{}", account_id, root_account.id())
-            .parse()
-            .unwrap();
-        let transaction = root_account
-            .batch(&account_id)
-            .create_account()
-            .add_key(
-                sk.public_key(),
-                AccessKey {
-                    nonce: 0,
-                    permission: AccessKeyPermission::FullAccess,
-                },
-            )
-            .transfer(NearToken::from_near(100))
-            .transact_async()
-            .await
-            .unwrap();
-        account_creation_transactions.push(transaction);
-        let account = Account::from_secret_key(account_id.clone(), sk, worker);
+        let (account, account_id) = gen_account(worker).await;
         accounts.push(account);
         account_ids.push(account_id);
-    }
-    for transaction in account_creation_transactions {
-        // We had a flaky test here (#1913) before timeout, hopefully 100 seconds is enough
-        let result = wait_for_transaction(Duration::from_secs(100), transaction)
-            .await
-            .unwrap();
-        dbg!(&result);
-        assert!(result.is_success());
     }
     let candidates = candidates(Some(account_ids));
     (accounts, candidates)
@@ -581,38 +542,4 @@ pub async fn generate_participant_and_submit_attestation(
     .expect("Attestation submission for new account must succeed.");
     assert!(result.is_success());
     (new_account, account_id, new_participant)
-}
-
-// This function is needed because in case of timeouts the wait function
-// for transactions fails instead of retrying.
-// See near_workspaces::operations::TransactionStatus in
-// https://github.com/near/near-workspaces-rs/blob/dc729222070b508381b8dc81c027b0c0e6720567/workspaces/src/operations.rs#L494
-pub async fn wait_for_transaction(
-    timeout_s: Duration,
-    transaction: TransactionStatus,
-) -> anyhow::Result<ExecutionFinalResult> {
-    let mut result = None;
-    let loop_future = async {
-        loop {
-            match transaction.status().await {
-                Ok(Poll::Ready(val)) => {
-                    result = Some(Ok(val));
-                    break;
-                }
-                Ok(Poll::Pending) => {}
-                Err(err) => {
-                    result = Some(Err(err));
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(300)).await;
-        }
-    };
-
-    match timeout(timeout_s, loop_future).await {
-        Ok(_) => match result {
-            Some(result) => Ok(result?),
-            None => anyhow::bail!("Transaction timed out without returning an error"),
-        },
-        Err(_) => anyhow::bail!("Loop timed out"),
-    }
 }

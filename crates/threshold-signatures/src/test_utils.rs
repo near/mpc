@@ -16,7 +16,6 @@ mod protocol;
 mod sign;
 pub mod simulator_bench;
 mod snapshot;
-pub mod test_generators;
 
 use crate::crypto::polynomials::Polynomial;
 use crate::errors::ProtocolError;
@@ -50,7 +49,6 @@ pub use simulator_bench::{
     bench_simulation, run_simulation, BenchConfig, LatencyModel, SimulationMetrics,
 };
 pub use snapshot::ProtocolSnapshot;
-pub use test_generators::*;
 
 /// Checks that the list contains all None but one element
 /// and verifies such element belongs to the coordinator
