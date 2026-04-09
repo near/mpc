@@ -12,10 +12,88 @@ use crate::protocol::{Action, Protocol};
 // All participants share a single global timeline starting at t=0.
 // Each participant tracks its position on this timeline via a clock (in ns).
 // The clock advances in two ways:
-//   - Computation: wall-clock time of each poke() call is added.
+//   - Computation: wall-clock time of each productive poke() call is added
+//     (Send/Return actions only, not Wait).
 //   - Waiting: on message receipt, clock = max(clock, arrival_time).
 // Messages are delivered via a priority queue ordered by arrival_time,
 // where arrival_time = sender_clock + latency at the time of sending.
+
+/// Extensible to statistical distributions (normal, log-normal, etc.).
+pub enum LatencyModel {
+    /// Fixed one-way latency in nanoseconds.
+    Fixed(u64),
+}
+
+impl LatencyModel {
+    pub fn sample(&self) -> u64 {
+        match self {
+            Self::Fixed(ns) => *ns,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SimulationMetrics {
+    pub total_bytes_sent: u64,
+    pub total_bytes_received: u64,
+    pub total_messages_sent: u64,
+    pub total_messages_received: u64,
+    pub bytes_sent_per_participant: HashMap<Participant, u64>,
+    pub bytes_received_per_participant: HashMap<Participant, u64>,
+    /// max(all participant clocks) in ns, includes network latency + computation time.
+    pub virtual_time_elapsed: u64,
+}
+
+impl SimulationMetrics {
+    #[allow(clippy::cast_precision_loss)]
+    pub fn virtual_time_ms(&self) -> f64 {
+        self.virtual_time_elapsed as f64 / 1_000_000.0
+    }
+
+    /// Assert that sent counts match between runs. Received counts are not
+    /// checked because protocols using threshold-based echo-broadcast may
+    /// consume a variable number of messages depending on delivery order.
+    pub fn assert_deterministic(&self, other: &Self, label: &str) {
+        assert_eq!(
+            self.total_messages_sent, other.total_messages_sent,
+            "{label}: total_messages_sent changed"
+        );
+        assert_eq!(
+            self.total_bytes_sent, other.total_bytes_sent,
+            "{label}: total_bytes_sent changed"
+        );
+    }
+}
+
+impl std::fmt::Display for SimulationMetrics {
+    #[allow(clippy::cast_precision_loss)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = self.bytes_sent_per_participant.len().max(1) as f64;
+        writeln!(
+            f,
+            "Total messages: {} sent, {} received",
+            self.total_messages_sent, self.total_messages_received
+        )?;
+        writeln!(
+            f,
+            "Avg messages/participant: {:.0} sent, {:.0} received",
+            self.total_messages_sent as f64 / n,
+            self.total_messages_received as f64 / n
+        )?;
+        writeln!(
+            f,
+            "Total bytes: {} sent, {} received",
+            self.total_bytes_sent, self.total_bytes_received
+        )?;
+        writeln!(
+            f,
+            "Avg bytes/participant: {:.0} sent, {:.0} received",
+            self.total_bytes_sent as f64 / n,
+            self.total_bytes_received as f64 / n
+        )?;
+        Ok(())
+    }
+}
 
 pub fn run_simulation<T>(
     mut protocols: Vec<(Participant, impl Protocol<Output = T>)>,
@@ -111,6 +189,134 @@ pub fn run_simulation<T>(
     (outputs, metrics)
 }
 
+#[allow(clippy::cast_precision_loss)]
+pub fn bench_simulation(name: &str, run: &dyn Fn() -> SimulationMetrics, samples: usize) {
+    let bar_width = 20;
+    eprint!("{name}: ");
+    let mut times = Vec::with_capacity(samples);
+    let mut first_metrics: Option<SimulationMetrics> = None;
+    for i in 0..samples {
+        let metrics = run();
+        times.push(metrics.virtual_time_ms());
+        if let Some(first) = &first_metrics {
+            metrics.assert_deterministic(first, name);
+        } else {
+            first_metrics = Some(metrics);
+        }
+        let done = (i + 1) * bar_width / samples;
+        eprint!(
+            "\r{name}: [{}{}] {}/{}",
+            "#".repeat(done),
+            ".".repeat(bar_width - done),
+            i + 1,
+            samples
+        );
+        let _ = std::io::stderr().flush();
+    }
+    eprintln!();
+    let first_metrics = first_metrics.expect("samples > 0");
+
+    let avg = times.iter().sum::<f64>() / samples as f64;
+    let min = times.iter().copied().reduce(f64::min).expect("samples > 0");
+    let max = times.iter().copied().reduce(f64::max).expect("samples > 0");
+
+    println!("=== {name} ===");
+    print!("{first_metrics}");
+    println!("Virtual time: avg {avg:.3} ms, min {min:.3} ms, max {max:.3} ms");
+}
+
+/// - `NUM_PARTICIPANTS` (default: 7)
+/// - `THRESHOLD` (default: n/2 + 1)
+/// - `LATENCY_MS` (default: 50)
+/// - `SAMPLE_SIZE` (default: 15)
+pub struct BenchConfig {
+    pub num_participants: usize,
+    pub threshold: usize,
+    pub latency: LatencyModel,
+    pub samples: usize,
+}
+
+const WARMUP_SECS: u64 = 3;
+
+impl BenchConfig {
+    pub fn from_env() -> Self {
+        let num_participants = env::var("NUM_PARTICIPANTS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7);
+        let threshold = env::var("THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or((num_participants / 2) + 1);
+        let latency_ms: u64 = env::var("LATENCY_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(50);
+        let samples = env::var("SAMPLE_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(15);
+        Self {
+            num_participants,
+            threshold,
+            latency: LatencyModel::Fixed(latency_ms * 1_000_000),
+            samples,
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    pub fn latency_ms(&self) -> f64 {
+        match self.latency {
+            LatencyModel::Fixed(ns) => ns as f64 / 1_000_000.0,
+        }
+    }
+
+    pub fn warmup(&self, run: &dyn Fn()) {
+        let warmup = Duration::from_secs(WARMUP_SECS);
+        eprint!("Warming up for {warmup:?}...");
+        let start = Instant::now();
+        while start.elapsed() < warmup {
+            run();
+        }
+        eprintln!(" done\n");
+    }
+}
+
+struct PendingMessage {
+    arrival_time: u64,
+    from: Participant,
+    to: Participant,
+    data: Vec<u8>,
+}
+
+impl PartialEq for PendingMessage {
+    fn eq(&self, other: &Self) -> bool {
+        self.arrival_time == other.arrival_time && self.from == other.from && self.to == other.to
+    }
+}
+
+impl Eq for PendingMessage {}
+
+impl PartialOrd for PendingMessage {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PendingMessage {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.arrival_time
+            .cmp(&other.arrival_time)
+            .then_with(|| self.from.cmp(&other.from))
+            .then_with(|| self.to.cmp(&other.to))
+    }
+}
+
+struct ParticipantState {
+    clock: u64,
+    finished: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn drain_poke<T>(
     idx: usize,
@@ -135,7 +341,7 @@ fn drain_poke<T>(
         let poke_elapsed_ns = poke_start.elapsed().as_nanos() as u64;
 
         match action {
-            Action::Wait => break, // Don't count idle check time
+            Action::Wait => break,
             Action::SendMany(data) => {
                 states[idx].clock += poke_elapsed_ns;
                 for &recipient in all_participants {
@@ -188,205 +394,3 @@ fn drain_poke<T>(
         }
     }
 }
-
-/// Model for generating per-message network latency.
-/// Extensible to statistical distributions (normal, log-normal, etc.).
-pub enum LatencyModel {
-    /// Fixed one-way latency in nanoseconds.
-    Fixed(u64),
-}
-
-impl LatencyModel {
-    pub fn sample(&self) -> u64 {
-        match self {
-            Self::Fixed(ns) => *ns,
-        }
-    }
-}
-
-struct PendingMessage {
-    arrival_time: u64,
-    from: Participant,
-    to: Participant,
-    data: Vec<u8>,
-}
-
-impl PartialEq for PendingMessage {
-    fn eq(&self, other: &Self) -> bool {
-        self.arrival_time == other.arrival_time && self.from == other.from && self.to == other.to
-    }
-}
-
-impl Eq for PendingMessage {}
-
-impl PartialOrd for PendingMessage {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for PendingMessage {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.arrival_time
-            .cmp(&other.arrival_time)
-            .then_with(|| self.from.cmp(&other.from))
-            .then_with(|| self.to.cmp(&other.to))
-    }
-}
-
-struct ParticipantState {
-    clock: u64,
-    finished: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct SimulationMetrics {
-    pub total_bytes_sent: u64,
-    pub total_bytes_received: u64,
-    pub total_messages_sent: u64,
-    pub total_messages_received: u64,
-    pub bytes_sent_per_participant: HashMap<Participant, u64>,
-    pub bytes_received_per_participant: HashMap<Participant, u64>,
-    /// max(all participant clocks) in ns, includes network latency + computation time.
-    pub virtual_time_elapsed: u64,
-}
-
-impl SimulationMetrics {
-    #[allow(clippy::cast_precision_loss)]
-    pub fn virtual_time_ms(&self) -> f64 {
-        self.virtual_time_elapsed as f64 / 1_000_000.0
-    }
-
-    /// Assert that sent counts match between runs. Received counts are not
-    /// checked because protocols using threshold-based echo-broadcast may
-    /// consume a variable number of messages depending on delivery order.
-    pub fn assert_deterministic(&self, other: &Self, label: &str) {
-        assert_eq!(
-            self.total_messages_sent, other.total_messages_sent,
-            "{label}: total_messages_sent changed"
-        );
-        assert_eq!(
-            self.total_bytes_sent, other.total_bytes_sent,
-            "{label}: total_bytes_sent changed"
-        );
-    }
-}
-
-impl std::fmt::Display for SimulationMetrics {
-    #[allow(clippy::cast_precision_loss)]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let n = self.bytes_sent_per_participant.len().max(1) as f64;
-        writeln!(
-            f,
-            "Total messages: {} sent, {} received",
-            self.total_messages_sent, self.total_messages_received
-        )?;
-        writeln!(
-            f,
-            "Avg messages/participant: {:.0} sent, {:.0} received",
-            self.total_messages_sent as f64 / n,
-            self.total_messages_received as f64 / n
-        )?;
-        writeln!(
-            f,
-            "Total bytes: {} sent, {} received",
-            self.total_bytes_sent, self.total_bytes_received
-        )?;
-        writeln!(
-            f,
-            "Avg bytes/participant: {:.0} sent, {:.0} received",
-            self.total_bytes_sent as f64 / n,
-            self.total_bytes_received as f64 / n
-        )?;
-        Ok(())
-    }
-}
-
-#[allow(clippy::cast_precision_loss)]
-pub fn bench_simulation(name: &str, run: &dyn Fn() -> SimulationMetrics, samples: usize) {
-    let bar_width = 20;
-    eprint!("{name}: ");
-    let mut times = Vec::with_capacity(samples);
-    let mut first_metrics: Option<SimulationMetrics> = None;
-    for i in 0..samples {
-        let metrics = run();
-        times.push(metrics.virtual_time_ms());
-        if let Some(first) = &first_metrics {
-            metrics.assert_deterministic(first, name);
-        } else {
-            first_metrics = Some(metrics);
-        }
-        let done = (i + 1) * bar_width / samples;
-        eprint!(
-            "\r{name}: [{}{}] {}/{}",
-            "#".repeat(done),
-            ".".repeat(bar_width - done),
-            i + 1,
-            samples
-        );
-        let _ = std::io::stderr().flush();
-    }
-    eprintln!();
-    let first_metrics = first_metrics.expect("samples > 0");
-
-    let avg = times.iter().sum::<f64>() / samples as f64;
-    let min = times.iter().copied().reduce(f64::min).expect("samples > 0");
-    let max = times.iter().copied().reduce(f64::max).expect("samples > 0");
-
-    println!("=== {name} ===");
-    print!("{first_metrics}");
-    println!("Virtual time: avg {avg:.3} ms, min {min:.3} ms, max {max:.3} ms");
-}
-
-pub struct BenchConfig {
-    pub num_participants: usize,
-    pub threshold: usize,
-    pub latency: LatencyModel,
-    pub samples: usize,
-}
-
-impl BenchConfig {
-    pub fn from_env() -> Self {
-        let num_participants = env::var("NUM_PARTICIPANTS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(7);
-        let threshold = env::var("THRESHOLD")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or((num_participants / 2) + 1);
-        let latency_ms: u64 = env::var("LATENCY_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(50);
-        let samples = env::var("SAMPLE_SIZE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(15);
-        Self {
-            num_participants,
-            threshold,
-            latency: LatencyModel::Fixed(latency_ms * 1_000_000),
-            samples,
-        }
-    }
-
-    #[allow(clippy::cast_precision_loss)]
-    pub fn latency_ms(&self) -> f64 {
-        match self.latency {
-            LatencyModel::Fixed(ns) => ns as f64 / 1_000_000.0,
-        }
-    }
-
-    pub fn warmup(&self, run: &dyn Fn()) {
-        let warmup = Duration::from_secs(WARMUP_SECS);
-        eprint!("Warming up for {warmup:?}...");
-        let start = Instant::now();
-        while start.elapsed() < warmup {
-            run();
-        }
-        eprintln!(" done\n");
-    }
-}
-
-const WARMUP_SECS: u64 = 3;

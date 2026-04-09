@@ -17,86 +17,6 @@ use threshold_signatures::{
     },
 };
 
-fn run_ckd(
-    participants: &[Participant],
-    key_packages: &[(Participant, ckd::KeygenOutput)],
-    coordinator: Participant,
-    latency: &LatencyModel,
-    rng: &mut MockCryptoRng,
-) -> SimulationMetrics {
-    let mut app_id_bytes: [u8; 32] = [0u8; 32];
-    rng.fill_bytes(&mut app_id_bytes);
-    let app_id = ckd::AppId::try_new(app_id_bytes).expect("cannot fail");
-
-    let scalar_rng = MockCryptoRng::seed_from_u64(rng.next_u64());
-    let app_sk = ckd::Scalar::random(scalar_rng);
-    let app_pk = ckd::ElementG1::generator() * app_sk;
-
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = ckd::CKDOutputOption>>,
-    )> = Vec::with_capacity(participants.len());
-    for (p, keygen_out) in key_packages {
-        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = ckd::protocol::ckd(
-            participants,
-            coordinator,
-            *p,
-            keygen_out.clone(),
-            app_id.clone(),
-            app_pk,
-            rng_p,
-        )
-        .expect("CKD should succeed");
-        protocols.push((*p, Box::new(protocol)));
-    }
-
-    let (results, metrics) = run_simulation(protocols, latency);
-    assert!(results.iter().any(|(_, out)| out.is_some()));
-    metrics
-}
-
-fn run_ckd_pv(
-    participants: &[Participant],
-    key_packages: &[(Participant, ckd::KeygenOutput)],
-    coordinator: Participant,
-    latency: &LatencyModel,
-    rng: &mut MockCryptoRng,
-) -> SimulationMetrics {
-    let mut app_id_bytes: [u8; 32] = [0u8; 32];
-    rng.fill_bytes(&mut app_id_bytes);
-    let app_id = ckd::AppId::try_new(app_id_bytes).expect("cannot fail");
-
-    let scalar_rng = MockCryptoRng::seed_from_u64(rng.next_u64());
-    let app_sk = ckd::Scalar::random(scalar_rng);
-    let app_pk1 = ckd::ElementG1::generator() * app_sk;
-    let app_pk2 = ckd::ElementG2::generator() * app_sk;
-    let app_pk = PublicVerificationKey::new(app_pk1, app_pk2);
-
-    let mut protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = ckd::CKDOutputOption>>,
-    )> = Vec::with_capacity(participants.len());
-    for (p, keygen_out) in key_packages {
-        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = ckd::ckd_pv(
-            participants,
-            coordinator,
-            *p,
-            keygen_out.clone(),
-            app_id.clone(),
-            app_pk.clone(),
-            rng_p,
-        )
-        .expect("CKD-PV should succeed");
-        protocols.push((*p, Box::new(protocol)));
-    }
-
-    let (results, metrics) = run_simulation(protocols, latency);
-    assert!(results.iter().any(|(_, out)| out.is_some()));
-    metrics
-}
-
 fn main() {
     let config = BenchConfig::from_env();
     println!("Protocol simulation: CKD (BLS12-381)");
@@ -159,4 +79,84 @@ fn main() {
         },
         config.samples,
     );
+}
+
+fn run_ckd(
+    participants: &[Participant],
+    key_packages: &[(Participant, ckd::KeygenOutput)],
+    coordinator: Participant,
+    latency: &LatencyModel,
+    rng: &mut MockCryptoRng,
+) -> SimulationMetrics {
+    let (app_id, app_sk) = make_app_params(rng);
+    let app_pk = ckd::ElementG1::generator() * app_sk;
+
+    let mut protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = ckd::CKDOutputOption>>,
+    )> = Vec::with_capacity(participants.len());
+    for (p, keygen_out) in key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = ckd::protocol::ckd(
+            participants,
+            coordinator,
+            *p,
+            keygen_out.clone(),
+            app_id.clone(),
+            app_pk,
+            rng_p,
+        )
+        .expect("CKD should succeed");
+        protocols.push((*p, Box::new(protocol)));
+    }
+
+    let (results, metrics) = run_simulation(protocols, latency);
+    assert!(results.iter().any(|(_, out)| out.is_some()));
+    metrics
+}
+
+fn run_ckd_pv(
+    participants: &[Participant],
+    key_packages: &[(Participant, ckd::KeygenOutput)],
+    coordinator: Participant,
+    latency: &LatencyModel,
+    rng: &mut MockCryptoRng,
+) -> SimulationMetrics {
+    let (app_id, app_sk) = make_app_params(rng);
+    let app_pk = PublicVerificationKey::new(
+        ckd::ElementG1::generator() * app_sk,
+        ckd::ElementG2::generator() * app_sk,
+    );
+
+    let mut protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = ckd::CKDOutputOption>>,
+    )> = Vec::with_capacity(participants.len());
+    for (p, keygen_out) in key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = ckd::ckd_pv(
+            participants,
+            coordinator,
+            *p,
+            keygen_out.clone(),
+            app_id.clone(),
+            app_pk.clone(),
+            rng_p,
+        )
+        .expect("CKD-PV should succeed");
+        protocols.push((*p, Box::new(protocol)));
+    }
+
+    let (results, metrics) = run_simulation(protocols, latency);
+    assert!(results.iter().any(|(_, out)| out.is_some()));
+    metrics
+}
+
+fn make_app_params(rng: &mut MockCryptoRng) -> (ckd::AppId, ckd::Scalar) {
+    let mut app_id_bytes: [u8; 32] = [0u8; 32];
+    rng.fill_bytes(&mut app_id_bytes);
+    let app_id = ckd::AppId::try_new(app_id_bytes).expect("cannot fail");
+    let scalar_rng = MockCryptoRng::seed_from_u64(rng.next_u64());
+    let app_sk = ckd::Scalar::random(scalar_rng);
+    (app_id, app_sk)
 }

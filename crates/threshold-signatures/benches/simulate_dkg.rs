@@ -13,29 +13,6 @@ use threshold_signatures::{
     Ciphersuite, Element, ReconstructionLowerBound, Scalar,
 };
 
-fn run_dkg<C: Ciphersuite>(
-    n: usize,
-    threshold: ReconstructionLowerBound,
-    config: &BenchConfig,
-) -> SimulationMetrics
-where
-    Element<C>: Send,
-    Scalar<C>: Send,
-{
-    let mut rng = MockCryptoRng::seed_from_u64(42);
-    let protocols = prepare_dkg::<C, _>(n, threshold, &mut rng);
-    let (results, metrics) = run_simulation(protocols, &config.latency);
-    assert_eq!(results.len(), n);
-    let first_pk = results[0].1.public_key;
-    for (p, output) in &results {
-        assert_eq!(
-            output.public_key, first_pk,
-            "Participant {p:?} has different public key"
-        );
-    }
-    metrics
-}
-
 fn main() {
     let config = BenchConfig::from_env();
     let threshold = ReconstructionLowerBound::from(config.threshold);
@@ -69,4 +46,27 @@ fn main() {
         &|| run_dkg::<BLS12381SHA256>(n, threshold, &config),
         config.samples,
     );
+}
+
+fn run_dkg<C: Ciphersuite>(
+    n: usize,
+    threshold: ReconstructionLowerBound,
+    config: &BenchConfig,
+) -> SimulationMetrics
+where
+    Element<C>: Send,
+    Scalar<C>: Send,
+{
+    let mut rng = MockCryptoRng::seed_from_u64(42);
+    let protocols = prepare_dkg::<C, _>(n, threshold, &mut rng);
+    let (results, metrics) = run_simulation(protocols, &config.latency);
+    assert_eq!(results.len(), n);
+    let first_pk = results[0].1.public_key;
+    for (p, output) in &results {
+        assert_eq!(
+            output.public_key, first_pk,
+            "Participant {p:?} has different public key"
+        );
+    }
+    metrics
 }

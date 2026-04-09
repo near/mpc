@@ -27,6 +27,172 @@ type TriplePair = (
 );
 type TriplesResult = Vec<(Participant, Vec<TriplePair>)>;
 
+fn main() {
+    let config = BenchConfig::from_env();
+    let threshold = ReconstructionLowerBound::from(config.threshold);
+    let max_malicious = MaxMalicious::from(config.threshold - 1);
+
+    println!("Protocol simulation: ECDSA (Cait-Sith vs DamgardEtAl)");
+    println!(
+        "Participants: {}, threshold: {}, latency: {}ms, samples: {}",
+        config.num_participants,
+        config.threshold,
+        config.latency_ms(),
+        config.samples
+    );
+    println!();
+
+    let mut setup_rng = MockCryptoRng::seed_from_u64(42);
+    let participants =
+        generate_participants_with_random_ids(config.num_participants, &mut setup_rng);
+    let coordinator = participants[0];
+
+    eprint!("Setting up (keygen)...");
+    let key_packages: Vec<(Participant, ecdsa::KeygenOutput)> =
+        run_keygen(&participants, config.threshold, &mut setup_rng);
+    let pk = key_packages[0].1.public_key;
+    eprintln!(" done");
+
+    config.warmup(&|| {
+        let mut rng = MockCryptoRng::seed_from_u64(66);
+        robust_run_presign(
+            &participants,
+            &key_packages,
+            max_malicious,
+            &config.latency,
+            &mut rng,
+        );
+    });
+
+    bench_cait_sith(
+        &participants,
+        &key_packages,
+        threshold,
+        coordinator,
+        pk,
+        &config,
+    );
+    bench_damgard(
+        &participants,
+        &key_packages,
+        max_malicious,
+        coordinator,
+        pk,
+        &config,
+    );
+}
+
+fn bench_cait_sith(
+    participants: &[Participant],
+    key_packages: &[(Participant, ecdsa::KeygenOutput)],
+    threshold: ReconstructionLowerBound,
+    coordinator: Participant,
+    pk: frost_secp256k1::VerifyingKey,
+    config: &BenchConfig,
+) {
+    let mut triple_rng = MockCryptoRng::seed_from_u64(55);
+    let (triples, _) = ot_run_triples(participants, threshold, &config.latency, &mut triple_rng);
+    let mut presign_rng = MockCryptoRng::seed_from_u64(55);
+    let (triples_for_presign, _) =
+        ot_run_triples(participants, threshold, &config.latency, &mut presign_rng);
+    let (presign_outputs, _) = ot_run_presign(
+        participants,
+        &triples_for_presign,
+        key_packages,
+        threshold,
+        &config.latency,
+    );
+
+    bench_simulation(
+        "Cait-Sith: triples",
+        &|| {
+            let mut rng = MockCryptoRng::seed_from_u64(55);
+            ot_run_triples(participants, threshold, &config.latency, &mut rng).1
+        },
+        config.samples,
+    );
+    bench_simulation(
+        "Cait-Sith: presign",
+        &|| {
+            ot_run_presign(
+                participants,
+                &triples,
+                key_packages,
+                threshold,
+                &config.latency,
+            )
+            .1
+        },
+        config.samples,
+    );
+    bench_simulation(
+        "Cait-Sith: sign",
+        &|| {
+            let mut rng = MockCryptoRng::seed_from_u64(77);
+            ot_run_sign(
+                participants,
+                &presign_outputs,
+                threshold,
+                coordinator,
+                pk,
+                &config.latency,
+                &mut rng,
+            )
+        },
+        config.samples,
+    );
+}
+
+fn bench_damgard(
+    participants: &[Participant],
+    key_packages: &[(Participant, ecdsa::KeygenOutput)],
+    max_malicious: MaxMalicious,
+    coordinator: Participant,
+    pk: frost_secp256k1::VerifyingKey,
+    config: &BenchConfig,
+) {
+    let mut presign_rng = MockCryptoRng::seed_from_u64(66);
+    let (presign_outputs, _) = robust_run_presign(
+        participants,
+        key_packages,
+        max_malicious,
+        &config.latency,
+        &mut presign_rng,
+    );
+
+    bench_simulation(
+        "DamgardEtAl: presign",
+        &|| {
+            let mut rng = MockCryptoRng::seed_from_u64(66);
+            robust_run_presign(
+                participants,
+                key_packages,
+                max_malicious,
+                &config.latency,
+                &mut rng,
+            )
+            .1
+        },
+        config.samples,
+    );
+    bench_simulation(
+        "DamgardEtAl: sign",
+        &|| {
+            let mut rng = MockCryptoRng::seed_from_u64(77);
+            robust_run_sign(
+                participants,
+                &presign_outputs,
+                max_malicious,
+                coordinator,
+                pk,
+                &config.latency,
+                &mut rng,
+            )
+        },
+        config.samples,
+    );
+}
+
 fn ot_run_triples(
     participants: &[Participant],
     threshold: ReconstructionLowerBound,
@@ -212,170 +378,4 @@ fn robust_run_sign(
     let (results, metrics) = run_simulation(protocols, latency);
     assert!(results.iter().any(|(_, sig)| sig.is_some()));
     metrics
-}
-
-fn bench_cait_sith(
-    participants: &[Participant],
-    key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    threshold: ReconstructionLowerBound,
-    coordinator: Participant,
-    pk: frost_secp256k1::VerifyingKey,
-    config: &BenchConfig,
-) {
-    let mut triple_rng = MockCryptoRng::seed_from_u64(55);
-    let (triples, _) = ot_run_triples(participants, threshold, &config.latency, &mut triple_rng);
-    let mut presign_rng = MockCryptoRng::seed_from_u64(55);
-    let (triples_for_presign, _) =
-        ot_run_triples(participants, threshold, &config.latency, &mut presign_rng);
-    let (presign_outputs, _) = ot_run_presign(
-        participants,
-        &triples_for_presign,
-        key_packages,
-        threshold,
-        &config.latency,
-    );
-
-    bench_simulation(
-        "Cait-Sith: triples",
-        &|| {
-            let mut rng = MockCryptoRng::seed_from_u64(55);
-            ot_run_triples(participants, threshold, &config.latency, &mut rng).1
-        },
-        config.samples,
-    );
-    bench_simulation(
-        "Cait-Sith: presign",
-        &|| {
-            ot_run_presign(
-                participants,
-                &triples,
-                key_packages,
-                threshold,
-                &config.latency,
-            )
-            .1
-        },
-        config.samples,
-    );
-    bench_simulation(
-        "Cait-Sith: sign",
-        &|| {
-            let mut rng = MockCryptoRng::seed_from_u64(77);
-            ot_run_sign(
-                participants,
-                &presign_outputs,
-                threshold,
-                coordinator,
-                pk,
-                &config.latency,
-                &mut rng,
-            )
-        },
-        config.samples,
-    );
-}
-
-fn bench_damgard(
-    participants: &[Participant],
-    key_packages: &[(Participant, ecdsa::KeygenOutput)],
-    max_malicious: MaxMalicious,
-    coordinator: Participant,
-    pk: frost_secp256k1::VerifyingKey,
-    config: &BenchConfig,
-) {
-    let mut presign_rng = MockCryptoRng::seed_from_u64(66);
-    let (presign_outputs, _) = robust_run_presign(
-        participants,
-        key_packages,
-        max_malicious,
-        &config.latency,
-        &mut presign_rng,
-    );
-
-    bench_simulation(
-        "DamgardEtAl: presign",
-        &|| {
-            let mut rng = MockCryptoRng::seed_from_u64(66);
-            robust_run_presign(
-                participants,
-                key_packages,
-                max_malicious,
-                &config.latency,
-                &mut rng,
-            )
-            .1
-        },
-        config.samples,
-    );
-    bench_simulation(
-        "DamgardEtAl: sign",
-        &|| {
-            let mut rng = MockCryptoRng::seed_from_u64(77);
-            robust_run_sign(
-                participants,
-                &presign_outputs,
-                max_malicious,
-                coordinator,
-                pk,
-                &config.latency,
-                &mut rng,
-            )
-        },
-        config.samples,
-    );
-}
-
-fn main() {
-    let config = BenchConfig::from_env();
-    let threshold = ReconstructionLowerBound::from(config.threshold);
-    let max_malicious = MaxMalicious::from(config.threshold - 1);
-
-    println!("Protocol simulation: ECDSA (Cait-Sith vs DamgardEtAl)");
-    println!(
-        "Participants: {}, threshold: {}, latency: {}ms, samples: {}",
-        config.num_participants,
-        config.threshold,
-        config.latency_ms(),
-        config.samples
-    );
-    println!();
-
-    let mut setup_rng = MockCryptoRng::seed_from_u64(42);
-    let participants =
-        generate_participants_with_random_ids(config.num_participants, &mut setup_rng);
-    let coordinator = participants[0];
-
-    eprint!("Setting up (keygen)...");
-    let key_packages: Vec<(Participant, ecdsa::KeygenOutput)> =
-        run_keygen(&participants, config.threshold, &mut setup_rng);
-    let pk = key_packages[0].1.public_key;
-    eprintln!(" done");
-
-    config.warmup(&|| {
-        let mut rng = MockCryptoRng::seed_from_u64(66);
-        robust_run_presign(
-            &participants,
-            &key_packages,
-            max_malicious,
-            &config.latency,
-            &mut rng,
-        );
-    });
-
-    bench_cait_sith(
-        &participants,
-        &key_packages,
-        threshold,
-        coordinator,
-        pk,
-        &config,
-    );
-    bench_damgard(
-        &participants,
-        &key_packages,
-        max_malicious,
-        coordinator,
-        pk,
-        &config,
-    );
 }
