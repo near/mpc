@@ -600,7 +600,7 @@ impl MpcContract {
         let supported_chains = self.get_supported_foreign_chains();
         if !supported_chains.contains(&requested_chain) {
             env::panic_str(
-                &InvalidParameters::ChainNotInPolicy {
+                &InvalidParameters::ForeignChainNotSupported {
                     requested: requested_chain,
                 }
                 .to_string(),
