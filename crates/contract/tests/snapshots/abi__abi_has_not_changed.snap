@@ -2231,7 +2231,6 @@ expression: abi
           }
         },
         "ForeignChainPolicy": {
-          "deprecated": true,
           "type": "object",
           "required": [
             "chains"
@@ -2246,7 +2245,6 @@ expression: abi
           }
         },
         "ForeignChainPolicyVotes": {
-          "deprecated": true,
           "type": "object",
           "required": [
             "proposal_by_account"
