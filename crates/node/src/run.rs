@@ -112,13 +112,18 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     )
     .into();
 
-    // TODO(#2723): add metrics for attestation generation success/failure
     let attestation = match tee_authority.generate_attestation(report_data).await {
         Ok(att) => {
+            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS])
+                .inc();
             tracing::info!("TEE attestation generated successfully");
             Some(att)
         }
         Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
+                .inc();
             tracing::error!(
                 error = ?e,
                 "TEE attestation failed. Node will continue without attestation and retry periodically",
@@ -126,6 +131,9 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             None
         }
         Err(e) => {
+            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
+                .inc();
             return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
         }
     };
