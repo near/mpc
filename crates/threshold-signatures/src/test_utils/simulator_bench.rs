@@ -134,11 +134,10 @@ fn drain_poke<T>(
         let action = protocols[idx].1.poke().expect("Protocol poke failed");
         let poke_elapsed_ns = poke_start.elapsed().as_nanos() as u64;
 
-        states[idx].clock += poke_elapsed_ns;
-
         match action {
-            Action::Wait => break,
+            Action::Wait => break, // Don't count idle check time
             Action::SendMany(data) => {
+                states[idx].clock += poke_elapsed_ns;
                 for &recipient in all_participants {
                     if recipient == sender {
                         continue;
@@ -161,6 +160,7 @@ fn drain_poke<T>(
                 }
             }
             Action::SendPrivate(recipient, data) => {
+                states[idx].clock += poke_elapsed_ns;
                 if indices.contains_key(&recipient) {
                     let data_len = data.len() as u64;
                     metrics.total_bytes_sent += data_len;
@@ -180,6 +180,7 @@ fn drain_poke<T>(
                 }
             }
             Action::Return(result) => {
+                states[idx].clock += poke_elapsed_ns;
                 states[idx].finished = true;
                 outputs.push((sender, result));
                 break;
