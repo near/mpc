@@ -413,7 +413,4 @@ evm_inspector_tests!(
     foreign_chain_inspector::abstract_chain::inspector::Abstract,
     abstract_chain
 );
-evm_inspector_tests!(
-    foreign_chain_inspector::bnb::inspector::Bnb,
-    bnb
-);
+evm_inspector_tests!(foreign_chain_inspector::bnb::inspector::Bnb, bnb);

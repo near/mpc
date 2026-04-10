@@ -173,9 +173,7 @@ impl<Chain: EvmChain> TryFrom<dtos::EvmExtractedValue> for EvmExtractedValue<Cha
             dtos::EvmExtractedValue::BlockHash(hash) => {
                 Ok(EvmExtractedValue::BlockHash(hash.0.into()))
             }
-            dtos::EvmExtractedValue::Log(log) => {
-                Ok(EvmExtractedValue::Log(evm_log_to_log(log)))
-            }
+            dtos::EvmExtractedValue::Log(log) => Ok(EvmExtractedValue::Log(evm_log_to_log(log))),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "EvmExtractedValue",
             }),

@@ -20,13 +20,7 @@ const GET_BLOCK_BY_FINALITY_METHOD: &str = "eth_getBlockByNumber";
 /// single [`EvmInspector`] implementation.
 pub trait EvmChain {
     type BlockHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
-    type TransactionHash: From<[u8; 32]>
-        + Into<[u8; 32]>
-        + Clone
-        + Debug
-        + PartialEq
-        + Eq
-        + Hash;
+    type TransactionHash: From<[u8; 32]> + Into<[u8; 32]> + Clone + Debug + PartialEq + Eq + Hash;
 }
 
 pub struct EvmInspector<Client, Chain> {
