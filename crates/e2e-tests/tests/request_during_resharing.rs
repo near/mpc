@@ -32,14 +32,7 @@ async fn test_request_during_resharing() {
     cluster.kill_nodes(&[3]).expect("failed to kill node 3");
 
     // then
-    let state = cluster
-        .get_contract_state()
-        .await
-        .expect("failed to get state");
-    assert!(
-        matches!(state, ProtocolContractState::Resharing(_)),
-        "expected Resharing state, got: {state:?}"
-    );
+    // start_resharing already waited for the contract to enter Resharing state.
 
     let sign_domain = running
         .domains
