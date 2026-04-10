@@ -725,7 +725,7 @@ pub struct ForeignChainPolicyVotes {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct SupportedForeignChainsVotes {
+pub struct NodeForeignChainConfigurations {
     pub supported_chains_by_account: BTreeMap<AccountId, ForeignChainConfiguration>,
 }
 

@@ -20,7 +20,7 @@ use crate::{
     state::ProtocolContractState,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
-    Config, ForeignChainPolicyVotes, ForeignChainSupport, IntoInterfaceType, StaleData,
+    Config, ForeignChainPolicyVotes, IntoInterfaceType, NodeForeignChainConfigurations, StaleData,
 };
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -49,7 +49,7 @@ impl From<MpcContract> for crate::MpcContract {
 
         let foreign_chain_policy = value.foreign_chain_policy;
 
-        let mut foreign_chain_support = ForeignChainSupport::default();
+        let mut foreign_chain_support = NodeForeignChainConfigurations::default();
 
         let participant_account_ids = running_state
             .parameters
@@ -63,7 +63,7 @@ impl From<MpcContract> for crate::MpcContract {
 
         for account_id in participant_account_ids {
             foreign_chain_support
-                .votes_per_chain
+                .supported_chains_by_account
                 .insert(account_id, current_on_chain_policy.clone().into());
         }
 
@@ -72,7 +72,7 @@ impl From<MpcContract> for crate::MpcContract {
         for (voter_account_id, proposed_policy) in
             value.foreign_chain_policy_votes.proposal_by_account.iter()
         {
-            foreign_chain_support.votes_per_chain.insert(
+            foreign_chain_support.supported_chains_by_account.insert(
                 voter_account_id.clone(),
                 proposed_policy.chains.clone().into(),
             );
@@ -91,7 +91,7 @@ impl From<MpcContract> for crate::MpcContract {
             node_migrations: value.node_migrations,
             stale_data: value.stale_data,
             metrics: value.metrics,
-            supported_foreign_chains_votes: foreign_chain_support,
+            node_foreign_chain_configurations: foreign_chain_support,
         }
     }
 }

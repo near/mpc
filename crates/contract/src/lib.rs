@@ -136,7 +136,7 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
-    supported_foreign_chains_votes: ForeignChainSupport,
+    node_foreign_chain_configurations: NodeForeignChainConfigurations,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -193,27 +193,27 @@ impl ForeignChainPolicyVotes {
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-struct ForeignChainSupport {
-    votes_per_chain: IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
+struct NodeForeignChainConfigurations {
+    supported_chains_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
 }
 
-impl Default for ForeignChainSupport {
+impl Default for NodeForeignChainConfigurations {
     fn default() -> Self {
         Self {
-            votes_per_chain: IterableMap::new(StorageKey::SupportedForeignChainsVotes),
+            supported_chains_by_account: IterableMap::new(StorageKey::SupportedForeignChainsVotes),
         }
     }
 }
 
-impl ForeignChainSupport {
-    fn to_dto(&self) -> dtos::SupportedForeignChainsVotes {
+impl NodeForeignChainConfigurations {
+    fn to_dto(&self) -> dtos::NodeForeignChainConfigurations {
         let supported_chains_by_account = self
-            .votes_per_chain
+            .supported_chains_by_account
             .iter()
             .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
             .collect();
 
-        dtos::SupportedForeignChainsVotes {
+        dtos::NodeForeignChainConfigurations {
             supported_chains_by_account,
         }
     }
@@ -1045,10 +1045,10 @@ impl MpcContract {
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let voter = dtos::AccountId(voter.get().to_string());
 
-        // Also register the chain keys as supported foreign chains,
+        // Also register the chain keys as configured,
         // so callers of the deprecated API still populate the new data model.
-        self.supported_foreign_chains_votes
-            .votes_per_chain
+        self.node_foreign_chain_configurations
+            .supported_chains_by_account
             .insert(voter.clone(), policy.chains.clone().into());
 
         if self
@@ -1094,8 +1094,8 @@ impl MpcContract {
             AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let account_id = authenticated_voter.get().into_dto_type();
 
-        self.supported_foreign_chains_votes
-            .votes_per_chain
+        self.node_foreign_chain_configurations
+            .supported_chains_by_account
             .insert(account_id, foreign_chain_configuration);
 
         Ok(())
@@ -1738,7 +1738,7 @@ impl MpcContract {
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
             metrics: Default::default(),
-            supported_foreign_chains_votes: Default::default(),
+            node_foreign_chain_configurations: Default::default(),
         })
     }
 
@@ -1803,7 +1803,7 @@ impl MpcContract {
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
             metrics: Default::default(),
-            supported_foreign_chains_votes: Default::default(),
+            node_foreign_chain_configurations: Default::default(),
         })
     }
 
@@ -1918,7 +1918,11 @@ impl MpcContract {
             BTreeSet<dtos::AccountId>,
         > = BTreeMap::new();
 
-        for (account_id, chains) in self.supported_foreign_chains_votes.votes_per_chain.iter() {
+        for (account_id, chains) in self
+            .node_foreign_chain_configurations
+            .supported_chains_by_account
+            .iter()
+        {
             for chain in chains.keys() {
                 foreign_chain_to_node_mapping
                     .entry(chain)
@@ -1944,8 +1948,8 @@ impl MpcContract {
             .into()
     }
 
-    pub fn get_supported_foreign_chains_votes(&self) -> dtos::SupportedForeignChainsVotes {
-        self.supported_foreign_chains_votes.to_dto()
+    pub fn get_foreign_chain_configurations(&self) -> dtos::NodeForeignChainConfigurations {
+        self.node_foreign_chain_configurations.to_dto()
     }
 
     // contract version
@@ -3413,7 +3417,7 @@ mod tests {
                 proposed_updates: Default::default(),
                 foreign_chain_policy: Default::default(),
                 foreign_chain_policy_votes: Default::default(),
-                supported_foreign_chains_votes: Default::default(),
+                node_foreign_chain_configurations: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
@@ -4962,7 +4966,7 @@ mod tests {
             .expect("vote should succeed");
 
         // Then — their supported chains are registered
-        let votes = contract.get_supported_foreign_chains_votes();
+        let votes = contract.get_foreign_chain_configurations();
         let first_voter = dtos::AccountId(first_account.to_string());
         let registered = votes
             .supported_chains_by_account
@@ -5014,7 +5018,7 @@ mod tests {
             .expect("vote should succeed");
 
         // Then — their registered chains are now only Ethereum (overwritten, not merged)
-        let votes = contract.get_supported_foreign_chains_votes();
+        let votes = contract.get_foreign_chain_configurations();
         let first_voter = dtos::AccountId(first_account.to_string());
         let registered = votes
             .supported_chains_by_account
@@ -5831,7 +5835,7 @@ mod tests {
             .expect("register should succeed");
 
         // Then
-        let votes = contract.get_supported_foreign_chains_votes();
+        let votes = contract.get_foreign_chain_configurations();
         assert_eq!(votes.supported_chains_by_account.len(), 1);
         assert_eq!(
             votes
@@ -6042,7 +6046,7 @@ mod tests {
         }
 
         // When
-        let votes = contract.get_supported_foreign_chains_votes();
+        let votes = contract.get_foreign_chain_configurations();
 
         // Then — each participant's individual RPC URLs are preserved
         for (i, (account_id, _, _)) in participants.iter().enumerate() {

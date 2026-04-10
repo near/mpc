@@ -338,7 +338,7 @@ expression: abi
         }
       },
       {
-        "name": "get_supported_foreign_chains_votes",
+        "name": "get_foreign_chain_configurations",
         "kind": "view",
         "result": {
           "serialization_type": "json",
