@@ -8,6 +8,7 @@ use crate::sandbox::utils::{
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
+use k256::ecdsa::SigningKey;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -21,18 +22,22 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{
-    self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
-    BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality, EvmTxId,
-    MockAttestation, StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
-    StarknetRpcRequest, StarknetTxId,
+use near_mpc_contract_interface::{
+    method_names,
+    types::{
+        self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
+        BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality,
+        EvmRpcRequest, EvmTxId, ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation,
+        StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
+        StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
+    },
 };
-use near_mpc_contract_interface::{method_names, types::EvmRpcRequest};
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
+use signature::hazmat::PrehashSigner;
 use std::collections::BTreeSet;
 
 pub async fn create_account_given_id(
@@ -625,12 +630,6 @@ pub fn sign_foreign_tx_response(
     near_mpc_contract_interface::types::ForeignTxSignPayload,
     near_mpc_contract_interface::types::VerifyForeignTransactionResponse,
 ) {
-    use k256::ecdsa::SigningKey;
-    use near_mpc_contract_interface::types::{
-        ForeignTxSignPayload, ForeignTxSignPayloadV1, VerifyForeignTransactionResponse,
-    };
-    use signature::hazmat::PrehashSigner;
-
     let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
         request: request.clone(),
         values: extracted_values,
