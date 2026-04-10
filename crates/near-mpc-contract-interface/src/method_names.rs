@@ -80,3 +80,22 @@ pub const CODE_HASH_VOTES: &str = "code_hash_votes";
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
+
+// Backup service TEE methods
+pub const REGISTER_BACKUP_SERVICE_WITH_ATTESTATION: &str =
+    "register_backup_service_with_attestation";
+pub const VOTE_BACKUP_SERVICE_CODE_HASH: &str = "vote_backup_service_code_hash";
+pub const VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH: &str = "vote_add_backup_service_launcher_hash";
+pub const VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH: &str =
+    "vote_remove_backup_service_launcher_hash";
+pub const VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT: &str = "vote_add_backup_service_os_measurement";
+pub const VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT: &str =
+    "vote_remove_backup_service_os_measurement";
+
+// Backup service TEE view methods
+pub const ALLOWED_BACKUP_SERVICE_CODE_HASHES: &str = "allowed_backup_service_code_hashes";
+pub const ALLOWED_BACKUP_SERVICE_LAUNCHER_COMPOSE_HASHES: &str =
+    "allowed_backup_service_launcher_compose_hashes";
+pub const ALLOWED_BACKUP_SERVICE_OS_MEASUREMENTS: &str = "allowed_backup_service_os_measurements";
+pub const REVERIFY_BACKUP_SERVICES: &str = "reverify_backup_services";
+pub const GET_BACKUP_SERVICE_ATTESTATION: &str = "get_backup_service_attestation";

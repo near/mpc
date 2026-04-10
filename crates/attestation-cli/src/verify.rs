@@ -72,6 +72,7 @@ pub fn verify_at_timestamp(
         &cli.allowed_image_hashes,
         &[allowed_compose_hash],
         &measurements,
+        mpc_attestation::MPC_IMAGE_HASH_EVENT,
     )?;
 
     // Extract results from the verified attestation

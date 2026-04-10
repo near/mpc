@@ -156,6 +156,7 @@ impl TeeState {
         node_id: NodeId,
         attestation: Attestation,
         tee_upgrade_deadline_duration: Duration,
+        image_hash_event_name: &'static str,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         // Convert TLS public key
         let tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey =
@@ -191,6 +192,7 @@ impl TeeState {
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
             &accepted_measurements,
+            image_hash_event_name,
         )?;
 
         let tls_pk = node_id.tls_public_key.clone();
@@ -505,6 +507,8 @@ mod tests {
     use near_sdk::testing_env;
     use std::time::Duration;
 
+    const TEST_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
+
     /// Helper to set up the testing environment with a specific signer
     fn set_signer(account_id: &AccountId, public_key: &near_sdk::PublicKey) {
         let mut builder = VMContextBuilder::new();
@@ -549,6 +553,7 @@ mod tests {
                 node_id.clone(),
                 local_attestation.clone(),
                 TEE_UPGRADE_DURATION,
+                TEST_IMAGE_HASH_EVENT,
             );
 
             assert_matches!(
@@ -560,6 +565,7 @@ mod tests {
             non_participant_uid.clone(),
             local_attestation.clone(),
             TEE_UPGRADE_DURATION,
+            TEST_IMAGE_HASH_EVENT,
         );
         assert_matches!(
             insertion_result,
@@ -611,6 +617,7 @@ mod tests {
             participant_id.clone(),
             local_attestation.clone(),
             TEE_UPGRADE_DURATION,
+            TEST_IMAGE_HASH_EVENT,
         );
         assert_matches!(
             insertion_result,
@@ -622,6 +629,7 @@ mod tests {
             participant_id.clone(),
             local_attestation.clone(),
             TEE_UPGRADE_DURATION,
+            TEST_IMAGE_HASH_EVENT,
         );
 
         // then
@@ -644,7 +652,7 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(node_id, attestation, Duration::from_secs(0))
+            .add_participant(node_id, attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
             .unwrap();
 
         // then
@@ -668,7 +676,7 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
             .unwrap();
 
         // then
@@ -693,7 +701,7 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
             .unwrap();
 
         // then
@@ -731,6 +739,7 @@ mod tests {
                 node_1.clone(),
                 Attestation::Mock(MockAttestation::Valid),
                 Duration::from_secs(0),
+                TEST_IMAGE_HASH_EVENT,
             )
             .unwrap();
         tee_state
@@ -738,6 +747,7 @@ mod tests {
                 node_2.clone(),
                 Attestation::Mock(MockAttestation::Valid),
                 Duration::from_secs(0),
+                TEST_IMAGE_HASH_EVENT,
             )
             .unwrap();
 
@@ -772,7 +782,7 @@ mod tests {
         });
 
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
             .unwrap();
 
         // when
@@ -804,7 +814,7 @@ mod tests {
         });
 
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
             .unwrap();
 
         // when
@@ -843,7 +853,7 @@ mod tests {
         });
 
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
             .unwrap();
 
         // when
@@ -900,6 +910,7 @@ mod tests {
                 node_id,
                 Attestation::Mock(MockAttestation::Valid),
                 tee_upgrade_duration,
+                TEST_IMAGE_HASH_EVENT,
             )
             .expect("Attestation is valid on insertion");
 
@@ -931,6 +942,7 @@ mod tests {
                 node_id,
                 Attestation::Mock(MockAttestation::Valid),
                 tee_upgrade_duration,
+                TEST_IMAGE_HASH_EVENT,
             )
             .expect("Attestation is valid on insertion");
 
@@ -994,6 +1006,7 @@ mod tests {
                 node_id,
                 Attestation::Mock(MockAttestation::Valid),
                 tee_upgrade_duration,
+                TEST_IMAGE_HASH_EVENT,
             )
             .expect("Attestation is valid on insertion");
 
@@ -1030,6 +1043,7 @@ mod tests {
                 node_id,
                 Attestation::Mock(MockAttestation::Valid),
                 tee_upgrade_duration,
+                TEST_IMAGE_HASH_EVENT,
             )
             .expect("Attestation is valid on insertion");
 
@@ -1077,6 +1091,7 @@ mod tests {
                     node_id,
                     Attestation::Mock(MockAttestation::Valid),
                     tee_upgrade_duration,
+                    TEST_IMAGE_HASH_EVENT,
                 )
                 .expect("mock attestation is valid");
         }
@@ -1102,6 +1117,7 @@ mod tests {
                     node_id,
                     Attestation::Mock(MockAttestation::Valid),
                     tee_upgrade_duration,
+                    TEST_IMAGE_HASH_EVENT,
                 )
                 .expect("mock attestation is valid");
         }
@@ -1136,6 +1152,7 @@ mod tests {
                     node_id,
                     Attestation::Mock(MockAttestation::Valid),
                     tee_upgrade_duration,
+                    TEST_IMAGE_HASH_EVENT,
                 )
                 .expect("mock attestation is valid");
         }
@@ -1149,7 +1166,7 @@ mod tests {
             expiry_timestamp_seconds: Some(expiry_time_secs),
         });
         tee_state
-            .add_participant(node_id, expiring_attestation, tee_upgrade_duration)
+            .add_participant(node_id, expiring_attestation, tee_upgrade_duration, TEST_IMAGE_HASH_EVENT)
             .expect("mock attestation is valid");
 
         // Advance time to exact expiry boundary
@@ -1191,7 +1208,7 @@ mod tests {
                 Attestation::Mock(MockAttestation::Valid)
             };
             tee_state
-                .add_participant(node_id, attestation, tee_upgrade_duration)
+                .add_participant(node_id, attestation, tee_upgrade_duration, TEST_IMAGE_HASH_EVENT)
                 .expect("mock attestation is valid");
         }
 
@@ -1223,6 +1240,7 @@ mod tests {
                     node_id,
                     Attestation::Mock(MockAttestation::Valid),
                     tee_upgrade_duration,
+                    TEST_IMAGE_HASH_EVENT,
                 )
                 .expect("mock attestation is valid");
         }
@@ -1234,6 +1252,7 @@ mod tests {
             node_id,
             Attestation::Mock(MockAttestation::Invalid),
             tee_upgrade_duration,
+            TEST_IMAGE_HASH_EVENT,
         );
 
         assert_matches!(

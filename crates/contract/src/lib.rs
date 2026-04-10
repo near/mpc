@@ -864,6 +864,7 @@ impl MpcContract {
                 },
                 proposed_participant_attestation,
                 tee_upgrade_deadline_duration,
+                mpc_attestation::MPC_IMAGE_HASH_EVENT,
             )
             .map_err(|err| {
                 InvalidParameters::InvalidTeeRemoteAttestation
@@ -3727,6 +3728,7 @@ mod tests {
                 },
                 valid_participant_attestation,
                 tee_upgrade_duration,
+                mpc_attestation::MPC_IMAGE_HASH_EVENT,
             );
             assert_matches::assert_matches!(
                 insertion_result,
@@ -4390,7 +4392,7 @@ mod tests {
         });
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION, mpc_attestation::MPC_IMAGE_HASH_EVENT)
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison
