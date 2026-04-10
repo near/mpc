@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::common::{
-    abstract_evm_request, bitcoin_extracted_values, bitcoin_request, ethereum_evm_request,
+    abstract_evm_request, await_pending_foreign_tx_request_observed_on_contract,
+    bitcoin_extracted_values, bitcoin_request, ethereum_evm_request,
     evm_block_hash_extracted_values, setup_foreign_tx_env, sign_foreign_tx_response,
     starknet_extracted_values, starknet_request, vote_chain_policy,
 };
@@ -13,7 +14,6 @@ use near_mpc_contract_interface::types::{
 use near_workspaces::types::NearToken;
 use rstest::rstest;
 use serde_json::json;
-use std::time::Duration;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 
@@ -48,13 +48,13 @@ async fn verify_foreign_transaction__should_succeed(
         .await
         .unwrap();
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
     let verify_request = VerifyForeignTransactionRequest {
         domain_id: dtos::DomainId(env.domain_id.0),
         payload_version: ForeignTxPayloadVersion::V1,
         request: rpc_request,
     };
+
+    await_pending_foreign_tx_request_observed_on_contract(&env.contract, &verify_request).await;
 
     let (payload, response) =
         sign_foreign_tx_response(&verify_request.request, extracted_values, &env.secret_key);
