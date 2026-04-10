@@ -32,6 +32,7 @@ tracing = { workspace = true }
 [dev-dependencies]
 blstrs = { workspace = true }
 group = { workspace = true }
+test-utils = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [[test]]

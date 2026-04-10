@@ -3013,6 +3013,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-utils",
  "tokio",
  "toml 1.1.1+spec-1.1.0",
  "tracing",

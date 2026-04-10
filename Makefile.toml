@@ -138,13 +138,5 @@ description = "Check that sandbox Docker image version matches nearcore"
 command = "bash"
 args = ["scripts/check-sandbox-image-version.sh"]
 
-[tasks.build-contract-wasm]
-description = "Build and optimize MPC contract WASM for E2E tests"
-script = '''
-cargo near build non-reproducible-wasm --no-wasmopt --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked
-wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
-  -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-'''
-
 [config]
 default_to_workspace = false

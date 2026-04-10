@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use blstrs::{G1Projective, Scalar};
-use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig};
+use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
     CKDAppPublicKey, ProtocolContractState, RunningContractState,
@@ -53,26 +53,21 @@ pub async fn setup_cluster(
     let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
     configure(&mut config);
 
-    let initial_participant_indices = config.initial_participant_indices.clone();
+    let initial_participant_indices = config.participant_indices();
     let presignatures_to_buffer = config.presignatures_to_buffer;
     let cluster = MpcCluster::start(config)
         .await
         .expect("failed to start cluster");
 
-    cluster
+    let protocol_state = cluster
         .wait_for_state(
             |s| matches!(s, ProtocolContractState::Running(_)),
             CLUSTER_WAIT_TIMEOUT,
         )
         .await
         .expect("cluster did not reach Running state");
-    let running = match cluster
-        .get_contract_state()
-        .await
-        .expect("failed to get contract state")
-    {
-        ProtocolContractState::Running(r) => r,
-        other => panic!("expected Running state, got: {other:?}"),
+    let ProtocolContractState::Running(running) = protocol_state else {
+        panic!("expected Running state");
     };
 
     wait_for_presignatures(
@@ -97,7 +92,7 @@ pub async fn wait_for_presignatures(
     let deadline = tokio::time::Instant::now() + CLUSTER_WAIT_TIMEOUT;
     loop {
         let values = cluster
-            .get_metric_all_nodes("mpc_owned_num_presignatures_available")
+            .get_metric_all_nodes(metrics::OWNED_PRESIGNATURES_AVAILABLE)
             .await
             .expect("failed to get metrics");
         let participant_values: Vec<_> = participant_indices.iter().map(|&i| values[i]).collect();
@@ -116,20 +111,30 @@ pub async fn wait_for_presignatures(
 }
 
 pub fn load_contract_wasm() -> Vec<u8> {
-    let wasm_path: PathBuf = std::env::var("MPC_CONTRACT_WASM")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm")
+    if let Ok(path) = std::env::var("MPC_CONTRACT_WASM") {
+        let wasm_path = PathBuf::from(&path);
+        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
+            panic!(
+                "Failed to read contract WASM at {}: {e}",
+                wasm_path.display()
+            )
         });
+    }
 
-    std::fs::read(&wasm_path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read contract WASM at {}: {e}\n\
-             Build it first: cargo make build-contract-wasm",
-            wasm_path.display()
-        )
-    })
+    let default_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/near/contract/mpc_contract.wasm");
+
+    if default_path.exists() {
+        return std::fs::read(&default_path).unwrap_or_else(|e| {
+            panic!(
+                "Failed to read contract WASM at {}: {e}",
+                default_path.display()
+            )
+        });
+    }
+
+    tracing::info!("MPC_CONTRACT_WASM not set and pre-built WASM not found — building contract");
+    test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build()
 }
 
 pub fn generate_ecdsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {

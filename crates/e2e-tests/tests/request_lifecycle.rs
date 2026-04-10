@@ -1,5 +1,3 @@
-#![expect(non_snake_case)]
-
 use crate::common;
 
 use near_mpc_contract_interface::types::{
@@ -8,11 +6,16 @@ use near_mpc_contract_interface::types::{
 use rand::SeedableRng;
 
 #[tokio::test]
+#[expect(non_snake_case)]
 async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
     // given
     let (cluster, running) =
         common::setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
+    assert!(
+        !running.domains.domains.is_empty(),
+        "expected at least one domain, got none"
+    );
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for domain in &running.domains.domains {
         tracing::info!(domain_id = ?domain.id, purpose = ?domain.purpose, scheme = ?domain.scheme, "sending request");
@@ -74,6 +77,7 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
 }
 
 #[tokio::test]
+#[expect(non_snake_case)]
 async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     // given
     let (cluster, running) = common::setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {

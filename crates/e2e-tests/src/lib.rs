@@ -1,5 +1,6 @@
 pub mod blockchain;
 pub mod cluster;
+pub mod metrics;
 pub mod mpc_node;
 pub mod near_sandbox;
 pub mod port_allocator;

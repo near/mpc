@@ -37,44 +37,24 @@ impl NearBlockchain {
         })
     }
 
-    pub async fn create_account(
+    pub async fn create_account_with_keys(
         &self,
         name: &str,
         balance_near: u128,
-        key: &SigningKey,
+        keys: &[SigningKey],
     ) -> anyhow::Result<()> {
-        self.root_client
+        let mut tx = self
+            .root_client
             .transaction(name)
             .create_account()
-            .transfer(near_kit::NearToken::from_near(balance_near))
-            .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()))
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to create account {name}: {e}"))?;
-        Ok(())
-    }
+            .transfer(near_kit::NearToken::from_near(balance_near));
 
-    /// Create an account with two full-access keys in a single transaction.
-    /// Used for node accounts that need a separate voting key so that test votes
-    /// never disturb the MPC node's own nonce sequence.
-    pub async fn create_account_with_extra_key(
-        &self,
-        name: &str,
-        balance_near: u128,
-        primary_key: &SigningKey,
-        extra_key: &SigningKey,
-    ) -> anyhow::Result<()> {
-        self.root_client
-            .transaction(name)
-            .create_account()
-            .transfer(near_kit::NearToken::from_near(balance_near))
-            .add_full_access_key(near_kit::PublicKey::Ed25519(
-                primary_key.verifying_key().to_bytes(),
-            ))
-            .add_full_access_key(near_kit::PublicKey::Ed25519(
-                extra_key.verifying_key().to_bytes(),
-            ))
-            .send()
+        for key in keys {
+            tx = tx
+                .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()));
+        }
+
+        tx.send()
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account {name}: {e}"))?;
         Ok(())
