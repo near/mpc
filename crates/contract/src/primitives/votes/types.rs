@@ -17,10 +17,9 @@ pub struct ProposalId(pub(crate) u64);
 
 impl ProposalId {
     pub(super) fn next(&self) -> Self {
-        let (next, overflow) = self.0.overflowing_add(1);
-        if overflow {
+        let Some(next) = self.0.checked_add(1) else {
             near_sdk::env::panic_str("overflow in proposal id")
-        }
+        };
         ProposalId(next)
     }
 }

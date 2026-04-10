@@ -1,11 +1,11 @@
-use super::thresholds::ThresholdParameters;
-use super::{key_state::AuthenticatedAccountId, participants::Participants};
+use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::{key_state::AuthenticatedAccountId, participants::Participants};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
 /// Tracks votes for ThresholdParameters (new participants and threshold).
 /// Each current participant can maintain one vote.
-// TODO: Replace with Votes<AuthenticatedAccountId, ThresholdParameters> from generic_votes.rs
+// TODO(#2825): Replace with Votes<AuthenticatedAccountId, ThresholdParameters> from generic_votes.rs
 // once this type is moved out of RunningContractState (which requires Clone + PartialEq + JSON).
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
