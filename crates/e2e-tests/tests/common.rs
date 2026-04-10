@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use blstrs::{G1Projective, Scalar};
-use e2e_tests::{MpcCluster, MpcClusterConfig};
+use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig};
 use group::Group;
 use near_mpc_contract_interface::types::{
     CKDAppPublicKey, ProtocolContractState, RunningContractState,
@@ -62,7 +62,7 @@ pub async fn setup_cluster(
     cluster
         .wait_for_state(
             |s| matches!(s, ProtocolContractState::Running(_)),
-            Duration::from_secs(120),
+            CLUSTER_WAIT_TIMEOUT,
         )
         .await
         .expect("cluster did not reach Running state");
@@ -94,7 +94,7 @@ pub async fn wait_for_presignatures(
     presignatures_to_buffer: usize,
 ) {
     let expected = i64::try_from(presignatures_to_buffer).expect("presignatures exceeds i64::MAX");
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+    let deadline = tokio::time::Instant::now() + CLUSTER_WAIT_TIMEOUT;
     loop {
         let values = cluster
             .get_metric_all_nodes("mpc_owned_num_presignatures_available")
@@ -144,7 +144,7 @@ pub fn generate_eddsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
     json!({ "Eddsa": hex::encode(bytes) })
 }
 
-pub fn generate_ckd_app_public_key() -> CKDAppPublicKey {
-    let point = G1Projective::generator() * Scalar::from(42u64);
+pub fn generate_ckd_app_public_key(rng: &mut impl rand::Rng) -> CKDAppPublicKey {
+    let point = G1Projective::generator() * Scalar::from(rng.next_u64());
     CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey::from(&point))
 }

@@ -27,6 +27,7 @@ const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCO
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
+pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 
@@ -115,7 +116,7 @@ pub struct MpcCluster {
     pub node_keys: Vec<SigningKey>,
     /// Separate access keys used by the test to cast votes on node accounts.
     /// Disjoint from `node_keys` so the MPC node's own nonce sequence is never disturbed.
-    pub voting_keys: Vec<SigningKey>,
+    pub operator_keys: Vec<SigningKey>,
     pub user_accounts: HashMap<AccountId, SigningKey>,
     pub ports: E2ePortAllocator,
     /// Held to keep the temp directory alive for the lifetime of the cluster.
@@ -139,7 +140,7 @@ impl MpcCluster {
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;
-        let (node_keys, node_near_keys, node_p2p_keys, voting_keys) =
+        let (node_keys, node_near_keys, node_p2p_keys, operator_keys) =
             generate_node_keys(u64::try_from(config.num_nodes).unwrap());
 
         let contract = deploy_contract(
@@ -150,7 +151,7 @@ impl MpcCluster {
         )
         .await?;
 
-        create_node_accounts(&blockchain, &node_near_keys, &voting_keys).await?;
+        create_node_accounts(&blockchain, &node_near_keys, &operator_keys).await?;
 
         init_contract(
             &blockchain,
@@ -181,7 +182,7 @@ impl MpcCluster {
             add_initial_domains(
                 &blockchain,
                 &contract,
-                &voting_keys,
+                &operator_keys,
                 &config.initial_participant_indices,
                 &config.domains,
             )
@@ -198,7 +199,7 @@ impl MpcCluster {
             contract,
             nodes,
             node_keys,
-            voting_keys,
+            operator_keys,
             user_accounts,
             ports,
             test_dir,
@@ -328,7 +329,7 @@ impl MpcCluster {
 
         self.wait_for_state(
             |s| matches!(s, ProtocolContractState::Running(_)),
-            Duration::from_secs(120),
+            CLUSTER_WAIT_TIMEOUT,
         )
         .await
     }
@@ -382,7 +383,7 @@ impl MpcCluster {
             .await?;
         self.wait_for_state(
             |s| matches!(s, ProtocolContractState::Running(_)),
-            Duration::from_secs(180),
+            CLUSTER_WAIT_TIMEOUT,
         )
         .await
     }
@@ -445,7 +446,7 @@ impl MpcCluster {
             let node = &self.nodes[*i];
             let client = self
                 .blockchain
-                .client_for(node.account_id().as_ref(), &self.voting_keys[*i])?;
+                .client_for(node.account_id().as_ref(), &self.operator_keys[*i])?;
             let outcome = self
                 .contract
                 .call_from(&client, method_names::VOTE_NEW_PARAMETERS, args.clone())
@@ -473,7 +474,7 @@ impl MpcCluster {
         let node = &self.nodes[node_index];
         let client = self
             .blockchain
-            .client_for(node.account_id().as_ref(), &self.voting_keys[node_index])?;
+            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
         self.contract
             .call_from(&client, method_names::VOTE_CANCEL_RESHARING, json!({}))
             .await
@@ -697,17 +698,17 @@ fn generate_node_keys(
     let mut node_keys = Vec::new();
     let mut near_keys = Vec::new();
     let mut p2p_keys = Vec::new();
-    let mut voting_keys = Vec::new();
+    let mut operator_keys = Vec::new();
     for i in 0..num_nodes {
         let near_key = generate_deterministic_key(i);
         let p2p_key = generate_deterministic_key(100 + i);
-        let voting_key = generate_deterministic_key(200 + i);
+        let operator_key = generate_deterministic_key(200 + i);
         node_keys.push(near_key.clone());
         near_keys.push(near_key);
         p2p_keys.push(p2p_key);
-        voting_keys.push(voting_key);
+        operator_keys.push(operator_key);
     }
-    (node_keys, near_keys, p2p_keys, voting_keys)
+    (node_keys, near_keys, p2p_keys, operator_keys)
 }
 
 async fn deploy_contract(
@@ -725,13 +726,13 @@ async fn deploy_contract(
 async fn create_node_accounts(
     blockchain: &NearBlockchain,
     near_keys: &[SigningKey],
-    voting_keys: &[SigningKey],
+    operator_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
-    for (i, (near_key, voting_key)) in near_keys.iter().zip(voting_keys).enumerate() {
+    for (i, (near_key, operator_key)) in near_keys.iter().zip(operator_keys).enumerate() {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
         tracing::info!(account = %account, "creating MPC node account");
         blockchain
-            .create_account_with_extra_key(&account, 100, near_key, voting_key)
+            .create_account_with_extra_key(&account, 100, near_key, operator_key)
             .await?;
     }
     Ok(())
@@ -794,7 +795,7 @@ async fn init_contract(
 async fn add_initial_domains(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    voting_keys: &[SigningKey],
+    operator_keys: &[SigningKey],
     participant_indices: &[usize],
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
@@ -803,7 +804,7 @@ async fn add_initial_domains(
 
     for &i in participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
-        let client = blockchain.client_for(&account, &voting_keys[i])?;
+        let client = blockchain.client_for(&account, &operator_keys[i])?;
         contract
             .call_from(&client, method_names::VOTE_ADD_DOMAINS, args.clone())
             .await
@@ -816,7 +817,7 @@ async fn add_initial_domains(
     .await
     .context("contract did not reach Initializing state after domain addition")?;
 
-    wait_for_contract_state(contract, Duration::from_secs(120), |s| {
+    wait_for_contract_state(contract, CLUSTER_WAIT_TIMEOUT, |s| {
         matches!(s, ProtocolContractState::Running(_))
     })
     .await

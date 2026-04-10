@@ -49,7 +49,7 @@ async fn test_web_endpoints() {
                     .expect("sign request transaction failed")
             }
             Some(DomainPurpose::CKD) => cluster
-                .send_ckd_request(domain.id, common::generate_ckd_app_public_key())
+                .send_ckd_request(domain.id, common::generate_ckd_app_public_key(&mut rng))
                 .await
                 .expect("ckd request transaction failed"),
             _ => continue,
