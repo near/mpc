@@ -4,6 +4,7 @@ pub use near_mpc_contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as
 
 pub mod abstract_chain;
 pub mod bitcoin;
+pub mod bnb;
 pub mod starknet;
 
 use near_mpc_contract_interface::types::PublicKey;
