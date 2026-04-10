@@ -9,7 +9,7 @@ use crate::bench_utils::{
     RECONSTRUCTION_LOWER_BOUND, SAMPLE_SIZE,
 };
 use threshold_signatures::{
-    frost::eddsa::{sign::sign_v1, SignatureOption},
+    frost::eddsa::{sign::sign_v1, KeygenOutput, SignatureOption},
     participants::Participant,
     protocol::Protocol,
     test_utils::{
@@ -24,7 +24,9 @@ type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
 fn bench_sign(c: &mut Criterion) {
     let num = RECONSTRUCTION_LOWER_BOUND.value();
     let max_malicious = *MAX_MALICIOUS;
-    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
+
+    let setup = setup_sign_snapshot(*RECONSTRUCTION_LOWER_BOUND);
+    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
     group.sample_size(*SAMPLE_SIZE);
@@ -32,25 +34,29 @@ fn bench_sign(c: &mut Criterion) {
         format!("frost_ed25519_sign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || {
-                    let preps = prepare_simulated_sign(*RECONSTRUCTION_LOWER_BOUND);
-                    // collecting data sizes
-                    sizes.push(preps.simulator.get_view_size());
-                    preps
-                },
+                || prepare_simulated_sign(&setup, *RECONSTRUCTION_LOWER_BOUND),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
         },
     );
-    analyze_received_sizes(&sizes, true);
+    analyze_received_sizes(&[size], true);
 }
 
 criterion_group!(benches, bench_sign);
 criterion_main!(benches);
 
-/// Used to simulate robust ecdsa signatures for benchmarking
-fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimulatedSig {
+struct SignSetup {
+    participants: Vec<Participant>,
+    real_participant: Participant,
+    keygen_out: KeygenOutput,
+    message: Vec<u8>,
+    rng_for_protocol: MockCryptoRng,
+    cached_simulator: Simulator,
+}
+
+/// Expensive one-time setup: runs the full N-party protocol to capture snapshots
+fn setup_sign_snapshot(threshold: ReconstructionLowerBound) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = ed25519_prepare_sign_v1(threshold, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
@@ -64,25 +70,40 @@ fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimula
 
     // choose the real_participant being the coordinator
     let (real_participant, keygen_out) = preps.key_packages[preps.index].clone();
-    let real_protocol = sign_v1(
-        &participants,
-        threshold,
-        real_participant,
+
+    let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
+        .expect("Simulator should not be empty");
+
+    SignSetup {
+        participants,
         real_participant,
         keygen_out,
-        preps.message,
-        rng,
+        message: preps.message,
+        rng_for_protocol: rng,
+        cached_simulator,
+    }
+}
+
+/// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
+fn prepare_simulated_sign(
+    setup: &SignSetup,
+    threshold: ReconstructionLowerBound,
+) -> PreparedSimulatedSig {
+    let real_protocol = sign_v1(
+        &setup.participants,
+        threshold,
+        setup.real_participant,
+        setup.real_participant,
+        setup.keygen_out.clone(),
+        setup.message.clone(),
+        setup.rng_for_protocol.clone(),
     )
     .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
     .expect("Signing should succeed");
 
-    // now preparing the simulator
-    let simulated_protocol =
-        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
-
     PreparedSimulatedSig {
-        participant: real_participant,
+        participant: setup.real_participant,
         protocol: real_protocol,
-        simulator: simulated_protocol,
+        simulator: setup.cached_simulator.clone(),
     }
 }
