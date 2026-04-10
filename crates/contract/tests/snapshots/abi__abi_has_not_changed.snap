@@ -2259,6 +2259,18 @@ expression: abi
                 }
               },
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Bnb"
+              ],
+              "properties": {
+                "Bnb": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
             }
           ]
         },
