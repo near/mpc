@@ -11005,6 +11005,7 @@ dependencies = [
  "serde",
  "serde_json",
  "test-utils",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]

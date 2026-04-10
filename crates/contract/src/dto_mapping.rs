@@ -153,7 +153,10 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
 
         fn try_convert<const N: usize>(str: String) -> Result<HexBytes<N>, Error> {
             str.try_into().map_err(|err| {
-                ConversionError::DataConversion.message(format!("Failed to get digest: {err}"))
+                ConversionError::DataConversion {
+                    reason: format!("Failed to get digest: {err}"),
+                }
+                .into()
             })
         }
 
@@ -192,9 +195,11 @@ impl TryIntoContractType<EventLog> for dtos::EventLog {
         Ok(EventLog {
             imr,
             event_type,
-            digest: digest.try_into().map_err(|err| {
-                ConversionError::DataConversion.message(format!("Failed to get digest: {err}"))
-            })?,
+            digest: digest
+                .try_into()
+                .map_err(|err| ConversionError::DataConversion {
+                    reason: format!("Failed to get digest: {err}"),
+                })?,
             event,
             event_payload,
         })

@@ -23,7 +23,6 @@ venv
 # Nix
 .direnv/
 
-# TODO(#1768): potentially remove
 .envrc
 
 # Agents
