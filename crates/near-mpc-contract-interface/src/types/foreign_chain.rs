@@ -1048,6 +1048,14 @@ mod tests {
         }),
         ForeignChain::Starknet,
     )]
+    #[case::bnb(
+        ForeignChainRpcRequest::Bnb(EvmRpcRequest {
+            tx_id: EvmTxId([0; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Bnb,
+    )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,
         #[case] expected_chain: ForeignChain,
