@@ -144,6 +144,7 @@ pub enum ForeignChainRpcRequest {
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
     Starknet(StarknetRpcRequest),
+    Bnb(EvmRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -154,6 +155,7 @@ impl ForeignChainRpcRequest {
             Self::Solana(_) => ForeignChain::Solana,
             Self::Bitcoin(_) => ForeignChain::Bitcoin,
             Self::Starknet(_) => ForeignChain::Starknet,
+            Self::Bnb(_) => ForeignChain::Bnb,
         }
     }
 }
