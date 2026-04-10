@@ -41,6 +41,8 @@ use rand_core::CryptoRngCore;
 use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::BTreeSet;
+use std::time::Duration;
+use tokio_util::time::FutureExt as _;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -618,24 +620,32 @@ pub async fn vote_chain_policy(
 /// Poll the contract until a pending foreign-tx request appears (or panic after timeout).
 pub async fn await_pending_foreign_tx_request_observed_on_contract(
     contract: &Contract,
-    request: &near_mpc_contract_interface::types::VerifyForeignTransactionRequest,
+    request: &dtos::VerifyForeignTransactionRequest,
 ) {
-    let args = json!({ "request": request });
-    for _ in 0..30 {
-        let result = contract
-            .view(method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST)
-            .args_json(&args)
-            .await;
-        if let Ok(view) = result {
-            // The view returns Option<YieldIndex>; non-null means the request is pending.
-            let value: serde_json::Value = view.json().unwrap();
-            if !value.is_null() {
-                return;
+    const TIMEOUT: Duration = Duration::from_secs(10);
+    const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+    async {
+        let args = json!({ "request": request });
+
+        loop {
+            let result = contract
+                .view(method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST)
+                .args_json(&args)
+                .await;
+            if let Ok(view) = result {
+                // The view returns Option<YieldIndex>; non-null means the request is pending.
+                let value: serde_json::Value = view.json().unwrap();
+                if !value.is_null() {
+                    return;
+                }
             }
+            tokio::time::sleep(POLL_INTERVAL).await;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
-    panic!("Timed out waiting for pending foreign-tx request on-chain");
+    .timeout(TIMEOUT)
+    .await
+    .expect("Timed out waiting for pending foreign-tx request on-chain");
 }
 
 /// Sign a foreign-tx payload hash with the root secret key and return the
