@@ -1,141 +1,40 @@
 use crate::{
-    foreign_chain::{ForeignChainRequestBuilder, ForeignChainRpcRequestWithExpectations},
+    foreign_chain::{
+        ForeignChainRequestBuilder,
+        evm::{EvmChainVariant, EvmRequest},
+    },
     sign::NotSet,
 };
 
-use near_mpc_contract_interface::types::{ExtractedValue, Hash256};
-
-// API types
-pub use near_mpc_contract_interface::types::{
+pub use crate::foreign_chain::evm::{
     EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest,
 };
-
-/// Type alias with concrete types for when [`BnbRequest`] is ready to be built
-/// as part of the [`ForeignChainRequestBuilder`] builder.
-type BuildableBnbRequest = BnbRequest<EvmTxId, EvmFinality>;
-
-#[derive(Debug, Clone, derive_more::From, derive_more::Deref)]
-pub struct BnbBlockHash([u8; 32]);
+pub use crate::foreign_chain::evm::EvmBlockHash as BnbBlockHash;
 
 #[derive(Debug, Clone)]
-pub struct BnbRequest<TxId, Finality> {
-    tx_id: TxId,
-    finality: Finality,
+pub struct Bnb;
 
-    // Extractors
-    expected_block_hash: Option<BnbBlockHash>,
-    expected_logs: Vec<ExpectedLog>,
-}
-
-#[derive(Debug, Clone)]
-struct ExpectedLog {
-    log_index: u64,
-    log: EvmLog,
-}
-
-impl From<BuildableBnbRequest> for ForeignChainRpcRequestWithExpectations {
-    fn from(built_request: BuildableBnbRequest) -> Self {
-        let mut extractors = vec![];
-        let mut expected_values = vec![];
-
-        if let Some(expected_block_hash) = built_request.expected_block_hash {
-            extractors.push(EvmExtractor::BlockHash);
-            expected_values.push(ExtractedValue::EvmExtractedValue(
-                EvmExtractedValue::BlockHash(Hash256::from(*expected_block_hash)),
-            ));
-        }
-
-        for expected_log in built_request.expected_logs {
-            extractors.push(EvmExtractor::Log {
-                log_index: expected_log.log_index,
-            });
-            expected_values.push(ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(
-                expected_log.log,
-            )));
-        }
-
-        ForeignChainRpcRequestWithExpectations {
-            request: ForeignChainRpcRequest::Bnb(EvmRpcRequest {
-                tx_id: built_request.tx_id,
-                finality: built_request.finality,
-                extractors,
-            }),
-            expected_values,
-        }
+impl EvmChainVariant for Bnb {
+    fn wrap(request: EvmRpcRequest) -> ForeignChainRpcRequest {
+        ForeignChainRpcRequest::Bnb(request)
     }
 }
+
+pub type BnbRequest<TxId, Finality> = EvmRequest<Bnb, TxId, Finality>;
 
 impl ForeignChainRequestBuilder<BnbRequest<NotSet, NotSet>, NotSet> {
     pub fn new_bnb() -> Self {
         Self {
-            request: BnbRequest {
+            request: EvmRequest {
                 tx_id: NotSet,
                 finality: NotSet,
                 expected_block_hash: None,
                 expected_logs: vec![],
+                _chain: std::marker::PhantomData,
             },
-
             domain_id: NotSet,
         }
-    }
-}
-
-impl ForeignChainRequestBuilder<BnbRequest<NotSet, NotSet>, NotSet> {
-    pub fn with_tx_id(
-        self,
-        tx_id: impl Into<EvmTxId>,
-    ) -> ForeignChainRequestBuilder<BnbRequest<EvmTxId, NotSet>, NotSet> {
-        ForeignChainRequestBuilder {
-            request: BnbRequest {
-                tx_id: tx_id.into(),
-                finality: NotSet,
-                expected_block_hash: None,
-                expected_logs: vec![],
-            },
-
-            domain_id: self.domain_id,
-        }
-    }
-}
-
-impl ForeignChainRequestBuilder<BnbRequest<EvmTxId, NotSet>, NotSet> {
-    pub fn with_finality(
-        self,
-        finality: impl Into<EvmFinality>,
-    ) -> ForeignChainRequestBuilder<BuildableBnbRequest, NotSet> {
-        ForeignChainRequestBuilder {
-            request: BnbRequest {
-                finality: finality.into(),
-                tx_id: self.request.tx_id,
-                expected_block_hash: self.request.expected_block_hash,
-                expected_logs: self.request.expected_logs,
-            },
-
-            domain_id: self.domain_id,
-        }
-    }
-}
-
-impl ForeignChainRequestBuilder<BuildableBnbRequest, NotSet> {
-    pub fn with_expected_block_hash(self, block_hash: impl Into<BnbBlockHash>) -> Self {
-        ForeignChainRequestBuilder {
-            request: BnbRequest {
-                tx_id: self.request.tx_id,
-                finality: self.request.finality,
-                expected_block_hash: Some(block_hash.into()),
-                expected_logs: self.request.expected_logs,
-            },
-
-            domain_id: self.domain_id,
-        }
-    }
-
-    pub fn with_expected_log(mut self, log_index: u64, log: EvmLog) -> Self {
-        self.request
-            .expected_logs
-            .push(ExpectedLog { log_index, log });
-        self
     }
 }
 
@@ -143,37 +42,53 @@ impl ForeignChainRequestBuilder<BuildableBnbRequest, NotSet> {
 mod test {
     use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{
-        DomainId, Hash160, VerifyForeignTransactionRequestArgs,
+        DomainId, Hash160, Hash256, VerifyForeignTransactionRequestArgs,
     };
 
     use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
+    use near_mpc_contract_interface::types::ExtractedValue;
 
     use super::*;
 
     #[test]
     fn with_tx_id_sets_expected_value() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
+
+        // when
         let builder = ForeignChainRequestBuilder::new_bnb().with_tx_id(tx_id.clone());
+
+        // then
         assert_eq!(builder.request.tx_id, tx_id);
     }
 
     #[test]
     fn with_finality_sets_expected_value() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
+
+        // when
         let builder = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized);
+
+        // then
         assert_eq!(builder.request.finality, EvmFinality::Finalized);
     }
 
     #[test]
     fn with_expected_block_hash_sets_expected_value() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
+
+        // when
         let builder = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash);
+
+        // then
         assert_eq!(
             builder.request.expected_block_hash.as_deref(),
             Some(&expected_hash)
@@ -182,12 +97,17 @@ mod test {
 
     #[test]
     fn with_expected_log_sets_expected_value() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
         let log = test_evm_log(3);
+
+        // when
         let builder = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized)
             .with_expected_log(3, log.clone());
+
+        // then
         assert_eq!(builder.request.expected_logs.len(), 1);
         assert_eq!(builder.request.expected_logs[0].log_index, 3);
         assert_eq!(builder.request.expected_logs[0].log, log);
@@ -195,10 +115,12 @@ mod test {
 
     #[test]
     fn with_multiple_expected_logs_produces_correct_extractors_and_values() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
         let log_a = test_evm_log(1);
         let log_b = test_evm_log(2);
 
+        // when
         let (verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
@@ -207,6 +129,7 @@ mod test {
             .with_domain_id(DomainId::from(1))
             .build();
 
+        // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Bnb(rpc_request) => {
             assert_eq!(
                 rpc_request.extractors,
@@ -228,11 +151,13 @@ mod test {
 
     #[test]
     fn build_produces_correct_request_args() {
+        // given
         let domain_id = DomainId::from(2);
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
         let log = test_evm_log(5);
 
+        // when
         let (_verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
@@ -241,13 +166,13 @@ mod test {
             .with_domain_id(domain_id)
             .build();
 
+        // then
         let expected = VerifyForeignTransactionRequestArgs {
             request: ForeignChainRpcRequest::Bnb(EvmRpcRequest {
                 tx_id,
                 finality: EvmFinality::Finalized,
                 extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
             }),
-
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };
@@ -257,10 +182,12 @@ mod test {
 
     #[test]
     fn build_produces_correct_verifier() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
         let log = test_evm_log(5);
 
+        // when
         let (verifier, _request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
@@ -269,6 +196,7 @@ mod test {
             .with_domain_id(DomainId::from(1))
             .build();
 
+        // then
         let expected_verifier = ForeignChainSignatureVerifier {
             expected_extracted_values: vec![
                 ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(
@@ -288,23 +216,28 @@ mod test {
 
     #[test]
     fn verifier_request_matches_request_args() {
+        // given
         let (verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(EvmTxId::from([123; 32]))
             .with_finality(EvmFinality::Safe)
             .with_domain_id(DomainId::from(1))
+            // when
             .build();
 
+        // then
         assert_eq!(verifier.request, request_args.request);
     }
 
     #[test]
     fn build_without_extractors_produces_empty_extractors() {
+        // given / when
         let (_verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(EvmTxId::from([42; 32]))
             .with_finality(EvmFinality::Latest)
             .with_domain_id(DomainId::from(1))
             .build();
 
+        // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Bnb(rpc_request) => {
             assert_eq!(rpc_request.extractors, vec![]);
         });

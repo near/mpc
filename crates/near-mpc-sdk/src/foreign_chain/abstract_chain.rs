@@ -1,141 +1,40 @@
 use crate::{
-    foreign_chain::{ForeignChainRequestBuilder, ForeignChainRpcRequestWithExpectations},
+    foreign_chain::{
+        ForeignChainRequestBuilder,
+        evm::{EvmChainVariant, EvmRequest},
+    },
     sign::NotSet,
 };
 
-use near_mpc_contract_interface::types::{ExtractedValue, Hash256};
-
-// API types
-pub use near_mpc_contract_interface::types::{
+pub use crate::foreign_chain::evm::{
     EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest,
 };
-
-/// Type alias with concrete types for when [`AbstractRequest`] is ready to be built
-/// as part of the [`ForeignChainRequestBuilder`] builder.
-type BuildableAbstractRequest = AbstractRequest<EvmTxId, EvmFinality>;
-
-#[derive(Debug, Clone, derive_more::From, derive_more::Deref)]
-pub struct AbstractBlockHash([u8; 32]);
+pub use crate::foreign_chain::evm::EvmBlockHash as AbstractBlockHash;
 
 #[derive(Debug, Clone)]
-pub struct AbstractRequest<TxId, Finality> {
-    tx_id: TxId,
-    finality: Finality,
+pub struct Abstract;
 
-    // Extractors
-    expected_block_hash: Option<AbstractBlockHash>,
-    expected_logs: Vec<ExpectedLog>,
-}
-
-#[derive(Debug, Clone)]
-struct ExpectedLog {
-    log_index: u64,
-    log: EvmLog,
-}
-
-impl From<BuildableAbstractRequest> for ForeignChainRpcRequestWithExpectations {
-    fn from(built_request: BuildableAbstractRequest) -> Self {
-        let mut extractors = vec![];
-        let mut expected_values = vec![];
-
-        if let Some(expected_block_hash) = built_request.expected_block_hash {
-            extractors.push(EvmExtractor::BlockHash);
-            expected_values.push(ExtractedValue::EvmExtractedValue(
-                EvmExtractedValue::BlockHash(Hash256::from(*expected_block_hash)),
-            ));
-        }
-
-        for expected_log in built_request.expected_logs {
-            extractors.push(EvmExtractor::Log {
-                log_index: expected_log.log_index,
-            });
-            expected_values.push(ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(
-                expected_log.log,
-            )));
-        }
-
-        ForeignChainRpcRequestWithExpectations {
-            request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
-                tx_id: built_request.tx_id,
-                finality: built_request.finality,
-                extractors,
-            }),
-            expected_values,
-        }
+impl EvmChainVariant for Abstract {
+    fn wrap(request: EvmRpcRequest) -> ForeignChainRpcRequest {
+        ForeignChainRpcRequest::Abstract(request)
     }
 }
+
+pub type AbstractRequest<TxId, Finality> = EvmRequest<Abstract, TxId, Finality>;
 
 impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet> {
     pub fn new_abstract() -> Self {
         Self {
-            request: AbstractRequest {
+            request: EvmRequest {
                 tx_id: NotSet,
                 finality: NotSet,
                 expected_block_hash: None,
                 expected_logs: vec![],
+                _chain: std::marker::PhantomData,
             },
-
             domain_id: NotSet,
         }
-    }
-}
-
-impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet> {
-    pub fn with_tx_id(
-        self,
-        tx_id: impl Into<EvmTxId>,
-    ) -> ForeignChainRequestBuilder<AbstractRequest<EvmTxId, NotSet>, NotSet> {
-        ForeignChainRequestBuilder {
-            request: AbstractRequest {
-                tx_id: tx_id.into(),
-                finality: NotSet,
-                expected_block_hash: None,
-                expected_logs: vec![],
-            },
-
-            domain_id: self.domain_id,
-        }
-    }
-}
-
-impl ForeignChainRequestBuilder<AbstractRequest<EvmTxId, NotSet>, NotSet> {
-    pub fn with_finality(
-        self,
-        finality: impl Into<EvmFinality>,
-    ) -> ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet> {
-        ForeignChainRequestBuilder {
-            request: AbstractRequest {
-                finality: finality.into(),
-                tx_id: self.request.tx_id,
-                expected_block_hash: self.request.expected_block_hash,
-                expected_logs: self.request.expected_logs,
-            },
-
-            domain_id: self.domain_id,
-        }
-    }
-}
-
-impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet> {
-    pub fn with_expected_block_hash(self, block_hash: impl Into<AbstractBlockHash>) -> Self {
-        ForeignChainRequestBuilder {
-            request: AbstractRequest {
-                tx_id: self.request.tx_id,
-                finality: self.request.finality,
-                expected_block_hash: Some(block_hash.into()),
-                expected_logs: self.request.expected_logs,
-            },
-
-            domain_id: self.domain_id,
-        }
-    }
-
-    pub fn with_expected_log(mut self, log_index: u64, log: EvmLog) -> Self {
-        self.request
-            .expected_logs
-            .push(ExpectedLog { log_index, log });
-        self
     }
 }
 
@@ -143,10 +42,11 @@ impl ForeignChainRequestBuilder<BuildableAbstractRequest, NotSet> {
 mod test {
     use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{
-        DomainId, Hash160, VerifyForeignTransactionRequestArgs,
+        DomainId, Hash160, Hash256, VerifyForeignTransactionRequestArgs,
     };
 
     use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
+    use near_mpc_contract_interface::types::ExtractedValue;
 
     use super::*;
 
@@ -273,7 +173,7 @@ mod test {
                 finality: EvmFinality::Finalized,
                 extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
             }),
-
+            
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };
