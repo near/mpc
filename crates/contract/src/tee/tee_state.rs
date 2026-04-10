@@ -449,6 +449,43 @@ impl TeeState {
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
+    /// Find a stored attestation by its account ID (O(n) scan).
+    /// Suitable for backup services where the number of entries is small.
+    pub fn find_node_attestation_by_account(
+        &self,
+        account_id: &near_account_id::AccountId,
+    ) -> Option<&NodeAttestation> {
+        self.stored_attestations
+            .values()
+            .find(|attestation| attestation.node_id.account_id == *account_id)
+    }
+
+    /// Removes attestations for accounts not in the participant set.
+    /// Unlike `clean_non_participants` (which matches by TLS key), this matches
+    /// by account_id — needed for backup services whose TLS keys are distinct
+    /// from participant TLS keys.
+    pub fn clean_non_participant_accounts(&mut self, participants: &Participants) {
+        let participant_accounts: std::collections::HashSet<&near_account_id::AccountId> =
+            participants
+                .participants()
+                .iter()
+                .map(|(account_id, _, _)| account_id)
+                .collect();
+
+        let stale_keys: Vec<near_sdk::PublicKey> = self
+            .stored_attestations
+            .iter()
+            .filter(|(_, attestation)| {
+                !participant_accounts.contains(&attestation.node_id.account_id)
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        for key in stale_keys {
+            self.stored_attestations.remove(&key);
+        }
+    }
+
     /// Returns Ok(()) if the caller has at least one participant entry
     /// whose TLS key matches an attested node belonging to the caller account.
     ///
