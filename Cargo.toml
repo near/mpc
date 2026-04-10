@@ -277,7 +277,7 @@ mod_module_files = "deny"
 broken_intra_doc_links = "deny"
 
 [profile.test-release]
-inherits = "release-contract"
+inherits = "release"
 overflow-checks = true
 debug = true
 debug-assertions = true
