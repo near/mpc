@@ -51,8 +51,12 @@ impl MpcNode {
         self.process.has_exited()
     }
 
-    fn web_address(&self) -> String {
+    pub fn web_address(&self) -> String {
         format!("127.0.0.1:{}", self.setup.ports.web_ui)
+    }
+
+    pub fn pprof_address(&self) -> String {
+        format!("127.0.0.1:{}", self.setup.ports.pprof)
     }
 
     /// Scrapes the node's `/metrics` HTTP endpoint and returns the value of
@@ -79,6 +83,24 @@ impl MpcNode {
             }
         }
         Ok(None)
+    }
+
+    /// Create a marker file that tells the MPC node a key event attempt was
+    /// already started. The node reads these on startup to determine which
+    /// attempt ID to use next.
+    pub fn reserve_key_event_attempt(
+        &self,
+        epoch_id: u64,
+        domain_id: u64,
+        attempt_id: u64,
+    ) -> anyhow::Result<()> {
+        let dir = self.setup.home_dir.join("temporary_keys");
+        std::fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create {}", dir.display()))?;
+        let path = dir.join(format!("started_{epoch_id}_{domain_id}_{attempt_id}"));
+        std::fs::File::create(&path)
+            .with_context(|| format!("failed to create {}", path.display()))?;
+        Ok(())
     }
 
     /// Writes a flag file that controls block ingestion. Requires the
@@ -207,7 +229,29 @@ impl MpcNodeSetup {
         &self.home_dir
     }
 
-    /// Deletes RocksDB files (.sst, MANIFEST, etc.) from the data directory.
+    /// Reset the node's MPC state while preserving NEAR indexer data.
+    /// Removes keyshares, temporary keys, and RocksDB state, but keeps the
+    /// NEAR chain data (`data/`, `config.json`, `genesis.json`, `node_key.json`)
+    /// so the node can resume syncing quickly after restart.
+    ///
+    /// Re-writes secrets.json and start_config.toml from the saved setup.
+    pub fn reset_mpc_state(&self) -> anyhow::Result<()> {
+        // Nuke and recreate the home directory. SIGKILL can leave NEAR indexer
+        // data in a corrupted state that prevents restart, so we start fully
+        // fresh. The NEAR indexer will re-init from genesis_path/boot_nodes in
+        // start_config.toml and sync from block 0.
+        if self.home_dir.exists() {
+            std::fs::remove_dir_all(&self.home_dir)
+                .with_context(|| format!("failed to remove {}", self.home_dir.display()))?;
+        }
+        std::fs::create_dir_all(&self.home_dir)
+            .with_context(|| format!("failed to recreate {}", self.home_dir.display()))?;
+        self.write_secrets_json()?;
+        self.write_start_config()?;
+        Ok(())
+    }
+
+    /// Deletes RocksDB files and temporary key state from the data directory.
     /// Safe to call because the node is not running.
     pub fn wipe_db(&self) -> anyhow::Result<()> {
         let entries = std::fs::read_dir(&self.home_dir)
@@ -229,6 +273,14 @@ impl MpcNodeSetup {
                     .with_context(|| format!("failed to remove {}", entry.path().display()))?;
             }
         }
+
+        // Also clean temporary key event state to avoid stale resharing data.
+        let temp_keys = self.home_dir.join("temporary_keys");
+        if temp_keys.exists() {
+            std::fs::remove_dir_all(&temp_keys)
+                .with_context(|| format!("failed to remove {}", temp_keys.display()))?;
+        }
+
         Ok(())
     }
 
