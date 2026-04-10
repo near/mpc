@@ -740,3 +740,11 @@ pub fn starknet_extracted_values() -> Vec<ExtractedValue> {
         StarknetExtractedValue::BlockHash(StarknetFelt([0xaa; 32])),
     )]
 }
+
+pub fn bnb_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Bnb(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}

@@ -2,7 +2,7 @@
 
 use crate::sandbox::common::{
     abstract_evm_request, await_pending_foreign_tx_request_observed_on_contract,
-    bitcoin_extracted_values, bitcoin_request, ethereum_evm_request,
+    bitcoin_extracted_values, bitcoin_request, bnb_evm_request, ethereum_evm_request,
     evm_block_hash_extracted_values, setup_foreign_tx_env, sign_foreign_tx_response,
     starknet_extracted_values, starknet_request, vote_chain_policy,
 };
@@ -22,6 +22,7 @@ const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 #[case::abstract_(abstract_evm_request(), evm_block_hash_extracted_values())]
 #[case::bitcoin(bitcoin_request(), bitcoin_extracted_values())]
 #[case::starknet(starknet_request(), starknet_extracted_values())]
+#[case::starknet(bnb_evm_request(), evm_block_hash_extracted_values())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_succeed(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -86,6 +87,7 @@ async fn verify_foreign_transaction__should_succeed(
 #[case::abstract_(abstract_evm_request())]
 #[case::bitcoin(bitcoin_request())]
 #[case::starknet(starknet_request())]
+#[case::starknet(bnb_evm_request())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_reject_without_policy(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -120,6 +122,7 @@ async fn verify_foreign_transaction__should_reject_without_policy(
 #[case::abstract_(abstract_evm_request())]
 #[case::bitcoin(bitcoin_request())]
 #[case::starknet(starknet_request())]
+#[case::starknet(bnb_evm_request())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_timeout_without_response(
     #[case] rpc_request: ForeignChainRpcRequest,
