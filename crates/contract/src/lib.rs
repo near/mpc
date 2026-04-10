@@ -2352,6 +2352,8 @@ impl MpcContract {
 /// Methods for Migration service
 #[near]
 impl MpcContract {
+    // TODO(#2730): replace with get_backup_service_attestation() after migrating
+    // to TEE-enabled backup service
     pub fn migration_info(
         &self,
     ) -> BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)> {
@@ -2364,8 +2366,8 @@ impl MpcContract {
     /// The caller (`signer_account_id`) must be an existing or prospective participant.
     /// Otherwise, the transaction will fail.
     ///
-    /// # Notes
-    /// - A deposit requirement may be added in the future.
+    /// TODO(#2730): remove after migrating to TEE-enabled backup service;
+    /// replace with register_backup_service_with_attestation()
     #[handle_result]
     pub fn register_backup_service(
         &mut self,
