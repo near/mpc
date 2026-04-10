@@ -22,8 +22,10 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    self as dtos, Attestation, EvmExtractedValue, EvmExtractor, EvmFinality, EvmTxId,
-    MockAttestation,
+    self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
+    BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality, EvmTxId,
+    MockAttestation, StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
+    StarknetRpcRequest, StarknetTxId,
 };
 use near_mpc_contract_interface::{method_names, types::EvmRpcRequest};
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
@@ -527,10 +529,6 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-// ---------------------------------------------------------------------------
-// Foreign-chain test helpers
-// ---------------------------------------------------------------------------
-
 pub struct ForeignTxEnv {
     pub worker: Worker<Sandbox>,
     pub contract: Contract,
@@ -676,14 +674,6 @@ pub async fn generate_participant_and_submit_attestation(
     (new_account, account_id, new_participant)
 }
 
-pub fn bnb_evm_request() -> ForeignChainRpcRequest {
-    ForeignChainRpcRequest::Bnb(EvmRpcRequest {
-        tx_id: EvmTxId([0xbb; 32]),
-        extractors: vec![EvmExtractor::BlockHash],
-        finality: EvmFinality::Finalized,
-    })
-}
-
 pub fn ethereum_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
@@ -700,8 +690,36 @@ pub fn abstract_evm_request() -> ForeignChainRpcRequest {
     })
 }
 
+pub fn bitcoin_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+        tx_id: BitcoinTxId([0xdd; 32]),
+        confirmations: BlockConfirmations(6),
+        extractors: vec![BitcoinExtractor::BlockHash],
+    })
+}
+
+pub fn starknet_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+        tx_id: StarknetTxId(StarknetFelt([0xee; 32])),
+        finality: StarknetFinality::AcceptedOnL1,
+        extractors: vec![StarknetExtractor::BlockHash],
+    })
+}
+
 pub fn evm_block_hash_extracted_values() -> Vec<ExtractedValue> {
     vec![ExtractedValue::EvmExtractedValue(
         EvmExtractedValue::BlockHash(Hash256([0xaa; 32])),
+    )]
+}
+
+pub fn bitcoin_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::BitcoinExtractedValue(
+        BitcoinExtractedValue::BlockHash(Hash256([0xaa; 32])),
+    )]
+}
+
+pub fn starknet_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::StarknetExtractedValue(
+        StarknetExtractedValue::BlockHash(StarknetFelt([0xaa; 32])),
     )]
 }

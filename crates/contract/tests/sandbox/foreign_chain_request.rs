@@ -1,8 +1,9 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::common::{
-    abstract_evm_request, bnb_evm_request, ethereum_evm_request, evm_block_hash_extracted_values,
-    setup_foreign_tx_env, sign_foreign_tx_response, vote_chain_policy,
+    abstract_evm_request, bitcoin_extracted_values, bitcoin_request, ethereum_evm_request,
+    evm_block_hash_extracted_values, setup_foreign_tx_env, sign_foreign_tx_response,
+    starknet_extracted_values, starknet_request, vote_chain_policy,
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -17,9 +18,10 @@ use std::time::Duration;
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 
 #[rstest]
-#[case::bnb(bnb_evm_request(), evm_block_hash_extracted_values())]
 #[case::ethereum(ethereum_evm_request(), evm_block_hash_extracted_values())]
 #[case::abstract_(abstract_evm_request(), evm_block_hash_extracted_values())]
+#[case::bitcoin(bitcoin_request(), bitcoin_extracted_values())]
+#[case::starknet(starknet_request(), starknet_extracted_values())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_succeed(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -80,9 +82,10 @@ async fn verify_foreign_transaction__should_succeed(
 }
 
 #[rstest]
-#[case::bnb(bnb_evm_request())]
 #[case::ethereum(ethereum_evm_request())]
 #[case::abstract_(abstract_evm_request())]
+#[case::bitcoin(bitcoin_request())]
+#[case::starknet(starknet_request())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_reject_without_policy(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -113,9 +116,10 @@ async fn verify_foreign_transaction__should_reject_without_policy(
 }
 
 #[rstest]
-#[case::bnb(bnb_evm_request())]
 #[case::ethereum(ethereum_evm_request())]
 #[case::abstract_(abstract_evm_request())]
+#[case::bitcoin(bitcoin_request())]
+#[case::starknet(starknet_request())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_timeout_without_response(
     #[case] rpc_request: ForeignChainRpcRequest,
