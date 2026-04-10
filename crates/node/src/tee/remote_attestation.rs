@@ -111,6 +111,7 @@ fn validate_remote_attestation(
             allowed_docker_image_hashes,
             allowed_launcher_compose_hashes,
             mpc_attestation::attestation::default_measurements(),
+            mpc_attestation::MPC_IMAGE_HASH_EVENT,
         )
         .map(|_| ())
 }
