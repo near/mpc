@@ -613,7 +613,7 @@ mod tests {
                     providers: NonEmptyBTreeMap::new(
                         "public".to_string(),
                         BnbProviderConfig {
-                            rpc_url: "https://api.testnet.abs.xyz".to_string(),
+                            rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
                             api_variant: BnbApiVariant::Standard,
                             auth: AuthConfig::None,
                         },
