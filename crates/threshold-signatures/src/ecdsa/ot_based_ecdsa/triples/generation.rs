@@ -1,5 +1,6 @@
 use frost_core::serialization::SerializableScalar;
 use frost_core::Ciphersuite;
+use itertools::multizip;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -340,33 +341,30 @@ async fn do_generation_many<const N: usize>(
                 .await?
         {
             for (
-                (
-                    (
-                        (
-                            (((all_commitments, their_big_e), their_big_f), their_big_l),
-                            their_randomizer,
-                        ),
-                        their_phi_proof0,
-                    ),
-                    their_phi_proof1,
-                ),
-                (big_e_j_zero, ((big_e, big_f), big_l)),
-            ) in all_commitments_vec
-                .iter()
-                .zip(their.big_e_v.iter())
-                .zip(their.big_f_v.iter())
-                .zip(their.big_l_v.iter())
-                .zip(their.randomizer_v.iter())
-                .zip(their.phi_proof0_v.iter())
-                .zip(their.phi_proof1_v.iter())
-                .zip(
-                    big_e_j_zero_v.iter_mut().zip(
-                        big_e_v
-                            .iter_mut()
-                            .zip(big_f_v.iter_mut())
-                            .zip(big_l_v.iter_mut()),
-                    ),
-                )
+                all_commitments,
+                their_big_e,
+                their_big_f,
+                their_big_l,
+                their_randomizer,
+                their_phi_proof0,
+                their_phi_proof1,
+                big_e_j_zero,
+                big_e,
+                big_f,
+                big_l,
+            ) in multizip((
+                all_commitments_vec.iter(),
+                their.big_e_v.iter(),
+                their.big_f_v.iter(),
+                their.big_l_v.iter(),
+                their.randomizer_v.iter(),
+                their.phi_proof0_v.iter(),
+                their.phi_proof1_v.iter(),
+                big_e_j_zero_v.iter_mut(),
+                big_e_v.iter_mut(),
+                big_f_v.iter_mut(),
+                big_l_v.iter_mut(),
+            ))
             {
                 if their_big_e.degree() != threshold.value() - 1
                     || their_big_f.degree() != threshold.value() - 1
