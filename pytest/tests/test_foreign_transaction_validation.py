@@ -275,6 +275,9 @@ def foreign_tx_validation_cluster():
     abstract_mock_server, abstract_mock_port = _start_mock_rpc(_EvmRpcHandler)
     abstract_mock_rpc_url = f"http://127.0.0.1:{abstract_mock_port}"
 
+    bnb_mock_server, bnb_mock_port = _start_mock_rpc(_EvmRpcHandler)
+    bnb_mock_rpc_url = f"http://127.0.0.1:{bnb_mock_port}"
+
     starknet_mock_server, starknet_mock_port = _start_mock_rpc(_StarknetRpcHandler)
     starknet_mock_rpc_url = f"http://127.0.0.1:{starknet_mock_port}"
 
@@ -304,6 +307,19 @@ def foreign_tx_validation_cluster():
                 "mock": {
                     "api_variant": "standard",
                     "rpc_url": abstract_mock_rpc_url,
+                    "auth": {
+                        "kind": "none",
+                    },
+                }
+            },
+        },
+        "bnb": {
+            "timeout_sec": 30,
+            "max_retries": 3,
+            "providers": {
+                "mock": {
+                    "api_variant": "standard",
+                    "rpc_url": bnb_mock_rpc_url,
                     "auth": {
                         "kind": "none",
                     },
@@ -342,6 +358,7 @@ def foreign_tx_validation_cluster():
             "chains": {
                 "Bitcoin": [{"rpc_url": bitcoin_mock_rpc_url}],
                 "Abstract": [{"rpc_url": abstract_mock_rpc_url}],
+                "Bnb": [{"rpc_url": bnb_mock_rpc_url}],
                 "Starknet": [{"rpc_url": starknet_mock_rpc_url}],
             }
         }
@@ -362,6 +379,7 @@ def foreign_tx_validation_cluster():
     cluster.kill_all()
     bitcoin_mock_server.shutdown()
     abstract_mock_server.shutdown()
+    bnb_mock_server.shutdown()
     starknet_mock_server.shutdown()
     atexit._run_exitfuncs()
 
@@ -464,6 +482,84 @@ def test_verify_foreign_transaction_abstract(
         "request": {
             "request": {
                 "Abstract": {
+                    "tx_id": MOCK_TX_ID,
+                    "finality": "Finalized",
+                    "extractors": ["BlockHash", {"Log": {"log_index": 0}}],
+                }
+            },
+            "domain_id": secp_domain.id,
+            "payload_version": 1,
+        }
+    }
+
+    tx = cluster.request_node.sign_tx(
+        cluster.mpc_contract_account(),
+        "verify_foreign_transaction",
+        args,
+        gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
+        deposit=VERIFY_FOREIGN_TX_DEPOSIT,
+    )
+
+    # Send, await, and verify response
+    def verify_response(res):
+        try:
+            success_value = res["result"]["status"]["SuccessValue"]
+        except KeyError:
+            raise AssertionError(
+                f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
+            )
+
+        response = json.loads(base64.b64decode(success_value))
+
+        print(
+            f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
+        )
+
+        # Verify payload_hash is present
+        payload_hash = response["payload_hash"]
+        assert isinstance(payload_hash, str), (
+            f"Expected hex string payload_hash, got: {type(payload_hash)}"
+        )
+        assert len(payload_hash) == 64, (
+            f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
+        )
+
+        # Verify signature is present and is Secp256k1
+        signature = response["signature"]
+        assert signature["scheme"] == "Secp256k1", (
+            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
+        )
+        assert "big_r" in signature, "Expected big_r in signature"
+        assert "s" in signature, "Expected s in signature"
+        assert "recovery_id" in signature, "Expected recovery_id in signature"
+
+        print("\033[96mVerify Foreign Tx Response \u2713\033[0m")
+
+    cluster.request_node.send_await_check_txs_parallel(
+        "verify_foreign_transaction", [tx], verify_response
+    )
+
+
+@pytest.mark.no_atexit_cleanup
+def test_verify_foreign_transaction_bnb(
+    foreign_tx_validation_cluster: tuple[MpcCluster, list],
+):
+    """
+    Submit a verify_foreign_transaction request for BNB and verify
+    the MPC nodes return a valid signed response with the expected payload.
+    """
+    cluster, _mpc_nodes = foreign_tx_validation_cluster
+
+    # Find the Secp256k1 domain
+    contract_state = cluster.contract_state()
+    domains = contract_state.get_running_domains()
+    secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
+
+    # Build the verify_foreign_transaction args
+    args = {
+        "request": {
+            "request": {
+                "Bnb": {
                     "tx_id": MOCK_TX_ID,
                     "finality": "Finalized",
                     "extractors": ["BlockHash", {"Log": {"log_index": 0}}],

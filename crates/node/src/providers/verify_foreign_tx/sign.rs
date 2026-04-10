@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use foreign_chain_inspector::abstract_chain::inspector::{AbstractExtractor, AbstractInspector};
 use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
+use foreign_chain_inspector::bnb::inspector::{BnbExtractor, BnbInspector};
 use foreign_chain_inspector::starknet::inspector::{
     StarknetExtractor, StarknetFinality, StarknetInspector,
 };
@@ -227,6 +228,51 @@ where
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<AbstractExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+
+                values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Bnb(request) => {
+                let Some(bnb_config) = &self.config.foreign_chains.bnb else {
+                    anyhow::bail!("bnb provider config is missing")
+                };
+
+                let provider_index = select_provider(
+                    bnb_config.providers.len(),
+                    &request_id,
+                    my_participant_index,
+                );
+
+                let bnb_provider_config =
+                    provider_index.and_then(|i| bnb_config.providers.values().nth(i));
+
+                let Some(bnb_provider_config) = bnb_provider_config else {
+                    anyhow::bail!("found empty list of providers for bnb")
+                };
+
+                let mut public_node_url = bnb_provider_config.rpc_url.clone();
+                let rpc_auth = auth_config_to_rpc_auth(
+                    bnb_provider_config.auth.clone(),
+                    &mut public_node_url,
+                )?;
+
+                let http_client =
+                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
+                let inspector = BnbInspector::new(http_client);
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<BnbExtractor> = request
                     .extractors
                     .iter()
                     .cloned()
