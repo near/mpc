@@ -499,6 +499,7 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use mpc_node_config::foreign_chains::{BnbApiVariant, BnbChainConfig, BnbProviderConfig};
     use mpc_node_config::{AuthConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -602,6 +603,18 @@ mod tests {
                         AbstractProviderConfig {
                             rpc_url: "https://api.testnet.abs.xyz".to_string(),
                             api_variant: AbstractApiVariant::Standard,
+                            auth: AuthConfig::None,
+                        },
+                    ),
+                }),
+                bnb: Some(BnbChainConfig {
+                    timeout_sec: 30,
+                    max_retries: 3,
+                    providers: NonEmptyBTreeMap::new(
+                        "public".to_string(),
+                        BnbProviderConfig {
+                            rpc_url: "https://api.testnet.abs.xyz".to_string(),
+                            api_variant: BnbApiVariant::Standard,
                             auth: AuthConfig::None,
                         },
                     ),
