@@ -1179,21 +1179,9 @@ docker image. Let's assume you want to vote for a docker image with tag
 corresponding to the commit hash `828f816be36aed6f0d2438e0131b3e9d7d0931ad`.
 Notice that the suffix of the image tag is the short version of the git hash.
 
-* First, we need to obtain the image hash, which is not the same as the manifest
-  hash shown in DockerHub. For that you need to install `docker` and `jq`, and
-  have the `docker` daemon running.
-
-```bash
-$ docker pull nearone/mpc-node:main-828f816
-$ docker inspect nearone/mpc-node:main-828f816 | jq -r .[0].Id
-sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
-```
-
-> **macOS:** `docker inspect` on Docker Desktop may return a different digest.
-> Use this instead:
-> ```bash
-> $ docker manifest inspect nearone/mpc-node:main-828f816 | jq -r '.config.digest'
-> ```
+* The manifest digest is shown on DockerHub and in the reproducible build script
+  output. To verify it, build the image yourself from the same commit and compare
+  the manifest digest.
 
 * Download the MPC code from this repository:
 
@@ -1208,20 +1196,18 @@ git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
   running.
 
 ```bash
-$ ./deployment/build-images.sh
+$ ./deployment/build-images.sh --node --push
 ...
 commit hash: 828f816be36aed6f0d2438e0131b3e9d7d0931ad
-SOURCE_DATE_EPOCH used: 1758103448
+SOURCE_DATE_EPOCH used: 0
 node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721bc
-node tee docker image hash: sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
-launcher docker image hash: sha256:97e8a9618125c452f1f22528c15008627e9d4cf422ae2bd48150bebeac01346d
+node docker image hash: sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
+node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
-Note that the `node tee docker image hash` must coincide with the one obtained
-before. In the same way, the launcher images published in
-[mpc-launcher tags](https://hub.docker.com/r/nearone/mpc-launcher/tags) can be
-verified. The one shown above corresponds to
-[mpc-launcher:main-828f816](https://hub.docker.com/layers/nearone/mpc-launcher/main-828f816/)
+The `node manifest digest` is what you vote for. It must match the manifest
+digest shown on DockerHub for the same image tag. The launcher pulls the image
+directly by this digest — Docker verifies the content matches during the pull.
 
 * Do your own due diligence on the code/binary
 
@@ -1229,14 +1215,14 @@ verified. The one shown above corresponds to
 
 ### Voting for the MPC image hash
 
-Each participant submits a vote for the new MPC Docker image hash.
+Each participant submits a vote for the new MPC Docker image **manifest digest**.
 A **threshold** number of participant votes is required for the vote to pass.
 
 ```bash
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_code_hash \
-  json-args '{"code_hash": "<IMAGE_HASH>"}' \
+  json-args '{"code_hash": "<MANIFEST_DIGEST>"}' \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1245,12 +1231,12 @@ near contract call-function as-transaction \
   send
 ```
 
-The **IMAGE_HASH** argument must be provided as an SHA-256 hex digest.
+The **MANIFEST_DIGEST** argument must be provided as an SHA-256 hex digest (without the `sha256:` prefix).
 
-For example, for the digest
+For example, for the manifest digest `sha256:331cfec9...`:
 
 ```bash
-IMAGE_HASH=4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+MANIFEST_DIGEST=331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
 TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
@@ -1270,12 +1256,7 @@ Following the hash update, you should upgrade the MPC node by following those st
 
 #### Confirm that you have the correct DockerHub link to the approved MPC docker image
 
-* Assume the DockerHub link provided to you is `nearone/mpc-node-gcp:abc..`
-* Download the image to some local machine via the command:
-  `docker pull nearone/mpc-node-gcp:abc..`
-* Retrieve the image hash via
-  * `docker inspect nearone/mpc-node-gcp:abc | grep "Id":`
-* Check that you got `"Id":"xyz…"`, that matches the hash you voted for.
+* Check the manifest digest shown on DockerHub for the image tag matches the hash you voted for. The launcher pulls by manifest digest directly, and Docker verifies the content matches during the pull.
 
 ## Launcher / CVM Upgrade
 
