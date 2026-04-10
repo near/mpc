@@ -224,6 +224,16 @@ expression: abi
         }
       },
       {
+        "name": "get_foreign_chain_configurations",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/NodeForeignChainConfigurations"
+          }
+        }
+      },
+      {
         "name": "get_foreign_chain_policy",
         "kind": "view",
         "result": {
@@ -334,16 +344,6 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/SupportedForeignChains"
-          }
-        }
-      },
-      {
-        "name": "get_foreign_chain_configurations",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/SupportedForeignChainsVotes"
           }
         }
       },
@@ -2873,6 +2873,20 @@ expression: abi
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
         },
+        "NodeForeignChainConfigurations": {
+          "type": "object",
+          "required": [
+            "foreign_chain_configuration_by_node"
+          ],
+          "properties": {
+            "foreign_chain_configuration_by_node": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ForeignChainConfiguration"
+              }
+            }
+          }
+        },
         "NodeId": {
           "type": "object",
           "required": [
@@ -3819,20 +3833,6 @@ expression: abi
             "$ref": "#/definitions/ForeignChain"
           },
           "uniqueItems": true
-        },
-        "SupportedForeignChainsVotes": {
-          "type": "object",
-          "required": [
-            "supported_chains_by_account"
-          ],
-          "properties": {
-            "supported_chains_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ForeignChainConfiguration"
-              }
-            }
-          }
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",

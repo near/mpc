@@ -194,27 +194,30 @@ impl ForeignChainPolicyVotes {
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 struct NodeForeignChainConfigurations {
-    supported_chains_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
+    foreign_chain_configuration_by_node:
+        IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
 }
 
 impl Default for NodeForeignChainConfigurations {
     fn default() -> Self {
         Self {
-            supported_chains_by_account: IterableMap::new(StorageKey::SupportedForeignChainsVotes),
+            foreign_chain_configuration_by_node: IterableMap::new(
+                StorageKey::SupportedForeignChainsVotes,
+            ),
         }
     }
 }
 
 impl NodeForeignChainConfigurations {
     fn to_dto(&self) -> dtos::NodeForeignChainConfigurations {
-        let supported_chains_by_account = self
-            .supported_chains_by_account
+        let foreign_chain_configuration_by_node = self
+            .foreign_chain_configuration_by_node
             .iter()
             .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
             .collect();
 
         dtos::NodeForeignChainConfigurations {
-            supported_chains_by_account,
+            foreign_chain_configuration_by_node,
         }
     }
 }
@@ -1048,7 +1051,7 @@ impl MpcContract {
         // Also register the chain keys as configured,
         // so callers of the deprecated API still populate the new data model.
         self.node_foreign_chain_configurations
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
             .insert(voter.clone(), policy.chains.clone().into());
 
         if self
@@ -1095,7 +1098,7 @@ impl MpcContract {
         let account_id = authenticated_voter.get().into_dto_type();
 
         self.node_foreign_chain_configurations
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
             .insert(account_id, foreign_chain_configuration);
 
         Ok(())
@@ -1920,7 +1923,7 @@ impl MpcContract {
 
         for (account_id, chains) in self
             .node_foreign_chain_configurations
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
             .iter()
         {
             for chain in chains.keys() {
@@ -4969,7 +4972,7 @@ mod tests {
         let votes = contract.get_foreign_chain_configurations();
         let first_voter = dtos::AccountId(first_account.to_string());
         let registered = votes
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
             .get(&first_voter)
             .expect("voter should have registered chains");
         assert!(registered.contains_key(&dtos::ForeignChain::Bitcoin));
@@ -5021,7 +5024,7 @@ mod tests {
         let votes = contract.get_foreign_chain_configurations();
         let first_voter = dtos::AccountId(first_account.to_string());
         let registered = votes
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
             .get(&first_voter)
             .expect("voter should have registered chains");
         assert!(registered.contains_key(&dtos::ForeignChain::Ethereum));
@@ -5836,10 +5839,10 @@ mod tests {
 
         // Then
         let votes = contract.get_foreign_chain_configurations();
-        assert_eq!(votes.supported_chains_by_account.len(), 1);
+        assert_eq!(votes.foreign_chain_configuration_by_node.len(), 1);
         assert_eq!(
             votes
-                .supported_chains_by_account
+                .foreign_chain_configuration_by_node
                 .get(&dtos::AccountId(first_account.to_string())),
             Some(&foreign_chain_configuration)
         );
@@ -6052,7 +6055,7 @@ mod tests {
         for (i, (account_id, _, _)) in participants.iter().enumerate() {
             let account_dto = dtos::AccountId(account_id.to_string());
             let config = votes
-                .supported_chains_by_account
+                .foreign_chain_configuration_by_node
                 .get(&account_dto)
                 .expect("participant should have a config");
             let btc_providers = config
