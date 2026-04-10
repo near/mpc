@@ -6,6 +6,7 @@ use crate::EthereumFinality;
 use crate::abstract_chain::inspector::{AbstractExtractedValue, AbstractExtractor};
 use crate::bitcoin::BitcoinExtractedValue;
 use crate::bitcoin::inspector::BitcoinExtractor;
+use crate::bnb::inspector::{BnbExtractedValue, BnbExtractor};
 use crate::starknet::StarknetExtractedValue;
 use crate::starknet::inspector::{StarknetExtractor, StarknetFinality};
 
@@ -183,6 +184,56 @@ impl TryFrom<dtos::EvmExtractedValue> for AbstractExtractedValue {
     }
 }
 
+impl From<BnbExtractor> for dtos::EvmExtractor {
+    fn from(value: BnbExtractor) -> Self {
+        match value {
+            BnbExtractor::BlockHash => dtos::EvmExtractor::BlockHash,
+            BnbExtractor::Log { log_index } => dtos::EvmExtractor::Log { log_index },
+        }
+    }
+}
+
+impl TryFrom<dtos::EvmExtractor> for BnbExtractor {
+    type Error = ConversionError;
+    fn try_from(value: dtos::EvmExtractor) -> Result<Self, Self::Error> {
+        match value {
+            dtos::EvmExtractor::BlockHash => Ok(BnbExtractor::BlockHash),
+            dtos::EvmExtractor::Log { log_index } => Ok(BnbExtractor::Log { log_index }),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "EvmExtractor",
+            }),
+        }
+    }
+}
+
+impl From<BnbExtractedValue> for dtos::EvmExtractedValue {
+    fn from(value: BnbExtractedValue) -> Self {
+        match value {
+            BnbExtractedValue::BlockHash(hash) => {
+                dtos::EvmExtractedValue::BlockHash(dtos::Hash256(hash.into()))
+            }
+            BnbExtractedValue::Log(log) => dtos::EvmExtractedValue::Log(log_to_evm_log(log)),
+        }
+    }
+}
+
+impl TryFrom<dtos::EvmExtractedValue> for BnbExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: dtos::EvmExtractedValue) -> Result<Self, Self::Error> {
+        match value {
+            dtos::EvmExtractedValue::BlockHash(hash) => {
+                Ok(BnbExtractedValue::BlockHash(hash.0.into()))
+            }
+            dtos::EvmExtractedValue::Log(log) => {
+                Ok(BnbExtractedValue::Log(evm_log_to_log(log)))
+            }
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "EvmExtractedValue",
+            }),
+        }
+    }
+}
+
 impl From<BitcoinExtractedValue> for dtos::ExtractedValue {
     fn from(value: BitcoinExtractedValue) -> Self {
         dtos::ExtractedValue::BitcoinExtractedValue(value.into())
@@ -191,6 +242,12 @@ impl From<BitcoinExtractedValue> for dtos::ExtractedValue {
 
 impl From<AbstractExtractedValue> for dtos::ExtractedValue {
     fn from(value: AbstractExtractedValue) -> Self {
+        dtos::ExtractedValue::EvmExtractedValue(value.into())
+    }
+}
+
+impl From<BnbExtractedValue> for dtos::ExtractedValue {
+    fn from(value: BnbExtractedValue) -> Self {
         dtos::ExtractedValue::EvmExtractedValue(value.into())
     }
 }
@@ -289,6 +346,7 @@ mod tests {
     use super::*;
     use crate::abstract_chain::AbstractBlockHash;
     use crate::bitcoin::BitcoinBlockHash;
+    use crate::bnb::BnbBlockHash;
     use crate::starknet::StarknetBlockHash;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::evm::Log;
@@ -413,6 +471,52 @@ mod tests {
         let contract = dtos::EvmExtractedValue::from(inspector.clone());
         assert_matches!(contract, dtos::EvmExtractedValue::Log(_));
         let back = AbstractExtractedValue::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn bnb_extractor_block_hash_roundtrip() {
+        let inspector = BnbExtractor::BlockHash;
+        let contract = dtos::EvmExtractor::from(inspector.clone());
+        let back = BnbExtractor::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn bnb_extractor_log_roundtrip() {
+        let inspector = BnbExtractor::Log { log_index: 5 };
+        let contract = dtos::EvmExtractor::from(inspector.clone());
+        assert_matches!(contract, dtos::EvmExtractor::Log { log_index: 5 });
+        let back = BnbExtractor::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn bnb_extracted_value_block_hash_roundtrip() {
+        let hash = BnbBlockHash::from([0xef; 32]);
+        let inspector = BnbExtractedValue::BlockHash(hash);
+        let contract = dtos::EvmExtractedValue::from(inspector.clone());
+        let back = BnbExtractedValue::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn bnb_extracted_value_log_roundtrip() {
+        let log = Log {
+            removed: false,
+            log_index: ethereum_types::U64::from(0),
+            transaction_index: ethereum_types::U64::from(0),
+            transaction_hash: ethereum_types::H256([0xaa; 32]),
+            block_hash: ethereum_types::H256([0xbb; 32]),
+            block_number: ethereum_types::U64::from(42),
+            address: ethereum_types::H160([0xcc; 20]),
+            data: String::new(),
+            topics: vec![],
+        };
+        let inspector = BnbExtractedValue::Log(log);
+        let contract = dtos::EvmExtractedValue::from(inspector.clone());
+        assert_matches!(contract, dtos::EvmExtractedValue::Log(_));
+        let back = BnbExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
 
