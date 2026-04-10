@@ -1,6 +1,7 @@
-mod common;
+use crate::common;
 
 use near_mpc_contract_interface::types::{DomainPurpose, ProtocolContractState, SignatureScheme};
+use rand::SeedableRng;
 
 /// Tests that signature and CKD requests are processed using the previous
 /// running state's threshold while resharing is in progress.
@@ -13,7 +14,7 @@ async fn test_request_during_resharing() {
     let (mut cluster, running) =
         common::setup_cluster(common::REQUEST_DURING_RESHARING_PORT_SEED, |c| {
             c.num_nodes = 4;
-            c.initial_participants = 2;
+            c.initial_participant_indices = vec![0, 1];
             c.triples_to_buffer = 2;
             c.presignatures_to_buffer = 2;
         })
@@ -48,10 +49,11 @@ async fn test_request_during_resharing() {
         .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
         .expect("no Secp256k1 Sign domain");
 
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for i in 0..3 {
         tracing::info!(i, "sending sign request during resharing");
         let outcome = cluster
-            .send_sign_request(sign_domain.id, common::generate_ecdsa_payload())
+            .send_sign_request(sign_domain.id, common::generate_ecdsa_payload(&mut rng))
             .await
             .expect("sign request failed");
         assert!(
@@ -82,7 +84,7 @@ async fn test_request_during_resharing() {
     for i in 0..3 {
         tracing::info!(i, "sending CKD request during resharing");
         let outcome = cluster
-            .send_ckd_request(ckd_domain.id, common::generate_ckd_app_public_key())
+            .send_ckd_request(ckd_domain.id, common::generate_ckd_app_public_key(&mut rng))
             .await
             .expect("ckd request failed");
         assert!(
