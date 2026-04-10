@@ -1,3 +1,4 @@
+use crate::sandbox::utils::shared_key_utils::new_secp256k1;
 use crate::sandbox::utils::{
     consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
     contract_build::current_contract,
@@ -22,14 +23,15 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::{
     method_names,
     types::{
         self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
         BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality,
-        EvmRpcRequest, EvmTxId, ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation,
-        StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
-        StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
+        EvmRpcRequest, EvmTxId, ForeignChainPolicy, ForeignTxSignPayload, ForeignTxSignPayloadV1,
+        MockAttestation, RpcProvider, StarknetExtractedValue, StarknetExtractor, StarknetFelt,
+        StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
@@ -545,10 +547,6 @@ pub struct ForeignTxEnv {
 /// Initialise a contract in Running state with a single ForeignTx Secp256k1
 /// domain.
 pub async fn setup_foreign_tx_env() -> ForeignTxEnv {
-    use crate::sandbox::utils::shared_key_utils::new_secp256k1;
-    use mpc_contract::crypto_shared::types::PublicKeyExtended;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
     let params = make_threshold_params(&participants);
@@ -588,9 +586,6 @@ pub async fn setup_foreign_tx_env() -> ForeignTxEnv {
 pub fn make_foreign_chain_policy(
     chain: &near_mpc_contract_interface::types::ForeignChain,
 ) -> near_mpc_contract_interface::types::ForeignChainPolicy {
-    use near_mpc_bounded_collections::NonEmptyBTreeSet;
-    use near_mpc_contract_interface::types::{ForeignChainPolicy, RpcProvider};
-
     let mut chains = std::collections::BTreeMap::new();
     chains.insert(
         chain.clone(),
