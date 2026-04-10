@@ -15,6 +15,7 @@ mod presign;
 mod protocol;
 mod sign;
 pub mod simulator_bench;
+pub mod snap_then_simulate;
 mod snapshot;
 
 use crate::crypto::polynomials::Polynomial;
@@ -47,6 +48,10 @@ pub use protocol::{
 pub use sign::{check_one_coordinator_output, run_sign};
 pub use simulator_bench::{
     bench_simulation, run_simulation, BenchConfig, LatencyModel, SimulationMetrics,
+};
+pub use snap_then_simulate::{
+    reconstruct_timeline, record_trace, snap_then_simulate, time_all_participants, AllTimings,
+    ExecutionTrace,
 };
 pub use snapshot::ProtocolSnapshot;
 
