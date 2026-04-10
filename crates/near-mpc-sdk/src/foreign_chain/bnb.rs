@@ -6,11 +6,11 @@ use crate::{
     sign::NotSet,
 };
 
+pub use crate::foreign_chain::evm::EvmBlockHash as BnbBlockHash;
 pub use crate::foreign_chain::evm::{
     EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest,
 };
-pub use crate::foreign_chain::evm::EvmBlockHash as BnbBlockHash;
 
 #[derive(Debug, Clone)]
 pub struct Bnb;

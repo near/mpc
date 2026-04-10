@@ -6,11 +6,11 @@ use crate::{
     sign::NotSet,
 };
 
+pub use crate::foreign_chain::evm::EvmBlockHash as AbstractBlockHash;
 pub use crate::foreign_chain::evm::{
     EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest,
 };
-pub use crate::foreign_chain::evm::EvmBlockHash as AbstractBlockHash;
 
 #[derive(Debug, Clone)]
 pub struct Abstract;
@@ -173,7 +173,7 @@ mod test {
                 finality: EvmFinality::Finalized,
                 extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
             }),
-            
+
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };
