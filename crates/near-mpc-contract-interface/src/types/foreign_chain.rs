@@ -1,9 +1,15 @@
+#![expect(
+    deprecated,
+    reason = "Deprecation of foreign TX types. Applied on module level 
+    as the expect doesn't apply on the derivations"
+)]
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
@@ -567,6 +573,7 @@ pub enum StarknetExtractedValue {
 
 #[derive(
     Debug,
+    Copy,
     Clone,
     Eq,
     PartialEq,
@@ -594,6 +601,7 @@ pub enum ForeignChain {
     Starknet,
 }
 
+#[deprecated(note = "will be removed in 3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -619,6 +627,53 @@ pub struct ForeignChainPolicy {
 #[derive(
     Debug,
     Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>);
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
+
+#[derive(
+    Debug,
+    Clone,
     Eq,
     PartialEq,
     Ord,
@@ -637,6 +692,7 @@ pub struct RpcProvider {
     pub rpc_url: String,
 }
 
+#[deprecated(note = "will be removed in 3.10.0")]
 #[derive(
     Debug,
     Clone,
@@ -657,6 +713,30 @@ pub struct RpcProvider {
 )]
 pub struct ForeignChainPolicyVotes {
     pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+    derive_more::From,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct SupportedForeignChainsVotes {
+    pub supported_chains_by_account: BTreeMap<AccountId, ForeignChainConfiguration>,
 }
 
 #[derive(

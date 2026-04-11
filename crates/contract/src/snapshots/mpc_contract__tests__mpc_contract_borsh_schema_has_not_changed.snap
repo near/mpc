@@ -496,6 +496,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ForeignChainSupport": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "votes_per_chain",
+                        "IterableMap",
+                    ),
+                ],
+            ),
+        },
         "ForeignChain__Abstract": Struct {
             fields: Empty,
         },
@@ -878,6 +888,10 @@ BorshSchemaContainer {
                     (
                         "foreign_chain_policy_votes",
                         "ForeignChainPolicyVotes",
+                    ),
+                    (
+                        "supported_foreign_chains_votes",
+                        "ForeignChainSupport",
                     ),
                     (
                         "config",

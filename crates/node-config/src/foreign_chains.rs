@@ -64,11 +64,7 @@ impl ForeignChainsConfig {
         Ok(())
     }
 
-    pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
-        if self.is_empty() {
-            return None;
-        }
-
+    pub fn to_dto(&self) -> dtos::ForeignChainConfiguration {
         let mut chains = BTreeMap::new();
 
         if let Some(config) = &self.solana {
@@ -106,7 +102,7 @@ impl ForeignChainsConfig {
             );
         }
 
-        Some(dtos::ForeignChainPolicy { chains })
+        chains.into()
     }
 }
 
@@ -723,11 +719,10 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let foreign_chain_config = config.foreign_chains.to_dto();
 
         // Then
-        let solana_providers = policy
-            .chains
+        let solana_providers = foreign_chain_config
             .get(&near_mpc_contract_interface::types::ForeignChain::Solana)
             .unwrap();
         let provider = solana_providers.iter().next().unwrap();
@@ -898,11 +893,10 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let foreign_chain_config = config.foreign_chains.to_dto();
 
         // Then
-        let eth_providers = policy
-            .chains
+        let eth_providers = foreign_chain_config
             .get(&near_mpc_contract_interface::types::ForeignChain::Ethereum)
             .unwrap();
         let provider = eth_providers.iter().next().unwrap();
