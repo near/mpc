@@ -266,7 +266,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
             .into_result()
             .unwrap_err()
             .to_string()
-            .contains(&errors::InvalidParameters::InsufficientDeposit.to_string()));
+            .contains("Attached deposit is lower than required"));
     }
     Ok(())
 }

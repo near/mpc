@@ -109,6 +109,26 @@ name = "advanced_dkg"
 harness = false
 required-features = ["test-utils"]
 
+[[bench]]
+name = "simulate_dkg"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "simulate_frost"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "simulate_ecdsa"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "simulate_ckd"
+harness = false
+required-features = ["test-utils"]
+
 [lints.clippy]
 mod_module_files = "deny"
 # We might revisit these exceptions in the future
