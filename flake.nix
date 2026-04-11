@@ -142,6 +142,7 @@
             binaryen
             jq
             perl
+            skopeo
           ];
 
           buildLibs =
