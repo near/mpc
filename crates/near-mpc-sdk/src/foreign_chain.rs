@@ -4,6 +4,8 @@ pub use near_mpc_contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as
 
 pub mod abstract_chain;
 pub mod bitcoin;
+pub mod bnb;
+pub mod evm;
 pub mod starknet;
 
 use near_mpc_contract_interface::types::PublicKey;
@@ -21,8 +23,8 @@ pub use near_mpc_contract_interface::types::{
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
 pub struct ForeignChainSignatureVerifier {
-    expected_extracted_values: Vec<ExtractedValue>,
-    request: ForeignChainRpcRequest,
+    pub(crate) expected_extracted_values: Vec<ExtractedValue>,
+    pub(crate) request: ForeignChainRpcRequest,
 }
 
 pub enum VerifyForeignChainError {
@@ -135,6 +137,6 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
 }
 
 pub struct ForeignChainRpcRequestWithExpectations {
-    request: ForeignChainRpcRequest,
-    expected_values: Vec<ExtractedValue>,
+    pub(crate) request: ForeignChainRpcRequest,
+    pub(crate) expected_values: Vec<ExtractedValue>,
 }

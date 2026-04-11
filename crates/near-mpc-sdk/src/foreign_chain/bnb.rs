@@ -6,25 +6,25 @@ use crate::{
     sign::NotSet,
 };
 
-pub use crate::foreign_chain::evm::EvmBlockHash as AbstractBlockHash;
+pub use crate::foreign_chain::evm::EvmBlockHash as BnbBlockHash;
 pub use crate::foreign_chain::evm::{
     EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest,
 };
 
 #[derive(Debug, Clone)]
-pub struct Abstract;
+pub struct Bnb;
 
-impl EvmChainVariant for Abstract {
+impl EvmChainVariant for Bnb {
     fn wrap(request: EvmRpcRequest) -> ForeignChainRpcRequest {
-        ForeignChainRpcRequest::Abstract(request)
+        ForeignChainRpcRequest::Bnb(request)
     }
 }
 
-pub type AbstractRequest<TxId, Finality> = EvmRequest<Abstract, TxId, Finality>;
+pub type BnbRequest<TxId, Finality> = EvmRequest<Bnb, TxId, Finality>;
 
-impl ForeignChainRequestBuilder<AbstractRequest<NotSet, NotSet>, NotSet> {
-    pub fn new_abstract() -> Self {
+impl ForeignChainRequestBuilder<BnbRequest<NotSet, NotSet>, NotSet> {
+    pub fn new_bnb() -> Self {
         Self {
             request: EvmRequest {
                 tx_id: NotSet,
@@ -56,7 +56,7 @@ mod test {
         let tx_id = EvmTxId::from([123; 32]);
 
         // when
-        let builder = ForeignChainRequestBuilder::new_abstract().with_tx_id(tx_id.clone());
+        let builder = ForeignChainRequestBuilder::new_bnb().with_tx_id(tx_id.clone());
 
         // then
         assert_eq!(builder.request.tx_id, tx_id);
@@ -68,7 +68,7 @@ mod test {
         let tx_id = EvmTxId::from([123; 32]);
 
         // when
-        let builder = ForeignChainRequestBuilder::new_abstract()
+        let builder = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized);
 
@@ -83,7 +83,7 @@ mod test {
         let expected_hash = [9; 32];
 
         // when
-        let builder = ForeignChainRequestBuilder::new_abstract()
+        let builder = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash);
@@ -102,7 +102,7 @@ mod test {
         let log = test_evm_log(3);
 
         // when
-        let builder = ForeignChainRequestBuilder::new_abstract()
+        let builder = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized)
             .with_expected_log(3, log.clone());
@@ -121,7 +121,7 @@ mod test {
         let log_b = test_evm_log(2);
 
         // when
-        let (verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
+        let (verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
             .with_expected_log(1, log_a.clone())
@@ -130,7 +130,7 @@ mod test {
             .build();
 
         // then
-        assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
+        assert_matches!(&request_args.request, ForeignChainRpcRequest::Bnb(rpc_request) => {
             assert_eq!(
                 rpc_request.extractors,
                 vec![
@@ -158,7 +158,7 @@ mod test {
         let log = test_evm_log(5);
 
         // when
-        let (_verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
+        let (_verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash)
@@ -168,12 +168,11 @@ mod test {
 
         // then
         let expected = VerifyForeignTransactionRequestArgs {
-            request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
+            request: ForeignChainRpcRequest::Bnb(EvmRpcRequest {
                 tx_id,
                 finality: EvmFinality::Finalized,
                 extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
             }),
-
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
         };
@@ -189,7 +188,7 @@ mod test {
         let log = test_evm_log(5);
 
         // when
-        let (verifier, _request_args) = ForeignChainRequestBuilder::new_abstract()
+        let (verifier, _request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash)
@@ -205,7 +204,7 @@ mod test {
                 )),
                 ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(log)),
             ],
-            request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
+            request: ForeignChainRpcRequest::Bnb(EvmRpcRequest {
                 tx_id,
                 finality: EvmFinality::Finalized,
                 extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
@@ -218,7 +217,7 @@ mod test {
     #[test]
     fn verifier_request_matches_request_args() {
         // given
-        let (verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
+        let (verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(EvmTxId::from([123; 32]))
             .with_finality(EvmFinality::Safe)
             .with_domain_id(DomainId::from(1))
@@ -232,14 +231,14 @@ mod test {
     #[test]
     fn build_without_extractors_produces_empty_extractors() {
         // given / when
-        let (_verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
+        let (_verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(EvmTxId::from([42; 32]))
             .with_finality(EvmFinality::Latest)
             .with_domain_id(DomainId::from(1))
             .build();
 
         // then
-        assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
+        assert_matches!(&request_args.request, ForeignChainRpcRequest::Bnb(rpc_request) => {
             assert_eq!(rpc_request.extractors, vec![]);
         });
     }
