@@ -25,10 +25,10 @@ frost-core.workspace = true
 frost-ed25519.workspace = true
 frost-secp256k1.workspace = true
 futures.workspace = true
-itertools.workspace = true
 futures-lite.workspace = true
 hex.workspace = true
 hkdf.workspace = true
+itertools.workspace = true
 k256 = { workspace = true, features = [
     "sha256",
     "ecdsa",

@@ -364,8 +364,7 @@ async fn do_generation_many<const N: usize>(
                 big_e_v.iter_mut(),
                 big_f_v.iter_mut(),
                 big_l_v.iter_mut(),
-            ))
-            {
+            )) {
                 if their_big_e.degree() != threshold.value() - 1
                     || their_big_f.degree() != threshold.value() - 1
                     // degree is threshold - 2 because the constant element identity is not serializable
