@@ -5,14 +5,15 @@
 
 //! Minimal implementation of (parts of) Strobe.
 
-// TODO(#122): remove this exception
-#![allow(clippy::indexing_slicing)]
-
 use derive_more::{Deref, DerefMut};
 use zeroize::Zeroize;
 
 use crate::crypto::constants::{FLAG_A, FLAG_C, FLAG_I, FLAG_K, FLAG_M, FLAG_T, STROBE_R};
 
+// SAFETY: `KeccakState` is `[u8; 200]`. These functions iterate `i` in `0..25`,
+// indexing `st[8*i..8*i+8]` — the maximum accessed byte is `8*24 + 7 = 199`,
+// which is within bounds.
+#[allow(clippy::indexing_slicing)]
 fn transmute_state(st: &KeccakState) -> [u64; 25] {
     let mut result = [0u64; 25];
     for (i, resulti) in result.iter_mut().enumerate() {
@@ -23,6 +24,7 @@ fn transmute_state(st: &KeccakState) -> [u64; 25] {
     result
 }
 
+#[allow(clippy::indexing_slicing)]
 fn untransmute_state(transmuted_state: [u64; 25], state: &mut KeccakState) {
     for (i, ti) in transmuted_state.iter().enumerate() {
         state[8 * i..8 * i + 8].copy_from_slice(&ti.to_le_bytes());
@@ -58,6 +60,7 @@ impl ::core::fmt::Debug for Strobe128 {
 }
 
 impl Strobe128 {
+    #[allow(clippy::indexing_slicing)] // Constant slices of [u8; 200]: [0..6] and [6..18]
     pub fn new(protocol_label: &[u8]) -> Self {
         let initial_state = {
             let mut st = KeccakState([0u8; 200]);
@@ -100,6 +103,12 @@ impl Strobe128 {
     }
 }
 
+// SAFETY for all methods in this block: `self.state` is `[u8; 200]` and `STROBE_R = 166`.
+// - `absorb`, `overwrite`, `squeeze`: `self.pos` ranges from 0 to `STROBE_R - 1` (reset to 0
+//   via `run_f` when `pos == STROBE_R`), so `self.state[self.pos as usize]` is always in bounds.
+// - `run_f`: called when `pos <= STROBE_R = 166`, so `pos + 1 <= 167 < 200` and
+//   `STROBE_R + 1 = 167 < 200` are both in bounds.
+#[allow(clippy::indexing_slicing)]
 impl Strobe128 {
     fn run_f(&mut self) {
         self.state[self.pos as usize] ^= self.pos_begin;
