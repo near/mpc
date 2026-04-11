@@ -20,4 +20,5 @@ pub enum StorageKey {
     ForeignChainPolicyVotes,
     PendingVerifyForeignTxRequests,
     PendingCKDRequestsV2,
+    SupportedForeignChainsVotes,
 }
