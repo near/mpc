@@ -96,7 +96,7 @@ impl MpcNode {
         domain_id: u64,
         attempt_id: u64,
     ) -> anyhow::Result<()> {
-        let dir = self.setup.home_dir.join("temporary_keys");
+        let dir = self.setup.home_dir.join(TEMP_KEYS_FILE);
         std::fs::create_dir_all(&dir)
             .with_context(|| format!("failed to create {}", dir.display()))?;
         let path = dir.join(format!("started_{epoch_id}_{domain_id}_{attempt_id}"));

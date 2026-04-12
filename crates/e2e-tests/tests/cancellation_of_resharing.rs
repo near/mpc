@@ -1,5 +1,6 @@
 use crate::common;
 
+use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use near_mpc_contract_interface::types::ProtocolContractState;
 
 /// Tests resharing cancellation and retry.
@@ -73,7 +74,7 @@ async fn test_cancellation_of_resharing() {
     cluster
         .wait_for_state(
             |s| matches!(s, ProtocolContractState::Running(_)),
-            std::time::Duration::from_secs(30),
+            CLUSTER_WAIT_TIMEOUT,
         )
         .await
         .expect("contract did not return to Running after cancellation");
