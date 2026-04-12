@@ -1,7 +1,9 @@
 [package]
 name = "pccs-proxy"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Local PCCS proxy — Phala-compatible collateral endpoint backed by Intel PCCS"
 
 [[bin]]

@@ -189,27 +189,21 @@ def get_collateral(quote_hex):
     tcb_json = json.loads(tcb_body)
     tcb_info = json.dumps(tcb_json["tcbInfo"], separators=(",", ":"))
     tcb_info_signature = tcb_json["signature"]
-    tcb_info_issuer_chain = unquote(
-        tcb_headers.get("TCB-Info-Issuer-Chain", "")
-    )
+    tcb_info_issuer_chain = unquote(tcb_headers.get("TCB-Info-Issuer-Chain", ""))
 
     # 2. QE Identity (TDX)
     qe_body, qe_headers = make_pccs_request("/tdx/certification/v4/qe/identity")
     qe_json = json.loads(qe_body)
     qe_identity = json.dumps(qe_json["enclaveIdentity"], separators=(",", ":"))
     qe_identity_signature = qe_json["signature"]
-    qe_identity_issuer_chain = unquote(
-        qe_headers.get("SGX-Enclave-Identity-Issuer-Chain", "")
-    )
+    qe_identity_issuer_chain = unquote(qe_headers.get("SGX-Enclave-Identity-Issuer-Chain", ""))
 
     # 3. PCK CRL (PCCS returns hex-encoded DER as text)
     pck_crl_body, pck_crl_headers = make_pccs_request(
         f"/sgx/certification/v4/pckcrl?ca={ca_type}"
     )
     pck_crl_hex = pck_crl_body.decode("utf-8")
-    pck_crl_issuer_chain = unquote(
-        pck_crl_headers.get("SGX-PCK-CRL-Issuer-Chain", "")
-    )
+    pck_crl_issuer_chain = unquote(pck_crl_headers.get("SGX-PCK-CRL-Issuer-Chain", ""))
 
     # 4. Root CA CRL (PCCS returns hex-encoded DER as text)
     root_crl_body, _ = make_pccs_request("/sgx/certification/v4/rootcacrl")
