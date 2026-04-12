@@ -1,5 +1,7 @@
 [launcher_config]
 image = "${MPC_IMAGE}"
+pull_max_retries = 5
+pull_retry_interval_secs = 2
 port_mappings = [
 ${PORTS_TOML}]
 
