@@ -2,7 +2,7 @@
 
 Secure launcher for initializing and attesting a Docker-based MPC node inside a TEE-enabled environment (e.g., Intel TDX via dstack).
 
-Replaces the previous Python launcher (`tee_launcher/launcher.py`).
+This is the production launcher. It replaces the previous Python launcher (`tee_launcher/launcher.py`), which is now deprecated.
 
 ## What it does
 

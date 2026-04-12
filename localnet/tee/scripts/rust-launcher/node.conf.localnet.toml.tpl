@@ -1,10 +1,5 @@
 [launcher_config]
-image_tags = ["${MPC_IMAGE_TAGS}"]
-image_name = "${MPC_IMAGE_NAME}"
-registry = "${MPC_REGISTRY}"
-rpc_request_timeout_secs = 10
-rpc_request_interval_secs = 1
-rpc_max_attempts = 20
+image = "${MPC_IMAGE}"
 port_mappings = [
 ${PORTS_TOML}]
 
