@@ -30,9 +30,13 @@ This provides maximum parity with production while keeping the setup simple.
 
 ## Files Used
 
-- **Launcher Docker Compose (non-TEE):** `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml`
+- **Launcher Docker Compose (non-TEE)**
+  - Rust launcher: `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml`
+  - Python launcher: `tee_launcher/launcher_docker_compose_nontee.yaml`
 
-- **User configuration file:** `user-config.toml` (TOML format, mounted at `/tapp/user_config`)
+- **User configuration file**
+  - Rust launcher: `user-config.toml` (TOML format, mounted at `/tapp/user_config`)
+  - Python launcher: `user-config.conf` (key=value format, mounted at `/tapp/user_config`)
 
 ---
 
@@ -48,18 +52,19 @@ Create or use a non-TEE launcher compose file with the following properties:
 - Mount the user config file at `/tapp/user_config`
 - Provide persistent volumes for shared state and MPC data
 
-See example:
+See examples:
 ```
-deployment/cvm-deployment/launcher_docker_compose_nontee.yaml
+deployment/cvm-deployment/launcher_docker_compose_nontee.yaml  (Rust launcher)
+tee_launcher/launcher_docker_compose_nontee.yaml               (Python launcher)
 ```
 
 ---
 
 ### 2. Prepare the user configuration file
 
-Create a `user-config.toml` file (TOML format) with `[launcher_config]` and `[mpc_node_config]` sections. See `deployment/cvm-deployment/user-config.toml` for an example.
+**Rust launcher:** Create a `user-config.toml` file (TOML format) with `[launcher_config]` and `[mpc_node_config]` sections. See `deployment/cvm-deployment/user-config.toml` for an example. The `[launcher_config]` section uses a single `image` field for the Docker image reference (e.g., `image = "nearone/mpc-node"`).
 
-The `[launcher_config]` section uses a single `image` field for the Docker image reference (e.g., `image = "nearone/mpc-node"`). The old `MPC_IMAGE_NAME`, `MPC_IMAGE_TAGS`, and `MPC_REGISTRY` fields are no longer used.
+**Python launcher:** Create a `user-config.conf` file (key=value format) with `MPC_IMAGE_NAME`, `MPC_IMAGE_TAGS`, `MPC_REGISTRY`, and MPC runtime configuration. See `tee_launcher/user-config.conf` for an example.
 
 This file is read by the launcher and passed into the MPC container.
 
