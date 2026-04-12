@@ -108,9 +108,7 @@ def extract_fmspc_and_ca_from_quote(quote_hex):
     )
     first_cert = pem_chain[:first_cert_end]
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".pem", delete=False
-    ) as tmpf:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", delete=False) as tmpf:
         tmpf.write(first_cert)
         tmpfile = tmpf.name
 
@@ -157,9 +155,7 @@ def extract_fmspc_and_ca_from_quote(quote_hex):
         ca_type = "processor"
     else:
         # Double check via openssl
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".pem", delete=False
-        ) as tmpf:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", delete=False) as tmpf:
             tmpf.write(second_cert)
             tmpfile = tmpf.name
         try:
@@ -196,7 +192,9 @@ def get_collateral(quote_hex):
     qe_json = json.loads(qe_body)
     qe_identity = json.dumps(qe_json["enclaveIdentity"], separators=(",", ":"))
     qe_identity_signature = qe_json["signature"]
-    qe_identity_issuer_chain = unquote(qe_headers.get("SGX-Enclave-Identity-Issuer-Chain", ""))
+    qe_identity_issuer_chain = unquote(
+        qe_headers.get("SGX-Enclave-Identity-Issuer-Chain", "")
+    )
 
     # 3. PCK CRL (PCCS returns hex-encoded DER as text)
     pck_crl_body, pck_crl_headers = make_pccs_request(
