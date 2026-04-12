@@ -44,7 +44,13 @@ pub async fn run() -> Result<(), LauncherError> {
         config.launcher_config.mpc_hash_override.as_ref(),
     )?;
 
-    pull_and_verify(&config.launcher_config.image, &manifest_digest)?;
+    pull_and_verify(
+        &config.launcher_config.image,
+        &manifest_digest,
+        config.launcher_config.pull_max_retries,
+        config.launcher_config.pull_retry_interval_secs,
+    )
+    .await?;
 
     if args.platform == Platform::Tee {
         emit_image_hash_event(&manifest_digest).await?;

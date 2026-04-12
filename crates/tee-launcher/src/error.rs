@@ -53,12 +53,12 @@ pub enum LauncherError {
     #[error("User config contains reserved key [{0}] — remove it from mpc_node_config")]
     ReservedConfigKey(String),
 
-    #[error("Image pull/validation failed: {0}")]
+    #[error("Image pull failed: {0}")]
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum ImageDigestValidationFailed {
-    #[error("docker pull failed: {0}")]
-    DockerPullFailed(String),
+    #[error("docker pull failed for {reference}: {detail}")]
+    DockerPullFailed { reference: String, detail: String },
 }

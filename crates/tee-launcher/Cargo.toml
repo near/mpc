@@ -13,7 +13,11 @@ path = "src/lib.rs"
 name = "tee-launcher"
 path = "src/main.rs"
 
+[features]
+external-services-tests = []
+
 [dependencies]
+backon = { workspace = true }
 clap = { workspace = true }
 dstack-sdk = { workspace = true }
 launcher-interface = { workspace = true }

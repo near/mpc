@@ -578,40 +578,46 @@ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> use-manuall
 
 For more details, please refer to the NEAR account documentation.
 
-### Prepare MPC container environment variables
+### Prepare MPC node configuration
 
-Create a user-config.conf file based on the [user-config.conf](https://github.com/near/mpc/blob/main/tee_launcher/user-config.conf) .
+Create a `user-config.toml` file based on the [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template.
 
-```txt
-# MPC docker image local override
-MPC_IMAGE_NAME=nearone/mpc-node-gcp
-MPC_IMAGE_TAGS=latest
-MPC_REGISTRY=registry.hub.docker.com
+The configuration has two sections: `[launcher_config]` for the launcher and `[mpc_node_config]` for the MPC node.
 
-# MPC node settings
-MPC_ACCOUNT_ID=$MY_MPC_NEAR_ACCOUNT_ID
-MPC_LOCAL_ADDRESS=127.0.0.1
-MPC_SECRET_STORE_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-MPC_CONTRACT_ID=$CONTRACT_ID # v1.signer-prod.testnet for Testnet or v1.signer for Mainnet
-MPC_ENV=$CHAIN_ID # testnet or mainnet
-MPC_HOME_DIR=/data
-RUST_BACKTRACE=full
-RUST_LOG=mpc=debug,info
+```toml
+[launcher_config]
+image = "nearone/mpc-node"
+port_mappings = [
+  { host = 80, container = 80 },
+  { host = 8080, container = 8080 },
+  { host = 8079, container = 8079 },
+  { host = 3030, container = 3030 },
+  { host = 24567, container = 24567 },
+]
 
-NEAR_BOOT_NODES=$BOOT_NODES
+[mpc_node_config]
+home_dir = "/data"
 
-# telemetry,migration,debug,node-node,DSS (Decentralized Status Sync)
-PORTS=8080:8080,8079:8079,3030:3030,80:80,24567:24567
+[mpc_node_config.node]
+my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
+mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for Testnet or v1.signer for Mainnet
+near_rpc = "https://rpc.testnet.near.org"
+near_boot_nodes = "$BOOT_NODES"
 
+[mpc_node_config.secrets]
+secret_store_key_hex = "$SECRET_STORE_KEY"
 
+[mpc_node_config.log]
+format = "plain"
+filter = "mpc=debug,info"
 ```
 
 Adjust the variables as per your environment.
 
-* MPC_ACCOUNT_ID `-` use the near account ID that was created in the previous step  
-  MPC\_CONTRACT\_ID is **v1.signer-prod.testnet** for testnet and **v1.signer** for mainnet
-* PORTS: Those are the port forwarding rules for the MPC container. Those should be a subset of the port forwarding for the CVM that are defined [Port Mapping](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#using-the-web-interface)
-* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into NEAR\_BOOT\_NODES variable.
+* `my_near_account_id` — use the NEAR account ID created in the previous step
+* `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
+* `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in [Port Mapping](#using-the-web-interface)
+* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `near_boot_nodes`.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
 ```bash
@@ -629,20 +635,19 @@ paste -sd',' -
 
 ### Preparing a Docker Compose File
 
-To launch the MPC node in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml).
+To launch the launcher in the TEE environment, use the Docker Compose file from the [NEAR MPC repository](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).
 
-Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image digest retrieved from the contract.
+Update the `DEFAULT_IMAGE_DIGEST` field in `launcher_docker_compose.yaml` with the latest MPC Docker image manifest digest retrieved from the contract.
 
-For details on how to map this hash to a specific Docker image published on DockerHub, or to the corresponding source code, see the section [MPC Node Image Upgrade](#mpc-node-image-upgrade).
+For details on how to verify this digest, see the section [MPC Node Image Upgrade](#mpc-node-image-upgrade).
 
 Example digest value:
 
 ```bash
-DEFAULT_IMAGE_DIGEST=sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
+DEFAULT_IMAGE_DIGEST=sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
-You can retrieve the allowed MPC Docker image hash directly from the contract using the NEAR CLI. The latest allowed image hash
-will appear first in the returned vector:
+You can retrieve the allowed MPC Docker image manifest digest directly from the contract using the NEAR CLI. The latest allowed digest will appear first in the returned vector:
 
 ```bash
 near contract call-function as-transaction \
@@ -657,9 +662,9 @@ near contract call-function as-transaction \
   send
 ```
 
-The transaction output will include the latest MPC Docker image hash.
+The transaction output will include the latest MPC Docker image manifest digest.
 
-**Note:** - the [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including whitespaces).
+**Note:** The [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml) is measured, and the measurements are part of the remote attestation. Make sure not to change any other fields or values (including whitespaces).
 
 ### Required Ports and Port Collisions
 
@@ -719,9 +724,9 @@ Use the following custom settings for MPC:
 
 #### Using the script
 
-Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/tee_launcher/deploy-launcher.sh) described here
-[https://github.com/near/mpc/blob/main/tee\_launcher/deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/tee_launcher/deploy-launcher-guide.md)  
-To configure and start your VM.
+Use the script [deploy-launcher.sh](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher.sh) described in
+[deploy-launcher-guide.md](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/deploy-launcher-guide.md)  
+to configure and start your VM.
 
 ### Accessing MPC (or Launcher) Docker Logs
 
@@ -817,7 +822,7 @@ cargo install --path crates/attestation-cli
 
 #### Gather the required inputs
 
-1. **Allowed MPC Docker image hash** — The SHA256 hex hash of the approved MPC Docker image. You can query it from the contract:
+1. **Allowed MPC Docker image manifest digest** — The SHA256 manifest digest of the approved MPC Docker image. You can query it from the contract:
 
    ```bash
    near contract call-function as-transaction \
@@ -832,7 +837,7 @@ cargo install --path crates/attestation-cli
      send
    ```
 
-   The latest allowed image hash will appear first in the returned vector.
+   The latest allowed manifest digest will appear first in the returned vector.
 
 2. **Launcher docker-compose file** — The same `launcher_docker_compose.yaml` you prepared in the [Preparing a Docker Compose File](#preparing-a-docker-compose-file) section. The CLI computes its SHA256 hash and compares it against the hash attested by the node.
 
@@ -1163,13 +1168,13 @@ When either type of hash is voted in, the contract automatically derives the exp
 
 ## MPC Node Image Upgrade
 
-This is the most common upgrade. When a new MPC node version is released, operators vote for the new image hash and restart their CVM. The MPC node image hash does **not** affect the sealing key, so existing key shares remain accessible.
+This is the most common upgrade. When a new MPC node version is released, operators vote for the new image manifest digest and restart their CVM. The MPC node image does **not** affect the sealing key, so existing key shares remain accessible.
 
 **Steps:**
 
-1. Verify the Docker image hash (see [Image/code inspection](#imagecode-inspection)).
-2. Vote for the new hash in the contract.
-3. Update `user-config.conf` and restart the CVM.
+1. Verify the Docker image (see [Image/code inspection](#imagecode-inspection)).
+2. Vote for the new manifest digest in the contract.
+3. Update the image tag in `user-config.toml` and restart the CVM.
 
 ### Image/code inspection
 
@@ -1243,20 +1248,11 @@ TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
 
 ### Update the MPC node
 
-After voting has finished, the MPC node will detect that there is a new approved MPC docker image hash registered on the contract, and will download and save the hash into a secure location inside the CVM.
+After voting has finished, the MPC node will detect the new approved manifest digest on the contract and save it to a secure location inside the CVM.
 
-You can view this has happened by
-
-TBD [#909](https://github.com/near/mpc/issues/909) \- add logs/screen shoot.
-
-Following the hash update, you should upgrade the MPC node by following those steps:
-1. (Optional) Manually confirm the MPC DockerHub path/tag matches the voted hash.
-2. Update the DockerHub image path/tag in `user-config.conf`.
-3. Restart the CVM.
-
-#### Confirm that you have the correct DockerHub link to the approved MPC docker image
-
-* Check the manifest digest shown on DockerHub for the image tag matches the hash you voted for. The launcher pulls by manifest digest directly, and Docker verifies the content matches during the pull.
+Following the digest update, upgrade the MPC node:
+1. (Optional) Confirm the manifest digest shown on DockerHub for the image tag matches the hash you voted for.
+2. Restart the CVM. The launcher will pull the new image by manifest digest automatically.
 
 ## Launcher / CVM Upgrade
 

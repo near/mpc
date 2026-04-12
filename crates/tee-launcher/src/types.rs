@@ -52,10 +52,24 @@ pub struct LauncherConfig {
     /// Full Docker image reference, including registry if not Docker Hub.
     /// Examples: `"nearone/mpc-node"` (Docker Hub), `"ghcr.io/nearone/mpc-node"`.
     pub image: String,
+    /// Maximum number of retries for `docker pull`. Defaults to 5.
+    #[serde(default = "default_pull_max_retries")]
+    pub pull_max_retries: usize,
+    /// Delay between pull retries in seconds (exponential backoff base). Defaults to 2.
+    #[serde(default = "default_pull_retry_interval_secs")]
+    pub pull_retry_interval_secs: u64,
     /// Optional digest override (`sha256:...`) that bypasses the approved list selection.
     /// Must still appear in the approved hashes file if present. Set via `mpc_hash_override`.
     pub mpc_hash_override: Option<DockerSha256Digest>,
     pub port_mappings: Vec<PortMapping>,
+}
+
+fn default_pull_max_retries() -> usize {
+    5
+}
+
+fn default_pull_retry_interval_secs() -> u64 {
+    2
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
