@@ -42,10 +42,11 @@ pub async fn pull_and_verify(
         Ok(())
     };
 
+    let max_delay_secs = 60;
     let backoff = ExponentialBuilder::default()
-        .with_min_delay(Duration::from_secs(retry_interval_secs))
+        .with_min_delay(Duration::from_secs(retry_interval_secs.min(max_delay_secs)))
         .with_factor(1.5)
-        .with_max_delay(Duration::from_secs(60))
+        .with_max_delay(Duration::from_secs(max_delay_secs))
         .with_max_times(max_retries);
 
     pull_fn
