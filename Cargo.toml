@@ -23,6 +23,7 @@ members = [
     "crates/near-mpc-sdk",
     "crates/near-mpc-signature-verifier",
     "crates/node",
+    "crates/pccs-proxy",
     "crates/node-config",
     "crates/node-types",
     "crates/primitives",
