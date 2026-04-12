@@ -83,3 +83,15 @@ pub trait Protocol {
     /// Inform the protocol of a new message.
     fn message(&mut self, from: Participant, data: MessageData) -> Result<(), MessageError>;
 }
+
+impl<T> Protocol for Box<dyn Protocol<Output = T>> {
+    type Output = T;
+
+    fn poke(&mut self) -> Result<Action<Self::Output>, ProtocolError> {
+        (**self).poke()
+    }
+
+    fn message(&mut self, from: Participant, data: MessageData) -> Result<(), MessageError> {
+        (**self).message(from, data)
+    }
+}
