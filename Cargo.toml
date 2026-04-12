@@ -164,9 +164,6 @@ near-sdk = { version = "5.24.1", features = [
 ] }
 near-workspaces = { version = "0.22.1" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
-oci-client = { version = "0.16", default-features = false, features = [
-    "rustls-tls",
-] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
     "cpp",

@@ -90,7 +90,7 @@ export VMM_RPC=http://127.0.0.1:10000
 # MPC node image (must support TOML config / start-with-config-file)
 export MPC_IMAGE_NAME=nearone/mpc-node
 export MPC_IMAGE_TAGS=main-9515e18
-export MPC_REGISTRY=registry.hub.docker.com
+export MPC_IMAGE=nearone/mpc-node
 
 # NEAR localnet
 export NEAR_NETWORK_CONFIG=mpc-localnet

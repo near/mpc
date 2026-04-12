@@ -1,79 +1,109 @@
 use std::process::Command;
 use std::time::Duration;
 
+use backon::{ExponentialBuilder, Retryable};
 use launcher_interface::types::DockerSha256Digest;
 
 use crate::error::ImageDigestValidationFailed;
-use crate::registry::{create_registry_client, get_manifest_digest};
-use crate::types::LauncherConfig;
 
-/// Returns if the given image digest is valid (pull + manifest + digest match).
-/// Does NOT extend RTMR3 and does NOT run the container.
-pub async fn validate_image_hash(
-    launcher_config: &LauncherConfig,
-    image_hash: DockerSha256Digest,
-) -> Result<DockerSha256Digest, ImageDigestValidationFailed> {
-    let timeout = Duration::from_secs(launcher_config.rpc_request_timeout_secs);
-    let client = create_registry_client(timeout);
-    let manifest_digest = get_manifest_digest(&client, launcher_config, &image_hash)
-        .await
-        .map_err(|e| ImageDigestValidationFailed::ManifestDigestLookupFailed(e.to_string()))?;
-    let image_name = &launcher_config.image_name;
+/// Pulls the image by manifest digest with retry logic.
+///
+/// The approved hashes file contains manifest digests, so we can pull directly
+/// without querying the Docker registry API. Docker verifies the content
+/// matches the digest during the pull.
+pub async fn pull_and_verify(
+    image_name: &str,
+    manifest_digest: &DockerSha256Digest,
+    max_retries: usize,
+    retry_interval_secs: u64,
+) -> Result<(), ImageDigestValidationFailed> {
+    let reference = format!("{image_name}@{manifest_digest}");
 
-    let name_and_digest = format!("{image_name}@{manifest_digest}");
+    let pull_fn = || async {
+        tracing::info!(%reference, "pulling image");
 
-    // Pull
-    let pull = Command::new("docker")
-        .args(["pull", &name_and_digest])
-        .output()
-        .map_err(|e| ImageDigestValidationFailed::DockerPullFailed(e.to_string()))?;
+        let pull = Command::new("docker")
+            .args(["pull", &reference])
+            .output()
+            .map_err(|e| ImageDigestValidationFailed::DockerPullFailed {
+                reference: reference.clone(),
+                detail: e.to_string(),
+            })?;
 
-    let pull_failed = !pull.status.success();
-    if pull_failed {
-        return Err(ImageDigestValidationFailed::DockerPullFailed(
-            "docker pull terminated with unsuccessful status".to_string(),
-        ));
+        if !pull.status.success() {
+            let stderr = String::from_utf8_lossy(&pull.stderr).to_string();
+            let stdout = String::from_utf8_lossy(&pull.stdout).to_string();
+            return Err(ImageDigestValidationFailed::DockerPullFailed {
+                reference: reference.clone(),
+                detail: format!(
+                    "exit code {}: stderr={stderr}, stdout={stdout}",
+                    pull.status
+                ),
+            });
+        }
+
+        Ok(())
+    };
+
+    let max_delay_secs = 60;
+    let backoff = ExponentialBuilder::default()
+        .with_min_delay(Duration::from_secs(retry_interval_secs.min(max_delay_secs)))
+        .with_factor(1.5)
+        .with_max_delay(Duration::from_secs(max_delay_secs))
+        .with_max_times(max_retries);
+
+    pull_fn
+        .retry(backoff)
+        .notify(|err, dur| {
+            tracing::warn!(
+                %reference,
+                ?dur,
+                ?err,
+                "docker pull failed, retrying"
+            );
+        })
+        .await?;
+
+    tracing::info!(%reference, "image pulled successfully");
+    Ok(())
+}
+
+#[cfg(all(test, feature = "external-services-tests"))]
+mod integration_tests {
+    use super::*;
+
+    /// Known manifest digest for nearone/testing:83b52da4e2270c688cdd30da04f6b9d3565f25bb
+    /// This is a small test image that should always be available.
+    const DOCKER_HUB_IMAGE: &str = "nearone/testing";
+    const DOCKER_HUB_MANIFEST_DIGEST: &str =
+        "sha256:8253c22185cd8dcdcc53cbfb3c1205223ea37ba14bd02b9a08198b4d9990b42a";
+
+    /// Known manifest digest for ghcr.io/linuxserver/baseimage-alpine:3.21
+    const GHCR_IMAGE: &str = "ghcr.io/linuxserver/baseimage-alpine";
+    const GHCR_MANIFEST_DIGEST: &str =
+        "sha256:8562e697b41f388d85eb6853ff65cdf5017d1939a6ea5c2fe60031a5764f2d41";
+
+    #[tokio::test]
+    async fn pull_from_docker_hub() {
+        let digest: DockerSha256Digest = DOCKER_HUB_MANIFEST_DIGEST.parse().unwrap();
+        let result = pull_and_verify(DOCKER_HUB_IMAGE, &digest, 3, 1).await;
+        assert!(result.is_ok(), "Docker Hub pull failed: {result:?}");
     }
 
-    // Verify that the pulled image ID matches the expected config digest.
-    // `docker inspect .ID` returns the image ID, which equals the config digest
-    // (i.e. the sha256 of the image config blob).
-    let inspect = Command::new("docker")
-        .args([
-            "image",
-            "inspect",
-            "--format",
-            "{{index .ID}}",
-            &name_and_digest,
-        ])
-        .output()
-        .map_err(|e| ImageDigestValidationFailed::DockerInspectFailed(e.to_string()))?;
-
-    let docker_inspect_failed = !inspect.status.success();
-    if docker_inspect_failed {
-        return Err(ImageDigestValidationFailed::DockerInspectFailed(
-            "docker inspect terminated with unsuccessful status".to_string(),
-        ));
+    #[tokio::test]
+    async fn pull_from_ghcr() {
+        let digest: DockerSha256Digest = GHCR_MANIFEST_DIGEST.parse().unwrap();
+        let result = pull_and_verify(GHCR_IMAGE, &digest, 3, 1).await;
+        assert!(result.is_ok(), "GHCR pull failed: {result:?}");
     }
 
-    let pulled_image_id: DockerSha256Digest = String::from_utf8_lossy(&inspect.stdout)
-        .trim()
-        .to_string()
-        .parse()
-        .map_err(|e| {
-            ImageDigestValidationFailed::DockerInspectFailed(format!(
-                "docker inspect returned invalid image ID: {e}"
-            ))
-        })?;
-
-    if pulled_image_id != image_hash {
-        return Err(
-            ImageDigestValidationFailed::PulledImageHasMismatchedDigest {
-                pulled_image_id,
-                expected_image_id: image_hash,
-            },
-        );
+    #[tokio::test]
+    async fn pull_with_wrong_digest_fails() {
+        let bad_digest: DockerSha256Digest =
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                .parse()
+                .unwrap();
+        let result = pull_and_verify(DOCKER_HUB_IMAGE, &bad_digest, 0, 1).await;
+        assert!(result.is_err(), "should fail with wrong digest");
     }
-
-    Ok(manifest_digest)
 }

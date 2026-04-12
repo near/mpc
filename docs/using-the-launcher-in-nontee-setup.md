@@ -62,7 +62,7 @@ tee_launcher/launcher_docker_compose_nontee.yaml               (Python launcher)
 
 ### 2. Prepare the user configuration file
 
-**Rust launcher:** Create a `user-config.toml` file (TOML format) with `[launcher_config]` and `[mpc_node_config]` sections. See `deployment/cvm-deployment/user-config.toml` for an example.
+**Rust launcher:** Create a `user-config.toml` file (TOML format) with `[launcher_config]` and `[mpc_node_config]` sections. See `deployment/cvm-deployment/user-config.toml` for an example. The `[launcher_config]` section uses a single `image` field for the Docker image reference (e.g., `image = "nearone/mpc-node"`).
 
 **Python launcher:** Create a `user-config.conf` file (key=value format) with `MPC_IMAGE_NAME`, `MPC_IMAGE_TAGS`, `MPC_REGISTRY`, and MPC runtime configuration. See `tee_launcher/user-config.conf` for an example.
 
@@ -90,7 +90,7 @@ You should see:
 - `Launcher platform: NONTEE`
 - Image hash selection and validation
 - `PLATFORM=NONTEE → skipping RTMR3 extension`
-- A `docker run ...` command launching `mpc-node`
+- The MPC container being launched via `docker compose up -d`
 
 ---
 

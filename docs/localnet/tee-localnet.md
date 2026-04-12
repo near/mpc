@@ -114,13 +114,7 @@ Update Sam/Frodo.toml fields:
 MPC_IMAGE_TAGS=main_3.0.3
 ```
 
-The MPC_IMAGE_TAGS should match the MPC node image hash used in the docker-compose file.
-e.g:
-
-```shell
-$Docker inspect nearone/mpc-node:main_3.0.3 | grep "Id"
-"Id": "sha256:abc",
-```
+The MPC_IMAGE_TAGS should match the MPC node image whose manifest digest is set as `DEFAULT_IMAGE_DIGEST` in the docker-compose file. You can look up the manifest digest on Docker Hub or the registry's tag listing.
 
 ---
 ### Node Startup
@@ -129,10 +123,10 @@ You can start the nodes **manually** as described in the Operator Guide, or you 
 
 Once all paths and configuration files (`*.env` and `*.toml`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
 
-#### 1. Move into the `tee_launcher` Directory
+#### 1. Move into the `deployment/cvm-deployment` Directory
 
 ```bash
-cd tee_launcher
+cd deployment/cvm-deployment
 ```
 
 #### 2. Ensure the Script Is Executable
@@ -301,10 +295,10 @@ near contract call-function as-transaction mpc-contract.test.near vote_code_hash
 ### Vote for Launcher Image Hash
 
 A launcher image hash must also be voted in so that compose hashes can be derived.
-Extract the launcher hash from `tee_launcher/launcher_docker_compose.yaml`:
+Extract the launcher hash from `deployment/cvm-deployment/launcher_docker_compose.yaml`:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' tee_launcher/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
 ```
 
 ```bash

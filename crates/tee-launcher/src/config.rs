@@ -33,15 +33,22 @@ fn insert_reserved(
     }
 }
 
-/// Validate that `image_name` contains only safe characters for Docker image names.
-/// Rejects values that could inject YAML syntax (newlines, colons in unexpected places, etc.)
-/// when substituted into the compose template.
+/// Validate that `image_name` contains only safe characters for Docker image references.
+/// Allows registry/name:tag format. Rejects values that could inject YAML syntax
+/// (newlines, spaces, etc.) when substituted into the compose template.
 pub fn validate_image_name(image_name: &str) -> Result<(), LauncherError> {
-    // Docker image names: [a-zA-Z0-9][a-zA-Z0-9._/-]*
+    // Docker image references: [a-zA-Z0-9][a-zA-Z0-9._/:-]*
+    // The colon is needed for tags (e.g., "nearone/mpc-node:3.8.1")
+    // and registry ports (e.g., "registry.example.com:5000/image")
     let is_valid = !image_name.is_empty()
-        && image_name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'/' || b == b'-' || b == b'.' || b == b'_');
+        && image_name.bytes().all(|b| {
+            b.is_ascii_alphanumeric()
+                || b == b'/'
+                || b == b'-'
+                || b == b'.'
+                || b == b'_'
+                || b == b':'
+        });
     if !is_valid {
         return Err(LauncherError::InvalidImageName(image_name.to_string()));
     }

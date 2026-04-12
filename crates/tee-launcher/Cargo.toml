@@ -22,8 +22,6 @@ clap = { workspace = true }
 dstack-sdk = { workspace = true }
 launcher-interface = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
-oci-client = { workspace = true }
-rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
@@ -35,7 +33,6 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-rstest = { workspace = true }
 
 [lints]
 workspace = true
