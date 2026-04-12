@@ -116,7 +116,11 @@ pub async fn batch_random_ot_sender_many<const N: usize>(
     mut chan: PrivateChannel,
     mut rng: impl CryptoRngCore,
 ) -> Result<Vec<BatchRandomOTOutputSender>, ProtocolError> {
-    assert!(N > 0);
+    if N == 0 {
+        return Err(ProtocolError::InvalidInput(
+            "N must be greater than 0".to_string(),
+        ));
+    }
     let mut big_y_v = vec![];
     let mut big_z_v = vec![];
     let mut yv = vec![];
@@ -282,7 +286,11 @@ pub async fn batch_random_ot_receiver_many<const N: usize>(
     mut chan: PrivateChannel,
     mut rng: impl CryptoRngCore,
 ) -> Result<Vec<BatchRandomOTOutputReceiver>, ProtocolError> {
-    assert!(N > 0);
+    if N == 0 {
+        return Err(ProtocolError::InvalidInput(
+            "N must be greater than 0".to_string(),
+        ));
+    }
     // Step 3
     let wait0 = chan.next_waitpoint();
     // deserialization prevents receiving the identity
