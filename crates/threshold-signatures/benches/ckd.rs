@@ -8,7 +8,9 @@ use crate::bench_utils::{
     analyze_received_sizes, prepare_ckd, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
 };
 use threshold_signatures::{
-    confidential_key_derivation::{protocol::ckd, CKDOutputOption},
+    confidential_key_derivation::{
+        protocol::ckd as ckd_protocol, AppId, CKDOutputOption, ElementG1, KeygenOutput,
+    },
     participants::Participant,
     protocol::Protocol,
     test_utils::{
@@ -27,7 +29,9 @@ fn threshold() -> ReconstructionLowerBound {
 fn bench_ckd(c: &mut Criterion) {
     let num = threshold().value();
     let max_malicious = *MAX_MALICIOUS;
-    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
+
+    let setup = setup_ckd_snapshot(threshold());
+    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("ckd");
     group.sample_size(*SAMPLE_SIZE);
@@ -35,23 +39,30 @@ fn bench_ckd(c: &mut Criterion) {
         format!("ckd_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || {
-                    let preps = prepare_simulated_ckd(threshold());
-                    sizes.push(preps.simulator.get_view_size());
-                    preps
-                },
+                || prepare_simulated_ckd(&setup),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
         },
     );
-    analyze_received_sizes(&sizes, true);
+    analyze_received_sizes(&[size], true);
 }
 
 criterion_group!(benches, bench_ckd);
 criterion_main!(benches);
 
-fn prepare_simulated_ckd(threshold: ReconstructionLowerBound) -> PreparedSimulatedCkd {
+struct CkdSetup {
+    participants: Vec<Participant>,
+    real_participant: Participant,
+    keygen_out: KeygenOutput,
+    app_id: AppId,
+    app_pk: ElementG1,
+    rng_for_protocol: MockCryptoRng,
+    cached_simulator: Simulator,
+}
+
+/// Expensive one-time setup: runs the full N-party protocol to capture snapshots
+fn setup_ckd_snapshot(threshold: ReconstructionLowerBound) -> CkdSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = prepare_ckd(threshold, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
@@ -65,25 +76,38 @@ fn prepare_simulated_ckd(threshold: ReconstructionLowerBound) -> PreparedSimulat
 
     // choose the real_participant being the coordinator
     let (real_participant, keygen_out) = preps.key_packages[preps.index].clone();
-    let real_protocol = ckd(
-        &participants,
-        real_participant,
+
+    let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
+        .expect("Simulator should not be empty");
+
+    CkdSetup {
+        participants,
         real_participant,
         keygen_out,
-        preps.app_id,
-        preps.app_pk,
-        rng,
+        app_id: preps.app_id,
+        app_pk: preps.app_pk,
+        rng_for_protocol: rng,
+        cached_simulator,
+    }
+}
+
+/// Cheap per-sample setup: creates fresh ckd protocol and clones the cached simulator
+fn prepare_simulated_ckd(setup: &CkdSetup) -> PreparedSimulatedCkd {
+    let real_protocol = ckd_protocol(
+        &setup.participants,
+        setup.real_participant,
+        setup.real_participant,
+        setup.keygen_out.clone(),
+        setup.app_id.clone(),
+        setup.app_pk,
+        setup.rng_for_protocol.clone(),
     )
     .map(|ckd| Box::new(ckd) as Box<dyn Protocol<Output = CKDOutputOption>>)
     .expect("Ckd should succeed");
 
-    // now preparing the simulator
-    let simulated_protocol =
-        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
-
     PreparedSimulatedCkd {
-        participant: real_participant,
+        participant: setup.real_participant,
         protocol: real_protocol,
-        simulator: simulated_protocol,
+        simulator: setup.cached_simulator.clone(),
     }
 }

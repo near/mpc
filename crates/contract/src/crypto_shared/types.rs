@@ -75,8 +75,9 @@ impl TryFrom<PublicKeyExtended> for near_sdk::PublicKey {
                 ..
             } => Ok(near_public_key_compressed),
             PublicKeyExtended::Bls12381 { public_key: _ } => {
-                Err(errors::ConversionError::DataConversion
-                    .message("Cannot convert Bls12381 key to near_sdk::PublicKey"))?
+                Err(errors::ConversionError::DataConversion {
+                    reason: "Cannot convert Bls12381 key to near_sdk::PublicKey".into(),
+                })?
             }
         }
     }
