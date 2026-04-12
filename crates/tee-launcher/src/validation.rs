@@ -76,12 +76,12 @@ mod integration_tests {
     /// This is a small test image that should always be available.
     const DOCKER_HUB_IMAGE: &str = "nearone/testing";
     const DOCKER_HUB_MANIFEST_DIGEST: &str =
-        "sha256:1b155a392e5e84b39ff2ae05a14bcc2764107b53da2e8fceec2e3bd69ed5fe54";
+        "sha256:8253c22185cd8dcdcc53cbfb3c1205223ea37ba14bd02b9a08198b4d9990b42a";
 
     /// Known manifest digest for ghcr.io/linuxserver/baseimage-alpine:3.21
     const GHCR_IMAGE: &str = "ghcr.io/linuxserver/baseimage-alpine";
     const GHCR_MANIFEST_DIGEST: &str =
-        "sha256:eb8b3498f8e0c5191e4d0a1c8b50148d48e33284a498498dff0e9e183206af30";
+        "sha256:8562e697b41f388d85eb6853ff65cdf5017d1939a6ea5c2fe60031a5764f2d41";
 
     #[tokio::test]
     async fn pull_from_docker_hub() {
