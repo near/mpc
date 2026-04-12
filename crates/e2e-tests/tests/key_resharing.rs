@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use near_mpc_contract_interface::types::AttemptId;
 
@@ -12,7 +12,7 @@ async fn test_key_resharing() {
     // (syncing) so it can be used as a fresh replacement when node 0 is dropped.
     let (cluster, running) = common::setup_cluster(common::KEY_RESHARING_PORT_SEED, |c| {
         c.num_nodes = 5;
-        c.initial_participants = 2;
+        c.initial_participant_indices = (0..2).collect();
         c.triples_to_buffer = 2;
         c.presignatures_to_buffer = 2;
     })

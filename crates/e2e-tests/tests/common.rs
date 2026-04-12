@@ -13,12 +13,10 @@ use serde_json::json;
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
-#[expect(dead_code)]
 pub const KEY_RESHARING_PORT_SEED: u16 = 3;
 #[expect(dead_code)]
 pub const REQUEST_DURING_RESHARING_PORT_SEED: u16 = 4;
 pub const SUBMIT_PARTICIPANT_INFO_PORT_SEED: u16 = 5;
-#[expect(dead_code)]
 pub const CANCELLATION_OF_RESHARING_PORT_SEED: u16 = 6;
 pub const ROBUST_ECDSA_PORT_SEED: u16 = 7;
 
@@ -162,7 +160,7 @@ pub async fn send_sign_request(cluster: &e2e_tests::MpcCluster, running: &Runnin
         .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
         .expect("no Secp256k1 Sign domain");
     let outcome = cluster
-        .send_sign_request(domain.id, generate_ecdsa_payload())
+        .send_sign_request(domain.id, generate_ecdsa_payload(&mut rand::thread_rng()))
         .await
         .expect("sign request failed");
     assert!(
@@ -180,7 +178,7 @@ pub async fn send_ckd_request(cluster: &e2e_tests::MpcCluster, running: &Running
         .find(|d| d.purpose == Some(DomainPurpose::CKD))
         .expect("no CKD domain");
     let outcome = cluster
-        .send_ckd_request(domain.id, generate_ckd_app_public_key())
+        .send_ckd_request(domain.id, generate_ckd_app_public_key(&mut rand::thread_rng()))
         .await
         .expect("ckd request failed");
     assert!(
