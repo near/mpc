@@ -21,6 +21,8 @@ const DUMMY_IMAGE_HASH: &str =
 
 const LISTEN_BLOCKS_FILE: &str = "listen_blocks";
 
+const TEMP_KEYS_FILE: &str = "temporary_keys";
+
 /// Handle to a running `mpc-node` OS process. Always represents a live process.
 /// Obtained by calling [`MpcNodeSetup::start()`].
 /// The child process is killed automatically when this value is dropped.
@@ -51,8 +53,12 @@ impl MpcNode {
         self.process.has_exited()
     }
 
-    fn web_address(&self) -> String {
+    pub fn web_address(&self) -> String {
         format!("127.0.0.1:{}", self.setup.ports.web_ui)
+    }
+
+    pub fn pprof_address(&self) -> String {
+        format!("127.0.0.1:{}", self.setup.ports.pprof)
     }
 
     /// Scrapes the node's `/metrics` HTTP endpoint and returns the value of
@@ -207,7 +213,30 @@ impl MpcNodeSetup {
         &self.home_dir
     }
 
-    /// Deletes RocksDB files (.sst, MANIFEST, etc.) from the data directory.
+    /// Fully reset the node by wiping its home directory.
+    /// SIGKILL can leave NEAR indexer data in a corrupted state that prevents
+    /// restart, so the entire home directory is removed and recreated. The NEAR
+    /// indexer will re-init from genesis_path/boot_nodes in start_config.toml
+    /// and sync from block 0.
+    ///
+    /// Re-writes secrets.json and start_config.toml from the saved setup.
+    pub fn reset_mpc_state(&self) -> anyhow::Result<()> {
+        // Nuke and recreate the home directory. SIGKILL can leave NEAR indexer
+        // data in a corrupted state that prevents restart, so we start fully
+        // fresh. The NEAR indexer will re-init from genesis_path/boot_nodes in
+        // start_config.toml and sync from block 0.
+        if self.home_dir.exists() {
+            std::fs::remove_dir_all(&self.home_dir)
+                .with_context(|| format!("failed to remove {}", self.home_dir.display()))?;
+        }
+        std::fs::create_dir_all(&self.home_dir)
+            .with_context(|| format!("failed to recreate {}", self.home_dir.display()))?;
+        self.write_secrets_json()?;
+        self.write_start_config()?;
+        Ok(())
+    }
+
+    /// Deletes RocksDB files and temporary key state from the data directory.
     /// Safe to call because the node is not running.
     pub fn wipe_db(&self) -> anyhow::Result<()> {
         let entries = std::fs::read_dir(&self.home_dir)
@@ -229,6 +258,14 @@ impl MpcNodeSetup {
                     .with_context(|| format!("failed to remove {}", entry.path().display()))?;
             }
         }
+
+        // Also clean temporary key event state to avoid stale resharing data.
+        let temp_keys = self.home_dir.join(TEMP_KEYS_FILE);
+        if temp_keys.exists() {
+            std::fs::remove_dir_all(&temp_keys)
+                .with_context(|| format!("failed to remove {}", temp_keys.display()))?;
+        }
+
         Ok(())
     }
 

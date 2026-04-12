@@ -1,133 +1,126 @@
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use crate::common;
 
-use e2e_tests::{MpcCluster, MpcClusterConfig};
 use near_mpc_contract_interface::types::{
-    DomainPurpose, ProtocolContractState, SignatureResponse, SignatureScheme,
+    DomainConfig, DomainId, DomainPurpose, SignatureResponse, SignatureScheme,
 };
-use serde_json::json;
+use rand::SeedableRng;
 
-/// Load the pre-built MPC contract WASM.
-///
-/// Uses `MPC_CONTRACT_WASM` env var if set, otherwise falls back to the
-/// default cargo build output path. The WASM must be optimized with
-/// `wasm-opt -Oz` to fit within the sandbox's HTTP body limit.
-///
-/// ```sh
-/// cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
-/// wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
-///   -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-/// ```
-fn load_contract_wasm() -> Vec<u8> {
-    let wasm_path: PathBuf = std::env::var("MPC_CONTRACT_WASM")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm")
-        });
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
+    // given
+    let (cluster, running) =
+        common::setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
-    std::fs::read(&wasm_path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read contract WASM at {}: {e}\n\
-             Build it first:\n  \
-             cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked\n  \
-             wasm-opt -Oz <path> -o <path>",
-            wasm_path.display()
-        )
-    })
-}
+    assert!(
+        !running.domains.domains.is_empty(),
+        "expected at least one domain, got none"
+    );
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    for domain in &running.domains.domains {
+        tracing::info!(domain_id = ?domain.id, purpose = ?domain.purpose, scheme = ?domain.scheme, "sending request");
+        match domain.purpose {
+            Some(DomainPurpose::Sign) => {
+                let payload = match domain.scheme {
+                    SignatureScheme::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
+                    SignatureScheme::Ed25519 => common::generate_eddsa_payload(&mut rng),
+                    _ => continue,
+                };
 
-fn generate_ecdsa_payload() -> serde_json::Value {
-    let bytes: [u8; 32] = rand::random();
-    json!({ "Ecdsa": hex::encode(bytes) })
-}
+                // when
+                let outcome = cluster
+                    .send_sign_request(domain.id, payload)
+                    .await
+                    .expect("sign request transaction failed");
 
-fn generate_eddsa_payload() -> serde_json::Value {
-    let bytes: [u8; 32] = rand::random();
-    json!({ "Eddsa": hex::encode(bytes) })
+                // then
+                assert!(
+                    outcome.is_success(),
+                    "sign request for domain {:?} failed: {:?}",
+                    domain.id,
+                    outcome.failure_message()
+                );
+
+                let signature: SignatureResponse = outcome
+                    .json()
+                    .expect("failed to deserialize SignatureResponse from transaction result");
+
+                match (&domain.scheme, &signature) {
+                    (SignatureScheme::Secp256k1, SignatureResponse::Secp256k1(_)) => {}
+                    (SignatureScheme::Ed25519, SignatureResponse::Ed25519 { .. }) => {}
+                    _ => panic!(
+                        "signature scheme mismatch: requested {:?}, got {:?}",
+                        domain.scheme, signature
+                    ),
+                }
+                tracing::info!(domain_id = ?domain.id, "sign request returned valid signature");
+            }
+            Some(DomainPurpose::CKD) => {
+                // when
+                let outcome = cluster
+                    .send_ckd_request(domain.id, common::generate_ckd_app_public_key(&mut rng))
+                    .await
+                    .expect("ckd request transaction failed");
+
+                // then
+                assert!(
+                    outcome.is_success(),
+                    "ckd request for domain {:?} failed: {:?}",
+                    domain.id,
+                    outcome.failure_message()
+                );
+                tracing::info!(domain_id = ?domain.id, "ckd request succeeded");
+            }
+            _ => continue,
+        }
+    }
 }
 
 #[tokio::test]
-async fn test_request_lifecycle() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,e2e_tests=debug".parse().unwrap()),
-        )
-        .try_init()
-        .ok();
+#[expect(non_snake_case)]
+async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
+    // given
+    let (cluster, running) = common::setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
+        c.num_nodes = 6;
+        c.initial_participant_indices = (0..6).collect();
+        c.threshold = 5;
+        c.domains = vec![DomainConfig {
+            id: DomainId(0),
+            scheme: SignatureScheme::V2Secp256k1,
+            purpose: Some(DomainPurpose::Sign),
+        }];
+        c.triples_to_buffer = 0;
+        c.presignatures_to_buffer = 6;
+    })
+    .await;
 
-    // Given: a running MPC cluster with presignatures ready.
-    let contract_wasm = load_contract_wasm();
-    let config = MpcClusterConfig::default_for_test(1, contract_wasm);
-    let cluster = MpcCluster::start(config)
-        .await
-        .expect("failed to start cluster");
-
-    let state = cluster
-        .get_contract_state()
-        .await
-        .expect("failed to get contract state");
-    let running = match &state {
-        ProtocolContractState::Running(r) => r,
-        other => panic!("expected Running state, got: {other:?}"),
-    };
-
-    let sign_domains: Vec<_> = running
+    let domain = running
         .domains
         .domains
         .iter()
-        .filter(|d| d.purpose == Some(DomainPurpose::Sign))
-        .collect();
-    assert!(!sign_domains.is_empty(), "no Sign domains found");
+        .find(|d| d.scheme == SignatureScheme::V2Secp256k1)
+        .expect("no V2Secp256k1 domain found");
 
-    cluster
-        .wait_for_metric_all_nodes(
-            "mpc_owned_num_presignatures_available",
-            |v| {
-                let expected = i64::try_from(e2e_tests::DEFAULT_PRESIGNATURES_TO_BUFFER)
-                    .expect("presignatures_to_buffer exceeds i64::MAX");
-                v >= expected
-            },
-            Duration::from_secs(120),
-        )
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+
+    // when
+    let outcome = cluster
+        .send_sign_request(domain.id, common::generate_ecdsa_payload(&mut rng))
         .await
-        .expect("nodes did not generate presignatures in time");
+        .expect("sign request transaction failed");
 
-    // When: we send a sign request for each Sign domain.
-    // Then: each returns a valid signature matching the requested scheme.
-    for domain in &sign_domains {
-        let payload = match domain.scheme {
-            SignatureScheme::Secp256k1 => generate_ecdsa_payload(),
-            SignatureScheme::Ed25519 => generate_eddsa_payload(),
-            _ => continue,
-        };
+    // then
+    assert!(
+        outcome.is_success(),
+        "V2Secp256k1 sign request failed: {:?}",
+        outcome.failure_message()
+    );
 
-        tracing::info!(domain_id = ?domain.id, scheme = ?domain.scheme, "sending sign request");
-        let outcome = cluster
-            .send_sign_request(domain.id, payload)
-            .await
-            .expect("sign request transaction failed");
-
-        assert!(
-            outcome.is_success(),
-            "sign request for domain {:?} failed: {:?}",
-            domain.id,
-            outcome.failure_message()
-        );
-
-        let signature: SignatureResponse = outcome
-            .json()
-            .expect("failed to deserialize SignatureResponse from transaction result");
-
-        match (&domain.scheme, &signature) {
-            (SignatureScheme::Secp256k1, SignatureResponse::Secp256k1(_)) => {}
-            (SignatureScheme::Ed25519, SignatureResponse::Ed25519 { .. }) => {}
-            _ => panic!(
-                "signature scheme mismatch: requested {:?}, got {:?}",
-                domain.scheme, signature
-            ),
-        }
-        tracing::info!(domain_id = ?domain.id, "sign request returned valid signature");
-    }
+    let signature: SignatureResponse = outcome
+        .json()
+        .expect("failed to deserialize SignatureResponse");
+    assert!(
+        matches!(signature, SignatureResponse::Secp256k1(_)),
+        "expected Secp256k1 signature, got: {signature:?}"
+    );
 }

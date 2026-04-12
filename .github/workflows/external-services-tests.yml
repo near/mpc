@@ -32,17 +32,21 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
-      - name: Clear cache for fresh rebuild
-        if: github.event_name == 'schedule'
-        run: |
-          cargo clean
-          rm -rf ~/.cargo
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: nextest@0.9.126
 
       - name: Run contract-history tests
         if: always()
-        run: cargo test -p contract-history --features external-services-tests --profile test-release --locked
+        run: cargo nextest run -p contract-history --features external-services-tests --cargo-profile test-release --locked
+
+      - name: Run tee-launcher registry tests
+        if: always()
+        run: cargo nextest run -p tee-launcher --features external-services-tests --cargo-profile test-release --locked
 
       - name: Run tee-authority tests
         if: always()
-        run: cargo test -p tee-authority --features external-services-tests --profile test-release --locked test_upload_quote_for_collateral_with_phala_endpoint
+        run: cargo nextest run -p tee-authority --features external-services-tests --cargo-profile test-release --locked -E 'test(test_upload_quote_for_collateral_with_phala_endpoint)'

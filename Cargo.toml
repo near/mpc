@@ -40,7 +40,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.8.0"
+version = "3.8.1"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -165,6 +165,9 @@ near-sdk = { version = "5.24.1", features = [
 ] }
 near-workspaces = { version = "0.22.1" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
+oci-client = { version = "0.16", default-features = false, features = [
+    "rustls-tls",
+] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
     "cpp",
@@ -252,17 +255,19 @@ schemars = "0.8.22"
 # This is deprecated, we should find an alterantive
 serde_yaml = "0.9.34"
 
-# TODO(#1907): These dependencies need to be upgraded in tandem
+# These dependencies need to be upgraded in tandem
 getrandom = "0.2.12"
 rand = "0.8.5"
 rand_chacha = "0.3"
 rand_core = "0.6.4"
 
 # Cannot be upgraded until we get MSVR 1.88
-time = "0.3.41"
+time = "0.3.45"
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "allow", check-cfg = ['cfg(feature, values("abi"))'] }
+unexpected_cfgs = { level = "allow", check-cfg = [
+    'cfg(feature, values("abi"))',
+] }
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"

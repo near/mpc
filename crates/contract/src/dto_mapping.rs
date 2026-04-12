@@ -75,8 +75,8 @@ impl IntoContractType<MockAttestation> for dtos::MockAttestation {
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
             } => MockAttestation::WithConstraints {
-                mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
-                launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
+                mpc_docker_image_hash,
+                launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
             },
         }
@@ -93,7 +93,7 @@ impl TryIntoContractType<DstackAttestation> for dtos::DstackAttestation {
         } = self;
 
         Ok(DstackAttestation {
-            quote: quote.into(),
+            quote: Vec::from(quote).into(),
             collateral: collateral.into_contract_type(),
             tcb_info: tcb_info.try_into_contract_type()?,
         })
@@ -117,14 +117,14 @@ impl IntoContractType<Collateral> for dtos::Collateral {
 
         Collateral::from(QuoteCollateralV3 {
             pck_crl_issuer_chain,
-            root_ca_crl,
-            pck_crl,
+            root_ca_crl: root_ca_crl.into(),
+            pck_crl: pck_crl.into(),
             tcb_info_issuer_chain,
             tcb_info,
-            tcb_info_signature,
+            tcb_info_signature: tcb_info_signature.into(),
             qe_identity_issuer_chain,
             qe_identity,
-            qe_identity_signature,
+            qe_identity_signature: qe_identity_signature.into(),
             pck_certificate_chain,
         })
     }
@@ -153,7 +153,10 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
 
         fn try_convert<const N: usize>(str: String) -> Result<HexBytes<N>, Error> {
             str.try_into().map_err(|err| {
-                ConversionError::DataConversion.message(format!("Failed to get digest: {err}"))
+                ConversionError::DataConversion {
+                    reason: format!("Failed to get digest: {err}"),
+                }
+                .into()
             })
         }
 
@@ -192,9 +195,11 @@ impl TryIntoContractType<EventLog> for dtos::EventLog {
         Ok(EventLog {
             imr,
             event_type,
-            digest: digest.try_into().map_err(|err| {
-                ConversionError::DataConversion.message(format!("Failed to get digest: {err}"))
-            })?,
+            digest: digest
+                .try_into()
+                .map_err(|err| ConversionError::DataConversion {
+                    reason: format!("Failed to get digest: {err}"),
+                })?,
             event,
             event_payload,
         })
@@ -209,15 +214,15 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
             }
             VerifiedAttestation::Dstack(v) => {
                 dtos::VerifiedAttestation::Dstack(dtos::VerifiedDstackAttestation {
-                    mpc_image_hash: v.mpc_image_hash.into(),
-                    launcher_compose_hash: v.launcher_compose_hash.into(),
+                    mpc_image_hash: v.mpc_image_hash,
+                    launcher_compose_hash: v.launcher_compose_hash,
                     expiry_timestamp_seconds: v.expiry_timestamp_seconds,
                     measurements: dtos::VerifiedMeasurements {
-                        mrtd: v.measurements.rtmrs.mrtd,
-                        rtmr0: v.measurements.rtmrs.rtmr0,
-                        rtmr1: v.measurements.rtmrs.rtmr1,
-                        rtmr2: v.measurements.rtmrs.rtmr2,
-                        key_provider_event_digest: v.measurements.key_provider_event_digest,
+                        mrtd: v.measurements.rtmrs.mrtd.into(),
+                        rtmr0: v.measurements.rtmrs.rtmr0.into(),
+                        rtmr1: v.measurements.rtmrs.rtmr1.into(),
+                        rtmr2: v.measurements.rtmrs.rtmr2.into(),
+                        key_provider_event_digest: v.measurements.key_provider_event_digest.into(),
                     },
                 })
             }
@@ -235,8 +240,8 @@ impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
             } => dtos::MockAttestation::WithConstraints {
-                mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
-                launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
+                mpc_docker_image_hash,
+                launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
             },
         }
@@ -252,7 +257,7 @@ impl IntoInterfaceType<dtos::DstackAttestation> for DstackAttestation {
         } = self;
 
         dtos::DstackAttestation {
-            quote: quote.into(),
+            quote: Vec::from(quote).into(),
             collateral: collateral.into_dto_type(),
             tcb_info: tcb_info.into_dto_type(),
         }
@@ -277,14 +282,14 @@ impl IntoInterfaceType<dtos::Collateral> for Collateral {
 
         dtos::Collateral {
             pck_crl_issuer_chain,
-            root_ca_crl,
-            pck_crl,
+            root_ca_crl: root_ca_crl.into(),
+            pck_crl: pck_crl.into(),
             tcb_info_issuer_chain,
             tcb_info,
-            tcb_info_signature,
+            tcb_info_signature: tcb_info_signature.into(),
             qe_identity_issuer_chain,
             qe_identity,
-            qe_identity_signature,
+            qe_identity_signature: qe_identity_signature.into(),
             pck_certificate_chain,
         }
     }

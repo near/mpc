@@ -170,19 +170,22 @@ mod tests {
     use std::str::FromStr;
 
     use rand::SeedableRng as _;
-    use threshold_signatures::frost_ed25519::VerifyingKey;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
+    use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
 
     use crate::providers::PublicKeyConversion;
     #[test]
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let x = TestGenerators::new(4, 3.into())
-            .make_eddsa_keygens(&mut rng)
-            .values()
-            .next()
-            .unwrap()
-            .clone();
+        let x = run_keygen::<Ed25519Sha512, _>(
+            &generate_participants_with_random_ids(4, &mut rng),
+            3,
+            &mut rng,
+        )
+        .into_iter()
+        .next()
+        .unwrap()
+        .1;
         let _ = x.public_key.to_near_sdk_public_key().unwrap();
         Ok(())
     }

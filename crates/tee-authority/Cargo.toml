@@ -17,6 +17,7 @@ http = { workspace = true }
 mpc-attestation = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

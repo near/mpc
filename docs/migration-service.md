@@ -302,7 +302,7 @@ pub struct NodeMigrations {
 }
 ```
 
-Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. (TODO(#947): Define attestation data for backup service)
+Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. See [backup-service-attestation-data.md](backup-service-attestation-data.md) for details.
 
 #### Backup Service Registration
 

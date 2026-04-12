@@ -17,10 +17,6 @@ pub const ALL_CURVES: &[Curve; 4] = &[
 /// gas attachment; in practice, nodes usually attach the maximum available gas. For testing,
 /// we use this constant to attach a fixed amount to each call and detect if gas usage
 /// increases unexpectedly in the future.
-///
-/// TODO(#926): this gas was bumped from 22 to 34 in https://github.com/near/mpc/pull/1559. This
-/// might be due to the high cost of `self.protocol_state = new_state` in the vote_reshard
-/// contract call. This needs to be investigated to understand why the increase was necessary.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_CANCEL_KEYGEN: Gas = Gas::from_tgas(5);
@@ -46,7 +42,7 @@ pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(185);
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
 /// not be getting that big.
 ///
-/// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
+/// TODO(#2756): Reduce this to the minimal value possible
 pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(16000);
 
 pub const DEFAULT_MAX_TIMEOUT_TX_INCLUDED: Duration = Duration::from_secs(3);
