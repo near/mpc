@@ -261,7 +261,7 @@ rand_chacha = "0.3"
 rand_core = "0.6.4"
 
 # Cannot be upgraded until we get MSVR 1.88
-time = "0.3.41"
+time = "0.3.45"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = [

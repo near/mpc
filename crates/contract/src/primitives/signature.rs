@@ -84,7 +84,13 @@ pub struct Bytes<const MIN_LEN: usize, const MAX_LEN: usize>(Vec<u8>);
 impl<const MIN_LEN: usize, const MAX_LEN: usize> Bytes<MIN_LEN, MAX_LEN> {
     pub fn new(bytes: Vec<u8>) -> Result<Self, Error> {
         if bytes.len() < MIN_LEN || bytes.len() > MAX_LEN {
-            return Err(InvalidParameters::MalformedPayload.into());
+            return Err(InvalidParameters::MalformedPayload {
+                reason: format!(
+                    "byte length {} out of range [{MIN_LEN}, {MAX_LEN}]",
+                    bytes.len()
+                ),
+            }
+            .into());
         }
         Ok(Self(bytes))
     }
@@ -187,7 +193,12 @@ impl TryFrom<SignRequestArgs> for SignRequest {
         let payload = match (args.payload_v2, args.deprecated_payload) {
             (Some(payload), None) => payload,
             (None, Some(payload)) => Payload::from_legacy_ecdsa(payload),
-            _ => return Err(InvalidParameters::MalformedPayload.into()),
+            _ => {
+                return Err(InvalidParameters::MalformedPayload {
+                    reason: "expected exactly one of payload_v2 or deprecated_payload".into(),
+                }
+                .into())
+            }
         };
         let domain_id = match (args.domain_id, args.deprecated_key_version) {
             (Some(domain_id), None) => domain_id,
