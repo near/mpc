@@ -1401,28 +1401,25 @@ For the migration procedure, see the [node migration guide](node-migration-guide
 
 After all operators have migrated to the new CVM, participants should vote to remove the old launcher hash using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
 
-## Updating the CVM `user-config.conf` with new registry information
+## Updating the CVM `user-config.toml` with new image information
 
-If any of the following fields change, you must update your `user-config.conf`:
-
-* `MPC_REGISTRY`  
-* `MPC_IMAGE_NAME`  
-* `MPC_IMAGE_TAGS`  
+If the image repository changes, update the `image` field in `user-config.toml`:
 
 **Example:**
 
-```ini
-MPC_REGISTRY=registry.hub.docker.com
-MPC_IMAGE_NAME=nearone/mpc-node-gcp
-MPC_IMAGE_TAGS=SHA256:abc
+```toml
+[launcher_config]
+image = "nearone/mpc-node"
 ```
+
+The image version is determined by the manifest digest from the contract (not by a tag). You do not need to update the config for routine image upgrades — just vote for the new manifest digest and restart the CVM.
 
 ---
 
 ### Steps
 
 1. **Stop the CVM**  
-2. **Update `user-config.conf`** with the new values  
+2. **Update `user-config.toml`** with the new values  
 3. **Start the CVM**
 
 ---
