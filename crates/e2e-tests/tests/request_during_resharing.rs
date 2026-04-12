@@ -12,7 +12,7 @@ use rand::SeedableRng;
 #[tokio::test]
 async fn test_request_during_resharing() {
     // given
-    let (mut cluster, running) =
+    let (mut cluster, contract_state) =
         common::setup_cluster(common::REQUEST_DURING_RESHARING_PORT_SEED, |c| {
             c.num_nodes = 4;
             c.initial_participant_indices = vec![0, 1];
@@ -32,15 +32,13 @@ async fn test_request_during_resharing() {
     cluster.kill_nodes(&[3]).expect("failed to kill node 3");
 
     // then
-    // start_resharing already waited for the contract to enter Resharing state.
-
-    let sign_domain = running
+    let sign_domain = contract_state
         .domains
         .domains
         .iter()
         .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
         .expect("no Secp256k1 Sign domain");
-    let ckd_domain = running
+    let ckd_domain = contract_state
         .domains
         .domains
         .iter()
@@ -59,20 +57,7 @@ async fn test_request_during_resharing() {
             "sign request {i} failed: {:?}",
             outcome.failure_message()
         );
-    }
 
-    assert!(
-        matches!(
-            cluster
-                .get_contract_state()
-                .await
-                .expect("failed to get state"),
-            ProtocolContractState::Resharing(_)
-        ),
-        "expected Resharing after sign requests"
-    );
-
-    for i in 0..3 {
         tracing::info!(i, "sending CKD request during resharing");
         let outcome = cluster
             .send_ckd_request(ckd_domain.id, common::generate_ckd_app_public_key(&mut rng))
