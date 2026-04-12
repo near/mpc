@@ -11,7 +11,7 @@ RUNNING_DIGEST=""
 if docker inspect "$CONTAINER_NAME" &>/dev/null; then
     RUNNING_IMAGE=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER_NAME" 2>/dev/null || echo "")
     if [ -n "$RUNNING_IMAGE" ]; then
-        RUNNING_DIGEST=$(docker inspect --format ‘{{index .RepoDigests 0}}’ "$RUNNING_IMAGE" 2>/dev/null | grep -oP ‘sha256:\K[0-9a-f]{64}’ || echo "")
+        RUNNING_DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$RUNNING_IMAGE" 2>/dev/null | grep -oP 'sha256:\K[0-9a-f]{64}' || echo "")
     fi
 fi
 
@@ -20,7 +20,7 @@ echo "Pulling latest image: $IMAGE_NAME..."
 docker pull "$IMAGE_NAME"
 
 # Get the manifest digest of the freshly pulled image
-LATEST_DIGEST=$(docker inspect --format ‘{{index .RepoDigests 0}}’ "$IMAGE_NAME" 2>/dev/null | grep -oP ‘sha256:\K[0-9a-f]{64}’ || echo "")
+LATEST_DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_NAME" 2>/dev/null | grep -oP 'sha256:\K[0-9a-f]{64}' || echo "")
 
 if [ -z "$LATEST_DIGEST" ]; then
     echo "WARNING: Could not determine manifest digest for $IMAGE_NAME, proceeding with update..."

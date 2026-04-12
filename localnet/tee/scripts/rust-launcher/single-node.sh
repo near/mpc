@@ -201,6 +201,7 @@ render_env_and_conf() {
   export MPC_ENV="${MPC_ENV:-mpc-localnet}"
   export MPC_IMAGE_NAME="nearone/mpc-node"
   export MPC_IMAGE_TAGS
+  export MPC_IMAGE="nearone/mpc-node"
   export MPC_REGISTRY="registry.hub.docker.com"
   export MPC_ACCOUNT_ID="$NODE_ACCOUNT"
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"

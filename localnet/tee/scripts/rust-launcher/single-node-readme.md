@@ -28,8 +28,13 @@ export MACHINE_IP=<host-ip>
 # MPC node image tag (must support TOML config / start-with-config-file)
 # Verify DEFAULT_IMAGE_DIGEST in deployment/cvm-deployment/launcher_docker_compose.yaml
 # matches this tag's manifest digest. You can look it up on Docker Hub or
-# in the registry's tag listing — no need for `docker inspect`.
+# in the registry's tag listing.
 export MPC_IMAGE_TAGS=main-9515e18
+
+# Docker image name (repository). Do not include a tag — the manifest digest
+# determines the actual image version. The tag above is only used by the
+# deploy script for operator reference.
+# export MPC_IMAGE=nearone/mpc-node  # (set automatically by single-node.sh)
 ```
 
 ## Optional Variables
