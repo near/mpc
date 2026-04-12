@@ -7,9 +7,9 @@ This is the production launcher. It replaces the previous Python launcher (`tee_
 ## What it does
 
 1. Loads a TOML configuration file from `/tapp/user_config`
-2. Selects an approved MPC image hash (from on-disk approved list, override, or default)
-3. Validates the image by resolving it through the Docker registry and pulling by digest
-4. In TEE mode: extends RTMR3 by emitting the image digest to dstack
+2. Selects an approved manifest digest (from on-disk approved list, override, or default)
+3. Pulls the image directly by manifest digest (`docker pull <image>@sha256:<digest>`)
+4. In TEE mode: extends RTMR3 by emitting the manifest digest to dstack
 5. Writes the MPC node config to a shared volume
 6. Launches the MPC container via `docker compose up -d`
 
@@ -49,7 +49,7 @@ port_mappings = [
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `image` | Yes | Full Docker image reference. Include registry prefix for non-Docker Hub registries. Examples: `"nearone/mpc-node"` (Docker Hub), `"ghcr.io/nearone/mpc-node"` |
+| `image` | Yes | Docker image name (repository). The actual image version is determined by the manifest digest from the approved hashes file, not by a tag. A tag may be included for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull. Include registry prefix for non-Docker Hub registries (e.g., `"ghcr.io/nearone/mpc-node"`). |
 | `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
 | `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 
@@ -70,10 +70,10 @@ The launcher pulls images using `docker pull <image>@sha256:<digest>`. Any regis
 | Azure Container Registry | `myregistry.azurecr.io/mpc-node` |
 | Self-hosted (Harbor, etc.) | `registry.example.com/myproject/mpc-node` |
 
-### Limitations
+### Notes
 
-- **Only public (anonymous-pull) images are supported.** The launcher does not accept registry credentials. Private registry support would require adding a credential source (e.g., environment variables, Docker config, or cloud credential helpers).
-- Multi-platform images are resolved to `linux/amd64` automatically.
+- The launcher uses `docker pull` which supports both public and private registries. For private registries, configure Docker credentials on the host (e.g., via `docker login` or credential helpers).
+- The `image` field tag (if present) is ignored — the manifest digest from the approved hashes file determines which exact image is pulled.
 
 ## Image Hash Selection
 
