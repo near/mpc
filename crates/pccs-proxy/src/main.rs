@@ -1,8 +1,8 @@
+use axum::Router;
 use axum::extract::{DefaultBodyLimit, Multipart, State};
 use axum::http::StatusCode;
 use axum::response::Json;
 use axum::routing::{get, post};
-use axum::Router;
 use clap::Parser;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -119,10 +119,7 @@ async fn extract_hex_field(multipart: &mut Multipart) -> anyhow::Result<String> 
     anyhow::bail!("'hex' field not found in multipart form data")
 }
 
-async fn get_collateral(
-    state: &AppState,
-    quote_hex: &str,
-) -> anyhow::Result<CollateralResponse> {
+async fn get_collateral(state: &AppState, quote_hex: &str) -> anyhow::Result<CollateralResponse> {
     let quote_bytes = hex::decode(quote_hex)?;
     let quote = dcap_qvl::quote::Quote::parse(&quote_bytes)
         .map_err(|e| anyhow::anyhow!("Failed to parse TDX quote: {e}"))?;
@@ -170,10 +167,7 @@ async fn get_collateral(
     })
 }
 
-async fn fetch_tcb_info(
-    state: &AppState,
-    fmspc: &str,
-) -> anyhow::Result<(String, String, String)> {
+async fn fetch_tcb_info(state: &AppState, fmspc: &str) -> anyhow::Result<(String, String, String)> {
     let url = format!(
         "{}/tdx/certification/v4/tcb?fmspc={}",
         state.pccs_base_url, fmspc
@@ -186,10 +180,7 @@ async fn fetch_tcb_info(
 }
 
 async fn fetch_qe_identity(state: &AppState) -> anyhow::Result<(String, String, String)> {
-    let url = format!(
-        "{}/tdx/certification/v4/qe/identity",
-        state.pccs_base_url
-    );
+    let url = format!("{}/tdx/certification/v4/qe/identity", state.pccs_base_url);
     let resp = state.http.get(&url).send().await?;
     let issuer_chain = url_decode_header(&resp, "SGX-Enclave-Identity-Issuer-Chain")?;
     let body: QeIdentityResponse = resp.json().await?;
