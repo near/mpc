@@ -35,7 +35,10 @@ pub async fn pull_and_verify(
             let stdout = String::from_utf8_lossy(&pull.stdout).to_string();
             return Err(ImageDigestValidationFailed::DockerPullFailed {
                 reference: reference.clone(),
-                detail: format!("exit code {}: stderr={stderr}, stdout={stdout}", pull.status),
+                detail: format!(
+                    "exit code {}: stderr={stderr}, stdout={stdout}",
+                    pull.status
+                ),
             });
         }
 

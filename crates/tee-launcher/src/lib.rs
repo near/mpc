@@ -121,9 +121,7 @@ fn load_approved_hashes(
     }
 }
 
-async fn emit_image_hash_event(
-    manifest_digest: &DockerSha256Digest,
-) -> Result<(), LauncherError> {
+async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(), LauncherError> {
     let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
     dstack_client
