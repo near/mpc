@@ -70,6 +70,10 @@ if $USE_NODE || $USE_RUST_LAUNCHER; then
     require_cmds repro-env podman
 fi
 
+if $USE_PUSH; then
+    require_cmds skopeo
+fi
+
 if ! docker buildx &>/dev/null; then
   die "Please install docker-buildx"
 fi
@@ -165,31 +169,36 @@ if $USE_PUSH; then
     image_tag="$sanitized_branch_name-$short_hash"
     echo "Using branch-hash tag: $image_tag"
 
+    # Push an image via skopeo with preserved manifest digests.
+    # Usage: skopeo_push <local_image_name> <remote_tag>
+    # Prints the manifest digest to stdout.
+    skopeo_push() {
+        local image_name="$1"
+        local tag="$2"
+        local td
+        td=$(mktemp -d)
+        trap 'rm -rf -- "$td"' EXIT
+        skopeo copy --all --dest-compress "docker-daemon:${image_name}:latest" "dir:$td"
+        skopeo copy --preserve-digests "dir:$td" "docker://docker.io/nearone/${image_name}:${tag}"
+        echo "sha256:$(sha256sum "$td/manifest.json" | cut -d' ' -f1)"
+        rm -rf -- "$td"
+        trap - EXIT
+    }
+
     if $USE_LAUNCHER; then
-        temp_dir=$(mktemp -d)
-        echo "using $temp_dir"
-        # This compresses the built image to a local directory, which implicitly computes the manifest
-        # digest in $temp_dir/manifest.json
-        skopeo copy --all --dest-compress docker-daemon:$LAUNCHER_IMAGE_NAME:latest dir:$temp_dir
-        # Then we publish the image from the directory, making sure the manifest digest does not change
-        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$image_tag
+        launcher_manifest_digest="$(skopeo_push "$LAUNCHER_IMAGE_NAME" "$image_tag")"
     fi
 
     if $USE_NODE; then
-        docker tag $NODE_IMAGE_NAME nearone/$NODE_IMAGE_NAME:$image_tag
-        docker push nearone/$NODE_IMAGE_NAME:$image_tag
+        node_manifest_digest="$(skopeo_push "$NODE_IMAGE_NAME" "$image_tag")"
     fi
 
     if $USE_NODE_GCP; then
-        docker tag $NODE_GCP_IMAGE_NAME nearone/$NODE_GCP_IMAGE_NAME:$image_tag
-        docker push nearone/$NODE_GCP_IMAGE_NAME:$image_tag
+        node_gcp_manifest_digest="$(skopeo_push "$NODE_GCP_IMAGE_NAME" "$image_tag")"
     fi
 
     if $USE_RUST_LAUNCHER; then
-        temp_dir=$(mktemp -d)
-        echo "using $temp_dir"
-        skopeo copy --all --dest-compress docker-daemon:$RUST_LAUNCHER_IMAGE_NAME:latest dir:$temp_dir
-        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$RUST_LAUNCHER_IMAGE_NAME:$image_tag
+        rust_launcher_manifest_digest="$(skopeo_push "$RUST_LAUNCHER_IMAGE_NAME" "$image_tag")"
     fi
 fi
 
@@ -200,14 +209,26 @@ if $USE_NODE || $USE_NODE_GCP; then
 fi
 if $USE_NODE; then
     echo "node docker image hash: $node_image_hash"
+    if $USE_PUSH; then
+        echo "node manifest digest: $node_manifest_digest"
+    fi
 fi
 if $USE_NODE_GCP; then
     echo "node gcp docker image hash: $node_gcp_image_hash"
+    if $USE_PUSH; then
+        echo "node gcp manifest digest: $node_gcp_manifest_digest"
+    fi
 fi
 if $USE_LAUNCHER; then
     echo "launcher docker image hash: $launcher_image_hash"
+    if $USE_PUSH; then
+        echo "launcher manifest digest: $launcher_manifest_digest"
+    fi
 fi
 if $USE_RUST_LAUNCHER; then
     echo "rust launcher binary hash: $rust_launcher_binary_hash"
     echo "rust launcher docker image hash: $rust_launcher_image_hash"
+    if $USE_PUSH; then
+        echo "rust launcher manifest digest: $rust_launcher_manifest_digest"
+    fi
 fi
