@@ -161,7 +161,7 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
@@ -217,7 +217,7 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
@@ -318,7 +318,7 @@ jobs:
           cargo build -p neard --release
 
       - name: Save pytest binaries cache
-        uses: WarpBuilds/cache/save@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache/save@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
           path: |
@@ -416,7 +416,7 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Restore pytest binaries cache
-        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache/restore@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
           fail-on-cache-miss: true
@@ -434,7 +434,7 @@ jobs:
 
       - name: Cache python virtualenv
         id: venv-cache
-        uses: WarpBuilds/cache@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           path: pytest/venv
           key: pytest-venv-${{ hashFiles('pytest/requirements.txt', 'libs/nearcore/pytest/requirements.txt') }}
@@ -467,7 +467,7 @@ jobs:
 
     steps:
       - name: Delete pytest binaries cache
-        uses: WarpBuilds/cache@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           delete-cache: true
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
@@ -522,14 +522,14 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
           prefix-key: v0-rust-week-${{ env.WEEK }}
 
       - name: Install ruff
-        uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
+        uses: astral-sh/ruff-action@0ce1b0bf8b818ef400413f810f8a11cdbda0034b # v4.0.0
         with:
           args: "--version" # workaround to avoid running ruff check here
 
@@ -597,14 +597,14 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
           prefix-key: v0-rust-e2e-week-${{ env.WEEK }}
 
       - name: Restore pytest binaries cache
-        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache/restore@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
           fail-on-cache-miss: true
