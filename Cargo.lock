@@ -2993,9 +2993,12 @@ name = "e2e-tests"
 version = "3.8.1"
 dependencies = [
  "anyhow",
+ "backon",
+ "blstrs",
  "bs58 0.5.1",
  "ed25519-dalek",
  "futures",
+ "group",
  "hex",
  "launcher-interface",
  "mpc-node-config",
@@ -3010,6 +3013,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-utils",
  "tokio",
  "toml 1.1.1+spec-1.1.0",
  "tracing",
@@ -11238,6 +11242,7 @@ dependencies = [
  "hex",
  "hkdf",
  "insta",
+ "itertools 0.14.0",
  "k256",
  "keccak",
  "pairing",
