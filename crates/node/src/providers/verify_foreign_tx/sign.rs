@@ -21,9 +21,9 @@ use crate::{
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
 use mpc_contract::primitives::signature::{Payload, Tweak};
-use near_mpc_bounded_collections::BoundedVec;
 use mpc_node_config::ForeignChainsConfig;
 use near_indexer_primitives::CryptoHash;
+use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types as dtos;
 use tokio::time::{timeout, Duration};
 

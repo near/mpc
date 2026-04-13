@@ -172,9 +172,7 @@ struct ParallelSignArgsV2 {
 
 fn make_payload(curve: Curve) -> Payload {
     match curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
-            Payload::Ecdsa(rand::random::<[u8; 32]>().into())
-        }
+        Curve::Secp256k1 | Curve::V2Secp256k1 => Payload::Ecdsa(rand::random::<[u8; 32]>().into()),
         Curve::Edwards25519 => {
             let len = rand::random_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,

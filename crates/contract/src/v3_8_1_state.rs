@@ -112,7 +112,9 @@ impl<const MIN_LEN: usize, const MAX_LEN: usize> Bytes<MIN_LEN, MAX_LEN> {
             return Err(InvalidParameters::MalformedPayload {
                 reason: format!(
                     "expected length between {} and {}, got {}",
-                    MIN_LEN, MAX_LEN, bytes.len()
+                    MIN_LEN,
+                    MAX_LEN,
+                    bytes.len()
                 ),
             }
             .into());
