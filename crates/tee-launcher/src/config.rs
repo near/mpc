@@ -3,12 +3,16 @@ use launcher_interface::types::TeeConfig;
 use crate::error::LauncherError;
 use crate::types::Platform;
 
+/// Config keys that are not allowed in TEE mode because they could allow
+/// an operator to exfiltrate key material.
+/// Must match the field names in node-config's `StartConfig`.
+const TEE_BLOCKED_KEYS: &[&str] = &["gcp"];
+
 /// Inject launcher-controlled config section (`tee`) into the user-provided
 /// MPC node config table.  Returns an error if the user config already
 /// contains a reserved key.
 ///
-/// In TEE mode, the `gcp` key is also rejected because it could allow an
-/// operator to exfiltrate keyshares to an external GCP Secret Manager project.
+/// In TEE mode, keys listed in [`TEE_BLOCKED_KEYS`] are also rejected.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
@@ -21,19 +25,14 @@ pub fn intercept_node_config(
     )?;
 
     if platform == Platform::Tee {
-        // Must match the field name in node-config's StartConfig::gcp
-        reject_in_tee_mode(&node_config, "gcp")?;
+        for key in TEE_BLOCKED_KEYS {
+            if node_config.contains_key(*key) {
+                return Err(LauncherError::TeeRestrictedConfigKey(key.to_string()));
+            }
+        }
     }
 
     Ok(node_config)
-}
-
-/// Return an error if the user config contains a key that is blocked in TEE mode.
-fn reject_in_tee_mode(table: &toml::Table, key: &str) -> Result<(), LauncherError> {
-    if table.contains_key(key) {
-        return Err(LauncherError::TeeRestrictedConfigKey(key.to_string()));
-    }
-    Ok(())
 }
 
 /// Insert `value` under `key` in `table`, returning an error if the key
@@ -305,7 +304,8 @@ project_id = "my-project"
         let result = intercept_node_config(config, &sample_tee_config(), Platform::NonTee);
 
         // then
-        assert!(result.is_ok());
-        assert!(result.unwrap().contains_key("gcp"));
+        assert_matches!(result, Ok(table) => {
+            assert!(table.contains_key("gcp"));
+        });
     }
 }
