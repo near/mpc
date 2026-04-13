@@ -15,7 +15,6 @@ pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
 #[expect(dead_code)]
 pub const KEY_RESHARING_PORT_SEED: u16 = 3;
-#[expect(dead_code)]
 pub const REQUEST_DURING_RESHARING_PORT_SEED: u16 = 4;
 pub const SUBMIT_PARTICIPANT_INFO_PORT_SEED: u16 = 5;
 #[expect(dead_code)]
