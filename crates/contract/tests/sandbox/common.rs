@@ -586,11 +586,11 @@ pub async fn setup_foreign_tx_env() -> ForeignTxEnv {
 
 /// Build a [`ForeignChainPolicy`] that enables the given chain with a dummy RPC URL.
 pub fn make_foreign_chain_policy(
-    chain: &near_mpc_contract_interface::types::ForeignChain,
+    chain: near_mpc_contract_interface::types::ForeignChain,
 ) -> near_mpc_contract_interface::types::ForeignChainPolicy {
     let mut chains = std::collections::BTreeMap::new();
     chains.insert(
-        chain.clone(),
+        chain,
         NonEmptyBTreeSet::new(RpcProvider {
             rpc_url: format!("https://{chain:?}-rpc.example.com").to_lowercase(),
         }),
@@ -600,7 +600,7 @@ pub fn make_foreign_chain_policy(
 
 /// Vote the given chain policy from all participants.
 pub async fn vote_chain_policy(
-    chain: &near_mpc_contract_interface::types::ForeignChain,
+    chain: near_mpc_contract_interface::types::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {

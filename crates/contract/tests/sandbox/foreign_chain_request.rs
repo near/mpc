@@ -30,7 +30,7 @@ async fn verify_foreign_transaction__should_succeed(
 ) {
     let chain = rpc_request.chain();
     let env = setup_foreign_tx_env().await;
-    vote_chain_policy(&chain, &env.contract, &env.accounts).await;
+    vote_chain_policy(chain, &env.contract, &env.accounts).await;
 
     let user = env.worker.dev_create_account().await.unwrap();
 
@@ -129,7 +129,7 @@ async fn verify_foreign_transaction__should_timeout_without_response(
 ) {
     let chain = rpc_request.chain();
     let env = setup_foreign_tx_env().await;
-    vote_chain_policy(&chain, &env.contract, &env.accounts).await;
+    vote_chain_policy(chain, &env.contract, &env.accounts).await;
 
     let user = env.worker.dev_create_account().await.unwrap();
 
