@@ -2640,7 +2640,12 @@ mod tests {
         );
 
         // then
-        assert!(matches!(result, PromiseOrValue::Promise(_)));
+
+        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
+        match result {
+            PromiseOrValue::Promise(_promise) => {}
+            PromiseOrValue::Value(_) => panic!("result should be a promise"),
+        }
         assert_matches!(contract.get_pending_request(&signature_request), None);
         assert_matches!(
             contract
@@ -2670,7 +2675,11 @@ mod tests {
         );
 
         // then
-        assert!(matches!(result, PromiseOrValue::Promise(_)));
+        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
+        match result {
+            PromiseOrValue::Promise(_promise) => {}
+            PromiseOrValue::Value(_) => panic!("result should be a promise"),
+        }
     }
 
     #[test]

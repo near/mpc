@@ -7,7 +7,6 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 borsh = { workspace = true }
-near-mpc-bounded-collections = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
@@ -16,6 +15,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils", "dev-utils"] }
 near-account-id = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "ed25519-dalek",
     "near",
