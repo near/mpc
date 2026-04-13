@@ -12,7 +12,7 @@ const TEE_BLOCKED_KEYS: &[&str] = &["gcp"];
 /// MPC node config table.  Returns an error if the user config already
 /// contains a reserved key.
 ///
-/// In TEE mode, keys listed in [`TEE_BLOCKED_KEYS`] are also rejected.
+/// In TEE mode, keys listed in `TEE_BLOCKED_KEYS` are also rejected.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
