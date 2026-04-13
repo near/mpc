@@ -15,7 +15,6 @@ pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
 pub const KEY_RESHARING_PORT_SEED: u16 = 3;
-#[expect(dead_code)]
 pub const REQUEST_DURING_RESHARING_PORT_SEED: u16 = 4;
 pub const SUBMIT_PARTICIPANT_INFO_PORT_SEED: u16 = 5;
 pub const CANCELLATION_OF_RESHARING_PORT_SEED: u16 = 6;
