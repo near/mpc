@@ -91,6 +91,8 @@ export VMM_RPC=http://127.0.0.1:10000
 export MPC_IMAGE_NAME=nearone/mpc-node
 export MPC_IMAGE_TAGS=main-9515e18
 export MPC_IMAGE=nearone/mpc-node
+# For non-Docker Hub registries, include the registry prefix:
+#   export MPC_IMAGE=ghcr.io/nearone/mpc-node
 
 # NEAR localnet
 export NEAR_NETWORK_CONFIG=mpc-localnet

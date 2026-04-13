@@ -2,6 +2,7 @@
 image = "${MPC_IMAGE}"
 pull_max_retries = 5
 pull_retry_interval_secs = 2
+pull_max_delay_secs = 60
 port_mappings = [
 ${PORTS_TOML}]
 

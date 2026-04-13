@@ -49,6 +49,7 @@ pub async fn run() -> Result<(), LauncherError> {
         &manifest_digest,
         config.launcher_config.pull_max_retries,
         config.launcher_config.pull_retry_interval_secs,
+        config.launcher_config.pull_max_delay_secs,
     )
     .await?;
 

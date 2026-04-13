@@ -16,6 +16,7 @@ pub async fn pull_and_verify(
     manifest_digest: &DockerSha256Digest,
     max_retries: usize,
     retry_interval_secs: u64,
+    max_delay_secs: u64,
 ) -> Result<(), ImageDigestValidationFailed> {
     let reference = format!("{image_name}@{manifest_digest}");
 
@@ -36,7 +37,7 @@ pub async fn pull_and_verify(
             return Err(ImageDigestValidationFailed::DockerPullFailed {
                 reference: reference.clone(),
                 detail: format!(
-                    "exit code {}: stderr={stderr}, stdout={stdout}",
+                    "exit code {}:\nstderr:\n{stderr}\nstdout:\n{stdout}",
                     pull.status
                 ),
             });
@@ -45,7 +46,6 @@ pub async fn pull_and_verify(
         Ok(())
     };
 
-    let max_delay_secs = 60;
     let backoff = ExponentialBuilder::default()
         .with_min_delay(Duration::from_secs(retry_interval_secs.min(max_delay_secs)))
         .with_factor(1.5)
@@ -86,14 +86,14 @@ mod integration_tests {
     #[tokio::test]
     async fn pull_from_docker_hub() {
         let digest: DockerSha256Digest = DOCKER_HUB_MANIFEST_DIGEST.parse().unwrap();
-        let result = pull_and_verify(DOCKER_HUB_IMAGE, &digest, 3, 1).await;
+        let result = pull_and_verify(DOCKER_HUB_IMAGE, &digest, 3, 1, 60).await;
         assert!(result.is_ok(), "Docker Hub pull failed: {result:?}");
     }
 
     #[tokio::test]
     async fn pull_from_ghcr() {
         let digest: DockerSha256Digest = GHCR_MANIFEST_DIGEST.parse().unwrap();
-        let result = pull_and_verify(GHCR_IMAGE, &digest, 3, 1).await;
+        let result = pull_and_verify(GHCR_IMAGE, &digest, 3, 1, 60).await;
         assert!(result.is_ok(), "GHCR pull failed: {result:?}");
     }
 
@@ -103,7 +103,7 @@ mod integration_tests {
             "sha256:0000000000000000000000000000000000000000000000000000000000000000"
                 .parse()
                 .unwrap();
-        let result = pull_and_verify(DOCKER_HUB_IMAGE, &bad_digest, 0, 1).await;
+        let result = pull_and_verify(DOCKER_HUB_IMAGE, &bad_digest, 0, 1, 60).await;
         assert!(result.is_err(), "should fail with wrong digest");
     }
 }
