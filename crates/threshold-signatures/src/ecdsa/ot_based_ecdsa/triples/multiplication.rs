@@ -150,12 +150,12 @@ async fn multiplication_receiver(
     Ok(gamma0? + gamma1?)
 }
 
-fn get_multiplication_inputs(
-    sid: &[HashOutput],
-    av_iv: &[Scalar],
-    bv_iv: &[Scalar],
+fn get_multiplication_inputs<'a>(
+    sid: &'a [HashOutput],
+    av_iv: &'a [Scalar],
+    bv_iv: &'a [Scalar],
     i: usize,
-) -> Result<(&HashOutput, &Scalar, &Scalar), ProtocolError> {
+) -> Result<(&'a HashOutput, &'a Scalar, &'a Scalar), ProtocolError> {
     let sid_i = sid
         .get(i)
         .ok_or_else(|| ProtocolError::AssertionFailed("sid index out of bounds".to_string()))?;
