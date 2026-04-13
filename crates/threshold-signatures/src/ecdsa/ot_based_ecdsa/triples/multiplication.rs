@@ -100,14 +100,14 @@ struct MultiplicationReceiverRandomPackage {
 }
 
 impl MultiplicationReceiverRandomPackage {
-    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Self {
+    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Result<Self, ProtocolError> {
         let y = batch_random_ot_sender_helper(rng);
         // This value must coincide with params.batch_size in `multiplication_receiver`
         let batch_size = 2 * (BITS + SECURITY_PARAMETER);
-        let b = random_ot_extension_receiver_helper(batch_size, rng);
+        let b = random_ot_extension_receiver_helper(batch_size, rng)?;
         let seed0 = mta_receiver_random_helper(rng);
         let seed1 = mta_receiver_random_helper(rng);
-        Self::new(y, b, seed0, seed1)
+        Ok(Self::new(y, b, seed0, seed1))
     }
 }
 
@@ -150,6 +150,24 @@ async fn multiplication_receiver(
     Ok(gamma0? + gamma1?)
 }
 
+fn get_multiplication_inputs<'a>(
+    sid: &'a [HashOutput],
+    av_iv: &'a [Scalar],
+    bv_iv: &'a [Scalar],
+    i: usize,
+) -> Result<(&'a HashOutput, &'a Scalar, &'a Scalar), ProtocolError> {
+    let sid_i = sid
+        .get(i)
+        .ok_or_else(|| ProtocolError::AssertionFailed("sid index out of bounds".to_string()))?;
+    let av_i = av_iv
+        .get(i)
+        .ok_or_else(|| ProtocolError::AssertionFailed("av_iv index out of bounds".to_string()))?;
+    let bv_i = bv_iv
+        .get(i)
+        .ok_or_else(|| ProtocolError::AssertionFailed("bv_iv index out of bounds".to_string()))?;
+    Ok((sid_i, av_i, bv_i))
+}
+
 pub(super) async fn multiplication_many<const N: usize>(
     comms: Comms,
     sid: Vec<HashOutput>,
@@ -163,6 +181,14 @@ pub(super) async fn multiplication_many<const N: usize>(
         return Err(ProtocolError::AssertionFailed(
             "N must be greater than 0".to_string(),
         ));
+    }
+    if sid.len() != N || av_iv.len() != N || bv_iv.len() != N {
+        return Err(ProtocolError::AssertionFailed(format!(
+            "input vectors must have length N={N}, got sid={}, av_iv={}, bv_iv={}",
+            sid.len(),
+            av_iv.len(),
+            bv_iv.len(),
+        )));
     }
     let sid_arc = Arc::new(sid);
     let av_iv_arc = Arc::new(av_iv);
@@ -185,25 +211,29 @@ pub(super) async fn multiplication_many<const N: usize>(
                     let precomputed_sender_package =
                         MultiplicationSenderRandomPackage::generate_random_package(&mut rng);
                     Box::pin(async move {
+                        let (sid_i, av_i, bv_i) =
+                            get_multiplication_inputs(&sid_arc, &av_iv_arc, &bv_iv_arc, i)?;
                         #[allow(clippy::large_futures)]
                         multiplication_sender(
                             chan,
-                            sid_arc[i].as_ref(),
-                            &av_iv_arc[i],
-                            &bv_iv_arc[i],
+                            sid_i.as_ref(),
+                            av_i,
+                            bv_i,
                             precomputed_sender_package,
                         )
                         .await
                     })
                 } else {
                     let precomputed_receiver_package =
-                        MultiplicationReceiverRandomPackage::generate_random_package(&mut rng);
+                        MultiplicationReceiverRandomPackage::generate_random_package(&mut rng)?;
                     Box::pin(async move {
+                        let (sid_i, av_i, bv_i) =
+                            get_multiplication_inputs(&sid_arc, &av_iv_arc, &bv_iv_arc, i)?;
                         multiplication_receiver(
                             chan,
-                            sid_arc[i].as_ref(),
-                            &av_iv_arc[i],
-                            &bv_iv_arc[i],
+                            sid_i.as_ref(),
+                            av_i,
+                            bv_i,
                             precomputed_receiver_package,
                         )
                         .await
@@ -213,13 +243,11 @@ pub(super) async fn multiplication_many<const N: usize>(
             tasks.push(fut);
         }
     }
-    let mut outs = vec![];
-    for i in 0..N {
-        let av_i = &av_iv_arc.as_slice()[i];
-        let bv_i = &bv_iv_arc.as_slice()[i];
-        let out = *av_i * *bv_i;
-        outs.push(out);
-    }
+    let mut outs: Vec<Scalar> = av_iv_arc
+        .iter()
+        .zip(bv_iv_arc.iter())
+        .map(|(av_i, bv_i)| *av_i * *bv_i)
+        .collect();
 
     let mut results = futures::future::try_join_all(tasks)
         .await?
