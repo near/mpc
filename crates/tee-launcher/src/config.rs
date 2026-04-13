@@ -22,16 +22,16 @@ pub fn intercept_node_config(
 
     if platform == Platform::Tee {
         // Must match the field name in node-config's StartConfig::gcp
-        reject_reserved(&node_config, "gcp")?;
+        reject_in_tee_mode(&node_config, "gcp")?;
     }
 
     Ok(node_config)
 }
 
-/// Return an error if the user config contains a key that is not allowed.
-fn reject_reserved(table: &toml::Table, key: &str) -> Result<(), LauncherError> {
+/// Return an error if the user config contains a key that is blocked in TEE mode.
+fn reject_in_tee_mode(table: &toml::Table, key: &str) -> Result<(), LauncherError> {
     if table.contains_key(key) {
-        return Err(LauncherError::ReservedConfigKey(key.to_string()));
+        return Err(LauncherError::TeeRestrictedConfigKey(key.to_string()));
     }
     Ok(())
 }
@@ -283,7 +283,7 @@ project_id = "my-project"
         let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
 
         // then
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
+        assert_matches!(result, Err(LauncherError::TeeRestrictedConfigKey(key)) => {
             assert_eq!(key, "gcp");
         });
     }
