@@ -1,20 +1,38 @@
 use launcher_interface::types::TeeConfig;
 
 use crate::error::LauncherError;
+use crate::types::Platform;
 
 /// Inject launcher-controlled config section (`tee`) into the user-provided
 /// MPC node config table.  Returns an error if the user config already
-/// contains the reserved key.
+/// contains a reserved key.
+///
+/// In TEE mode, the `gcp` key is also rejected because it could allow an
+/// operator to exfiltrate keyshares to an external GCP Secret Manager project.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
+    platform: Platform,
 ) -> Result<toml::Table, LauncherError> {
     insert_reserved(
         &mut node_config,
         "tee",
         toml::Value::try_from(tee_config).expect("tee config serializes to TOML"),
     )?;
+
+    if platform == Platform::Tee {
+        reject_reserved(&node_config, "gcp")?;
+    }
+
     Ok(node_config)
+}
+
+/// Return an error if the user config contains a key that is not allowed.
+fn reject_reserved(table: &toml::Table, key: &str) -> Result<(), LauncherError> {
+    if table.contains_key(key) {
+        return Err(LauncherError::ReservedConfigKey(key.to_string()));
+    }
+    Ok(())
 }
 
 /// Insert `value` under `key` in `table`, returning an error if the key
@@ -85,7 +103,7 @@ mod tests {
         let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee).unwrap();
 
         // then
         assert!(result.contains_key("tee"));
@@ -103,7 +121,7 @@ type = "Local"
         .unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config());
+        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
 
         // then
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
@@ -117,7 +135,7 @@ type = "Local"
         let config = toml::Table::new();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee).unwrap();
 
         // then
         assert!(result.contains_key("tee"));
@@ -138,7 +156,7 @@ key = "value"
         .unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee).unwrap();
 
         // then
         assert_eq!(result["home_dir"].as_str(), Some("/data"));
@@ -161,7 +179,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee).unwrap();
+        let result = intercept_node_config(config, &tee, Platform::Tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -184,7 +202,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee).unwrap();
+        let result = intercept_node_config(config, &tee, Platform::Tee).unwrap();
 
         // then — Local variant is a unit variant; just verify the key exists
         assert!(result.contains_key("tee"));
@@ -207,7 +225,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee).unwrap();
+        let result = intercept_node_config(config, &tee, Platform::Tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -224,7 +242,7 @@ key = "value"
         let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee).unwrap();
         let toml_str = toml::to_string(&result).unwrap();
 
         // then — the output can be parsed back
@@ -239,11 +257,54 @@ key = "value"
         let config: toml::Table = toml::from_str(r#"tee = "sneaky""#).unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config());
+        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
 
         // then — any occupied entry is rejected regardless of value type
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
             assert_eq!(key, "tee");
         });
+    }
+
+    #[test]
+    fn intercept_config_rejects_gcp_in_tee_mode() {
+        // given
+        let config: toml::Table = toml::from_str(
+            r#"
+home_dir = "/data"
+[gcp]
+keyshare_secret_id = "my-secret"
+project_id = "my-project"
+"#,
+        )
+        .unwrap();
+
+        // when
+        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
+
+        // then
+        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) => {
+            assert_eq!(key, "gcp");
+        });
+    }
+
+    #[test]
+    fn intercept_config_allows_gcp_in_nontee_mode() {
+        // given
+        let config: toml::Table = toml::from_str(
+            r#"
+home_dir = "/data"
+[gcp]
+keyshare_secret_id = "my-secret"
+project_id = "my-project"
+"#,
+        )
+        .unwrap();
+
+        // when
+        let result = intercept_node_config(config, &sample_tee_config(), Platform::NonTee);
+
+        // then
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains_key("gcp"));
     }
 }
