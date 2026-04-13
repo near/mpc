@@ -21,6 +21,7 @@ pub fn intercept_node_config(
     )?;
 
     if platform == Platform::Tee {
+        // Must match the field name in node-config's StartConfig::gcp
         reject_reserved(&node_config, "gcp")?;
     }
 
