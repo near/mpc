@@ -1,10 +1,7 @@
 use std::fmt;
 
-use mpc_contract::primitives::{
-    domain::DomainId,
-    signature::{Payload, Tweak},
-};
 use near_indexer_primitives::CryptoHash;
+use near_mpc_contract_interface::types::{DomainId, Payload, Tweak};
 use serde::{Deserialize, Serialize};
 
 use near_mpc_contract_interface::types as dtos;

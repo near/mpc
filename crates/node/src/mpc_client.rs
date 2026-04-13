@@ -26,8 +26,8 @@ use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
-use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
-use mpc_contract::primitives::domain::{Curve, DomainId};
+use near_mpc_contract_interface::types::kdf::derive_tweak;
+use near_mpc_contract_interface::types::{CKDResponse, DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -56,7 +56,7 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
     verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
-    domain_to_curve: HashMap<DomainId, Curve>,
+    domain_to_curve: HashMap<DomainId, SignatureScheme>,
 }
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
@@ -75,7 +75,7 @@ where
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
         verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
-        domain_to_curve: HashMap<DomainId, Curve>,
+        domain_to_curve: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
             config,
@@ -310,7 +310,7 @@ where
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
-                                domain_id: request.domain_id.into(),
+                                domain_id: request.domain_id,
                                 entropy,
                                 payload_version: request.payload_version,
                                 request: request.request,
@@ -390,7 +390,7 @@ where
                                     .domain_to_curve
                                     .get(&signature_attempt.request.domain)
                                 {
-                                    Some(Curve::Secp256k1) => {
+                                    Some(SignatureScheme::Secp256k1) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.ecdsa_signature_provider
@@ -407,7 +407,7 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Edwards25519) => {
+                                    Some(SignatureScheme::Ed25519) => {
                                         let (signature, _) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.eddsa_signature_provider
@@ -423,11 +423,11 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Bls12381) => Err(anyhow::anyhow!(
+                                    Some(SignatureScheme::Bls12381) => Err(anyhow::anyhow!(
                                         "Incorrect protocol for domain: {:?}",
                                         signature_attempt.request.domain.clone()
                                     )),
-                                    Some(Curve::V2Secp256k1) => {
+                                    Some(SignatureScheme::V2Secp256k1) => {
                                         let (signature, public_key) = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.robust_ecdsa_signature_provider
@@ -506,7 +506,7 @@ where
                                     .domain_to_curve
                                     .get(&ckd_attempt.request.domain_id)
                                 {
-                                    Some(Curve::Bls12381) => {
+                                    Some(SignatureScheme::Bls12381) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.ckd.timeout_sec),
                                             this.ckd_provider
@@ -525,9 +525,9 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Secp256k1)
-                                    | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
+                                    Some(SignatureScheme::Secp256k1)
+                                    | Some(SignatureScheme::V2Secp256k1)
+                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
@@ -597,7 +597,7 @@ where
                                     .domain_to_curve
                                     .get(&verify_foreign_tx_attempt.request.domain_id)
                                 {
-                                    Some(Curve::Secp256k1) => {
+                                    Some(SignatureScheme::Secp256k1) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.verify_foreign_tx_provider.clone().make_signature(
@@ -617,9 +617,9 @@ where
 
                                         Ok(response)
                                     }
-                                    Some(Curve::Bls12381)
-                                    | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
+                                    Some(SignatureScheme::Bls12381)
+                                    | Some(SignatureScheme::V2Secp256k1)
+                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         verify_foreign_tx_attempt.request.domain_id.clone()
                                     )),

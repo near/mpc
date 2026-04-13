@@ -12,10 +12,10 @@ use crate::indexer::tee::{
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use mpc_contract::state::ProtocolContractState;
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_indexer::Indexer;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]

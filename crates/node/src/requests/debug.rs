@@ -234,11 +234,8 @@ mod tests {
         indexer::types::{ChainCKDRespondArgs, ChainSignatureRespondArgs},
         types::{CKDRequest, SignatureRequest},
     };
-    use mpc_contract::primitives::{
-        domain::DomainId,
-        signature::{Payload, Tweak},
-    };
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types::{DomainId, Payload, Tweak};
     use rand::seq::SliceRandom;
 
     #[test]

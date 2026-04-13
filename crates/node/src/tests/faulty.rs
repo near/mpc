@@ -5,8 +5,8 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
 use near_time::Clock;
 use rand::Rng;
 
@@ -36,14 +36,14 @@ async fn test_faulty_cluster() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
-        purpose: DomainPurpose::Sign,
+        scheme: SignatureScheme::Secp256k1,
+        purpose: Some(DomainPurpose::Sign),
     };
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants);
-        contract.add_domains(vec![domain.clone()]);
+        contract.add_domains(super::to_contract_domain_configs(&[domain.clone()]));
     }
 
     let _runs = setup
@@ -171,14 +171,14 @@ async fn test_indexer_stuck() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
-        purpose: DomainPurpose::Sign,
+        scheme: SignatureScheme::Secp256k1,
+        purpose: Some(DomainPurpose::Sign),
     };
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
-        contract.add_domains(vec![domain.clone()]);
+        contract.add_domains(super::to_contract_domain_configs(&[domain.clone()]));
     }
 
     let _runs = setup

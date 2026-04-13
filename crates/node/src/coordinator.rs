@@ -32,10 +32,9 @@ use crate::web::DebugRequest;
 use anyhow::Context;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::{Curve, DomainId};
-use mpc_contract::primitives::key_state::EpochId;
 use mpc_node_config::ConfigFile;
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{DomainId, EpochId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -538,26 +537,26 @@ where
                     DomainId,
                     confidential_key_derivation::KeygenOutput,
                 > = HashMap::new();
-                let mut domain_to_curve: HashMap<DomainId, Curve> = HashMap::new();
+                let mut domain_to_curve: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
                 for keyshare in keyshares {
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
                         KeyshareData::Secp256k1(data) => {
                             ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Secp256k1);
+                            domain_to_curve.insert(domain_id, SignatureScheme::Secp256k1);
                         }
                         KeyshareData::Ed25519(data) => {
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Edwards25519);
+                            domain_to_curve.insert(domain_id, SignatureScheme::Ed25519);
                         }
                         KeyshareData::Bls12381(data) => {
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::Bls12381);
+                            domain_to_curve.insert(domain_id, SignatureScheme::Bls12381);
                         }
                         KeyshareData::V2Secp256k1(data) => {
                             robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_curve.insert(domain_id, Curve::V2Secp256k1);
+                            domain_to_curve.insert(domain_id, SignatureScheme::V2Secp256k1);
                         }
                     }
                 }

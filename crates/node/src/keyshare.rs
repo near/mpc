@@ -7,11 +7,10 @@ mod temporary;
 pub mod test_utils;
 
 use anyhow::Context;
-use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
 use near_mpc_contract_interface::types::{
     Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
 };
+use near_mpc_contract_interface::types::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
@@ -60,7 +59,9 @@ impl Keyshare {
                 key_id
             );
         }
-        let public_key: dtos::PublicKey = key.key.clone().into();
+        let public_key: dtos::PublicKey = key.key.clone().try_into().map_err(|e| {
+            anyhow::anyhow!("Failed to convert PublicKeyExtended to PublicKey: {:?}", e)
+        })?;
         if self.public_key()? != public_key {
             anyhow::bail!(
                 "Keyshare has incorrect public key {:?}, should be {:?}",
@@ -515,10 +516,7 @@ pub async fn generate_key_storage() -> (KeyshareStorage, tempfile::TempDir) {
 
 #[cfg(test)]
 pub mod tests {
-    use mpc_contract::primitives::{
-        domain::DomainId,
-        key_state::{AttemptId, EpochId, KeyEventId},
-    };
+    use near_mpc_contract_interface::types::{AttemptId, DomainId, EpochId, KeyEventId};
     use rand::SeedableRng as _;
 
     use super::{generate_key_storage, KeyshareStorage};

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
 use hyper::{body::to_bytes, client::conn::SendRequest, Body, Request};
-use mpc_contract::primitives::key_state::Keyset;
 use mpc_tls::tls::configure_tls;
+use near_mpc_contract_interface::types::Keyset;
 use tokio::net::TcpStream;
 
 use crate::{

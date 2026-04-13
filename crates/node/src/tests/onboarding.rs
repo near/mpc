@@ -17,9 +17,8 @@ use crate::tests::{
 use crate::tracking::AutoAbortTask;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
-use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
-use mpc_contract::state::ProtocolContractState;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
 use near_time::Clock;
 use rand::rngs::OsRng;
 
@@ -104,14 +103,14 @@ async fn test_onboarding() {
 
     let domain = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
-        purpose: DomainPurpose::Sign,
+        scheme: SignatureScheme::Secp256k1,
+        purpose: Some(DomainPurpose::Sign),
     };
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(initial_participants);
-        contract.add_domains(vec![domain.clone()]);
+        contract.add_domains(super::to_contract_domain_configs(&[domain.clone()]));
     }
 
     let _runs = setup
@@ -140,7 +139,7 @@ async fn test_onboarding() {
 
     {
         tracing::info!("sanity checking test setup");
-        let ProtocolContractState::Running(running) =
+        let mpc_contract::state::ProtocolContractState::Running(running) =
             setup.indexer.contract_mut().await.state.clone()
         else {
             panic!("expect running")
@@ -159,7 +158,10 @@ async fn test_onboarding() {
     {
         tracing::info!("Setting backup and destination node info");
         let mut contract = setup.indexer.contract_mut().await;
-        assert_matches!(&contract.state, ProtocolContractState::Running(_));
+        assert_matches!(
+            &contract.state,
+            mpc_contract::state::ProtocolContractState::Running(_)
+        );
         let backup_service_info = BackupServiceInfo {
             public_key: Ed25519PublicKey::from(&backup_service_key.verifying_key()),
         };
@@ -195,11 +197,12 @@ async fn test_onboarding() {
         .unwrap();
 
     let keyset = {
-        let ProtocolContractState::Running(running) = &setup.indexer.contract_mut().await.state
+        let mpc_contract::state::ProtocolContractState::Running(running) =
+            &setup.indexer.contract_mut().await.state
         else {
             panic!("expect running");
         };
-        running.keyset.clone()
+        super::to_interface_keyset(&running.keyset)
     };
     let received_keyshares = {
         tracing::info!("Fetching keyshares from parting node.");
@@ -272,7 +275,8 @@ async fn test_onboarding() {
         assert_eq!(received_keyshares, found);
     }
 
-    let ProtocolContractState::Running(running) = setup.indexer.contract_mut().await.state.clone()
+    let mpc_contract::state::ProtocolContractState::Running(running) =
+        setup.indexer.contract_mut().await.state.clone()
     else {
         panic!("expect running")
     };

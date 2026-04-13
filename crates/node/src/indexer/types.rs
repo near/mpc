@@ -5,14 +5,6 @@ use k256::{
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
-use mpc_contract::{
-    crypto_shared::CKDResponse,
-    primitives::{
-        domain::DomainId,
-        key_state::{KeyEventId, Keyset},
-        signature::Tweak,
-    },
-};
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
@@ -23,6 +15,7 @@ pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
+use near_mpc_contract_interface::types::{CKDResponse, DomainId, KeyEventId, Keyset, Tweak};
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -76,11 +69,11 @@ pub type ChainVerifyForeignTransactionRequest =
     near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 
 pub type ChainSignatureResponse = near_mpc_contract_interface::types::SignatureResponse;
-pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
+pub type ChainCKDResponse = near_mpc_contract_interface::types::CKDResponse;
 pub type ChainVerifyForeignTransactionResponse =
     near_mpc_contract_interface::types::VerifyForeignTransactionResponse;
 
-use mpc_contract::primitives::signature::Payload;
+use near_mpc_contract_interface::types::Payload;
 
 const MAX_RECOVERY_ID: u8 = 3;
 
@@ -356,7 +349,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
         Ok(ChainVerifyForeignTransactionRespondArgs {
             request: VerifyForeignTransactionRequest {
                 request: request.request,
-                domain_id: request.domain_id.into(),
+                domain_id: request.domain_id,
                 payload_version: request.payload_version,
             },
             response: VerifyForeignTransactionResponse {

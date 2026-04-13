@@ -40,6 +40,26 @@ use super::primitives::DomainId;
 )]
 pub struct EpochId(pub u64);
 
+impl EpochId {
+    pub const fn new(epoch_id: u64) -> Self {
+        EpochId(epoch_id)
+    }
+
+    pub fn get(&self) -> u64 {
+        self.0
+    }
+
+    pub const fn next(&self) -> Self {
+        EpochId(self.0 + 1)
+    }
+}
+
+impl std::fmt::Display for EpochId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Attempt identifier within a key event.
 #[derive(
     Clone,
@@ -63,6 +83,37 @@ pub struct EpochId(pub u64);
     derive(schemars::JsonSchema)
 )]
 pub struct AttemptId(pub u64);
+
+impl AttemptId {
+    pub fn new() -> Self {
+        AttemptId(0)
+    }
+
+    pub fn next(&self) -> Self {
+        AttemptId(self.0 + 1)
+    }
+
+    pub fn get(&self) -> u64 {
+        self.0
+    }
+
+    /// Returns the AttemptId used for legacy keyshares (before key events existed).
+    pub fn legacy_attempt_id() -> Self {
+        AttemptId(0)
+    }
+}
+
+impl Default for AttemptId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for AttemptId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 /// Threshold value for distributed key operations.
 #[derive(
@@ -242,9 +293,33 @@ pub struct Keyset {
     pub domains: Vec<KeyForDomain>,
 }
 
+impl Keyset {
+    pub fn get_domain_ids(&self) -> Vec<DomainId> {
+        self.domains.iter().map(|domain| domain.domain_id).collect()
+    }
+
+    /// Returns the public key for the given domain, or an error if the domain is not found.
+    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKeyExtended, String> {
+        self.domains
+            .iter()
+            .find(|k| k.domain_id == domain_id)
+            .map(|k| k.key.clone())
+            .ok_or_else(|| format!("Domain {:?} not found in keyset", domain_id))
+    }
+}
+
 /// Identifier for a key event (generation or resharing attempt).
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -254,6 +329,16 @@ pub struct KeyEventId {
     pub epoch_id: EpochId,
     pub domain_id: DomainId,
     pub attempt_id: AttemptId,
+}
+
+impl KeyEventId {
+    pub fn new(epoch_id: EpochId, domain_id: DomainId, attempt_id: AttemptId) -> Self {
+        KeyEventId {
+            epoch_id,
+            domain_id,
+            attempt_id,
+        }
+    }
 }
 
 // =============================================================================

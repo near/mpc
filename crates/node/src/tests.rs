@@ -1,8 +1,8 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
 use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
-use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::state::ProtocolContractState;
+use near_mpc_contract_interface::types::Keyset;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
@@ -36,11 +36,11 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
-use mpc_contract::primitives::domain::{Curve, DomainConfig};
-use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
+use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_contract_interface::types::{DomainConfig, Payload, SignatureScheme};
 use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
@@ -59,6 +59,27 @@ mod onboarding;
 mod resharing;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Convert an interface DomainConfig to a contract DomainConfig via JSON serialization.
+fn to_contract_domain_config(
+    domain: &DomainConfig,
+) -> mpc_contract::primitives::domain::DomainConfig {
+    let json = serde_json::to_string(domain).unwrap();
+    serde_json::from_str(&json).unwrap()
+}
+
+/// Convert a vec of interface DomainConfigs to contract DomainConfigs.
+fn to_contract_domain_configs(
+    domains: &[DomainConfig],
+) -> Vec<mpc_contract::primitives::domain::DomainConfig> {
+    domains.iter().map(to_contract_domain_config).collect()
+}
+
+/// Convert a contract Keyset to an interface Keyset via JSON serialization.
+fn to_interface_keyset(keyset: &mpc_contract::primitives::key_state::Keyset) -> Keyset {
+    let json = serde_json::to_string(keyset).unwrap();
+    serde_json::from_str(&json).unwrap()
+}
 const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
 const DEFAULT_MAX_SIGNATURE_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
 
@@ -275,21 +296,21 @@ pub async fn request_signature_and_await_response(
     domain: &DomainConfig,
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
-    let payload = match domain.curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
+    let payload = match domain.scheme {
+        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
-            Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())
+            Payload::from_legacy_ecdsa(payload)
         }
-        Curve::Edwards25519 => {
+        SignatureScheme::Ed25519 => {
             let len = rand::thread_rng().gen_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
             let mut payload = vec![0; len];
             rand::thread_rng().fill_bytes(payload.as_mut());
-            Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
+            Payload::Eddsa(BoundedVec::try_from(payload).unwrap())
         }
-        Curve::Bls12381 => unreachable!(),
+        SignatureScheme::Bls12381 => unreachable!(),
     };
     let request = SignatureRequestFromChain {
         signature_id: CryptoHash(rand::random()),
@@ -390,8 +411,8 @@ async fn do_request_ckd_and_await_response(
     app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.curve,
-        Curve::Bls12381,
+        domain.scheme,
+        SignatureScheme::Bls12381,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
     let request = CKDRequestFromChain {
@@ -470,8 +491,8 @@ pub async fn request_verify_foreign_tx_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
-        domain.curve,
-        Curve::Secp256k1,
+        domain.scheme,
+        SignatureScheme::Secp256k1,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
     let request = VerifyForeignTxRequestFromChain {

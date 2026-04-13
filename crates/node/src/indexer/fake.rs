@@ -26,7 +26,6 @@ use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
     participants::{ParticipantId, ParticipantInfo, Participants},
-    signature::Payload,
     thresholds::{Threshold, ThresholdParameters},
 };
 use mpc_contract::state::{
@@ -40,6 +39,16 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::{broadcast, mpsc, watch};
 
+/// Convert an interface type to a contract type via JSON round-trip.
+fn to_contract<T: serde::de::DeserializeOwned>(dto: &impl serde::Serialize) -> T {
+    serde_json::from_value(serde_json::to_value(dto).unwrap()).unwrap()
+}
+
+/// Convert a contract type to an interface type via JSON round-trip.
+fn to_interface<T: serde::de::DeserializeOwned>(contract: &impl serde::Serialize) -> T {
+    serde_json::from_value(serde_json::to_value(contract).unwrap()).unwrap()
+}
+
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
     pub state: ProtocolContractState,
@@ -47,7 +56,7 @@ pub struct FakeMpcContractState {
     env: Environment,
     // TODO(#1958): Although this is only used in tests, it does not seem correct to
     // group signatures by Payload. We should use the same we use in the contract
-    pub pending_signatures: BTreeMap<Payload, SignatureId>,
+    pub pending_signatures: BTreeMap<dtos::Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     foreign_chain_policy: dtos::ForeignChainPolicy,
@@ -373,7 +382,8 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(running_state) = &self.state else {
             panic!("only allow calling this in `running_state`");
         };
-        if running_state.keyset != args.keyset {
+        let dto_keyset: dtos::Keyset = to_interface(&running_state.keyset);
+        if dto_keyset != args.keyset {
             panic!("keyset mismatch");
         }
         self.migration_service.remove_migration(&account_id);
@@ -465,14 +475,17 @@ impl FakeIndexerCore {
                 loop {
                     {
                         let state = contract.lock().await;
+                        let dto_state: dtos::ProtocolContractState = to_interface(&state.state);
                         let config = ContractState::from_contract_state(
-                            &state.state,
+                            &dto_state,
                             state.env.block_height,
                             None,
                         )
                         .expect("Failed to convert contract state");
                         state_change_sender.send(config).ok();
-                        let migration_state = state.migration_service.get_all();
+                        let contract_migration_state = state.migration_service.get_all();
+                        let migration_state: super::migrations::ContractMigrationInfo =
+                            to_interface(&contract_migration_state);
                         migration_state_sender.send(migration_state).ok();
                     }
                     clock.sleep(Duration::seconds(1)).await;
@@ -605,7 +618,8 @@ impl FakeIndexerCore {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_pk(account_id, vote_pk.key_event_id, vote_pk.public_key);
+                        let key_event_id: KeyEventId = to_contract(&vote_pk.key_event_id);
+                        contract.vote_pk(account_id, key_event_id, vote_pk.public_key);
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;
@@ -657,7 +671,8 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::VoteReshared(reshared) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_reshared(account_id, reshared.key_event_id);
+                        let key_event_id: KeyEventId = to_contract(&reshared.key_event_id);
+                        contract.vote_reshared(account_id, key_event_id);
                     }
                     ChainSendTransactionRequest::VoteForeignChainPolicy(vote) => {
                         let mut contract = contract.lock().await;
@@ -666,15 +681,18 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?
                         let mut contract = contract.lock().await;
-                        contract.vote_start_keygen(account_id, start.key_event_id);
+                        let key_event_id: KeyEventId = to_contract(&start.key_event_id);
+                        contract.vote_start_keygen(account_id, key_event_id);
                     }
                     ChainSendTransactionRequest::StartReshare(start) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_start_reshare(account_id, start.key_event_id);
+                        let key_event_id: KeyEventId = to_contract(&start.key_event_id);
+                        contract.vote_start_reshare(account_id, key_event_id);
                     }
                     ChainSendTransactionRequest::VoteAbortKeyEventInstance(abort) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_abort_key_event(account_id, abort.key_event_id);
+                        let key_event_id: KeyEventId = to_contract(&abort.key_event_id);
+                        contract.vote_abort_key_event(account_id, key_event_id);
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
                     ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {

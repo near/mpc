@@ -11,7 +11,7 @@ use crate::types::{SignatureId, SignatureRequest};
 use anyhow::Context;
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
-use mpc_contract::primitives::signature::Tweak;
+use near_mpc_contract_interface::types::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignOutput, RerandomizedPresignOutput};

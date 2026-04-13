@@ -6,9 +6,6 @@ use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
 use futures::StreamExt;
-use mpc_contract::primitives::ckd::CKDRequest;
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
 use near_account_id::AccountId;
 use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
@@ -23,13 +20,16 @@ use near_mpc_contract_interface::method_names::{
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDRequestArgs;
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs;
+use near_mpc_contract_interface::types::{
+    CKDRequest, DomainId, LegacySignRequestArgs, Payload, SignRequest,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct UnvalidatedSignArgs {
-    request: SignRequestArgs,
+    request: LegacySignRequestArgs,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -368,7 +368,7 @@ fn try_get_ckd_args(
 
     let ckd_request = CKDRequest::new(
         ckd_args.request.app_public_key,
-        ckd_args.request.domain_id.into(),
+        ckd_args.request.domain_id,
         &receipt.predecessor_id,
         &ckd_args.request.derivation_path,
     );

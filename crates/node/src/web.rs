@@ -9,8 +9,6 @@ use axum::{serve, Json};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::utils::protocol_state_to_string;
 use mpc_node_config::{
     AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
     BitcoinChainConfig, BitcoinProviderConfig, CKDConfig, ConfigFile, EthereumApiVariant,
@@ -19,7 +17,9 @@ use mpc_node_config::{
     StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig, TripleConfig,
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
@@ -386,7 +386,126 @@ async fn contract_state(state: State<WebServerState>) -> String {
         // Clone to avoid holding a lock
         .clone();
 
-    protocol_state_to_string(&protocol_state)
+    format_protocol_state(&protocol_state)
+}
+
+fn format_protocol_state(contract_state: &ProtocolContractState) -> String {
+    fn params_to_string(output: &mut String, parameters: &dtos::ThresholdParameters) {
+        output.push_str("    Participants:\n");
+        for (account_id, id, info) in &parameters.participants.participants {
+            output.push_str(&format!(
+                "      ID {}: {} ({})\n",
+                id.0, account_id.0, info.url
+            ));
+        }
+        output.push_str(&format!("    Threshold: {}\n", parameters.threshold.0));
+    }
+
+    let mut output = String::new();
+    match contract_state {
+        ProtocolContractState::NotInitialized => {
+            output.push_str("Contract is not initialized\n");
+        }
+        ProtocolContractState::Initializing(state) => {
+            output.push_str("Contract is in Initializing state (key generation)");
+            output.push_str(&format!("  Epoch: {}\n", state.generating_key.epoch_id));
+            output.push_str("  Domains:\n");
+            for (i, domain) in state.domains.domains.iter().enumerate() {
+                output.push_str(&format!("    Domain {}: {:?}, ", domain.id, domain.scheme));
+                #[expect(clippy::comparison_chain)]
+                if i < state.generated_keys.len() {
+                    output.push_str(&format!(
+                        "key generated (attempt ID {})\n",
+                        state.generated_keys[i].attempt
+                    ));
+                } else if i == state.generated_keys.len() {
+                    output.push_str("generating key: ");
+                    if state.generating_key.instance.is_some() {
+                        let attempt_id = state.generating_key.instance.as_ref().unwrap().attempt_id;
+                        output.push_str(&format!("active; current attempt ID: {}\n", attempt_id));
+                    } else {
+                        output.push_str(&format!(
+                            "not active; next attempt ID: {}\n",
+                            state.generating_key.next_attempt_id
+                        ));
+                    }
+                } else {
+                    output.push_str("queued for generation\n");
+                }
+            }
+            output.push_str("  Parameters:\n");
+            params_to_string(&mut output, &state.generating_key.parameters);
+            output.push_str("  Warning: this tool does not calculate automatic timeouts for key generation attempts\n");
+        }
+        ProtocolContractState::Running(state) => {
+            output.push_str("Contract is in Running state\n");
+            output.push_str(&format!("  Epoch: {}\n", state.keyset.epoch_id));
+            output.push_str("  Keyset:\n");
+            for (domain, key) in state
+                .domains
+                .domains
+                .iter()
+                .zip(state.keyset.domains.iter())
+            {
+                output.push_str(&format!(
+                    "    Domain {}: {:?}, key from attempt {}\n",
+                    domain.id, domain.scheme, key.attempt
+                ));
+            }
+            output.push_str("  Parameters:\n");
+            params_to_string(&mut output, &state.parameters);
+        }
+        ProtocolContractState::Resharing(state) => {
+            output.push_str("Contract is in Resharing state\n");
+            output.push_str(&format!(
+                "  Epoch transition: original {} --> prospective {}\n",
+                state.previous_running_state.keyset.epoch_id,
+                state.resharing_key.epoch_id
+            ));
+            output.push_str("  Domains:\n");
+            for (i, domain) in state
+                .previous_running_state
+                .domains
+                .domains
+                .iter()
+                .enumerate()
+            {
+                output.push_str(&format!(
+                    "    Domain {}: {:?}, original key from attempt {}, ",
+                    domain.id,
+                    domain.scheme,
+                    state.previous_running_state.keyset.domains[i].attempt
+                ));
+
+                #[expect(clippy::comparison_chain)]
+                if i < state.reshared_keys.len() {
+                    output.push_str(&format!(
+                        "reshared (attempt ID {})\n",
+                        state.reshared_keys[i].attempt
+                    ));
+                } else if i == state.reshared_keys.len() {
+                    output.push_str("resharing key: ");
+                    if state.resharing_key.instance.is_some() {
+                        let attempt_id = state.resharing_key.instance.as_ref().unwrap().attempt_id;
+                        output.push_str(&format!("active; current attempt ID: {}\n", attempt_id));
+                    } else {
+                        output.push_str(&format!(
+                            "not active; next attempt ID: {}\n",
+                            state.resharing_key.next_attempt_id
+                        ));
+                    }
+                } else {
+                    output.push_str("queued for resharing\n");
+                }
+            }
+            output.push_str("  Previous Parameters:\n");
+            params_to_string(&mut output, &state.previous_running_state.parameters);
+            output.push_str("  Proposed Parameters:\n");
+            params_to_string(&mut output, &state.resharing_key.parameters);
+            output.push_str("  Warning: this tool does not calculate automatic timeouts for resharing attempts\n");
+        }
+    }
+    output
 }
 
 async fn third_party_licenses() -> Html<&'static str> {

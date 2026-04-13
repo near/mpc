@@ -151,9 +151,15 @@ impl From<Participant> for ParticipantId {
         ParticipantId(participant.into())
     }
 }
+#[cfg(test)]
 impl From<mpc_contract::primitives::participants::ParticipantId> for ParticipantId {
     fn from(participant: mpc_contract::primitives::participants::ParticipantId) -> Self {
         ParticipantId(participant.get())
+    }
+}
+impl From<near_mpc_contract_interface::types::ParticipantId> for ParticipantId {
+    fn from(participant: near_mpc_contract_interface::types::ParticipantId) -> Self {
+        ParticipantId(participant.0)
     }
 }
 impl From<ParticipantId> for Participant {

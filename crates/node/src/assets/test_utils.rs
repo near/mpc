@@ -9,10 +9,17 @@ use crate::providers::HasParticipants;
 use crate::{db::DBCol, primitives::ParticipantId};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ProjectivePoint;
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::EpochId;
 use mpc_contract::primitives::test_utils::gen_participants;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
+use near_mpc_contract_interface::types::{DomainId, EpochId};
+
+/// Convert contract ThresholdParameters to interface ThresholdParameters via JSON serialization.
+fn to_interface_params(
+    params: ThresholdParameters,
+) -> near_mpc_contract_interface::types::ThresholdParameters {
+    let json = serde_json::to_string(&params).unwrap();
+    serde_json::from_str(&json).unwrap()
+}
 use near_time::FakeClock;
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -33,8 +40,9 @@ pub fn random_verifying_key() -> VerifyingKey {
 
 pub fn gen_four_participants() -> (EpochData, ParticipantId) {
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());
-    let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-    let participants: ParticipantsConfig = convert_participant_infos(parameters, None).unwrap();
+    let contract_params = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+    let participants: ParticipantsConfig =
+        convert_participant_infos(to_interface_params(contract_params), None).unwrap();
     let epoch_data = EpochData {
         epoch_id,
         participants,
