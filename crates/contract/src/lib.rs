@@ -2693,7 +2693,7 @@ mod tests {
             "m/44'\''/60'\''/0'\''/0/0",
         );
         let signature_response = dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
-            big_r: dtos::K256AffinePoint::from(k256::AffinePoint::IDENTITY),
+            big_r: dtos::K256AffinePoint::from(k256::AffinePoint::GENERATOR),
             s: dtos::K256Scalar::from(k256::Scalar::ONE),
             recovery_id: 0,
         });
