@@ -12,7 +12,6 @@ export MACHINE_IP=51.68.219.1
 export BASE_PATH=/mnt/data/barak/dstack_latest/meta-dstack/dstack
 export VMM_RPC=http://127.0.0.1:10000
 
-export MPC_IMAGE_NAME=nearone/mpc-node
 export MPC_IMAGE=nearone/mpc-node
 # Manifest digest of the MPC node image (for DEFAULT_IMAGE_DIGEST and voting).
 # Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest

@@ -199,7 +199,6 @@ render_env_and_conf() {
   export INTERNAL_MPC_FUTURE_PORT="${INTERNAL_FUTURE_PORT:-13001}"
 
   export MPC_ENV="${MPC_ENV:-mpc-localnet}"
-  export MPC_IMAGE_NAME="nearone/mpc-node"
   export MPC_IMAGE="nearone/mpc-node"
   export MPC_ACCOUNT_ID="$NODE_ACCOUNT"
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"

@@ -87,8 +87,7 @@ export MACHINE_IP=<EXTERNAL_SERVER_IP>
 export BASE_PATH=/path/to/meta-dstack/dstack  # must contain vmm/src/vmm-cli.py
 export VMM_RPC=http://127.0.0.1:10000
 
-# MPC node image
-export MPC_IMAGE_NAME=nearone/mpc-node
+# MPC node image name (repository)
 export MPC_IMAGE=nearone/mpc-node
 # For non-Docker Hub registries, include the registry prefix:
 #   export MPC_IMAGE=ghcr.io/nearone/mpc-node

@@ -764,7 +764,6 @@ render_node_files_range() {
 
     export MPC_ENV
 
-    export MPC_IMAGE_NAME="nearone/mpc-node"
     export MPC_IMAGE="nearone/mpc-node"
     export MPC_ACCOUNT_ID="$account"
     export MPC_SECRET_STORE_KEY="$(printf '%032x' "$i")"

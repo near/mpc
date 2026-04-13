@@ -218,7 +218,7 @@ verify_cluster() {
 
 upgrade_cluster() {
   local new_digest="$1"
-  local image_name="${MPC_IMAGE_NAME:-nearone/mpc-node}"
+  local image_name="${MPC_IMAGE:-nearone/mpc-node}"
   # Strip sha256: prefix if present for voting
   local new_hash="${new_digest#sha256:}"
 
