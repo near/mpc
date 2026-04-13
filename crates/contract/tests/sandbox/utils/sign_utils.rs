@@ -27,7 +27,7 @@ use near_mpc_contract_interface::types::{
     self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
 };
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
-use near_mpc_sdk::sign::{SignRequestArgs as SdkSignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
+use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, types::NearToken, Account, Contract, Worker,
 };
@@ -134,7 +134,7 @@ impl DomainResponseTest {
 #[derive(Debug)]
 pub struct SignRequestTest {
     pub response: SignResponseArgs,
-    pub args: SdkSignRequestArgs,
+    pub args: SignRequestArgs,
 }
 
 impl SignRequestTest {
@@ -305,7 +305,7 @@ async fn submit_request(
 
 async fn submit_sign_request(
     account: &Account,
-    request: &SdkSignRequestArgs,
+    request: &SignRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
     submit_request(account, contract, SIGN, request).await
