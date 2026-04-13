@@ -1,4 +1,5 @@
 use crate::crypto::constants::{NEAR_PRG_CTX, SECURITY_PARAMETER};
+use crate::errors::ProtocolError;
 use auto_ops::impl_op_ex;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -232,9 +233,13 @@ impl BitMatrix {
     /// Create a random matrix of a certain chunk size.
     ///
     /// Each chunk will have a security parameter's worth of rows.
-    pub fn random(rng: &mut impl CryptoRngCore, height: usize) -> Self {
-        assert!(height % SECURITY_PARAMETER == 0);
-        Self((0..height).map(|_| BitVector::random(rng)).collect())
+    pub fn random(rng: &mut impl CryptoRngCore, height: usize) -> Result<Self, ProtocolError> {
+        if height % SECURITY_PARAMETER != 0 {
+            return Err(ProtocolError::InvalidInput(format!(
+                "height {height} must be a multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
+            )));
+        }
+        Ok(Self((0..height).map(|_| BitVector::random(rng)).collect()))
     }
 
     /// Create a new matrix from a list of rows.
@@ -323,8 +328,12 @@ impl TryFrom<BitMatrix> for SquareBitMatrix {
 impl SquareBitMatrix {
     /// Expand transpose expands each row to contain `chunks * SECURITY_PARAMETER` bits, and then transposes
     /// the resulting matrix.
-    pub fn expand_transpose(&self, sid: &[u8], rows: usize) -> BitMatrix {
-        assert!(rows % SECURITY_PARAMETER == 0);
+    pub fn expand_transpose(&self, sid: &[u8], rows: usize) -> Result<BitMatrix, ProtocolError> {
+        if rows % SECURITY_PARAMETER != 0 {
+            return Err(ProtocolError::InvalidInput(format!(
+                "rows {rows} must be a multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
+            )));
+        }
 
         let mut hasher = Shake256::default();
         hasher.update(NEAR_PRG_CTX);
@@ -358,7 +367,7 @@ impl SquareBitMatrix {
                 }
             }
         }
-        out
+        Ok(out)
     }
 }
 
@@ -372,14 +381,18 @@ impl_secret_debug!(ChoiceVector);
 
 impl ChoiceVector {
     /// Generate a random vector with a certain number of bits.
-    pub fn random(rng: &mut impl CryptoRngCore, size: usize) -> Self {
-        assert!(size > 0 && size % SECURITY_PARAMETER == 0);
+    pub fn random(rng: &mut impl CryptoRngCore, size: usize) -> Result<Self, ProtocolError> {
+        if size == 0 || size % SECURITY_PARAMETER != 0 {
+            return Err(ProtocolError::InvalidInput(format!(
+                "size {size} must be a positive multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
+            )));
+        }
 
         let data = (0..(size / SECURITY_PARAMETER))
             .map(|_| BitVector::random(rng))
             .collect();
 
-        Self(data)
+        Ok(Self(data))
     }
 
     /// Iterate over the bits in this vector.
