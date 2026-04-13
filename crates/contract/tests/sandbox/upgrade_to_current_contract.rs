@@ -12,7 +12,7 @@ use crate::sandbox::{
     },
 };
 use mpc_contract::{
-    crypto_shared::CKDResponse,
+    crypto::CKDResponse,
     primitives::{
         domain::{Curve, DomainConfig, DomainPurpose},
         key_state::{EpochId, Keyset},

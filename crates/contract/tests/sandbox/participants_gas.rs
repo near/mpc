@@ -15,7 +15,7 @@ use crate::sandbox::{
     utils::{contract_build::current_contract_with_bench_methods, shared_key_utils::new_secp256k1},
 };
 use mpc_contract::{
-    crypto_shared::types::PublicKeyExtended,
+    crypto::types::PublicKeyExtended,
     primitives::{
         domain::{Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},

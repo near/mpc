@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 pub mod config;
-pub mod crypto_shared;
+pub mod crypto;
 pub mod errors;
 pub mod node_migrations;
 pub mod primitives;
@@ -21,7 +21,7 @@ mod dto_mapping;
 use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
-    crypto_shared::types::CKDResponse,
+    crypto::types::CKDResponse,
     dto_mapping::{args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType},
     errors::{Error, RequestError},
     primitives::{
@@ -35,7 +35,7 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
-use crypto_shared::{
+use crypto::{
     derive_key_secp256k1, derive_tweak,
     kdf::derive_public_key_edwards_point_ed25519,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},

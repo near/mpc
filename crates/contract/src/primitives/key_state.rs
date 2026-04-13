@@ -1,6 +1,6 @@
 use super::domain::DomainId;
 use super::participants::{ParticipantId, Participants};
-use crate::crypto_shared::types::PublicKeyExtended;
+use crate::crypto::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use near_account_id::AccountId;
 use near_sdk::{env, near};

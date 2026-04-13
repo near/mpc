@@ -1,4 +1,4 @@
-use crate::crypto_shared::kdf::TweakNotOnCurve;
+use crate::crypto::kdf::TweakNotOnCurve;
 use crate::primitives::domain::DomainId;
 use crate::primitives::key_state::{EpochId, Keyset};
 use near_account_id::AccountId;
@@ -37,7 +37,7 @@ pub enum RespondError {
     #[error("The provided signature scheme does not match. MPC response: {mpc_scheme:?}, user request: {user_scheme:?}")]
     SignatureSchemeMismatch {
         mpc_scheme: Box<dtos::SignatureResponse>,
-        user_scheme: Box<crate::crypto_shared::types::PublicKeyExtended>,
+        user_scheme: Box<crate::crypto::types::PublicKeyExtended>,
     },
     #[error("The provided domain was not found.")]
     DomainNotFound,

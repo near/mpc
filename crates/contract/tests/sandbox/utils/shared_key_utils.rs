@@ -1,6 +1,6 @@
 use k256::elliptic_curve::{Field as _, Group as _, PrimeField as _};
 use mpc_contract::{
-    crypto_shared::types::PublicKeyExtended,
+    crypto::types::PublicKeyExtended,
     primitives::{
         domain::{Curve, DomainConfig, DomainId},
         signature::Tweak,

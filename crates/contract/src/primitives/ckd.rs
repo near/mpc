@@ -1,5 +1,5 @@
 use crate::{
-    crypto_shared::{kdf::derive_app_id, CKDResponse},
+    crypto::{kdf::derive_app_id, CKDResponse},
     primitives::domain::DomainId,
 };
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective};

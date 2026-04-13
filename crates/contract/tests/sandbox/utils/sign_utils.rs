@@ -9,7 +9,7 @@ use k256::{
     FieldBytes,
 };
 use mpc_contract::{
-    crypto_shared::{derive_tweak, kdf::derive_app_id, CKDResponse},
+    crypto::{derive_tweak, kdf::derive_app_id, CKDResponse},
     errors,
     primitives::{
         ckd::CKDRequest,

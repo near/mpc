@@ -1,5 +1,5 @@
 use mpc_contract::{
-    crypto_shared::types::PublicKeyExtended,
+    crypto::types::PublicKeyExtended,
     primitives::{
         domain::{Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},

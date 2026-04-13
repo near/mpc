@@ -5,7 +5,7 @@ pub mod running;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
-use crate::crypto_shared::types::PublicKeyExtended;
+use crate::crypto::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
     domain::{Curve, DomainConfig, DomainId, DomainRegistry},

@@ -16,7 +16,7 @@ use near_sdk::env::sha256_array;
 
 use crate::{
     config::Config,
-    crypto_shared::types::PublicKeyExtended,
+    crypto::types::PublicKeyExtended,
     errors::{ConversionError, Error},
     primitives::{
         domain::{AddDomainsVotes, Curve, DomainConfig, DomainId, DomainRegistry},

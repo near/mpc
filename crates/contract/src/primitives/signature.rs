@@ -1,7 +1,7 @@
-use crate::crypto_shared;
+use crate::crypto;
 use crate::errors::{Error, InvalidParameters};
 use crate::DomainId;
-use crypto_shared::derive_tweak;
+use crypto::derive_tweak;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     ECDSA_PAYLOAD_SIZE_BYTES, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,

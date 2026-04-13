@@ -1,4 +1,4 @@
-use crate::{crypto_shared::types::k256_types, primitives::signature::Tweak};
+use crate::{crypto::types::k256_types, primitives::signature::Tweak};
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
 #[cfg(target_arch = "wasm32")]
 use k256::EncodedPoint;

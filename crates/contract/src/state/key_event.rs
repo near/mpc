@@ -1,4 +1,4 @@
-use crate::crypto_shared::types::PublicKeyExtended;
+use crate::crypto::types::PublicKeyExtended;
 use crate::errors::Error;
 use crate::errors::KeyEventError;
 use crate::errors::VoteError;

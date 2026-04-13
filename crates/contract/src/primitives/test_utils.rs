@@ -1,6 +1,6 @@
 use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry};
 use crate::{
-    crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
+    crypto::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},

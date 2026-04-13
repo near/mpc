@@ -1,5 +1,5 @@
 ---
-source: crates/contract/src/crypto_shared/kdf.rs
+source: crates/contract/src/crypto/kdf.rs
 expression: derived_public_key
 ---
 [

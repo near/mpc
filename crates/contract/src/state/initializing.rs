@@ -1,6 +1,6 @@
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
-use crate::crypto_shared::types::PublicKeyExtended;
+use crate::crypto::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidParameters};
 use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
 use crate::primitives::key_state::{
