@@ -324,7 +324,7 @@ mod tests {
     use futures::{stream, StreamExt};
     use std::collections::HashMap;
     use std::sync::Arc;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
     use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
@@ -338,7 +338,7 @@ mod tests {
     async fn test_many_triple_generation() {
         tracking::testing::start_root_task_with_periodic_dump(async {
             let all_triples = run_test_clients(
-                into_participant_ids(&TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD.into())),
+                into_participant_ids(&generate_participants(NUM_PARTICIPANTS)),
                 run_triple_gen_client,
             )
             .await

@@ -169,7 +169,6 @@ async fn handle_message(
             let receipt = outcome.receipt.clone();
             let execution_outcome = outcome.execution_outcome.clone();
 
-            // TODO(#950): this should improve once the issue is resolved
             if let Some(next_receipt_id) =
                 try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
             {
@@ -233,7 +232,6 @@ async fn handle_message(
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
-                        // TODO(#1959): add this function to the contract
                         RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_verify_foreign_txs.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();

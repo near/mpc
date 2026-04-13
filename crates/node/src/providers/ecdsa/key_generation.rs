@@ -13,11 +13,7 @@ impl EcdsaSignatureProvider {
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
         let key = KeyGenerationComputation { threshold }
-            .perform_leader_centric_computation(
-                channel,
-                // TODO(#195): Move timeout here instead of in Coordinator.
-                std::time::Duration::from_secs(60),
-            )
+            .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
             .await?;
         tracing::info!("Ecdsa secp256k1 key generation completed");
 
@@ -66,7 +62,7 @@ mod tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use near_mpc_contract_interface::types::{AttemptId, DomainId, EpochId, KeyEventId};
     use std::sync::Arc;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
     use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
@@ -74,7 +70,7 @@ mod tests {
     async fn test_key_generation() {
         start_root_task_with_periodic_dump(async move {
             let results = run_test_clients(
-                into_participant_ids(&TestGenerators::new(4, 3.into())),
+                into_participant_ids(&generate_participants(4)),
                 run_keygen_client,
             )
             .await

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.8.1] - 2026-04-07
+
+### 🚀 Features
+
+- [#2701](https://github.com/near/mpc/pull/2701)(@gilcu3): Support arbitrary OCI registries in the launcher (#2701)
+
+
+### 🐛 Bug Fixes
+
+- [#2718](https://github.com/near/mpc/pull/2718)(@netrome): Set default crypto provider to avoid rustls panic (#2718)
+
+
+### 📚 Documentation
+
+- [#2670](https://github.com/near/mpc/pull/2670)(@pbeza): Define attestation data for backup service (#2670)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#2694](https://github.com/near/mpc/pull/2694)(@pbeza): Add workflow to automate `nearcore` version bumps (#2694)
+
+- [#2699](https://github.com/near/mpc/pull/2699)(@gilcu3): Unify testing contract build steps (#2699)
+
+
 ## [3.8.0] - 2026-04-02
 
 ### 🚀 Features
@@ -219,6 +243,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2674](https://github.com/near/mpc/pull/2674)(@gilcu3): Automatic draft release creation on tag push (#2674)
 
 - [#2691](https://github.com/near/mpc/pull/2691)(@gilcu3): Fix and simplify release automation (#2691)
+
+- [#2696](https://github.com/near/mpc/pull/2696)(@anodar): Create mpc-node release v3.8.0 (#2696)
 
 
 ## [3.7.0] - 2026-03-17

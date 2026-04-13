@@ -3,7 +3,11 @@ use super::{Keyshare, KeyshareData};
 use near_mpc_contract_interface::types::{DomainId, EpochId, KeyEventId, KeyForDomain, Keyset};
 use rand::{CryptoRng, RngCore, SeedableRng};
 use threshold_signatures::ecdsa::KeygenOutput;
-use threshold_signatures::test_utils::TestGenerators;
+use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
+use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
+
+const NUM_PARTICIPANTS: usize = 2;
+const THRESHOLD: usize = 2;
 
 pub fn make_key_id(epoch_id: u64, domain_id: u64, attempt_id: u64) -> KeyEventId {
     KeyEventId::new(
@@ -19,7 +23,13 @@ pub fn generate_dummy_keyshares<R: CryptoRng + RngCore + SeedableRng + Send + 's
     attempt_id: u64,
     rng: &mut R,
 ) -> (Keyshare, Keyshare) {
-    let keyshares = TestGenerators::new(2, 2.into()).make_ecdsa_keygens(rng);
+    let keyshares: std::collections::HashMap<_, _> = run_keygen::<Secp256K1Sha256, _>(
+        &generate_participants_with_random_ids(NUM_PARTICIPANTS, rng),
+        THRESHOLD,
+        rng,
+    )
+    .into_iter()
+    .collect();
     let mut iter = keyshares.into_iter().map(|share| {
         let key = share.1;
 
@@ -54,12 +64,15 @@ pub fn generate_dummy_keyshare<R: CryptoRng + RngCore + SeedableRng + Send + 'st
     attempt_id: u64,
     rng: &mut R,
 ) -> Keyshare {
-    let key = TestGenerators::new(2, 2.into())
-        .make_ecdsa_keygens(rng)
-        .into_iter()
-        .next()
-        .unwrap()
-        .1;
+    let key = run_keygen::<Secp256K1Sha256, _>(
+        &generate_participants_with_random_ids(NUM_PARTICIPANTS, rng),
+        THRESHOLD,
+        rng,
+    )
+    .into_iter()
+    .next()
+    .unwrap()
+    .1;
     Keyshare {
         key_id: make_key_id(epoch_id, domain_id, attempt_id),
         data: KeyshareData::Secp256k1(KeygenOutput {

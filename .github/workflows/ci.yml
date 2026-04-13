@@ -65,23 +65,6 @@ jobs:
         run: |
           ./scripts/check-mpc-node-docker-starts.sh --launcher
 
-  rust-launcher-nontee-check:
-    name: "MPC Rust Launcher non-tee check"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Check mpc-node docker image can initialize through the Rust launcher and start
-        run: |
-          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
-
   docker-launcher-build-and-verify:
     name: "Build MPC Launcher Docker image and verify"
     runs-on: warp-ubuntu-2404-x64-2x
@@ -137,15 +120,21 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Build Rust launcher docker image and verify its hash
         shell: bash
         run: |
           ./scripts/build-and-verify-rust-launcher-docker-image.sh
 
+      - name: Run Rust launcher non-TEE runtime check
+        shell: bash
+        run: |
+          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
+
   mpc-unittests:
     name: "Cargo test: ${{ matrix.group }}"
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: ${{ matrix.runner || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -156,8 +145,9 @@ jobs:
           - group: "node"
             nextest-args: "-p mpc-node"
           - group: "contract"
-            nextest-args: "-p mpc-contract"
+            nextest-args: "--profile=ci-contract -p mpc-contract"
             extra-tools: true
+            runner: warp-ubuntu-2404-x64-32x
           - group: "other"
             nextest-args: "--profile=ci-other"
             extra-tools: true
@@ -179,12 +169,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
           prefix-key: v0-rust-tests-${{ matrix.group }}
-
-      - name: Clear cache for fresh rebuild
-        if: github.event_name == 'schedule'
-        run: |
-          cargo clean
-          rm -rf ~/.cargo/registry ~/.cargo/git
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -239,12 +224,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-
-      - name: Clear cache for fresh rebuild
-        if: github.event_name == 'schedule'
-        run: |
-          cargo clean
-          rm -rf ~/.cargo/registry ~/.cargo/git
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install build dependencies
         run: |
@@ -548,12 +528,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-
-      - name: Clear cache for fresh rebuild
-        if: github.event_name == 'schedule'
-        run: |
-          cargo clean
-          rm -rf ~/.cargo/registry ~/.cargo/git
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install ruff
         uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
@@ -628,6 +603,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
           prefix-key: v0-rust-e2e
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Restore pytest binaries cache
         uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
@@ -675,3 +651,22 @@ jobs:
 
       - name: Run cargo-make extra checks
         run: cargo make check-extra
+
+  check-todo-closed-issues:
+    name: "Check TODOs for issues closed by this PR"
+    if: github.event_name == 'pull_request'
+    runs-on: warp-ubuntu-2404-x64-2x
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check TODOs for issues closed by this PR
+        run: bash .github/scripts/check-todo-closed-issues.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}

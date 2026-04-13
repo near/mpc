@@ -600,11 +600,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     foreign_chain_policy_reader.clone(),
-                    running_mpc_config.into(),
                     verify_foreign_tx_request_store.clone(),
-                    // We are re-using the ecdsa signature provider here
-                    // Once domain separation is implemented we might create a separate
-                    // ecdsa signature provider and insert it here
                     ecdsa_signature_provider.clone(),
                 ));
 

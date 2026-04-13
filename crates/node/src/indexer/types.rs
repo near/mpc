@@ -60,25 +60,9 @@ impl ChainSignatureRequest {
  */
 #[derive(Serialize, Deserialize, Debug, Clone, derive_more::Constructor)]
 pub struct ChainCKDRequest {
-    /// For the `AppPublicKey` (legacy) variant, we serialize as a plain G1 key
-    /// string so that both old (pre-PV) and new contracts can deserialize it.
-    /// TODO(#2491): remove `serialize_with` once the contract supports CKDAppPublicKey.
-    #[serde(serialize_with = "serialize_ckd_app_public_key_compat")]
     pub app_public_key: dtos::CKDAppPublicKey,
     pub app_id: dtos::CkdAppId,
     pub domain_id: DomainId,
-}
-
-/// Serializes `CKDAppPublicKey::AppPublicKey` as a plain G1 key (old format)
-/// for backward compatibility with pre-upgrade contracts.
-fn serialize_ckd_app_public_key_compat<S: serde::Serializer>(
-    value: &dtos::CKDAppPublicKey,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    match value {
-        dtos::CKDAppPublicKey::AppPublicKey(pk) => serde::Serialize::serialize(pk, serializer),
-        other => serde::Serialize::serialize(other, serializer),
-    }
 }
 
 pub type ChainVerifyForeignTransactionRequest =

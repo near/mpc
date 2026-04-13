@@ -167,12 +167,14 @@ where
                     anyhow::bail!("found empty list of providers for bitcoin")
                 };
 
-                let public_node_url = bitcoin_provider_config.rpc_url.clone();
-
-                let http_client = foreign_chain_inspector::build_http_client(
-                    public_node_url,
-                    auth_config_to_rpc_auth(bitcoin_provider_config.auth.clone())?,
+                let mut public_node_url = bitcoin_provider_config.rpc_url.clone();
+                let rpc_auth = auth_config_to_rpc_auth(
+                    bitcoin_provider_config.auth.clone(),
+                    &mut public_node_url,
                 )?;
+
+                let http_client =
+                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
                 let inspector = BitcoinInspector::new(http_client);
 
                 let transaction_id = request.tx_id.0.into();
@@ -210,12 +212,14 @@ where
                     anyhow::bail!("found empty list of providers for abstract")
                 };
 
-                let public_node_url = abstract_provider_config.rpc_url.clone();
-
-                let http_client = foreign_chain_inspector::build_http_client(
-                    public_node_url,
-                    auth_config_to_rpc_auth(abstract_provider_config.auth.clone())?,
+                let mut public_node_url = abstract_provider_config.rpc_url.clone();
+                let rpc_auth = auth_config_to_rpc_auth(
+                    abstract_provider_config.auth.clone(),
+                    &mut public_node_url,
                 )?;
+
+                let http_client =
+                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
                 let inspector = AbstractInspector::new(http_client);
 
                 let transaction_id = request.tx_id.0.into();
@@ -253,12 +257,11 @@ where
                     anyhow::bail!("found empty list of providers for starknet")
                 };
 
-                let rpc_url = starknet_provider_config.rpc_url.clone();
+                let mut rpc_url = starknet_provider_config.rpc_url.clone();
+                let rpc_auth =
+                    auth_config_to_rpc_auth(starknet_provider_config.auth.clone(), &mut rpc_url)?;
 
-                let http_client = foreign_chain_inspector::build_http_client(
-                    rpc_url,
-                    auth_config_to_rpc_auth(starknet_provider_config.auth.clone())?,
-                )?;
+                let http_client = foreign_chain_inspector::build_http_client(rpc_url, rpc_auth)?;
                 let inspector = StarknetInspector::new(http_client);
 
                 let transaction_id = request.tx_id.0 .0.into();

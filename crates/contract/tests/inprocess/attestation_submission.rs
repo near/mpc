@@ -246,7 +246,7 @@ impl TestSetup {
 
     fn create_attestation_with_hash_constraint(hash: [u8; 32]) -> Attestation {
         Attestation::Mock(MockAttestation::WithConstraints {
-            mpc_docker_image_hash: Some(hash),
+            mpc_docker_image_hash: Some(hash.into()),
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: None,
         })

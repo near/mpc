@@ -317,7 +317,6 @@ impl PersistentSecrets {
         );
         let secrets = if let Some(secrets) = Self::maybe_get_existing(home_dir)? {
             tracing::debug!("p2p and near account secret key already exists. Using existing.");
-            // TODO(#534): consistent number of keys
             secrets
         } else {
             tracing::debug!("p2p and near account secret key not found. Generating...");
@@ -418,9 +417,6 @@ pub struct RespondConfig {
 
 impl RespondConfig {
     pub fn from_parts(config: &ConfigFile, secrets: &PersistentSecrets) -> Self {
-        // TODO(#1296): Decide if the MPC responder account is actually needed
-        // updated as part PR #1270 as temporary solution.
-        // using main account for responding.
         Self {
             account_id: config.my_near_account_id.clone(),
             access_keys: vec![secrets.near_signer_key.clone()],
@@ -451,6 +447,7 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 /// `foreign-chain-inspector` as a dependency of the lightweight config crate.
 pub fn auth_config_to_rpc_auth(
     auth: AuthConfig,
+    rpc_url: &mut String,
 ) -> anyhow::Result<foreign_chain_inspector::RpcAuthentication> {
     match auth {
         AuthConfig::None => Ok(RpcAuthentication::KeyInUrl),
@@ -467,15 +464,17 @@ pub fn auth_config_to_rpc_auth(
                 header_value,
             })
         }
-        AuthConfig::Path {
-            placeholder: _,
-            token: _,
-        } => Ok(RpcAuthentication::KeyInUrl),
+        AuthConfig::Path { placeholder, token } => {
+            let token_value = token.resolve()?;
+            *rpc_url = rpc_url.replace(&placeholder, &token_value);
+            Ok(RpcAuthentication::KeyInUrl)
+        }
         AuthConfig::Query { name: _, token: _ } => anyhow::bail!("this is not supported yet"),
     }
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use assert_matches::assert_matches;
     fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
@@ -498,7 +497,7 @@ pub mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use mpc_node_config::ConfigFile;
+    use mpc_node_config::{ConfigFile, TokenConfig};
 
     #[test]
     fn test_secret_gen() -> anyhow::Result<()> {
@@ -850,5 +849,58 @@ cores: 4
         // rewritten content round-trips correctly
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__path_auth_substitutes_token_into_url() {
+        // Given
+        let auth = AuthConfig::Path {
+            placeholder: "{api_key}".to_string(),
+            token: TokenConfig::Val {
+                val: "my-secret-key".to_string(),
+            },
+        };
+        let mut url = "https://rpc.ankr.com/near/{api_key}".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::KeyInUrl);
+        assert_eq!(url, "https://rpc.ankr.com/near/my-secret-key");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__none_auth_leaves_url_unchanged() {
+        // Given
+        let auth = AuthConfig::None;
+        let mut url = "https://rpc.example.com".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::KeyInUrl);
+        assert_eq!(url, "https://rpc.example.com");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__header_auth_leaves_url_unchanged() {
+        // Given
+        let auth = AuthConfig::Header {
+            name: http::HeaderName::from_static("authorization"),
+            scheme: Some("Bearer".to_string()),
+            token: TokenConfig::Val {
+                val: "secret".to_string(),
+            },
+        };
+        let mut url = "https://rpc.example.com/v2/".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::CustomHeader { .. });
+        assert_eq!(url, "https://rpc.example.com/v2/");
     }
 }

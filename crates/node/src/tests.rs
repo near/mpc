@@ -557,13 +557,9 @@ pub async fn request_verify_foreign_tx_and_await_response(
 }
 
 pub fn into_participant_ids(
-    test_generator: &threshold_signatures::test_utils::TestGenerators,
+    participants: &[threshold_signatures::participants::Participant],
 ) -> Vec<ParticipantId> {
-    test_generator
-        .participants
-        .iter()
-        .map(|p| (*p).into())
-        .collect()
+    participants.iter().map(|p| (*p).into()).collect()
 }
 
 #[test]

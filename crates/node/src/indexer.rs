@@ -196,7 +196,6 @@ impl IndexerViewClient {
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
-            // TODO(#1959): add this function in the contract
             method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -464,8 +463,7 @@ impl IndexerRpcHandler {
 /// API to interact with the indexer. Can be replaced by a dummy implementation.
 /// The MPC node implementation needs this and only this to be able to interact
 /// with the indexer.
-/// TODO(#155): This would be the interface to abstract away having an indexer
-/// running in a separate process.
+/// TODO(#592): abstract away having an indexer running in a separate process
 pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
