@@ -49,7 +49,7 @@ port_mappings = [
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `image` | Yes | Docker image name (repository). Do not include a tag — the image version is determined by the manifest digest from the approved hashes file. Include registry prefix for non-Docker Hub registries. Examples: `"nearone/mpc-node"`, `"ghcr.io/nearone/mpc-node"` |
+| `image` | Yes | Docker image reference. A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
 | `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
 | `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 
@@ -73,7 +73,7 @@ The launcher pulls images using `docker pull <image>@sha256:<digest>`. Any regis
 ### Notes
 
 - The launcher uses `docker pull` which supports both public and private registries. For private registries, configure Docker credentials on the host (e.g., via `docker login` or credential helpers).
-- Do not include a tag in the `image` field. The manifest digest from the approved hashes file determines which exact image is pulled. If a tag is present it will be ignored by Docker, but it adds confusion.
+- A tag can be included in the `image` field (e.g., `nearone/mpc-node:testnet-release`) to identify the configured version. The manifest digest from the approved hashes file determines the actual image pulled — Docker ignores the tag when a digest is present.
 
 ## Image Hash Selection
 

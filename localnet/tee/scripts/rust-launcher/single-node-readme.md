@@ -31,9 +31,9 @@ export MACHINE_IP=<host-ip>
 # in the registry's tag listing.
 export MPC_IMAGE_TAGS=main-9515e18
 
-# Docker image name (repository). Do not include a tag — the manifest digest
-# determines the actual image version. The tag above is only used by the
-# deploy script for operator reference.
+# Docker image reference. A tag can be included (e.g., nearone/mpc-node:testnet-release)
+# to identify which version is configured. The manifest digest from the contract
+# determines the actual image pulled.
 # export MPC_IMAGE=nearone/mpc-node  # (set automatically by single-node.sh)
 ```
 
