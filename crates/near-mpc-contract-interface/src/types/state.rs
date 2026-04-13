@@ -555,7 +555,7 @@ impl fmt::Display for ProtocolContractState {
                     f,
                     "  Epoch transition: original {} --> prospective {}",
                     state.previous_running_state.keyset.epoch_id,
-                    state.previous_running_state.keyset.epoch_id.next()
+                    state.resharing_key.epoch_id
                 )?;
                 write_key_event_progress(
                     f,
