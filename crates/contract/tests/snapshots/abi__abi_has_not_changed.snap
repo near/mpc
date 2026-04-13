@@ -16,6 +16,48 @@ expression: abi
   "body": {
     "functions": [
       {
+        "name": "allowed_backup_service_code_hashes",
+        "doc": " Returns allowed backup service Docker image hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/DockerImageHash"
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_backup_service_launcher_compose_hashes",
+        "doc": " Returns allowed backup service launcher compose hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/LauncherDockerComposeHash"
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_backup_service_os_measurements",
+        "doc": " Returns allowed backup service OS measurements",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ContractExpectedMeasurements"
+            }
+          }
+        }
+      },
+      {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
         "kind": "view",
@@ -220,6 +262,42 @@ expression: abi
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      {
+        "name": "get_backup_service_attestation",
+        "doc": " Returns the backup service attestation for the given account ID, if any\n\n TODO(#2730): once TEE-enabled backup service is ready, replace migration_info()\n with this method for looking up backup service TLS keys",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": [
+              {
+                "$ref": "#/definitions/NodeId"
+              },
+              {
+                "$ref": "#/definitions/VerifiedAttestation"
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
           }
         }
       },
@@ -738,7 +816,7 @@ expression: abi
       },
       {
         "name": "register_backup_service",
-        "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n # Notes\n - A deposit requirement may be added in the future.",
+        "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n TODO(#2730): remove after migrating to TEE-enabled backup service;\n replace with register_backup_service_with_attestation()",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -747,6 +825,34 @@ expression: abi
               "name": "backup_service_info",
               "type_schema": {
                 "$ref": "#/definitions/BackupServiceInfo"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "register_backup_service_with_attestation",
+        "doc": " Registers a backup service with TEE attestation.\n Rejects Mock attestations — only Dstack is accepted.\n\n The caller must be an existing or prospective participant.\n\n TODO(#2730): once TEE-enabled backup service is ready, update\n register_backup_service() to accept attestation and remove this separate method",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "attestation",
+              "type_schema": {
+                "$ref": "#/definitions/Attestation"
+              }
+            },
+            {
+              "name": "tls_public_key",
+              "type_schema": {
+                "$ref": "#/definitions/Ed25519PublicKey"
               }
             }
           ]
@@ -995,6 +1101,17 @@ expression: abi
         }
       },
       {
+        "name": "reverify_backup_services",
+        "doc": " Re-verifies all backup service attestations and removes invalid ones",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "sign",
         "doc": " `key_version` must be less than or equal to the value at `latest_key_version`\n To avoid overloading the network with too many requests,\n we ask for a small deposit for each signature request.",
         "kind": "call",
@@ -1201,6 +1318,48 @@ expression: abi
         }
       },
       {
+        "name": "vote_add_backup_service_launcher_hash",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "$ref": "#/definitions/LauncherImageHash"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_add_backup_service_os_measurement",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "measurement",
+              "type_schema": {
+                "$ref": "#/definitions/ContractExpectedMeasurements"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_add_domains",
         "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
         "kind": "call",
@@ -1258,6 +1417,27 @@ expression: abi
               "name": "measurement",
               "type_schema": {
                 "$ref": "#/definitions/ContractExpectedMeasurements"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_backup_service_code_hash",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "code_hash",
+              "type_schema": {
+                "$ref": "#/definitions/DockerImageHash"
               }
             }
           ]
@@ -1392,6 +1572,48 @@ expression: abi
               "name": "public_key",
               "type_schema": {
                 "$ref": "#/definitions/PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_backup_service_launcher_hash",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "$ref": "#/definitions/LauncherImageHash"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_backup_service_os_measurement",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "measurement",
+              "type_schema": {
+                "$ref": "#/definitions/ContractExpectedMeasurements"
               }
             }
           ]
