@@ -30,7 +30,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().curves(&[Curve::Secp256k1]).build().await;
+    } = SandboxTestSetup::builder().with_curves(&[Curve::Secp256k1]).build().await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -146,7 +146,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().curves(&[Curve::Secp256k1]).build().await;
+    } = SandboxTestSetup::builder().with_curves(&[Curve::Secp256k1]).build().await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;

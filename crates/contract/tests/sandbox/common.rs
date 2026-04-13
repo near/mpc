@@ -150,7 +150,6 @@ pub async fn init_contract_running(
     result.into_result().unwrap()
 }
 
-
 pub struct SandboxTestSetup {
     pub worker: Worker<Sandbox>,
     pub contract: Contract,
@@ -185,22 +184,22 @@ pub struct SandboxTestSetupBuilder {
 }
 
 impl SandboxTestSetupBuilder {
-    pub fn curves(mut self, curves: &[Curve]) -> Self {
+    pub fn with_curves(mut self, curves: &[Curve]) -> Self {
         self.curves = curves.to_vec();
         self
     }
 
-    pub fn participants(mut self, n: usize) -> Self {
+    pub fn with_number_of_participants(mut self, n: usize) -> Self {
         self.number_of_participants = n;
         self
     }
 
-    pub fn init_config(mut self, config: dtos::InitConfig) -> Self {
+    pub fn with_init_config(mut self, config: dtos::InitConfig) -> Self {
         self.init_config = Some(config);
         self
     }
 
-    pub fn foreign_tx(mut self) -> Self {
+    pub fn with_foreign_tx_domain(mut self) -> Self {
         self.foreign_tx = true;
         self
     }

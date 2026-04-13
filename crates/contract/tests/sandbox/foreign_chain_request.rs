@@ -29,7 +29,10 @@ async fn verify_foreign_transaction__should_succeed(
     #[case] extracted_values: Vec<ExtractedValue>,
 ) {
     let chain = rpc_request.chain();
-    let setup = SandboxTestSetup::builder().foreign_tx().build().await;
+    let setup = SandboxTestSetup::builder()
+        .with_foreign_tx_domain()
+        .build()
+        .await;
     let ftx_key = setup.foreign_tx_key();
     vote_chain_policy(&chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
@@ -43,7 +46,10 @@ async fn verify_foreign_transaction__should_succeed(
     };
 
     let status = user
-        .call(setup.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
+        .call(
+            setup.contract.id(),
+            method_names::VERIFY_FOREIGN_TRANSACTION,
+        )
         .args_json(json!({ "request": request_args }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
@@ -59,8 +65,11 @@ async fn verify_foreign_transaction__should_succeed(
 
     await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request).await;
 
-    let (payload, response) =
-        sign_foreign_tx_response(&verify_request.request, extracted_values, ftx_key.as_secp256k1());
+    let (payload, response) = sign_foreign_tx_response(
+        &verify_request.request,
+        extracted_values,
+        ftx_key.as_secp256k1(),
+    );
 
     let respond_result = setup.mpc_signer_accounts[0]
         .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
@@ -94,7 +103,10 @@ async fn verify_foreign_transaction__should_succeed(
 async fn verify_foreign_transaction__should_reject_without_policy(
     #[case] rpc_request: ForeignChainRpcRequest,
 ) {
-    let setup = SandboxTestSetup::builder().foreign_tx().build().await;
+    let setup = SandboxTestSetup::builder()
+        .with_foreign_tx_domain()
+        .build()
+        .await;
     let ftx_key = setup.foreign_tx_key();
     let user = setup.worker.dev_create_account().await.unwrap();
 
@@ -105,7 +117,10 @@ async fn verify_foreign_transaction__should_reject_without_policy(
     };
 
     let result = user
-        .call(setup.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
+        .call(
+            setup.contract.id(),
+            method_names::VERIFY_FOREIGN_TRANSACTION,
+        )
         .args_json(json!({ "request": request_args }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
@@ -131,7 +146,10 @@ async fn verify_foreign_transaction__should_timeout_without_response(
     #[case] rpc_request: ForeignChainRpcRequest,
 ) {
     let chain = rpc_request.chain();
-    let setup = SandboxTestSetup::builder().foreign_tx().build().await;
+    let setup = SandboxTestSetup::builder()
+        .with_foreign_tx_domain()
+        .build()
+        .await;
     let ftx_key = setup.foreign_tx_key();
     vote_chain_policy(&chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
@@ -144,7 +162,10 @@ async fn verify_foreign_transaction__should_timeout_without_response(
     };
 
     let status = user
-        .call(setup.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
+        .call(
+            setup.contract.id(),
+            method_names::VERIFY_FOREIGN_TRANSACTION,
+        )
         .args_json(json!({ "request": request_args }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
@@ -152,7 +173,8 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         .await
         .unwrap();
 
-    setup.worker
+    setup
+        .worker
         .fast_forward(SIGNATURE_TIMEOUT_BLOCKS)
         .await
         .unwrap();

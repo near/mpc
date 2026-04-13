@@ -39,8 +39,8 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .init_config(init_config)
-        .participants(3)
+        .with_init_config(init_config)
+        .with_number_of_participants(3)
         .build()
         .await;
 
@@ -103,8 +103,8 @@ async fn contract_configuration_can_be_set_on_initialization() {
     };
 
     let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
-        .init_config(init_config.clone())
-        .participants(2)
+        .with_init_config(init_config.clone())
+        .with_number_of_participants(2)
         .build()
         .await;
 

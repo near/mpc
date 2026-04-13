@@ -9,7 +9,7 @@ use crate::sandbox::common::SandboxTestSetup;
 #[tokio::test]
 async fn test_key_version() -> anyhow::Result<()> {
     let SandboxTestSetup { contract, .. } =
-        SandboxTestSetup::builder().curves(&[Curve::Secp256k1]).build().await;
+        SandboxTestSetup::builder().with_curves(&[Curve::Secp256k1]).build().await;
 
     let version: u32 = contract
         .view(method_names::LATEST_KEY_VERSION)
@@ -25,7 +25,7 @@ async fn test_key_version() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_public_key() -> anyhow::Result<()> {
     let SandboxTestSetup { contract, .. } =
-        SandboxTestSetup::builder().curves(&[Curve::Secp256k1]).build().await;
+        SandboxTestSetup::builder().with_curves(&[Curve::Secp256k1]).build().await;
 
     let key: String = contract
         .view(method_names::PUBLIC_KEY)
@@ -43,7 +43,7 @@ async fn test_public_key() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_derived_public_key() -> anyhow::Result<()> {
     let SandboxTestSetup { contract, .. } =
-        SandboxTestSetup::builder().curves(&[Curve::Secp256k1]).build().await;
+        SandboxTestSetup::builder().with_curves(&[Curve::Secp256k1]).build().await;
 
     let key: String = contract
         .view(method_names::DERIVED_PUBLIC_KEY)

@@ -31,7 +31,10 @@ async fn test_keygen() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     let init_state = get_state(&contract).await;
     let ProtocolContractState::Running(ref init_running) = init_state else {
         panic!("expected running state");
@@ -132,7 +135,10 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     let init_state = get_state(&contract).await;
     let ProtocolContractState::Running(ref init_running) = init_state else {
         panic!("expected running state");
@@ -320,8 +326,8 @@ async fn setup_resharing_state(
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .curves(ALL_CURVES)
-        .participants(number_of_participants)
+        .with_curves(ALL_CURVES)
+        .with_number_of_participants(number_of_participants)
         .build()
         .await;
 
@@ -754,7 +760,10 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         contract,
         mut mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     let state = get_state(&contract).await;
     let ProtocolContractState::Running(ref running_state) = state else {
