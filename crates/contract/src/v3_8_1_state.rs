@@ -20,7 +20,7 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
-    tee::tee_state::TeeState,
+    tee::{measurements::ContractExpectedMeasurements, tee_state::TeeState},
     update::ProposedUpdates,
     Config, ForeignChainPolicyVotes, StaleData,
 };
@@ -53,8 +53,6 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
-        use crate::tee::measurements::ContractExpectedMeasurements;
-
         // Seed backup service TeeState with default measurements (same as MPC nodes)
         let backup_service_tee_state = {
             let mut state = TeeState::default();
