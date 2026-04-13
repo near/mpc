@@ -8,9 +8,6 @@ pub enum LauncherError {
     #[error("MPC_HASH_OVERRIDE invalid: {0}")]
     InvalidHashOverride(String),
 
-    #[error("Invalid image name (must contain only [a-zA-Z0-9/_.-]): {0}")]
-    InvalidImageName(String),
-
     #[error("docker compose up failed for validated hash")]
     DockerRunFailed {
         image_hash: DockerSha256Digest,

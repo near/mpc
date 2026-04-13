@@ -8,7 +8,7 @@ use launcher_interface::types::{
 use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
 
 use compose::launch_mpc_container;
-use config::{intercept_node_config, validate_image_reference};
+use config::intercept_node_config;
 use constants::{
     DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, IMAGE_DIGEST_FILE, MPC_CONFIG_SHARED_PATH,
 };
@@ -85,8 +85,6 @@ fn load_config() -> Result<Config, LauncherError> {
             path: DSTACK_USER_CONFIG_FILE.to_string(),
             source,
         })?;
-
-    validate_image_reference(&config.launcher_config.image_reference)?;
 
     Ok(config)
 }
