@@ -11,7 +11,7 @@ use crate::{
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct NodeMigrations {
-    // TODO(#2730): remove after migrating to TEE-enabled backup service
+    // TODO(#2840): remove after migrating to TEE-enabled backup service
     backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
     ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
     pub(crate) backup_service_tee_state: TeeState,
@@ -43,11 +43,11 @@ impl NodeMigrations {
 }
 
 impl NodeMigrations {
-    // TODO(#2730): remove after migrating to TEE-enabled backup service
+    // TODO(#2840): remove after migrating to TEE-enabled backup service
     pub(crate) fn backup_services_info(&self) -> &IterableMap<AccountId, BackupServiceInfo> {
         &self.backup_services_info
     }
-    // TODO(#2730): remove after migrating to TEE-enabled backup service
+    // TODO(#2840): remove after migrating to TEE-enabled backup service
     pub fn set_backup_service_info(&mut self, account_id: AccountId, info: BackupServiceInfo) {
         self.backup_services_info.insert(account_id, info);
     }
@@ -108,7 +108,7 @@ impl NodeMigrations {
     }
 }
 
-// TODO(#2730): remove after migrating to TEE-enabled backup service
+// TODO(#2840): remove after migrating to TEE-enabled backup service
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 #[near(serializers=[borsh, json])]
 pub struct BackupServiceInfo {

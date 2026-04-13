@@ -1696,7 +1696,7 @@ impl MpcContract {
     ///
     /// The caller must be an existing or prospective participant.
     ///
-    /// TODO(#2730): once TEE-enabled backup service is ready, update
+    /// TODO(#2840): once TEE-enabled backup service is ready, update
     /// register_backup_service() to accept attestation and remove this separate method
     #[handle_result]
     pub fn register_backup_service_with_attestation(
@@ -1970,7 +1970,7 @@ impl MpcContract {
 
     /// Returns the backup service attestation for the given account ID, if any
     ///
-    /// TODO(#2730): once TEE-enabled backup service is ready, replace migration_info()
+    /// TODO(#2840): once TEE-enabled backup service is ready, replace migration_info()
     /// with this method for looking up backup service TLS keys
     #[handle_result]
     pub fn get_backup_service_attestation(
@@ -2450,7 +2450,7 @@ impl MpcContract {
 /// Methods for Migration service
 #[near]
 impl MpcContract {
-    // TODO(#2730): replace with get_backup_service_attestation() after migrating
+    // TODO(#2840): replace with get_backup_service_attestation() after migrating
     // to TEE-enabled backup service
     pub fn migration_info(
         &self,
@@ -2464,7 +2464,7 @@ impl MpcContract {
     /// The caller (`signer_account_id`) must be an existing or prospective participant.
     /// Otherwise, the transaction will fail.
     ///
-    /// TODO(#2730): remove after migrating to TEE-enabled backup service;
+    /// TODO(#2840): remove after migrating to TEE-enabled backup service;
     /// replace with register_backup_service_with_attestation()
     #[handle_result]
     pub fn register_backup_service(
