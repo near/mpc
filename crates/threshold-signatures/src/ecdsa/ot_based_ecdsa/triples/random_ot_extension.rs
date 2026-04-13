@@ -135,7 +135,7 @@ pub async fn random_ot_extension_sender(
 pub(super) fn random_ot_extension_receiver_helper(
     batch_size: usize,
     rng: &mut impl CryptoRngCore,
-) -> ChoiceVector {
+) -> Result<ChoiceVector, ProtocolError> {
     // This must coincide with the `adjusted_size` value computed in `random_ot_extension_receiver`
     let adjusted_size = adjust_size(batch_size);
     ChoiceVector::random(rng, adjusted_size)
@@ -242,7 +242,7 @@ mod test {
         let sid_r = sid;
 
         let seed_s = random_ot_extension_sender_helper(rng);
-        let seed_r = random_ot_extension_receiver_helper(batch_size, rng);
+        let seed_r = random_ot_extension_receiver_helper(batch_size, rng)?;
 
         run_two_party_protocol(
             s,

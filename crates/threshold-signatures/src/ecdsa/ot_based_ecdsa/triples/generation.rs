@@ -128,7 +128,11 @@ async fn do_generation_many<const N: usize>(
     threshold: ReconstructionLowerBound,
     mut rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutputMany, ProtocolError> {
-    assert!(N > 0);
+    if N == 0 {
+        return Err(ProtocolError::InvalidInput(
+            "N must be greater than 0".to_string(),
+        ));
+    }
 
     let mut chan = comms.shared_channel();
     let mut transcript = create_transcript(&participants, threshold)?;
