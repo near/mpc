@@ -16,7 +16,7 @@ pub async fn correlated_ot_sender(
     k: &SquareBitMatrix,
 ) -> Result<BitMatrix, ProtocolError> {
     // Spec 2
-    let t = k.expand_transpose(params.sid, params.batch_size);
+    let t = k.expand_transpose(params.sid, params.batch_size)?;
 
     // Spec 5
     let wait0 = chan.next_waitpoint();
@@ -48,8 +48,8 @@ pub fn correlated_ot_receiver(
         ));
     }
     // Spec 1
-    let t0 = k0.expand_transpose(params.sid, params.batch_size);
-    let t1 = k1.expand_transpose(params.sid, params.batch_size);
+    let t0 = k0.expand_transpose(params.sid, params.batch_size)?;
+    let t1 = k1.expand_transpose(params.sid, params.batch_size)?;
 
     // Spec 3
     let u = &t0 ^ t1 ^ x;
@@ -108,7 +108,7 @@ mod test {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
         let batch_size = 256;
-        let x = BitMatrix::random(&mut rng, batch_size);
+        let x = BitMatrix::random(&mut rng, batch_size).unwrap();
         let (q, t) = run_correlated_ot(
             (delta, k),
             (k0, k1, x.clone()),

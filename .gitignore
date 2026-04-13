@@ -27,4 +27,5 @@ venv
 
 # Agents
 .claude
+.codex
 CLAUDE.local.md
