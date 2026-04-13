@@ -15,7 +15,10 @@ async fn vote_foreign_chain_policy__should_reject_empty_rpc_providers() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: a participant votes with a policy containing an empty RPC providers set
     let transaction_result = mpc_signer_accounts[0]
@@ -47,7 +50,10 @@ async fn vote_foreign_chain_policy_accepts_valid_policy() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: a participant votes with a valid policy containing non-empty RPC providers
     let transaction_result = mpc_signer_accounts[0]
@@ -79,7 +85,10 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: a participant votes with a policy containing duplicate RPC providers
     let transaction_result = mpc_signer_accounts[0]
@@ -132,7 +141,10 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: a participant votes with a policy containing duplicate chain keys.
     // The json! macro cannot represent duplicate object keys, so we use raw JSON bytes.

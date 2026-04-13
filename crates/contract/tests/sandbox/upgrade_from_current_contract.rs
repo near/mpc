@@ -49,7 +49,10 @@ async fn test_propose_contract_max_size_upload() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     dbg!(contract.id());
 
     // check that we can propose an update with the maximum contract size.
@@ -77,7 +80,10 @@ async fn test_propose_update_config() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     let threshold = assert_running_return_threshold(&contract).await;
     dbg!(contract.id());
 
@@ -183,7 +189,10 @@ async fn test_propose_update_contract() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
 }
 
@@ -193,7 +202,10 @@ async fn test_invalid_contract_deploy() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     dbg!(contract.id());
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
@@ -233,7 +245,10 @@ async fn test_propose_update_contract_many() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     dbg!(contract.id());
 
     const PROPOSAL_COUNT: usize = 2;
@@ -291,7 +306,10 @@ async fn test_vote_update_gas_before_threshold() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::PROPOSE_UPDATE)
@@ -365,7 +383,10 @@ async fn test_propose_incorrect_updates() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(ALL_CURVES).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     dbg!(contract.id());
 
     let dummy_config = near_mpc_contract_interface::types::InitConfig::default();
@@ -553,7 +574,10 @@ async fn migration_function_rejects_external_callers() {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_number_of_participants(2).build().await;
+    } = SandboxTestSetup::builder()
+        .with_number_of_participants(2)
+        .build()
+        .await;
 
     let execution_error = mpc_signer_accounts[0]
         .call(contract.id(), method_names::MIGRATE)

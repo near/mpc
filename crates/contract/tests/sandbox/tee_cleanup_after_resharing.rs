@@ -35,7 +35,10 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = SandboxTestSetup::builder().with_curves(&[Curve::Secp256k1]).build().await;
+    } = SandboxTestSetup::builder()
+        .with_curves(&[Curve::Secp256k1])
+        .build()
+        .await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
