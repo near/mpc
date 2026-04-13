@@ -192,6 +192,8 @@ pub(super) async fn multiplication_many<const N: usize>(
                 if order_key_other.as_ref() < order_key_me.as_ref() {
                     let precomputed_sender_package =
                         MultiplicationSenderRandomPackage::generate_random_package(&mut rng);
+                    // SAFETY: `i < N` and all three vecs have length `N` (checked above).
+                    #[allow(clippy::indexing_slicing)]
                     Box::pin(async move {
                         #[allow(clippy::large_futures)]
                         multiplication_sender(
@@ -206,6 +208,8 @@ pub(super) async fn multiplication_many<const N: usize>(
                 } else {
                     let precomputed_receiver_package =
                         MultiplicationReceiverRandomPackage::generate_random_package(&mut rng);
+                    // SAFETY: `i < N` and all three vecs have length `N` (checked above).
+                    #[allow(clippy::indexing_slicing)]
                     Box::pin(async move {
                         multiplication_receiver(
                             chan,
