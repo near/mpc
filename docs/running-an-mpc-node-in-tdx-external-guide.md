@@ -1175,7 +1175,7 @@ This is the most common upgrade. When a new MPC node version is released, operat
 
 1. Verify the Docker image (see [Image/code inspection](#imagecode-inspection)).
 2. Vote for the new manifest digest in the contract.
-3. Update the image tag in `user-config.toml` and restart the CVM.
+3. Restart the CVM. The launcher will pull the new image by manifest digest automatically.
 
 ### Image/code inspection
 
