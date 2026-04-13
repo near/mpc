@@ -14,8 +14,8 @@ pub use near_mpc_contract_interface::types::{
 
 // raw request arg type
 pub use near_mpc_contract_interface::types::{
-    BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainPolicy,
-    ForeignChainRpcRequest, ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
+    BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainRpcRequest,
+    ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
     VerifyForeignTransactionRequestArgs,
 };
 
