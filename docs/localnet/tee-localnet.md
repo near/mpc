@@ -105,12 +105,24 @@ Define the machine's external IP once
 export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 ```
 
-#### Configuration Files
+#### Environment File (`frodo/sam.toml`, `frodo/sam.env`)
 
-**TOML configs** (`frodo.toml`, `sam.toml`): The `[launcher_config]` section has `image = "nearone/mpc-node"` and port mappings. Update if needed for your environment.
+The `image` field in `frodo.toml` / `sam.toml` must point to the same repository whose manifest digest is set as `DEFAULT_IMAGE_DIGEST` in the docker-compose file above.
 
-**Docker compose** (`launcher_docker_compose.yaml`): Verify that `DEFAULT_IMAGE_DIGEST` contains the correct manifest digest for the MPC node image. Get the manifest digest with:
+For example, if the compose file has:
+```yaml
+DEFAULT_IMAGE_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+```
 
+Then the TOML files should have:
+```toml
+[launcher_config]
+image = "nearone/mpc-node"
+```
+
+The launcher combines these at runtime: `docker pull nearone/mpc-node@sha256:5d1e604d...`
+
+Get the manifest digest for an image tag with:
 ```bash
 docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
 ```
