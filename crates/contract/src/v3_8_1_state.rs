@@ -59,7 +59,7 @@ impl From<MpcContract> for crate::MpcContract {
             for m in mpc_attestation::attestation::default_measurements() {
                 state
                     .allowed_measurements
-                    .add(ContractExpectedMeasurements::from(m.clone()));
+                    .add(ContractExpectedMeasurements::from(*m));
             }
             state
         };

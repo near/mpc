@@ -451,7 +451,7 @@ impl TeeState {
 
     /// Find a stored attestation by its account ID (O(n) scan).
     /// Suitable for backup services where the number of entries is small.
-    pub fn find_node_attestation_by_account(
+    pub(crate) fn find_node_attestation_by_account(
         &self,
         account_id: &near_account_id::AccountId,
     ) -> Option<&NodeAttestation> {
