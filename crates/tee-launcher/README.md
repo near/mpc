@@ -49,7 +49,7 @@ port_mappings = [
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `image` | Yes | Docker image reference. A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
+| `image` | Yes | Docker image name (repository). A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
 | `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
 | `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 

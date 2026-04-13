@@ -49,10 +49,10 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
-    /// Docker image reference. A tag can be included to identify the configured
-    /// version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest
-    /// digest from the approved hashes file determines the actual image pulled.
-    /// Include registry prefix for non-Docker Hub registries.
+    /// Docker image name (repository). A tag can be included to identify the
+    /// configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the
+    /// manifest digest from the approved hashes file determines the actual image
+    /// pulled. Include registry prefix for non-Docker Hub registries.
     /// Examples: `"nearone/mpc-node"`, `"nearone/mpc-node:3.8.1"`,
     /// `"ghcr.io/nearone/mpc-node"`.
     pub image: String,
