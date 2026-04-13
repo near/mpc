@@ -247,12 +247,14 @@ async fn do_generation_many<const N: usize>(
         let mut my_phi_proof0v = vec![];
         let mut my_phi_proof1v = vec![];
 
-        for ((((big_e_i, big_f_i), (e, f)), nonce0), nonce1) in big_e_i_v
-            .iter()
-            .zip(big_f_i_v.iter())
-            .zip(e_v.iter().zip(f_v.iter()))
-            .zip(my_phi_proof0_nonces.iter())
-            .zip(my_phi_proof1_nonces.iter())
+        for (big_e_i, big_f_i, e, f, nonce0, nonce1) in multizip((
+            big_e_i_v.iter(),
+            big_f_i_v.iter(),
+            e_v.iter(),
+            f_v.iter(),
+            my_phi_proof0_nonces.iter(),
+            my_phi_proof1_nonces.iter(),
+        ))
         {
             // Spec 2.6
             let statement0 = dlog::Statement::<C> {
