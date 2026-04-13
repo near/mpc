@@ -177,7 +177,10 @@ if $USE_PUSH; then
         local tag="$2"
         local td
         td=$(mktemp -d)
+        # Compress the built image to a local directory, which implicitly computes
+        # the manifest digest in $td/manifest.json
         skopeo copy --all --dest-compress "docker-daemon:${image_name}:latest" "dir:$td"
+        # Publish the image from the directory, making sure the manifest digest does not change
         skopeo copy --preserve-digests "dir:$td" "docker://docker.io/nearone/${image_name}:${tag}"
         echo "sha256:$(sha256sum "$td/manifest.json" | cut -d' ' -f1)"
     }
