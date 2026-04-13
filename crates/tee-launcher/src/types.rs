@@ -49,13 +49,14 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
-    /// Docker image name (repository). A tag can be included to identify the
-    /// configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the
-    /// manifest digest from the approved hashes file determines the actual image
-    /// pulled. Include registry prefix for non-Docker Hub registries.
+    /// Docker image reference: `[registry[:port]/]name[:tag]`.
+    /// A tag can be included to identify the configured version
+    /// (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest
+    /// from the approved hashes file determines the actual image pulled.
+    /// Include registry prefix for non-Docker Hub registries.
     /// Examples: `"nearone/mpc-node"`, `"nearone/mpc-node:3.8.1"`,
     /// `"ghcr.io/nearone/mpc-node"`.
-    pub image: String,
+    pub image_reference: String,
     /// Maximum number of retries for `docker pull`. Defaults to 5.
     #[serde(default = "default_pull_max_retries")]
     pub pull_max_retries: usize,
@@ -169,7 +170,7 @@ mod tests {
         // given
         let toml_str = r#"
 [launcher_config]
-image = "nearone/mpc-node"
+image_reference = "nearone/mpc-node"
 port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_node_config]
@@ -182,7 +183,7 @@ some_opaque_field = true
 
         // then
         assert_matches!(result, Ok(config) => {
-            assert_eq!(config.launcher_config.image, "nearone/mpc-node");
+            assert_eq!(config.launcher_config.image_reference, "nearone/mpc-node");
             assert_eq!(config.mpc_node_config["home_dir"].as_str(), Some("/data"));
             assert_eq!(config.mpc_node_config["some_opaque_field"].as_bool(), Some(true));
         });
@@ -193,7 +194,7 @@ some_opaque_field = true
         // given
         let toml_str = r#"
 [launcher_config]
-image = "ghcr.io/nearone/mpc-node"
+image_reference = "ghcr.io/nearone/mpc-node"
 port_mappings = []
 
 [mpc_node_config]
@@ -205,7 +206,7 @@ home_dir = "/data"
 
         // then
         assert_matches!(result, Ok(config) => {
-            assert_eq!(config.launcher_config.image, "ghcr.io/nearone/mpc-node");
+            assert_eq!(config.launcher_config.image_reference, "ghcr.io/nearone/mpc-node");
         });
     }
 
@@ -214,7 +215,7 @@ home_dir = "/data"
         // given
         let toml_str = r#"
 [launcher_config]
-image = "nearone/mpc-node"
+image_reference = "nearone/mpc-node"
 port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_node_config]
@@ -236,7 +237,7 @@ arbitrary_key = "arbitrary_value"
         // given - mpc_node_config is missing
         let toml_str = r#"
 [launcher_config]
-image = "nearone/mpc-node"
+image_reference = "nearone/mpc-node"
 port_mappings = []
 "#;
 

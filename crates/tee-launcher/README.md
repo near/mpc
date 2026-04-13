@@ -29,7 +29,7 @@ The launcher reads its configuration from `/tapp/user_config` as a TOML file. Th
 
 ```toml
 [launcher_config]
-image = "nearone/mpc-node"
+image_reference = "nearone/mpc-node"
 # Optional: force selection of a specific digest (must be in approved list)
 # mpc_hash_override = "sha256:abcd..."
 port_mappings = [
@@ -49,7 +49,7 @@ port_mappings = [
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `image` | Yes | Docker image name (repository). A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
+| `image_reference` | Yes | Docker image reference. A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
 | `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
 | `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 
@@ -59,9 +59,9 @@ Arbitrary TOML table passed through to the MPC node. The launcher writes this ve
 
 ## Supported Registries
 
-The launcher pulls images using `docker pull <image>@sha256:<digest>`. Any registry that Docker supports works out of the box. Set the `image` field to include the registry prefix:
+The launcher pulls images using `docker pull <image>@sha256:<digest>`. Any registry that Docker supports works out of the box. Set the `image_reference` field to include the registry prefix:
 
-| Registry | Example `image` |
+| Registry | Example `image_reference` |
 |----------|----------------|
 | Docker Hub | `nearone/mpc-node` |
 | GitHub Container Registry | `ghcr.io/myorg/mpc-node` |
@@ -73,7 +73,7 @@ The launcher pulls images using `docker pull <image>@sha256:<digest>`. Any regis
 ### Notes
 
 - The launcher uses `docker pull` which supports both public and private registries. For private registries, configure Docker credentials on the host (e.g., via `docker login` or credential helpers).
-- A tag can be included in the `image` field (e.g., `nearone/mpc-node:testnet-release`) to identify the configured version. The manifest digest from the approved hashes file determines the actual image pulled — Docker ignores the tag when a digest is present.
+- A tag can be included in the `image_reference` field (e.g., `nearone/mpc-node:testnet-release`) to identify the configured version. The manifest digest from the approved hashes file determines the actual image pulled — Docker ignores the tag when a digest is present.
 
 ## Image Hash Selection
 

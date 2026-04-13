@@ -117,7 +117,7 @@ DEFAULT_IMAGE_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86
 Then the TOML files should have:
 ```toml
 [launcher_config]
-image = "nearone/mpc-node"
+image_reference = "nearone/mpc-node"
 ```
 
 The launcher combines these at runtime: `docker pull nearone/mpc-node@sha256:5d1e604d...`

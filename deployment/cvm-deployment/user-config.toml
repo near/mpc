@@ -4,7 +4,7 @@
 # testnet genesis file, which requires ~20 GiB of RAM.
 
 [launcher_config]
-image = "nearone/mpc-node"
+image_reference = "nearone/mpc-node"
 port_mappings = [
     { host = 8080, container = 8080 },
 ]

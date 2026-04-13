@@ -1,5 +1,5 @@
 [launcher_config]
-image = "${MPC_IMAGE}"
+image_reference = "${MPC_IMAGE}"
 pull_max_retries = 5
 pull_retry_interval_secs = 2
 pull_max_delay_secs = 60

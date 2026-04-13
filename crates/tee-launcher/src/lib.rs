@@ -8,7 +8,7 @@ use launcher_interface::types::{
 use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
 
 use compose::launch_mpc_container;
-use config::{intercept_node_config, validate_image_name};
+use config::{intercept_node_config, validate_image_reference};
 use constants::{
     DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, IMAGE_DIGEST_FILE, MPC_CONFIG_SHARED_PATH,
 };
@@ -45,7 +45,7 @@ pub async fn run() -> Result<(), LauncherError> {
     )?;
 
     pull_with_retry(
-        &config.launcher_config.image,
+        &config.launcher_config.image_reference,
         &manifest_digest,
         config.launcher_config.pull_max_retries,
         config.launcher_config.pull_retry_interval_secs,
@@ -65,7 +65,7 @@ pub async fn run() -> Result<(), LauncherError> {
     launch_mpc_container(
         args.platform,
         &manifest_digest,
-        &config.launcher_config.image,
+        &config.launcher_config.image_reference,
         &config.launcher_config.port_mappings,
     )?;
 
@@ -86,7 +86,7 @@ fn load_config() -> Result<Config, LauncherError> {
             source,
         })?;
 
-    validate_image_name(&config.launcher_config.image)?;
+    validate_image_reference(&config.launcher_config.image_reference)?;
 
     Ok(config)
 }

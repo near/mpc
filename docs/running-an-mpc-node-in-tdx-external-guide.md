@@ -586,7 +586,7 @@ The configuration has two sections: `[launcher_config]` for the launcher and `[m
 
 ```toml
 [launcher_config]
-image = "nearone/mpc-node"
+image_reference = "nearone/mpc-node"
 port_mappings = [
   { host = 80, container = 80 },
   { host = 8080, container = 8080 },
@@ -614,7 +614,7 @@ filter = "mpc=debug,info"
 
 Adjust the variables as per your environment.
 
-* `image` — the Docker image name (repository). The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
+\* \`image_reference\` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in [Port Mapping](#using-the-web-interface)
@@ -1407,7 +1407,7 @@ If the image repository changes, update the `image` field in `user-config.toml`:
 
 ```toml
 [launcher_config]
-image = "nearone/mpc-node"
+image_reference = "nearone/mpc-node"
 ```
 
 The image version is determined by the manifest digest from the contract (not by a tag). You do not need to update the config for routine image upgrades — just vote for the new manifest digest and restart the CVM.

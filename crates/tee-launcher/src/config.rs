@@ -33,24 +33,36 @@ fn insert_reserved(
     }
 }
 
-/// Validate that `image_name` contains only safe characters for Docker image references.
-/// Allows registry/name:tag format. Rejects values that could inject YAML syntax
-/// (newlines, spaces, etc.) when substituted into the compose template.
-pub fn validate_image_name(image_name: &str) -> Result<(), LauncherError> {
-    // Docker image references: [a-zA-Z0-9][a-zA-Z0-9._/:-]*
-    // The colon is needed for tags (e.g., "nearone/mpc-node:3.8.1")
-    // and registry ports (e.g., "registry.example.com:5000/image")
-    let is_valid = !image_name.is_empty()
-        && image_name.bytes().all(|b| {
+/// Validate a Docker image reference: `[registry[:port]/]name[:tag]`.
+///
+/// Checks structural validity beyond just safe characters:
+/// - Must not be empty
+/// - Must start with an alphanumeric character
+/// - Must not end with `:`, `/`, or `.`
+/// - Must not contain `//`, `::`, or `:.`
+/// - Only allows `[a-zA-Z0-9._/:-]`
+///
+/// This prevents YAML injection when the value is interpolated into the
+/// compose template, while also catching obviously malformed references.
+pub fn validate_image_reference(image_ref: &str) -> Result<(), LauncherError> {
+    let is_valid = !image_ref.is_empty()
+        && image_ref.bytes().next().unwrap().is_ascii_alphanumeric()
+        && image_ref.bytes().all(|b| {
             b.is_ascii_alphanumeric()
                 || b == b'/'
                 || b == b'-'
                 || b == b'.'
                 || b == b'_'
                 || b == b':'
-        });
+        })
+        && !image_ref.ends_with(':')
+        && !image_ref.ends_with('/')
+        && !image_ref.ends_with('.')
+        && !image_ref.contains("//")
+        && !image_ref.contains("::")
+        && !image_ref.contains(":.");
     if !is_valid {
-        return Err(LauncherError::InvalidImageName(image_name.to_string()));
+        return Err(LauncherError::InvalidImageName(image_ref.to_string()));
     }
     Ok(())
 }
