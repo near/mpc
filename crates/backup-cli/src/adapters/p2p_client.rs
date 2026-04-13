@@ -1,6 +1,6 @@
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use near_mpc_contract_interface::types::Keyset;
 use mpc_node::{config::AesKey256, keyshare::Keyshare, migration_service::web::client};
+use near_mpc_contract_interface::types::Keyset;
 
 use crate::{cli::NodeAddress, ports};
 

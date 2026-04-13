@@ -6650,6 +6650,7 @@ dependencies = [
  "hex",
  "insta",
  "mpc-primitives",
+ "near-account-id 2.6.0",
  "near-mpc-bounded-collections",
  "near-mpc-crypto-types",
  "rstest",
@@ -6659,6 +6660,7 @@ dependencies = [
  "serde_repr",
  "serde_with",
  "sha2 0.10.9",
+ "sha3",
 ]
 
 [[package]]

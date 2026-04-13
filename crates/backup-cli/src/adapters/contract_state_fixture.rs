@@ -61,7 +61,7 @@ pub fn get_keyset_from_contract_state(
         ProtocolContractState::NotInitialized | ProtocolContractState::Resharing(_) => {
             return Err(Error::IncorrectContractState(
                 contract_state.name().to_string(),
-            ))
+            ));
         }
         ProtocolContractState::Initializing(state) => {
             mpc_contract::primitives::key_state::Keyset::new(
