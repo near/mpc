@@ -69,7 +69,7 @@ pub async fn pull_with_retry(
 }
 
 #[cfg(all(test, feature = "external-services-tests"))]
-mod integration_tests {
+mod tests {
     use super::*;
 
     /// Known manifest digest for nearone/testing:83b52da4e2270c688cdd30da04f6b9d3565f25bb
