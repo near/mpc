@@ -15,7 +15,7 @@ use constants::{
 use error::LauncherError;
 use selection::select_image_hash;
 use types::{CliArgs, Config, Platform};
-use validation::pull_and_verify;
+use validation::pull_with_retry;
 
 pub mod compose;
 pub mod config;
@@ -44,7 +44,7 @@ pub async fn run() -> Result<(), LauncherError> {
         config.launcher_config.mpc_hash_override.as_ref(),
     )?;
 
-    pull_and_verify(
+    pull_with_retry(
         &config.launcher_config.image,
         &manifest_digest,
         config.launcher_config.pull_max_retries,

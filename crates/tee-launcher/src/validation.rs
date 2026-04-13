@@ -6,12 +6,12 @@ use launcher_interface::types::DockerSha256Digest;
 
 use crate::error::ImageDigestValidationFailed;
 
-/// Pulls the image by manifest digest with retry logic.
+/// Pulls the image by manifest digest with exponential backoff retry.
 ///
-/// The approved hashes file contains manifest digests, so we can pull directly
-/// without querying the Docker registry API. Docker verifies the content
+/// Pre-pulls the image before docker compose starts the container, so that
+/// transient network failures are retried. Docker verifies the content
 /// matches the digest during the pull.
-pub async fn pull_and_verify(
+pub async fn pull_with_retry(
     image_name: &str,
     manifest_digest: &DockerSha256Digest,
     max_retries: usize,
@@ -86,14 +86,14 @@ mod integration_tests {
     #[tokio::test]
     async fn pull_from_docker_hub() {
         let digest: DockerSha256Digest = DOCKER_HUB_MANIFEST_DIGEST.parse().unwrap();
-        let result = pull_and_verify(DOCKER_HUB_IMAGE, &digest, 3, 1, 60).await;
+        let result = pull_with_retry(DOCKER_HUB_IMAGE, &digest, 3, 1, 60).await;
         assert!(result.is_ok(), "Docker Hub pull failed: {result:?}");
     }
 
     #[tokio::test]
     async fn pull_from_ghcr() {
         let digest: DockerSha256Digest = GHCR_MANIFEST_DIGEST.parse().unwrap();
-        let result = pull_and_verify(GHCR_IMAGE, &digest, 3, 1, 60).await;
+        let result = pull_with_retry(GHCR_IMAGE, &digest, 3, 1, 60).await;
         assert!(result.is_ok(), "GHCR pull failed: {result:?}");
     }
 
@@ -103,7 +103,7 @@ mod integration_tests {
             "sha256:0000000000000000000000000000000000000000000000000000000000000000"
                 .parse()
                 .unwrap();
-        let result = pull_and_verify(DOCKER_HUB_IMAGE, &bad_digest, 0, 1, 60).await;
+        let result = pull_with_retry(DOCKER_HUB_IMAGE, &bad_digest, 0, 1, 60).await;
         assert!(result.is_err(), "should fail with wrong digest");
     }
 }
