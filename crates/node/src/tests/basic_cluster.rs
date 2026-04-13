@@ -6,7 +6,7 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -32,20 +32,20 @@ async fn test_basic_cluster() {
 
     let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
-        curve: Curve::Secp256k1,
-        purpose: DomainPurpose::Sign,
+        scheme: SignatureScheme::Secp256k1,
+        purpose: Some(DomainPurpose::Sign),
     };
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
-        curve: Curve::Edwards25519,
-        purpose: DomainPurpose::Sign,
+        scheme: SignatureScheme::Ed25519,
+        purpose: Some(DomainPurpose::Sign),
     };
 
     let ckd_domain = DomainConfig {
         id: DomainId(2),
-        curve: Curve::Bls12381,
-        purpose: DomainPurpose::CKD,
+        scheme: SignatureScheme::Bls12381,
+        purpose: Some(DomainPurpose::CKD),
     };
 
     let domains = vec![
@@ -57,7 +57,7 @@ async fn test_basic_cluster() {
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
-        contract.add_domains(domains.clone());
+        contract.add_domains(super::to_contract_domain_configs(&domains));
     }
 
     let _runs = setup

@@ -24,12 +24,14 @@ near = ["near-mpc-crypto-types/near"]
 borsh = { workspace = true }
 derive_more = { workspace = true }
 mpc-primitives = { workspace = true }
+near-account-id = { workspace = true, features = ["serde"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-crypto-types = { workspace = true }
 serde = { workspace = true }
 serde_repr = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
+sha3 = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 schemars = { workspace = true, optional = true }

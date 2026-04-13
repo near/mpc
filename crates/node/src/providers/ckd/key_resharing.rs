@@ -101,8 +101,7 @@ mod tests {
     use crate::providers::ckd::CKDTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_contract::primitives::domain::DomainId;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use near_mpc_contract_interface::types::{AttemptId, DomainId, EpochId, KeyEventId};
     use rand::{Rng as _, SeedableRng as _};
     use std::sync::Arc;
     use threshold_signatures::confidential_key_derivation::BLS12381SHA256;

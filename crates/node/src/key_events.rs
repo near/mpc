@@ -20,9 +20,10 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use mpc_contract::primitives::domain::{Curve, DomainConfig};
-use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{
+    DomainConfig, KeyEventId, KeyForDomain, Keyset, SignatureScheme,
+};
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
@@ -58,8 +59,8 @@ pub async fn keygen_computation_inner(
         key_id
     );
 
-    let (keyshare, public_key) = match domain.curve {
-        Curve::Secp256k1 => {
+    let (keyshare, public_key) = match domain.scheme {
+        SignatureScheme::Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
@@ -67,7 +68,7 @@ pub async fn keygen_computation_inner(
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
-        Curve::V2Secp256k1 => {
+        SignatureScheme::V2Secp256k1 => {
             let keyshare =
                 RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
@@ -75,7 +76,7 @@ pub async fn keygen_computation_inner(
             )?);
             (KeyshareData::V2Secp256k1(keyshare), public_key)
         }
-        Curve::Edwards25519 => {
+        SignatureScheme::Ed25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
@@ -83,7 +84,7 @@ pub async fn keygen_computation_inner(
             ));
             (KeyshareData::Ed25519(keyshare), public_key)
         }
-        Curve::Bls12381 => {
+        SignatureScheme::Bls12381 => {
             let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey::from(
                 &keyshare.public_key.to_element(),
@@ -208,12 +209,15 @@ async fn resharing_computation_inner(
         .public_key(key_id.domain_id)
         .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
 
-    let public_key = dtos::PublicKey::from(previous_public_key.clone());
+    let public_key: dtos::PublicKey = previous_public_key
+        .clone()
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Failed to convert public key: {:?}", e))?;
 
-    let keyshare_data = match (public_key, domain.curve) {
+    let keyshare_data = match (public_key, domain.scheme) {
         (
             near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Curve::Secp256k1,
+            SignatureScheme::Secp256k1,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
@@ -235,7 +239,7 @@ async fn resharing_computation_inner(
         }
         (
             near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            Curve::V2Secp256k1,
+            SignatureScheme::V2Secp256k1,
         ) => {
             let pk = k256::PublicKey::try_from(&inner_public_key)?;
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
@@ -257,7 +261,7 @@ async fn resharing_computation_inner(
         }
         (
             near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),
-            Curve::Edwards25519,
+            SignatureScheme::Ed25519,
         ) => {
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare
@@ -276,7 +280,7 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Ed25519(res)
         }
-        (dtos::PublicKey::Bls12381(inner_public_key), Curve::Bls12381) => {
+        (dtos::PublicKey::Bls12381(inner_public_key), SignatureScheme::Bls12381) => {
             let public_key = ckd::VerifyingKey::new(ckd::ElementG2::try_from(&inner_public_key)?);
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
@@ -294,11 +298,11 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Bls12381(res)
         }
-        (public_key, curve) => {
+        (public_key, scheme) => {
             return Err(anyhow::anyhow!(
                 "Unexpected pair of ({:?}, {:?})",
                 public_key,
-                curve
+                scheme
             ));
         }
     };
@@ -722,8 +726,9 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
     use assert_matches::assert_matches;
-    use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use near_mpc_contract_interface::types::{
+        AttemptId, DomainConfig, DomainId, DomainPurpose, EpochId, KeyEventId, SignatureScheme,
+    };
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -881,8 +886,8 @@ mod tests {
             id: key_event_id,
             domain: DomainConfig {
                 id: key_event_id.domain_id,
-                curve: Curve::Secp256k1,
-                purpose: DomainPurpose::Sign,
+                scheme: SignatureScheme::Secp256k1,
+                purpose: Some(DomainPurpose::Sign),
             },
             started,
             completed: BTreeSet::new(),
@@ -892,7 +897,10 @@ mod tests {
 
     fn make_test_resharing_args() -> Arc<ResharingArgs> {
         Arc::new(ResharingArgs {
-            previous_keyset: Keyset::new(EpochId::new(5), vec![]),
+            previous_keyset: Keyset {
+                epoch_id: EpochId::new(5),
+                domains: vec![],
+            },
             existing_keyshares: None,
             new_threshold: ReconstructionLowerBound::from(3),
             old_participants: ParticipantsConfig {

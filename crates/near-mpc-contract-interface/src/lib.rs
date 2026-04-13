@@ -10,8 +10,11 @@ pub mod types {
     pub use foreign_chain::*;
     pub use participants::{ParticipantId, ParticipantInfo, Participants};
 
-    pub use ckd::{CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, CkdAppId};
+    pub use ckd::{
+        CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequest, CKDRequestArgs, CKDResponse, CkdAppId,
+    };
     pub use metrics::Metrics;
+    pub use migrations::{BackupServiceInfo, DestinationNodeInfo};
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
@@ -21,6 +24,7 @@ pub mod types {
         ResharingContractState, RunningContractState, SignatureScheme, Threshold,
         ThresholdParameters, ThresholdParametersVotes,
     };
+    pub use tee::NodeId;
     pub use updates::{ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields
@@ -33,15 +37,19 @@ pub mod types {
         PublicKey, PublicKeyExtended, Secp256k1PublicKey, SignatureResponse,
     };
 
+    pub mod kdf;
+
     mod attestation;
     mod ckd;
     mod config;
     mod foreign_chain;
     mod metrics;
+    mod migrations;
     mod participants;
     mod primitives;
     mod sign;
     mod state;
+    mod tee;
     mod updates;
 }
 

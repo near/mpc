@@ -1,10 +1,8 @@
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::{
-    node_migrations::{BackupServiceInfo, DestinationNodeInfo},
-    primitives::key_state::Keyset,
-};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, Keyset};
 use serde::Serialize;
+use std::str::FromStr;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -131,11 +129,11 @@ fn infer_migration_status(
     destination_node_info
         .as_ref()
         .map(|info| {
-            ed25519_dalek::VerifyingKey::from_near_sdk_public_key(
-                &info.destination_node_info.sign_pk,
-            )
-            .inspect_err(|_| tracing::warn!(target: "Migration Service", "Error parsing public key from chain."))
-            .is_ok_and(|key| key == *my_p2p_public_key)
+            near_sdk::PublicKey::from_str(&info.destination_node_info.sign_pk)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+                .and_then(|pk| ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&pk))
+                .inspect_err(|_| tracing::warn!(target: "Migration Service", "Error parsing public key from chain."))
+                .is_ok_and(|key| key == *my_p2p_public_key)
         })
         .unwrap_or(false)
 }
@@ -143,20 +141,47 @@ fn infer_migration_status(
 #[cfg(test)]
 pub mod tests {
     use ed25519_dalek::VerifyingKey;
-    use mpc_contract::{
-        node_migrations::{BackupServiceInfo, DestinationNodeInfo},
-        primitives::{
-            key_state::Keyset,
-            test_utils::{
-                bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_participant,
-            },
-        },
-        state::{
-            test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state},
-            ProtocolContractState,
-        },
+    use mpc_contract::state::test_utils::{
+        gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use near_account_id::AccountId;
+    use near_mpc_contract_interface::types::{
+        BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, Keyset, ProtocolContractState,
+    };
+    use rand::rngs::OsRng;
+
+    fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
+        let signing_key = ed25519_dalek::SigningKey::generate(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        near_sdk::PublicKey::from_parts(
+            near_sdk::CurveType::ED25519,
+            verifying_key.as_bytes().as_slice().into(),
+        )
+        .unwrap()
+    }
+
+    fn bogus_ed25519_public_key() -> Ed25519PublicKey {
+        let signing_key = ed25519_dalek::SigningKey::generate(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        Ed25519PublicKey::from(&verifying_key)
+    }
+
+    fn gen_participant(
+        i: usize,
+    ) -> (
+        AccountId,
+        mpc_contract::primitives::participants::ParticipantInfo,
+    ) {
+        mpc_contract::primitives::test_utils::gen_participant(i)
+    }
+
+    /// Convert a contract ProtocolContractState to an interface ProtocolContractState via JSON.
+    fn to_interface_state(
+        state: &mpc_contract::state::ProtocolContractState,
+    ) -> ProtocolContractState {
+        let json = serde_json::to_string(state).unwrap();
+        serde_json::from_str(&json).unwrap()
+    }
 
     use crate::{
         config,
@@ -204,8 +229,11 @@ pub mod tests {
         let (account_id_1, _) = gen_participant(1);
         let signer_account_pk = bogus_ed25519_near_public_key();
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: signer_account_pk.clone(),
-            destination_node_info: participant_info_0.clone(),
+            signer_account_pk: signer_account_pk.to_string(),
+            destination_node_info: near_mpc_contract_interface::types::ParticipantInfo {
+                url: participant_info_0.url.clone(),
+                sign_pk: participant_info_0.sign_pk.to_string(),
+            },
         };
 
         let backup_service_info = BackupServiceInfo {
@@ -488,39 +516,43 @@ pub mod tests {
     pub(crate) fn make_resharing_contract_case(
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> ContractCase {
-        let contract = ContractState::from_contract_state(
-            &ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1),
-            BLOCK_HEIGHT,
-            PORT_OVERRIDE,
-        )
-        .unwrap();
+        let contract_state = mpc_contract::state::ProtocolContractState::Resharing(
+            gen_resharing_state(NUM_DOMAINS).1,
+        );
+        let interface_state = to_interface_state(&contract_state);
+        let contract =
+            ContractState::from_contract_state(&interface_state, BLOCK_HEIGHT, PORT_OVERRIDE)
+                .unwrap();
         ContractCase::new(contract, onboarding_node_p2p_public_key)
     }
     pub(crate) fn make_running_contract_case(
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> (ContractCase, Keyset) {
         let running_state = gen_running_state(NUM_DOMAINS);
-        let contract = ContractState::from_contract_state(
-            &ProtocolContractState::Running(running_state.clone()),
-            BLOCK_HEIGHT,
-            PORT_OVERRIDE,
-        )
-        .unwrap();
+        let contract_state =
+            mpc_contract::state::ProtocolContractState::Running(running_state.clone());
+        let interface_state = to_interface_state(&contract_state);
+        let contract =
+            ContractState::from_contract_state(&interface_state, BLOCK_HEIGHT, PORT_OVERRIDE)
+                .unwrap();
+        let interface_keyset: Keyset =
+            serde_json::from_str(&serde_json::to_string(&running_state.keyset).unwrap()).unwrap();
 
         (
             ContractCase::new(contract, onboarding_node_p2p_public_key),
-            running_state.keyset,
+            interface_keyset,
         )
     }
     pub(crate) fn make_initializing_contract_case(
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> ContractCase {
-        let contract = ContractState::from_contract_state(
-            &ProtocolContractState::Initializing(gen_initializing_state(NUM_DOMAINS, 0).1),
-            BLOCK_HEIGHT,
-            PORT_OVERRIDE,
-        )
-        .unwrap();
+        let contract_state = mpc_contract::state::ProtocolContractState::Initializing(
+            gen_initializing_state(NUM_DOMAINS, 0).1,
+        );
+        let interface_state = to_interface_state(&contract_state);
+        let contract =
+            ContractState::from_contract_state(&interface_state, BLOCK_HEIGHT, PORT_OVERRIDE)
+                .unwrap();
         ContractCase::new(contract, onboarding_node_p2p_public_key)
     }
 }

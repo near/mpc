@@ -90,6 +90,30 @@ impl TryFrom<&PublicKeyExtended> for near_sdk::PublicKey {
     }
 }
 
+impl TryFrom<PublicKeyExtended> for PublicKey {
+    type Error = CryptoConversionError;
+    fn try_from(pk: PublicKeyExtended) -> Result<Self, Self::Error> {
+        match pk {
+            PublicKeyExtended::Secp256k1 { near_public_key } => {
+                let near_pk: near_sdk::PublicKey = near_public_key
+                    .parse()
+                    .map_err(|_| CryptoConversionError::InvalidPublicKey)?;
+                Ok(PublicKey::from(&near_pk))
+            }
+            PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                ..
+            } => {
+                let near_pk: near_sdk::PublicKey = near_public_key_compressed
+                    .parse()
+                    .map_err(|_| CryptoConversionError::InvalidPublicKey)?;
+                Ok(PublicKey::from(&near_pk))
+            }
+            PublicKeyExtended::Bls12381 { public_key } => Ok(public_key),
+        }
+    }
+}
+
 impl K256Signature {
     /// Returns the 64-byte `r || s` representation compatible with NEAR's `ecrecover`.
     ///

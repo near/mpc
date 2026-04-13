@@ -1,7 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_account_id::AccountId;
 use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use super::kdf::derive_app_id;
 use crate::types::DomainId;
 
 /// AppId for CKD
@@ -104,6 +106,41 @@ impl<'de> Deserialize<'de> for CKDAppPublicKey {
 pub struct CKDAppPublicKeyPV {
     pub pk1: Bls12381G1PublicKey,
     pub pk2: Bls12381G2PublicKey,
+}
+
+/// The response to a CKD request, containing the derived keys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct CKDResponse {
+    pub big_y: Bls12381G1PublicKey,
+    pub big_c: Bls12381G1PublicKey,
+}
+
+/// A validated CKD request with the derived app ID.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CKDRequest {
+    pub app_public_key: CKDAppPublicKey,
+    pub app_id: CkdAppId,
+    pub domain_id: DomainId,
+}
+
+impl CKDRequest {
+    pub fn new(
+        app_public_key: CKDAppPublicKey,
+        domain_id: DomainId,
+        predecessor_id: &AccountId,
+        derivation_path: &str,
+    ) -> Self {
+        let app_id = derive_app_id(predecessor_id, derivation_path);
+        Self {
+            app_public_key,
+            app_id,
+            domain_id,
+        }
+    }
 }
 
 #[cfg(test)]

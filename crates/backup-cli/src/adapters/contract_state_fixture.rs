@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
+use near_mpc_contract_interface::types::Keyset;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -57,15 +57,23 @@ impl ContractStateReader for ContractStateFixture {
 pub fn get_keyset_from_contract_state(
     contract_state: &ProtocolContractState,
 ) -> Result<Keyset, Error> {
-    match contract_state {
-        ProtocolContractState::NotInitialized | ProtocolContractState::Resharing(_) => Err(
-            Error::IncorrectContractState(contract_state.name().to_string()),
-        ),
-        ProtocolContractState::Initializing(state) => {
-            Ok(Keyset::new(state.epoch_id, state.generated_keys.clone()))
+    let contract_keyset = match contract_state {
+        ProtocolContractState::NotInitialized | ProtocolContractState::Resharing(_) => {
+            return Err(Error::IncorrectContractState(
+                contract_state.name().to_string(),
+            ))
         }
-        ProtocolContractState::Running(state) => Ok(state.keyset.clone()),
-    }
+        ProtocolContractState::Initializing(state) => {
+            mpc_contract::primitives::key_state::Keyset::new(
+                state.epoch_id,
+                state.generated_keys.clone(),
+            )
+        }
+        ProtocolContractState::Running(state) => state.keyset.clone(),
+    };
+    // Convert contract Keyset → interface Keyset via JSON (structurally identical)
+    serde_json::from_value(serde_json::to_value(&contract_keyset).unwrap())
+        .map_err(Error::JsonDeserialization)
 }
 
 #[cfg(test)]
