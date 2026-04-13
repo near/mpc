@@ -880,6 +880,10 @@ BorshSchemaContainer {
                         "ForeignChainPolicyVotes",
                     ),
                     (
+                        "node_foreign_chain_configurations",
+                        "NodeForeignChainConfigurations",
+                    ),
+                    (
                         "config",
                         "Config",
                     ),
@@ -943,6 +947,16 @@ BorshSchemaContainer {
                     (
                         "verified_attestation",
                         "VerifiedAttestation",
+                    ),
+                ],
+            ),
+        },
+        "NodeForeignChainConfigurations": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "foreign_chain_configuration_by_node",
+                        "IterableMap",
                     ),
                 ],
             ),

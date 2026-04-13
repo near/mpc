@@ -53,6 +53,10 @@ pub const NEAR_DLOGEQ_ENCODE_LABEL_PUBLIC1: &[u8] = b"public 1:";
 /// A string used to extend an encoding
 pub const NEAR_DLOGEQ_ENCODE_LABEL_GENERATOR1: &[u8] = b"generator 1:";
 
+// Keccak Constants
+pub const KECCAK_STATE_BYTES: usize = 200;
+pub const KECCAK_STATE_WORDS: usize = 25;
+
 // Strobe Constants
 /// Strobe R value; security level 128 is hardcoded
 pub const STROBE_R: u8 = 166;

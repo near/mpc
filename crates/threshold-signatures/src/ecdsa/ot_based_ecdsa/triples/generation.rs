@@ -1,5 +1,6 @@
 use frost_core::serialization::SerializableScalar;
 use frost_core::Ciphersuite;
+use itertools::multizip;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -127,7 +128,11 @@ async fn do_generation_many<const N: usize>(
     threshold: ReconstructionLowerBound,
     mut rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutputMany, ProtocolError> {
-    assert!(N > 0);
+    if N == 0 {
+        return Err(ProtocolError::InvalidInput(
+            "N must be greater than 0".to_string(),
+        ));
+    }
 
     let mut chan = comms.shared_channel();
     let mut transcript = create_transcript(&participants, threshold)?;
@@ -192,8 +197,8 @@ async fn do_generation_many<const N: usize>(
         .any(|all_commitments| !all_commitments.full())
     {
         let (from, FixedArray(commitments)) = chan.recv::<FixedArray<Commitment, N>>(wait0).await?;
-        for i in 0..N {
-            all_commitments_vec[i].put(from, commitments[i]);
+        for (acv, commit) in all_commitments_vec.iter_mut().zip(commitments.iter()) {
+            acv.put(from, *commit);
         }
     }
 
@@ -246,11 +251,14 @@ async fn do_generation_many<const N: usize>(
         let mut my_phi_proof0v = vec![];
         let mut my_phi_proof1v = vec![];
 
-        for i in 0..N {
-            let big_e_i = &big_e_i_v[i];
-            let big_f_i = &big_f_i_v[i];
-            let e = &e_v[i];
-            let f = &f_v[i];
+        for (big_e_i, big_f_i, e, f, nonce0, nonce1) in multizip((
+            big_e_i_v.iter(),
+            big_f_i_v.iter(),
+            e_v.iter(),
+            f_v.iter(),
+            my_phi_proof0_nonces.iter(),
+            my_phi_proof1_nonces.iter(),
+        )) {
             // Spec 2.6
             let statement0 = dlog::Statement::<C> {
                 public: &big_e_i.eval_at_zero()?.value(),
@@ -262,7 +270,7 @@ async fn do_generation_many<const N: usize>(
                 &mut transcript.fork(b"dlog0", &me.bytes()),
                 statement0,
                 &witness0,
-                my_phi_proof0_nonces[i],
+                *nonce0,
             )?;
             let statement1 = dlog::Statement::<C> {
                 public: &big_f_i.eval_at_zero()?.value(),
@@ -274,7 +282,7 @@ async fn do_generation_many<const N: usize>(
                 &mut transcript.fork(b"dlog1", &me.bytes()),
                 statement1,
                 &witness1,
-                my_phi_proof1_nonces[i],
+                *nonce1,
             )?;
             my_phi_proof0v.push(my_phi_proof0);
             my_phi_proof1v.push(my_phi_proof1);
@@ -298,9 +306,7 @@ async fn do_generation_many<const N: usize>(
         for p in participants.others(me) {
             let mut a_i_j_v = vec![];
             let mut b_i_j_v = vec![];
-            for i in 0..N {
-                let e = &e_v[i];
-                let f = &f_v[i];
+            for (e, f) in e_v.iter().zip(f_v.iter()) {
                 let a_i_j = e.eval_at_participant(p)?.0;
                 let b_i_j = f.eval_at_participant(p)?.0;
                 a_i_j_v.push(a_i_j);
@@ -310,9 +316,7 @@ async fn do_generation_many<const N: usize>(
         }
         let mut a_i_v = vec![];
         let mut b_i_v = vec![];
-        for i in 0..N {
-            let e = &e_v[i];
-            let f = &f_v[i];
+        for (e, f) in e_v.iter().zip(f_v.iter()) {
             let a_i = e.eval_at_participant(me)?;
             let b_i = f.eval_at_participant(me)?;
             a_i_v.push(a_i.0);
@@ -331,29 +335,41 @@ async fn do_generation_many<const N: usize>(
         }
 
         // Spec 3.3 + 3.4, and part of 3.6, 5.3, for summing up the Es, Fs, and Ls.
-        let mut big_e_v = vec![];
-        let mut big_f_v = vec![];
-        let mut big_l_v = vec![];
-        let mut big_e_j_zero_v = vec![];
-        for i in 0..N {
-            big_e_v.push(big_e_i_v[i].clone());
-            big_f_v.push(big_f_i_v[i].clone());
-            big_l_v.push(big_l_i_v[i].clone());
-            big_e_j_zero_v.push(ParticipantMap::new(&participants));
-        }
+        let mut big_e_v: Vec<_> = big_e_i_v.iter().cloned().collect();
+        let mut big_f_v: Vec<_> = big_f_i_v.iter().cloned().collect();
+        let mut big_l_v: Vec<_> = big_l_i_v.iter().cloned().collect();
+        let mut big_e_j_zero_v: Vec<_> =
+            (0..N).map(|_| ParticipantMap::new(&participants)).collect();
 
         for (from, their) in
             recv_from_others::<PolynomialCommitmentsMessageMany<N>>(&chan, wait2, &participants, me)
                 .await?
         {
-            for i in 0..N {
-                let all_commitments = &all_commitments_vec[i];
-                let their_big_e = &their.big_e_v[i];
-                let their_big_f = &their.big_f_v[i];
-                let their_big_l = &their.big_l_v[i];
-                let their_randomizer = &their.randomizer_v[i];
-                let their_phi_proof0 = &their.phi_proof0_v[i];
-                let their_phi_proof1 = &their.phi_proof1_v[i];
+            for (
+                all_commitments,
+                their_big_e,
+                their_big_f,
+                their_big_l,
+                their_randomizer,
+                their_phi_proof0,
+                their_phi_proof1,
+                big_e_j_zero,
+                big_e,
+                big_f,
+                big_l,
+            ) in multizip((
+                all_commitments_vec.iter(),
+                their.big_e_v.iter(),
+                their.big_f_v.iter(),
+                their.big_l_v.iter(),
+                their.randomizer_v.iter(),
+                their.phi_proof0_v.iter(),
+                their.phi_proof1_v.iter(),
+                big_e_j_zero_v.iter_mut(),
+                big_e_v.iter_mut(),
+                big_f_v.iter_mut(),
+                big_l_v.iter_mut(),
+            )) {
                 if their_big_e.degree() != threshold.value() - 1
                     || their_big_f.degree() != threshold.value() - 1
                     // degree is threshold - 2 because the constant element identity is not serializable
@@ -402,11 +418,11 @@ async fn do_generation_many<const N: usize>(
                     )));
                 }
 
-                big_e_j_zero_v[i].put(from, their_big_e.eval_at_zero()?);
+                big_e_j_zero.put(from, their_big_e.eval_at_zero()?);
 
-                big_e_v[i] = big_e_v[i].add(their_big_e)?;
-                big_f_v[i] = big_f_v[i].add(their_big_f)?;
-                big_l_v[i] = big_l_v[i].add(their_big_l)?;
+                *big_e = big_e.add(their_big_e)?;
+                *big_f = big_f.add(their_big_f)?;
+                *big_l = big_l.add(their_big_l)?;
             }
         }
 
@@ -418,23 +434,26 @@ async fn do_generation_many<const N: usize>(
             )>(&chan, wait3, &participants, me)
             .await?
         {
-            for i in 0..N {
-                let a_j_i = &a_j_i_v[i];
-                let b_j_i = &b_j_i_v[i];
-                a_i_v[i] += &a_j_i.0;
-                b_i_v[i] += &b_j_i.0;
+            for ((a_i, b_i), (a_j_i, b_j_i)) in a_i_v
+                .iter_mut()
+                .zip(b_i_v.iter_mut())
+                .zip(a_j_i_v.iter().zip(b_j_i_v.iter()))
+            {
+                *a_i += &a_j_i.0;
+                *b_i += &b_j_i.0;
             }
         }
 
         let mut big_c_i_points = vec![];
         let mut big_c_i_v = vec![];
         let mut my_phi_proofs = vec![];
-        for i in 0..N {
-            let big_e = &big_e_v[i];
-            let big_f = &big_f_v[i];
-            let a_i = &a_i_v[i];
-            let b_i = &b_i_v[i];
-            let e = &e_v[i];
+        for ((((big_e, big_f), (a_i, b_i)), (e, big_e_i)), nonce) in big_e_v
+            .iter()
+            .zip(big_f_v.iter())
+            .zip(a_i_v.iter().zip(b_i_v.iter()))
+            .zip(e_v.iter().zip(big_e_i_v.iter()))
+            .zip(my_phi_proof_nonces.iter())
+        {
             // Spec 3.7
             let check1 = big_e.eval_at_participant(me)?.value() != ProjectivePoint::GENERATOR * a_i;
             let check2 = big_f.eval_at_participant(me)?.value() != ProjectivePoint::GENERATOR * b_i;
@@ -445,7 +464,6 @@ async fn do_generation_many<const N: usize>(
             }
             // Spec 3.8
             let big_c_i = big_f.eval_at_zero()?.value() * e.eval_at_zero()?.0;
-            let big_e_i = &big_e_i_v[i];
             // Spec 3.9
             let statement = dlogeq::Statement::<C> {
                 public0: &big_e_i.eval_at_zero()?.value(),
@@ -459,7 +477,7 @@ async fn do_generation_many<const N: usize>(
                 &mut transcript.fork(b"dlogeq0", &me.bytes()),
                 statement,
                 &witness,
-                my_phi_proof_nonces[i],
+                *nonce,
             )?;
             big_c_i_points.push(CoefficientCommitment::new(big_c_i));
             big_c_i_v.push(big_c_i);
@@ -472,10 +490,7 @@ async fn do_generation_many<const N: usize>(
 
         // Spec 4.1 + 4.2 + 4.3
 
-        let mut big_c_v = vec![];
-        for big_c_i_v_i in big_c_i_v.iter().take(N) {
-            big_c_v.push(*big_c_i_v_i);
-        }
+        let mut big_c_v: Vec<_> = big_c_i_v.clone();
         for (from, (FixedArray(big_c_j_v), FixedArray(their_phi_proofs))) in
             recv_from_others::<(
                 FixedArray<CoefficientCommitment, N>,
@@ -483,17 +498,19 @@ async fn do_generation_many<const N: usize>(
             )>(&chan, wait4, &participants, me)
             .await?
         {
-            for i in 0..N {
-                let big_e_j_zero = &big_e_j_zero_v[i];
-                let big_f = &big_f_v[i];
-
-                let big_c_j = big_c_j_v[i].value();
-                let their_phi_proof = &their_phi_proofs[i];
+            for ((((big_e_j_zero, big_f), big_c_j), their_phi_proof), big_c) in big_e_j_zero_v
+                .iter()
+                .zip(big_f_v.iter())
+                .zip(big_c_j_v.iter())
+                .zip(their_phi_proofs.iter())
+                .zip(big_c_v.iter_mut())
+            {
+                let big_c_j_val = big_c_j.value();
 
                 let statement = dlogeq::Statement::<C> {
                     public0: &big_e_j_zero.index(from)?.value(),
                     generator1: &big_f.eval_at_zero()?.value(),
-                    public1: &big_c_j,
+                    public1: &big_c_j_val,
                 };
 
                 if !dlogeq::verify(
@@ -505,7 +522,7 @@ async fn do_generation_many<const N: usize>(
                         "dlogeq proof from {from:?} failed to verify"
                     )));
                 }
-                big_c_v[i] += big_c_j;
+                *big_c += big_c_j_val;
             }
         }
         let big_l_v = big_l_v
@@ -539,7 +556,7 @@ async fn do_generation_many<const N: usize>(
     let mut hat_big_c_i_v = vec![];
     let mut my_phi_proofs = vec![];
 
-    for (i, l0) in l0_v.iter().enumerate() {
+    for (l0, nonce) in l0_v.iter().zip(my_l0_phi_proof_nonces.iter()) {
         // Spec 4.5
         let hat_big_c_i = ProjectivePoint::GENERATOR * l0;
 
@@ -554,7 +571,7 @@ async fn do_generation_many<const N: usize>(
             &mut transcript.fork(b"dlog2", &me.bytes()),
             statement,
             &witness,
-            my_l0_phi_proof_nonces[i],
+            *nonce,
         )?;
         hat_big_c_i_points.push(CoefficientCommitment::new(hat_big_c_i));
         hat_big_c_i_v.push(hat_big_c_i);
@@ -566,9 +583,7 @@ async fn do_generation_many<const N: usize>(
     chan.send_many(wait5, &(&hat_big_c_i_points, &my_phi_proofs))?;
 
     // Spec 4.9
-    for i in 0..N {
-        let l = &mut l_v[i];
-        let l0 = &l0_v[i];
+    for (l, l0) in l_v.iter_mut().zip(l0_v.iter()) {
         // extend to make the degree threshold - 1
         *l = l.extend_with_zero()?;
         l.set_nonzero_constant(*l0)?;
@@ -589,10 +604,7 @@ async fn do_generation_many<const N: usize>(
     }
 
     // Spec 5.1 + 5.2 + 5.3
-    let mut hat_big_c_v = vec![];
-    for hat_big_c_i_v_i in hat_big_c_i_v.iter().take(N) {
-        hat_big_c_v.push(*hat_big_c_i_v_i);
-    }
+    let mut hat_big_c_v: Vec<_> = hat_big_c_i_v.clone();
 
     for (from, (FixedArray(their_hat_big_c_i_points), FixedArray(their_phi_proofs))) in
         recv_from_others::<(
@@ -601,9 +613,12 @@ async fn do_generation_many<const N: usize>(
         )>(&chan, wait5, &participants, me)
         .await?
     {
-        for i in 0..N {
-            let their_hat_big_c = their_hat_big_c_i_points[i].value();
-            let their_phi_proof = &their_phi_proofs[i];
+        for ((their_point, their_phi_proof), hat_big_c) in their_hat_big_c_i_points
+            .iter()
+            .zip(their_phi_proofs.iter())
+            .zip(hat_big_c_v.iter_mut())
+        {
+            let their_hat_big_c = their_point.value();
 
             let statement = dlog::Statement::<C> {
                 public: &their_hat_big_c,
@@ -617,15 +632,15 @@ async fn do_generation_many<const N: usize>(
                     "dlog proof from {from:?} failed to verify"
                 )));
             }
-            hat_big_c_v[i] += &their_hat_big_c;
+            *hat_big_c += &their_hat_big_c;
         }
     }
 
-    for i in 0..N {
-        let big_l = &mut big_l_v[i];
-        let hat_big_c = &hat_big_c_v[i];
-        let big_c = &big_c_v[i];
-
+    for ((big_l, hat_big_c), big_c) in big_l_v
+        .iter_mut()
+        .zip(hat_big_c_v.iter())
+        .zip(big_c_v.iter())
+    {
         // Spec 5.3
         big_l.set_non_identity_constant(CoefficientCommitment::new(*hat_big_c))?;
 
@@ -642,23 +657,19 @@ async fn do_generation_many<const N: usize>(
         recv_from_others::<FixedArray<SerializableScalar<C>, N>>(&chan, wait6, &participants, me)
             .await?
     {
-        for i in 0..N {
-            let c_j_i = c_j_i_v[i].0;
-            c_i_v[i] += c_j_i;
+        for (c_i, c_j_i) in c_i_v.iter_mut().zip(c_j_i_v.iter()) {
+            *c_i += c_j_i.0;
         }
     }
 
     let mut ret = vec![];
     // Spec 5.7
-    for i in 0..N {
-        let big_l = &big_l_v[i];
-        let c_i = &c_i_v[i];
-        let a_i = &a_i_v[i];
-        let b_i = &b_i_v[i];
-        let big_e = &big_e_v[i];
-        let big_f = &big_f_v[i];
-        let big_c = &big_c_v[i];
-
+    for (((big_l, (c_i, (a_i, b_i))), big_e), (big_f, big_c)) in big_l_v
+        .iter()
+        .zip(c_i_v.iter().zip(a_i_v.iter().zip(b_i_v.iter())))
+        .zip(big_e_v.iter())
+        .zip(big_f_v.iter().zip(big_c_v.iter()))
+    {
         if big_l.eval_at_participant(me)?.value() != ProjectivePoint::GENERATOR * c_i {
             return Err(ProtocolError::AssertionFailed(
                 "received bad private share of c".to_string(),
