@@ -111,17 +111,14 @@ Update Sam/Frodo.toml fields:
 
 
 ```env
-MPC_IMAGE_TAGS=main_3.0.3
+MPC_MANIFEST_DIGEST=sha256:<manifest_digest>
 ```
 
-Verify that the `DEFAULT_IMAGE_DIGEST` in the docker-compose file contains the manifest digest for this image tag. You can look up the manifest digest on Docker Hub:
+The `MPC_MANIFEST_DIGEST` should match the `DEFAULT_IMAGE_DIGEST` in the docker-compose file. Get the manifest digest for an image tag with:
 
 ```bash
-# Get manifest digest for a tag
-docker pull nearone/mpc-node:main_3.0.3 2>&1 | grep Digest
+docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
 ```
-
-The `DEFAULT_IMAGE_DIGEST` value should match the digest shown.
 
 ---
 ### Node Startup

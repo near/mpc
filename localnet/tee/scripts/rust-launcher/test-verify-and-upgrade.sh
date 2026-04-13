@@ -21,7 +21,7 @@
 #
 # Usage:
 #   bash test-verify-and-upgrade.sh verify              # Scenario 1 only
-#   bash test-verify-and-upgrade.sh upgrade <new_tag>    # Scenario 2 (includes verify before & after)
+#   bash test-verify-and-upgrade.sh upgrade <manifest_digest>  # Scenario 2 (includes verify before & after)
 #
 # Environment variables (from set-localnet-env.sh or deploy script):
 #   NEAR_NETWORK_CONFIG, MPC_CONTRACT_ACCOUNT, N, MACHINE_IP,
@@ -215,52 +215,22 @@ verify_cluster() {
 # SCENARIO 2: ROLLING UPGRADE
 # =============================================================================
 
-# Get the Docker image manifest digest for a given tag from the registry.
-# The launcher uses manifest digests (not config digests) to identify images.
-# This fetches the digest via the Docker-Content-Digest header, which is the
-# sha256 hash of the manifest blob itself.
-fetch_image_manifest_digest() {
-  local image_name="$1" tag="$2"
-
-  # Get auth token
-  local token
-  token="$(curl -sf "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${image_name}:pull" \
-    | jq -r '.token')"
-
-  # Fetch the manifest digest via HEAD request.
-  # The Docker-Content-Digest header contains the manifest digest.
-  local digest_header
-  digest_header="$(curl -sf -I \
-    -H "Authorization: Bearer $token" \
-    -H "Accept: application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json" \
-    "https://registry-1.docker.io/v2/${image_name}/manifests/${tag}" \
-    | tr -d '\r' | grep -i '^Docker-Content-Digest:' | awk '{print $2}')"
-
-  if [ -n "$digest_header" ]; then
-    echo "${digest_header#sha256:}"
-    return 0
-  fi
-
-  # Fallback: try skopeo if available (works with any registry)
-  if command -v skopeo &>/dev/null; then
-    local skopeo_digest
-    skopeo_digest="$(skopeo inspect "docker://docker.io/${image_name}:${tag}" 2>/dev/null | jq -r '.Digest // empty')"
-    if [ -n "$skopeo_digest" ]; then
-      echo "${skopeo_digest#sha256:}"
-      return 0
-    fi
-  fi
-
-  err "Could not fetch manifest digest for $image_name:$tag"
-  return 1
-}
 
 upgrade_cluster() {
-  local new_tag="$1"
+  local new_digest="$1"
   local image_name="${MPC_IMAGE_NAME:-nearone/mpc-node}"
+  # Strip sha256: prefix if present for voting
+  local new_hash="${new_digest#sha256:}"
+
+  if [ ${#new_hash} -ne 64 ]; then
+    err "Invalid manifest digest: $new_digest (expected sha256:<64 hex chars>)"
+    exit 1
+  fi
 
   log "============================================================"
-  log "SCENARIO 2: Rolling Upgrade to $image_name:$new_tag"
+  log "SCENARIO 2: Rolling Upgrade"
+  log "  Image: $image_name"
+  log "  New manifest digest: $new_hash"
   log "============================================================"
 
   # --- Pre-upgrade verification ---
@@ -268,16 +238,6 @@ upgrade_cluster() {
   verify_cluster || true
   local pre_failures=$FAILURES
   FAILURES=0
-
-  # --- 2.1 Get new image manifest digest ---
-  log "Fetching manifest digest for $image_name:$new_tag..."
-  local new_hash
-  new_hash="$(fetch_image_manifest_digest "$image_name" "$new_tag")"
-  if [ -z "$new_hash" ] || [ ${#new_hash} -ne 64 ]; then
-    err "Failed to fetch manifest digest for $image_name:$new_tag"
-    exit 1
-  fi
-  log "New MPC image manifest digest: $new_hash"
 
   # Check if already approved
   local current_hashes
@@ -349,8 +309,8 @@ upgrade_cluster() {
     warn "Could not confirm hash detection from logs (nodes may still pick it up on restart)"
   fi
 
-  # --- 2.3 Restart CVMs with new image tag ---
-  log "Restarting CVMs with new image tag: $new_tag"
+  # --- 2.3 Restart CVMs ---
+  log "Restarting CVMs with new manifest digest: $new_hash"
 
   # Find running VM IDs
   local vm_ids=()
@@ -374,10 +334,7 @@ upgrade_cluster() {
       return 1
     fi
 
-    # Update image in TOML (single field: "registry/name:tag")
-    local new_image="${image_name}:${new_tag}"
-    log "  node$i: updating TOML image to \"$new_image\""
-    sed -i "s|^image = .*|image = \"$new_image\"|" "$toml_file"
+    log "  node$i: restarting VM ${vm_ids[$i]}"
 
     log "  node$i: stopping VM ${vm_ids[$i]}"
     $CLI stop "${vm_ids[$i]}" 2>/dev/null
@@ -442,7 +399,6 @@ upgrade_cluster() {
 
   log "============================================================"
   log "Upgrade Summary"
-  log "  Image tag: $new_tag"
   log "  Manifest digest: $new_hash"
   log "  Pre-upgrade failures: $pre_failures"
   log "  Post-upgrade failures: $FAILURES"
@@ -457,11 +413,11 @@ usage() {
   echo
   echo "Commands:"
   echo "  verify                    Run cluster verification (Scenario 1)"
-  echo "  upgrade <new_image_tag>   Run rolling upgrade test (Scenario 2)"
+  echo "  upgrade <manifest_digest>   Run rolling upgrade test (Scenario 2)"
   echo
   echo "Examples:"
   echo "  $0 verify"
-  echo "  $0 upgrade 3.8.0"
+  echo "  $0 upgrade sha256:abc123..."
 }
 
 case "${1:-}" in
@@ -471,7 +427,7 @@ case "${1:-}" in
     ;;
   upgrade)
     if [ -z "${2:-}" ]; then
-      err "Missing argument: new image tag"
+      err "Missing argument: manifest digest (e.g. sha256:abc123...)"
       usage
       exit 1
     fi

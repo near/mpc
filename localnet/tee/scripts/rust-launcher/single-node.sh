@@ -97,7 +97,7 @@ VALIDATOR_KEY="$(jq -r .secret_key ~/.near/mpc-localnet/validator_key.json)"
 # --- Required ---
 : "${BASE_PATH:?Set BASE_PATH (dstack base path)}"
 : "${MACHINE_IP:?Set MACHINE_IP (host IP reachable from the CVM)}"
-: "${MPC_IMAGE_TAGS:?Set MPC_IMAGE_TAGS}"
+: "${MPC_MANIFEST_DIGEST:?Set MPC_MANIFEST_DIGEST (e.g. sha256:abc...)}"
 
 # NODE_IP usually equals MACHINE_IP for single-node
 NODE_IP="${NODE_IP:-$MACHINE_IP}"
@@ -200,7 +200,6 @@ render_env_and_conf() {
 
   export MPC_ENV="${MPC_ENV:-mpc-localnet}"
   export MPC_IMAGE_NAME="nearone/mpc-node"
-  export MPC_IMAGE_TAGS
   export MPC_IMAGE="nearone/mpc-node"
   export MPC_ACCOUNT_ID="$NODE_ACCOUNT"
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"

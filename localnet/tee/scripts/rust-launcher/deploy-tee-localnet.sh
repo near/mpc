@@ -42,7 +42,7 @@ MPC_ENV="${MPC_ENV:-$NEAR_NETWORK_CONFIG}"
 : "${BASE_PATH:?Must set BASE_PATH to dstack base path (contains vmm/src/vmm-cli.py)}"
 : "${MACHINE_IP:?Must set MACHINE_IP (external IP for localnet node comms)}"
 
-: "${MPC_IMAGE_TAGS:?Must set MPC_IMAGE_TAGS (e.g. export MPC_IMAGE_TAGS=3.3.0)}"
+: "${MPC_MANIFEST_DIGEST:?Must set MPC_MANIFEST_DIGEST (e.g. export MPC_MANIFEST_DIGEST=sha256:abc...)}"
 
 # If set, use this funded testnet account instead of faucet to create/top-up the ROOT account.
 # Example: export FUNDER_ACCOUNT=barak_tee_test1.testnet
@@ -717,7 +717,7 @@ render_node_files_range() {
   log "Rendering node env/conf files into $WORKDIR (nodes $start_i..$end_i)"
   log "Threshold (for env): $threshold / $N"
   log "OS_IMAGE=$OS_IMAGE  SEALING_KEY_TYPE=$SEALING_KEY_TYPE  VMM_RPC=$VMM_RPC"
-  log "MPC_IMAGE_TAGS=$MPC_IMAGE_TAGS"
+  log "MPC_MANIFEST_DIGEST=$MPC_MANIFEST_DIGEST"
   log "Contract account: $MPC_CONTRACT_ACCOUNT"
   log "Node naming: node{i}.${ROOT_ACCOUNT}"
 
@@ -765,7 +765,6 @@ render_node_files_range() {
     export MPC_ENV
 
     export MPC_IMAGE_NAME="nearone/mpc-node"
-    export MPC_IMAGE_TAGS="$MPC_IMAGE_TAGS"
     export MPC_IMAGE="nearone/mpc-node"
     export MPC_ACCOUNT_ID="$account"
     export MPC_SECRET_STORE_KEY="$(printf '%032x' "$i")"
@@ -1082,10 +1081,10 @@ init_contract() {
 }
 
 extract_code_hash() {
-  local digest
-  digest="$(grep -E "DEFAULT_IMAGE_DIGEST=sha256:" "$COMPOSE_YAML" | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')"
+  # Use MPC_MANIFEST_DIGEST directly (strip sha256: prefix)
+  local digest="${MPC_MANIFEST_DIGEST#sha256:}"
   if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-    err "Could not extract DEFAULT_IMAGE_DIGEST from $COMPOSE_YAML"
+    err "MPC_MANIFEST_DIGEST is not a valid sha256 digest: $MPC_MANIFEST_DIGEST"
     exit 1
   fi
   echo "$digest"
@@ -1486,7 +1485,7 @@ print_summary() {
   echo " CONTRACT_BAL        : $CONTRACT_INITIAL_BALANCE"
   echo " NODE_BAL            : $NODE_INITIAL_BALANCE"
   echo " MAX_NODES_TO_FUND   : $MAX_NODES_TO_FUND"
-  echo " MPC_IMAGE_TAGS      : $MPC_IMAGE_TAGS"
+  echo " MPC_MANIFEST_DIGEST : $MPC_MANIFEST_DIGEST"
   echo " CODE_HASH           : $code_hash"
   echo " LAUNCHER_HASH       : $launcher_hash"
   echo " ADD_NODES           : $ADD_NODES"

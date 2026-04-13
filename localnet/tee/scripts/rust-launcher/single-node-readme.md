@@ -25,16 +25,8 @@ export BASE_PATH=/path/to/meta-dstack/dstack
 # External machine IP reachable from the CVM
 export MACHINE_IP=<host-ip>
 
-# MPC node image tag (must support TOML config / start-with-config-file)
-# Verify DEFAULT_IMAGE_DIGEST in deployment/cvm-deployment/launcher_docker_compose.yaml
-# matches this tag's manifest digest. You can look it up on Docker Hub or
-# in the registry's tag listing.
-export MPC_IMAGE_TAGS=main-9515e18
-
-# Docker image reference. A tag can be included (e.g., nearone/mpc-node:testnet-release)
-# to identify which version is configured. The manifest digest from the contract
-# determines the actual image pulled.
-# export MPC_IMAGE=nearone/mpc-node  # (set automatically by single-node.sh)
+# MPC node manifest digest. Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
+export MPC_MANIFEST_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
 ```
 
 ## Optional Variables
