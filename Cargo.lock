@@ -10945,6 +10945,7 @@ dependencies = [
  "dstack-sdk",
  "launcher-interface",
  "near-mpc-bounded-collections",
+ "rustls",
  "serde",
  "serde_json",
  "tempfile",
