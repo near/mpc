@@ -8,14 +8,17 @@
 use derive_more::{Deref, DerefMut};
 use zeroize::Zeroize;
 
-use crate::crypto::constants::{FLAG_A, FLAG_C, FLAG_I, FLAG_K, FLAG_M, FLAG_T, STROBE_R};
+use crate::crypto::constants::{
+    FLAG_A, FLAG_C, FLAG_I, FLAG_K, FLAG_M, FLAG_T, KECCAK_STATE_BYTES, KECCAK_STATE_WORDS,
+    STROBE_R,
+};
 
-// SAFETY: `KeccakState` is `[u8; 200]`. These functions iterate `i` in `0..25`,
-// indexing `st[8*i..8*i+8]` — the maximum accessed byte is `8*24 + 7 = 199`,
-// which is within bounds.
+// SAFETY: `KeccakState` is `[u8; KECCAK_STATE_BYTES]`. These functions iterate `i` in
+// `0..KECCAK_STATE_WORDS`, indexing `st[8*i..8*i+8]` — the maximum accessed byte is
+// `8*24 + 7 = 199`, which is within bounds.
 #[allow(clippy::indexing_slicing)]
-fn transmute_state(st: &KeccakState) -> [u64; 25] {
-    let mut result = [0u64; 25];
+fn transmute_state(st: &KeccakState) -> [u64; KECCAK_STATE_WORDS] {
+    let mut result = [0u64; KECCAK_STATE_WORDS];
     for (i, resulti) in result.iter_mut().enumerate() {
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&st[8 * i..8 * i + 8]);
@@ -25,7 +28,7 @@ fn transmute_state(st: &KeccakState) -> [u64; 25] {
 }
 
 #[allow(clippy::indexing_slicing)]
-fn untransmute_state(transmuted_state: [u64; 25], state: &mut KeccakState) {
+fn untransmute_state(transmuted_state: [u64; KECCAK_STATE_WORDS], state: &mut KeccakState) {
     for (i, ti) in transmuted_state.iter().enumerate() {
         state[8 * i..8 * i + 8].copy_from_slice(&ti.to_le_bytes());
     }
@@ -39,7 +42,7 @@ fn keccak_f1600_wrapper(state: &mut KeccakState) {
 
 #[derive(Clone, Zeroize, Deref, DerefMut)]
 #[zeroize(drop)]
-struct KeccakState([u8; 200]);
+struct KeccakState([u8; KECCAK_STATE_BYTES]);
 
 /// A Strobe context for the 128-bit security level.
 ///
@@ -60,10 +63,10 @@ impl ::core::fmt::Debug for Strobe128 {
 }
 
 impl Strobe128 {
-    #[allow(clippy::indexing_slicing)] // Constant slices of [u8; 200]: [0..6] and [6..18]
+    #[allow(clippy::indexing_slicing)] // Constant slices of [u8; KECCAK_STATE_BYTES]: [0..6] and [6..18]
     pub fn new(protocol_label: &[u8]) -> Self {
         let initial_state = {
-            let mut st = KeccakState([0u8; 200]);
+            let mut st = KeccakState([0u8; KECCAK_STATE_BYTES]);
             st[0..6].copy_from_slice(&[1, STROBE_R + 2, 1, 0, 1, 96]);
             st[6..18].copy_from_slice(b"STROBEv1.0.2");
             keccak_f1600_wrapper(&mut st);
@@ -103,7 +106,7 @@ impl Strobe128 {
     }
 }
 
-// SAFETY for all methods in this block: `self.state` is `[u8; 200]` and `STROBE_R = 166`.
+// SAFETY for all methods in this block: `self.state` is `[u8; KECCAK_STATE_BYTES]` and `STROBE_R = 166`.
 // - `absorb`, `overwrite`, `squeeze`: `self.pos` ranges from 0 to `STROBE_R - 1` (reset to 0
 //   via `run_f` when `pos == STROBE_R`), so `self.state[self.pos as usize]` is always in bounds.
 // - `run_f`: called when `pos <= STROBE_R = 166`, so `pos + 1 <= 167 < 200` and
@@ -180,5 +183,15 @@ impl Strobe128 {
         if force_f && self.pos != 0 {
             self.run_f();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keccak_constants_consistent() {
+        assert_eq!(8 * KECCAK_STATE_WORDS, KECCAK_STATE_BYTES);
     }
 }
