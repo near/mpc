@@ -110,11 +110,7 @@ export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 Update Sam/Frodo.toml fields: 
 
 
-```env
-MPC_MANIFEST_DIGEST=sha256:<manifest_digest>
-```
-
-The `MPC_MANIFEST_DIGEST` should match the `DEFAULT_IMAGE_DIGEST` in the docker-compose file. Get the manifest digest for an image tag with:
+Verify that `DEFAULT_IMAGE_DIGEST` in `deployment/cvm-deployment/launcher_docker_compose.yaml` contains the correct manifest digest for the MPC node image you want to run. Get the manifest digest with:
 
 ```bash
 docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
