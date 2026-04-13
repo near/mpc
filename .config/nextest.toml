@@ -1,0 +1,13 @@
+# Limit sandbox test parallelism to avoid resource contention and flaky timeouts.
+# Each sandbox test spins up its own NEAR sandbox instance, so running too many
+# concurrently causes request timeouts on CI.
+[test-groups.contract-sandbox]
+max-threads = 16
+
+[profile.ci-contract]
+[[profile.ci-contract.overrides]]
+filter = 'package(mpc-contract) and test(/sandbox/)'
+test-group = 'contract-sandbox'
+
+[profile.ci-other]
+default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_upload_quote_for_collateral_with_phala_endpoint) and not (test(/^registry::integration_tests::/) and package(tee-launcher))'

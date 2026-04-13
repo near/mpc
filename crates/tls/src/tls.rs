@@ -67,12 +67,13 @@ fn server_tls_config(
     p2p_cert: &rcgen::Certificate,
     p2p_private_key: &PrivateKeyDer,
 ) -> anyhow::Result<rustls::server::ServerConfig> {
-    let client_verifier = WebPkiClientVerifier::builder(root_cert_store).build()?;
-    Ok(
-        rustls::ServerConfig::builder_with_protocol_versions(&[constants::TLS_PROTOCOL_VERSION])
-            .with_client_cert_verifier(client_verifier) // enforcing mTLS
-            .with_single_cert(vec![p2p_cert.der().clone()], p2p_private_key.clone_key())?,
-    )
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let client_verifier =
+        WebPkiClientVerifier::builder_with_provider(root_cert_store, provider.clone()).build()?;
+    Ok(rustls::ServerConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[constants::TLS_PROTOCOL_VERSION])?
+        .with_client_cert_verifier(client_verifier) // enforcing mTLS
+        .with_single_cert(vec![p2p_cert.der().clone()], p2p_private_key.clone_key())?)
 }
 
 /// Builds a [`rustls::client::ClientConfig`] for peer-to-peer connections.
@@ -100,11 +101,12 @@ fn client_tls_config(
     p2p_cert: &rcgen::Certificate,
     p2p_private_key: &PrivateKeyDer,
 ) -> anyhow::Result<rustls::client::ClientConfig> {
-    Ok(
-        rustls::ClientConfig::builder_with_protocol_versions(&[constants::TLS_PROTOCOL_VERSION])
-            .with_root_certificates(root_cert_store)
-            .with_client_auth_cert(vec![p2p_cert.der().clone()], p2p_private_key.clone_key())?,
-    )
+    Ok(rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_protocol_versions(&[constants::TLS_PROTOCOL_VERSION])?
+    .with_root_certificates(root_cert_store)
+    .with_client_auth_cert(vec![p2p_cert.der().clone()], p2p_private_key.clone_key())?)
 }
 
 /// Builds both server and client TLS configurations for a P2P node.

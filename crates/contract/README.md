@@ -52,9 +52,15 @@ Participants can propose and vote on contract updates (code or configuration cha
 
 ## Usage
 
+### Deposit requirement
+
+Both `sign` and `request_app_private_key` require a **deposit of at least 1 yoctonear**. Any excess deposit is automatically refunded.
+
+The deposit exists to prevent abuse by malicious frontends. On NEAR, a dApp frontend can hold a function-call access key that lets it submit transactions on behalf of a user without prompting for approval each time. By default, however, function-call access keys **cannot attach a deposit**. Requiring a deposit therefore guarantees that the call was authorised by the user's full-access key (or a function-call key with an explicit deposit allowance), preventing a compromised or malicious frontend from silently submitting signature requests without the user's knowledge.
+
 ### Submitting a signature request
 
-Users can submit a signature request to the MPC network via the `sign` endpoint of this contract. Note that a **deposit of 1 yoctonear is required** to prevent abuse by malicious frontends.
+Users can submit a signature request to the MPC network via the `sign` endpoint of this contract. A **deposit of 1 yoctonear is required** (see [Deposit requirement](#deposit-requirement)).
 
 The sign request takes the following arguments:
 
@@ -103,29 +109,46 @@ Note that an Ecdsa payload is subsequently represented as a Scalar on curve Secp
 ### Submitting a confidential key derivation (ckd) request
 
 Users can submit a ckd request to the MPC network via the
-`request_app_private_key` endpoint of this contract. Note that a **deposit of 1
-yoctonear is required** to prevent abuse by malicious frontends.
+`request_app_private_key` endpoint of this contract. A **deposit of 1
+yoctonear is required** (see [Deposit requirement](#deposit-requirement)).
 
 The ckd request takes the following arguments:
 
 - `derivation_path` (String): the derivation path (used to derive different keys from the same account).
-- `"app_public_key": "bls12381g1:<base58 encoded point in curve>"`
+- `app_public_key`: the ephemeral public key for the CKD request. Two formats are supported:
+  - **Privately verifiable** (legacy): a single G1 point, e.g. `"bls12381g1:<base58>"` or `{"AppPublicKey": "bls12381g1:<base58>"}`.
+  - **Publicly verifiable**: a pair of points `(pk1, pk2) = (a·G1, a·G2)`, passed as `{"AppPublicKeyPV": {"pk1": "bls12381g1:<base58>", "pk2": "bls12381g2:<base58>"}}`. This allows anyone to verify the encrypted result on-chain without the app's secret key.
 - `domain_id` (integer): identifies the master key to use for deriving the ckd, and must correspond to bls12381.
-
-Note that `app_public_key` represents a valid point on curve BLS12381 (G1).
 
 Submitting a ckd request costs approximately 7 Tgas, but the contract requires
 that at least 10 Tgas are attached to the transaction.
 
-#### Example
+#### Examples
 
-_ckd request_
+_Privately verifiable ckd request (legacy)_
 
 ```Json
 {
   "request": {
     "derivation_path": "mykey",
     "app_public_key": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
+    "domain_id": 2
+  }
+}
+```
+
+_Publicly verifiable ckd request_
+
+```Json
+{
+  "request": {
+    "derivation_path": "mykey",
+    "app_public_key": {
+      "AppPublicKeyPV": {
+        "pk1": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
+        "pk2": "bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw"
+      }
+    },
     "domain_id": 2
   }
 }
@@ -243,7 +266,7 @@ The `sign` request takes the following arguments:
 The `request_app_private_key` request takes the following arguments:
 
 - `derivation_path` (String): the derivation path.
-- `app_public_key` (String): the ephemeral public key to encrypt the generated confidential key
+- `app_public_key`: the ephemeral public key to encrypt the generated confidential key. Accepts either a plain G1 point string (privately verifiable, legacy) or a tagged enum with `AppPublicKey` (single G1 point) or `AppPublicKeyPV` (a `{pk1, pk2}` pair for public verifiability).
 - `domain_id` (integer): the domain ID that identifies the key and signature scheme to use to generate the confidential key
 
 #### SignRequestArgs (Legacy version for backwards compatibility with V1)
@@ -263,6 +286,10 @@ These functions require the caller to be a participant or candidate.
 | `vote_add_domains(domains: Vec<DomainConfig>)`                                      | Votes to add new domains (new keys) to the MPC network; newly proposed domain IDs must start from next_domain_id and be contiguous.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_new_parameters(prospective_epoch_id: EpochId, proposal: ThresholdParameters)` | Votes to change the set of participants as well as the new threshold for the network. (Prospective epoch ID must be 1 plus current)                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_code_hash(code_hash: CodeHash)`                                               | Votes to add new whitelisted TEE Docker image code hashes.                                                                                                                                                                              | `Result<(), Error>`       | TBD             | TBD                |
+| `vote_add_launcher_hash(launcher_hash: LauncherImageHash)`                          | Votes to add a launcher image hash to the allowed set. Requires threshold votes.                                                                                                                                                        | `Result<(), Error>`       | TBD             | TBD                |
+| `vote_remove_launcher_hash(launcher_hash: LauncherImageHash)`                       | Votes to remove a launcher image hash. Requires ALL participants to vote.                                                                                                                                                               | `Result<(), Error>`       | TBD             | TBD                |
+| `vote_add_os_measurement(measurement: ContractExpectedMeasurements)`                | Votes to add an OS measurement set (MRTD, RTMR0-2, key-provider event digest). Requires threshold votes.                                                                                                                               | `Result<(), Error>`       | TBD             | TBD                |
+| `vote_remove_os_measurement(measurement: ContractExpectedMeasurements)`             | Votes to remove an OS measurement set. Requires ALL participants to vote.                                                                                                                                                               | `Result<(), Error>`       | TBD             | TBD                |
 | `start_keygen_instance(key_event_id: KeyEventId)`                                   | For Initializing state only. Starts a new attempt to generate a key (key_event_id must be the expected one)                                                                                                                             | `Result<(), Error>`       | TBD             | TBD                |
 | `start_reshare_instance(key_event_id: KeyEventId)`                                | For Resharing state only. Starts a new attempt to reshare a key (key_event_id must be the expected one)                                                                                                                                 | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_pk(key_event_id: KeyEventId, public_key: PublicKey)`                          | For Initializing state only. Votes for the public key for the given generation attempt; if enough votes are collected, transitions to the next domain to generate a key for, or if all domains are completed, transitions into Running. | `Result<(), Error>`       | TBD             | TBD                |
@@ -283,6 +310,13 @@ These functions require the caller to be a participant or candidate.
 | `config()`                                                                 | Returns the contract configuration.                                                                                                                                                                                                      | `&ConfigV1`              | TBD             | TBD                |
 | `version()`                                                                | Returns the contract version.                                                                                                                                                                                                            | `String`                 | TBD             | TBD                |
 | `update_config(config: ConfigV1)`                                          | Updates the contract configuration for `V1`.                                                                                                                                                                                             | `()`                     | TBD             | TBD                |
+| `allowed_docker_image_hashes()`                                            | Returns all currently allowed MPC Docker image hashes.                                                                                                                                            | `Vec<NodeImageHash>` | TBD            | TBD                |
+| `allowed_launcher_image_hashes()`                                          | Returns all currently allowed launcher image hashes.                                                                                                                                              | `Vec<LauncherImageHash>` | TBD             | TBD                |
+| `allowed_launcher_compose_hashes()`                                        | Returns all currently allowed launcher compose hashes (derived from launcher + MPC image pairs).                                                                                                  | `Vec<LauncherDockerComposeHash>` | TBD     | TBD                |
+| `launcher_hash_votes()`                                                    | Returns current launcher hash votes, showing each participant's vote.                                                                                                                             | `LauncherHashVotes`      | TBD             | TBD                |
+| `code_hash_votes()`                                                        | Returns current code hash votes, showing each participant's vote.                                                                                                                                 | `CodeHashesVotes`        | TBD             | TBD                |
+| `allowed_os_measurements()`                                                | Returns all currently allowed OS measurement sets.                                                                                                                                                | `Vec<ContractExpectedMeasurements>` | TBD  | TBD                |
+| `os_measurement_votes()`                                                   | Returns current OS measurement votes, showing each participant's vote.                                                                                                                            | `MeasurementVotes`       | TBD             | TBD                |
 | `clean_tee_status()`                                                       | Private endpoint. Cleans up TEE information for non-participants after resharing. Only callable by the contract itself via a promise.                                                              | `Result<(), Error>`      | TBD             | TBD                |
 
 ## Building the contract
@@ -324,7 +358,7 @@ The prospective node operator can retrieve that data from the web endpoint (`:80
 
 The process of doing so is as follows:
 
-1. The prospective participants set up their MPC inside their TEE environment (TODO(#550): documentation to follow).
+1. The prospective participants set up their MPC inside their TEE environment (see [running an MPC node in TDX](../../docs/running-an-mpc-node-in-tdx-external-guide.md)).
 2. The prospective participants fetch their TEE related information from their logs.
 3. The prospective participants add the `near_signer_public_key` from the web endpoint (`:8080/get_public_data`) as an access key to their node operator account, eligible for calling the MPC contract (`v1.signer` on mainnet or `v1.signer-prod.testnet` on testnet). Participants should provide sufficient funding to this key.
 4. The prospective participants add the `near_responder_public_keys` from the web endpoint to a different account and provide sufficient funding to it.

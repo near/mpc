@@ -1,15 +1,15 @@
-use crate::config::{
-    AuthConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
-};
 use crate::p2p::testing::PortSeed;
 use crate::tests::{IntegrationTestSetup, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
+use mpc_node_config::{
+    AuthConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
+};
 use near_time::Clock;
 use std::time::Duration;
 
 #[tokio::test]
 #[test_log::test]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() {
     // Given
     const THRESHOLD: usize = 2;
@@ -26,7 +26,7 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         DEFAULT_BLOCK_TIME,
     );
 
-    let providers = bounded_collections::NonEmptyBTreeMap::new(
+    let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
         "public".to_string(),
         SolanaProviderConfig {
             rpc_url: "https://rpc.public.example.com".to_string(),

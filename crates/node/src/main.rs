@@ -2,6 +2,14 @@ use clap::Parser;
 use mpc_node::cli;
 
 fn main() -> anyhow::Result<()> {
+    // Install the default rustls crypto provider before any TLS usage.
+    // Required because rustls is configured with default-features=false,
+    // and indirect consumers like hyper-rustls (via reqwest) call
+    // ClientConfig::builder() without an explicit provider.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("Failed to install default rustls CryptoProvider"))?;
+
     // Handle version flags before parsing CLI
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 && (args[1] == "--version" || args[1] == "-V") {
@@ -12,6 +20,5 @@ fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
 
     mpc_node::metrics::init_build_info_metric();
-    mpc_node::tracing::init_logging(cli.log_format);
     futures::executor::block_on(cli.run())
 }

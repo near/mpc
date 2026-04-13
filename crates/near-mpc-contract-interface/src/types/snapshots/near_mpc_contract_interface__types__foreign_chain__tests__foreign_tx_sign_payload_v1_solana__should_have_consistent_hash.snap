@@ -1,0 +1,5 @@
+---
+source: crates/near-mpc-contract-interface/src/types/foreign_chain.rs
+expression: "hex::encode(hash.0)"
+---
+"55e8dd3d4428b89cba75072c249481db5e0e037b6fbd0ee99d67159042fee2aa"

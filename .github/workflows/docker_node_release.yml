@@ -1,7 +1,7 @@
 name: Release Node Docker Image
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: retag-node-${{ inputs.repository }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -20,6 +20,22 @@ on:
         required: false
         type: string
         default: mpc-node-gcp
+  workflow_call:
+    inputs:
+      source-tag:
+        required: true
+        type: string
+      release-tag:
+        required: true
+        type: string
+      repository:
+        required: true
+        type: string
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
 
 jobs:
   retag-node-image:
@@ -42,19 +58,19 @@ jobs:
 
       - name: Verify source image exists
         env:
-          SOURCE_TAG: ${{ github.event.inputs.source-tag }}
-          REPOSITORY: ${{ github.event.inputs.repository }}
+          SOURCE_TAG: ${{ inputs.source-tag }}
+          REPOSITORY: ${{ inputs.repository }}
         run: |
           if ! skopeo inspect docker://nearone/$REPOSITORY:$SOURCE_TAG > /dev/null 2>&1; then
-            echo "❌ Source image nearone/$REPOSITORY:$SOURCE_TAG does not exist"
+            echo "Source image nearone/$REPOSITORY:$SOURCE_TAG does not exist"
             exit 1
           fi
 
       - name: Retag image
         env:
-          SOURCE_TAG: ${{ github.event.inputs.source-tag }}
-          REPOSITORY: ${{ github.event.inputs.repository }}
-          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
+          SOURCE_TAG: ${{ inputs.source-tag }}
+          REPOSITORY: ${{ inputs.repository }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
         run: |
           skopeo copy \
             docker://nearone/$REPOSITORY:$SOURCE_TAG \

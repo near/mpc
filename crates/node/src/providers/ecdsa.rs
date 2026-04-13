@@ -10,7 +10,7 @@ pub mod triple;
 
 pub use triple::TripleStorage;
 
-use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
+use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -18,6 +18,7 @@ use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
 use crate::providers::SignatureProvider;
 use crate::storage::SignRequestStorage;
 use crate::tracking;
+use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -28,6 +29,7 @@ use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::ReconstructionLowerBound;
 
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
@@ -157,14 +159,14 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: usize,
+        threshold: ReconstructionLowerBound,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: usize,
+        new_threshold: ReconstructionLowerBound,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -230,6 +232,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
+
         let generate_triples = tracking::spawn(
             "generate triples",
             Self::run_background_triple_generation(
@@ -237,6 +242,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                 self.mpc_config.clone(),
                 self.config.triple.clone().into(),
                 self.triple_store.clone(),
+                threshold,
             ),
         );
 
@@ -248,7 +254,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     &format!("generate presignatures for domain {}", domain_id.0),
                     Self::run_background_presignature_generation(
                         self.client.clone(),
-                        self.mpc_config.participants.threshold as usize,
+                        threshold,
                         self.config.presignature.clone().into(),
                         self.triple_store.clone(),
                         *domain_id,

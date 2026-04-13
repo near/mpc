@@ -1,9 +1,9 @@
 pub const fn current_mainnet() -> &'static [u8] {
-    version_3_4_1()
+    version_3_8_1()
 }
 
 pub const fn current_testnet() -> &'static [u8] {
-    version_3_4_1()
+    version_3_8_1()
 }
 
 pub const fn version_2_2_0() -> &'static [u8; 566653] {
@@ -24,6 +24,22 @@ pub const fn version_3_3_2() -> &'static [u8; 1223846] {
 
 pub const fn version_3_4_1() -> &'static [u8; 1342917] {
     include_bytes!("../archive/signer-3_4_1.wasm")
+}
+
+pub const fn version_3_5_1() -> &'static [u8; 1396979] {
+    include_bytes!("../archive/signer-3_5_1.wasm")
+}
+
+pub const fn version_3_6_0() -> &'static [u8; 1364062] {
+    include_bytes!("../archive/signer-3_6_0.wasm")
+}
+
+pub const fn version_3_7_0() -> &'static [u8; 1402916] {
+    include_bytes!("../archive/signer-3_7_0.wasm")
+}
+
+pub const fn version_3_8_1() -> &'static [u8; 1515608] {
+    include_bytes!("../archive/signer-3_8_1.wasm")
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ mod key_generation;
 mod key_resharing;
 mod sign;
 
-use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
+use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::metrics::tokio_task_metrics::EDDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -13,11 +13,14 @@ use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
+use mpc_node_config::ConfigFile;
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use std::collections::HashMap;
 use std::sync::Arc;
 use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
+use threshold_signatures::ReconstructionLowerBound;
 
 #[derive(Clone)]
 pub struct EddsaSignatureProvider {
@@ -77,14 +80,14 @@ impl SignatureProvider for EddsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: usize,
+        threshold: ReconstructionLowerBound,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: usize,
+        new_threshold: ReconstructionLowerBound,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -137,70 +140,58 @@ impl PublicKeyConversion for VerifyingKey {
         let data: [u8; 32] = data
             .try_into()
             .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
-
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())
-            .context("Infallible.")
+        Ok(near_sdk::PublicKey::from(Ed25519PublicKey::from(data)))
     }
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
-        let key_bytes = public_key.as_bytes();
-
-        // Skip first byte as it is reserved as an identifier for the curve type.
-        let key_data: [u8; 32] = key_bytes[1..]
-            .try_into()
-            .context("Invariant broken, public key must 32 bytes.")?;
-
-        VerifyingKey::deserialize(&key_data)
-            .context("Failed to convert SDK public key to ed25519_dalek::VerifyingKey")
+        let ed25519_pk = Ed25519PublicKey::try_from(public_key)
+            .map_err(|_| anyhow::anyhow!("Not an ed25519 public key"))?;
+        VerifyingKey::deserialize(ed25519_pk.as_ref())
+            .context("Failed to convert SDK public key to frost_ed25519::VerifyingKey")
     }
 }
+
 impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
     #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
-        let data: [u8; 32] = self.to_bytes();
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())
-            .context("Infallible.")
+        Ok(near_sdk::PublicKey::from(Ed25519PublicKey::from(self)))
     }
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
-        let key_bytes = public_key.as_bytes();
-
-        // Skip first byte as it is reserved as an identifier for the curve type.
-        let key_data: [u8; 32] = key_bytes[1..]
-            .try_into()
-            .context("Invariant broken, public key must 32 bytes.")?;
-
-        ed25519_dalek::VerifyingKey::from_bytes(&key_data)
-            .context("Failed to convert SDK public key to ed25519_dalek::VerifyingKey")
+        let ed25519_pk = Ed25519PublicKey::try_from(public_key)
+            .map_err(|_| anyhow::anyhow!("Not an ed25519 public key"))?;
+        ed25519_dalek::VerifyingKey::try_from(&ed25519_pk)
+            .map_err(|_| anyhow::anyhow!("Failed to convert to ed25519_dalek::VerifyingKey"))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng as _;
-    use threshold_signatures::frost_ed25519::VerifyingKey;
+    use std::str::FromStr;
 
-    use crate::{
-        providers::PublicKeyConversion,
-        trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
-    };
+    use rand::SeedableRng as _;
+    use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
+    use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
+
+    use crate::providers::PublicKeyConversion;
     #[test]
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        use threshold_signatures::test_utils::TestGenerators;
-        let x = TestGenerators::new(4, 3.into())
-            .make_eddsa_keygens(&mut rng)
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        x.public_key.into_contract_interface_type();
+        let x = run_keygen::<Ed25519Sha512, _>(
+            &generate_participants_with_random_ids(4, &mut rng),
+            3,
+            &mut rng,
+        )
+        .into_iter()
+        .next()
+        .unwrap()
+        .1;
+        let _ = x.public_key.to_near_sdk_public_key().unwrap();
         Ok(())
     }
 
     #[test]
     fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
-        use std::str::FromStr;
         let near_sdk =
             near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
         let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;

@@ -58,7 +58,7 @@ impl Participants {
         }
     }
 
-    #[allow(clippy::len_without_is_empty)]
+    #[expect(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.participants.len()
     }
@@ -108,22 +108,32 @@ impl Participants {
             accounts.insert(acc_id.clone());
             ids.insert(pid.clone());
             if self.next_id.get() <= pid.get() {
-                return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
+                return Err(InvalidCandidateSet::ParticipantIdNotLessThanNextId {
+                    id: pid.get(),
+                    next_id: self.next_id.get(),
+                }
+                .into());
             }
         }
         if ids.len() != self.len() {
-            return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
+            return Err(InvalidCandidateSet::DuplicateParticipantIds.into());
         }
         if accounts.len() != self.len() {
-            return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
+            return Err(InvalidCandidateSet::DuplicateAccountIds.into());
         }
         Ok(())
     }
 
-    pub fn is_participant(&self, account_id: &AccountId) -> bool {
+    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
         self.participants
             .iter()
             .any(|(a_id, _, _)| a_id == account_id)
+    }
+
+    pub fn is_participant_given_participant_id(&self, participant_id: &ParticipantId) -> bool {
+        self.participants
+            .iter()
+            .any(|(_, p_id, _)| p_id == participant_id)
     }
 
     pub fn init(
@@ -154,7 +164,7 @@ impl Participants {
                 return Ok(());
             }
         }
-        Err(crate::errors::InvalidState::NotParticipant.into())
+        Err(crate::errors::InvalidState::NotParticipant { account_id }.into())
     }
 }
 
@@ -165,7 +175,12 @@ impl Participants {
             .iter()
             .find(|(a_id, _, _)| a_id == account_id)
             .map(|(_, p_id, _)| p_id.clone())
-            .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
+            .ok_or_else(|| {
+                crate::errors::InvalidState::NotParticipant {
+                    account_id: account_id.clone(),
+                }
+                .into()
+            })
     }
 
     pub fn account_id(&self, id: &ParticipantId) -> Result<AccountId, Error> {
@@ -208,7 +223,7 @@ impl Participants {
 
     /// Returns the set of [`NodeId`]s corresponding to the participants.
     /// Note that the `account_public_key` field in [`NodeId`] is `None`.
-    /// This is because [`NodeId`] is used in contexts where `account_public_key` is not needed (only TLS key is needed).  
+    /// This is because [`NodeId`] is used in contexts where `account_public_key` is not needed (only TLS key is needed).
     pub fn get_node_ids(&self) -> BTreeSet<NodeId> {
         self.participants()
             .iter()
@@ -223,9 +238,12 @@ impl Participants {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::{
-        participants::{ParticipantId, Participants},
-        test_utils::gen_accounts_and_info,
+    use crate::{
+        errors::{Error, InvalidCandidateSet},
+        primitives::{
+            participants::{ParticipantId, Participants},
+            test_utils::{gen_accounts_and_info, gen_participant},
+        },
     };
     use rand::Rng;
 
@@ -247,7 +265,7 @@ pub mod tests {
                 participants.id(account_id).unwrap(),
                 ParticipantId(idx as u32)
             );
-            assert!(participants.is_participant(account_id));
+            assert!(participants.is_participant_given_account_id(account_id));
         }
         assert_eq!(participants.len(), n);
         for i in 0..n {
@@ -256,5 +274,61 @@ pub mod tests {
         participants
             .validate()
             .expect("Participants should validate after inserts");
+    }
+
+    #[test]
+    fn test_validate_duplicate_participant_ids() {
+        let (account1, info1) = gen_participant(0);
+        let (account2, info2) = gen_participant(1);
+        let participants = Participants::init(
+            ParticipantId(2),
+            vec![
+                (account1, ParticipantId(0), info1),
+                (account2, ParticipantId(0), info2), // same ID
+            ],
+        );
+        assert_eq!(
+            participants.validate().unwrap_err(),
+            Error::from(InvalidCandidateSet::DuplicateParticipantIds)
+        );
+    }
+
+    #[test]
+    fn test_validate_duplicate_account_ids() {
+        let (account, info1) = gen_participant(0);
+        let (_, info2) = gen_participant(1);
+        let participants = Participants::init(
+            ParticipantId(2),
+            vec![
+                (account.clone(), ParticipantId(0), info1),
+                (account, ParticipantId(1), info2), // same account
+            ],
+        );
+        assert_eq!(
+            participants.validate().unwrap_err(),
+            Error::from(InvalidCandidateSet::DuplicateAccountIds)
+        );
+    }
+
+    #[test]
+    fn test_validate_participant_id_not_less_than_next_id() {
+        let (account, info) = gen_participant(0);
+        let participants = Participants::init(
+            ParticipantId(0), // next_id = 0, but participant has id = 0
+            vec![(account, ParticipantId(0), info)],
+        );
+        assert_eq!(
+            participants.validate().unwrap_err(),
+            Error::from(InvalidCandidateSet::ParticipantIdNotLessThanNextId { id: 0, next_id: 0 })
+        );
+
+        // Also test with id > next_id
+        let (account2, info2) = gen_participant(1);
+        let participants =
+            Participants::init(ParticipantId(3), vec![(account2, ParticipantId(5), info2)]);
+        assert_eq!(
+            participants.validate().unwrap_err(),
+            Error::from(InvalidCandidateSet::ParticipantIdNotLessThanNextId { id: 5, next_id: 3 })
+        );
     }
 }

@@ -70,6 +70,7 @@ impl ResharingContractState {
                     self.previous_running_state.domains.clone(),
                     self.previous_running_state.keyset.clone(),
                     self.previous_running_state.parameters.clone(),
+                    self.previous_running_state.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(
@@ -98,7 +99,7 @@ impl ResharingContractState {
             .start(key_event_id, key_event_timeout_blocks)
     }
 
-    /// Casts a successfully-reshared vote for for the attempt identified by `key_event_id`.
+    /// Casts a successfully-reshared vote for the attempt identified by `key_event_id`.
     /// Upon success (a return of Ok(...)), the effect of this method is one of the following:
     ///  - A vote has been collected but we don't have enough votes yet.
     ///  - Everyone has now voted; the state transitions into resharing the key for the next domain.
@@ -141,6 +142,7 @@ impl ResharingContractState {
                     self.previous_running_state.domains.clone(),
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
                     self.resharing_key.proposed_parameters().clone(),
+                    self.previous_running_state.add_domains_votes.clone(),
                 )));
             }
         }
@@ -180,17 +182,18 @@ impl ResharingContractState {
     }
 
     pub fn is_participant_or_prospective_participant(&self, account_id: &AccountId) -> bool {
-        self.previous_running_state.is_participant(account_id)
+        self.previous_running_state
+            .is_participant_given_account_id(account_id)
             || self
                 .resharing_key
                 .proposed_parameters()
                 .participants()
-                .is_participant(account_id)
+                .is_participant_given_account_id(account_id)
     }
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::test_utils::NUM_PROTOCOLS;
+    use crate::primitives::test_utils::NUM_CURVES;
     use crate::state::{key_event::tests::find_leader, running::RunningContractState};
     use crate::{
         primitives::{
@@ -343,15 +346,15 @@ pub mod tests {
     #[case(1)]
     #[case(2)]
     #[case(3)]
-    #[case(NUM_PROTOCOLS)]
-    #[case(2*NUM_PROTOCOLS)]
+    #[case(NUM_CURVES)]
+    #[case(2*NUM_CURVES)]
     fn test_resharing_contract_state(#[case] num_domains: usize) {
         test_resharing_contract_state_for(num_domains);
     }
 
     #[test]
     fn test_resharing_reproposal() {
-        let (mut env, mut state) = gen_resharing_state(NUM_PROTOCOLS);
+        let (mut env, mut state) = gen_resharing_state(NUM_CURVES);
 
         // Vote for first domain's key.
         let leader = find_leader(&state.resharing_key);

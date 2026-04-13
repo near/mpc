@@ -75,6 +75,19 @@ impl UniqueId {
         }
     }
 
+    /// Validates that this unique ID belongs to the given participant.
+    /// Returns an error if the embedded participant ID does not match.
+    pub fn validate_owned_by(&self, expected: ParticipantId) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.participant_id() == expected,
+            "UniqueId {:?} belongs to participant {}, expected {}",
+            self,
+            self.participant_id(),
+            expected
+        );
+        Ok(())
+    }
+
     /// Add the given delta to the counter, returning a new unique ID.
     /// This is useful for generating multiple unique IDs in a row, for batched
     /// generation of multiple assets at once.
@@ -185,12 +198,33 @@ pub struct MpcMessage {
     pub kind: MpcMessageKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum MpcMessageKind {
     Start(MpcStartMessage),
     Computation(Vec<Vec<u8>>),
     Abort(String),
     Success,
+}
+
+/// Redacts the raw bytes in Computation messages.
+/// These bytes contain serialized protocol round data (commitments, encrypted shares, proofs)
+/// which must not be leaked to logs.
+impl Debug for MpcMessageKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MpcMessageKind::Start(msg) => f.debug_tuple("Start").field(msg).finish(),
+            MpcMessageKind::Computation(chunks) => f
+                .debug_tuple("Computation")
+                .field(&format_args!(
+                    "[{} chunks, {} bytes]",
+                    chunks.len(),
+                    chunks.iter().map(|c| c.len()).sum::<usize>()
+                ))
+                .finish(),
+            MpcMessageKind::Abort(err) => f.debug_tuple("Abort").field(err).finish(),
+            MpcMessageKind::Success => write!(f, "Success"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -236,4 +270,149 @@ pub struct Version {
     pub commit: String,
     #[serde(default)]
     pub rustc_version: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_owned_by_accepts_matching_participant() {
+        // given
+        let participant = ParticipantId::from_raw(5);
+        let id = UniqueId::new(participant, 1000, 0);
+        let id_from_batch = id.add_to_counter(42).unwrap();
+
+        // when/then
+        id.validate_owned_by(participant).unwrap();
+        id_from_batch.validate_owned_by(participant).unwrap();
+    }
+
+    #[test]
+    fn test_validate_owned_by_rejects_mismatched_participant() {
+        // given
+        let owner = ParticipantId::from_raw(5);
+        let other = ParticipantId::from_raw(99);
+        let id = UniqueId::new(owner, 1000, 0);
+
+        // when
+        let err = id
+            .validate_owned_by(other)
+            .expect_err("Should reject mismatched participant");
+
+        // then
+        assert!(
+            err.to_string().contains("expected 99"),
+            "Unexpected error message: {}",
+            err
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn mpc_message_kind_debug__should_redact_computation_payload() {
+        // given
+        let secret_data = b"SECRET_SHARE_DATA_THAT_MUST_NOT_LEAK".to_vec();
+        let kind = MpcMessageKind::Computation(vec![secret_data]);
+
+        // when
+        let debug_output = format!("{:?}", kind);
+
+        // then
+        assert!(
+            !debug_output.contains("SECRET_SHARE_DATA"),
+            "Debug output must not contain raw computation bytes, got: {}",
+            debug_output
+        );
+        assert!(
+            debug_output.contains("Computation"),
+            "Debug output should identify the message kind, got: {}",
+            debug_output
+        );
+        assert!(
+            debug_output.contains("1 chunks"),
+            "Debug output should show chunk count, got: {}",
+            debug_output
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn mpc_message_kind_debug__should_show_chunk_count_and_total_bytes() {
+        // given
+        let kind = MpcMessageKind::Computation(vec![vec![0u8; 100], vec![0u8; 200], vec![0u8; 50]]);
+
+        // when
+        let debug_output = format!("{:?}", kind);
+
+        // then
+        assert!(
+            debug_output.contains("3 chunks"),
+            "Debug output should show 3 chunks, got: {}",
+            debug_output
+        );
+        assert!(
+            debug_output.contains("350 bytes"),
+            "Debug output should show 350 total bytes, got: {}",
+            debug_output
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn mpc_message_kind_debug__should_show_non_sensitive_variants_normally() {
+        // given
+        let start = MpcMessageKind::Start(MpcStartMessage {
+            task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
+                start: UniqueId::new(ParticipantId::from_raw(0), 42, 0),
+                count: 1,
+            }),
+            participants: vec![ParticipantId::from_raw(0)],
+        });
+        let abort = MpcMessageKind::Abort("some error".into());
+        let success = MpcMessageKind::Success;
+
+        // when
+        let start_debug = format!("{:?}", start);
+        let abort_debug = format!("{:?}", abort);
+        let success_debug = format!("{:?}", success);
+
+        // then
+        assert!(start_debug.contains("Start"), "got: {}", start_debug);
+        assert!(
+            abort_debug.contains("some error"),
+            "Abort debug should show the error string, got: {}",
+            abort_debug
+        );
+        assert_eq!(success_debug, "Success");
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn mpc_peer_message_debug__should_redact_computation_payload() {
+        // given
+        let secret_data = b"PRIVATE_KEY_SHARE_MATERIAL".to_vec();
+        let message = MpcPeerMessage {
+            from: ParticipantId::from_raw(1),
+            message: MpcMessage {
+                channel_id: ChannelId(UniqueId::new(ParticipantId::from_raw(0), 99, 0)),
+                kind: MpcMessageKind::Computation(vec![secret_data]),
+            },
+        };
+
+        // when
+        let debug_output = format!("{:?}", message);
+
+        // then
+        assert!(
+            !debug_output.contains("PRIVATE_KEY_SHARE"),
+            "MpcPeerMessage debug must not leak computation bytes, got: {}",
+            debug_output
+        );
+        assert!(
+            debug_output.contains("1 chunks"),
+            "Should show chunk metadata, got: {}",
+            debug_output
+        );
+    }
 }

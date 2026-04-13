@@ -11,6 +11,9 @@ on:
   push:
     branches:
       - main
+  # Weekly cron to clear and rebuild Rust cache (https://github.com/Swatinem/rust-cache/issues/181).
+  schedule:
+    - cron: "0 12 * * 6"
 
 jobs:
   docker-tee-build:
@@ -85,12 +88,69 @@ jobs:
         run: |
           ./scripts/build-and-verify-launcher-docker-image.sh
 
-  mpc-unittests:
-    name: "Cargo test"
-    runs-on: warp-ubuntu-2404-x64-16x
+  docker-rust-launcher-build-and-verify:
+    name: "Build Rust Launcher Docker image and verify"
+    runs-on: warp-ubuntu-2404-x64-8x
     timeout-minutes: 60
     permissions:
       contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo liblzma-dev podman
+
+      - name: Install repro-env
+        run: |
+          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
+          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
+          sudo install -m755 repro-env -t /usr/bin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+          lookup-only: ${{ github.event_name == 'schedule' }}
+
+      - name: Build Rust launcher docker image and verify its hash
+        shell: bash
+        run: |
+          ./scripts/build-and-verify-rust-launcher-docker-image.sh
+
+      - name: Run Rust launcher non-TEE runtime check
+        shell: bash
+        run: |
+          ./scripts/check-mpc-node-docker-starts.sh --rust-launcher
+
+  mpc-unittests:
+    name: "Cargo test: ${{ matrix.group }}"
+    runs-on: ${{ matrix.runner || 'warp-ubuntu-2404-x64-16x' }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: "node"
+            nextest-args: "-p mpc-node"
+          - group: "contract"
+            nextest-args: "--profile=ci-contract -p mpc-contract"
+            extra-tools: true
+            runner: warp-ubuntu-2404-x64-32x
+          - group: "other"
+            nextest-args: "--profile=ci-other"
+            extra-tools: true
 
     steps:
       - name: Checkout repository
@@ -108,6 +168,8 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+          prefix-key: v0-rust-tests-${{ matrix.group }}
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -115,11 +177,13 @@ jobs:
           tool: nextest@0.9.126
 
       - name: Install cargo-binstall
+        if: matrix.extra-tools
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
           tool: cargo-binstall
 
       - name: Install cargo-near
+        if: matrix.extra-tools
         run: |
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
           cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
@@ -127,6 +191,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install wasm-opt
+        if: matrix.extra-tools
         run: |
           cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
@@ -134,14 +199,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run cargo-nextest
-        run: cargo nextest run --cargo-profile=test-release --locked
+        run: cargo nextest run --cargo-profile=test-release --all-features --locked ${{ matrix.nextest-args }}
 
-  mpc-pytests:
-    name: "MPC Node: pytests"
+  mpc-pytest-build:
+    name: "MPC pytests: build"
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      MPC_PYTEST_BINARIES_CACHE_KEY: mpc-pytest-binaries-${{ github.run_id }}
 
     steps:
       - name: Checkout repository
@@ -157,11 +224,64 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y liblzma-dev
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-binstall
+
+      - name: Install wasm-opt
+        run: |
+          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
+          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-near (for reproducible build on main)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build mpc-node
+        run: |
+          cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
+
+      # We run this build step on main as well to cache the contract build.
+      # The non reproducible build will not be used on main since it will be overwritten by the reproducible
+      # step below.
+      - name: Build mpc-contract
+        run: |
+          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
+          wasm-opt -Oz \
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
+            -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+
+      - name: Build mpc-contract reproducibly
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cargo near build reproducible-wasm \
+            --manifest-path crates/contract/Cargo.toml \
+            --out-dir target/wasm32-unknown-unknown/release-contract
+
+      - name: Build test-parallel-contract
+        run: |
+          cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
+          wasm-opt -Oz \
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm \
+            -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+
+      - name: Build backup-cli
+        run: |
+          cargo build -p backup-cli --release --locked
 
       - name: Download near core binary from S3
         id: download-neard
@@ -172,15 +292,24 @@ jobs:
           os_and_arch=${os}-${arch}
           cd libs/nearcore
 
-          branch_name=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' | head -n 1 || echo "no-branch")
+          branches=$(git branch -r --contains HEAD | grep -o 'origin/[^ ]*' | sed 's|origin/||' || true)
           commit_hash=$(git rev-parse HEAD || echo "no-commit")
 
-          url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
-
           mkdir -p target/release
-          status_code=$(curl -v -o target/release/neard -w "%{http_code}" "${url}")
-          if [ "$status_code" -ne 200 ]; then
-            echo "curl failed with URL: ${url}, Status Code: ${status_code}"
+          downloaded=false
+          for branch_name in $branches; do
+            url="https://s3.us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/${os_and_arch}/${branch_name}/${commit_hash}/neard"
+            status_code=$(curl -s -f -o target/release/neard -w "%{http_code}" "${url}" || true)
+            if [ "$status_code" -eq 200 ]; then
+              echo "Downloaded neard from branch: ${branch_name}"
+              downloaded=true
+              break
+            fi
+            echo "Branch ${branch_name} failed (status ${status_code}), trying next..."
+          done
+
+          if [ "$downloaded" != "true" ]; then
+            echo "All branches failed for commit ${commit_hash}"
             exit 1
           fi
           chmod +x target/release/neard
@@ -191,6 +320,35 @@ jobs:
           cd libs/nearcore
           cargo build -p neard --release
 
+      - name: Save pytest binaries cache
+        uses: WarpBuilds/cache/save@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        with:
+          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
+          path: |
+            target/release/mpc-node
+            target/release/backup-cli
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+            libs/nearcore/target/release/neard
+
+  mpc-contract-reproducible-build:
+    name: "MPC contract reproducible build"
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+          
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev libudev-dev
+
       - name: Install cargo-binstall
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
@@ -198,24 +356,94 @@ jobs:
 
       - name: Install cargo-near
         run: |
-          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
           cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install wasm-opt
+      - name: Build mpc-contract (reproducible)
         run: |
-          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          cargo near build reproducible-wasm \
+            --manifest-path crates/contract/Cargo.toml
+
+  mpc-pytests:
+    name: "MPC pytests: ${{ matrix.group }}"
+    needs: mpc-pytest-build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      MPC_PYTEST_BINARIES_CACHE_KEY: mpc-pytest-binaries-${{ github.run_id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: "shared-cluster"
+            tests: "tests/shared_cluster_tests/"
+            runner: warp-ubuntu-2404-x64-2x
+          - group: "robust-ecdsa"
+            tests: "tests/robust_ecdsa/"
+            runner: warp-ubuntu-2404-x64-16x
+          - group: "resharing-cancel"
+            tests: "tests/test_cancellation_of_key_resharing.py"
+            runner: warp-ubuntu-2404-x64-2x
+          - group: "resharing-request"
+            tests: "tests/test_request_during_resharing.py"
+            runner: warp-ubuntu-2404-x64-2x
+          - group: "foreign-tx"
+            tests: "tests/test_foreign_transaction_validation.py tests/test_foreign_chain_policy_auto_voting.py"
+            runner: warp-ubuntu-2404-x64-2x
+          - group: "key-event-single-domain"
+            tests: "tests/test_key_event.py::test_single_domain"
+            runner: warp-ubuntu-2404-x64-8x
+          - group: "key-event-multi-domain"
+            tests: "tests/test_key_event.py::test_multi_domain"
+            runner: warp-ubuntu-2404-x64-2x
+          - group: "migration"
+            tests: "tests/test_migration_service.py"
+            runner: warp-ubuntu-2404-x64-2x
+          - group: "participant-info"
+            tests: "tests/test_submit_participant_info.py"
+            runner: warp-ubuntu-2404-x64-2x
+          - group: "lost-assets"
+            tests: "tests/test_lost_assets.py"
+            runner: warp-ubuntu-2404-x64-2x
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+
+      - name: Restore pytest binaries cache
+        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        with:
+          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
+          fail-on-cache-miss: true
+          path: |
+            target/release/mpc-node
+            target/release/backup-cli
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+            libs/nearcore/target/release/neard
 
       - name: Setup python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.11"
 
+      - name: Cache python virtualenv
+        id: venv-cache
+        uses: WarpBuilds/cache@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        with:
+          path: pytest/venv
+          key: pytest-venv-${{ hashFiles('pytest/requirements.txt', 'libs/nearcore/pytest/requirements.txt') }}
+
       - name: Setup virtualenv
+        if: steps.venv-cache.outputs.cache-hit != 'true'
         run: |
           python3 -m venv pytest/venv
           source pytest/venv/bin/activate
@@ -227,9 +455,31 @@ jobs:
       - name: Run pytest
         run: |
           source pytest/venv/bin/activate
-          cd pytest 
-          # `neard` is already downloaded in the step, `download-neard`, above
-          pytest -m "not ci_excluded" -s -x --skip-nearcore-build
+          cd pytest
+          pytest -m "not ci_excluded" -s -x --skip-nearcore-build --skip-mpc-node-build --skip-mpc-contract-build --skip-parallel-contract-build --skip-backup-cli-build ${{ matrix.tests }}
+
+  mpc-pytests-cache-cleanup:
+    name: "MPC pytests: cache cleanup"
+    needs: [mpc-pytests, mpc-e2e-tests]
+    runs-on: warp-ubuntu-2404-x64-2x
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      MPC_PYTEST_BINARIES_CACHE_KEY: mpc-pytest-binaries-${{ github.run_id }}
+
+    steps:
+      - name: Delete pytest binaries cache
+        uses: WarpBuilds/cache@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        with:
+          delete-cache: true
+          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
+          path: |
+            target/release/mpc-node
+            target/release/backup-cli
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+            libs/nearcore/target/release/neard
 
   tee-launcher-tests:
     name: "TEE Launcher: pytests"
@@ -278,6 +528,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
+          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Install ruff
         uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
@@ -314,8 +565,68 @@ jobs:
         with:
           tool: cargo-make@0.37.24
 
+      - name: Setup python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
       - name: Run cargo-make fast checks
         run: cargo make check-all-fast
+
+  mpc-e2e-tests:
+    name: "MPC E2E tests"
+    needs: mpc-pytest-build
+    runs-on: warp-ubuntu-2404-x64-16x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      MPC_PYTEST_BINARIES_CACHE_KEY: mpc-pytest-binaries-${{ github.run_id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+          prefix-key: v0-rust-e2e
+          lookup-only: ${{ github.event_name == 'schedule' }}
+
+      - name: Restore pytest binaries cache
+        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        with:
+          key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
+          fail-on-cache-miss: true
+          path: |
+            target/release/mpc-node
+            target/release/backup-cli
+            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+            libs/nearcore/target/release/neard
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: nextest@0.9.126
+
+      - name: Run E2E tests
+        run: |
+          RUST_LOG=info,e2e_tests=debug cargo nextest run --cargo-profile=test-release -p e2e-tests --all-features --locked 2>&1
+        env:
+          MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 
   ci-extra:
     name: "Extra CI checks"
@@ -340,3 +651,22 @@ jobs:
 
       - name: Run cargo-make extra checks
         run: cargo make check-extra
+
+  check-todo-closed-issues:
+    name: "Check TODOs for issues closed by this PR"
+    if: github.event_name == 'pull_request'
+    runs-on: warp-ubuntu-2404-x64-2x
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check TODOs for issues closed by this PR
+        run: bash .github/scripts/check-todo-closed-issues.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}

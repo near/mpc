@@ -80,6 +80,10 @@ pub enum VerificationError {
     },
     #[error("the mock attestation is invalid per definition")]
     InvalidMockAttestation,
+    #[error("the allowed measurements list is empty")]
+    EmptyMeasurementsList,
+    #[error("the attestation's measurements are not in the allowed set")]
+    MeasurementsNotAllowed,
     #[error("custom error: `{0}`")]
     Custom(String),
 }
@@ -117,12 +121,14 @@ impl DstackAttestation {
     /// - accepted_measurements: set of accepted RTMRs and key-provider event digest.
     ///   If any element in the set is valid, the function accepts the attestation as
     ///   valid.
+    ///
+    /// On success, returns the matched measurements.
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<(), VerificationError> {
+    ) -> Result<ExpectedMeasurements, VerificationError> {
         let verification_result =
             dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
                 .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
@@ -166,9 +172,13 @@ impl DstackAttestation {
                     return Err(VerificationError::EventDecoding(hex::encode(*event.digest)));
                 }
             };
-            let expected_digest =
+            let expected_event_digest =
                 Self::event_digest(event.event_type, &event.event, &payload_bytes);
-            compare_hashes("event_digest", event.digest.as_slice(), &expected_digest)?;
+            compare_hashes(
+                "event_digest",
+                event.digest.as_slice(),
+                &expected_event_digest,
+            )?;
 
             hasher.update(event.digest.as_slice());
 
@@ -245,13 +255,13 @@ impl DstackAttestation {
     }
 
     /// Try to verify static RTMRs and key_provider_digest against multiple expected measurement sets.
-    /// Returns `Ok(())` if any set matches; otherwise, returns a WrongHash error.
+    /// On success, returns the matched measurements.
     fn verify_any_measurements(
         &self,
         report_data: &dcap_qvl::quote::TDReport10,
         tcb_info: &TcbInfo,
         accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<(), VerificationError> {
+    ) -> Result<ExpectedMeasurements, VerificationError> {
         for expected in accepted_measurements {
             if self
                 .verify_static_rtmrs(report_data, tcb_info, expected)
@@ -260,7 +270,7 @@ impl DstackAttestation {
                     .verify_key_provider_digest(tcb_info, &expected.key_provider_event_digest)
                     .is_ok()
             {
-                return Ok(()); // found a valid match
+                return Ok(*expected); // found a valid match
             }
         }
 
@@ -456,7 +466,7 @@ impl GetSingleEvent for TcbInfo {
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
 

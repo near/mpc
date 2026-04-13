@@ -2,7 +2,7 @@
 
 ## Overview
 
-Near One is currently in the process of migrating the MPC nodes into **Trusted Execution Environment (TEEs)** (c.f. [TEE doc](./securing_mpc_with_tee_design_doc.md) for an introduction to TEEs and their benefits).
+Near One is currently in the process of migrating the MPC nodes into **Trusted Execution Environment (TEEs)** (c.f. [TEE doc](./securing-mpc-with-tee-design-doc.md) for an introduction to TEEs and their benefits).
 
 Running MPC nodes inside TEEs significantly increases the security of the network, but poses additional operational challenges:
 
@@ -302,7 +302,7 @@ pub struct NodeMigrations {
 }
 ```
 
-Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. (TODO(#947): Define attestation data for backup service)
+Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. See [backup-service-attestation-data.md](backup-service-attestation-data.md) for details.
 
 #### Backup Service Registration
 
@@ -454,7 +454,7 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 **Hard Launch Implementation Tasks:**
 
 *Phase 1: Standalone Application with Mocked Attestations*
-- [ ] Create `BackupServiceDockerImageHash` type in primitives (separate from `MpcDockerImageHash`)
+- [ ] Create `BackupServiceDockerImageHash` type in primitives (separate from `NodeImageHash`)
 - [ ] Implement voting structures for backup service images (`BackupServiceCodeHashesVotes`, `AllowedBackupServiceDockerImageHashes`)
 - [ ] Implement `allowed_backup_service_code_hashes()` and `allowed_backup_service_launcher_compose_hashes()` view methods
 - [ ] Update `register_backup_service()` to accept and verify attestations using `TeeState` verification logic

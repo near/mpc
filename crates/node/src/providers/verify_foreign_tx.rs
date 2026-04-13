@@ -1,24 +1,23 @@
 mod sign;
 
-use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
+use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::types as dtos;
+use mpc_node_config::ConfigFile;
+use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
+use threshold_signatures::ReconstructionLowerBound;
 
 pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
     foreign_chain_policy_reader: ForeignChainPolicyReader,
-    // TODO(#2076): This field might become useful when domain separation is implemented
-    #[allow(dead_code)]
-    mpc_config: Arc<MpcConfig>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -27,14 +26,12 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
     pub fn new(
         config: Arc<ConfigFile>,
         foreign_chain_policy_reader: ForeignChainPolicyReader,
-        mpc_config: Arc<MpcConfig>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> Self {
         Self {
             config,
             foreign_chain_policy_reader,
-            mpc_config,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
         }
@@ -74,7 +71,7 @@ where
     }
 
     async fn run_key_generation_client(
-        _threshold: usize,
+        _threshold: ReconstructionLowerBound,
         _channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         anyhow::bail!(
@@ -83,7 +80,7 @@ where
     }
 
     async fn run_key_resharing_client(
-        _new_threshold: usize,
+        _new_threshold: ReconstructionLowerBound,
         _key_share: Option<SigningShare>,
         _public_key: VerifyingKey,
         _old_participants: &ParticipantsConfig,

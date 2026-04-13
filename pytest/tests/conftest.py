@@ -60,6 +60,24 @@ def pytest_addoption(parser):
         default=False,
         help="Enable nearcore build",
     )
+    parser.addoption(
+        "--skip-mpc-contract-build",
+        action="store_true",
+        default=False,
+        help="Skip mpc-contract compilation (use pre-built artifact)",
+    )
+    parser.addoption(
+        "--skip-parallel-contract-build",
+        action="store_true",
+        default=False,
+        help="Skip test-parallel-contract compilation (use pre-built artifact)",
+    )
+    parser.addoption(
+        "--skip-backup-cli-build",
+        action="store_true",
+        default=False,
+        help="Skip backup-cli compilation (use pre-built artifact)",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -97,7 +115,7 @@ def compile_mpc_node(request):
                 "mpc-node",
                 "--release",
                 "--features",
-                "network-hardship-simulation",
+                "network-hardship-simulation,test-utils",
                 "--locked",
             ],
             check=True,
@@ -138,7 +156,11 @@ def compile_nearcore(request):
 
 
 @pytest.fixture(scope="session")
-def compile_backup_cli():
+def compile_backup_cli(request):
+    skip_backup_cli_build = request.config.getoption("--skip-backup-cli-build")
+    if skip_backup_cli_build:
+        return
+
     print("compiling backup-cli")
 
     subprocess.run(
@@ -204,6 +226,10 @@ def compile_mpc_contract(request):
     This ensures that the pytests will always use the current source code of the mpc-contract.
     """
 
+    skip_mpc_contract_build = request.config.getoption("--skip-mpc-contract-build")
+    if skip_mpc_contract_build:
+        return
+
     git_root_directory = git_root()
     non_reproducible = request.config.getoption("--non-reproducible")
 
@@ -235,6 +261,11 @@ def compile_parallel_contract(request):
     """
     This function compiles the test parallel contract.
     """
+    skip_parallel_contract_build = request.config.getoption(
+        "--skip-parallel-contract-build"
+    )
+    if skip_parallel_contract_build:
+        return
 
     compile_contract_common(
         contracts.PARALLEL_CONTRACT_PACKAGE_NAME,

@@ -1,24 +1,10 @@
-// We disallow using `near_sdk::AccountId` in our own code.
-// However, the `near_bindgen` proc macro expands to code that uses it
-// internally, and Clippy applies the `disallowed_types` lint to that
-// generated code as well. Since the lint cannot be suppressed only for the
-// macro expansion, we allow it in this file to avoid false positives.
-#![allow(clippy::disallowed_types)]
+use near_sdk::{env::log_str, near};
 
-use near_sdk::{
-    borsh::{BorshDeserialize, BorshSerialize},
-    env::log_str,
-    near_bindgen,
-    state::ContractState,
-};
-
-#[derive(BorshDeserialize, BorshSerialize, Debug)]
-#[near_bindgen]
+#[derive(Debug)]
+#[near(contract_state)]
 pub struct Contract {}
 
-impl ContractState for Contract {}
-
-#[near_bindgen]
+#[near]
 impl Contract {
     #[private]
     #[init(ignore_state)]

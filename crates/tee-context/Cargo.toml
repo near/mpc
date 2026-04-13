@@ -1,0 +1,27 @@
+[package]
+name = "tee-context"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+chain-gateway = { workspace = true }
+mpc-primitives = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
+
+near-account-id = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+chain-gateway = { workspace = true, features = ["test-utils"] }
+ed25519-dalek = { workspace = true }
+mpc-primitives = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }
+
+[lints]
+workspace = true

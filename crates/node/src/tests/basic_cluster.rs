@@ -1,11 +1,12 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    request_ckd_and_await_response, request_ckd_pv_and_await_response,
+    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
+use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -31,19 +32,19 @@ async fn test_basic_cluster() {
 
     let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        curve: Curve::Secp256k1,
         purpose: DomainPurpose::Sign,
     };
 
     let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
-        scheme: SignatureScheme::Ed25519,
+        curve: Curve::Edwards25519,
         purpose: DomainPurpose::Sign,
     };
 
     let ckd_domain = DomainConfig {
         id: DomainId(2),
-        scheme: SignatureScheme::Bls12381,
+        curve: Curve::Bls12381,
         purpose: DomainPurpose::CKD,
     };
 
@@ -93,6 +94,15 @@ async fn test_basic_cluster() {
     .is_some());
 
     assert!(request_ckd_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &ckd_domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
+
+    assert!(request_ckd_pv_and_await_response(
         &mut setup.indexer,
         "user0",
         &ckd_domain,

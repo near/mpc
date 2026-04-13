@@ -1,6 +1,6 @@
-/// Generates a dummy [`contract_interface::types::Config`] with different values for each field.
-pub fn dummy_config(value: u64) -> contract_interface::types::Config {
-    contract_interface::types::Config {
+/// Generates a dummy [`near_mpc_contract_interface::types::Config`] with different values for each field.
+pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
+    near_mpc_contract_interface::types::Config {
         key_event_timeout_blocks: value,
         tee_upgrade_deadline_duration_seconds: value + 1,
         contract_upgrade_deposit_tera_gas: value + 2,

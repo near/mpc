@@ -1,15 +1,19 @@
 use crate::crypto_shared;
 use crate::errors::{Error, InvalidParameters};
 use crate::DomainId;
-use bounded_collections::{hex_serde, BoundedVec};
+use near_mpc_bounded_collections::{hex_serde, BoundedVec};
 use crypto_shared::derive_tweak;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{
+    ECDSA_PAYLOAD_SIZE_BYTES, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+};
 use near_sdk::{near, CryptoHash};
 use std::fmt::Debug;
 
-const ECDSA_PAYLOAD_SIZE_BYTES: usize = 32;
-const EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES: usize = 32;
-const EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES: usize = 1232;
+// const ECDSA_PAYLOAD_SIZE_BYTES: usize = 32;
+// const EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES: usize = 32;
+// const EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES: usize = 1232;
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
@@ -129,7 +133,12 @@ impl TryFrom<SignRequestArgs> for SignRequest {
         let payload = match (args.payload_v2, args.deprecated_payload) {
             (Some(payload), None) => payload,
             (None, Some(payload)) => Payload::from_legacy_ecdsa(payload),
-            _ => return Err(InvalidParameters::MalformedPayload.into()),
+            _ => {
+                return Err(InvalidParameters::MalformedPayload {
+                    reason: "expected exactly one of payload_v2 or deprecated_payload".into(),
+                }
+                .into())
+            }
         };
         let domain_id = match (args.domain_id, args.deprecated_key_version) {
             (Some(domain_id), None) => domain_id,

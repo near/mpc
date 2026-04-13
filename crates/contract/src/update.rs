@@ -8,10 +8,10 @@ use crate::{
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
-use contract_interface::method_names;
-use contract_interface::types::UpdateHash;
 use derive_more::Deref;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::UpdateHash;
 use near_sdk::{
     env, near,
     serde::{Deserialize, Serialize},
@@ -67,11 +67,11 @@ impl From<u64> for UpdateId {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub enum Update {
     Contract(Vec<u8>),
-    Config(contract_interface::types::Config),
+    Config(near_mpc_contract_interface::types::Config),
 }
 
 #[derive(
@@ -89,7 +89,7 @@ pub enum Update {
 )]
 pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
-    pub config: Option<contract_interface::types::Config>,
+    pub config: Option<near_mpc_contract_interface::types::Config>,
 }
 
 impl TryFrom<ProposeUpdateArgs> for Update {
@@ -101,12 +101,16 @@ impl TryFrom<ProposeUpdateArgs> for Update {
             (Some(contract), None) => Update::Contract(contract),
             (None, Some(config)) => Update::Config(config),
             (Some(_), Some(_)) => {
-                return Err(ConversionError::DataConversion
-                    .message("Code and config updates are not allowed at the same time"));
+                return Err(ConversionError::DataConversion {
+                    reason: "Code and config updates are not allowed at the same time".into(),
+                }
+                .into());
             }
             _ => {
-                return Err(ConversionError::DataConversion
-                    .message("Expected either code or config update, received none of them"));
+                return Err(ConversionError::DataConversion {
+                    reason: "Expected either code or config update, received none of them".into(),
+                }
+                .into());
             }
         };
         Ok(update)
@@ -124,7 +128,7 @@ impl TryFrom<ProposeUpdateArgs> for Update {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub(crate) struct UpdateEntry {
     pub(super) update: Update,
@@ -242,7 +246,7 @@ impl ProposedUpdates {
         let non_participants: Vec<AccountId> = self
             .vote_by_participant
             .keys()
-            .filter(|voter| !participants.is_participant(voter))
+            .filter(|voter| !participants.is_participant_given_account_id(voter))
             .cloned()
             .collect();
 
@@ -299,7 +303,7 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 mod tests {
     use crate::{
         dto_mapping::IntoInterfaceType,
-        primitives::test_utils::gen_account_id,
+        primitives::test_utils::{gen_account_id, gen_participants},
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
     };
     use near_account_id::AccountId;
@@ -705,8 +709,6 @@ mod tests {
 
     #[test]
     fn test_proposed_updates_remove_non_participant_votes() {
-        use crate::primitives::test_utils::gen_participants;
-
         let mut proposed_updates = ProposedUpdates::default();
         let update = Update::Contract([0; 1000].into());
         let bytes_used = bytes_used(&update);

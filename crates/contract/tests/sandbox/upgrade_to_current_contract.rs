@@ -11,19 +11,19 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
-use contract_interface::method_names;
-use contract_interface::types::{self as dtos, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::CKDResponse,
-    crypto_shared::SignatureResponse,
     primitives::{
-        domain::{DomainConfig, DomainPurpose, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainPurpose},
         key_state::{EpochId, Keyset},
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
 use rstest::rstest;
@@ -106,50 +106,6 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
     Ok(())
 }
 
-/// Fill in `None` purposes on DTO `DomainConfig`s with the value inferred from scheme.
-/// Needed when comparing state read from an old contract (no `purpose` field) against
-/// state read from the new contract (which fills `purpose` during migration).
-fn fill_missing_purposes(state: &mut ProtocolContractState) {
-    fn infer_purpose(scheme: dtos::SignatureScheme) -> dtos::DomainPurpose {
-        match scheme {
-            dtos::SignatureScheme::Bls12381 => dtos::DomainPurpose::CKD,
-            _ => dtos::DomainPurpose::Sign,
-        }
-    }
-    fn fill_domain(d: &mut dtos::DomainConfig) {
-        if d.purpose.is_none() {
-            d.purpose = Some(infer_purpose(d.scheme));
-        }
-    }
-    fn fill_registry(r: &mut dtos::DomainRegistry) {
-        r.domains.iter_mut().for_each(fill_domain);
-    }
-    fn fill_votes(v: &mut dtos::AddDomainsVotes) {
-        for domains in v.proposal_by_account.values_mut() {
-            domains.iter_mut().for_each(fill_domain);
-        }
-    }
-    fn fill_key_event(e: &mut dtos::KeyEvent) {
-        fill_domain(&mut e.domain);
-    }
-    match state {
-        ProtocolContractState::NotInitialized => {}
-        ProtocolContractState::Running(r) => {
-            fill_registry(&mut r.domains);
-            fill_votes(&mut r.add_domains_votes);
-        }
-        ProtocolContractState::Initializing(i) => {
-            fill_registry(&mut i.domains);
-            fill_key_event(&mut i.generating_key);
-        }
-        ProtocolContractState::Resharing(r) => {
-            fill_registry(&mut r.previous_running_state.domains);
-            fill_votes(&mut r.previous_running_state.add_domains_votes);
-            fill_key_event(&mut r.resharing_key);
-        }
-    }
-}
-
 /// Checks the contract in the following order:
 /// 1. Are there any state-breaking changes?
 /// 2. If so, does `migrate()` still work correctly?
@@ -200,8 +156,6 @@ async fn back_compatibility_without_state(
 async fn propose_upgrade_from_production_to_current_binary(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    use rand_core::OsRng;
-
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
@@ -218,13 +172,12 @@ async fn propose_upgrade_from_production_to_current_binary(
     )
     .await;
 
-    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
-    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
@@ -266,7 +219,7 @@ async fn upgrade_preserves_state_and_requests(
     )
     .await;
 
-    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -276,7 +229,6 @@ async fn upgrade_preserves_state_and_requests(
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
-    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
@@ -287,7 +239,7 @@ async fn upgrade_preserves_state_and_requests(
             .unwrap();
 
         let execution = pending.transaction.await.unwrap().into_result().unwrap();
-        let returned: SignatureResponse = execution.json().unwrap();
+        let returned: SignatureRequestResponse = execution.json().unwrap();
 
         assert_eq!(
             returned, pending.response.response,
@@ -377,7 +329,7 @@ async fn upgrade_allows_new_request_types(
     )
     .await;
 
-    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -387,7 +339,6 @@ async fn upgrade_allows_new_request_types(
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
-    fill_missing_purposes(&mut state_pre_upgrade);
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
@@ -399,12 +350,12 @@ async fn upgrade_allows_new_request_types(
     let domains_to_add = [
         DomainConfig {
             id: first_available_domain_id.into(),
-            scheme: SignatureScheme::Bls12381,
+            curve: Curve::Bls12381,
             purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
-            scheme: SignatureScheme::Ed25519,
+            curve: Curve::Edwards25519,
             purpose: DomainPurpose::Sign,
         },
     ];
@@ -434,7 +385,7 @@ async fn upgrade_allows_new_request_types(
             .unwrap();
 
         let execution = pending.transaction.await.unwrap().into_result().unwrap();
-        let returned: SignatureResponse = execution.json().unwrap();
+        let returned: SignatureRequestResponse = execution.json().unwrap();
 
         assert_eq!(
             returned, pending.response.response,

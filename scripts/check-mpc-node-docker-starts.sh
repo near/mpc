@@ -2,16 +2,22 @@
 
 set -euo pipefail
 
-USE_LAUNCHER=false
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+USE_LAUNCHER=false
+USE_RUST_LAUNCHER=false
 for arg in "$@"; do
   case "$arg" in
   --launcher)
     USE_LAUNCHER=true
     ;;
+  --rust-launcher)
+    USE_RUST_LAUNCHER=true
+    ;;
   *)
     echo "Unknown parameter: $arg"
-    echo "Usage: $0 [--node] [--launcher] [--push]"
+    echo "Usage: $0 [--launcher] [--rust-launcher]"
     exit 1
     ;;
   esac
@@ -19,15 +25,34 @@ done
 
 : "${NODE_IMAGE_NAME:=mpc-node}"
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher-nontee}"
+: "${RUST_LAUNCHER_IMAGE_NAME:=mpc-rust-launcher-nontee}"
 
 if $USE_LAUNCHER; then
-  cd tee_launcher
+  cd "$REPO_ROOT/tee_launcher"
   export LAUNCHER_IMAGE_NAME
   docker compose -f launcher_docker_compose_nontee.yaml up -d
   sleep 10
   launcher_logs=$(docker logs --tail 10 "$LAUNCHER_IMAGE_NAME" 2>&1)
   if ! echo "$launcher_logs" | grep "MPC launched successfully."; then
     echo "MPC launcher image did not start properly"
+    echo "$launcher_logs"
+    exit 1
+  fi
+  CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
+elif $USE_RUST_LAUNCHER; then
+  cd "$REPO_ROOT/deployment/cvm-deployment"
+  # Use the locally built image instead of pulling from Docker Hub.
+  # This ensures the runtime test uses the same image that was just built. See #2704.
+  docker tag mpc-rust-launcher:latest nearone/mpc-launcher:ci-local
+  # Create a temporary compose in the same directory (so relative volume mounts work)
+  sed 's|nearone/mpc-launcher@sha256:[a-f0-9]*|nearone/mpc-launcher:ci-local|' \
+    launcher_docker_compose_nontee.yaml > launcher_docker_compose_nontee_local.yaml
+  export RUST_LAUNCHER_IMAGE_NAME
+  docker compose -f launcher_docker_compose_nontee_local.yaml up -d
+  sleep 10
+  launcher_logs=$(docker logs --tail 10 "$RUST_LAUNCHER_IMAGE_NAME" 2>&1)
+  if ! echo "$launcher_logs" | grep "MPC launched successfully."; then
+    echo "Rust MPC launcher image did not start properly"
     echo "$launcher_logs"
     exit 1
   fi
@@ -62,9 +87,10 @@ fi
 echo "Container started: $CONTAINER_ID"
 
 # Check if container is actually running
-sleep 60
+WAIT_SECS=60
+sleep $WAIT_SECS
 if [ -z "$(docker ps --filter "id=$CONTAINER_ID" --format "{{.ID}}")" ]; then
-  docker logs "$CONTAINER_ID" 2>&1 | head -50
+  docker logs --tail 100 "$CONTAINER_ID" 2>&1
   echo "❌ Container cannot initialize/start properly"
   exit 1
 fi
@@ -75,6 +101,9 @@ docker rm -f "$CONTAINER_ID"
 
 if $USE_LAUNCHER; then
   docker compose -f launcher_docker_compose_nontee.yaml down -v --rmi local
+elif $USE_RUST_LAUNCHER; then
+  docker compose -f launcher_docker_compose_nontee_local.yaml down -v --rmi local
+  rm -f launcher_docker_compose_nontee_local.yaml
 else
   rm /tmp/image-digest.bin
 fi

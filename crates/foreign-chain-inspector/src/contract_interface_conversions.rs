@@ -1,5 +1,5 @@
-use contract_interface::types as dtos;
 use foreign_chain_rpc_interfaces::evm::Log;
+use near_mpc_contract_interface::types as dtos;
 
 use crate::BlockConfirmations;
 use crate::EthereumFinality;
@@ -133,14 +133,11 @@ impl TryFrom<dtos::BitcoinExtractedValue> for BitcoinExtractedValue {
     }
 }
 
-impl TryFrom<AbstractExtractor> for dtos::EvmExtractor {
-    type Error = ConversionError;
-    fn try_from(value: AbstractExtractor) -> Result<Self, Self::Error> {
+impl From<AbstractExtractor> for dtos::EvmExtractor {
+    fn from(value: AbstractExtractor) -> Self {
         match value {
-            AbstractExtractor::BlockHash => Ok(dtos::EvmExtractor::BlockHash),
-            AbstractExtractor::Log { log_index } => Ok(dtos::EvmExtractor::Log {
-                log_index: log_index as u64,
-            }),
+            AbstractExtractor::BlockHash => dtos::EvmExtractor::BlockHash,
+            AbstractExtractor::Log { log_index } => dtos::EvmExtractor::Log { log_index },
         }
     }
 }
@@ -150,13 +147,7 @@ impl TryFrom<dtos::EvmExtractor> for AbstractExtractor {
     fn try_from(value: dtos::EvmExtractor) -> Result<Self, Self::Error> {
         match value {
             dtos::EvmExtractor::BlockHash => Ok(AbstractExtractor::BlockHash),
-            dtos::EvmExtractor::Log { log_index } => Ok(AbstractExtractor::Log {
-                log_index: usize::try_from(log_index).map_err(|_| {
-                    ConversionError::IntegerOverflow {
-                        context: "EvmExtractor::Log log_index exceeds platform usize",
-                    }
-                })?,
-            }),
+            dtos::EvmExtractor::Log { log_index } => Ok(AbstractExtractor::Log { log_index }),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "EvmExtractor",
             }),
@@ -226,10 +217,18 @@ impl TryFrom<dtos::StarknetFinality> for StarknetFinality {
     }
 }
 
-impl From<StarknetExtractor> for dtos::StarknetExtractor {
-    fn from(value: StarknetExtractor) -> Self {
+impl TryFrom<StarknetExtractor> for dtos::StarknetExtractor {
+    type Error = ConversionError;
+    fn try_from(value: StarknetExtractor) -> Result<Self, Self::Error> {
         match value {
-            StarknetExtractor::BlockHash => dtos::StarknetExtractor::BlockHash,
+            StarknetExtractor::BlockHash => Ok(dtos::StarknetExtractor::BlockHash),
+            StarknetExtractor::Log { log_index } => Ok(dtos::StarknetExtractor::Log {
+                log_index: u64::try_from(log_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "StarknetExtractor::Log log_index exceeds u64",
+                    }
+                })?,
+            }),
         }
     }
 }
@@ -239,6 +238,13 @@ impl TryFrom<dtos::StarknetExtractor> for StarknetExtractor {
     fn try_from(value: dtos::StarknetExtractor) -> Result<Self, Self::Error> {
         match value {
             dtos::StarknetExtractor::BlockHash => Ok(StarknetExtractor::BlockHash),
+            dtos::StarknetExtractor::Log { log_index } => Ok(StarknetExtractor::Log {
+                log_index: usize::try_from(log_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "StarknetExtractor::Log log_index exceeds platform usize",
+                    }
+                })?,
+            }),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "StarknetExtractor",
             }),
@@ -252,6 +258,7 @@ impl From<StarknetExtractedValue> for dtos::StarknetExtractedValue {
             StarknetExtractedValue::BlockHash(hash) => {
                 dtos::StarknetExtractedValue::BlockHash(dtos::StarknetFelt(hash.into()))
             }
+            StarknetExtractedValue::Log(log) => dtos::StarknetExtractedValue::Log(log),
         }
     }
 }
@@ -263,6 +270,7 @@ impl TryFrom<dtos::StarknetExtractedValue> for StarknetExtractedValue {
             dtos::StarknetExtractedValue::BlockHash(felt) => {
                 Ok(StarknetExtractedValue::BlockHash(felt.0.into()))
             }
+            dtos::StarknetExtractedValue::Log(log) => Ok(StarknetExtractedValue::Log(log)),
             _ => Err(ConversionError::UnsupportedVariant {
                 context: "StarknetExtractedValue",
             }),
@@ -282,6 +290,7 @@ mod tests {
     use crate::abstract_chain::AbstractBlockHash;
     use crate::bitcoin::BitcoinBlockHash;
     use crate::starknet::StarknetBlockHash;
+    use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::evm::Log;
 
     #[test]
@@ -344,7 +353,7 @@ mod tests {
     #[test]
     fn abstract_extractor_block_hash_roundtrip() {
         let inspector = AbstractExtractor::BlockHash;
-        let contract = dtos::EvmExtractor::try_from(inspector.clone()).unwrap();
+        let contract = dtos::EvmExtractor::from(inspector.clone());
         let back = AbstractExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -352,8 +361,8 @@ mod tests {
     #[test]
     fn abstract_extractor_log_roundtrip() {
         let inspector = AbstractExtractor::Log { log_index: 5 };
-        let contract = dtos::EvmExtractor::try_from(inspector.clone()).unwrap();
-        assert!(matches!(contract, dtos::EvmExtractor::Log { log_index: 5 }));
+        let contract = dtos::EvmExtractor::from(inspector.clone());
+        assert_matches!(contract, dtos::EvmExtractor::Log { log_index: 5 });
         let back = AbstractExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -402,7 +411,7 @@ mod tests {
         };
         let inspector = AbstractExtractedValue::Log(log);
         let contract = dtos::EvmExtractedValue::from(inspector.clone());
-        assert!(matches!(contract, dtos::EvmExtractedValue::Log(_)));
+        assert_matches!(contract, dtos::EvmExtractedValue::Log(_));
         let back = AbstractExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -430,7 +439,7 @@ mod tests {
     #[test]
     fn starknet_extractor_roundtrip() {
         let inspector = StarknetExtractor::BlockHash;
-        let contract = dtos::StarknetExtractor::from(inspector.clone());
+        let contract = dtos::StarknetExtractor::try_from(inspector.clone()).unwrap();
         let back = StarknetExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }

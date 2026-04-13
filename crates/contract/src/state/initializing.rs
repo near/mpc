@@ -2,7 +2,7 @@ use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::domain::DomainRegistry;
+use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
@@ -94,6 +94,7 @@ impl InitializingContractState {
                     self.domains.clone(),
                     Keyset::new(self.epoch_id, self.generated_keys.clone()),
                     self.generating_key.proposed_parameters().clone(),
+                    AddDomainsVotes::default(),
                 )));
             }
         }
@@ -135,16 +136,17 @@ impl InitializingContractState {
                 domains,
                 Keyset::new(self.epoch_id, self.generated_keys.clone()),
                 self.generating_key.proposed_parameters().clone(),
+                AddDomainsVotes::default(),
             )));
         }
         Ok(None)
     }
 
-    pub fn is_participant(&self, account_id: &AccountId) -> bool {
+    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
         self.generating_key
             .proposed_parameters()
             .participants()
-            .is_participant(account_id)
+            .is_participant_given_account_id(account_id)
     }
 }
 
@@ -153,7 +155,7 @@ pub mod tests {
     use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key_extended, gen_account_id, NUM_PROTOCOLS,
+        bogus_ed25519_public_key_extended, gen_account_id, NUM_CURVES,
     };
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::find_leader;
@@ -318,9 +320,9 @@ pub mod tests {
     #[case(3, 0)]
     #[case(3, 1)]
     #[case(3, 2)]
-    #[case(NUM_PROTOCOLS, 0)]
-    #[case(NUM_PROTOCOLS, 1)]
-    #[case(NUM_PROTOCOLS, 2)]
+    #[case(NUM_CURVES, 0)]
+    #[case(NUM_CURVES, 1)]
+    #[case(NUM_CURVES, 2)]
     fn test_initializing_contract_state(
         #[case] domains: usize,
         #[case] num_already_generated: usize,
@@ -330,7 +332,7 @@ pub mod tests {
 
     #[test]
     fn test_cancel_key_generation() {
-        let (mut env, mut state) = gen_initializing_state(NUM_PROTOCOLS, 2);
+        let (mut env, mut state) = gen_initializing_state(NUM_CURVES, 2);
 
         // Vote for domain #2.
         let leader = find_leader(&state.generating_key);

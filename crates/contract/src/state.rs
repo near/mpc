@@ -8,7 +8,7 @@ pub mod test_utils;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
-    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    domain::{Curve, DomainConfig, DomainId, DomainRegistry},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
     thresholds::{Threshold, ThresholdParameters},
@@ -57,9 +57,10 @@ impl ProtocolContractState {
             ProtocolContractState::Resharing(state) => {
                 Ok(state.previous_running_state.parameters.threshold())
             }
-            ProtocolContractState::NotInitialized => {
-                Err(InvalidState::UnexpectedProtocolState.into())
+            ProtocolContractState::NotInitialized => Err(InvalidState::UnexpectedProtocolState {
+                state_name: self.name(),
             }
+            .into()),
         }
     }
     pub fn start_keygen_instance(
@@ -168,12 +169,9 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Running))
     }
 
-    pub fn most_recent_domain_for_protocol(
-        &self,
-        signature_scheme: SignatureScheme,
-    ) -> Result<DomainId, Error> {
+    pub fn most_recent_domain_for_curve(&self, curve: Curve) -> Result<DomainId, Error> {
         self.domain_registry()?
-            .most_recent_domain_for_protocol(signature_scheme)
+            .most_recent_domain_for_curve(curve)
             .ok_or_else(|| DomainError::NoSuchDomain.into())
     }
 
@@ -230,7 +228,10 @@ impl ProtocolContractState {
                 )?;
             }
             ProtocolContractState::NotInitialized => {
-                return Err(InvalidState::UnexpectedProtocolState.message(self.name()));
+                return Err(InvalidState::UnexpectedProtocolState {
+                    state_name: self.name(),
+                }
+                .into());
             }
         };
         Ok(())
@@ -266,13 +267,20 @@ impl ProtocolContractState {
         account_id: &AccountId,
     ) -> Result<bool, Error> {
         let is_existing_or_prospective_participant = match &self {
-            ProtocolContractState::Initializing(state) => state.is_participant(account_id),
-            ProtocolContractState::Running(state) => state.is_participant(account_id),
+            ProtocolContractState::Initializing(state) => {
+                state.is_participant_given_account_id(account_id)
+            }
+            ProtocolContractState::Running(state) => {
+                state.is_participant_given_account_id(account_id)
+            }
             ProtocolContractState::Resharing(state) => {
                 state.is_participant_or_prospective_participant(account_id)
             }
             ProtocolContractState::NotInitialized => {
-                return Err(InvalidState::UnexpectedProtocolState.message(self.name()));
+                return Err(InvalidState::UnexpectedProtocolState {
+                    state_name: self.name(),
+                }
+                .into());
             }
         };
         Ok(is_existing_or_prospective_participant)

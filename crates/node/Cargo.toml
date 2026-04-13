@@ -16,14 +16,11 @@ axum = { workspace = true }
 backon = { workspace = true }
 base64 = { workspace = true }
 borsh = { workspace = true }
-bounded-collections = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
-contract-interface = { workspace = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
-either = { workspace = true }
 flume = { workspace = true }
 foreign-chain-inspector = { workspace = true }
 futures = { workspace = true }
@@ -34,9 +31,12 @@ humantime = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
+launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true }
 mpc-contract = { workspace = true }
+mpc-node-config = { workspace = true }
+mpc-primitives = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id = { workspace = true }
 near-async = { workspace = true }
@@ -45,6 +45,13 @@ near-config-utils = { workspace = true }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = [
+    "k256",
+    "ed25519-dalek",
+    "blstrs",
+    "near",
+] }
 near-o11y = { workspace = true }
 near-sdk = { workspace = true }
 near-time = { workspace = true }
@@ -58,13 +65,11 @@ rocksdb = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 socket2 = { workspace = true }
 tee-authority = { workspace = true }
 tempfile = { workspace = true }
-test-utils = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true }
 time = { workspace = true }
@@ -88,6 +93,8 @@ built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+blstrs = { workspace = true }
+elliptic-curve = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
@@ -96,6 +103,7 @@ rstest = { workspace = true }
 serial_test = { workspace = true }
 test-log = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
+tokio = { workspace = true, features = ["test-util"] }
 tracing-test = { workspace = true }
 
 [lints]

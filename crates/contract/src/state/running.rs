@@ -41,13 +41,20 @@ pub struct RunningContractState {
 }
 
 impl RunningContractState {
-    pub fn new(domains: DomainRegistry, keyset: Keyset, parameters: ThresholdParameters) -> Self {
+    pub fn new(
+        domains: DomainRegistry,
+        keyset: Keyset,
+        parameters: ThresholdParameters,
+        add_domains_votes: AddDomainsVotes,
+    ) -> Self {
+        let remaining_add_domain_votes =
+            add_domains_votes.get_remaining_votes(parameters.participants());
         RunningContractState {
             domains,
             keyset,
             parameters,
             parameters_votes: ThresholdParametersVotes::default(),
-            add_domains_votes: AddDomainsVotes::default(),
+            add_domains_votes: remaining_add_domain_votes,
             previously_cancelled_resharing_epoch_id: None,
         }
     }
@@ -64,6 +71,7 @@ impl RunningContractState {
                     self.domains.clone(),
                     self.keyset.clone(),
                     self.parameters.clone(),
+                    self.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(epoch_id, first_domain.clone(), proposal.clone()),
@@ -76,6 +84,7 @@ impl RunningContractState {
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
                 proposal.clone(),
+                self.add_domains_votes.clone(),
             );
             None
         }
@@ -158,12 +167,10 @@ impl RunningContractState {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
         for domain in &domains {
-            if !crate::primitives::domain::is_valid_scheme_for_purpose(
-                domain.purpose,
-                domain.scheme,
-            ) {
-                return Err(DomainError::InvalidSchemePurposeCombination {
-                    scheme: domain.scheme,
+            if !crate::primitives::domain::is_valid_curve_for_purpose(domain.purpose, domain.curve)
+            {
+                return Err(DomainError::InvalidCurvePurposeCombination {
+                    curve: domain.curve,
                     purpose: domain.purpose,
                 }
                 .into());
@@ -189,18 +196,22 @@ impl RunningContractState {
         }
     }
 
-    pub fn is_participant(&self, account_id: &AccountId) -> bool {
-        self.parameters.participants().is_participant(account_id)
+    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
+        self.parameters
+            .participants()
+            .is_participant_given_account_id(account_id)
     }
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 pub mod running_tests {
     use rstest::rstest;
 
-    use crate::primitives::domain::{AddDomainsVotes, DomainPurpose, SignatureScheme};
-    use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
+    use crate::primitives::domain::{
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
+    };
+    use crate::primitives::test_utils::{gen_threshold_params, NUM_CURVES};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
     use crate::{
@@ -247,7 +258,7 @@ pub mod running_tests {
                 if i < participants.participants().len()
                     && !proposal
                         .participants()
-                        .is_participant(&participants.participants()[i].0)
+                        .is_participant_given_account_id(&participants.participants()[i].0)
                 {
                     continue;
                 }
@@ -271,7 +282,10 @@ pub mod running_tests {
         // existing participants vote
         let mut n_votes = 0;
         for (account_id, _, _) in participants.participants().iter() {
-            if !proposal.participants().is_participant(account_id) {
+            if !proposal
+                .participants()
+                .is_participant_given_account_id(account_id)
+            {
                 continue;
             }
             n_votes += 1;
@@ -287,7 +301,7 @@ pub mod running_tests {
         }
         // candidates vote
         for (account_id, _, _) in proposal.participants().participants().iter() {
-            if participants.is_participant(account_id) {
+            if participants.is_participant_given_account_id(account_id) {
                 continue;
             }
             n_votes += 1;
@@ -326,22 +340,20 @@ pub mod running_tests {
     #[case(1)]
     #[case(2)]
     #[case(3)]
-    #[case(NUM_PROTOCOLS)]
-    #[case(2*NUM_PROTOCOLS)]
+    #[case(NUM_CURVES)]
+    #[case(2*NUM_CURVES)]
     fn test_running(#[case] n: usize) {
         test_running_for(n);
     }
 
     #[rstest]
-    #[case(SignatureScheme::Bls12381, DomainPurpose::Sign)]
-    #[case(SignatureScheme::Ed25519, DomainPurpose::ForeignTx)]
-    #[case(SignatureScheme::Secp256k1, DomainPurpose::CKD)]
-    fn vote_add_domains__should_reject_invalid_scheme_purpose(
-        #[case] scheme: SignatureScheme,
+    #[case(Curve::Bls12381, DomainPurpose::Sign)]
+    #[case(Curve::Edwards25519, DomainPurpose::ForeignTx)]
+    #[case(Curve::Secp256k1, DomainPurpose::CKD)]
+    fn vote_add_domains__should_reject_invalid_curve_purpose(
+        #[case] curve: Curve,
         #[case] purpose: DomainPurpose,
     ) {
-        use crate::primitives::domain::{DomainConfig, DomainId};
-
         // Given
         let mut state = gen_running_state(1);
         let mut env = Environment::new(None, None, None);
@@ -350,7 +362,7 @@ pub mod running_tests {
 
         let invalid_domain = vec![DomainConfig {
             id: DomainId(next_id),
-            scheme,
+            curve,
             purpose,
         }];
 
@@ -360,8 +372,8 @@ pub mod running_tests {
         // Then
         assert!(
             err.to_string()
-                .contains("Invalid scheme-purpose combination"),
-            "Expected InvalidSchemePurposeCombination, got: {err}"
+                .contains("Invalid curve-purpose combination"),
+            "Expected InvalidCurvePurposeCombination, got: {err}"
         );
     }
 }

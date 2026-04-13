@@ -1,69 +1,24 @@
 use crate::primitives::ParticipantId;
+use mpc_node_config::{AuthConfig, ConfigFile};
 
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use either::Either;
+use foreign_chain_inspector::RpcAuthentication;
+use http::HeaderValue;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Finality;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
+    io::Write,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::Path,
 };
 
-mod foreign_chains;
-pub use foreign_chains::{
-    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, AuthConfig, BitcoinApiVariant,
-    BitcoinChainConfig, BitcoinProviderConfig, EthereumApiVariant, EthereumChainConfig,
-    EthereumProviderConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig,
-    SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
-    TokenConfig,
-};
-
-const DEFAULT_PPROF_PORT: u16 = 34001;
+pub(crate) mod start;
 
 pub type AesKey256 = [u8; 32];
 pub type AesKey128 = [u8; 16];
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TripleConfig {
-    pub concurrency: usize,
-    pub desired_triples_to_buffer: usize,
-    pub timeout_sec: u64,
-    /// If we issued a triple generation, wait at least this number of seconds
-    /// before issuing another one. This is to avoid thundering herd situations.
-    pub parallel_triple_generation_stagger_time_sec: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PresignatureConfig {
-    pub concurrency: usize,
-    pub desired_presignatures_to_buffer: usize,
-    pub timeout_sec: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SignatureConfig {
-    pub timeout_sec: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CKDConfig {
-    pub timeout_sec: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct KeygenConfig {
-    pub timeout_sec: u64,
-}
-
-impl Default for KeygenConfig {
-    fn default() -> KeygenConfig {
-        KeygenConfig { timeout_sec: 60 }
-    }
-}
 
 /// Configuration about the MPC protocol. It can come from either the contract
 /// on chain, or static offline config file.
@@ -102,111 +57,6 @@ impl MpcConfig {
             .min()
             .expect("Participants list should not be empty");
         my_participant_id == participant_with_lowest_id
-    }
-}
-
-/// Config for the web UI, which is mostly for debugging and metrics.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WebUIConfig {
-    pub host: String,
-    pub port: u16,
-}
-
-/// Configures behavior of the near indexer.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct IndexerConfig {
-    /// Tells whether to validate the genesis file before starting
-    pub validate_genesis: bool,
-    /// Sets the starting point for indexing
-    pub sync_mode: SyncMode,
-    /// Sets the finality level at which blocks are streamed
-    pub finality: Finality,
-    /// Sets the concurrency for indexing
-    pub concurrency: std::num::NonZeroU16,
-    /// MPC contract id
-    pub mpc_contract_id: AccountId,
-    /// If specified, replaces the port number in any ParticipantInfos read from chain
-    pub port_override: Option<u16>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SyncMode {
-    /// continue from the block Indexer was interrupted
-    Interruption,
-    /// start from the newest block after node finishes syncing
-    Latest,
-    /// start from specified block height
-    Block(BlockArgs),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BlockArgs {
-    /// block height for block sync mode
-    pub height: u64,
-}
-
-/// The contents of the on-disk config.yaml file. Contains no secrets.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ConfigFile {
-    /// The near account ID that this node owns.
-    /// If an on-chain contract is used, this account is used to invoke
-    /// identity-sensitive functions of the contract (join, vote, etc.).
-    /// If static ParticipantsConfig is specified, this account id is used
-    /// to identify our own participant ID from within the static config.
-    /// In both cases this account is *not* used to send signature responses.
-    pub my_near_account_id: AccountId,
-
-    /// Near account ID of the account that will be used to submit signature responses.
-    /// For reference, go to the `spawn_real_indexer` logic.
-    pub near_responder_account_id: AccountId,
-    /// Number of keys that will be used to sign the signature responses.
-    pub number_of_responder_keys: usize,
-    // TODO(#2038): remove custom deserializer
-    #[serde(deserialize_with = "deserialize_to_socket_addr")]
-    pub web_ui: SocketAddr,
-    // TODO(#2038): remove custom deserializer
-    #[serde(deserialize_with = "deserialize_to_socket_addr")]
-    pub migration_web_ui: SocketAddr,
-    #[serde(default = "default_pprof_bind_address")]
-    pub pprof_bind_address: SocketAddr,
-    pub indexer: IndexerConfig,
-    pub triple: TripleConfig,
-    pub presignature: PresignatureConfig,
-    pub signature: SignatureConfig,
-    pub ckd: CKDConfig,
-    #[serde(default)]
-    pub keygen: KeygenConfig,
-    #[serde(default)]
-    pub foreign_chains: ForeignChainsConfig,
-    /// This value is only considered when the node is run in normal node. It defines the number of
-    /// working threads for the runtime.
-    pub cores: Option<usize>,
-}
-
-impl ConfigFile {
-    pub fn from_file(path: &Path) -> anyhow::Result<Self> {
-        let original_config_string =
-            fs::read_to_string(path).context("failed to read config file")?;
-        let config: Self = serde_yaml::from_str(&original_config_string)?;
-        config.validate().context("Validate config.yaml")?;
-
-        // re-serialize if needed
-        {
-            let re_serialized = serde_yaml::to_string(&config)?;
-            let update_config_with_new_schema = re_serialized != original_config_string;
-
-            if update_config_with_new_schema {
-                let tmp = path.with_extension("yaml.tmp");
-                fs::write(&tmp, re_serialized.as_bytes())?;
-                fs::rename(&tmp, path)?;
-            }
-        }
-
-        Ok(config)
-    }
-
-    pub fn validate(&self) -> anyhow::Result<()> {
-        self.foreign_chains.validate()
     }
 }
 
@@ -256,7 +106,7 @@ impl ParticipantsConfig {
     ///
     /// If the account_id exists in the participant list, returns
     /// [`ParticipantStatus::Active`] with either [`NodeStatus::Active`] if the
-    /// stored P2P public key matches, or [`NodeStatus::Idle`] otherwise.  
+    /// stored P2P public key matches, or [`NodeStatus::Idle`] otherwise.
     /// Returns [`ParticipantStatus::Inactive`] if the account is not found.
     pub fn participant_status(
         &self,
@@ -318,11 +168,6 @@ pub struct ParticipantInfo {
     pub near_account_id: AccountId,
 }
 
-pub fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
-    let config_path = home_dir.join("config.yaml");
-    ConfigFile::from_file(&config_path).context("Load config.yaml")
-}
-
 #[derive(Clone)]
 pub struct SecretsConfig {
     // Ed25519 keys. `near_crypto` API too rigid to store this exact enum type.
@@ -342,13 +187,35 @@ pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N
     ))
 }
 
+/// Writes data to a file with owner-only permissions (0o600).
+/// Permissions are set explicitly after writing to ensure correctness
+/// even if the file already exists with different permissions.
+fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("failed to create secret file {}", path.display()))?;
+    file.write_all(data)
+        .with_context(|| format!("failed to write secret file {}", path.display()))?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).with_context(|| {
+        format!(
+            "failed to set permissions on secret file {}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
 pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {
     tracing::info!("generating encryption key");
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
     let key_path = home_dir.join("backup_encryption_key.hex");
     let key_hex = hex::encode(key);
-    std::fs::write(&key_path, &key_hex)?;
+    write_secret_file(&key_path, key_hex.as_bytes())?;
     tracing::info!("wrote encryption key to disk {:?}", key_path);
     Ok(key_hex)
 }
@@ -434,7 +301,7 @@ impl PersistentSecrets {
         if path.exists() {
             anyhow::bail!("secrets.json already exists. Refusing to overwrite.");
         }
-        std::fs::write(&path, serde_json::to_vec(&secrets)?)?;
+        write_secret_file(&path, &serde_json::to_vec(&secrets)?)?;
         tracing::debug!("p2p and near account key generated in {}", path.display());
 
         Ok(secrets)
@@ -450,7 +317,6 @@ impl PersistentSecrets {
         );
         let secrets = if let Some(secrets) = Self::maybe_get_existing(home_dir)? {
             tracing::debug!("p2p and near account secret key already exists. Using existing.");
-            // TODO(#534): consistent number of keys
             secrets
         } else {
             tracing::debug!("p2p and near account secret key not found. Generating...");
@@ -551,9 +417,6 @@ pub struct RespondConfig {
 
 impl RespondConfig {
     pub fn from_parts(config: &ConfigFile, secrets: &PersistentSecrets) -> Self {
-        // TODO(#1296): Decide if the MPC responder account is actually needed
-        // updated as part PR #1270 as temporary solution.
-        // using main account for responding.
         Self {
             account_id: config.my_near_account_id.clone(),
             access_keys: vec![secrets.near_signer_key.clone()],
@@ -578,27 +441,40 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
     }
 }
 
-fn default_pprof_bind_address() -> SocketAddr {
-    (Ipv4Addr::UNSPECIFIED, DEFAULT_PPROF_PORT).into()
-}
-
-fn deserialize_to_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let either: Either<SocketAddr, WebUIConfig> =
-        either::serde_untagged::deserialize(deserializer)?;
-    match either {
-        Either::Left(addr) => Ok(addr),
-        Either::Right(WebUIConfig { host, port }) => format!("{host}:{port}")
-            .to_socket_addrs()
-            .map_err(serde::de::Error::custom)?
-            .next()
-            .ok_or_else(|| serde::de::Error::custom("could not resolve host")),
+/// Convert an [`AuthConfig`] into a [`foreign_chain_inspector::RpcAuthentication`].
+///
+/// This lives in mpc-node (rather than the config crate) to avoid adding
+/// `foreign-chain-inspector` as a dependency of the lightweight config crate.
+pub fn auth_config_to_rpc_auth(
+    auth: AuthConfig,
+    rpc_url: &mut String,
+) -> anyhow::Result<foreign_chain_inspector::RpcAuthentication> {
+    match auth {
+        AuthConfig::None => Ok(RpcAuthentication::KeyInUrl),
+        AuthConfig::Header {
+            name: header_name,
+            scheme,
+            token,
+        } => {
+            let scheme = scheme.unwrap_or_else(|| "Bearer".to_string());
+            let token_value = token.resolve()?;
+            let header_value = HeaderValue::from_str(&format!("{scheme} {token_value}"))?;
+            Ok(RpcAuthentication::CustomHeader {
+                header_name,
+                header_value,
+            })
+        }
+        AuthConfig::Path { placeholder, token } => {
+            let token_value = token.resolve()?;
+            *rpc_url = rpc_url.replace(&placeholder, &token_value);
+            Ok(RpcAuthentication::KeyInUrl)
+        }
+        AuthConfig::Query { name: _, token: _ } => anyhow::bail!("this is not supported yet"),
     }
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use assert_matches::assert_matches;
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
@@ -607,13 +483,16 @@ pub mod tests {
         rngs::OsRng,
         Rng, RngCore,
     };
+    use std::net::{Ipv4Addr, SocketAddr};
 
     use crate::providers::PublicKeyConversion;
+    use tempfile::TempDir;
 
     use super::*;
+    use mpc_node_config::{ConfigFile, TokenConfig};
+
     #[test]
     fn test_secret_gen() -> anyhow::Result<()> {
-        use tempfile::TempDir;
         let temp_dir = TempDir::new()?;
         let temp_dir_path = temp_dir.path();
 
@@ -962,5 +841,58 @@ cores: 4
         // rewritten content round-trips correctly
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__path_auth_substitutes_token_into_url() {
+        // Given
+        let auth = AuthConfig::Path {
+            placeholder: "{api_key}".to_string(),
+            token: TokenConfig::Val {
+                val: "my-secret-key".to_string(),
+            },
+        };
+        let mut url = "https://rpc.ankr.com/near/{api_key}".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::KeyInUrl);
+        assert_eq!(url, "https://rpc.ankr.com/near/my-secret-key");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__none_auth_leaves_url_unchanged() {
+        // Given
+        let auth = AuthConfig::None;
+        let mut url = "https://rpc.example.com".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::KeyInUrl);
+        assert_eq!(url, "https://rpc.example.com");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__header_auth_leaves_url_unchanged() {
+        // Given
+        let auth = AuthConfig::Header {
+            name: http::HeaderName::from_static("authorization"),
+            scheme: Some("Bearer".to_string()),
+            token: TokenConfig::Val {
+                val: "secret".to_string(),
+            },
+        };
+        let mut url = "https://rpc.example.com/v2/".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        assert_matches!(result, RpcAuthentication::CustomHeader { .. });
+        assert_eq!(url, "https://rpc.example.com/v2/");
     }
 }

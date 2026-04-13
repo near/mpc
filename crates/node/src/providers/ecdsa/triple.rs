@@ -1,6 +1,6 @@
 use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
-use crate::config::{MpcConfig, TripleConfig};
+use crate::config::MpcConfig;
 use crate::db::SecretDB;
 use crate::metrics;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
@@ -12,6 +12,7 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_contract::primitives::domain::DomainId;
+use mpc_node_config::TripleConfig;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use std::ops::Deref;
@@ -19,6 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::participants::Participant;
+use threshold_signatures::ReconstructionLowerBound;
 
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 
@@ -67,12 +69,11 @@ impl EcdsaSignatureProvider {
         mpc_config: Arc<MpcConfig>,
         config: Arc<TripleConfig>,
         triple_store: Arc<TripleStorage>,
+        threshold: ReconstructionLowerBound,
     ) {
         let in_flight_generations = InFlightGenerationTracker::new();
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
-
-        let threshold = mpc_config.participants.threshold as usize;
         let running_participants: Vec<_> = mpc_config
             .participants
             .participants
@@ -96,7 +97,7 @@ impl EcdsaSignatureProvider {
                 < config.concurrency * 2 * SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
             {
                 let participants = match client.select_random_active_participants_including_me(
-                    threshold,
+                    threshold.value(),
                     &running_participants,
                 ) {
                     Ok(participants) => participants,
@@ -185,13 +186,15 @@ impl EcdsaSignatureProvider {
         start: UniqueId,
         count: u32,
     ) -> anyhow::Result<()> {
+        start.validate_owned_by(channel.sender().get_leader())?;
         if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
             return Err(anyhow::anyhow!(
                 "Unsupported batch size for triple generation"
             ));
         }
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: self.mpc_config.participants.threshold as usize,
+            threshold: ReconstructionLowerBound::from(threshold),
             out_triple_id_start: start,
             out_triple_store: self.triple_store.clone(),
         }
@@ -219,7 +222,7 @@ impl HasParticipants for PairedTriple {
 /// Generates many cait-sith triples at once. This can significantly save the
 /// *number* of network messages.
 pub struct ManyTripleGenerationComputation<const N: usize> {
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
 }
 
 #[async_trait::async_trait]
@@ -265,7 +268,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
 /// The follower version of the triple generation. The difference is that the follower will only
 /// complete the computation after successfully persisting the triples to storage.
 pub struct FollowerManyTripleGenerationComputation<const N: usize> {
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
     pub out_triple_store: Arc<TripleStorage>,
     pub out_triple_id_start: UniqueId,
 }
@@ -311,19 +314,18 @@ pub fn participants_from_triples(
 #[cfg(test)]
 mod tests {
     use super::{ManyTripleGenerationComputation, PairedTriple};
-    use crate::cli::LogFormat;
     use crate::network::computation::MpcLeaderCentricComputation;
     use crate::network::testing::run_test_clients;
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::ecdsa::EcdsaTaskId;
     use crate::tests::into_participant_ids;
-    use crate::tracing::init_logging;
     use crate::tracking;
     use futures::{stream, StreamExt};
     use std::collections::HashMap;
     use std::sync::Arc;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
+    use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
     const NUM_PARTICIPANTS: usize = 4;
@@ -332,12 +334,11 @@ mod tests {
     const TRIPLES_PER_BATCH: usize = 10;
     const BATCHES_TO_GENERATE_PER_CLIENT: usize = 10;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[test_log::test(tokio::test(flavor = "multi_thread"))]
     async fn test_many_triple_generation() {
-        init_logging(LogFormat::Plain);
         tracking::testing::start_root_task_with_periodic_dump(async {
             let all_triples = run_test_clients(
-                into_participant_ids(&TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD.into())),
+                into_participant_ids(&generate_participants(NUM_PARTICIPANTS)),
                 run_triple_gen_client,
             )
             .await
@@ -380,7 +381,7 @@ mod tests {
                             panic!("Unexpected task id");
                         };
                         let triples = ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
-                            threshold: THRESHOLD,
+                            threshold: ReconstructionLowerBound::from(THRESHOLD),
                         }
                         .perform_leader_centric_computation(
                             channel,
@@ -428,7 +429,7 @@ mod tests {
                     let result = tracking::spawn(
                         &format!("task {:?}", task_id),
                         ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
-                            threshold: THRESHOLD,
+                            threshold: ReconstructionLowerBound::from(THRESHOLD),
                         }
                         .perform_leader_centric_computation(
                             channel,

@@ -1,5 +1,6 @@
 use super::resharing::ResharingContractState;
 use super::InitializingContractState;
+use crate::primitives::domain::AddDomainsVotes;
 use crate::primitives::test_utils::{bogus_ed25519_public_key_extended, gen_domains_to_add};
 use crate::primitives::{key_state::AttemptId, test_utils::gen_domain_registry};
 use crate::state::key_event::tests::Environment;
@@ -91,7 +92,12 @@ pub fn gen_running_state(num_domains: usize) -> RunningContractState {
     }
     let max_n = 30;
     let threshold_parameters = gen_threshold_params(max_n);
-    RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
+    RunningContractState::new(
+        domains,
+        Keyset::new(epoch_id, keys),
+        threshold_parameters,
+        AddDomainsVotes::default(),
+    )
 }
 
 /// Randomly generates an InitializingContractState where we already have keys for

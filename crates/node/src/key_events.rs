@@ -4,12 +4,10 @@ use crate::indexer::types::{
     ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventInstanceArgs,
 };
 use crate::network::MeshNetworkClient;
+use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::EcdsaTaskId;
 use crate::tracking::AutoAbortTaskCollection;
-use crate::trait_extensions::convert_to_contract_dto::{
-    IntoContractInterfaceType, TryIntoNodeType,
-};
 use crate::{
     config::ParticipantsConfig,
     indexer::{
@@ -22,12 +20,14 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use contract_interface::types as dtos;
-use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
+use mpc_contract::primitives::domain::{Curve, DomainConfig};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
+use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::frost_ed25519;
+use threshold_signatures::{
+    confidential_key_derivation as ckd, frost_ed25519, frost_secp256k1, ReconstructionLowerBound,
+};
 use tokio::sync::{mpsc, watch, RwLock};
 use tokio::time::timeout;
 use tracing::{error, info};
@@ -45,7 +45,7 @@ pub async fn keygen_computation_inner(
     generated_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
     domain: DomainConfig,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
     let keyshare_handle = keyshare_storage
@@ -58,28 +58,36 @@ pub async fn keygen_computation_inner(
         key_id
     );
 
-    let (keyshare, public_key) = match domain.scheme {
-        SignatureScheme::Secp256k1 => {
+    let (keyshare, public_key) = match domain.curve {
+        Curve::Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_contract_interface_type();
+            let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
+                keyshare.public_key.to_element().to_affine(),
+            )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
-        SignatureScheme::V2Secp256k1 => {
+        Curve::V2Secp256k1 => {
             let keyshare =
                 RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_contract_interface_type();
+            let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
+                keyshare.public_key.to_element().to_affine(),
+            )?);
             (KeyshareData::V2Secp256k1(keyshare), public_key)
         }
-        SignatureScheme::Ed25519 => {
+        Curve::Edwards25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_contract_interface_type();
+            let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
+                keyshare.public_key.to_element().compress(),
+            ));
             (KeyshareData::Ed25519(keyshare), public_key)
         }
-        SignatureScheme::Bls12381 => {
+        Curve::Bls12381 => {
             let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_contract_interface_type();
+            let public_key = dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey::from(
+                &keyshare.public_key.to_element(),
+            ));
             (KeyshareData::Bls12381(keyshare), public_key)
         }
     };
@@ -114,7 +122,7 @@ async fn keygen_computation(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     chain_txn_sender: impl TransactionSender,
     key_id: KeyEventId,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> anyhow::Result<()> {
     let key_event = wait_for_contract_catchup(&mut contract_key_event_id, key_id).await;
     let inner = keygen_computation_inner(
@@ -150,7 +158,7 @@ async fn keygen_computation(
 pub struct ResharingArgs {
     pub previous_keyset: Keyset,
     pub existing_keyshares: Option<Vec<Keyshare>>,
-    pub new_threshold: usize,
+    pub new_threshold: ReconstructionLowerBound,
     pub old_participants: ParticipantsConfig,
 }
 
@@ -202,12 +210,13 @@ async fn resharing_computation_inner(
 
     let public_key = dtos::PublicKey::from(previous_public_key.clone());
 
-    let keyshare_data = match (public_key, domain.scheme) {
+    let keyshare_data = match (public_key, domain.curve) {
         (
-            contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            SignatureScheme::Secp256k1,
+            near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
+            Curve::Secp256k1,
         ) => {
-            let public_key = inner_public_key.try_into_node_type()?;
+            let pk = k256::PublicKey::try_from(&inner_public_key)?;
+            let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Secp256k1(data) => Ok(data.private_share),
@@ -225,10 +234,11 @@ async fn resharing_computation_inner(
             KeyshareData::Secp256k1(res)
         }
         (
-            contract_interface::types::PublicKey::Secp256k1(inner_public_key),
-            SignatureScheme::V2Secp256k1,
+            near_mpc_contract_interface::types::PublicKey::Secp256k1(inner_public_key),
+            Curve::V2Secp256k1,
         ) => {
-            let public_key = inner_public_key.try_into_node_type()?;
+            let pk = k256::PublicKey::try_from(&inner_public_key)?;
+            let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::V2Secp256k1(data) => Ok(data.private_share),
@@ -246,12 +256,10 @@ async fn resharing_computation_inner(
             KeyshareData::V2Secp256k1(res)
         }
         (
-            contract_interface::types::PublicKey::Ed25519(inner_public_key),
-            SignatureScheme::Ed25519,
+            near_mpc_contract_interface::types::PublicKey::Ed25519(inner_public_key),
+            Curve::Edwards25519,
         ) => {
-            let public_key: Result<frost_ed25519::VerifyingKey, _> =
-                inner_public_key.try_into_node_type();
-            let public_key = public_key?;
+            let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Ed25519(data) => Ok(data.private_share),
@@ -268,8 +276,8 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Ed25519(res)
         }
-        (dtos::PublicKey::Bls12381(inner_public_key), SignatureScheme::Bls12381) => {
-            let public_key = inner_public_key.try_into_node_type()?;
+        (dtos::PublicKey::Bls12381(inner_public_key), Curve::Bls12381) => {
+            let public_key = ckd::VerifyingKey::new(ckd::ElementG2::try_from(&inner_public_key)?);
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Bls12381(data) => Ok(data.private_share),
@@ -286,11 +294,11 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Bls12381(res)
         }
-        (public_key, scheme) => {
+        (public_key, curve) => {
             return Err(anyhow::anyhow!(
                 "Unexpected pair of ({:?}, {:?})",
                 public_key,
-                scheme
+                curve
             ));
         }
     };
@@ -402,16 +410,16 @@ const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration:
 /// failure (node shutting down). The coordinator is expected to interrupt this when the
 /// contract state transitions out of the key generation state.
 pub async fn keygen_leader(
-    client: Arc<MeshNetworkClient>,
+    client: impl KeyEventLeaderClient,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> anyhow::Result<()> {
     loop {
         // Wait for all participants to be connected. Otherwise, computations are most likely going
         // to fail so don't waste the effort.
-        client.leader_wait_for_all_connected().await?;
+        client.wait_for_all_participants_connected().await?;
 
         // Wait for the contract to have no active key event instance.
         let key_event_id = key_event_receiver
@@ -453,11 +461,12 @@ pub async fn keygen_leader(
         }
 
         // Start the keygen computation.
+        let participants = client.all_participant_ids();
         let Ok(channel) = client.new_channel_for_task(
             EcdsaTaskId::KeyGeneration {
                 key_event: key_event_id,
             },
-            client.all_participant_ids(),
+            participants,
         ) else {
             tracing::warn!("Failed to create channel for keygen computation; retrying.");
             continue;
@@ -489,7 +498,7 @@ pub async fn keygen_follower(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender + 'static,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> anyhow::Result<()> {
     let mut tasks = AutoAbortTaskCollection::new();
     loop {
@@ -527,7 +536,7 @@ pub async fn keygen_follower(
 /// The leader logic for an entire key resharing state.
 /// See `keygen_leader` for more details that are in common.
 pub async fn resharing_leader(
-    client: Arc<MeshNetworkClient>,
+    client: impl KeyEventLeaderClient,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
@@ -538,7 +547,7 @@ pub async fn resharing_leader(
         // Wait for all participants to be connected. Otherwise, computations are most likely going
         // to fail so don't waste the effort.
         client
-            .leader_wait_for_all_connected()
+            .wait_for_all_participants_connected()
             .await
             .inspect_err(|e| error!("Could not connect to all participants: {:?}", e))?;
 
@@ -565,12 +574,20 @@ pub async fn resharing_leader(
 
         match timeout(
             MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
-            key_event_receiver.wait_for(|contract_event| contract_event.id == key_event_id),
+            key_event_receiver.wait_for(|contract_event| contract_event.started),
         )
         .await
         {
             Ok(res) => {
-                res?;
+                let contract_key_event_id = res?.id;
+                if contract_key_event_id != key_event_id {
+                    tracing::warn!(
+                        "Activated key event {:?} does not match expected {:?}; retrying.",
+                        contract_key_event_id,
+                        key_event_id
+                    );
+                    continue;
+                }
             }
             Err(_) => {
                 tracing::warn!(
@@ -583,11 +600,12 @@ pub async fn resharing_leader(
 
         // Start the resharing computation.
         info!("Starting resharing computation.");
+        let participants = client.all_participant_ids();
         let channel = match client.new_channel_for_task(
             EcdsaTaskId::KeyResharing {
                 key_event: key_event_id,
             },
-            client.all_participant_ids(),
+            participants,
         ) {
             Ok(channel) => channel,
             Err(err) => {
@@ -654,5 +672,233 @@ pub async fn resharing_follower(
                 args.clone(),
             ),
         );
+    }
+}
+
+/// Network interface used by key event leaders (`keygen_leader` and `resharing_leader`).
+///
+/// This trait abstracts the network operations needed by leader functions, making them
+/// testable without a real mesh network.
+pub trait KeyEventLeaderClient: Send + Sync {
+    /// Waits until all participants in the network are connected.
+    fn wait_for_all_participants_connected(
+        &self,
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+
+    /// Creates a new network channel for the given MPC task.
+    fn new_channel_for_task(
+        &self,
+        task_id: impl Into<MpcTaskId>,
+        participants: Vec<ParticipantId>,
+    ) -> anyhow::Result<NetworkTaskChannel>;
+
+    /// Returns the participant IDs of all nodes in the network.
+    fn all_participant_ids(&self) -> Vec<ParticipantId>;
+}
+
+impl KeyEventLeaderClient for Arc<MeshNetworkClient> {
+    async fn wait_for_all_participants_connected(&self) -> anyhow::Result<()> {
+        self.leader_wait_for_all_connected().await
+    }
+
+    fn new_channel_for_task(
+        &self,
+        task_id: impl Into<MpcTaskId>,
+        participants: Vec<ParticipantId>,
+    ) -> anyhow::Result<NetworkTaskChannel> {
+        MeshNetworkClient::new_channel_for_task(self, task_id, participants)
+    }
+
+    fn all_participant_ids(&self) -> Vec<ParticipantId> {
+        MeshNetworkClient::all_participant_ids(self)
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
+    use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
+    use crate::keyshare::KeyStorageConfig;
+    use assert_matches::assert_matches;
+    use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
+    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use std::collections::BTreeSet;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[rstest::rstest]
+    #[tokio::test(start_paused = true)]
+    #[timeout(Duration::from_millis(100))]
+    #[expect(non_snake_case)]
+    async fn resharing_leader__should_retry_after_timeout_if_computation_is_not_started() {
+        // Given
+        // Simulate the expired/idle contract state: started=false but ID already
+        // matches the next attempt (this is what next_attempt_id() produces).
+        // This matches the state of a production incident - see [#2298](https://github.com/near/mpc/issues/2298)
+        // for more context.
+        let key_event_id = make_key_event_id(6, 1, 1);
+        let instance = make_key_event_instance(key_event_id, false);
+        let (_tx, rx) = watch::channel(instance);
+
+        let txn_sender = CountingTransactionSender::new();
+        let txn_sender_handle = txn_sender.clone();
+
+        let keyshare_storage = KeyStorageConfig {
+            home_dir: tempfile::tempdir().unwrap().keep(),
+            local_encryption_key: [0u8; 16],
+            gcp: None,
+        }
+        .create()
+        .await
+        .unwrap();
+        let keyshare_storage = Arc::new(RwLock::new(keyshare_storage));
+
+        // When
+        let leader_handle = tokio::spawn(resharing_leader(
+            MockKeyEventLeaderClient,
+            keyshare_storage,
+            rx,
+            txn_sender,
+            make_test_resharing_args(),
+        ));
+
+        // Advance past two full timeout cycles.
+        // Note that tokio will auto-advance the clock here since we're running with paused time.
+        // See https://docs.rs/tokio/latest/tokio/time/fn.advance.html#auto-advance.
+        let wait_time =
+            MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE * 2 + Duration::from_secs(5);
+        tokio::time::sleep(wait_time).await;
+
+        // Then
+        let send_count = txn_sender_handle.count();
+        assert!(
+            send_count >= 2,
+            "Expected at least 2 StartReshare attempts (retries after timeout), got {send_count}"
+        );
+
+        leader_handle.abort();
+    }
+
+    #[test]
+    fn compare_to_expected_key_event_id__should_return_remote_behind_when_ids_match_but_not_started(
+    ) {
+        // Given
+        let key_event_id = make_key_event_id(6, 1, 1);
+        let instance = make_key_event_instance(key_event_id, false);
+
+        // When
+        let result = instance.compare_to_expected_key_event_id(&key_event_id);
+
+        // Then
+        assert_matches!(result, KeyEventIdComparisonResult::RemoteBehind);
+    }
+
+    #[test]
+    fn compare_to_expected_key_event_id__should_return_remote_matches_when_ids_match_and_started() {
+        // Given
+        let key_event_id = make_key_event_id(6, 1, 1);
+        let instance = make_key_event_instance(key_event_id, true);
+
+        // When
+        let result = instance.compare_to_expected_key_event_id(&key_event_id);
+
+        // Then
+        assert_matches!(result, KeyEventIdComparisonResult::RemoteMatches);
+    }
+
+    // -- Mocks and helpers --
+
+    struct MockKeyEventLeaderClient;
+
+    impl KeyEventLeaderClient for MockKeyEventLeaderClient {
+        async fn wait_for_all_participants_connected(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn new_channel_for_task(
+            &self,
+            _task_id: impl Into<MpcTaskId>,
+            _participants: Vec<ParticipantId>,
+        ) -> anyhow::Result<NetworkTaskChannel> {
+            anyhow::bail!("mock: should not reach channel creation during retry test")
+        }
+
+        fn all_participant_ids(&self) -> Vec<ParticipantId> {
+            vec![]
+        }
+    }
+
+    #[derive(Clone)]
+    struct CountingTransactionSender {
+        count: Arc<AtomicUsize>,
+    }
+
+    impl CountingTransactionSender {
+        fn new() -> Self {
+            Self {
+                count: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+
+        fn count(&self) -> usize {
+            self.count.load(Ordering::SeqCst)
+        }
+    }
+
+    impl TransactionSender for CountingTransactionSender {
+        async fn send(
+            &self,
+            _transaction: ChainSendTransactionRequest,
+        ) -> Result<(), TransactionProcessorError> {
+            self.count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn send_and_wait(
+            &self,
+            _transaction: ChainSendTransactionRequest,
+        ) -> Result<TransactionStatus, TransactionProcessorError> {
+            unimplemented!()
+        }
+    }
+
+    fn make_key_event_id(epoch: u64, domain: u64, attempt: u64) -> KeyEventId {
+        KeyEventId::new(EpochId::new(epoch), DomainId(domain), {
+            let mut id = AttemptId::new();
+            for _ in 0..attempt {
+                id = id.next();
+            }
+            id
+        })
+    }
+
+    fn make_key_event_instance(
+        key_event_id: KeyEventId,
+        started: bool,
+    ) -> ContractKeyEventInstance {
+        ContractKeyEventInstance {
+            id: key_event_id,
+            domain: DomainConfig {
+                id: key_event_id.domain_id,
+                curve: Curve::Secp256k1,
+                purpose: DomainPurpose::Sign,
+            },
+            started,
+            completed: BTreeSet::new(),
+            completed_domains: vec![],
+        }
+    }
+
+    fn make_test_resharing_args() -> Arc<ResharingArgs> {
+        Arc::new(ResharingArgs {
+            previous_keyset: Keyset::new(EpochId::new(5), vec![]),
+            existing_keyshares: None,
+            new_threshold: ReconstructionLowerBound::from(3),
+            old_participants: ParticipantsConfig {
+                threshold: 3,
+                participants: vec![],
+            },
+        })
     }
 }

@@ -17,10 +17,11 @@ use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
-use contract_interface::types as dtos;
+use assert_matches::assert_matches;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
+use mpc_contract::primitives::domain::AddDomainsVotes;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
@@ -33,6 +34,7 @@ use mpc_contract::state::{
     resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -105,12 +107,13 @@ impl FakeMpcContractState {
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
-        assert!(matches!(self.state, ProtocolContractState::NotInitialized));
+        assert_matches!(self.state, ProtocolContractState::NotInitialized);
 
         self.state = ProtocolContractState::Running(RunningContractState::new(
             DomainRegistry::default(),
             Keyset::new(EpochId::new(0), Vec::new()),
             participants_config_to_threshold_parameters(&participants),
+            AddDomainsVotes::default(),
         ));
     }
 
@@ -149,6 +152,7 @@ impl FakeMpcContractState {
                 previous_running_state.domains.clone(),
                 previous_running_state.keyset.clone(),
                 previous_running_state.parameters.clone(),
+                previous_running_state.add_domains_votes.clone(),
             ),
             reshared_keys: Vec::new(),
             resharing_key: KeyEvent::new(

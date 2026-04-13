@@ -43,7 +43,7 @@ impl KeyShareRepository for KeyshareStorageAdapter {
         let data = self.storage.load().await?;
 
         match data {
-            Some(permanent_data) => Ok(permanent_data.keyshares),
+            Some(permanent_data) => Ok(permanent_data.keyshares_vec()),
             None => Ok(vec![]),
         }
     }

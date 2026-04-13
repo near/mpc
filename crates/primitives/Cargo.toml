@@ -12,13 +12,13 @@ borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
-serde_with = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
+assert_matches = { workspace = true }
 rand = { workspace = true }
 serde_json = { workspace = true }
 

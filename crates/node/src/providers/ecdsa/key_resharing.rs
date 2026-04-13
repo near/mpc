@@ -8,27 +8,25 @@ use rand::rngs::OsRng;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::participants::Participant;
+use threshold_signatures::ReconstructionLowerBound;
 
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_resharing_client_internal(
-        new_threshold: usize,
+        new_threshold: ReconstructionLowerBound,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
+        let old_threshold: usize = old_participants.threshold.try_into()?;
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
-            old_threshold: old_participants.threshold as usize,
+            old_threshold: ReconstructionLowerBound::from(old_threshold),
             my_share,
             public_key,
         }
-        .perform_leader_centric_computation(
-            channel,
-            // TODO(#195): Move timeout here instead of in Coordinator.
-            std::time::Duration::from_secs(60),
-        )
+        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
         .await?;
         tracing::info!("Key resharing completed");
 
@@ -50,9 +48,9 @@ impl EcdsaSignatureProvider {
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
 pub struct KeyResharingComputation {
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     old_participants: Vec<ParticipantId>,
-    old_threshold: usize,
+    old_threshold: ReconstructionLowerBound,
     my_share: Option<SigningShare>,
     public_key: VerifyingKey,
 }
@@ -103,9 +101,11 @@ mod tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
-    use rand::SeedableRng as _;
+    use rand::{Rng as _, SeedableRng as _};
     use std::sync::Arc;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
+    use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
+    use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -113,12 +113,15 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         const THRESHOLD: usize = 3;
         const NUM_PARTICIPANTS: usize = 4;
-        let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD.into());
-        let keygens = gen.make_ecdsa_keygens(&mut rng);
+        let participants = generate_participants_with_random_ids(NUM_PARTICIPANTS, &mut rng);
+        let keygens: std::collections::HashMap<_, _> =
+            run_keygen::<Secp256K1Sha256, _>(&participants, THRESHOLD, &mut rng)
+                .into_iter()
+                .collect();
         let pubkey = keygens.iter().next().unwrap().1.public_key;
-        let old_participants = into_participant_ids(&gen);
-        let mut new_participants = into_participant_ids(&gen);
-        new_participants.push(ParticipantId::from_raw(rand::random()));
+        let old_participants = into_participant_ids(&participants);
+        let mut new_participants = into_participant_ids(&participants);
+        new_participants.push(ParticipantId::from_raw(rng.gen()));
 
         let key_resharing_client_runner =
             move |client: Arc<MeshNetworkClient>,
@@ -147,9 +150,9 @@ mod tests {
                             .ok_or_else(|| anyhow::anyhow!("No channel"))?
                     };
                     let key = KeyResharingComputation {
-                        threshold: THRESHOLD,
+                        threshold: ReconstructionLowerBound::from(THRESHOLD),
                         old_participants,
-                        old_threshold: THRESHOLD,
+                        old_threshold: ReconstructionLowerBound::from(THRESHOLD),
                         my_share: keyshare,
                         public_key: pubkey,
                     }

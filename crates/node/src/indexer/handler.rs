@@ -5,17 +5,8 @@ use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
-use contract_interface::method_names::{
-    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
-};
-use contract_interface::types as dtos;
-use contract_interface::types::VerifyForeignTransactionRequest;
-use contract_interface::types::VerifyForeignTransactionRequestArgs;
 use futures::StreamExt;
-use mpc_contract::crypto_shared::derive_foreign_tx_tweak;
-use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
+use mpc_contract::primitives::ckd::CKDRequest;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
 use near_account_id::AccountId;
@@ -24,6 +15,14 @@ use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_indexer_primitives::CryptoHash;
+use near_mpc_contract_interface::method_names::{
+    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
+};
+use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::CKDRequestArgs;
+use near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -53,7 +52,7 @@ pub struct SignArgs {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct CKDArgs {
-    pub app_public_key: dtos::Bls12381G1PublicKey,
+    pub app_public_key: dtos::CKDAppPublicKey,
     pub app_id: dtos::CkdAppId,
     pub domain_id: DomainId,
 }
@@ -64,8 +63,6 @@ pub struct SignatureRequestFromChain {
     pub receipt_id: CryptoHash,
     pub request: SignArgs,
     pub predecessor_id: AccountId,
-    pub entropy: [u8; 32],
-    pub timestamp_nanosec: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -73,9 +70,6 @@ pub struct CKDRequestFromChain {
     pub ckd_id: CKDId,
     pub receipt_id: CryptoHash,
     pub request: CKDArgs,
-    pub predecessor_id: AccountId,
-    pub entropy: [u8; 32],
-    pub timestamp_nanosec: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -83,13 +77,9 @@ pub struct VerifyForeignTxRequestFromChain {
     pub verify_foreign_tx_id: VerifyForeignTxId,
     pub receipt_id: CryptoHash,
     pub request: VerifyForeignTransactionRequestArgs,
-    pub predecessor_id: AccountId,
-    pub entropy: [u8; 32],
-    pub timestamp_nanosec: u64,
 }
 
 #[derive(Clone)]
-
 pub struct ChainBlockUpdate {
     pub block: BlockViewLite,
     pub signature_requests: Vec<SignatureRequestFromChain>,
@@ -179,7 +169,6 @@ async fn handle_message(
             let receipt = outcome.receipt.clone();
             let execution_outcome = outcome.execution_outcome.clone();
 
-            // TODO(#950): this should improve once the issue is resolved
             if let Some(next_receipt_id) =
                 try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
             {
@@ -194,11 +183,6 @@ async fn handle_message(
                                     receipt_id: receipt.receipt_id,
                                     request: sign_args,
                                     predecessor_id: receipt.predecessor_id.clone(),
-                                    entropy: streamer_message.block.header.random_value.into(),
-                                    timestamp_nanosec: streamer_message
-                                        .block
-                                        .header
-                                        .timestamp_nanosec,
                                 });
                                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                             }
@@ -211,12 +195,6 @@ async fn handle_message(
                                     ckd_id,
                                     receipt_id: receipt.receipt_id,
                                     request: ckd_args,
-                                    predecessor_id: receipt.predecessor_id.clone(),
-                                    entropy: streamer_message.block.header.random_value.into(),
-                                    timestamp_nanosec: streamer_message
-                                        .block
-                                        .header
-                                        .timestamp_nanosec,
                                 });
                                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
                             }
@@ -234,12 +212,6 @@ async fn handle_message(
                                     verify_foreign_tx_id,
                                     receipt_id: receipt.receipt_id,
                                     request: verify_foreign_tx_args,
-                                    predecessor_id: receipt.predecessor_id.clone(),
-                                    entropy: streamer_message.block.header.random_value.into(),
-                                    timestamp_nanosec: streamer_message
-                                        .block
-                                        .header
-                                        .timestamp_nanosec,
                                 });
                                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
                             }
@@ -260,7 +232,6 @@ async fn handle_message(
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
-                        // TODO(#1959): add this function to the contract
                         RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_verify_foreign_txs.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
@@ -281,6 +252,8 @@ async fn handle_message(
                 height: streamer_message.block.header.height,
                 prev_hash: streamer_message.block.header.prev_hash,
                 last_final_block: streamer_message.block.header.last_final_block,
+                entropy: streamer_message.block.header.random_value.into(),
+                timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
             },
             signature_requests,
             completed_signatures,
@@ -395,7 +368,7 @@ fn try_get_ckd_args(
 
     let ckd_request = CKDRequest::new(
         ckd_args.request.app_public_key,
-        ckd_args.request.domain_id,
+        ckd_args.request.domain_id.into(),
         &receipt.predecessor_id,
         &ckd_args.request.derivation_path,
     );
@@ -434,31 +407,18 @@ fn try_get_verify_foreign_tx_args(
         }
     };
 
-    let tweak = derive_foreign_tx_tweak(
-        &receipt.predecessor_id,
-        &verify_foreign_tx_args.request.derivation_path,
-    );
-
-    let verify_foreign_tx_request = VerifyForeignTransactionRequest {
-        request: verify_foreign_tx_args.request.request.clone(),
-        tweak,
-        domain_id: verify_foreign_tx_args.request.domain_id,
-        payload_version: verify_foreign_tx_args.request.payload_version,
-    };
-
     tracing::info!(
         target: "mpc",
         receipt_id = %receipt.receipt_id,
         next_receipt_id = %next_receipt_id,
         caller_id = receipt.predecessor_id.to_string(),
-        request = ?verify_foreign_tx_request,
+        request = ?verify_foreign_tx_args.request,
         "indexed new `{}` function call", expected_name
     );
     Some((
         next_receipt_id,
         VerifyForeignTransactionRequestArgs {
             request: verify_foreign_tx_args.request.request,
-            derivation_path: verify_foreign_tx_args.request.derivation_path,
             domain_id: verify_foreign_tx_args.request.domain_id,
             payload_version: verify_foreign_tx_args.request.payload_version,
         },

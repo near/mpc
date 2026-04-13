@@ -1,24 +1,25 @@
 use crate::sandbox::{
     common::{candidates, create_account_given_id, init, init_env, SandboxTestSetup},
     utils::{
-        consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
+        consts::{ALL_CURVES, PARTICIPANT_LEN},
         shared_key_utils::SharedSecretKey,
         sign_utils::{
-            gen_secp_256k1_sign_test, submit_signature_response, verify_timeout, DomainResponseTest,
+            gen_secp_256k1_sign_test, submit_ckd_response_measure_gas, submit_signature_response,
+            verify_timeout, CKDRequestTest, DomainResponseTest,
         },
     },
 };
 use anyhow::Context;
-use contract_interface::method_names;
 use mpc_contract::{
     errors,
     primitives::{
-        domain::SignatureScheme,
+        domain::Curve,
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::method_names;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
 use std::time::Duration;
@@ -34,7 +35,7 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
 
     let account_ids: [AccountId; 5] = [
@@ -72,7 +73,7 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
 
     for key in &keys {
@@ -118,7 +119,7 @@ async fn test_contract_request_timeout_all_schemes() -> anyhow::Result<()> {
         contract,
         keys,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     for key in &keys {
         let alice = worker.dev_create_account().await.unwrap();
@@ -141,7 +142,7 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let attested_account = &mpc_signer_accounts[0];
 
@@ -181,7 +182,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
         contract,
         keys,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
@@ -219,7 +220,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let attested_account = &mpc_signer_accounts[0];
     let predecessor_id = contract.id();
@@ -265,7 +266,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
             .into_result()
             .unwrap_err()
             .to_string()
-            .contains(&errors::InvalidParameters::InsufficientDeposit.to_string()));
+            .contains("Attached deposit is lower than required"));
     }
     Ok(())
 }
@@ -277,7 +278,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let key = &keys[0];
     const LEGACY_KEY_VERSION: u64 = 0; // this is the first cait-sith domain in the contract
@@ -362,6 +363,134 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     assert!(
         result.is_failure(),
         "initializing with valid candidates again should fail"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_ckd_pv_request() -> anyhow::Result<()> {
+    let mut rng = rand::rngs::StdRng::from_seed([3u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        keys,
+    } = init_env(&[Curve::Bls12381], PARTICIPANT_LEN).await;
+    let attested_account = &mpc_signer_accounts[0];
+
+    let bls_key = &keys[0];
+    let SharedSecretKey::Bls12381(sk) = &bls_key.domain_secret_key else {
+        anyhow::bail!("expected bls12381 key");
+    };
+
+    let alice = worker.dev_create_account().await?;
+    let req = CKDRequestTest::new_pv(&mut rng, bls_key.domain_id(), alice.id(), sk);
+    let test = DomainResponseTest::CKD(req);
+    test.run(&alice, &contract, attested_account)
+        .await
+        .with_context(|| format!("{:?}", test))?;
+
+    Ok(())
+}
+
+/// Gas regression test for CKD request and respond operations.
+///
+/// Measures gas consumed by `request_app_private_key` and `respond_ckd` for
+/// both legacy and PV variants, and asserts they stay within expected bounds.
+/// The PV path runs on-chain BLS12-381 pairing checks which are significantly
+/// more expensive.
+#[tokio::test]
+async fn test_ckd_gas_regression() -> anyhow::Result<()> {
+    let mut rng = rand::rngs::StdRng::from_seed([6u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        keys,
+    } = init_env(&[Curve::Bls12381], PARTICIPANT_LEN).await;
+    let attested_account = &mpc_signer_accounts[0];
+
+    let bls_key = &keys[0];
+    let SharedSecretKey::Bls12381(sk) = &bls_key.domain_secret_key else {
+        anyhow::bail!("expected bls12381 key");
+    };
+
+    // --- Legacy CKD ---
+    let alice = worker.dev_create_account().await?;
+    let legacy = CKDRequestTest::new(&mut rng, bls_key.domain_id(), alice.id(), sk);
+    let legacy_test = DomainResponseTest::CKD(legacy);
+    let legacy_request_status = legacy_test
+        .submit_request_ensure_included(&alice, &contract)
+        .await?;
+    let legacy_respond_gas = match &legacy_test {
+        DomainResponseTest::CKD(inner) => {
+            submit_ckd_response_measure_gas(&inner.response, &contract, attested_account).await?
+        }
+        _ => unreachable!(),
+    };
+    let legacy_request_execution = legacy_request_status.await?;
+    let legacy_request_gas = legacy_request_execution.total_gas_burnt;
+    legacy_request_execution.into_result()?;
+
+    // --- PV CKD ---
+    let bob = worker.dev_create_account().await?;
+    let pv = CKDRequestTest::new_pv(&mut rng, bls_key.domain_id(), bob.id(), sk);
+    let pv_test = DomainResponseTest::CKD(pv);
+    let pv_request_status = pv_test
+        .submit_request_ensure_included(&bob, &contract)
+        .await?;
+    let pv_respond_gas = match &pv_test {
+        DomainResponseTest::CKD(inner) => {
+            submit_ckd_response_measure_gas(&inner.response, &contract, attested_account).await?
+        }
+        _ => unreachable!(),
+    };
+    let pv_request_execution = pv_request_status.await?;
+    let pv_request_gas = pv_request_execution.total_gas_burnt;
+    pv_request_execution.into_result()?;
+
+    println!(
+        "  CKD request (legacy): {} TGas",
+        legacy_request_gas.as_tgas()
+    );
+    println!(
+        "  CKD respond (legacy): {} TGas",
+        legacy_respond_gas.as_tgas()
+    );
+    println!("  CKD request (PV):     {} TGas", pv_request_gas.as_tgas());
+    println!("  CKD respond (PV):     {} TGas", pv_respond_gas.as_tgas());
+
+    // Gas thresholds (in TGas) with ~25% buffer over measured values.
+    // PV adds BLS12-381 pairing checks on both request and respond.
+    const MAX_LEGACY_REQUEST_TGAS: u64 = 10;
+    const MAX_LEGACY_RESPOND_TGAS: u64 = 7;
+    const MAX_PV_REQUEST_TGAS: u64 = 72;
+    const MAX_PV_RESPOND_TGAS: u64 = 75;
+
+    assert!(
+        legacy_request_gas.as_tgas() <= MAX_LEGACY_REQUEST_TGAS,
+        "GAS REGRESSION: legacy request_app_private_key used {} TGas (limit: {} TGas)",
+        legacy_request_gas.as_tgas(),
+        MAX_LEGACY_REQUEST_TGAS,
+    );
+    assert!(
+        legacy_respond_gas.as_tgas() <= MAX_LEGACY_RESPOND_TGAS,
+        "GAS REGRESSION: legacy respond_ckd used {} TGas (limit: {} TGas)",
+        legacy_respond_gas.as_tgas(),
+        MAX_LEGACY_RESPOND_TGAS,
+    );
+    assert!(
+        pv_request_gas.as_tgas() <= MAX_PV_REQUEST_TGAS,
+        "GAS REGRESSION: PV request_app_private_key used {} TGas (limit: {} TGas)",
+        pv_request_gas.as_tgas(),
+        MAX_PV_REQUEST_TGAS,
+    );
+    assert!(
+        pv_respond_gas.as_tgas() <= MAX_PV_RESPOND_TGAS,
+        "GAS REGRESSION: PV respond_ckd used {} TGas (limit: {} TGas)",
+        pv_respond_gas.as_tgas(),
+        MAX_PV_RESPOND_TGAS,
     );
 
     Ok(())

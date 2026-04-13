@@ -1,13 +1,6 @@
 pub use ethereum_types;
-use mpc_primitives::hash::Hash32;
 
 pub mod inspector;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AbstractBlock;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AbstractTransaction;
-
-pub type AbstractBlockHash = Hash32<AbstractBlock>;
-pub type AbstractTransactionHash = Hash32<AbstractTransaction>;
+mpc_primitives::define_hash!(AbstractBlockHash, 32);
+mpc_primitives::define_hash!(AbstractTransactionHash, 32);

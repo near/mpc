@@ -869,9 +869,8 @@ pub mod testing {
             Ok(())
         }
 
-        fn send_indexer_height(&self, _height: crate::primitives::IndexerHeightMessage) {
-            // TODO(#226): Test this.
-        }
+        // TODO(#2753): add test coverage
+        fn send_indexer_height(&self, _height: crate::primitives::IndexerHeightMessage) {}
 
         async fn wait_for_ready(
             &self,
@@ -973,7 +972,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
     use tokio::sync::mpsc;
 
     /// Just some big prime number
@@ -983,7 +982,7 @@ mod tests {
     async fn test_network_basic() {
         start_root_task_with_periodic_dump(async move {
             run_test_clients(
-                into_participant_ids(&TestGenerators::new(4, 3.into())),
+                into_participant_ids(&generate_participants(4)),
                 run_test_client,
             )
             .await
@@ -1127,10 +1126,7 @@ mod tests {
     fn select_random_active_participants_including_me_should_return_not_enough_active_participants_when_peers_to_consider_is_empty(
     ) {
         let num_participants = 4;
-        let participant_ids = into_participant_ids(&TestGenerators::new(
-            num_participants,
-            num_participants.into(),
-        ));
+        let participant_ids = into_participant_ids(&generate_participants(num_participants));
         let transports = new_test_transports(participant_ids.clone());
         let indexer_heights = {
             let heights = participant_ids
@@ -1169,7 +1165,7 @@ mod fault_handling_tests {
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use std::sync::Arc;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
@@ -1192,10 +1188,7 @@ mod fault_handling_tests {
             let test_case = Arc::new(test_case);
             start_root_task_with_periodic_dump(async move {
                 run_test_clients(
-                    into_participant_ids(&TestGenerators::new_contiguous_participant_ids(
-                        4,
-                        3.into(),
-                    )),
+                    into_participant_ids(&generate_participants(4)),
                     move |client, channel_receiver| {
                         let test_case = test_case.clone();
                         async move {

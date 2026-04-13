@@ -1,12 +1,12 @@
-use contract_interface::types::{self as dtos, Bls12381G1PublicKey};
-use k256::elliptic_curve::{sec1::ToEncodedPoint as _, Field as _, Group as _, PrimeField as _};
+use k256::elliptic_curve::{Field as _, Group as _, PrimeField as _};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{Curve, DomainConfig, DomainId},
         signature::Tweak,
     },
 };
+use near_mpc_contract_interface::types::{self as dtos, Bls12381G1PublicKey};
 use rand::rngs::OsRng;
 use rand_core::CryptoRngCore;
 use threshold_signatures::{
@@ -49,25 +49,25 @@ pub fn new_secp256k1() -> (dtos::PublicKey, ts_ecdsa::KeygenOutput) {
         public_key,
     };
 
-    let compressed_key = public_key.to_element().to_encoded_point(false);
-    let mut bytes = [0u8; 64];
-    bytes.copy_from_slice(&compressed_key.as_bytes()[1..]);
-    let pk = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::from(bytes));
+    let pk = dtos::PublicKey::Secp256k1(
+        dtos::Secp256k1PublicKey::try_from(public_key.to_element().to_affine())
+            .expect("non-identity verifying key is a valid public key"),
+    );
 
     (pk, keygen_output)
 }
 
-pub fn make_key_for_domain(domain_scheme: SignatureScheme) -> (dtos::PublicKey, SharedSecretKey) {
-    match domain_scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+pub fn make_key_for_domain(domain_curve: Curve) -> (dtos::PublicKey, SharedSecretKey) {
+    match domain_curve {
+        Curve::Secp256k1 | Curve::V2Secp256k1 => {
             let (pk, sk) = new_secp256k1();
             (pk, SharedSecretKey::Secp256k1(sk))
         }
-        SignatureScheme::Ed25519 => {
+        Curve::Edwards25519 => {
             let (pk, sk) = new_ed25519();
             (pk, SharedSecretKey::Ed25519(sk))
         }
-        SignatureScheme::Bls12381 => {
+        Curve::Bls12381 => {
             let (pk, sk) = new_bls12381();
             (pk, SharedSecretKey::Bls12381(sk))
         }
@@ -85,10 +85,9 @@ pub fn new_ed25519() -> (dtos::PublicKey, eddsa::KeygenOutput) {
         public_key,
     };
 
-    let compressed_key = public_key.to_element().compress().as_bytes().to_vec();
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&compressed_key);
-    let pk = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(bytes));
+    let pk = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
+        public_key.to_element().compress(),
+    ));
 
     (pk, keygen_output)
 }
@@ -104,8 +103,7 @@ pub fn new_bls12381() -> (dtos::PublicKey, ckd::KeygenOutput) {
         public_key,
     };
 
-    let compressed_key = public_key.to_element().to_compressed();
-    let pk = dtos::PublicKey::from(dtos::Bls12381G2PublicKey::from(compressed_key));
+    let pk = dtos::PublicKey::from(dtos::Bls12381G2PublicKey::from(&public_key.to_element()));
 
     (pk, keygen_output)
 }
@@ -144,5 +142,5 @@ pub fn derive_secret_key_ed25519(
 pub fn generate_random_app_public_key(rng: &mut impl CryptoRngCore) -> Bls12381G1PublicKey {
     let x = blstrs::Scalar::random(rng);
     let big_x = blstrs::G1Projective::generator() * x;
-    Bls12381G1PublicKey::from(big_x.to_compressed())
+    Bls12381G1PublicKey::from(&big_x)
 }

@@ -1,6 +1,6 @@
 use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
-use crate::config::{MpcConfig, PresignatureConfig};
+use crate::config::MpcConfig;
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
@@ -15,6 +15,7 @@ use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_contract::primitives::domain::DomainId;
+use mpc_node_config::PresignatureConfig;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,7 @@ use threshold_signatures::ecdsa::robust_ecdsa::{
     presign::presign, PresignArguments, PresignOutput,
 };
 use threshold_signatures::participants::Participant;
+use threshold_signatures::MaxMalicious;
 
 #[derive(derive_more::Deref)]
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
@@ -85,10 +87,14 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let threshold = mpc_config.participants.threshold as usize;
-    let num_signers = get_number_of_signers(threshold, running_participants.len());
+    let threshold: usize = mpc_config.participants.threshold.try_into()?;
+    let num_signers = get_number_of_signers(threshold, running_participants.len())?;
     let robust_ecdsa_threshold = translate_threshold(threshold, running_participants.len())?;
-    anyhow::ensure!(robust_ecdsa_threshold * 2 + 1 <= num_signers);
+    anyhow::ensure!(robust_ecdsa_threshold
+        .value()
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(1))
+        .is_some_and(|v| v <= num_signers));
 
     loop {
         progress_tracker.update_progress();
@@ -174,6 +180,7 @@ impl RobustEcdsaSignatureProvider {
         id: UniqueId,
         domain_id: DomainId,
     ) -> anyhow::Result<()> {
+        id.validate_owned_by(channel.sender().get_leader())?;
         let domain_data = self.domain_data(domain_id)?;
 
         let number_of_participants = self.mpc_config.participants.participants.len();
@@ -213,7 +220,7 @@ impl HasParticipants for PresignOutputWithParticipants {
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub struct PresignComputation {
-    max_malicious: usize,
+    max_malicious: MaxMalicious,
     keygen_out: KeygenOutput,
 }
 
@@ -232,7 +239,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
             me.into(),
             PresignArguments {
                 keygen_out: self.keygen_out,
-                max_malicious: self.max_malicious.into(),
+                max_malicious: self.max_malicious,
             },
             OsRng,
         )?;
@@ -250,7 +257,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
 /// The difference is: we need to read the triples from the triple store (which may fail),
 /// and we need to write the presignature to the presignature store before completing.
 pub struct FollowerPresignComputation {
-    pub max_malicious: usize,
+    pub max_malicious: MaxMalicious,
     pub keygen_out: KeygenOutput,
 
     pub out_presignature_store: Arc<PresignatureStorage>,

@@ -160,7 +160,7 @@ impl AuthenticatedParticipantId {
             .iter()
             .find(|(a_id, _, _)| *a_id == signer)
             .map(|(_, p_id, _)| AuthenticatedParticipantId(p_id.clone()))
-            .ok_or_else(|| InvalidState::NotParticipant.into())
+            .ok_or_else(|| InvalidState::NotParticipant { account_id: signer }.into())
     }
 }
 
@@ -183,7 +183,7 @@ impl AuthenticatedAccountId {
         {
             Ok(AuthenticatedAccountId(signer))
         } else {
-            Err(InvalidState::NotParticipant.into())
+            Err(InvalidState::NotParticipant { account_id: signer }.into())
         }
     }
 }

@@ -3,7 +3,8 @@ use mpc_attestation::{
     quote::QuoteBytes,
     tcb_info::TcbInfo,
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use near_mpc_contract_interface::types::HexVec;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -18,23 +19,42 @@ pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_di
 pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
     include_str!("../assets/launcher_image_compose.yaml");
 
-/// Unix time as of 2026/01/27, represents a date where
+/// Unix time as of 2026/03/29, represents a date where
 /// the measurements stored in ../assets are valid. When these measurements are
 /// modified, this value should be updated as well
-pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1_769_527_031;
+pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1774945717;
 
 pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
     let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();
     LauncherDockerComposeHash::from(digest)
 }
 
-pub fn image_digest() -> MpcDockerImageHash {
+/// Extracts the launcher image hash from the `launcher_image_compose.yaml` asset.
+/// Parses `services.launcher.image` and extracts the `sha256:<hex>` digest.
+pub fn launcher_image_hash() -> LauncherImageHash {
+    let compose: serde_yaml::Value =
+        serde_yaml::from_str(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).expect("valid YAML");
+    let image = compose["services"]["launcher"]["image"]
+        .as_str()
+        .expect("services.launcher.image must be a string");
+    let hash_hex = image
+        .rsplit_once("sha256:")
+        .expect("image must contain sha256: digest")
+        .1;
+    let bytes: [u8; 32] = hex::decode(hash_hex)
+        .expect("Launcher image hash is valid hex")
+        .try_into()
+        .expect("Launcher image hash is 32 bytes");
+    LauncherImageHash::from(bytes)
+}
+
+pub fn image_digest() -> NodeImageHash {
     let digest: [u8; 32] = hex::decode(TEST_MPC_IMAGE_DIGEST_HEX)
         .expect("File has valid hex encoding.")
         .try_into()
         .expect("Hex file decoded is 32 bytes.");
 
-    MpcDockerImageHash::from(digest)
+    NodeImageHash::from(digest)
 }
 
 pub fn collateral() -> Value {
@@ -60,7 +80,7 @@ pub fn account_key() -> [u8; 32] {
 
 fn parse_key(key_file: &str) -> [u8; 32] {
     *key_file
-        .parse::<contract_interface::types::Ed25519PublicKey>()
+        .parse::<near_mpc_contract_interface::types::Ed25519PublicKey>()
         .expect("File contains a valid public key")
         .as_bytes()
 }
@@ -85,16 +105,16 @@ pub fn mock_dstack_attestation() -> Attestation {
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }
 
-pub fn mock_dto_dstack_attestation() -> contract_interface::types::Attestation {
-    let quote = quote().into();
+pub fn mock_dto_dstack_attestation() -> near_mpc_contract_interface::types::Attestation {
+    let quote = HexVec::from(Vec::from(quote()));
     let collateral_json_string = include_str!("../assets/collateral.json");
     let collateral = serde_json::from_str(collateral_json_string).unwrap();
 
-    let tcb_info: contract_interface::types::TcbInfo =
+    let tcb_info: near_mpc_contract_interface::types::TcbInfo =
         serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
-    contract_interface::types::Attestation::Dstack(
-        contract_interface::types::DstackAttestation::new(quote, collateral, tcb_info),
+    near_mpc_contract_interface::types::Attestation::Dstack(
+        near_mpc_contract_interface::types::DstackAttestation::new(quote, collateral, tcb_info),
     )
 }
 
@@ -139,5 +159,10 @@ mod tests {
     #[test]
     fn test_image_digest_works() {
         image_digest();
+    }
+
+    #[test]
+    fn test_launcher_image_hash_works() {
+        launcher_image_hash();
     }
 }

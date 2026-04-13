@@ -1,13 +1,18 @@
 use std::collections::BTreeMap;
 
-use bounded_collections::BoundedVec;
-use contract_interface::method_names;
 use mpc_contract::primitives::{
-    ckd::CKDRequestArgs,
-    domain::{DomainConfig, SignatureScheme},
+    domain::{Curve, DomainConfig},
     signature::{Payload, SignRequestArgs},
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_contract_interface::{
+    method_names,
+    types::{
+        CKDAppPublicKey, CKDRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    },
+};
 use near_primitives::action::Action;
 use rand::RngCore;
 use serde::Serialize;
@@ -51,14 +56,14 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             let mut eddsa_calls_by_domain = BTreeMap::new();
             let mut ckd_calls_by_domain = BTreeMap::new();
             for (domain, prot_calls) in args.calls_by_domain {
-                match domain.scheme {
-                    SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+                match domain.curve {
+                    Curve::Secp256k1 | Curve::V2Secp256k1 => {
                         ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    SignatureScheme::Ed25519 => {
+                    Curve::Edwards25519 => {
                         eddsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    SignatureScheme::Bls12381 => {
+                    Curve::Bls12381 => {
                         ckd_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                 }
@@ -88,7 +93,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     request: SignRequestArgs {
                         domain_id: Some(args.domain_config.id),
                         path: "".to_string(),
-                        payload_v2: Some(make_payload(args.domain_config.scheme)),
+                        payload_v2: Some(make_payload(args.domain_config.curve)),
                         ..Default::default()
                     },
                 })
@@ -120,8 +125,10 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                 &serde_json::to_vec(&CKDArgs {
                     request: CKDRequestArgs {
                         derivation_path: "".to_string(),
-                        domain_id: args.domain_config.id,
-                        app_public_key: mpc_contract::utils::random_app_public_key(),
+                        domain_id: args.domain_config.id.into(),
+                        app_public_key: CKDAppPublicKey::AppPublicKey(
+                            mpc_contract::utils::random_app_public_key(),
+                        ),
                     },
                 })
                 .unwrap(),
@@ -163,26 +170,28 @@ struct ParallelSignArgsV2 {
     seed: u64,
 }
 
-fn make_payload(scheme: SignatureScheme) -> Payload {
-    match scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+fn make_payload(curve: Curve) -> Payload {
+    match curve {
+        Curve::Secp256k1 | Curve::V2Secp256k1 => {
             Payload::Ecdsa(rand::random::<[u8; 32]>().into())
         }
-        SignatureScheme::Ed25519 => {
-            const LOWER: usize = 32;
-            const UPPER: usize = 1232;
-            let len = rand::random_range(LOWER..=UPPER);
-
+        Curve::Edwards25519 => {
+            let len = rand::random_range(
+                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+            );
             let mut payload = vec![0; len];
             rand::rng().fill_bytes(&mut payload);
 
-            let bounded_payload: BoundedVec<u8, LOWER, UPPER> =
-                BoundedVec::<u8, LOWER, UPPER>::try_from(payload).unwrap();
+            let bounded_payload: BoundedVec<
+                u8,
+                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+                EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+            > = payload.try_into().unwrap();
 
             Payload::Eddsa(bounded_payload)
         }
-        SignatureScheme::Bls12381 => {
-            unreachable!("make_payload should not be called with `Bls12381` scheme")
+        Curve::Bls12381 => {
+            unreachable!("make_payload should not be called with `Bls12381` curve")
         }
     }
 }

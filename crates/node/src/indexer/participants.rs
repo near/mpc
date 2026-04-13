@@ -89,7 +89,8 @@ impl ContractKeyEventInstance {
     }
 }
 
-#[allow(clippy::enum_variant_names)]
+#[derive(Debug)]
+#[expect(clippy::enum_variant_names)]
 pub enum KeyEventIdComparisonResult {
     /// Contract has already moved past the expected key event ID, meaning that the computation
     /// corresponding to the expected key event ID should be aborted.

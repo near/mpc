@@ -5,13 +5,15 @@ use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
-use crate::config::{IndexerConfig, RespondConfig};
+use crate::config::RespondConfig;
+use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
+use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_indexer::Indexer;
 use std::path::PathBuf;
@@ -45,7 +47,7 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
 ///
 /// If an unrecoverable error occurs, the spawned indexer will terminate, and the provided [`oneshot::Sender`]
 /// will be used to propagate the error.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn spawn_real_indexer(
     home_dir: PathBuf,
     mpc_indexer_config: IndexerConfig,

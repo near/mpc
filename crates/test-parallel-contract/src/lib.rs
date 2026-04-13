@@ -1,28 +1,20 @@
-// We disallow using `near_sdk::AccountId` in our own code.
-// However, the `near_bindgen` proc macro expands to code that uses it
-// internally, and Clippy applies the `disallowed_types` lint to that
-// generated code as well. Since the lint cannot be suppressed only for the
-// macro expansion, we allow it in this file to avoid false positives.
-#![allow(clippy::disallowed_types)]
-
-use contract_interface::method_names;
 use elliptic_curve::group::Group;
-use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_contract_interface::method_names;
 use near_sdk::serde::Serialize;
-use near_sdk::state::ContractState;
-use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise};
+use near_sdk::{env, near, serde_json, AccountId, Gas, NearToken, Promise};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
-use contract_interface::types::Bls12381G1PublicKey;
-// TODO(#1057): all these types should come from mpc_contract
+use near_mpc_contract_interface::types::Bls12381G1PublicKey;
 
+// TODO(#1057): all these types should come from mpc_contract
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum Payload {
     Ecdsa(String),
     Eddsa(String),
 }
+
 #[derive(Serialize)]
 pub struct SignRequest {
     pub path: String,
@@ -50,16 +42,14 @@ struct CKDArgs {
 pub fn generate_app_public_key(seed: u64) -> Bls12381G1PublicKey {
     let x = blstrs::Scalar::from(seed);
     let big_x = blstrs::G1Projective::generator() * x;
-    Bls12381G1PublicKey::from(big_x.to_compressed())
+    Bls12381G1PublicKey::from(&big_x)
 }
 
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, Default)]
+#[near(contract_state)]
+#[derive(Default)]
 pub struct TestContract;
 
-impl ContractState for TestContract {}
-
-#[near_bindgen]
+#[near]
 impl TestContract {
     pub fn make_parallel_sign_calls(
         &self,

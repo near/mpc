@@ -1,26 +1,23 @@
 use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
-        consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
-        interface::{IntoContractType, IntoInterfaceType},
+        consts::{ALL_CURVES, PARTICIPANT_LEN},
+        interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            vote_for_hash,
+            vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
     },
 };
 use anyhow::Result;
-use contract_interface::method_names;
-use contract_interface::types::{self as dtos, Attestation, MockAttestation};
-use mpc_contract::{
-    errors::InvalidState,
-    primitives::{
-        domain::SignatureScheme, participants::Participants, test_utils::bogus_ed25519_public_key,
-    },
+use mpc_contract::primitives::{
+    domain::Curve, participants::Participants, test_utils::bogus_ed25519_public_key,
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use near_workspaces::Contract;
 use test_utils::attestation::{image_digest, p2p_tls_key};
 
@@ -33,7 +30,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
 
     let allowed_mpc_image_digest = image_digest();
@@ -55,7 +52,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     )
     .await?;
     let allowed_hashes = get_allowed_hashes(&contract).await;
-    assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
+    assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest]);
 
     // Additional votes - should not change the allowed hashes
     const EXTRA_VOTES_TO_TEST_STABILITY: usize = 4;
@@ -68,7 +65,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         .await?;
         // Should still have exactly one hash
         let allowed_hashes = get_allowed_hashes(&contract).await;
-        assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
+        assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest]);
     }
 
     Ok(())
@@ -82,14 +79,14 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
     // This is necessary for some parts of the test below
     assert!((threshold.0 as usize) < mpc_signer_accounts.len());
     let first_hash = image_digest();
 
     let arbitrary_bytes = [2; 32];
-    let second_hash = MpcDockerImageHash::from(arbitrary_bytes);
+    let second_hash = NodeImageHash::from(arbitrary_bytes);
 
     // Initially, there should be no allowed hashes
     assert_eq!(get_allowed_hashes(&contract).await.len(), 0);
@@ -102,7 +99,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 
     // Verify first hash is allowed
     let allowed_hashes = get_allowed_hashes(&contract).await;
-    assert_eq!(allowed_hashes, vec![first_hash.clone()]);
+    assert_eq!(allowed_hashes, vec![first_hash]);
 
     // Participant 0 changes vote to second hash
     vote_for_hash(&mpc_signer_accounts[0], &contract, &second_hash).await?;
@@ -110,7 +107,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     // First hash should still be allowed
     // Second hash should not be allowed yet (only 1 vote)
     let allowed_hashes = get_allowed_hashes(&contract).await;
-    assert_eq!(allowed_hashes, vec![first_hash.clone()]);
+    assert_eq!(allowed_hashes, vec![first_hash]);
 
     // Participants 2..threshold votes for second hash - should reach threshold
     for account in mpc_signer_accounts
@@ -123,10 +120,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 
     // Now both hashes should be allowed
     let allowed_hashes = get_allowed_hashes(&contract).await;
-    assert_eq!(
-        allowed_hashes,
-        vec![second_hash.clone(), first_hash.clone()]
-    );
+    assert_eq!(allowed_hashes, vec![second_hash, first_hash]);
 
     // Participant 1 also changes vote to second hash
     vote_for_hash(&mpc_signer_accounts[1], &contract, &second_hash).await?;
@@ -134,10 +128,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     // Both hashes should still be allowed (once a hash reaches threshold, it stays)
     // Second hash should still be allowed (threshold + 1 votes)
     let allowed_hashes = get_allowed_hashes(&contract).await;
-    assert_eq!(
-        allowed_hashes,
-        vec![second_hash.clone(), first_hash.clone()]
-    );
+    assert_eq!(allowed_hashes, vec![second_hash, first_hash]);
 
     Ok(())
 }
@@ -148,7 +139,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() -> Result<()> {
     let SandboxTestSetup {
         worker, contract, ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let random_account = &gen_accounts(&worker, 1).await.0[0];
     let allowed_mpc_image_digest = image_digest();
 
@@ -162,9 +153,11 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
             "vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list"
         );
     };
-    let expected = format!("{:?}", InvalidState::NotParticipant);
     let err_str = format!("{:?}", err);
-    assert!(err_str.contains(&expected));
+    assert!(
+        err_str.contains("NotParticipant"),
+        "Expected NotParticipant error, got: {err_str}"
+    );
     Ok(())
 }
 
@@ -174,7 +167,7 @@ async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() ->
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let allowed_mpc_image_digest =
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 
@@ -201,7 +194,7 @@ async fn get_allowed_launcher_compose_hashes(
         .json::<Vec<LauncherDockerComposeHash>>()?)
 }
 
-async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
+async fn get_allowed_hashes(contract: &Contract) -> Vec<NodeImageHash> {
     contract
         .call(method_names::ALLOWED_DOCKER_IMAGE_HASHES)
         .args_json(serde_json::json!(""))
@@ -209,7 +202,7 @@ async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
         .transact()
         .await
         .expect("Contract is running")
-        .json::<Vec<MpcDockerImageHash>>()
+        .json::<Vec<NodeImageHash>>()
         .expect("allowed_docker_image_hashes method is infallible")
 }
 
@@ -236,7 +229,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let mock_attestation = Attestation::Mock(MockAttestation::Valid);
     let tls_key = p2p_tls_key().into();
     let success = submit_participant_info(
@@ -257,7 +250,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
 async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     let SandboxTestSetup {
         worker, contract, ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     // Create a new account that's not the contract
     let external_account = worker.dev_create_account().await?;
@@ -294,7 +287,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
         contract,
         mut mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     let participant_uids = {
         let p: Participants =
@@ -345,7 +338,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
     let hash_1 = [1; 32];
     let hash_2 = [2; 32];
@@ -359,7 +352,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     let hashes = [hash_1, hash_2, hash_3];
 
     for (i, current_hash) in hashes.iter().enumerate() {
-        let hash = MpcDockerImageHash::from(*current_hash);
+        let hash = NodeImageHash::from(*current_hash);
         for account in mpc_signer_accounts.iter().take(threshold.0 as usize) {
             vote_for_hash(account, &contract, &hash).await?;
         }
@@ -368,7 +361,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
         for approved_hash in previous_and_current_approved_hashes {
             let mock_attestation = MockAttestation::WithConstraints {
-                mpc_docker_image_hash: Some(*approved_hash),
+                mpc_docker_image_hash: Some((*approved_hash).into()),
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: None,
             };
@@ -401,7 +394,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     let participant_account_1 = &mpc_signer_accounts[0];
     let tls_key_1 = bogus_ed25519_public_key();
@@ -434,7 +427,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     let participant_account_1 = &mpc_signer_accounts[0];
     let tls_key_1 = bogus_ed25519_public_key();
@@ -500,7 +493,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     let participant_account = &mpc_signer_accounts[0];
     let tls_key = bogus_ed25519_public_key();
@@ -555,28 +548,41 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     );
 }
 
+/// Tests that on a fresh contract, compose hashes are derived when both an MPC image
+/// hash and a launcher image hash are voted in.
 #[tokio::test]
 async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
-
-    let allowed_mpc_image_digest = image_digest();
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
     assert_eq!(
         get_allowed_launcher_compose_hashes(&contract).await?.len(),
         0
     );
 
-    for account in mpc_signer_accounts {
-        vote_for_hash(&account, &contract, &allowed_mpc_image_digest).await?;
+    // Vote in an MPC image hash — no compose hashes yet (no launcher images)
+    let allowed_mpc_image_digest = image_digest();
+    for account in &mpc_signer_accounts {
+        vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
     }
-
     assert_eq!(
         get_allowed_launcher_compose_hashes(&contract).await?.len(),
-        1
+        0,
+        "no compose hashes without a launcher image"
+    );
+
+    // Vote in a launcher image hash — compose hash derived for the existing MPC image
+    let launcher_hash = LauncherImageHash::from([0xAA; 32]);
+    for account in &mpc_signer_accounts {
+        vote_add_launcher_hash(account, &contract, &launcher_hash).await?;
+    }
+    assert_eq!(
+        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        1,
+        "1 compose hash: launcher x MPC image"
     );
 
     Ok(())
@@ -605,7 +611,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_COUNT).await;
+    } = init_env(&[Curve::Secp256k1], PARTICIPANT_COUNT).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     assert_eq!(initial_participants.participants.len(), PARTICIPANT_COUNT);
@@ -633,7 +639,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         target_account,
         &contract,
         &expiring_attestation,
-        &target_node_id.tls_public_key.into_interface_type(),
+        &dtos::Ed25519PublicKey::try_from(&target_node_id.tls_public_key)
+            .expect("expected ED25519 key"),
     )
     .await?
     .is_success();

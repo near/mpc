@@ -1,0 +1,41 @@
+[package]
+name = "tee-launcher"
+readme = "README.md"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+name = "tee_launcher"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tee-launcher"
+path = "src/main.rs"
+
+[features]
+external-services-tests = []
+
+[dependencies]
+backon = { workspace = true }
+clap = { workspace = true }
+dstack-sdk = { workspace = true }
+launcher-interface = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
+oci-client = { workspace = true }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+rstest = { workspace = true }
+
+[lints]
+workspace = true

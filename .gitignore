@@ -2,9 +2,6 @@
 .idea
 venv
 .vscode
-# extensions.json only includes recommended extensions,
-# and does not affect VS code behavior
-!.vscode/extensions.json
 
 # Lock file generated in contract integration tests
 *.itest.build.lock
@@ -26,8 +23,8 @@ venv
 # Nix
 .direnv/
 
-# TODO(#1768): potentially remove
 .envrc
 
 # Agents
 .claude
+CLAUDE.local.md

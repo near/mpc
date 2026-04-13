@@ -1,0 +1,33 @@
+[package]
+name = "chain-gateway-test-contract"
+version = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+repository = "https://github.com/near/mpc"
+
+[package.metadata.cargo-shear]
+ignored = ["borsh"]
+
+[package.metadata.near.reproducible_build]
+image = "sourcescan/cargo-near:0.17.0-rust-1.86.0"
+image_digest = "sha256:1784ca6310f3496f0048356ce420921c8f5fdf71ee8124d43a2e1ceb1f70db8a"
+passed_env = []
+container_build_command = [
+    "cargo",
+    "near",
+    "build",
+    "non-reproducible-wasm",
+    "--locked",
+]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+borsh = { workspace = true }
+derive_more = { workspace = true }
+near-sdk = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

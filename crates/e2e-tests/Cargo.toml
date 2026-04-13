@@ -1,0 +1,43 @@
+[package]
+name = "e2e-tests"
+edition = { workspace = true }
+version = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+[dependencies]
+anyhow = { workspace = true }
+backon = { workspace = true }
+bs58 = { workspace = true }
+ed25519-dalek = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+launcher-interface = { workspace = true }
+mpc-node-config = { workspace = true }
+near-account-id = { workspace = true }
+near-indexer-primitives = { workspace = true }
+near-kit = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
+near-mpc-crypto-types = { workspace = true, features = ["ed25519-dalek", "blstrs"] }
+near-sandbox = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+blstrs = { workspace = true }
+group = { workspace = true }
+test-utils = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[[test]]
+name = "e2e"
+path = "tests/e2e.rs"
+
+[lints]
+workspace = true

@@ -2,43 +2,32 @@ use crate::sandbox::utils::{
     consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-    interface::IntoInterfaceType,
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
     shared_key_utils::{make_key_for_domain, DomainKey},
     sign_utils::{make_and_submit_requests, PendingSignRequest},
 };
-use contract_interface::method_names;
-use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use digest::Digest;
 use dtos::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{
-            infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
-        },
+        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        test_utils::bogus_ed25519_near_public_key,
+        test_utils::{bogus_ed25519_near_public_key, infer_purpose_from_curve},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
-use near_sdk::NearToken;
-use near_workspaces::{
-    network::Sandbox,
-    operations::TransactionStatus,
-    result::{ExecutionFinalResult, ExecutionSuccess},
-    types::AccessKeyPermission,
-    AccessKey, Contract,
-};
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
+use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
-use std::{collections::BTreeSet, task::Poll, time::Duration};
-use tokio::time::timeout;
+use std::collections::BTreeSet;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -78,44 +67,13 @@ pub async fn gen_account(worker: &Worker<Sandbox>) -> (Account, AccountId) {
 }
 
 /// Create `amount` accounts and return them along with the candidate info.
-/// This creates accounts async, but as this is not supported by
-/// near_workspaces, hence the way to do so is very low level
 pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Account>, Participants) {
-    let root_account = worker.root_account().unwrap();
     let mut accounts = Vec::with_capacity(amount);
     let mut account_ids = Vec::with_capacity(amount);
-    let mut account_creation_transactions = Vec::with_capacity(amount);
     for _ in 0..amount {
-        let (account_id, sk) = worker.generate_dev_account_credentials();
-        let account_id = format!("{}.{}", account_id, root_account.id())
-            .parse()
-            .unwrap();
-        let transaction = root_account
-            .batch(&account_id)
-            .create_account()
-            .add_key(
-                sk.public_key(),
-                AccessKey {
-                    nonce: 0,
-                    permission: AccessKeyPermission::FullAccess,
-                },
-            )
-            .transfer(NearToken::from_near(100))
-            .transact_async()
-            .await
-            .unwrap();
-        account_creation_transactions.push(transaction);
-        let account = Account::from_secret_key(account_id.clone(), sk, worker);
+        let (account, account_id) = gen_account(worker).await;
         accounts.push(account);
         account_ids.push(account_id);
-    }
-    for transaction in account_creation_transactions {
-        // We had a flaky test here (#1913) before timeout, hopefully 100 seconds is enough
-        let result = wait_for_transaction(Duration::from_secs(100), transaction)
-            .await
-            .unwrap();
-        dbg!(&result);
-        assert!(result.is_success());
     }
     let candidates = candidates(Some(account_ids));
     (accounts, candidates)
@@ -205,25 +163,25 @@ pub async fn init_with_candidates(
             .enumerate()
             .map(|(i, pk)| {
                 let domain_id = DomainId((i as u64) * 2);
-                let scheme = match pk {
-                    dtos::PublicKey::Ed25519(_) => SignatureScheme::Ed25519,
-                    dtos::PublicKey::Secp256k1(_) => SignatureScheme::Secp256k1,
-                    dtos::PublicKey::Bls12381(_) => SignatureScheme::Bls12381,
+                let curve = match pk {
+                    dtos::PublicKey::Ed25519(_) => Curve::Edwards25519,
+                    dtos::PublicKey::Secp256k1(_) => Curve::Secp256k1,
+                    dtos::PublicKey::Bls12381(_) => Curve::Bls12381,
                 };
                 let key: PublicKeyExtended = pk.try_into().unwrap();
-                let purpose = infer_purpose_from_scheme(scheme);
+                let purpose = infer_purpose_from_curve(curve);
                 ret_domains.push(DomainPublicKey {
                     public_key: key.clone(),
                     config: DomainConfig {
                         id: domain_id,
-                        scheme,
+                        curve,
                         purpose,
                     },
                 });
                 (
                     DomainConfig {
                         id: domain_id,
-                        scheme,
+                        curve,
                         purpose,
                     },
                     KeyForDomain {
@@ -263,13 +221,10 @@ pub struct SandboxTestSetup {
     pub keys: Vec<DomainKey>,
 }
 
-pub async fn init_env(
-    schemes: &[SignatureScheme],
-    number_of_participants: usize,
-) -> SandboxTestSetup {
-    let (public_keys, secret_keys): (Vec<_>, Vec<_>) = schemes
+pub async fn init_env(curves: &[Curve], number_of_participants: usize) -> SandboxTestSetup {
+    let (public_keys, secret_keys): (Vec<_>, Vec<_>) = curves
         .iter()
-        .map(|scheme| make_key_for_domain(*scheme))
+        .map(|curve| make_key_for_domain(*curve))
         .collect();
     let (worker, contract, mpc_signer_accounts, domains) =
         init_with_candidates(public_keys, None, number_of_participants).await;
@@ -386,7 +341,8 @@ pub async fn submit_tee_attestations(
             account,
             contract,
             &attestation,
-            &node_id.tls_public_key.into_interface_type(),
+            &dtos::Ed25519PublicKey::try_from(&node_id.tls_public_key)
+                .expect("expected ED25519 key"),
         )
         .await?;
         assert!(result.is_success());
@@ -407,7 +363,9 @@ pub async fn submit_attestations(
         .enumerate()
         .map(|(i, ((_, _, participant), account))| async move {
             let attestation = Attestation::Mock(MockAttestation::Valid);
-            let tls_key = (&participant.sign_pk).into_interface_type();
+            let tls_key: dtos::Ed25519PublicKey =
+                dtos::Ed25519PublicKey::try_from(&participant.sign_pk)
+                    .expect("expected ED25519 key");
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
                 .await
                 .expect("submit_participant_info should not error")
@@ -465,7 +423,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         start_keygen_instance(contract, accounts, key_event_id)
             .await
             .unwrap();
-        let (public_key, shared_secret_key) = make_key_for_domain(domain.scheme);
+        let (public_key, shared_secret_key) = make_key_for_domain(domain.curve);
 
         domain_keys.push(DomainKey {
             domain_config: domain.clone(),
@@ -532,17 +490,17 @@ pub async fn execute_key_generation_and_add_random_state(
     let domains_to_add = [
         DomainConfig {
             id: 0.into(),
-            scheme: SignatureScheme::Ed25519,
+            curve: Curve::Edwards25519,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 1.into(),
-            scheme: SignatureScheme::Secp256k1,
+            curve: Curve::Secp256k1,
             purpose: DomainPurpose::Sign,
         },
         DomainConfig {
             id: 2.into(),
-            scheme: SignatureScheme::Ed25519,
+            curve: Curve::Edwards25519,
             purpose: DomainPurpose::Sign,
         },
     ];
@@ -578,44 +536,10 @@ pub async fn generate_participant_and_submit_attestation(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-        &new_participant.sign_pk.into_interface_type(),
+        &dtos::Ed25519PublicKey::try_from(&new_participant.sign_pk).expect("expected ED25519 key"),
     )
     .await
     .expect("Attestation submission for new account must succeed.");
     assert!(result.is_success());
     (new_account, account_id, new_participant)
-}
-
-// This function is needed because in case of timeouts the wait function
-// for transactions fails instead of retrying.
-// See near_workspaces::operations::TransactionStatus in
-// https://github.com/near/near-workspaces-rs/blob/dc729222070b508381b8dc81c027b0c0e6720567/workspaces/src/operations.rs#L494
-pub async fn wait_for_transaction(
-    timeout_s: Duration,
-    transaction: TransactionStatus,
-) -> anyhow::Result<ExecutionFinalResult> {
-    let mut result = None;
-    let loop_future = async {
-        loop {
-            match transaction.status().await {
-                Ok(Poll::Ready(val)) => {
-                    result = Some(Ok(val));
-                    break;
-                }
-                Ok(Poll::Pending) => {}
-                Err(err) => {
-                    result = Some(Err(err));
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(300)).await;
-        }
-    };
-
-    match timeout(timeout_s, loop_future).await {
-        Ok(_) => match result {
-            Some(result) => Ok(result?),
-            None => anyhow::bail!("Transaction timed out without returning an error"),
-        },
-        Err(_) => anyhow::bail!("Loop timed out"),
-    }
 }

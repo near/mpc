@@ -11,7 +11,7 @@ use rand::SeedableRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
-use crate::config::ForeignChainsConfig;
+use crate::config::auth_config_to_rpc_auth;
 use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
@@ -20,10 +20,11 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use bounded_collections::BoundedVec;
-use contract_interface::types as dtos;
 use mpc_contract::primitives::signature::{Payload, Tweak};
+use near_mpc_bounded_collections::BoundedVec;
+use mpc_node_config::ForeignChainsConfig;
 use near_indexer_primitives::CryptoHash;
+use near_mpc_contract_interface::types as dtos;
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -39,7 +40,7 @@ fn build_signature_request(
         id: request.id,
         receipt_id: request.receipt_id,
         payload: Payload::Ecdsa(payload_bytes),
-        tweak: Tweak::new(request.tweak.0),
+        tweak: Tweak::new([0u8; 32]),
         entropy: request.entropy,
         timestamp_nanosec: request.timestamp_nanosec,
         domain: request.domain_id,
@@ -76,7 +77,12 @@ where
             .context("my participant ID not found in participants list")?;
 
         let response_payload = self
-            .execute_foreign_chain_request(id, &foreign_tx_request.request, my_participant_index)
+            .execute_foreign_chain_request(
+                id,
+                &foreign_tx_request.request,
+                my_participant_index,
+                foreign_tx_request.payload_version,
+            )
             .await?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
@@ -110,7 +116,12 @@ where
             .context("my participant ID not found in participants list")?;
 
         let response_payload = self
-            .execute_foreign_chain_request(id, &foreign_tx_request.request, my_participant_index)
+            .execute_foreign_chain_request(
+                id,
+                &foreign_tx_request.request,
+                my_participant_index,
+                foreign_tx_request.payload_version,
+            )
             .await?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
@@ -125,6 +136,7 @@ where
         request_id: SignatureId,
         request: &dtos::ForeignChainRpcRequest,
         my_participant_index: usize,
+        payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
         validate_foreign_chain_policy(
             &self.config.foreign_chains,
@@ -158,12 +170,14 @@ where
                     anyhow::bail!("found empty list of providers for bitcoin")
                 };
 
-                let public_node_url = bitcoin_provider_config.rpc_url.clone();
-
-                let http_client = foreign_chain_inspector::build_http_client(
-                    public_node_url,
-                    bitcoin_provider_config.auth.clone().try_into()?,
+                let mut public_node_url = bitcoin_provider_config.rpc_url.clone();
+                let rpc_auth = auth_config_to_rpc_auth(
+                    bitcoin_provider_config.auth.clone(),
+                    &mut public_node_url,
                 )?;
+
+                let http_client =
+                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
                 let inspector = BitcoinInspector::new(http_client);
 
                 let transaction_id = request.tx_id.0.into();
@@ -201,12 +215,14 @@ where
                     anyhow::bail!("found empty list of providers for abstract")
                 };
 
-                let public_node_url = abstract_provider_config.rpc_url.clone();
-
-                let http_client = foreign_chain_inspector::build_http_client(
-                    public_node_url,
-                    abstract_provider_config.auth.clone().try_into()?,
+                let mut public_node_url = abstract_provider_config.rpc_url.clone();
+                let rpc_auth = auth_config_to_rpc_auth(
+                    abstract_provider_config.auth.clone(),
+                    &mut public_node_url,
                 )?;
+
+                let http_client =
+                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
                 let inspector = AbstractInspector::new(http_client);
 
                 let transaction_id = request.tx_id.0.into();
@@ -244,12 +260,11 @@ where
                     anyhow::bail!("found empty list of providers for starknet")
                 };
 
-                let rpc_url = starknet_provider_config.rpc_url.clone();
+                let mut rpc_url = starknet_provider_config.rpc_url.clone();
+                let rpc_auth =
+                    auth_config_to_rpc_auth(starknet_provider_config.auth.clone(), &mut rpc_url)?;
 
-                let http_client = foreign_chain_inspector::build_http_client(
-                    rpc_url,
-                    starknet_provider_config.auth.clone().try_into()?,
-                )?;
+                let http_client = foreign_chain_inspector::build_http_client(rpc_url, rpc_auth)?;
                 let inspector = StarknetInspector::new(http_client);
 
                 let transaction_id = request.tx_id.0 .0.into();
@@ -271,12 +286,16 @@ where
             }
             _ => bail!("unsupported foreign chain request"),
         };
-        Ok(dtos::ForeignTxSignPayload::V1(
-            dtos::ForeignTxSignPayloadV1 {
-                request: request.clone(),
-                values,
-            },
-        ))
+        let payload = match payload_version {
+            dtos::ForeignTxPayloadVersion::V1 => {
+                dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
+                    request: request.clone(),
+                    values,
+                })
+            }
+            _ => bail!("unsupported payload_version"),
+        };
+        Ok(payload)
     }
 }
 
@@ -353,15 +372,15 @@ fn select_provider(
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::config::{
-        BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig,
-    };
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
-    use bounded_collections::NonEmptyBTreeSet;
+    use mpc_node_config::{
+        BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig,
+    };
+    use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use std::collections::BTreeMap;
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
@@ -373,7 +392,7 @@ mod tests {
     }
 
     fn bitcoin_foreign_chains_config() -> ForeignChainsConfig {
-        let providers = bounded_collections::NonEmptyBTreeMap::new(
+        let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
             "public".to_string(),
             BitcoinProviderConfig {
                 rpc_url: "https://blockstream.info/api".to_string(),

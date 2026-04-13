@@ -10,8 +10,12 @@ use threshold_signatures::confidential_key_derivation::{
     ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };
 
+use threshold_signatures::ReconstructionLowerBound;
+
+use mpc_node_config::ConfigFile;
+
 use crate::{
-    config::{ConfigFile, MpcConfig, ParticipantsConfig},
+    config::{MpcConfig, ParticipantsConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
     primitives::MpcTaskId,
     providers::SignatureProvider,
@@ -74,14 +78,14 @@ impl SignatureProvider for CKDProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: usize,
+        threshold: ReconstructionLowerBound,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: usize,
+        new_threshold: ReconstructionLowerBound,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,

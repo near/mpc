@@ -2,7 +2,10 @@
 description = "Run all fast checks"
 dependencies = [
   "crate-names",
+  "kebab-file-names",
   "todo-format",
+  "assert-matches",
+  "use-in-fn",
   "ruff-format",
   "ruff-check",
   "fmt",
@@ -11,6 +14,7 @@ dependencies = [
   "cargo-deny-no-advisories",
   "zizmor",
   "check-markdown-links",
+  "sandbox-image-version",
   "check",
   "check-docs",
   "clippy",
@@ -19,23 +23,7 @@ dependencies = [
 
 [tasks.check-all]
 description = "Run all checks"
-dependencies = [
-  "crate-names",
-  "todo-format",
-  "ruff-format",
-  "ruff-check",
-  "fmt",
-  "cargo-sort",
-  "cargo-shear",
-  "cargo-deny-no-advisories",
-  "zizmor",
-  "check-markdown-links",
-  "check",
-  "check-docs",
-  "clippy",
-  "clippy-all-features",
-  "nextest",
-]
+dependencies = ["check-all-fast", "nextest"]
 
 [tasks.check-extra]
 description = "Run extra checks"
@@ -101,9 +89,23 @@ args = [".github/"]
 command = "bash"
 args = ["scripts/check-crates-kebab-case.sh"]
 
+[tasks.kebab-file-names]
+command = "bash"
+args = ["scripts/check-kebab-case-files.sh"]
+
 [tasks.todo-format]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
+
+[tasks.assert-matches]
+description = "Check for assert!(matches!(...)) — use assert_matches!() instead"
+command = "bash"
+args = ["scripts/check-assert-matches.sh"]
+
+[tasks.use-in-fn]
+description = "Check for use statements inside function bodies"
+command = "python"
+args = ["scripts/check-use-in-fn.py"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"
@@ -124,9 +126,17 @@ description = "Check rustdoc for broken intra-doc links"
 command = "cargo"
 args = ["doc", "--workspace", "--no-deps"]
 
+[tasks.check-docs.env]
+RUSTDOCFLAGS = "-D warnings"
+
 [tasks.check-markdown-links]
 command = "lychee"
 args = ["--no-progress", "."]
+
+[tasks.sandbox-image-version]
+description = "Check that sandbox Docker image version matches nearcore"
+command = "bash"
+args = ["scripts/check-sandbox-image-version.sh"]
 
 [config]
 default_to_workspace = false

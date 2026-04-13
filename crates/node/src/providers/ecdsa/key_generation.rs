@@ -5,18 +5,15 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use rand::rngs::OsRng;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::participants::Participant;
+use threshold_signatures::ReconstructionLowerBound;
 
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_generation_client_internal(
-        threshold: usize,
+        threshold: ReconstructionLowerBound,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
         let key = KeyGenerationComputation { threshold }
-            .perform_leader_centric_computation(
-                channel,
-                // TODO(#195): Move timeout here instead of in Coordinator.
-                std::time::Duration::from_secs(60),
-            )
+            .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
             .await?;
         tracing::info!("Ecdsa secp256k1 key generation completed");
 
@@ -27,7 +24,7 @@ impl EcdsaSignatureProvider {
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub struct KeyGenerationComputation {
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 }
 
 #[async_trait::async_trait]
@@ -66,14 +63,15 @@ mod tests {
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
-    use threshold_signatures::test_utils::TestGenerators;
+    use threshold_signatures::test_utils::generate_participants;
+    use threshold_signatures::ReconstructionLowerBound;
     use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn test_key_generation() {
         start_root_task_with_periodic_dump(async move {
             let results = run_test_clients(
-                into_participant_ids(&TestGenerators::new(4, 3.into())),
+                into_participant_ids(&generate_participants(4)),
                 run_keygen_client,
             )
             .await
@@ -107,9 +105,11 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
-        let key = KeyGenerationComputation { threshold: 3 }
-            .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
-            .await?;
+        let key = KeyGenerationComputation {
+            threshold: ReconstructionLowerBound::from(3),
+        }
+        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+        .await?;
 
         Ok(key)
     }

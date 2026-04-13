@@ -4,13 +4,17 @@ use anyhow::Context;
 use rand::rngs::OsRng;
 use tokio::time::timeout;
 
-use contract_interface::types as dtos;
+use near_mpc_contract_interface::types as dtos;
 use threshold_signatures::{
-    confidential_key_derivation::{protocol::ckd, AppId, ElementG1, KeygenOutput, VerifyingKey},
+    confidential_key_derivation::{
+        ckd_pv, protocol::ckd, AppId, ElementG1, ElementG2, KeygenOutput, PublicVerificationKey,
+        VerifyingKey,
+    },
     participants::Participant,
+    ReconstructionLowerBound,
 };
 
-use crate::{metrics, trait_extensions::convert_to_contract_dto::TryIntoNodeType};
+use crate::metrics;
 use crate::{
     network::{computation::MpcLeaderCentricComputation, NetworkTaskChannel},
     protocol::run_protocol,
@@ -25,7 +29,8 @@ impl CKDProvider {
     ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
-        let threshold = self.mpc_config.participants.threshold as usize;
+        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
+        let threshold = ReconstructionLowerBound::from(threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -36,7 +41,10 @@ impl CKDProvider {
 
         let participants = self
             .client
-            .select_random_active_participants_including_me(threshold, &running_participants)
+            .select_random_active_participants_including_me(
+                threshold.value(),
+                &running_participants,
+            )
             .context("Could not choose active participants for a ckd")?;
 
         let channel = self
@@ -118,7 +126,7 @@ impl CKDProvider {
 /// The tweak allows key derivation
 pub struct CKDComputation {
     pub keygen_output: KeygenOutput,
-    pub app_public_key: dtos::Bls12381G1PublicKey,
+    pub app_public_key: dtos::CKDAppPublicKey,
     pub app_id: dtos::CkdAppId,
 }
 
@@ -135,18 +143,39 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let protocol = ckd(
-            cs_participants.as_slice(),
-            channel.sender().get_leader().into(),
-            channel.my_participant_id().into(),
-            self.keygen_output,
-            AppId::try_new(self.app_id.as_ref())?,
-            self.app_public_key.try_into_node_type()?,
-            OsRng,
-        )?;
+        let app_id = AppId::try_new(self.app_id.as_ref())?;
+        let leader = channel.sender().get_leader().into();
+        let my_id = channel.my_participant_id().into();
 
         let _timer = metrics::MPC_CKD_TIME_ELAPSED.start_timer();
-        let result = run_protocol("ckd", channel, protocol).await?;
+        let result = match self.app_public_key {
+            dtos::CKDAppPublicKey::AppPublicKey(pk) => {
+                let protocol = ckd(
+                    cs_participants.as_slice(),
+                    leader,
+                    my_id,
+                    self.keygen_output,
+                    app_id,
+                    ElementG1::try_from(&pk)?,
+                    OsRng,
+                )?;
+                run_protocol("ckd", channel, protocol).await?
+            }
+            dtos::CKDAppPublicKey::AppPublicKeyPV(pv) => {
+                let pk1 = ElementG1::try_from(&pv.pk1)?;
+                let pk2 = ElementG2::try_from(&pv.pk2)?;
+                let protocol = ckd_pv(
+                    cs_participants.as_slice(),
+                    leader,
+                    my_id,
+                    self.keygen_output,
+                    app_id,
+                    PublicVerificationKey::new(pk1, pk2),
+                    OsRng,
+                )?;
+                run_protocol("ckd_pv", channel, protocol).await?
+            }
+        };
 
         Ok(result.map(|f| (f.big_y(), f.big_c())))
     }
