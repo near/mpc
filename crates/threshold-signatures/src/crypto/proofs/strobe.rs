@@ -198,6 +198,6 @@ mod tests {
     #[test]
     fn strobe_r_within_keccak_state() {
         // run_f indexes up to STROBE_R + 1, so that must be in bounds
-        assert!((STROBE_R + 1) < KECCAK_STATE_BYTES as u8);
+        assert!(((STROBE_R + 1) as usize) < KECCAK_STATE_BYTES);
     }
 }
