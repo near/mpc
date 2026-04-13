@@ -181,10 +181,7 @@ mod tests {
             project_id: "test".into(),
         };
         let mut table = toml::Table::new();
-        table.insert(
-            "gcp".to_string(),
-            toml::Value::try_from(&gcp).unwrap(),
-        );
+        table.insert("gcp".to_string(), toml::Value::try_from(&gcp).unwrap());
         let toml_str = toml::to_string(&table).unwrap();
         let parsed: toml::Table = toml::from_str(&toml_str).unwrap();
         assert!(

@@ -50,7 +50,8 @@ pub async fn run() -> Result<(), LauncherError> {
     }
 
     let tee_config = build_tee_config(args.platform, image_hash);
-    let mpc_node_config = intercept_node_config(config.mpc_node_config, &tee_config, args.platform)?;
+    let mpc_node_config =
+        intercept_node_config(config.mpc_node_config, &tee_config, args.platform)?;
 
     write_config_atomically(&mpc_node_config)?;
 
