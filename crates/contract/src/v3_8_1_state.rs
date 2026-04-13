@@ -57,7 +57,9 @@ impl From<MpcContract> for crate::MpcContract {
         let backup_service_tee_state = {
             let mut state = TeeState::default();
             for m in mpc_attestation::attestation::default_measurements() {
-                state.allowed_measurements.add(ContractExpectedMeasurements::from(m.clone()));
+                state
+                    .allowed_measurements
+                    .add(ContractExpectedMeasurements::from(m.clone()));
             }
             state
         };

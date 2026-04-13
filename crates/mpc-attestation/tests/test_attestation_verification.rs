@@ -21,7 +21,14 @@ fn valid_mock_attestation_succeeds_verification() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_matches!(
-        valid_attestation.verify(report_data.into(), timestamp_s, &[], &[], &[], launcher_interface::MPC_IMAGE_HASH_EVENT),
+        valid_attestation.verify(
+            report_data.into(),
+            timestamp_s,
+            &[],
+            &[],
+            &[],
+            launcher_interface::MPC_IMAGE_HASH_EVENT
+        ),
         Ok(VerifiedAttestation::Mock(MockAttestation::Valid))
     );
 }
@@ -36,7 +43,14 @@ fn invalid_mock_attestation_fails_verification() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_matches!(
-        valid_attestation.verify(report_data.into(), timestamp_s, &[], &[], &[], launcher_interface::MPC_IMAGE_HASH_EVENT),
+        valid_attestation.verify(
+            report_data.into(),
+            timestamp_s,
+            &[],
+            &[],
+            &[],
+            launcher_interface::MPC_IMAGE_HASH_EVENT
+        ),
         Err(VerificationError::InvalidMockAttestation)
     );
 }
@@ -120,7 +134,14 @@ fn validated_mock_attestation_passes_reverification() {
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
 
     let validated = valid_attestation
-        .verify(report_data.into(), 0, &[], &[], &[], launcher_interface::MPC_IMAGE_HASH_EVENT)
+        .verify(
+            report_data.into(),
+            0,
+            &[],
+            &[],
+            &[],
+            launcher_interface::MPC_IMAGE_HASH_EVENT,
+        )
         .expect("Initial verification failed");
 
     // Mock should generally pass re-verify

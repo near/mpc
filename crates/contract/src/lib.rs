@@ -1676,12 +1676,12 @@ impl MpcContract {
             )));
         }
 
-        if matches!(attestation, mpc_attestation::attestation::Attestation::Mock(_)) {
-            return Err(
-                errors::InvalidParameters::InvalidTeeRemoteAttestation.message(
-                    "Mock attestations are not accepted for backup services".to_string(),
-                ),
-            );
+        if matches!(
+            attestation,
+            mpc_attestation::attestation::Attestation::Mock(_)
+        ) {
+            return Err(errors::InvalidParameters::InvalidTeeRemoteAttestation
+                .message("Mock attestations are not accepted for backup services".to_string()));
         }
 
         let tee_upgrade_deadline_duration =
@@ -1708,10 +1708,7 @@ impl MpcContract {
     }
 
     #[handle_result]
-    pub fn vote_backup_service_code_hash(
-        &mut self,
-        code_hash: NodeImageHash,
-    ) -> Result<(), Error> {
+    pub fn vote_backup_service_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error> {
         log!(
             "vote_backup_service_code_hash: signer={}, code_hash={:?}",
             env::signer_account_id(),
@@ -1907,9 +1904,7 @@ impl MpcContract {
     }
 
     /// Returns allowed backup service launcher compose hashes
-    pub fn allowed_backup_service_launcher_compose_hashes(
-        &self,
-    ) -> Vec<LauncherDockerComposeHash> {
+    pub fn allowed_backup_service_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
         self.node_migrations
             .backup_service_tee_state
             .get_allowed_launcher_compose_hashes()
@@ -1961,8 +1956,10 @@ impl MpcContract {
             .stored_attestations
             .iter()
             .filter(|(_, node_attestation)| {
-                let status =
-                    bs_tee.reverify_participants(&node_attestation.node_id, tee_upgrade_deadline_duration);
+                let status = bs_tee.reverify_participants(
+                    &node_attestation.node_id,
+                    tee_upgrade_deadline_duration,
+                );
                 matches!(status, TeeQuoteStatus::Invalid(_))
             })
             .map(|(k, _)| k.clone())
@@ -4735,7 +4732,12 @@ mod tests {
         });
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION, mpc_attestation::MPC_IMAGE_HASH_EVENT)
+            .add_participant(
+                node_id,
+                expiring_attestation,
+                TEE_UPGRADE_DURATION,
+                mpc_attestation::MPC_IMAGE_HASH_EVENT,
+            )
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison

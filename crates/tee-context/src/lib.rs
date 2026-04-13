@@ -332,7 +332,9 @@ mod tests {
             .with_latest_block(latest_block)
             .with_signed_transaction_submitter_response(submit_response)
             .build();
-        TeeContext::new(mock, governance_account(), TeeContextConfig::mpc_node()).await.unwrap()
+        TeeContext::new(mock, governance_account(), TeeContextConfig::mpc_node())
+            .await
+            .unwrap()
     }
 
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
@@ -345,9 +347,13 @@ mod tests {
             .with_latest_block(Ok(default_block_info()))
             .with_signed_transaction_submitter_response(Ok(()))
             .build();
-        let ctx = TeeContext::new(mock_chain_state.clone(), governance_account(), TeeContextConfig::mpc_node())
-            .await
-            .unwrap();
+        let ctx = TeeContext::new(
+            mock_chain_state.clone(),
+            governance_account(),
+            TeeContextConfig::mpc_node(),
+        )
+        .await
+        .unwrap();
         (ctx, mock_chain_state)
     }
 
@@ -436,7 +442,12 @@ mod tests {
             .with_query_view_function_response(Err(MockError::ViewClientError))
             .build();
 
-        let result = TeeContext::new(mock.clone(), governance_account(), TeeContextConfig::mpc_node()).await;
+        let result = TeeContext::new(
+            mock.clone(),
+            governance_account(),
+            TeeContextConfig::mpc_node(),
+        )
+        .await;
         assert!(result.is_err());
 
         // The task exited on initial failure — no further polling should happen.
@@ -477,7 +488,15 @@ mod tests {
             .build();
         let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-        watch_hashes(mock, governance_account(), tx, CancellationToken::new(), method_names::ALLOWED_DOCKER_IMAGE_HASHES, method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES).await;
+        watch_hashes(
+            mock,
+            governance_account(),
+            tx,
+            CancellationToken::new(),
+            method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+            method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
+        )
+        .await;
 
         assert!(rx.changed().await.is_err(), "sender should be dropped");
     }

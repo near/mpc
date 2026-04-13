@@ -4,8 +4,7 @@ pub mod types {
     pub use attestation::{
         AppCompose, Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation,
         RegisterBackupServiceWithAttestationArgs, SubmitParticipantInfoArgs, TcbInfo,
-        VerifiedAttestation, VerifiedDstackAttestation,
-        VerifiedMeasurements,
+        VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;

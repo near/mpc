@@ -689,7 +689,12 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(node_id, attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
+            .add_participant(
+                node_id,
+                attestation,
+                Duration::from_secs(0),
+                TEST_IMAGE_HASH_EVENT,
+            )
             .unwrap();
 
         // then
@@ -713,7 +718,12 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
+            .add_participant(
+                node_id.clone(),
+                attestation,
+                Duration::from_secs(0),
+                TEST_IMAGE_HASH_EVENT,
+            )
             .unwrap();
 
         // then
@@ -738,7 +748,12 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
+            .add_participant(
+                node_id.clone(),
+                attestation,
+                Duration::from_secs(0),
+                TEST_IMAGE_HASH_EVENT,
+            )
             .unwrap();
 
         // then
@@ -819,7 +834,12 @@ mod tests {
         });
 
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
+            .add_participant(
+                node_id.clone(),
+                attestation,
+                Duration::from_secs(0),
+                TEST_IMAGE_HASH_EVENT,
+            )
             .unwrap();
 
         // when
@@ -851,7 +871,12 @@ mod tests {
         });
 
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
+            .add_participant(
+                node_id.clone(),
+                attestation,
+                Duration::from_secs(0),
+                TEST_IMAGE_HASH_EVENT,
+            )
             .unwrap();
 
         // when
@@ -890,7 +915,12 @@ mod tests {
         });
 
         tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0), TEST_IMAGE_HASH_EVENT)
+            .add_participant(
+                node_id.clone(),
+                attestation,
+                Duration::from_secs(0),
+                TEST_IMAGE_HASH_EVENT,
+            )
             .unwrap();
 
         // when
@@ -1203,7 +1233,12 @@ mod tests {
             expiry_timestamp_seconds: Some(expiry_time_secs),
         });
         tee_state
-            .add_participant(node_id, expiring_attestation, tee_upgrade_duration, TEST_IMAGE_HASH_EVENT)
+            .add_participant(
+                node_id,
+                expiring_attestation,
+                tee_upgrade_duration,
+                TEST_IMAGE_HASH_EVENT,
+            )
             .expect("mock attestation is valid");
 
         // Advance time to exact expiry boundary
@@ -1245,7 +1280,12 @@ mod tests {
                 Attestation::Mock(MockAttestation::Valid)
             };
             tee_state
-                .add_participant(node_id, attestation, tee_upgrade_duration, TEST_IMAGE_HASH_EVENT)
+                .add_participant(
+                    node_id,
+                    attestation,
+                    tee_upgrade_duration,
+                    TEST_IMAGE_HASH_EVENT,
+                )
                 .expect("mock attestation is valid");
         }
 

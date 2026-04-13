@@ -5,9 +5,7 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{near, store::IterableMap};
 
 use crate::{
-    primitives::participants::ParticipantInfo,
-    storage_keys::StorageKey,
-    tee::tee_state::TeeState,
+    primitives::participants::ParticipantInfo, storage_keys::StorageKey, tee::tee_state::TeeState,
 };
 
 #[near(serializers=[borsh])]
