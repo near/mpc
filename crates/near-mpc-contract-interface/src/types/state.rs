@@ -9,6 +9,7 @@ use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fmt;
 
 use super::primitives::DomainId;
 
@@ -469,6 +470,109 @@ pub enum ProtocolContractState {
     Initializing(InitializingContractState),
     Running(RunningContractState),
     Resharing(ResharingContractState),
+}
+
+impl fmt::Display for ProtocolContractState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn write_params(f: &mut fmt::Formatter<'_>, parameters: &ThresholdParameters) -> fmt::Result {
+            writeln!(f, "    Participants:")?;
+            for (account_id, id, info) in &parameters.participants.participants {
+                writeln!(f, "      ID {}: {} ({})", id.0, account_id.0, info.url)?;
+            }
+            writeln!(f, "    Threshold: {}", parameters.threshold.0)
+        }
+
+        fn write_key_event_progress(
+            f: &mut fmt::Formatter<'_>,
+            key_event: &KeyEvent,
+            completed_keys: &[KeyForDomain],
+            domains: &[DomainConfig],
+            action: &str,
+            past_action: &str,
+        ) -> fmt::Result {
+            writeln!(f, "  Domains:")?;
+            #[expect(clippy::comparison_chain)]
+            for (i, domain) in domains.iter().enumerate() {
+                write!(f, "    Domain {}: {:?}, ", domain.id, domain.scheme)?;
+                if i < completed_keys.len() {
+                    writeln!(f, "{past_action} (attempt ID {})", completed_keys[i].attempt)?;
+                } else if i == completed_keys.len() {
+                    write!(f, "{action} key: ")?;
+                    if let Some(instance) = &key_event.instance {
+                        writeln!(f, "active; current attempt ID: {}", instance.attempt_id)?;
+                    } else {
+                        writeln!(
+                            f,
+                            "not active; next attempt ID: {}",
+                            key_event.next_attempt_id
+                        )?;
+                    }
+                } else {
+                    writeln!(f, "queued for {action}")?;
+                }
+            }
+            Ok(())
+        }
+
+        match self {
+            ProtocolContractState::NotInitialized => {
+                writeln!(f, "Contract is not initialized")
+            }
+            ProtocolContractState::Initializing(state) => {
+                writeln!(f, "Contract is in Initializing state (key generation)")?;
+                writeln!(f, "  Epoch: {}", state.generating_key.epoch_id)?;
+                write_key_event_progress(
+                    f,
+                    &state.generating_key,
+                    &state.generated_keys,
+                    &state.domains.domains,
+                    "generating",
+                    "key generated",
+                )?;
+                writeln!(f, "  Parameters:")?;
+                write_params(f, &state.generating_key.parameters)?;
+                writeln!(f, "  Warning: this tool does not calculate automatic timeouts for key generation attempts")
+            }
+            ProtocolContractState::Running(state) => {
+                writeln!(f, "Contract is in Running state")?;
+                writeln!(f, "  Epoch: {}", state.keyset.epoch_id)?;
+                writeln!(f, "  Keyset:")?;
+                for (domain, key) in
+                    state.domains.domains.iter().zip(state.keyset.domains.iter())
+                {
+                    writeln!(
+                        f,
+                        "    Domain {}: {:?}, key from attempt {}",
+                        domain.id, domain.scheme, key.attempt
+                    )?;
+                }
+                writeln!(f, "  Parameters:")?;
+                write_params(f, &state.parameters)
+            }
+            ProtocolContractState::Resharing(state) => {
+                writeln!(f, "Contract is in Resharing state")?;
+                writeln!(
+                    f,
+                    "  Epoch transition: original {} --> prospective {}",
+                    state.previous_running_state.keyset.epoch_id,
+                    state.previous_running_state.keyset.epoch_id.next()
+                )?;
+                write_key_event_progress(
+                    f,
+                    &state.resharing_key,
+                    &state.reshared_keys,
+                    &state.previous_running_state.domains.domains,
+                    "resharing",
+                    "reshared",
+                )?;
+                writeln!(f, "  Previous Parameters:")?;
+                write_params(f, &state.previous_running_state.parameters)?;
+                writeln!(f, "  Proposed Parameters:")?;
+                write_params(f, &state.resharing_key.parameters)?;
+                writeln!(f, "  Warning: this tool does not calculate automatic timeouts for resharing attempts")
+            }
+        }
+    }
 }
 
 #[cfg(test)]
