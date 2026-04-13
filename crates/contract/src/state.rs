@@ -57,9 +57,10 @@ impl ProtocolContractState {
             ProtocolContractState::Resharing(state) => {
                 Ok(state.previous_running_state.parameters.threshold())
             }
-            ProtocolContractState::NotInitialized => {
-                Err(InvalidState::UnexpectedProtocolState.into())
+            ProtocolContractState::NotInitialized => Err(InvalidState::UnexpectedProtocolState {
+                state_name: self.name(),
             }
+            .into()),
         }
     }
     pub fn start_keygen_instance(
@@ -227,7 +228,10 @@ impl ProtocolContractState {
                 )?;
             }
             ProtocolContractState::NotInitialized => {
-                return Err(InvalidState::UnexpectedProtocolState.message(self.name()));
+                return Err(InvalidState::UnexpectedProtocolState {
+                    state_name: self.name(),
+                }
+                .into());
             }
         };
         Ok(())
@@ -273,7 +277,10 @@ impl ProtocolContractState {
                 state.is_participant_or_prospective_participant(account_id)
             }
             ProtocolContractState::NotInitialized => {
-                return Err(InvalidState::UnexpectedProtocolState.message(self.name()));
+                return Err(InvalidState::UnexpectedProtocolState {
+                    state_name: self.name(),
+                }
+                .into());
             }
         };
         Ok(is_existing_or_prospective_participant)
