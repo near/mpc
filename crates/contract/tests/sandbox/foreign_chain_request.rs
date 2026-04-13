@@ -33,11 +33,11 @@ async fn verify_foreign_transaction__should_succeed(
         .with_foreign_tx_domain()
         .build()
         .await;
-    let ftx_key = setup.foreign_tx_key();
+    let foreign_tx_key = setup.foreign_tx_key();
     vote_chain_policy(&chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
-    let domain_id = dtos::DomainId(ftx_key.domain_id().0);
+    let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
 
     let request_args = dtos::VerifyForeignTransactionRequestArgs {
         domain_id,
@@ -68,7 +68,7 @@ async fn verify_foreign_transaction__should_succeed(
     let (payload, response) = sign_foreign_tx_response(
         &verify_request.request,
         extracted_values,
-        ftx_key.as_secp256k1(),
+        foreign_tx_key.as_secp256k1(),
     );
 
     let respond_result = setup.mpc_signer_accounts[0]
@@ -107,11 +107,11 @@ async fn verify_foreign_transaction__should_reject_without_policy(
         .with_foreign_tx_domain()
         .build()
         .await;
-    let ftx_key = setup.foreign_tx_key();
+    let foreign_tx_key = setup.foreign_tx_key();
     let user = setup.worker.dev_create_account().await.unwrap();
 
     let request_args = dtos::VerifyForeignTransactionRequestArgs {
-        domain_id: dtos::DomainId(ftx_key.domain_id().0),
+        domain_id: dtos::DomainId(foreign_tx_key.domain_id().0),
         payload_version: ForeignTxPayloadVersion::V1,
         request: rpc_request,
     };
@@ -150,13 +150,13 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         .with_foreign_tx_domain()
         .build()
         .await;
-    let ftx_key = setup.foreign_tx_key();
+    let foreign_tx_key = setup.foreign_tx_key();
     vote_chain_policy(&chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
 
     let request_args = dtos::VerifyForeignTransactionRequestArgs {
-        domain_id: dtos::DomainId(ftx_key.domain_id().0),
+        domain_id: dtos::DomainId(foreign_tx_key.domain_id().0),
         payload_version: ForeignTxPayloadVersion::V1,
         request: rpc_request,
     };
