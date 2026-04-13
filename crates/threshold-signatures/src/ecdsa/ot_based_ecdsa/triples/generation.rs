@@ -254,8 +254,7 @@ async fn do_generation_many<const N: usize>(
             f_v.iter(),
             my_phi_proof0_nonces.iter(),
             my_phi_proof1_nonces.iter(),
-        ))
-        {
+        )) {
             // Spec 2.6
             let statement0 = dlog::Statement::<C> {
                 public: &big_e_i.eval_at_zero()?.value(),
