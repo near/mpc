@@ -194,4 +194,10 @@ mod tests {
     fn keccak_constants_consistent() {
         assert_eq!(8 * KECCAK_STATE_WORDS, KECCAK_STATE_BYTES);
     }
+
+    #[test]
+    fn strobe_r_within_keccak_state() {
+        // run_f indexes up to STROBE_R + 1, so that must be in bounds
+        assert!((STROBE_R + 1) < KECCAK_STATE_BYTES as u8);
+    }
 }
