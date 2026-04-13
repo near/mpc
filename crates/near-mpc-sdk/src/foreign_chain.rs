@@ -23,8 +23,8 @@ pub use near_mpc_contract_interface::types::{
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
 pub struct ForeignChainSignatureVerifier {
-    pub(crate) expected_extracted_values: Vec<ExtractedValue>,
-    pub(crate) request: ForeignChainRpcRequest,
+    expected_extracted_values: Vec<ExtractedValue>,
+    request: ForeignChainRpcRequest,
 }
 
 pub enum VerifyForeignChainError {
@@ -137,6 +137,6 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
 }
 
 pub struct ForeignChainRpcRequestWithExpectations {
-    pub(crate) request: ForeignChainRpcRequest,
-    pub(crate) expected_values: Vec<ExtractedValue>,
+    request: ForeignChainRpcRequest,
+    expected_values: Vec<ExtractedValue>,
 }
