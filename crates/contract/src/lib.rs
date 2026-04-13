@@ -221,6 +221,103 @@ impl MpcContract {
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
+
+    /// Common preconditions enforced on every user-facing request method (`sign`,
+    /// `request_app_private_key`, `verify_foreign_transaction`):
+    ///
+    /// 1. The target domain exists and its purpose matches `expected_purpose`.
+    /// 2. The caller attached enough prepaid gas to perform the yield/resume flow.
+    /// 3. The caller attached at least `minimum_deposit` (excess is refunded).
+    /// 4. The contract is currently accepting user requests.
+    ///
+    /// Returns the validated domain config and the caller's account id.
+    fn check_request_preconditions(
+        &self,
+        domain_id: DomainId,
+        expected_purpose: DomainPurpose,
+        minimum_gas: Gas,
+        minimum_deposit: NearToken,
+    ) -> (DomainConfig, AccountId) {
+        // 1. Look up the domain and check its purpose.
+        let domains = match self.protocol_state.domain_registry() {
+            Ok(domains) => domains,
+            Err(err) => env::panic_str(&err.to_string()),
+        };
+        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound {
+                    provided: domain_id,
+                }
+                .to_string(),
+            );
+        };
+        if domain_config.purpose != expected_purpose {
+            env::panic_str(
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: expected_purpose,
+                    actual: domain_config.purpose,
+                }
+                .to_string(),
+            );
+        }
+        let domain_config = domain_config.clone();
+
+        // 2. Make sure the call will not run out of gas doing yield/resume logic.
+        let prepaid_gas = env::prepaid_gas();
+        if prepaid_gas < minimum_gas {
+            env::panic_str(
+                &InvalidParameters::InsufficientGas {
+                    provided: prepaid_gas.as_gas(),
+                    required: minimum_gas.as_gas(),
+                }
+                .to_string(),
+            );
+        }
+
+        // 3. Require the minimum deposit and refund any excess.
+        let predecessor = env::predecessor_account_id();
+        require_deposit(minimum_deposit, &predecessor);
+
+        // 4. Refuse the request if the contract is not currently accepting requests
+        //    (e.g. because TEE validation has failed).
+        if !self.accept_requests {
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
+        (domain_config, predecessor)
+    }
+
+    /// Creates a yield-resume promise that calls back into `callback_method` with the
+    /// pre-serialized `callback_args`, and stores the resulting yield id via `insert`.
+    ///
+    /// This function calls `env::promise_return` and so must be the last operation performed
+    /// in the enclosing contract method.
+    fn enqueue_yield_request(
+        &mut self,
+        callback_method: &str,
+        callback_args: Vec<u8>,
+        callback_gas: Gas,
+        insert: impl FnOnce(&mut Self, CryptoHash) -> bool,
+    ) {
+        let promise_index = env::promise_yield_create(
+            callback_method,
+            callback_args,
+            callback_gas,
+            GasWeight(0),
+            DATA_ID_REGISTER,
+        );
+
+        let return_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+            .expect("read_register failed")
+            .try_into()
+            .expect("conversion to CryptoHash failed");
+        if insert(self, return_id) {
+            log!("request already present, overriding callback.")
+        }
+
+        env::promise_return(promise_index);
+    }
 }
 
 // User contract API
@@ -248,29 +345,12 @@ impl MpcContract {
 
         let request: SignRequest = request.try_into().unwrap();
 
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id,
-                }
-                .to_string(),
-            );
-        };
-
-        if domain_config.purpose != DomainPurpose::Sign {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::Sign,
-                    actual: domain_config.purpose,
-                }
-                .to_string(),
-            );
-        }
+        let (domain_config, predecessor) = self.check_request_preconditions(
+            request.domain_id,
+            DomainPurpose::Sign,
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_SIGN_REQUEST_DEPOSIT,
+        );
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -290,23 +370,6 @@ impl MpcContract {
             }
         }
 
-        let gas_required =
-            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure sign call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas {
-                    provided: env::prepaid_gas().as_gas(),
-                    required: gas_required.as_gas(),
-                }
-                .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
-
         let request = SignatureRequest::new(
             request.domain_id,
             request.payload,
@@ -314,33 +377,18 @@ impl MpcContract {
             &request.path,
         );
 
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
-
         let callback_gas = Gas::from_tgas(
             self.config
                 .return_signature_and_clean_state_on_success_call_tera_gas,
         );
 
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_signature_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_signature_request(&request, return_sig_id) {
-            log!("signature request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 
     /// This is the root public key combined from all the public keys of the participants.
@@ -419,49 +467,13 @@ impl MpcContract {
             request
         );
 
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let domain_id = request.domain_id.into();
-        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: domain_id,
-                }
-                .to_string(),
-            );
-        };
-        if domain_config.purpose != DomainPurpose::CKD {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::CKD,
-                    actual: domain_config.purpose,
-                }
-                .to_string(),
-            );
-        }
-
-        let gas_required = Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure CKD call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas {
-                    provided: env::prepaid_gas().as_gas(),
-                    required: gas_required.as_gas(),
-                }
-                .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_CKD_REQUEST_DEPOSIT, &predecessor);
-
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
+        let domain_id: DomainId = request.domain_id.into();
+        let (_, predecessor) = self.check_request_preconditions(
+            domain_id,
+            DomainPurpose::CKD,
+            Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_CKD_REQUEST_DEPOSIT,
+        );
 
         match &request.app_public_key {
             dtos::CKDAppPublicKey::AppPublicKey(_) => {}
@@ -472,11 +484,10 @@ impl MpcContract {
             }
         }
 
-        let account_id = env::predecessor_account_id();
         let request = CKDRequest::new(
             request.app_public_key,
             domain_id,
-            &account_id,
+            &predecessor,
             &request.derivation_path,
         );
 
@@ -485,24 +496,13 @@ impl MpcContract {
                 .return_ck_and_clean_state_on_success_call_tera_gas,
         );
 
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_ckd_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_ck_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_ckd_request(&request, return_ck_id) {
-            log!("request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 
     /// Submit a verification + signing request for a foreign chain transaction.
@@ -517,29 +517,12 @@ impl MpcContract {
             request
         );
 
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.into()) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id.into(),
-                }
-                .to_string(),
-            );
-        };
-
-        if domain_config.purpose != DomainPurpose::ForeignTx {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::ForeignTx,
-                    actual: domain_config.purpose,
-                }
-                .to_string(),
-            );
-        }
+        self.check_request_preconditions(
+            request.domain_id.into(),
+            DomainPurpose::ForeignTx,
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_SIGN_REQUEST_DEPOSIT,
+        );
 
         let requested_chain = request.request.chain();
         if !self
@@ -555,52 +538,19 @@ impl MpcContract {
             );
         }
 
-        let gas_required =
-            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas {
-                    provided: env::prepaid_gas().as_gas(),
-                    required: gas_required.as_gas(),
-                }
-                .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
-
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
-
         let callback_gas = Gas::from_tgas(
             self.config
                 .return_signature_and_clean_state_on_success_call_tera_gas,
         );
 
         let request = args_into_verify_foreign_tx_request(request);
-
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_verify_foreign_tx_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_verify_foreign_tx_request(&request, return_sig_id) {
-            log!("signature request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 }
 
@@ -2648,6 +2598,99 @@ mod tests {
             }
             Err(_) => panic!("respond_ckd should not fail"),
         }
+    }
+
+    fn override_context_for_preconditions(deposit: NearToken, prepaid_gas: Gas) {
+        let predecessor: AccountId = "contract_account.near".parse().unwrap();
+        let context = VMContextBuilder::new()
+            .predecessor_account_id(predecessor.clone())
+            .current_account_id(predecessor)
+            .attached_deposit(deposit)
+            .prepaid_gas(prepaid_gas)
+            .build();
+        testing_env!(context);
+    }
+
+    #[test]
+    fn check_request_preconditions__returns_domain_config_and_predecessor_on_valid_call() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        let (config, predecessor) = contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+        assert_eq!(config.id, DomainId::default());
+        assert_eq!(config.curve, Curve::Secp256k1);
+        assert_eq!(config.purpose, DomainPurpose::Sign);
+        assert_eq!(predecessor.as_str(), "contract_account.near");
+    }
+
+    #[test]
+    #[should_panic(expected = "was not found")]
+    fn check_request_preconditions__panics_when_domain_does_not_exist() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.check_request_preconditions(
+            DomainId(999),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "purpose")]
+    fn check_request_preconditions__panics_when_domain_purpose_does_not_match() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::CKD,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Provided gas is lower than required")]
+    fn check_request_preconditions__panics_when_prepaid_gas_is_insufficient() {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        override_context_for_preconditions(NearToken::from_yoctonear(1), Gas::from_tgas(1));
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(100),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Attached deposit is lower than required")]
+    fn check_request_preconditions__panics_when_attached_deposit_is_insufficient() {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        override_context_for_preconditions(NearToken::from_yoctonear(0), Gas::from_tgas(300));
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "TEE validation")]
+    fn check_request_preconditions__panics_when_contract_is_not_accepting_requests() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.accept_requests = false;
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
     }
 
     #[test]
