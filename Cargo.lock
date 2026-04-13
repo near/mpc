@@ -11146,6 +11146,7 @@ dependencies = [
  "hex",
  "hkdf",
  "insta",
+ "itertools 0.14.0",
  "k256",
  "keccak",
  "pairing",

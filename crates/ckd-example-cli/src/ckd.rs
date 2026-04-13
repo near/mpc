@@ -8,7 +8,8 @@ use sha3::{Digest, Sha3_256};
 use std::io::{self, Write as _};
 
 use near_mpc_contract_interface::types::{
-    AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDRequestArgs, CkdAppId,
+    AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDAppPublicKeyPV,
+    CKDRequestArgs, CkdAppId,
 };
 
 use crate::{cli::Args, types::CKDResponse};
@@ -21,10 +22,19 @@ pub fn run(args: Args) -> Result<()> {
     let account_id = AccountId(args.signer_account_id);
     let app_id = derive_app_id(&account_id, &args.derivation_path);
 
-    let (ephemeral_private_key, ephemeral_public_key) = generate_ephemeral_key(&mut OsRng);
+    let (ephemeral_private_key, app_public_key) = if args.publicly_verifiable {
+        let (scalar, pk1, pk2) = generate_ephemeral_key_pv(&mut OsRng);
+        (
+            scalar,
+            CKDAppPublicKey::AppPublicKeyPV(CKDAppPublicKeyPV { pk1, pk2 }),
+        )
+    } else {
+        let (scalar, pk) = generate_ephemeral_key(&mut OsRng);
+        (scalar, CKDAppPublicKey::AppPublicKey(pk))
+    };
     let ckd_params = CKDRequestArgs {
         derivation_path: args.derivation_path,
-        app_public_key: CKDAppPublicKey::AppPublicKey(ephemeral_public_key),
+        app_public_key,
         domain_id: args.domain_id,
     };
     let function_name = near_mpc_contract_interface::method_names::REQUEST_APP_PRIVATE_KEY;
@@ -72,6 +82,19 @@ fn generate_ephemeral_key(rng: &mut impl CryptoRngCore) -> (Scalar, Bls12381G1Pu
     let x = blstrs::Scalar::random(rng);
     let big_x = blstrs::G1Projective::generator() * x;
     (x, Bls12381G1PublicKey::from(&big_x))
+}
+
+fn generate_ephemeral_key_pv(
+    rng: &mut impl CryptoRngCore,
+) -> (Scalar, Bls12381G1PublicKey, Bls12381G2PublicKey) {
+    let x = blstrs::Scalar::random(rng);
+    let pk1 = blstrs::G1Projective::generator() * x;
+    let pk2 = blstrs::G2Projective::generator() * x;
+    (
+        x,
+        Bls12381G1PublicKey::from(&pk1),
+        Bls12381G2PublicKey::from(&pk2),
+    )
 }
 
 pub fn verify(public_key: &G2Projective, app_id: &[u8], signature: &G1Projective) -> bool {
