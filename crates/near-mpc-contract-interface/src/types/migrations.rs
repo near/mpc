@@ -1,12 +1,15 @@
 //! DTO types for node migration data.
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
 use super::participants::ParticipantInfo;
 
 /// Information about a backup service for a node.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, PartialOrd, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
 pub struct BackupServiceInfo {
     pub public_key: Ed25519PublicKey,
 }

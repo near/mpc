@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{near, store::IterableMap};
+
+pub use near_mpc_contract_interface::types::BackupServiceInfo;
 
 use crate::{primitives::participants::ParticipantInfo, storage_keys::StorageKey};
 
@@ -84,12 +85,6 @@ impl NodeMigrations {
 
         combined
     }
-}
-
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
-#[near(serializers=[borsh, json])]
-pub struct BackupServiceInfo {
-    pub public_key: Ed25519PublicKey,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
