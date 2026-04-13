@@ -3,8 +3,8 @@
 use crate::sandbox::common::{
     abstract_evm_request, await_pending_foreign_tx_request_observed_on_contract,
     bitcoin_extracted_values, bitcoin_request, bnb_evm_request, ethereum_evm_request,
-    evm_block_hash_extracted_values, setup_foreign_tx_env, sign_foreign_tx_response,
-    starknet_extracted_values, starknet_request, vote_chain_policy,
+    evm_block_hash_extracted_values, sign_foreign_tx_response, starknet_extracted_values,
+    starknet_request, vote_chain_policy, SandboxTestSetup,
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -29,19 +29,21 @@ async fn verify_foreign_transaction__should_succeed(
     #[case] extracted_values: Vec<ExtractedValue>,
 ) {
     let chain = rpc_request.chain();
-    let env = setup_foreign_tx_env().await;
-    vote_chain_policy(&chain, &env.contract, &env.accounts).await;
+    let setup = SandboxTestSetup::builder().foreign_tx().build().await;
+    let ftx_key = setup.foreign_tx_key();
+    vote_chain_policy(&chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
-    let user = env.worker.dev_create_account().await.unwrap();
+    let user = setup.worker.dev_create_account().await.unwrap();
+    let domain_id = dtos::DomainId(ftx_key.domain_id().0);
 
     let request_args = dtos::VerifyForeignTransactionRequestArgs {
-        domain_id: dtos::DomainId(env.domain_id.0),
+        domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
         request: rpc_request.clone(),
     };
 
     let status = user
-        .call(env.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
+        .call(setup.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
         .args_json(json!({ "request": request_args }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
@@ -50,18 +52,18 @@ async fn verify_foreign_transaction__should_succeed(
         .unwrap();
 
     let verify_request = VerifyForeignTransactionRequest {
-        domain_id: dtos::DomainId(env.domain_id.0),
+        domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
         request: rpc_request,
     };
 
-    await_pending_foreign_tx_request_observed_on_contract(&env.contract, &verify_request).await;
+    await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request).await;
 
     let (payload, response) =
-        sign_foreign_tx_response(&verify_request.request, extracted_values, &env.secret_key);
+        sign_foreign_tx_response(&verify_request.request, extracted_values, ftx_key.as_secp256k1());
 
-    let respond_result = env.accounts[0]
-        .call(env.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
+    let respond_result = setup.mpc_signer_accounts[0]
+        .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
         .args_json(json!({
             "request": verify_request,
             "response": response,
@@ -92,17 +94,18 @@ async fn verify_foreign_transaction__should_succeed(
 async fn verify_foreign_transaction__should_reject_without_policy(
     #[case] rpc_request: ForeignChainRpcRequest,
 ) {
-    let env = setup_foreign_tx_env().await;
-    let user = env.worker.dev_create_account().await.unwrap();
+    let setup = SandboxTestSetup::builder().foreign_tx().build().await;
+    let ftx_key = setup.foreign_tx_key();
+    let user = setup.worker.dev_create_account().await.unwrap();
 
     let request_args = dtos::VerifyForeignTransactionRequestArgs {
-        domain_id: dtos::DomainId(env.domain_id.0),
+        domain_id: dtos::DomainId(ftx_key.domain_id().0),
         payload_version: ForeignTxPayloadVersion::V1,
         request: rpc_request,
     };
 
     let result = user
-        .call(env.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
+        .call(setup.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
         .args_json(json!({ "request": request_args }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
@@ -128,19 +131,20 @@ async fn verify_foreign_transaction__should_timeout_without_response(
     #[case] rpc_request: ForeignChainRpcRequest,
 ) {
     let chain = rpc_request.chain();
-    let env = setup_foreign_tx_env().await;
-    vote_chain_policy(&chain, &env.contract, &env.accounts).await;
+    let setup = SandboxTestSetup::builder().foreign_tx().build().await;
+    let ftx_key = setup.foreign_tx_key();
+    vote_chain_policy(&chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
-    let user = env.worker.dev_create_account().await.unwrap();
+    let user = setup.worker.dev_create_account().await.unwrap();
 
     let request_args = dtos::VerifyForeignTransactionRequestArgs {
-        domain_id: dtos::DomainId(env.domain_id.0),
+        domain_id: dtos::DomainId(ftx_key.domain_id().0),
         payload_version: ForeignTxPayloadVersion::V1,
         request: rpc_request,
     };
 
     let status = user
-        .call(env.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
+        .call(setup.contract.id(), method_names::VERIFY_FOREIGN_TRANSACTION)
         .args_json(json!({ "request": request_args }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
@@ -148,7 +152,7 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         .await
         .unwrap();
 
-    env.worker
+    setup.worker
         .fast_forward(SIGNATURE_TIMEOUT_BLOCKS)
         .await
         .unwrap();

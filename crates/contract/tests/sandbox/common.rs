@@ -1,4 +1,3 @@
-use crate::sandbox::utils::shared_key_utils::new_secp256k1;
 use crate::sandbox::utils::{
     consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
     contract_build::current_contract,
@@ -151,83 +150,6 @@ pub async fn init_contract_running(
     result.into_result().unwrap()
 }
 
-pub struct DomainPublicKey {
-    public_key: PublicKeyExtended,
-    config: DomainConfig,
-}
-
-/// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
-pub async fn init_with_candidates(
-    pks: Vec<dtos::PublicKey>,
-    init_config: Option<dtos::InitConfig>,
-    number_of_participants: usize,
-) -> (
-    Worker<Sandbox>,
-    Contract,
-    Vec<Account>,
-    Vec<DomainPublicKey>,
-) {
-    let (worker, contract) = init().await;
-    let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
-    let threshold_parameters = make_threshold_params(&participants);
-    let mut ret_domains: Vec<DomainPublicKey> = Vec::new();
-
-    let init = if !pks.is_empty() {
-        let (domains, keys): (Vec<_>, Vec<_>) = pks
-            .into_iter()
-            .enumerate()
-            .map(|(i, pk)| {
-                let domain_id = DomainId((i as u64) * 2);
-                let curve = match pk {
-                    dtos::PublicKey::Ed25519(_) => Curve::Edwards25519,
-                    dtos::PublicKey::Secp256k1(_) => Curve::Secp256k1,
-                    dtos::PublicKey::Bls12381(_) => Curve::Bls12381,
-                };
-                let key: PublicKeyExtended = pk.try_into().unwrap();
-                let purpose = infer_purpose_from_curve(curve);
-                ret_domains.push(DomainPublicKey {
-                    public_key: key.clone(),
-                    config: DomainConfig {
-                        id: domain_id,
-                        curve,
-                        purpose,
-                    },
-                });
-                (
-                    DomainConfig {
-                        id: domain_id,
-                        curve,
-                        purpose,
-                    },
-                    KeyForDomain {
-                        attempt: AttemptId::new(),
-                        domain_id,
-                        key,
-                    },
-                )
-            })
-            .unzip();
-
-        let next_domain_id = (domains.len() as u64) * 2;
-        let keyset = Keyset::new(EpochId::new(5), keys);
-        init_contract_running(
-            &contract,
-            domains,
-            next_domain_id,
-            keyset,
-            threshold_parameters,
-        )
-        .await
-    } else {
-        init_contract(&contract, threshold_parameters, init_config).await
-    };
-
-    // Give each participant a valid attestation initially
-    submit_attestations(&contract, &accounts, &participants).await;
-
-    dbg!(init);
-    (worker, contract, accounts, ret_domains)
-}
 
 pub struct SandboxTestSetup {
     pub worker: Worker<Sandbox>,
@@ -236,27 +158,137 @@ pub struct SandboxTestSetup {
     pub keys: Vec<DomainKey>,
 }
 
-pub async fn init_env(curves: &[Curve], number_of_participants: usize) -> SandboxTestSetup {
-    let (public_keys, secret_keys): (Vec<_>, Vec<_>) = curves
-        .iter()
-        .map(|curve| make_key_for_domain(*curve))
-        .collect();
-    let (worker, contract, mpc_signer_accounts, domains) =
-        init_with_candidates(public_keys, None, number_of_participants).await;
-    let keys = domains
-        .into_iter()
-        .zip(secret_keys.into_iter())
-        .map(|(public, secret)| DomainKey {
-            domain_config: public.config,
-            domain_secret_key: secret,
-            domain_public_key: public.public_key,
-        })
-        .collect();
-    SandboxTestSetup {
-        worker,
-        contract,
-        mpc_signer_accounts,
-        keys,
+impl SandboxTestSetup {
+    pub fn builder() -> SandboxTestSetupBuilder {
+        SandboxTestSetupBuilder {
+            curves: Vec::new(),
+            foreign_tx: false,
+            number_of_participants: PARTICIPANT_LEN,
+            init_config: None,
+        }
+    }
+
+    /// Returns the first key with `ForeignTx` purpose.
+    pub fn foreign_tx_key(&self) -> &DomainKey {
+        self.keys
+            .iter()
+            .find(|k| k.domain_config.purpose == DomainPurpose::ForeignTx)
+            .expect("No ForeignTx domain in setup. Did you call .foreign_tx() on the builder?")
+    }
+}
+
+pub struct SandboxTestSetupBuilder {
+    curves: Vec<Curve>,
+    foreign_tx: bool,
+    number_of_participants: usize,
+    init_config: Option<dtos::InitConfig>,
+}
+
+impl SandboxTestSetupBuilder {
+    pub fn curves(mut self, curves: &[Curve]) -> Self {
+        self.curves = curves.to_vec();
+        self
+    }
+
+    pub fn participants(mut self, n: usize) -> Self {
+        self.number_of_participants = n;
+        self
+    }
+
+    pub fn init_config(mut self, config: dtos::InitConfig) -> Self {
+        self.init_config = Some(config);
+        self
+    }
+
+    pub fn foreign_tx(mut self) -> Self {
+        self.foreign_tx = true;
+        self
+    }
+
+    pub async fn build(self) -> SandboxTestSetup {
+        let (worker, contract) = init().await;
+        let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
+        let threshold_parameters = make_threshold_params(&participants);
+
+        let mut keys = Vec::new();
+        let mut domain_configs = Vec::new();
+        let mut key_for_domains = Vec::new();
+        let mut domain_id_counter = 0u64;
+
+        // Sign-purpose domains from curves
+        for curve in &self.curves {
+            let (pk, sk) = make_key_for_domain(*curve);
+            let purpose = infer_purpose_from_curve(*curve);
+            let domain_id = DomainId(domain_id_counter);
+            domain_id_counter += 2;
+
+            let key: PublicKeyExtended = pk.try_into().unwrap();
+            let config = DomainConfig {
+                id: domain_id,
+                curve: *curve,
+                purpose,
+            };
+            keys.push(DomainKey {
+                domain_config: config.clone(),
+                domain_secret_key: sk,
+                domain_public_key: key.clone(),
+            });
+            domain_configs.push(config);
+            key_for_domains.push(KeyForDomain {
+                attempt: AttemptId::new(),
+                domain_id,
+                key,
+            });
+        }
+
+        // Optional ForeignTx domain
+        if self.foreign_tx {
+            let (pk, sk) = make_key_for_domain(Curve::Secp256k1);
+            let domain_id = DomainId(domain_id_counter);
+            domain_id_counter += 2;
+
+            let key: PublicKeyExtended = pk.try_into().unwrap();
+            let config = DomainConfig {
+                id: domain_id,
+                curve: Curve::Secp256k1,
+                purpose: DomainPurpose::ForeignTx,
+            };
+            keys.push(DomainKey {
+                domain_config: config.clone(),
+                domain_secret_key: sk,
+                domain_public_key: key.clone(),
+            });
+            domain_configs.push(config);
+            key_for_domains.push(KeyForDomain {
+                attempt: AttemptId::new(),
+                domain_id,
+                key,
+            });
+        }
+
+        if !domain_configs.is_empty() {
+            let next_domain_id = domain_id_counter;
+            let keyset = Keyset::new(EpochId::new(5), key_for_domains);
+            init_contract_running(
+                &contract,
+                domain_configs,
+                next_domain_id,
+                keyset,
+                threshold_parameters,
+            )
+            .await;
+        } else {
+            init_contract(&contract, threshold_parameters, self.init_config).await;
+        }
+
+        submit_attestations(&contract, &accounts, &participants).await;
+
+        SandboxTestSetup {
+            worker,
+            contract,
+            mpc_signer_accounts: accounts,
+            keys,
+        }
     }
 }
 
@@ -536,52 +568,6 @@ fn hash(code: &[u8]) -> [u8; 32] {
     let mut hasher = sha2::Sha256::new();
     hasher.update(code);
     hasher.finalize().into()
-}
-
-pub struct ForeignTxEnv {
-    pub worker: Worker<Sandbox>,
-    pub contract: Contract,
-    pub accounts: Vec<Account>,
-    pub domain_id: DomainId,
-    pub secret_key: threshold_signatures::ecdsa::KeygenOutput,
-}
-
-/// Initialise a contract in Running state with a single ForeignTx Secp256k1
-/// domain.
-pub async fn setup_foreign_tx_env() -> ForeignTxEnv {
-    let (worker, contract) = init().await;
-    let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
-    let params = make_threshold_params(&participants);
-
-    let domain_id = DomainId(0);
-    let (pk, sk) = new_secp256k1();
-    let key: PublicKeyExtended = pk.try_into().unwrap();
-
-    let domain = DomainConfig {
-        id: domain_id,
-        curve: Curve::Secp256k1,
-        purpose: DomainPurpose::ForeignTx,
-    };
-
-    let keyset = Keyset::new(
-        EpochId::new(0),
-        vec![KeyForDomain {
-            attempt: AttemptId::new(),
-            domain_id,
-            key,
-        }],
-    );
-
-    init_contract_running(&contract, vec![domain], 1, keyset, params).await;
-    submit_attestations(&contract, &accounts, &participants).await;
-
-    ForeignTxEnv {
-        worker,
-        contract,
-        accounts,
-        domain_id,
-        secret_key: sk,
-    }
 }
 
 /// Build a [`ForeignChainPolicy`] that enables the given chain with a dummy RPC URL.
