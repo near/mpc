@@ -270,69 +270,67 @@ key = "value"
 
     #[test]
     fn valid_docker_hub_simple() {
-        assert!(validate_image_reference("nearone/mpc-node").is_ok());
+        validate_image_reference("nearone/mpc-node").unwrap();
     }
 
     #[test]
     fn valid_docker_hub_with_tag() {
-        assert!(validate_image_reference("nearone/mpc-node:3.8.1").is_ok());
+        validate_image_reference("nearone/mpc-node:3.8.1").unwrap();
     }
 
     #[test]
     fn valid_docker_hub_with_text_tag() {
-        assert!(validate_image_reference("nearone/mpc-node:testnet-release").is_ok());
+        validate_image_reference("nearone/mpc-node:testnet-release").unwrap();
     }
 
     #[test]
     fn valid_ghcr() {
-        assert!(validate_image_reference("ghcr.io/nearone/mpc-node").is_ok());
+        validate_image_reference("ghcr.io/nearone/mpc-node").unwrap();
     }
 
     #[test]
     fn valid_ecr_public() {
-        assert!(validate_image_reference("public.ecr.aws/myalias/mpc-node").is_ok());
+        validate_image_reference("public.ecr.aws/myalias/mpc-node").unwrap();
     }
 
     #[test]
     fn valid_google_artifact_registry() {
-        assert!(validate_image_reference("us-docker.pkg.dev/my-project/my-repo/mpc-node").is_ok());
+        validate_image_reference("us-docker.pkg.dev/my-project/my-repo/mpc-node").unwrap();
     }
 
     #[test]
     fn valid_azure_acr() {
-        assert!(validate_image_reference("myregistry.azurecr.io/mpc-node").is_ok());
+        validate_image_reference("myregistry.azurecr.io/mpc-node").unwrap();
     }
 
     #[test]
     fn valid_self_hosted_with_port() {
-        assert!(validate_image_reference("registry.example.com:5000/myproject/mpc-node").is_ok());
+        validate_image_reference("registry.example.com:5000/myproject/mpc-node").unwrap();
     }
 
     #[test]
     fn valid_self_hosted_with_port_and_tag() {
-        assert!(
-            validate_image_reference("registry.example.com:5000/myproject/mpc-node:v1.0").is_ok()
-        );
+        validate_image_reference("registry.example.com:5000/myproject/mpc-node:v1.0").unwrap();
     }
 
     #[test]
     fn valid_simple_name() {
-        assert!(validate_image_reference("ubuntu").is_ok());
+        validate_image_reference("ubuntu").unwrap();
     }
 
     #[test]
     fn valid_library_image() {
-        assert!(validate_image_reference("library/alpine").is_ok());
+        validate_image_reference("library/alpine").unwrap();
     }
 
     #[test]
     fn valid_deep_path() {
-        assert!(validate_image_reference("ghcr.io/org/team/subproject/image").is_ok());
+        validate_image_reference("ghcr.io/org/team/subproject/image").unwrap();
     }
 
     #[test]
     fn valid_underscore_in_name() {
-        assert!(validate_image_reference("my_org/my_image").is_ok());
+        validate_image_reference("my_org/my_image").unwrap();
     }
 
     // --- validate_image_reference: negative (structurally invalid) ---
