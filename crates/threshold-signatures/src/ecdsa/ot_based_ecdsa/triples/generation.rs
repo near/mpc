@@ -1,5 +1,6 @@
 use frost_core::serialization::SerializableScalar;
 use frost_core::Ciphersuite;
+use itertools::multizip;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -250,13 +251,14 @@ async fn do_generation_many<const N: usize>(
         let mut my_phi_proof0v = vec![];
         let mut my_phi_proof1v = vec![];
 
-        for ((((big_e_i, big_f_i), (e, f)), nonce0), nonce1) in big_e_i_v
-            .iter()
-            .zip(big_f_i_v.iter())
-            .zip(e_v.iter().zip(f_v.iter()))
-            .zip(my_phi_proof0_nonces.iter())
-            .zip(my_phi_proof1_nonces.iter())
-        {
+        for (big_e_i, big_f_i, e, f, nonce0, nonce1) in multizip((
+            big_e_i_v.iter(),
+            big_f_i_v.iter(),
+            e_v.iter(),
+            f_v.iter(),
+            my_phi_proof0_nonces.iter(),
+            my_phi_proof1_nonces.iter(),
+        )) {
             // Spec 2.6
             let statement0 = dlog::Statement::<C> {
                 public: &big_e_i.eval_at_zero()?.value(),
@@ -344,34 +346,30 @@ async fn do_generation_many<const N: usize>(
                 .await?
         {
             for (
-                (
-                    (
-                        (
-                            (((all_commitments, their_big_e), their_big_f), their_big_l),
-                            their_randomizer,
-                        ),
-                        their_phi_proof0,
-                    ),
-                    their_phi_proof1,
-                ),
-                (big_e_j_zero, ((big_e, big_f), big_l)),
-            ) in all_commitments_vec
-                .iter()
-                .zip(their.big_e_v.iter())
-                .zip(their.big_f_v.iter())
-                .zip(their.big_l_v.iter())
-                .zip(their.randomizer_v.iter())
-                .zip(their.phi_proof0_v.iter())
-                .zip(their.phi_proof1_v.iter())
-                .zip(
-                    big_e_j_zero_v.iter_mut().zip(
-                        big_e_v
-                            .iter_mut()
-                            .zip(big_f_v.iter_mut())
-                            .zip(big_l_v.iter_mut()),
-                    ),
-                )
-            {
+                all_commitments,
+                their_big_e,
+                their_big_f,
+                their_big_l,
+                their_randomizer,
+                their_phi_proof0,
+                their_phi_proof1,
+                big_e_j_zero,
+                big_e,
+                big_f,
+                big_l,
+            ) in multizip((
+                all_commitments_vec.iter(),
+                their.big_e_v.iter(),
+                their.big_f_v.iter(),
+                their.big_l_v.iter(),
+                their.randomizer_v.iter(),
+                their.phi_proof0_v.iter(),
+                their.phi_proof1_v.iter(),
+                big_e_j_zero_v.iter_mut(),
+                big_e_v.iter_mut(),
+                big_f_v.iter_mut(),
+                big_l_v.iter_mut(),
+            )) {
                 if their_big_e.degree() != threshold.value() - 1
                     || their_big_f.degree() != threshold.value() - 1
                     // degree is threshold - 2 because the constant element identity is not serializable

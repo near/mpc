@@ -150,6 +150,24 @@ async fn multiplication_receiver(
     Ok(gamma0? + gamma1?)
 }
 
+fn get_multiplication_inputs<'a>(
+    sid: &'a [HashOutput],
+    av_iv: &'a [Scalar],
+    bv_iv: &'a [Scalar],
+    i: usize,
+) -> Result<(&'a HashOutput, &'a Scalar, &'a Scalar), ProtocolError> {
+    let sid_i = sid
+        .get(i)
+        .ok_or_else(|| ProtocolError::AssertionFailed("sid index out of bounds".to_string()))?;
+    let av_i = av_iv
+        .get(i)
+        .ok_or_else(|| ProtocolError::AssertionFailed("av_iv index out of bounds".to_string()))?;
+    let bv_i = bv_iv
+        .get(i)
+        .ok_or_else(|| ProtocolError::AssertionFailed("bv_iv index out of bounds".to_string()))?;
+    Ok((sid_i, av_i, bv_i))
+}
+
 pub(super) async fn multiplication_many<const N: usize>(
     comms: Comms,
     sid: Vec<HashOutput>,
@@ -193,15 +211,8 @@ pub(super) async fn multiplication_many<const N: usize>(
                     let precomputed_sender_package =
                         MultiplicationSenderRandomPackage::generate_random_package(&mut rng);
                     Box::pin(async move {
-                        let sid_i = sid_arc.get(i).ok_or_else(|| {
-                            ProtocolError::AssertionFailed("sid index out of bounds".to_string())
-                        })?;
-                        let av_i = av_iv_arc.get(i).ok_or_else(|| {
-                            ProtocolError::AssertionFailed("av_iv index out of bounds".to_string())
-                        })?;
-                        let bv_i = bv_iv_arc.get(i).ok_or_else(|| {
-                            ProtocolError::AssertionFailed("bv_iv index out of bounds".to_string())
-                        })?;
+                        let (sid_i, av_i, bv_i) =
+                            get_multiplication_inputs(&sid_arc, &av_iv_arc, &bv_iv_arc, i)?;
                         #[allow(clippy::large_futures)]
                         multiplication_sender(
                             chan,
@@ -216,15 +227,8 @@ pub(super) async fn multiplication_many<const N: usize>(
                     let precomputed_receiver_package =
                         MultiplicationReceiverRandomPackage::generate_random_package(&mut rng)?;
                     Box::pin(async move {
-                        let sid_i = sid_arc.get(i).ok_or_else(|| {
-                            ProtocolError::AssertionFailed("sid index out of bounds".to_string())
-                        })?;
-                        let av_i = av_iv_arc.get(i).ok_or_else(|| {
-                            ProtocolError::AssertionFailed("av_iv index out of bounds".to_string())
-                        })?;
-                        let bv_i = bv_iv_arc.get(i).ok_or_else(|| {
-                            ProtocolError::AssertionFailed("bv_iv index out of bounds".to_string())
-                        })?;
+                        let (sid_i, av_i, bv_i) =
+                            get_multiplication_inputs(&sid_arc, &av_iv_arc, &bv_iv_arc, i)?;
                         multiplication_receiver(
                             chan,
                             sid_i.as_ref(),

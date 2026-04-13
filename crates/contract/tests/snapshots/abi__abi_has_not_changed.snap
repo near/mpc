@@ -224,6 +224,16 @@ expression: abi
         }
       },
       {
+        "name": "get_foreign_chain_configurations",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/NodeForeignChainConfigurations"
+          }
+        }
+      },
+      {
         "name": "get_foreign_chain_policy",
         "kind": "view",
         "result": {
@@ -324,6 +334,16 @@ expression: abi
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      {
+        "name": "get_supported_foreign_chains",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/SupportedForeignChains"
           }
         }
       },
@@ -727,6 +747,27 @@ expression: abi
               "name": "backup_service_info",
               "type_schema": {
                 "$ref": "#/definitions/BackupServiceInfo"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "register_foreign_chain_config",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "foreign_chain_configuration",
+              "type_schema": {
+                "$ref": "#/definitions/ForeignChainConfiguration"
               }
             }
           ]
@@ -2170,6 +2211,25 @@ expression: abi
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
+        "ForeignChain": {
+          "type": "string",
+          "enum": [
+            "Solana",
+            "Bitcoin",
+            "Ethereum",
+            "Base",
+            "Bnb",
+            "Arbitrum",
+            "Abstract",
+            "Starknet"
+          ]
+        },
+        "ForeignChainConfiguration": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/NonEmptyBTreeSet_RpcProvider"
+          }
+        },
         "ForeignChainPolicy": {
           "type": "object",
           "required": [
@@ -2256,6 +2316,18 @@ expression: abi
               "properties": {
                 "Starknet": {
                   "$ref": "#/definitions/StarknetRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Bnb"
+              ],
+              "properties": {
+                "Bnb": {
+                  "$ref": "#/definitions/EvmRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -2812,6 +2884,20 @@ expression: abi
           "maxLength": 96,
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
+        },
+        "NodeForeignChainConfigurations": {
+          "type": "object",
+          "required": [
+            "foreign_chain_configuration_by_node"
+          ],
+          "properties": {
+            "foreign_chain_configuration_by_node": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ForeignChainConfiguration"
+              }
+            }
+          }
         },
         "NodeId": {
           "type": "object",
@@ -3752,6 +3838,13 @@ expression: abi
         },
         "StarknetTxId": {
           "$ref": "#/definitions/StarknetFelt"
+        },
+        "SupportedForeignChains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ForeignChain"
+          },
+          "uniqueItems": true
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",

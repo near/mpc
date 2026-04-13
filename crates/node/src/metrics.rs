@@ -352,3 +352,16 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
 
 pub const MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL: &str = "total";
 pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";
+
+pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_tee_attestation_attempts_total",
+            "Total number of completed TEE attestation generation attempts",
+            &["outcome"],
+        )
+        .unwrap()
+    });
+
+pub const MPC_TEE_ATTESTATION_OUTCOME_SUCCESS: &str = "success";
+pub const MPC_TEE_ATTESTATION_OUTCOME_FAILURE: &str = "failure";
