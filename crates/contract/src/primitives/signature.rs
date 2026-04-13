@@ -1,19 +1,15 @@
 use crate::crypto_shared;
 use crate::errors::{Error, InvalidParameters};
 use crate::DomainId;
-use near_mpc_bounded_collections::{hex_serde, BoundedVec};
 use crypto_shared::derive_tweak;
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::{hex_serde, BoundedVec};
 use near_mpc_contract_interface::types::{
     ECDSA_PAYLOAD_SIZE_BYTES, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
 };
 use near_sdk::{near, CryptoHash};
 use std::fmt::Debug;
-
-// const ECDSA_PAYLOAD_SIZE_BYTES: usize = 32;
-// const EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES: usize = 32;
-// const EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES: usize = 1232;
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
