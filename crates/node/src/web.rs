@@ -460,7 +460,7 @@ fn format_protocol_state(contract_state: &ProtocolContractState) -> String {
             output.push_str(&format!(
                 "  Epoch transition: original {} --> prospective {}\n",
                 state.previous_running_state.keyset.epoch_id,
-                state.previous_running_state.keyset.epoch_id.next()
+                state.resharing_key.epoch_id
             ));
             output.push_str("  Domains:\n");
             for (i, domain) in state
