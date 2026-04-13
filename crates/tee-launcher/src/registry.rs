@@ -327,11 +327,12 @@ mod tests {
 /// Run with: `cargo nextest run --cargo-profile=test-release -p tee-launcher --features external-services-tests`
 #[cfg(all(test, feature = "external-services-tests"))]
 mod integration_tests {
-    use assert_matches::assert_matches;
     use launcher_interface::types::DockerSha256Digest;
 
+    #[cfg(target_os = "linux")]
+    use {crate::validation::validate_image_hash, assert_matches::assert_matches};
+
     use super::*;
-    use crate::validation::validate_image_hash;
 
     const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 

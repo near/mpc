@@ -97,7 +97,7 @@ impl ProtocolSnapshot {
 
     /// Returns a vector of all received messages by a specific participant
     pub fn get_received_messages(
-        self,
+        &self,
         participant: &Participant,
     ) -> Option<Vec<(Participant, MessageData)>> {
         self.snapshots

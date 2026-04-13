@@ -28,6 +28,7 @@ futures.workspace = true
 futures-lite.workspace = true
 hex.workspace = true
 hkdf.workspace = true
+itertools.workspace = true
 k256 = { workspace = true, features = [
     "sha256",
     "ecdsa",
@@ -105,6 +106,26 @@ required-features = ["test-utils"]
 
 [[bench]]
 name = "advanced_dkg"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "simulate_dkg"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "simulate_frost"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "simulate_ecdsa"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "simulate_ckd"
 harness = false
 required-features = ["test-utils"]
 

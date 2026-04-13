@@ -12,8 +12,11 @@ use crate::bench_utils::{
 };
 use threshold_signatures::{
     ecdsa::{
-        robust_ecdsa::{presign::presign, sign::sign, PresignArguments, PresignOutput},
-        SignatureOption,
+        robust_ecdsa::{
+            presign::presign, sign::sign, PresignArguments, PresignOutput,
+            RerandomizedPresignOutput,
+        },
+        KeygenOutput, SignatureOption,
     },
     participants::Participant,
     protocol::Protocol,
@@ -22,6 +25,9 @@ use threshold_signatures::{
         Simulator,
     },
 };
+
+use k256::AffinePoint;
+use threshold_signatures::ecdsa::Scalar;
 
 type PreparedPresig = PreparedOutputs<PresignOutput>;
 type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
@@ -34,7 +40,9 @@ fn participants_num() -> usize {
 fn bench_presign(c: &mut Criterion) {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
-    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
+
+    let setup = setup_presign_snapshot(num);
+    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("presign");
     group.sample_size(*SAMPLE_SIZE);
@@ -42,30 +50,27 @@ fn bench_presign(c: &mut Criterion) {
         format!("robust_ecdsa_presign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || {
-                    let preps = prepare_simulate_presign(num);
-                    // collecting data sizes
-                    sizes.push(preps.simulator.get_view_size());
-                    preps
-                },
+                || prepare_simulate_presign(&setup),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
         },
     );
-    analyze_received_sizes(&sizes, true);
+    analyze_received_sizes(&[size], true);
 }
 
 /// Benches the signing protocol
 fn bench_sign(c: &mut Criterion) {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
-    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
 
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = robust_ecdsa_prepare_presign(num, &mut rng);
     let result = run_protocol(preps.protocols).expect("Prepare sign should not fail");
     let pk = preps.key_packages[0].1.public_key;
+
+    let setup = setup_sign_snapshot(&result, max_malicious, pk);
+    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("sign");
     group.sample_size(*SAMPLE_SIZE);
@@ -73,25 +78,28 @@ fn bench_sign(c: &mut Criterion) {
         format!("robust_ecdsa_sign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || {
-                    let preps = prepare_simulated_sign(&result, max_malicious, pk);
-                    // collecting data sizes
-                    sizes.push(preps.simulator.get_view_size());
-                    preps
-                },
+                || prepare_simulated_sign(&setup, max_malicious),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
         },
     );
-    analyze_received_sizes(&sizes, true);
+    analyze_received_sizes(&[size], true);
 }
 
 criterion_group!(benches, bench_presign, bench_sign);
 criterion_main!(benches);
 
-/// Used to simulate robust ecdsa presignatures for benchmarking
-fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
+struct PresignSetup {
+    participants: Vec<Participant>,
+    real_participant: Participant,
+    keygen_out: KeygenOutput,
+    real_participant_rng: MockCryptoRng,
+    cached_simulator: Simulator,
+}
+
+/// Expensive one-time setup for presign: runs the full N-party protocol to capture snapshots
+fn setup_presign_snapshot(num_participants: usize) -> PresignSetup {
     // Running presign a first time with snapshots
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = robust_ecdsa_prepare_presign(num_participants, &mut rng);
@@ -116,35 +124,54 @@ fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
     }
     let real_participant_rng = MockCryptoRng::seed_from_u64(rng_copy.next_u64());
 
-    let real_protocol = presign(
-        &preps.participants,
+    let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
+        .expect("Simulator should not be empty");
+
+    PresignSetup {
+        participants: preps.participants,
         real_participant,
+        keygen_out,
+        real_participant_rng,
+        cached_simulator,
+    }
+}
+
+/// Cheap per-sample setup: creates fresh presign protocol and clones the cached simulator
+fn prepare_simulate_presign(setup: &PresignSetup) -> PreparedPresig {
+    let real_protocol = presign(
+        &setup.participants,
+        setup.real_participant,
         PresignArguments {
-            keygen_out,
+            keygen_out: setup.keygen_out.clone(),
             max_malicious: (*MAX_MALICIOUS).into(),
         },
-        real_participant_rng, // provide the exact same randomness
+        setup.real_participant_rng.clone(), // provide the exact same randomness
     )
     .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = PresignOutput>>)
     .expect("Presignature should succeed");
 
-    // now preparing the simulator
-    let simulated_protocol =
-        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
-
     PreparedPresig {
-        participant: real_participant,
+        participant: setup.real_participant,
         protocol: real_protocol,
-        simulator: simulated_protocol,
+        simulator: setup.cached_simulator.clone(),
     }
 }
 
-/// Used to simulate robust ecdsa signatures for benchmarking
-fn prepare_simulated_sign(
+struct SignSetup {
+    participants: Vec<Participant>,
+    real_participant: Participant,
+    derived_pk: AffinePoint,
+    presig: RerandomizedPresignOutput,
+    msg_hash: Scalar,
+    cached_simulator: Simulator,
+}
+
+/// Expensive one-time setup for sign: runs the full N-party protocol to capture snapshots
+fn setup_sign_snapshot(
     result: &[(Participant, PresignOutput)],
     max_malicious: usize,
     pk: VerifyingKey,
-) -> PreparedSimulatedSig {
+) -> SignSetup {
     let mut rng = MockCryptoRng::seed_from_u64(41);
     let preps = robust_ecdsa_prepare_sign(result, max_malicious.into(), pk, &mut rng);
     let (_, protocol_snapshot) = run_protocol_and_take_snapshots(preps.protocols)
@@ -155,25 +182,37 @@ fn prepare_simulated_sign(
         result.iter().map(|(participant, _)| *participant).collect();
     // choose the real_participant being the coordinator
     let (real_participant, _) = result[preps.index];
+
+    let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
+        .expect("Simulator should not be empty");
+
+    SignSetup {
+        participants,
+        real_participant,
+        derived_pk: preps.derived_pk,
+        presig: preps.presig,
+        msg_hash: preps.msg_hash,
+        cached_simulator,
+    }
+}
+
+/// Cheap per-sample setup: creates fresh sign protocol and clones the cached simulator
+fn prepare_simulated_sign(setup: &SignSetup, max_malicious: usize) -> PreparedSimulatedSig {
     let real_protocol = sign(
-        &participants,
-        real_participant,
+        &setup.participants,
+        setup.real_participant,
         max_malicious,
-        real_participant,
-        preps.derived_pk,
-        preps.presig,
-        preps.msg_hash,
+        setup.real_participant,
+        setup.derived_pk,
+        setup.presig.clone(),
+        setup.msg_hash,
     )
     .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
     .expect("Presignature should succeed");
 
-    // now preparing the simulator
-    let simulated_protocol =
-        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
-
     PreparedSimulatedSig {
-        participant: real_participant,
+        participant: setup.real_participant,
         protocol: real_protocol,
-        simulator: simulated_protocol,
+        simulator: setup.cached_simulator.clone(),
     }
 }
