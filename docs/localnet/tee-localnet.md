@@ -105,12 +105,11 @@ Define the machine's external IP once
 export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 ```
 
-#### Environment File (`frodo/sam.toml`, `frodo/sam.env`) )
+#### Configuration Files
 
-Update Sam/Frodo.toml fields: 
+**TOML configs** (`frodo.toml`, `sam.toml`): The `[launcher_config]` section has `image = "nearone/mpc-node"` and port mappings. Update if needed for your environment.
 
-
-Verify that `DEFAULT_IMAGE_DIGEST` in `deployment/cvm-deployment/launcher_docker_compose.yaml` contains the correct manifest digest for the MPC node image you want to run. Get the manifest digest with:
+**Docker compose** (`launcher_docker_compose.yaml`): Verify that `DEFAULT_IMAGE_DIGEST` contains the correct manifest digest for the MPC node image. Get the manifest digest with:
 
 ```bash
 docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
