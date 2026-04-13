@@ -114,7 +114,14 @@ Update Sam/Frodo.toml fields:
 MPC_IMAGE_TAGS=main_3.0.3
 ```
 
-The MPC_IMAGE_TAGS should match the MPC node image whose manifest digest is set as `DEFAULT_IMAGE_DIGEST` in the docker-compose file. You can look up the manifest digest on Docker Hub or the registry's tag listing.
+Verify that the `DEFAULT_IMAGE_DIGEST` in the docker-compose file contains the manifest digest for this image tag. You can look up the manifest digest on Docker Hub:
+
+```bash
+# Get manifest digest for a tag
+docker pull nearone/mpc-node:main_3.0.3 2>&1 | grep Digest
+```
+
+The `DEFAULT_IMAGE_DIGEST` value should match the digest shown.
 
 ---
 ### Node Startup
