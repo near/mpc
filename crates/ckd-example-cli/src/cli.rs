@@ -18,4 +18,8 @@ pub struct Args {
     /// The account that will be used to call the MPC contract
     #[arg(long, env)]
     pub signer_account_id: String,
+
+    /// Use the publicly verifiable variant of CKD
+    #[arg(long, env, default_value_t = false)]
+    pub publicly_verifiable: bool,
 }
