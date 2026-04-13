@@ -266,53 +266,81 @@ key = "value"
         });
     }
 
-    // --- validate_image_reference ---
+    // --- validate_image_reference: positive (valid references) ---
 
     #[test]
-    fn valid_docker_hub_image() {
+    fn valid_docker_hub_simple() {
         assert!(validate_image_reference("nearone/mpc-node").is_ok());
     }
 
     #[test]
-    fn valid_image_with_tag() {
+    fn valid_docker_hub_with_tag() {
         assert!(validate_image_reference("nearone/mpc-node:3.8.1").is_ok());
     }
 
     #[test]
-    fn valid_image_with_registry() {
+    fn valid_docker_hub_with_text_tag() {
+        assert!(validate_image_reference("nearone/mpc-node:testnet-release").is_ok());
+    }
+
+    #[test]
+    fn valid_ghcr() {
         assert!(validate_image_reference("ghcr.io/nearone/mpc-node").is_ok());
     }
 
     #[test]
-    fn valid_image_with_registry_port() {
+    fn valid_ecr_public() {
+        assert!(validate_image_reference("public.ecr.aws/myalias/mpc-node").is_ok());
+    }
+
+    #[test]
+    fn valid_google_artifact_registry() {
+        assert!(validate_image_reference("us-docker.pkg.dev/my-project/my-repo/mpc-node").is_ok());
+    }
+
+    #[test]
+    fn valid_azure_acr() {
+        assert!(validate_image_reference("myregistry.azurecr.io/mpc-node").is_ok());
+    }
+
+    #[test]
+    fn valid_self_hosted_with_port() {
         assert!(validate_image_reference("registry.example.com:5000/myproject/mpc-node").is_ok());
     }
 
     #[test]
-    fn valid_image_with_registry_and_tag() {
-        assert!(validate_image_reference("ghcr.io/nearone/mpc-node:testnet-release").is_ok());
+    fn valid_self_hosted_with_port_and_tag() {
+        assert!(
+            validate_image_reference("registry.example.com:5000/myproject/mpc-node:v1.0").is_ok()
+        );
     }
+
+    #[test]
+    fn valid_simple_name() {
+        assert!(validate_image_reference("ubuntu").is_ok());
+    }
+
+    #[test]
+    fn valid_library_image() {
+        assert!(validate_image_reference("library/alpine").is_ok());
+    }
+
+    #[test]
+    fn valid_deep_path() {
+        assert!(validate_image_reference("ghcr.io/org/team/subproject/image").is_ok());
+    }
+
+    #[test]
+    fn valid_underscore_in_name() {
+        assert!(validate_image_reference("my_org/my_image").is_ok());
+    }
+
+    // --- validate_image_reference: negative (structurally invalid) ---
 
     #[test]
     fn rejects_empty() {
         assert_matches!(
             validate_image_reference(""),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_spaces() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc node"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_newline() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc-node\nevil"),
             Err(LauncherError::InvalidImageName(_))
         );
     }
@@ -334,6 +362,14 @@ key = "value"
     }
 
     #[test]
+    fn rejects_trailing_dot() {
+        assert_matches!(
+            validate_image_reference("nearone/mpc-node."),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
     fn rejects_double_slash() {
         assert_matches!(
             validate_image_reference("nearone//mpc-node"),
@@ -350,9 +386,91 @@ key = "value"
     }
 
     #[test]
+    fn rejects_colon_dot() {
+        assert_matches!(
+            validate_image_reference("nearone/mpc-node:.tag"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
     fn rejects_starting_with_dot() {
         assert_matches!(
             validate_image_reference(".hidden/image"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
+    fn rejects_starting_with_slash() {
+        assert_matches!(
+            validate_image_reference("/nearone/mpc-node"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
+    fn rejects_starting_with_colon() {
+        assert_matches!(
+            validate_image_reference(":latest"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    // --- validate_image_reference: negative (malicious input) ---
+
+    #[test]
+    fn rejects_spaces() {
+        assert_matches!(
+            validate_image_reference("nearone/mpc node"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
+    fn rejects_newline_injection() {
+        assert_matches!(
+            validate_image_reference("nearone/mpc-node\nevil: true"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
+    fn rejects_yaml_injection_quotes() {
+        assert_matches!(
+            validate_image_reference("nearone/mpc-node\"; evil"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
+    fn rejects_shell_metacharacters() {
+        assert_matches!(
+            validate_image_reference("nearone/mpc-node; rm -rf /"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
+    fn rejects_backtick_injection() {
+        assert_matches!(
+            validate_image_reference("nearone/`whoami`"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
+    fn rejects_dollar_expansion() {
+        assert_matches!(
+            validate_image_reference("nearone/${USER}"),
+            Err(LauncherError::InvalidImageName(_))
+        );
+    }
+
+    #[test]
+    fn rejects_backslash() {
+        assert_matches!(
+            validate_image_reference("nearone\\mpc-node"),
             Err(LauncherError::InvalidImageName(_))
         );
     }
