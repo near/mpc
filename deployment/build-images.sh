@@ -177,12 +177,9 @@ if $USE_PUSH; then
         local tag="$2"
         local td
         td=$(mktemp -d)
-        trap 'rm -rf -- "$td"' EXIT
         skopeo copy --all --dest-compress "docker-daemon:${image_name}:latest" "dir:$td"
         skopeo copy --preserve-digests "dir:$td" "docker://docker.io/nearone/${image_name}:${tag}"
         echo "sha256:$(sha256sum "$td/manifest.json" | cut -d' ' -f1)"
-        rm -rf -- "$td"
-        trap - EXIT
     }
 
     if $USE_LAUNCHER; then
