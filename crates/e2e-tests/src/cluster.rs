@@ -8,9 +8,9 @@ use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    EpochId, ParticipantId, ParticipantInfo, Participants, ProtocolContractState, SignatureScheme,
-    Threshold, ThresholdParameters,
+    AccountId as ContractAccountId, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose,
+    EpochId, ParticipantId, ParticipantInfo, Participants, ProtocolContractState, Threshold,
+    ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -63,7 +63,7 @@ impl MpcClusterConfig {
     /// Sensible defaults for a basic E2E test.
     ///
     /// - 3 nodes, 2-of-3 threshold
-    /// - All 3 standard domains (Secp256k1, Ed25519, Bls12381)
+    /// - All 3 standard domains (Secp256k1, Edwards25519, Bls12381)
     /// - 10 triples, 10 presignatures per node
     pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self {
         Self {
@@ -72,17 +72,17 @@ impl MpcClusterConfig {
             domains: vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
+                    curve: Curve::Secp256k1,
                     purpose: Some(DomainPurpose::Sign),
                 },
                 DomainConfig {
                     id: DomainId(1),
-                    scheme: SignatureScheme::Ed25519,
+                    curve: Curve::Edwards25519,
                     purpose: Some(DomainPurpose::Sign),
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Bls12381,
+                    curve: Curve::Bls12381,
                     purpose: Some(DomainPurpose::CKD),
                 },
             ],

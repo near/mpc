@@ -1,6 +1,5 @@
 ---
 source: crates/contract/tests/abi.rs
-assertion_line: 47
 expression: abi
 ---
 {
@@ -1957,6 +1956,26 @@ expression: abi
             "V2Secp256k1"
           ]
         },
+        "Curve2": {
+          "description": "Elliptic curve used by a domain.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Secp256k1",
+                "Edwards25519",
+                "Bls12381"
+              ]
+            },
+            {
+              "description": "Robust ECDSA variant.",
+              "type": "string",
+              "enum": [
+                "V2Secp256k1"
+              ]
+            }
+          ]
+        },
         "DestinationNodeInfo": {
           "type": "object",
           "required": [
@@ -2003,10 +2022,13 @@ expression: abi
           "description": "Configuration for a signature domain.",
           "type": "object",
           "required": [
-            "id",
-            "scheme"
+            "curve",
+            "id"
           ],
           "properties": {
+            "curve": {
+              "$ref": "#/definitions/Curve2"
+            },
             "id": {
               "$ref": "#/definitions/DomainId2"
             },
@@ -2020,14 +2042,11 @@ expression: abi
                   "type": "null"
                 }
               ]
-            },
-            "scheme": {
-              "$ref": "#/definitions/SignatureScheme"
             }
           }
         },
         "DomainId": {
-          "description": "Each domain corresponds to a specific root key in a specific signature scheme. There may be multiple domains per signature scheme. The domain ID uniquely identifies a domain.",
+          "description": "Each domain corresponds to a specific root key on a specific elliptic curve. There may be multiple domains per curve. The domain ID uniquely identifies a domain.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -3707,26 +3726,6 @@ expression: abi
                   "$ref": "#/definitions/Ed25519Signature"
                 }
               }
-            }
-          ]
-        },
-        "SignatureScheme": {
-          "description": "Supported signature schemes.",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Secp256k1",
-                "Ed25519",
-                "Bls12381"
-              ]
-            },
-            {
-              "description": "Robust ECDSA variant.",
-              "type": "string",
-              "enum": [
-                "V2Secp256k1"
-              ]
             }
           ]
         },

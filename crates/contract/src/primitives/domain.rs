@@ -8,8 +8,8 @@ use std::fmt::Display;
 
 pub use near_mpc_contract_interface::types::DomainPurpose;
 
-/// Each domain corresponds to a specific root key in a specific signature scheme. There may be
-/// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
+/// Each domain corresponds to a specific root key on a specific elliptic curve. There may be
+/// multiple domains per curve. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Deref)]
 pub struct DomainId(pub u64);
@@ -201,6 +201,16 @@ pub struct AddDomainsVotes {
 }
 
 impl AddDomainsVotes {
+    // Remove after #2167.
+    #[cfg(feature = "compat")]
+    pub fn from_raw(
+        proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
+    ) -> Self {
+        Self {
+            proposal_by_account,
+        }
+    }
+
     /// Votes for the proposal, returning the total number of voters so far who
     /// have proposed the exact same domains to add.
     /// If the participant had voted already, this replaces the existing vote.
@@ -400,7 +410,7 @@ pub mod tests {
         Curve::Edwards25519,
         DomainPurpose::Sign
     )]
-    fn test_deserialize_scheme_and_curve_keys(
+    fn test_deserialize_domain_config(
         #[case] json: &str,
         #[case] expected_curve: Curve,
         #[case] expected_purpose: DomainPurpose,

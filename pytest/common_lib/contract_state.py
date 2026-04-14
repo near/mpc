@@ -9,7 +9,7 @@ class ProtocolState(str, Enum):
     RESHARING = "Resharing"
 
 
-SignatureScheme = Literal["Secp256k1", "Ed25519", "Bls12381"]
+Curve = Literal["Secp256k1", "Edwards25519", "Bls12381", "V2Secp256k1"]
 
 
 @dataclass
@@ -48,9 +48,9 @@ class Keyset:
 DomainPurpose = Literal["Sign", "ForeignTx", "CKD"]
 
 
-def infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose:
-    """Infer the default purpose from the signature scheme."""
-    if scheme == "Bls12381":
+def infer_purpose_from_curve(curve: Curve) -> DomainPurpose:
+    """Infer the default purpose from the curve."""
+    if curve == "Bls12381":
         return "CKD"
     return "Sign"
 
@@ -58,7 +58,7 @@ def infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose:
 @dataclass
 class Domain:
     id: int
-    scheme: SignatureScheme
+    curve: Curve
     purpose: DomainPurpose = "Sign"
 
 
@@ -69,7 +69,7 @@ class Domains:
 
     def make_str(self):
         return f"\033[93mnext domain id: {self.next_domain_id}, " + ", ".join(
-            f"\033[93m({d.id} -> {d.scheme})" for d in self.domains
+            f"\033[93m({d.id} -> {d.curve})" for d in self.domains
         )
 
     @staticmethod
@@ -78,7 +78,7 @@ class Domains:
         domains = [
             Domain(
                 id=d["id"],
-                scheme=d["scheme"],
+                curve=d["curve"],
                 purpose=d["purpose"],
             )
             for d in domains_data["domains"]
@@ -256,7 +256,7 @@ class KeyEvent:
         domain_data = event_data["domain"]
         event_key = Domain(
             id=domain_data["id"],
-            scheme=domain_data["scheme"],
+            curve=domain_data["curve"],
             purpose=domain_data["purpose"],
         )
         return KeyEvent(
