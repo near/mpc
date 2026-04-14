@@ -384,6 +384,15 @@ def foreign_tx_validation_cluster():
     atexit._run_exitfuncs()
 
 
+# Send, await, and verify response
+def verify_response(res):
+    try:
+        success_value = res["result"]["status"]["SuccessValue"]
+    except KeyError:
+        raise AssertionError(
+            f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
+        )
+
 @pytest.mark.no_atexit_cleanup
 def test_verify_foreign_transaction_bitcoin(
     foreign_tx_validation_cluster: tuple[MpcCluster, list],
@@ -421,15 +430,6 @@ def test_verify_foreign_transaction_bitcoin(
         gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
         deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
-
-    # Send, await, and verify response
-    def verify_response(res):
-        try:
-            success_value = res["result"]["status"]["SuccessValue"]
-        except KeyError:
-            raise AssertionError(
-                f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
-            )
 
         response = json.loads(base64.b64decode(success_value))
 
@@ -500,15 +500,6 @@ def test_verify_foreign_transaction_abstract(
         deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
 
-    # Send, await, and verify response
-    def verify_response(res):
-        try:
-            success_value = res["result"]["status"]["SuccessValue"]
-        except KeyError:
-            raise AssertionError(
-                f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
-            )
-
         response = json.loads(base64.b64decode(success_value))
 
         print(
@@ -578,15 +569,6 @@ def test_verify_foreign_transaction_bnb(
         deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
 
-    # Send, await, and verify response
-    def verify_response(res):
-        try:
-            success_value = res["result"]["status"]["SuccessValue"]
-        except KeyError:
-            raise AssertionError(
-                f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
-            )
-
         response = json.loads(base64.b64decode(success_value))
 
         print(
@@ -655,15 +637,6 @@ def test_verify_foreign_transaction_starknet(
         gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
         deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
-
-    # Send, await, and verify response
-    def verify_response(res):
-        try:
-            success_value = res["result"]["status"]["SuccessValue"]
-        except KeyError:
-            raise AssertionError(
-                f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
-            )
 
         response = json.loads(base64.b64decode(success_value))
 
