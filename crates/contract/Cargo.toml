@@ -29,8 +29,8 @@ container_build_command = [
     "non-reproducible-wasm",
     "--locked",
     "--profile=release-contract",
-    "--features",
-    "abi",
+    "--no-embed-abi",
+    "--no-abi",
 ]
 
 [lib]
