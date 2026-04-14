@@ -8,7 +8,7 @@ use serde_json::json;
 /// Verifies all calls succeed and the signature queue processes all requests.
 #[tokio::test]
 #[expect(non_snake_case)]
-async fn parallel_sign_calls__robust_ecdsa() {
+async fn mpc_cluster__should_successfully_process_parallel_robust_ecdsa_requests() {
     const N: u64 = 3;
 
     // given
@@ -88,7 +88,7 @@ async fn parallel_sign_calls__robust_ecdsa() {
 /// Verifies all calls succeed and both the signature and CKD queues process all requests.
 #[tokio::test]
 #[expect(non_snake_case)]
-async fn parallel_sign_calls__mixed() {
+async fn mpc_cluster__should_successfully_process_mixed_parallel_requests() {
     const N: u64 = 6;
     const PER_TYPE: u64 = N / 3; // 2 of each
 

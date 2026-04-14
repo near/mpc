@@ -13,6 +13,7 @@ const PRESIGNATURES_TO_BUFFER: usize = 8;
 #[tokio::test]
 async fn dead_node_presignatures_purged_and_signing_recovers() {
     // given
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     let (mut cluster, running) = common::setup_cluster(common::LOST_ASSETS_PORT_SEED, |c| {
         c.presignatures_to_buffer = PRESIGNATURES_TO_BUFFER;
     })
@@ -77,7 +78,6 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
     .await;
 
     // then — surviving nodes can still process sign requests.
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     if let Some(domain) = running
         .domains
         .domains
