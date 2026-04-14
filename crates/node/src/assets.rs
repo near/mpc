@@ -588,6 +588,7 @@ where
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DomainId, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
@@ -1385,7 +1386,8 @@ mod tests {
     }
 
     #[test]
-    fn test_take_unowned_concurrent_race() {
+    fn take_unowned__should_allow_exactly_one_concurrent_caller_to_succeed() {
+        // Given
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let store = Arc::new(
@@ -1405,6 +1407,7 @@ mod tests {
         let id = UniqueId::new(other, 1, 0);
         store.add_unowned(id, 999);
 
+        // When
         let num_threads = 10;
         let barrier = Arc::new(std::sync::Barrier::new(num_threads));
         let success_count = Arc::new(AtomicUsize::new(0));
@@ -1428,6 +1431,7 @@ mod tests {
             h.join().unwrap();
         }
 
+        // Then
         assert_eq!(
             success_count.load(Ordering::SeqCst),
             1,
