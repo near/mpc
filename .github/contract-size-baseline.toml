@@ -1,0 +1,6 @@
+# NEAR max_transaction_size since protocol v69
+# https://github.com/near/nearcore/blob/master/core/parameters/res/runtime_configs/69.yaml
+max_transaction_size = 1572864
+
+# Expected contract WASM size in bytes (reproducible builds must match exactly)
+expected_size = 1474361

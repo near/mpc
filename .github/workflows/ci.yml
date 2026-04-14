@@ -362,6 +362,9 @@ jobs:
           cargo near build reproducible-wasm \
             --manifest-path crates/contract/Cargo.toml
 
+      - name: Check contract WASM size
+        run: bash .github/scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
+
   mpc-pytests:
     name: "MPC pytests: ${{ matrix.group }}"
     needs: mpc-pytest-build
