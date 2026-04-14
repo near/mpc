@@ -4574,6 +4574,7 @@ mod tests {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
+            expected_measurements: None,
         });
         contract
             .tee_state

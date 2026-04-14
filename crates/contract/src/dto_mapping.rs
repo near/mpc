@@ -6,7 +6,10 @@
 
 use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
-    attestation::{Attestation, DstackAttestation, MockAttestation, VerifiedAttestation},
+    attestation::{
+        Attestation, DstackAttestation, ExpectedMeasurements, Measurements, MockAttestation,
+        VerifiedAttestation,
+    },
     collateral::{Collateral, QuoteCollateralV3},
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
@@ -74,10 +77,20 @@ impl IntoContractType<MockAttestation> for dtos::MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements,
             } => MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements: expected_measurements.map(|m| ExpectedMeasurements {
+                    rtmrs: Measurements {
+                        mrtd: m.mrtd.into(),
+                        rtmr0: m.rtmr0.into(),
+                        rtmr1: m.rtmr1.into(),
+                        rtmr2: m.rtmr2.into(),
+                    },
+                    key_provider_event_digest: m.key_provider_event_digest.into(),
+                }),
             },
         }
     }
@@ -239,10 +252,18 @@ impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements,
             } => dtos::MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements: expected_measurements.map(|m| dtos::VerifiedMeasurements {
+                    mrtd: m.rtmrs.mrtd.into(),
+                    rtmr0: m.rtmrs.rtmr0.into(),
+                    rtmr1: m.rtmrs.rtmr1.into(),
+                    rtmr2: m.rtmrs.rtmr2.into(),
+                    key_provider_event_digest: m.key_provider_event_digest.into(),
+                }),
             },
         }
     }

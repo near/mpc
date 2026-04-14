@@ -47,10 +47,20 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::MockAttestati
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements,
             } => near_mpc_contract_interface::types::MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements: expected_measurements.map(|m| {
+                    near_mpc_contract_interface::types::VerifiedMeasurements {
+                        mrtd: m.rtmrs.mrtd.into(),
+                        rtmr0: m.rtmrs.rtmr0.into(),
+                        rtmr1: m.rtmrs.rtmr1.into(),
+                        rtmr2: m.rtmrs.rtmr2.into(),
+                        key_provider_event_digest: m.key_provider_event_digest.into(),
+                    }
+                }),
             },
         }
     }

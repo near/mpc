@@ -845,6 +845,10 @@ BorshSchemaContainer {
                         "expiry_timestamp_seconds",
                         "Option<u64>",
                     ),
+                    (
+                        "expected_measurements",
+                        "Option<ExpectedMeasurements>",
+                    ),
                 ],
             ),
         },
@@ -1025,6 +1029,21 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "EpochId",
+                ),
+            ],
+        },
+        "Option<ExpectedMeasurements>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "ExpectedMeasurements",
                 ),
             ],
         },

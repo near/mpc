@@ -2843,6 +2843,16 @@ expression: abi
                 "WithConstraints": {
                   "type": "object",
                   "properties": {
+                    "expected_measurements": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/VerifiedMeasurements"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "expiry_timestamp_seconds": {
                       "description": "Unix time stamp for when this attestation expires.",
                       "type": [
