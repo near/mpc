@@ -5,9 +5,12 @@ responsible disclosure of security vulnerabilities helps us ensure the security
 and privacy of all our users.
 
 Please do NOT raise a GitHub Issue to report a security vulnerability. If you
-believe you have found a security vulnerability, please submit a report to
-<security@nearone.org>, preferably with a proof of concept. We ask that you
-do not use other channels or contact project contributors directly.
+believe you have found a security vulnerability, please report it through our
+bug bounty program:
+
+**[NEAR Intents Bug Bounty (HackenProof)](https://hackenproof.com/programs/near-intents-bridges)**
+
+We ask that you do not use other channels or contact project contributors directly.
 
 Non-vulnerability-related security issues, such as new ideas for security
 features, are welcome on GitHub Issues.
