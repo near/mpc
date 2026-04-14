@@ -105,21 +105,26 @@ Define the machine's external IP once
 export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 ```
 
-#### Environment File (`frodo/sam.toml`, `frodo/sam.env`) )
+#### Environment File (`frodo/sam.toml`, `frodo/sam.env`)
 
-Update Sam/Frodo.toml fields: 
+The `image` field in `frodo.toml` / `sam.toml` must point to the same repository whose manifest digest is set as `DEFAULT_IMAGE_DIGEST` in the docker-compose file above.
 
-
-```env
-MPC_IMAGE_TAGS=main_3.0.3
+For example, if the compose file has:
+```yaml
+DEFAULT_IMAGE_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
 ```
 
-The MPC_IMAGE_TAGS should match the MPC node image hash used in the docker-compose file.
-e.g:
+Then the TOML files should have:
+```toml
+[launcher_config]
+image_reference = "nearone/mpc-node"
+```
 
-```shell
-$Docker inspect nearone/mpc-node:main_3.0.3 | grep "Id"
-"Id": "sha256:abc",
+The launcher combines these at runtime: `docker pull nearone/mpc-node@sha256:5d1e604d...`
+
+Get the manifest digest for an image tag with:
+```bash
+docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
 ```
 
 ---
@@ -129,10 +134,10 @@ You can start the nodes **manually** as described in the Operator Guide, or you 
 
 Once all paths and configuration files (`*.env` and `*.toml`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
 
-#### 1. Move into the `tee_launcher` Directory
+#### 1. Move into the `deployment/cvm-deployment` Directory
 
 ```bash
-cd tee_launcher
+cd deployment/cvm-deployment
 ```
 
 #### 2. Ensure the Script Is Executable
@@ -303,10 +308,10 @@ near contract call-function as-transaction mpc-contract.test.near vote_code_hash
 ### Vote for Launcher Image Hash
 
 A launcher image hash must also be voted in so that compose hashes can be derived.
-Extract the launcher hash from `tee_launcher/launcher_docker_compose.yaml`:
+Extract the launcher hash from `deployment/cvm-deployment/launcher_docker_compose.yaml`:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' tee_launcher/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
 ```
 
 ```bash
