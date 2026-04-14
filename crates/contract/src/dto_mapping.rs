@@ -424,6 +424,9 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.remove_non_participant_update_votes_tera_gas {
             config.remove_non_participant_update_votes_tera_gas = v;
         }
+        if let Some(v) = config_ext.clean_foreign_chain_data_tera_gas {
+            config.clean_foreign_chain_data_tera_gas = v;
+        }
 
         config
     }
@@ -449,6 +452,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
         }
     }
 }
@@ -473,6 +477,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
         }
     }
 }

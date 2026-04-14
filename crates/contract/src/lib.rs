@@ -1136,7 +1136,6 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
-        // TODO(#2769): clean up supported foreign chain votes from non participants
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
@@ -1167,6 +1166,15 @@ impl MpcContract {
                     vec![],
                     NearToken::from_yoctonear(0),
                     Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
+                )
+                .detach();
+            // Spawn a promise to clean up foreign chain data for non-participants
+            Promise::new(env::current_account_id())
+                .function_call(
+                    method_names::CLEAN_FOREIGN_CHAIN_DATA.to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
                 )
                 .detach();
         }
@@ -1630,6 +1638,59 @@ impl MpcContract {
         };
 
         self.tee_state.clean_non_participants(participants);
+        Ok(())
+    }
+
+    /// Private endpoint to clean up foreign chain policy votes and node configurations
+    /// for non-participants after resharing.
+    /// This can only be called by the contract itself via a promise.
+    #[private]
+    #[handle_result]
+    pub fn clean_foreign_chain_data(&mut self) -> Result<(), Error> {
+        log!(
+            "clean_foreign_chain_data: signer={}",
+            env::signer_account_id()
+        );
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        let participant_accounts: std::collections::HashSet<dtos::AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| dtos::AccountId(account_id.to_string()))
+            .collect();
+
+        let non_participant_accounts: Vec<dtos::AccountId> = self
+            .foreign_chain_policy_votes
+            .proposal_by_account
+            .keys()
+            .filter(|account| !participant_accounts.contains(account))
+            .cloned()
+            .collect();
+        for account in &non_participant_accounts {
+            self.foreign_chain_policy_votes
+                .proposal_by_account
+                .remove(account);
+        }
+
+        let non_participant_configs: Vec<dtos::AccountId> = self
+            .node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
+            .keys()
+            .filter(|account| !participant_accounts.contains(account))
+            .cloned()
+            .collect();
+        for account in &non_participant_configs {
+            self.node_foreign_chain_configurations
+                .foreign_chain_configuration_by_node
+                .remove(account);
+        }
+
         Ok(())
     }
 }

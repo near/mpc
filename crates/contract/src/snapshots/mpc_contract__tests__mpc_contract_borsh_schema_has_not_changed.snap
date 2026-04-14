@@ -262,6 +262,10 @@ BorshSchemaContainer {
                         "remove_non_participant_update_votes_tera_gas",
                         "u64",
                     ),
+                    (
+                        "clean_foreign_chain_data_tera_gas",
+                        "u64",
+                    ),
                 ],
             ),
         },
