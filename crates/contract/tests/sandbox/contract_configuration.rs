@@ -1,10 +1,13 @@
 use crate::sandbox::{
     common::init_with_candidates,
-    upgrade_from_current_contract::current_contract_proposal,
-    utils::consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
+    utils::{
+        consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
+        contract_build::current_contract,
+    },
 };
-use mpc_contract::update::UpdateId;
+use mpc_contract::update::{StartContractUploadArgs, UpdateId, UploadContractChunkArgs};
 use near_mpc_contract_interface::method_names;
+use near_workspaces::types::NearToken;
 
 #[tokio::test]
 async fn test_high_gas_deposit_config_value_passes_upgrades() {
@@ -38,17 +41,47 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
     let (_, contract, accounts, _) =
         init_with_candidates(vec![], Some(init_config), number_of_participants).await;
 
-    let execution = accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
+    let code = current_contract();
+
+    accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs {
+            total_size: code.len() as u64,
+        })
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("start_contract_upload failed");
+
+    const CHUNK_SIZE: usize = 1024 * 1024;
+    for chunk in code.chunks(CHUNK_SIZE) {
+        accounts[0]
+            .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+            .args_borsh(UploadContractChunkArgs {
+                data: chunk.to_vec(),
+            })
+            .max_gas()
+            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+            .transact()
+            .await
+            .unwrap()
+            .into_result()
+            .expect("upload_contract_chunk failed");
+    }
+
+    let finalize = accounts[0]
+        .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
+        .args_borsh(())
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await
         .unwrap();
-
-    assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
+    assert!(finalize.is_success(), "finalize_contract_upload failed");
+    let proposal_id: UpdateId = finalize.json().unwrap();
 
     let mut saw_completion = false;
     let mut saw_failure = false;

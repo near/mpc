@@ -15,32 +15,62 @@ use crate::sandbox::{
         },
     },
 };
-use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
+use mpc_contract::update::{
+    ProposeUpdateArgs, StartContractUploadArgs, UpdateId, UploadContractChunkArgs,
+};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_workspaces::types::NearToken;
+use near_workspaces::{Account, Contract};
 use rand_core::OsRng;
+use sha2::Digest;
 
-pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
-    ProposeUpdateArgs {
-        code: Some(vec![1, 2, 3]),
-        config: None,
-    }
-}
+/// Upload contract code via the chunked upload flow and return the resulting UpdateId.
+async fn chunked_upload_contract(
+    account: &Account,
+    contract: &Contract,
+    code: &[u8],
+    deposit_per_chunk: NearToken,
+) -> UpdateId {
+    account
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs {
+            total_size: code.len() as u64,
+        })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("start_contract_upload failed");
 
-pub fn invalid_contract_proposal() -> ProposeUpdateArgs {
-    let new_wasm = b"invalid wasm".to_vec();
-    ProposeUpdateArgs {
-        code: Some(new_wasm),
-        config: None,
+    const CHUNK_SIZE: usize = 1024 * 1024;
+    for chunk in code.chunks(CHUNK_SIZE) {
+        account
+            .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+            .args_borsh(UploadContractChunkArgs {
+                data: chunk.to_vec(),
+            })
+            .max_gas()
+            .deposit(deposit_per_chunk)
+            .transact()
+            .await
+            .unwrap()
+            .into_result()
+            .expect("upload_contract_chunk failed");
     }
-}
 
-pub fn current_contract_proposal() -> ProposeUpdateArgs {
-    ProposeUpdateArgs {
-        code: Some(current_contract().to_vec()),
-        config: None,
-    }
+    let finalize = account
+        .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
+        .args_borsh(())
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap();
+    assert!(finalize.is_success(), "finalize_contract_upload failed");
+    finalize.json().unwrap()
 }
 
 #[tokio::test]
@@ -52,23 +82,15 @@ async fn test_propose_contract_max_size_upload() {
     } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
-    // check that we can propose an update with the maximum contract size.
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh((ProposeUpdateArgs {
-            code: Some(vec![0; 1536 * 1024 - 400]), //3900 seems to not work locally
-            config: None,
-        },))
-        .max_gas()
-        .deposit(NearToken::from_near(40))
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(
-        execution.is_success(),
-        "Failed to propose update with our highest contract size"
-    );
+    // check that we can propose an update with a large contract size via chunked upload.
+    let large_code = vec![0u8; 1536 * 1024 - 400];
+    let _update_id = chunked_upload_contract(
+        &mpc_signer_accounts[0],
+        &contract,
+        &large_code,
+        NearToken::from_near(40),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -82,9 +104,24 @@ async fn test_propose_update_config() {
     dbg!(contract.id());
 
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
+    let dummy_config = near_mpc_contract_interface::types::Config {
+        key_event_timeout_blocks: 1,
+        tee_upgrade_deadline_duration_seconds: 2,
+        contract_upgrade_deposit_tera_gas: 3,
+        sign_call_gas_attachment_requirement_tera_gas: 4,
+        ckd_call_gas_attachment_requirement_tera_gas: 5,
+        return_signature_and_clean_state_on_success_call_tera_gas: 6,
+        return_ck_and_clean_state_on_success_call_tera_gas: 7,
+        fail_on_timeout_tera_gas: 8,
+        clean_tee_status_tera_gas: 9,
+        cleanup_orphaned_node_migrations_tera_gas: 10,
+        remove_non_participant_update_votes_tera_gas: 11,
+    };
     let execution = contract
         .call(method_names::PROPOSE_UPDATE)
-        .args_borsh((dummy_contract_proposal(),))
+        .args_borsh((ProposeUpdateArgs {
+            config: dummy_config,
+        },))
         .transact()
         .await
         .unwrap();
@@ -115,8 +152,7 @@ async fn test_propose_update_config() {
         let propose_execution = account
             .call(contract.id(), method_names::PROPOSE_UPDATE)
             .args_borsh((ProposeUpdateArgs {
-                code: None,
-                config: Some(new_config.clone()),
+                config: new_config.clone(),
             },))
             .deposit(NearToken::from_millinear(100))
             .transact()
@@ -198,18 +234,15 @@ async fn test_invalid_contract_deploy() {
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
 
-    // Let's propose a contract update instead now.
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh((invalid_contract_proposal(),))
-        .max_gas()
-        .deposit(CONTRACT_DEPLOY)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
+    // Let's propose an invalid contract update via chunked upload.
+    let invalid_wasm = b"invalid wasm".to_vec();
+    let proposal_id = chunked_upload_contract(
+        &mpc_signer_accounts[0],
+        &contract,
+        &invalid_wasm,
+        CONTRACT_DEPLOY,
+    )
+    .await;
     vote_update_till_completion(&contract, &mpc_signer_accounts, &proposal_id).await;
 
     // Try calling into state and see if it works after the contract updates with an invalid
@@ -238,23 +271,17 @@ async fn test_propose_update_contract_many() {
 
     const PROPOSAL_COUNT: usize = 2;
     let mut proposals = Vec::with_capacity(PROPOSAL_COUNT);
-    // Try to propose multiple updates to check if they are being proposed correctly
-    // and that we can have many at once living in the contract state.
+    // Try to propose multiple updates via chunked upload to check if they are being
+    // proposed correctly and that we can have many at once living in the contract state.
     for i in 0..PROPOSAL_COUNT {
-        let execution = mpc_signer_accounts[i % mpc_signer_accounts.len()]
-            .call(contract.id(), method_names::PROPOSE_UPDATE)
-            .args_borsh(current_contract_proposal())
-            .max_gas()
-            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-            .transact()
-            .await
-            .unwrap();
-
-        assert!(
-            execution.is_success(),
-            "failed to propose update [i={i}]; {execution:#?}"
-        );
-        let proposal_id = execution.json().expect("unable to convert into UpdateId");
+        let account = &mpc_signer_accounts[i % mpc_signer_accounts.len()];
+        let proposal_id = chunked_upload_contract(
+            account,
+            &contract,
+            current_contract(),
+            CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+        )
+        .await;
         proposals.push(proposal_id);
     }
 
@@ -293,17 +320,13 @@ async fn test_vote_update_gas_before_threshold() {
         ..
     } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-
-    assert!(execution.is_success(), "failed to propose update");
-    let proposal_id: UpdateId = execution.json().unwrap();
+    let proposal_id = chunked_upload_contract(
+        &mpc_signer_accounts[0],
+        &contract,
+        current_contract(),
+        CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+    )
+    .await;
 
     // Cast votes until threshold is reached (need 6 total votes)
     for (idx, account) in mpc_signer_accounts[1..=5].iter().enumerate() {
@@ -368,21 +391,7 @@ async fn test_propose_incorrect_updates() {
     } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
-    let dummy_config = near_mpc_contract_interface::types::InitConfig::default();
-
-    // Can not propose update both to code and config
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh((dummy_contract_proposal(), dummy_config))
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_failure());
-
-    // Should propose something
+    // Sending garbage args to propose_update should fail
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(())
@@ -430,29 +439,21 @@ async fn only_one_vote_from_participant() {
     } = init_env(ALL_CURVES, number_of_participants).await;
     dbg!(contract.id());
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let proposal_a: UpdateId = execution.json().unwrap();
+    let proposal_a = chunked_upload_contract(
+        &mpc_signer_accounts[0],
+        &contract,
+        current_contract(),
+        CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+    )
+    .await;
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let proposal_b: UpdateId = execution.json().unwrap();
+    let proposal_b = chunked_upload_contract(
+        &mpc_signer_accounts[0],
+        &contract,
+        current_contract(),
+        CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+    )
+    .await;
 
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::VOTE_UPDATE)
@@ -559,4 +560,263 @@ async fn migration_function_rejects_external_callers() {
         "migrate call was accepted by external caller. expected method to be private. {:?}",
         error_message
     )
+}
+
+// ──── Chunked upload integration tests ────
+
+/// Verifies the full chunked upload flow: start → multi-chunk upload → finalize → vote → deploy.
+#[tokio::test]
+async fn test_chunked_upload_multi_chunk_and_deploy() {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+
+    let code = current_contract();
+    assert!(code.len() > 1024, "contract binary should be non-trivial");
+
+    // Upload in small chunks to exercise multi-chunk path
+    let chunk_size = code.len() / 3 + 1; // ~3 chunks
+
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs {
+            total_size: code.len() as u64,
+        })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("start_contract_upload failed");
+
+    let mut chunks_uploaded = 0;
+    for chunk in code.chunks(chunk_size) {
+        mpc_signer_accounts[0]
+            .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+            .args_borsh(UploadContractChunkArgs {
+                data: chunk.to_vec(),
+            })
+            .max_gas()
+            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+            .transact()
+            .await
+            .unwrap()
+            .into_result()
+            .expect("upload_contract_chunk failed");
+        chunks_uploaded += 1;
+    }
+    assert!(chunks_uploaded >= 3, "should have uploaded at least 3 chunks");
+
+    let finalize = mpc_signer_accounts[0]
+        .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
+        .args_borsh(())
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap();
+    assert!(finalize.is_success(), "finalize_contract_upload failed");
+    let proposal_id: UpdateId = finalize.json().unwrap();
+
+    // Vote and deploy
+    vote_update_till_completion(&contract, &mpc_signer_accounts, &proposal_id).await;
+
+    // Verify deployed code matches what we uploaded
+    let deployed = contract.view_code().await.unwrap();
+    assert_eq!(
+        sha2::Sha256::digest(code).as_slice(),
+        sha2::Sha256::digest(&deployed).as_slice(),
+        "deployed binary must match uploaded code"
+    );
+}
+
+/// Non-voter cannot start a chunked upload.
+#[tokio::test]
+async fn test_chunked_upload_non_voter_rejected() {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts: _,
+        ..
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+
+    // The contract's own account is not a voter
+    let execution = contract
+        .call(method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs { total_size: 100 })
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap();
+    assert!(
+        execution.is_failure(),
+        "non-voter should be rejected from start_contract_upload"
+    );
+}
+
+/// Starting a second upload without clearing the first should fail.
+#[tokio::test]
+async fn test_chunked_upload_double_start_rejected() {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+
+    // First start succeeds
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs { total_size: 100 })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("first start should succeed");
+
+    // Second start without clear_staged_contract should fail
+    let execution = mpc_signer_accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs { total_size: 200 })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap();
+    assert!(
+        execution.is_failure(),
+        "second start_contract_upload without clearing should fail"
+    );
+}
+
+/// Uploading a chunk that exceeds declared total_size should fail.
+#[tokio::test]
+async fn test_chunked_upload_exceeding_total_size_rejected() {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs { total_size: 10 })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("start should succeed");
+
+    let execution = mpc_signer_accounts[0]
+        .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+        .args_borsh(UploadContractChunkArgs {
+            data: vec![0u8; 20], // exceeds total_size of 10
+        })
+        .max_gas()
+        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .transact()
+        .await
+        .unwrap();
+    assert!(
+        execution.is_failure(),
+        "chunk exceeding total_size should be rejected"
+    );
+}
+
+/// Finalizing an incomplete upload should fail.
+#[tokio::test]
+async fn test_chunked_upload_finalize_incomplete_rejected() {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs { total_size: 100 })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("start should succeed");
+
+    // Upload only 50 of 100 bytes
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+        .args_borsh(UploadContractChunkArgs {
+            data: vec![0u8; 50],
+        })
+        .max_gas()
+        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("partial upload should succeed");
+
+    // Finalize should fail because upload is incomplete
+    let execution = mpc_signer_accounts[0]
+        .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
+        .args_borsh(())
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap();
+    assert!(
+        execution.is_failure(),
+        "finalize with incomplete upload should fail"
+    );
+}
+
+/// clear_staged_contract should allow starting a new upload.
+#[tokio::test]
+async fn test_clear_staged_contract_allows_restart() {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+
+    // Start an upload
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs { total_size: 100 })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("start should succeed");
+
+    // Clear it
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::CLEAR_STAGED_CONTRACT)
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("clear should succeed");
+
+    // Should be able to start a new one
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs { total_size: 200 })
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("restart after clear should succeed");
 }

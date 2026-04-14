@@ -473,25 +473,66 @@ impl MpcProposeUpdateContractCmd {
         .await;
         let proposer = setup.accounts.account(proposer_account_id);
 
-        let result = proposer
+        // Start chunked upload
+        proposer
             .any_access_key()
             .await
             .submit_tx_to_call_function(
                 &contract,
-                method_names::PROPOSE_UPDATE,
-                &borsh::to_vec(&ProposeUpdateArgs {
-                    contract: Some(contract_code),
-                    config: None,
+                method_names::START_CONTRACT_UPLOAD,
+                &borsh::to_vec(&StartContractUploadArgs {
+                    total_size: contract_code.len() as u64,
                 })
                 .unwrap(),
                 300,
-                self.deposit_near * ONE_NEAR,
+                1, // minimal deposit
                 near_primitives::views::TxExecutionStatus::Final,
                 false,
             )
             .await
             .into_return_value()
-            .expect("Failed to propose update");
+            .expect("Failed to start contract upload");
+
+        // Upload in 1 MiB chunks
+        const CHUNK_SIZE: usize = 1024 * 1024;
+        let deposit_per_chunk = self.deposit_near * ONE_NEAR / (contract_code.len().div_ceil(CHUNK_SIZE) as u128);
+        for chunk in contract_code.chunks(CHUNK_SIZE) {
+            proposer
+                .any_access_key()
+                .await
+                .submit_tx_to_call_function(
+                    &contract,
+                    method_names::UPLOAD_CONTRACT_CHUNK,
+                    &borsh::to_vec(&UploadContractChunkArgs {
+                        data: chunk.to_vec(),
+                    })
+                    .unwrap(),
+                    300,
+                    deposit_per_chunk,
+                    near_primitives::views::TxExecutionStatus::Final,
+                    false,
+                )
+                .await
+                .into_return_value()
+                .expect("Failed to upload contract chunk");
+        }
+
+        // Finalize
+        let result = proposer
+            .any_access_key()
+            .await
+            .submit_tx_to_call_function(
+                &contract,
+                method_names::FINALIZE_CONTRACT_UPLOAD,
+                &borsh::to_vec(&()).unwrap(),
+                300,
+                1, // minimal deposit
+                near_primitives::views::TxExecutionStatus::Final,
+                false,
+            )
+            .await
+            .into_return_value()
+            .expect("Failed to finalize contract upload");
         let update_id: u64 = serde_json::from_slice(&result).expect(&format!(
             "Failed to deserialize result: {}",
             String::from_utf8_lossy(&result)
@@ -511,9 +552,13 @@ impl MpcProposeUpdateContractCmd {
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
-pub struct ProposeUpdateArgs {
-    pub contract: Option<Vec<u8>>,
-    pub config: Option<()>, // unsupported
+pub struct StartContractUploadArgs {
+    pub total_size: u64,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct UploadContractChunkArgs {
+    pub data: Vec<u8>,
 }
 
 impl MpcVoteUpdateCmd {

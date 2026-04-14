@@ -34,7 +34,10 @@ use crate::{
     state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
-    update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
+    update::{
+        ProposeUpdateArgs, ProposedUpdates, StagedContractUpload, StartContractUploadArgs,
+        Update, UpdateId, UploadContractChunkArgs,
+    },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
@@ -132,6 +135,7 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
+    staged_uploads: IterableMap<AccountId, StagedContractUpload>,
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
     node_foreign_chain_configurations: NodeForeignChainConfigurations,
@@ -1228,16 +1232,15 @@ impl MpcContract {
             .vote_abort_key_event_instance(key_event_id)
     }
 
-    /// Propose update to either code or config, but not both of them at the same time.
+    /// Propose a config update.
     #[payable]
     #[handle_result]
     pub fn propose_update(
         &mut self,
         #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, Error> {
-        // Only voters can propose updates:
         let proposer = self.voter_or_panic();
-        let update: Update = args.try_into()?;
+        let update: Update = args.into();
 
         let attached = env::attached_deposit();
         let required = ProposedUpdates::required_deposit(&update);
@@ -1257,7 +1260,6 @@ impl MpcContract {
             id,
         );
 
-        // Refund the difference if the proposer attached more than required.
         if let Some(diff) = attached.checked_sub(required) {
             if diff > NearToken::from_yoctonear(0) {
                 Promise::new(proposer).transfer(diff).detach();
@@ -1265,6 +1267,128 @@ impl MpcContract {
         }
 
         Ok(id)
+    }
+
+    /// Begin a chunked contract code upload. Call [`upload_contract_chunk`] to append data,
+    /// then [`finalize_contract_upload`] to create the proposal.
+    #[payable]
+    #[handle_result]
+    pub fn start_contract_upload(
+        &mut self,
+        #[serializer(borsh)] args: StartContractUploadArgs,
+    ) -> Result<(), Error> {
+        let caller = self.voter_or_panic();
+
+        if self.staged_uploads.contains_key(&caller) {
+            return Err(InvalidParameters::MalformedPayload {
+                reason: "Caller already has a staged upload. Call clear_staged_contract first."
+                    .into(),
+            }
+            .into());
+        }
+
+        let staged = StagedContractUpload::new(args.total_size);
+        self.staged_uploads.insert(caller, staged);
+
+        log!(
+            "start_contract_upload: signer={}, total_size={}",
+            env::signer_account_id(),
+            args.total_size,
+        );
+
+        Ok(())
+    }
+
+    /// Append a chunk of contract code to the caller's staged upload.
+    #[payable]
+    #[handle_result]
+    pub fn upload_contract_chunk(
+        &mut self,
+        #[serializer(borsh)] args: UploadContractChunkArgs,
+    ) -> Result<(), Error> {
+        let caller = self.voter_or_panic();
+
+        let staged = self.staged_uploads.get_mut(&caller).ok_or(
+            InvalidParameters::MalformedPayload {
+                reason: "No staged upload found. Call start_contract_upload first.".into(),
+            },
+        )?;
+
+        let chunk_len = args.data.len();
+
+        let attached = env::attached_deposit();
+        let required = StagedContractUpload::required_deposit_for_bytes(chunk_len);
+        if attached < required {
+            return Err(InvalidParameters::InsufficientDeposit {
+                attached: attached.as_yoctonear(),
+                required: required.as_yoctonear(),
+            }
+            .into());
+        }
+
+        staged.append_chunk(args.data)?;
+        staged.deposited = staged.deposited.saturating_add(attached);
+
+        log!(
+            "upload_contract_chunk: signer={}, chunk_len={}, received_bytes={}/{}",
+            env::signer_account_id(),
+            chunk_len,
+            staged.received_bytes,
+            staged.total_size,
+        );
+
+        Ok(())
+    }
+
+    /// Assemble staged chunks into a contract code proposal and register it for voting.
+    #[payable]
+    #[handle_result]
+    pub fn finalize_contract_upload(&mut self) -> Result<UpdateId, Error> {
+        let caller = self.voter_or_panic();
+
+        let staged = self
+            .staged_uploads
+            .remove(&caller)
+            .ok_or(InvalidParameters::MalformedPayload {
+                reason: "No staged upload found. Call start_contract_upload first.".into(),
+            })?;
+
+        let code = staged.assemble()?;
+        let update = Update::Contract(code);
+
+        let id = self.proposed_updates.propose(update);
+
+        log!(
+            "finalize_contract_upload: signer={}, id={:?}",
+            env::signer_account_id(),
+            id,
+        );
+
+        Ok(id)
+    }
+
+    /// Clear the caller's staged contract upload and refund accumulated deposits.
+    #[handle_result]
+    pub fn clear_staged_contract(&mut self) -> Result<(), Error> {
+        let caller = self.voter_or_panic();
+
+        let staged = self
+            .staged_uploads
+            .remove(&caller)
+            .ok_or(InvalidParameters::MalformedPayload {
+                reason: "No staged upload found.".into(),
+            })?;
+
+        if staged.deposited > NearToken::from_yoctonear(0) {
+            Promise::new(caller).transfer(staged.deposited).detach();
+        }
+
+        log!(
+            "clear_staged_contract: signer={}",
+            env::signer_account_id(),
+        );
+
+        Ok(())
     }
 
     /// Vote for a proposed update given the [`UpdateId`] of the update.
@@ -1672,6 +1796,7 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequests,
             ),
             proposed_updates: ProposedUpdates::default(),
+            staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
             foreign_chain_policy: Default::default(),
             foreign_chain_policy_votes: Default::default(),
             config: init_config.map(Into::into).unwrap_or_default(),
@@ -1738,6 +1863,7 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequests,
             ),
             proposed_updates: Default::default(),
+            staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
             foreign_chain_policy: Default::default(),
             foreign_chain_policy_votes: Default::default(),
             tee_state,
@@ -3454,6 +3580,7 @@ mod tests {
                 ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
+                staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
                 foreign_chain_policy: Default::default(),
                 foreign_chain_policy_votes: Default::default(),
                 node_foreign_chain_configurations: Default::default(),

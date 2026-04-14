@@ -3,7 +3,7 @@ use std::hash::Hash;
 
 use crate::{
     dto_mapping::IntoInterfaceType,
-    errors::{ConversionError, Error},
+    errors::{Error, InvalidParameters},
     primitives::participants::Participants,
     storage_keys::StorageKey,
 };
@@ -88,32 +88,12 @@ pub enum Update {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ProposeUpdateArgs {
-    pub code: Option<Vec<u8>>,
-    pub config: Option<near_mpc_contract_interface::types::Config>,
+    pub config: near_mpc_contract_interface::types::Config,
 }
 
-impl TryFrom<ProposeUpdateArgs> for Update {
-    type Error = Error;
-
-    fn try_from(value: ProposeUpdateArgs) -> Result<Self, Self::Error> {
-        let ProposeUpdateArgs { code, config } = value;
-        let update = match (code, config) {
-            (Some(contract), None) => Update::Contract(contract),
-            (None, Some(config)) => Update::Config(config),
-            (Some(_), Some(_)) => {
-                return Err(ConversionError::DataConversion {
-                    reason: "Code and config updates are not allowed at the same time".into(),
-                }
-                .into());
-            }
-            _ => {
-                return Err(ConversionError::DataConversion {
-                    reason: "Expected either code or config update, received none of them".into(),
-                }
-                .into());
-            }
-        };
-        Ok(update)
+impl From<ProposeUpdateArgs> for Update {
+    fn from(value: ProposeUpdateArgs) -> Self {
+        Update::Config(value.config)
     }
 }
 
@@ -139,6 +119,102 @@ pub(crate) struct UpdateEntry {
 pub(super) struct UpdateVotes {
     pub(super) votes: BTreeMap<AccountId, UpdateId>,
     pub(super) updates: BTreeMap<UpdateId, UpdateHash>,
+}
+
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+pub struct StagedContractUpload {
+    pub chunks: Vec<Vec<u8>>,
+    pub total_size: u64,
+    pub received_bytes: u64,
+    pub deposited: NearToken,
+}
+
+impl StagedContractUpload {
+    pub fn new(total_size: u64) -> Self {
+        Self {
+            chunks: Vec::new(),
+            total_size,
+            received_bytes: 0,
+            deposited: NearToken::from_yoctonear(0),
+        }
+    }
+
+    pub fn append_chunk(&mut self, data: Vec<u8>) -> Result<(), Error> {
+        let new_received = self.received_bytes + data.len() as u64;
+        if new_received > self.total_size {
+            return Err(InvalidParameters::MalformedPayload {
+                reason: format!(
+                    "Chunk would exceed declared total_size. received_bytes={}, chunk_len={}, total_size={}",
+                    self.received_bytes, data.len(), self.total_size
+                ),
+            }
+            .into());
+        }
+        self.received_bytes = new_received;
+        self.chunks.push(data);
+        Ok(())
+    }
+
+    pub fn assemble(self) -> Result<Vec<u8>, Error> {
+        if self.received_bytes != self.total_size {
+            return Err(InvalidParameters::MalformedPayload {
+                reason: format!(
+                    "Upload incomplete. received_bytes={}, total_size={}",
+                    self.received_bytes, self.total_size
+                ),
+            }
+            .into());
+        }
+        let mut assembled = Vec::with_capacity(self.total_size as usize);
+        for chunk in self.chunks {
+            assembled.extend_from_slice(&chunk);
+        }
+        Ok(assembled)
+    }
+
+    pub fn required_deposit_for_bytes(len: usize) -> NearToken {
+        env::storage_byte_cost().saturating_mul(len as u128)
+    }
+}
+
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct StartContractUploadArgs {
+    pub total_size: u64,
+}
+
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct UploadContractChunkArgs {
+    pub data: Vec<u8>,
 }
 
 #[near(serializers=[borsh ])]
@@ -795,5 +871,46 @@ mod tests {
         };
         let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
         assert_eq!(result, expected_after_removal);
+    }
+
+    mod staged_upload {
+        use super::super::StagedContractUpload;
+
+        #[test]
+        fn test_append_chunk_tracks_received_bytes() {
+            let mut staged = StagedContractUpload::new(100);
+            staged.append_chunk(vec![0u8; 40]).unwrap();
+            assert_eq!(staged.received_bytes, 40);
+            assert_eq!(staged.chunks.len(), 1);
+
+            staged.append_chunk(vec![1u8; 60]).unwrap();
+            assert_eq!(staged.received_bytes, 100);
+            assert_eq!(staged.chunks.len(), 2);
+        }
+
+        #[test]
+        fn test_append_chunk_rejects_exceeding_total_size() {
+            let mut staged = StagedContractUpload::new(50);
+            staged.append_chunk(vec![0u8; 40]).unwrap();
+            let err = staged.append_chunk(vec![0u8; 20]).unwrap_err();
+            assert!(err.to_string().contains("exceed declared total_size"));
+        }
+
+        #[test]
+        fn test_assemble_concatenates_chunks() {
+            let mut staged = StagedContractUpload::new(6);
+            staged.append_chunk(vec![1, 2, 3]).unwrap();
+            staged.append_chunk(vec![4, 5, 6]).unwrap();
+            let assembled = staged.assemble().unwrap();
+            assert_eq!(assembled, vec![1, 2, 3, 4, 5, 6]);
+        }
+
+        #[test]
+        fn test_assemble_rejects_incomplete_upload() {
+            let mut staged = StagedContractUpload::new(100);
+            staged.append_chunk(vec![0u8; 50]).unwrap();
+            let err = staged.assemble().unwrap_err();
+            assert!(err.to_string().contains("incomplete"));
+        }
     }
 }

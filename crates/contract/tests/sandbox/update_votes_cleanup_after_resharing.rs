@@ -15,11 +15,12 @@ use crate::sandbox::{
 use anyhow::Result;
 use mpc_contract::{
     primitives::{domain::Curve, participants::Participants, thresholds::ThresholdParameters},
-    update::{ProposeUpdateArgs, UpdateId},
+    update::{StartContractUploadArgs, UpdateId, UploadContractChunkArgs},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
+use near_workspaces::types::NearToken;
 use near_workspaces::Account;
 use serde_json::json;
 use sha2::Digest;
@@ -38,15 +39,31 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
 
-    // Propose update and have first 2 participants vote on it
+    // Propose update via chunked upload and have first 2 participants vote on it
     let code = vec![1u8; 1000];
-    let update_id: UpdateId = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
-            code: Some(code.clone()),
-            config: None,
+
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs {
+            total_size: code.len() as u64,
         })
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+
+    mpc_signer_accounts[0]
+        .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+        .args_borsh(UploadContractChunkArgs { data: code.clone() })
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .transact()
+        .await?
+        .into_result()?;
+
+    let update_id: UpdateId = mpc_signer_accounts[0]
+        .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
+        .args_borsh(())
+        .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await?
         .json()?;

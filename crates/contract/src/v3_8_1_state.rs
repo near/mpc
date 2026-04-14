@@ -9,7 +9,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::{env, store::LookupMap};
+use near_sdk::{env, store::{IterableMap, LookupMap}};
 
 use crate::{
     node_migrations::NodeMigrations,
@@ -18,6 +18,7 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
     Config, ForeignChainPolicyVotes, IntoInterfaceType, NodeForeignChainConfigurations, StaleData,
@@ -85,6 +86,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: value.pending_ckd_requests,
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
+            staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
             foreign_chain_policy,
             foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             config: value.config,

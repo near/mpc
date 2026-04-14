@@ -20,7 +20,7 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
-    update::{ProposeUpdateArgs, UpdateId},
+    update::{StartContractUploadArgs, UpdateId, UploadContractChunkArgs},
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
@@ -35,6 +35,7 @@ use near_mpc_contract_interface::{
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
+use near_workspaces::types::NearToken;
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
@@ -276,24 +277,54 @@ pub async fn propose_and_vote_contract_binary(
     contract: &Contract,
     new_contract_binary: &[u8],
 ) {
-    let propose_update_execution = accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
-            code: Some(new_contract_binary.to_vec()),
-            config: None,
+    // Chunked upload: start, upload in 1 MiB chunks, finalize
+    let start_execution = accounts[0]
+        .call(contract.id(), method_names::START_CONTRACT_UPLOAD)
+        .args_borsh(StartContractUploadArgs {
+            total_size: new_contract_binary.len() as u64,
         })
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await
-        .expect("propose update call succeeds");
-
+        .expect("start_contract_upload call succeeds");
     assert!(
-        propose_update_execution.is_success(),
-        "propose update call failed"
+        start_execution.is_success(),
+        "start_contract_upload failed"
     );
 
-    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
+    const CHUNK_SIZE: usize = 1024 * 1024; // 1 MiB
+    for chunk in new_contract_binary.chunks(CHUNK_SIZE) {
+        let upload_execution = accounts[0]
+            .call(contract.id(), method_names::UPLOAD_CONTRACT_CHUNK)
+            .args_borsh(UploadContractChunkArgs {
+                data: chunk.to_vec(),
+            })
+            .max_gas()
+            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+            .transact()
+            .await
+            .expect("upload_contract_chunk call succeeds");
+        assert!(
+            upload_execution.is_success(),
+            "upload_contract_chunk failed"
+        );
+    }
+
+    let finalize_execution = accounts[0]
+        .call(contract.id(), method_names::FINALIZE_CONTRACT_UPLOAD)
+        .args_borsh(())
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await
+        .expect("finalize_contract_upload call succeeds");
+    assert!(
+        finalize_execution.is_success(),
+        "finalize_contract_upload failed"
+    );
+
+    let proposal_id: UpdateId = finalize_execution.json().unwrap();
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
