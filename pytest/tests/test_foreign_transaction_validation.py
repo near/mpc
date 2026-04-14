@@ -393,6 +393,33 @@ def verify_response(res):
             f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
         )
 
+    response = json.loads(base64.b64decode(success_value))
+
+    print(
+        f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
+    )
+
+    # Verify payload_hash is present
+    payload_hash = response["payload_hash"]
+    assert isinstance(payload_hash, str), (
+        f"Expected hex string payload_hash, got: {type(payload_hash)}"
+    )
+    assert len(payload_hash) == 64, (
+        f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
+    )
+
+    # Verify signature is present and is Secp256k1
+    signature = response["signature"]
+    assert signature["scheme"] == "Secp256k1", (
+        f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
+    )
+    assert "big_r" in signature, "Expected big_r in signature"
+    assert "s" in signature, "Expected s in signature"
+    assert "recovery_id" in signature, "Expected recovery_id in signature"
+
+    print("\033[96mVerify Foreign Tx Response \u2713\033[0m")
+
+
 @pytest.mark.no_atexit_cleanup
 def test_verify_foreign_transaction_bitcoin(
     foreign_tx_validation_cluster: tuple[MpcCluster, list],
@@ -430,32 +457,6 @@ def test_verify_foreign_transaction_bitcoin(
         gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
         deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
-
-        response = json.loads(base64.b64decode(success_value))
-
-        print(
-            f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
-        )
-
-        # Verify payload_hash is present
-        payload_hash = response["payload_hash"]
-        assert isinstance(payload_hash, str), (
-            f"Expected hex string payload_hash, got: {type(payload_hash)}"
-        )
-        assert len(payload_hash) == 64, (
-            f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
-        )
-
-        # Verify signature is present and is Secp256k1
-        signature = response["signature"]
-        assert signature["scheme"] == "Secp256k1", (
-            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
-        )
-        assert "big_r" in signature, "Expected big_r in signature"
-        assert "s" in signature, "Expected s in signature"
-        assert "recovery_id" in signature, "Expected recovery_id in signature"
-
-        print("\033[96mVerify Foreign Tx Response \u2713\033[0m")
 
     cluster.request_node.send_await_check_txs_parallel(
         "verify_foreign_transaction", [tx], verify_response
@@ -500,32 +501,6 @@ def test_verify_foreign_transaction_abstract(
         deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
 
-        response = json.loads(base64.b64decode(success_value))
-
-        print(
-            f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
-        )
-
-        # Verify payload_hash is present
-        payload_hash = response["payload_hash"]
-        assert isinstance(payload_hash, str), (
-            f"Expected hex string payload_hash, got: {type(payload_hash)}"
-        )
-        assert len(payload_hash) == 64, (
-            f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
-        )
-
-        # Verify signature is present and is Secp256k1
-        signature = response["signature"]
-        assert signature["scheme"] == "Secp256k1", (
-            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
-        )
-        assert "big_r" in signature, "Expected big_r in signature"
-        assert "s" in signature, "Expected s in signature"
-        assert "recovery_id" in signature, "Expected recovery_id in signature"
-
-        print("\033[96mVerify Foreign Tx Response \u2713\033[0m")
-
     cluster.request_node.send_await_check_txs_parallel(
         "verify_foreign_transaction", [tx], verify_response
     )
@@ -569,32 +544,6 @@ def test_verify_foreign_transaction_bnb(
         deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
 
-        response = json.loads(base64.b64decode(success_value))
-
-        print(
-            f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
-        )
-
-        # Verify payload_hash is present
-        payload_hash = response["payload_hash"]
-        assert isinstance(payload_hash, str), (
-            f"Expected hex string payload_hash, got: {type(payload_hash)}"
-        )
-        assert len(payload_hash) == 64, (
-            f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
-        )
-
-        # Verify signature is present and is Secp256k1
-        signature = response["signature"]
-        assert signature["scheme"] == "Secp256k1", (
-            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
-        )
-        assert "big_r" in signature, "Expected big_r in signature"
-        assert "s" in signature, "Expected s in signature"
-        assert "recovery_id" in signature, "Expected recovery_id in signature"
-
-        print("\033[96mVerify Foreign Tx Response \u2713\033[0m")
-
     cluster.request_node.send_await_check_txs_parallel(
         "verify_foreign_transaction", [tx], verify_response
     )
@@ -637,32 +586,6 @@ def test_verify_foreign_transaction_starknet(
         gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
         deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
-
-        response = json.loads(base64.b64decode(success_value))
-
-        print(
-            f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
-        )
-
-        # Verify payload_hash is present
-        payload_hash = response["payload_hash"]
-        assert isinstance(payload_hash, str), (
-            f"Expected hex string payload_hash, got: {type(payload_hash)}"
-        )
-        assert len(payload_hash) == 64, (
-            f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
-        )
-
-        # Verify signature is present and is Secp256k1
-        signature = response["signature"]
-        assert signature["scheme"] == "Secp256k1", (
-            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
-        )
-        assert "big_r" in signature, "Expected big_r in signature"
-        assert "s" in signature, "Expected s in signature"
-        assert "recovery_id" in signature, "Expected recovery_id in signature"
-
-        print("\033[96mVerify Foreign Tx Response \u2713\033[0m")
 
     cluster.request_node.send_await_check_txs_parallel(
         "verify_foreign_transaction", [tx], verify_response
