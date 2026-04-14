@@ -5,7 +5,7 @@ use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
-    CKDAppPublicKey, ProtocolContractState, RunningContractState,
+    CKDAppPublicKey, DomainPurpose, ProtocolContractState, RunningContractState, SignatureScheme,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -13,11 +13,9 @@ use serde_json::json;
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
-#[expect(dead_code)]
 pub const KEY_RESHARING_PORT_SEED: u16 = 3;
 pub const REQUEST_DURING_RESHARING_PORT_SEED: u16 = 4;
 pub const SUBMIT_PARTICIPANT_INFO_PORT_SEED: u16 = 5;
-#[expect(dead_code)]
 pub const CANCELLATION_OF_RESHARING_PORT_SEED: u16 = 6;
 pub const ROBUST_ECDSA_PORT_SEED: u16 = 7;
 
@@ -151,4 +149,48 @@ pub fn generate_eddsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
 pub fn generate_ckd_app_public_key(rng: &mut impl rand::Rng) -> CKDAppPublicKey {
     let point = G1Projective::generator() * Scalar::from(rng.next_u64());
     CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey::from(&point))
+}
+
+pub async fn send_sign_request(
+    cluster: &e2e_tests::MpcCluster,
+    running: &RunningContractState,
+    rng: &mut impl rand::Rng,
+) {
+    let domain = running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
+        .expect("no Secp256k1 Sign domain");
+    let outcome = cluster
+        .send_sign_request(domain.id, generate_ecdsa_payload(rng))
+        .await
+        .expect("sign request failed");
+    assert!(
+        outcome.is_success(),
+        "sign request failed: {:?}",
+        outcome.failure_message()
+    );
+}
+
+pub async fn send_ckd_request(
+    cluster: &e2e_tests::MpcCluster,
+    running: &RunningContractState,
+    rng: &mut impl rand::Rng,
+) {
+    let domain = running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.purpose == Some(DomainPurpose::CKD))
+        .expect("no CKD domain");
+    let outcome = cluster
+        .send_ckd_request(domain.id, generate_ckd_app_public_key(rng))
+        .await
+        .expect("ckd request failed");
+    assert!(
+        outcome.is_success(),
+        "ckd request failed: {:?}",
+        outcome.failure_message()
+    );
 }
