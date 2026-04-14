@@ -121,7 +121,7 @@ def generate_app_public_key_pv() -> Tuple[dict, Scalar]:
 def generate_ckd_args(
     domain: Domain, app_public_key: Optional[str] = None, path: str = ""
 ) -> dict:
-    assert domain.scheme == "Bls12381"
+    assert domain.curve == "Bls12381"
     if app_public_key is None:
         app_public_key, _ = generate_app_public_key()
     return {
@@ -137,7 +137,7 @@ def generate_ckd_pv_args(
     domain: Domain, app_public_key_pv: Optional[dict] = None, path: str = ""
 ) -> dict:
     """Generate CKD request args using the PV (publicly verifiable) format."""
-    assert domain.scheme == "Bls12381"
+    assert domain.curve == "Bls12381"
     if app_public_key_pv is None:
         app_public_key_pv, _ = generate_app_public_key_pv()
     return {

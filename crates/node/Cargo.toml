@@ -34,7 +34,7 @@ k256 = { workspace = true }
 launcher-interface = { workspace = true }
 lru = { workspace = true }
 mpc-attestation = { workspace = true }
-mpc-contract = { workspace = true }
+mpc-contract = { workspace = true, features = ["compat"] }
 mpc-node-config = { workspace = true }
 mpc-primitives = { workspace = true }
 mpc-tls = { workspace = true }

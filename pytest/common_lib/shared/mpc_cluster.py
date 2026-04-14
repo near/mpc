@@ -15,7 +15,7 @@ from common_lib.contract_state import (
     ContractState,
     ProtocolState,
     RunningProtocolState,
-    infer_purpose_from_scheme,
+    infer_purpose_from_curve,
 )
 from common_lib.contracts import ContractMethod
 from common_lib.migration_state import (
@@ -159,11 +159,11 @@ class MpcCluster:
         self,
         participants: List[MpcNode],
         threshold: int,
-        domains=["Secp256k1", "Ed25519", "Bls12381"],
+        domains=["Secp256k1", "Edwards25519", "Bls12381"],
     ):
         """
         initializes the contract with `participants` and `threshold`.
-        Adds `Secp256k1`, `Ed25519` and `Bls12381` to the contract domains.
+        Adds `Secp256k1`, `Edwards25519` and `Bls12381` to the contract domains.
         """
         self.define_candidate_set(participants)
         self.update_participant_status(
@@ -279,32 +279,32 @@ class MpcCluster:
 
     def add_domains(
         self,
-        schemes,
+        curves,
         wait_for_running=True,
     ):
         """Add domains to the contract.
 
-        Each item in `schemes` can be either:
-        - A scheme string like "Secp256k1" (purpose inferred from scheme)
-        - A tuple (scheme, purpose) like ("Secp256k1", "ForeignTx")
+        Each item in `curves` can be either:
+        - A curve string like "Secp256k1" (purpose inferred from curve)
+        - A tuple (curve, purpose) like ("Secp256k1", "ForeignTx")
         """
-        print(f"\033[91m(Vote Domains) Adding domains: \033[93m{schemes}\033[0m")
+        print(f"\033[91m(Vote Domains) Adding domains: \033[93m{curves}\033[0m")
         state = self.contract_state()
         state.print()
         assert state.is_state(ProtocolState.RUNNING), "require running state"
         assert isinstance(state.protocol_state, RunningProtocolState)
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
-        for entry in schemes:
+        for entry in curves:
             if isinstance(entry, tuple):
-                scheme, purpose = entry
+                curve, purpose = entry
             else:
-                scheme = entry
-                purpose = infer_purpose_from_scheme(scheme)
+                curve = entry
+                purpose = infer_purpose_from_curve(curve)
             domains_to_add.append(
                 {
                     "id": next_domain_id,
-                    "scheme": scheme,
+                    "curve": curve,
                     "purpose": purpose,
                 }
             )
@@ -466,7 +466,7 @@ class MpcCluster:
         deposit = constants.SIGNATURE_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            if domain.scheme == "Secp256k1" or domain.scheme == "Ed25519":
+            if domain.curve == "Secp256k1" or domain.curve == "Edwards25519":
                 print(
                     f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m sign requests for {domain}.\033[0m"
                 )
@@ -522,7 +522,7 @@ class MpcCluster:
         deposit = constants.CKD_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            if domain.scheme == "Bls12381":
+            if domain.curve == "Bls12381":
                 print(
                     f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m ckd requests for {domain}.\033[0m"
                 )
