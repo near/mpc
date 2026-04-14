@@ -11,6 +11,7 @@ use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
+use mpc_node_config::foreign_chains::{BnbApiVariant, BnbChainConfig, BnbProviderConfig};
 use mpc_node_config::{
     AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
     BitcoinChainConfig, BitcoinProviderConfig, CKDConfig, ConfigFile, EthereumApiVariant,
@@ -135,6 +136,8 @@ struct ForeignChains {
     abstract_chain: Option<AbstractChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
     starknet: Option<StarknetChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bnb: Option<BnbChain>,
 }
 
 impl From<ForeignChainsConfig> for ForeignChains {
@@ -145,6 +148,7 @@ impl From<ForeignChainsConfig> for ForeignChains {
             ethereum: config.ethereum.map(Into::into),
             abstract_chain: config.abstract_chain.map(Into::into),
             starknet: config.starknet.map(Into::into),
+            bnb: config.bnb.map(Into::into),
         }
     }
 }
@@ -307,6 +311,39 @@ struct StarknetProvider {
 
 impl From<StarknetProviderConfig> for StarknetProvider {
     fn from(config: StarknetProviderConfig) -> Self {
+        Self {
+            rpc_url: config.rpc_url,
+            api_variant: config.api_variant,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct BnbChain {
+    timeout_sec: u64,
+    max_retries: u64,
+    providers: BTreeMap<String, BnbProvider>,
+}
+
+impl From<BnbChainConfig> for BnbChain {
+    fn from(config: BnbChainConfig) -> Self {
+        let providers: BTreeMap<String, BnbProviderConfig> = config.providers.into();
+        Self {
+            timeout_sec: config.timeout_sec,
+            max_retries: config.max_retries,
+            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct BnbProvider {
+    rpc_url: String,
+    api_variant: BnbApiVariant,
+}
+
+impl From<BnbProviderConfig> for BnbProvider {
+    fn from(config: BnbProviderConfig) -> Self {
         Self {
             rpc_url: config.rpc_url,
             api_variant: config.api_variant,
@@ -499,7 +536,6 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::foreign_chains::{BnbApiVariant, BnbChainConfig, BnbProviderConfig};
     use mpc_node_config::{AuthConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -733,6 +769,25 @@ mod tests {
             StarknetProvider {
                 rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
                 api_variant: StarknetApiVariant::Blast,
+            }
+        );
+    }
+
+    #[test]
+    fn node_config_response_from__omits_auth_from_bnb_provider() {
+        // Given
+        let config = test_config();
+
+        // When
+        let response = NodeConfigResponse::from(config);
+
+        // Then
+        let provider = &response.foreign_chains.bnb.unwrap().providers["public"];
+        assert_eq!(
+            *provider,
+            BnbProvider {
+                rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
+                api_variant: BnbApiVariant::Standard,
             }
         );
     }
