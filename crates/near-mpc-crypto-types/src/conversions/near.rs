@@ -72,6 +72,47 @@ impl TryFrom<&near_sdk::PublicKey> for Secp256k1PublicKey {
     }
 }
 
+impl TryFrom<PublicKeyExtended> for PublicKey {
+    type Error = CryptoConversionError;
+    fn try_from(pk: PublicKeyExtended) -> Result<Self, Self::Error> {
+        match pk {
+            PublicKeyExtended::Secp256k1 { near_public_key } => {
+                let near_pk: near_sdk::PublicKey = near_public_key
+                    .parse()
+                    .map_err(|_| CryptoConversionError::InvalidPublicKey)?;
+                Ok(PublicKey::from(&near_pk))
+            }
+            PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                ..
+            } => {
+                let near_pk: near_sdk::PublicKey = near_public_key_compressed
+                    .parse()
+                    .map_err(|_| CryptoConversionError::InvalidPublicKey)?;
+                Ok(PublicKey::from(&near_pk))
+            }
+            PublicKeyExtended::Bls12381 { public_key } => Ok(public_key),
+        }
+    }
+}
+
+impl From<PublicKey> for PublicKeyExtended {
+    fn from(pk: PublicKey) -> Self {
+        match pk {
+            PublicKey::Secp256k1(inner) => PublicKeyExtended::Secp256k1 {
+                near_public_key: String::from(&inner),
+            },
+            PublicKey::Ed25519(inner) => PublicKeyExtended::Ed25519 {
+                near_public_key_compressed: String::from(&inner),
+                edwards_point: inner.0,
+            },
+            PublicKey::Bls12381(inner) => PublicKeyExtended::Bls12381 {
+                public_key: PublicKey::Bls12381(inner),
+            },
+        }
+    }
+}
+
 impl TryFrom<&PublicKeyExtended> for near_sdk::PublicKey {
     type Error = CryptoConversionError;
     fn try_from(pk: &PublicKeyExtended) -> Result<Self, Self::Error> {

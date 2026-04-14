@@ -20,7 +20,7 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
     for domain in &running.domains.domains {
         tracing::info!(domain_id = ?domain.id, purpose = ?domain.purpose, curve = ?domain.curve, "sending request");
         match domain.purpose {
-            Some(DomainPurpose::Sign) => {
+            DomainPurpose::Sign => {
                 let payload = match domain.curve {
                     Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
                     Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
@@ -55,7 +55,7 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
                 }
                 tracing::info!(domain_id = ?domain.id, "sign request returned valid signature");
             }
-            Some(DomainPurpose::CKD) => {
+            DomainPurpose::CKD => {
                 // when
                 let outcome = cluster
                     .send_ckd_request(domain.id, common::generate_ckd_app_public_key(&mut rng))
@@ -87,7 +87,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         c.domains = vec![DomainConfig {
             id: DomainId(0),
             curve: Curve::V2Secp256k1,
-            purpose: Some(DomainPurpose::Sign),
+            purpose: DomainPurpose::Sign,
         }];
         c.triples_to_buffer = 0;
         c.presignatures_to_buffer = 6;

@@ -5,7 +5,7 @@ mod sign;
 use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId};
+use near_mpc_contract_interface::types::{DomainId, KeyEventId};
 use threshold_signatures::confidential_key_derivation::{
     ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };

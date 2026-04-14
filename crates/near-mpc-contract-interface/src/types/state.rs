@@ -33,6 +33,7 @@ use super::primitives::DomainId;
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
+    derive_more::Display,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -57,6 +58,7 @@ pub struct EpochId(pub u64);
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
+    derive_more::Display,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -203,9 +205,7 @@ pub struct DomainConfig {
     // Accepts "scheme" for compat with pre-3.9.0 contracts. Remove after 3.9.0 deployment.
     #[serde(alias = "scheme")]
     pub curve: Curve,
-    /// `None` when reading state from an old contract that predates domain purposes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub purpose: Option<DomainPurpose>,
+    pub purpose: DomainPurpose,
 }
 
 /// Registry of all signature domains.
@@ -248,7 +248,16 @@ pub struct Keyset {
 
 /// Identifier for a key event (generation or resharing attempt).
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

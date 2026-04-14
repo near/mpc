@@ -7,7 +7,6 @@ use crate::types::VerifyForeignTxId;
 use anyhow::Context;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::CKDRequest;
-use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
 use near_account_id::AccountId;
 use near_indexer_primitives::types::FunctionArgs;
@@ -22,6 +21,7 @@ use near_mpc_contract_interface::method_names::{
 };
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDRequestArgs;
+use near_mpc_contract_interface::types::DomainId;
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -347,7 +347,7 @@ fn try_get_sign_args(
         SignArgs {
             payload: sign_request.payload,
             path: sign_request.path,
-            domain_id: sign_request.domain_id,
+            domain_id: DomainId(sign_request.domain_id.0),
         },
     ))
 }
@@ -386,7 +386,7 @@ fn try_get_ckd_args(
         CKDArgs {
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
-            domain_id: ckd_request.domain_id,
+            domain_id: DomainId(ckd_request.domain_id.0),
         },
     ))
 }

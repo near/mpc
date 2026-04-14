@@ -15,7 +15,6 @@ use anyhow::Context;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
-    state::ProtocolContractState,
     tee::{
         proposal::{LauncherDockerComposeHash, NodeImageHash},
         tee_state::NodeId,
@@ -46,7 +45,6 @@ use tokio::sync::{
 };
 use types::ChainSendTransactionRequest;
 
-mod compat;
 pub mod configs;
 pub mod handler;
 pub mod migrations;
@@ -297,13 +295,11 @@ impl IndexerViewClient {
             .context("failed to get query for final block")
     }
 
-    pub(crate) async fn get_mpc_contract_state(
+    pub(crate) async fn get_mpc_contract_state_dto(
         &self,
         mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, ProtocolContractState)> {
-        let (height, dto): (u64, dtos::ProtocolContractState) =
-            self.get_mpc_state(mpc_contract_id, STATE).await?;
-        Ok((height, compat::into_internal(dto)?))
+    ) -> anyhow::Result<(u64, dtos::ProtocolContractState)> {
+        self.get_mpc_state(mpc_contract_id, STATE).await
     }
 
     pub(crate) async fn get_mpc_allowed_image_hashes(

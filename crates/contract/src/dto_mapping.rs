@@ -507,6 +507,209 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 // State DTO Conversions
 // =============================================================================
 
+// --- From DTO to contract types (node-only, not compiled into WASM) ---
+// TODO(#381): Remove once the node no longer depends on the contract crate.
+
+#[cfg(feature = "compat")]
+mod from_dto {
+    use super::*;
+    use crate::crypto_shared::types::serializable::SerializableEdwardsPoint;
+    use crate::crypto_shared::types::PublicKeyExtendedConversionError;
+
+    impl TryFrom<dtos::PublicKeyExtended> for PublicKeyExtended {
+        type Error = PublicKeyExtendedConversionError;
+        fn try_from(pk: dtos::PublicKeyExtended) -> Result<Self, Self::Error> {
+            match pk {
+                dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
+                    let pk: near_sdk::PublicKey = near_public_key
+                        .parse()
+                        .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
+                    Ok(Self::Secp256k1 {
+                        near_public_key: pk,
+                    })
+                }
+                dtos::PublicKeyExtended::Ed25519 {
+                    near_public_key_compressed,
+                    edwards_point,
+                } => {
+                    let pk: near_sdk::PublicKey = near_public_key_compressed
+                        .parse()
+                        .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
+                    let edwards_point = SerializableEdwardsPoint::from_bytes(&edwards_point)
+                        .into_option()
+                        .ok_or(
+                            PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint,
+                        )?;
+                    Ok(Self::Ed25519 {
+                        near_public_key_compressed: pk,
+                        edwards_point,
+                    })
+                }
+                dtos::PublicKeyExtended::Bls12381 { public_key } => {
+                    Ok(Self::Bls12381 { public_key })
+                }
+            }
+        }
+    }
+
+    impl From<dtos::EpochId> for EpochId {
+        fn from(id: dtos::EpochId) -> Self {
+            EpochId::new(id.0)
+        }
+    }
+
+    impl From<dtos::AttemptId> for AttemptId {
+        fn from(id: dtos::AttemptId) -> Self {
+            AttemptId::from_u64(id.0)
+        }
+    }
+
+    impl From<dtos::Curve> for Curve {
+        fn from(curve: dtos::Curve) -> Self {
+            match curve {
+                dtos::Curve::Secp256k1 => Curve::Secp256k1,
+                dtos::Curve::Edwards25519 => Curve::Edwards25519,
+                dtos::Curve::Bls12381 => Curve::Bls12381,
+                dtos::Curve::V2Secp256k1 => Curve::V2Secp256k1,
+            }
+        }
+    }
+
+    impl From<dtos::DomainConfig> for DomainConfig {
+        fn from(config: dtos::DomainConfig) -> Self {
+            DomainConfig {
+                id: config.id.into(),
+                curve: config.curve.into(),
+                purpose: config.purpose,
+            }
+        }
+    }
+
+    impl From<dtos::KeyEventId> for KeyEventId {
+        fn from(id: dtos::KeyEventId) -> Self {
+            KeyEventId::new(
+                id.epoch_id.into(),
+                id.domain_id.into(),
+                id.attempt_id.into(),
+            )
+        }
+    }
+
+    impl TryFrom<dtos::KeyForDomain> for KeyForDomain {
+        type Error = Error;
+        fn try_from(kfd: dtos::KeyForDomain) -> Result<Self, Self::Error> {
+            Ok(KeyForDomain {
+                domain_id: kfd.domain_id.into(),
+                key: kfd
+                    .key
+                    .try_into()
+                    .map_err(|e| ConversionError::DataConversion {
+                        reason: format!("Failed to convert PublicKeyExtended: {e:?}"),
+                    })?,
+                attempt: kfd.attempt.into(),
+            })
+        }
+    }
+
+    impl TryFrom<dtos::Keyset> for Keyset {
+        type Error = Error;
+        fn try_from(keyset: dtos::Keyset) -> Result<Self, Self::Error> {
+            let domains: Result<Vec<KeyForDomain>, _> =
+                keyset.domains.into_iter().map(TryFrom::try_from).collect();
+            Ok(Keyset::new(keyset.epoch_id.into(), domains?))
+        }
+    }
+}
+
+// TODO(#381): Remove once the node no longer depends on the contract crate.
+#[cfg(feature = "compat")]
+mod to_dto {
+    use super::*;
+
+    impl From<EpochId> for dtos::EpochId {
+        fn from(id: EpochId) -> Self {
+            dtos::EpochId(id.get())
+        }
+    }
+
+    impl From<AttemptId> for dtos::AttemptId {
+        fn from(id: AttemptId) -> Self {
+            dtos::AttemptId(id.get())
+        }
+    }
+
+    impl From<KeyEventId> for dtos::KeyEventId {
+        fn from(id: KeyEventId) -> Self {
+            dtos::KeyEventId {
+                epoch_id: id.epoch_id.into(),
+                domain_id: id.domain_id.into(),
+                attempt_id: id.attempt_id.into(),
+            }
+        }
+    }
+
+    impl From<Curve> for dtos::Curve {
+        fn from(curve: Curve) -> Self {
+            match curve {
+                Curve::Secp256k1 => dtos::Curve::Secp256k1,
+                Curve::Edwards25519 => dtos::Curve::Edwards25519,
+                Curve::Bls12381 => dtos::Curve::Bls12381,
+                Curve::V2Secp256k1 => dtos::Curve::V2Secp256k1,
+            }
+        }
+    }
+
+    impl From<DomainConfig> for dtos::DomainConfig {
+        fn from(config: DomainConfig) -> Self {
+            dtos::DomainConfig {
+                id: config.id.into(),
+                curve: config.curve.into(),
+                purpose: config.purpose,
+            }
+        }
+    }
+
+    impl From<PublicKeyExtended> for dtos::PublicKeyExtended {
+        fn from(key: PublicKeyExtended) -> Self {
+            (&key).into_dto_type()
+        }
+    }
+
+    impl From<KeyForDomain> for dtos::KeyForDomain {
+        fn from(kfd: KeyForDomain) -> Self {
+            dtos::KeyForDomain {
+                domain_id: kfd.domain_id.into(),
+                key: (&kfd.key).into_dto_type(),
+                attempt: kfd.attempt.into(),
+            }
+        }
+    }
+
+    impl From<Keyset> for dtos::Keyset {
+        fn from(keyset: Keyset) -> Self {
+            dtos::Keyset {
+                epoch_id: keyset.epoch_id.into(),
+                domains: keyset.domains.into_iter().map(Into::into).collect(),
+            }
+        }
+    }
+
+    impl From<ThresholdParameters> for dtos::ThresholdParameters {
+        fn from(params: ThresholdParameters) -> Self {
+            dtos::ThresholdParameters {
+                participants: params.participants().into_dto_type(),
+                threshold: params.threshold().into_dto_type(),
+            }
+        }
+    }
+
+    impl From<ProtocolContractState> for dtos::ProtocolContractState {
+        fn from(state: ProtocolContractState) -> Self {
+            (&state).into_dto_type()
+        }
+    }
+}
+
 // --- Simple wrapper types ---
 
 impl IntoInterfaceType<dtos::EpochId> for EpochId {
@@ -563,7 +766,7 @@ impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
         dtos::DomainConfig {
             id: self.id.into_dto_type(),
             curve: self.curve.into_dto_type(),
-            purpose: Some(self.purpose),
+            purpose: self.purpose,
         }
     }
 }

@@ -61,8 +61,8 @@ mod tests {
     use crate::providers::ckd::CKDTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_contract::primitives::domain::DomainId;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use near_mpc_contract_interface::types::DomainId;
+    use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use threshold_signatures::confidential_key_derivation::KeygenOutput;
     use threshold_signatures::frost_core::Group;
@@ -105,11 +105,11 @@ mod tests {
         let channel = if participant_id == all_participant_ids[0] {
             client.new_channel_for_task(
                 CKDTaskId::KeyGeneration {
-                    key_event: KeyEventId::new(
-                        EpochId::new(42),
-                        DomainId::default(),
-                        AttemptId::default(),
-                    ),
+                    key_event: KeyEventId {
+                        epoch_id: EpochId(42),
+                        domain_id: DomainId::default(),
+                        attempt_id: AttemptId(0),
+                    },
                 },
                 client.all_participant_ids(),
             )?

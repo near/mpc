@@ -14,8 +14,8 @@ use crate::providers::robust_ecdsa::{
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
-use mpc_contract::primitives::domain::DomainId;
 use mpc_node_config::PresignatureConfig;
+use near_mpc_contract_interface::types::DomainId;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};

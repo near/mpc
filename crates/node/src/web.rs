@@ -9,8 +9,6 @@ use axum::{serve, Json};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::utils::protocol_state_to_string;
 use mpc_node_config::{
     AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
     BitcoinChainConfig, BitcoinProviderConfig, CKDConfig, ConfigFile, EthereumApiVariant,
@@ -20,6 +18,7 @@ use mpc_node_config::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
@@ -386,7 +385,8 @@ async fn contract_state(state: State<WebServerState>) -> String {
         // Clone to avoid holding a lock
         .clone();
 
-    protocol_state_to_string(&protocol_state)
+    // TODO: check if the debug output looks nice, otherwise port protocol_state_to_string
+    format!("{:#?}", protocol_state)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
