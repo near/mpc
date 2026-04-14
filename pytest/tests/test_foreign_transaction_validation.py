@@ -519,6 +519,7 @@ def test_verify_foreign_transaction_bnb(
     # Find the Secp256k1 domain
     contract_state = cluster.contract_state()
     domains = contract_state.get_running_domains()
+    print(f"domains: {domains}, types: {[(type(d), dir(d)) for d in domains]}")
     secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
 
     # Build the verify_foreign_transaction args
