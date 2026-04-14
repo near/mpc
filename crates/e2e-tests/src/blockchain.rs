@@ -1,9 +1,17 @@
+use std::time::Duration;
+
 use ed25519_dalek::SigningKey;
 use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
 const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+
+/// Retries for `AccessKeyNotFound` errors that occur when a transaction's
+/// `view_access_key` query (using `Finality::Final`) races against account
+/// creation that was only waited for with `ExecutedOptimistic`.
+const ACCESS_KEY_RETRY_ATTEMPTS: u32 = 20;
+const ACCESS_KEY_RETRY_DELAY: Duration = Duration::from_millis(500);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -118,13 +126,35 @@ impl DeployedContract {
         method: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<FinalExecutionOutcome> {
-        self.client
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
+        // near-kit's send() queries view_access_key with Finality::Final, but
+        // create_account_and_deploy only waits for ExecutedOptimistic. The key
+        // may not appear in the finalized state yet — retry until it does.
+        for attempt in 0..ACCESS_KEY_RETRY_ATTEMPTS {
+            match self
+                .client
+                .call(&self.contract_id, method)
+                .args(args.clone())
+                .gas(MAX_GAS)
+                .send()
+                .await
+            {
+                Ok(outcome) => return Ok(outcome),
+                Err(near_kit::Error::Rpc(rpc_err))
+                    if matches!(*rpc_err, near_kit::RpcError::AccessKeyNotFound { .. }) =>
+                {
+                    tracing::debug!(
+                        attempt,
+                        "Access key not found querying finalized state, retrying after {:?}",
+                        ACCESS_KEY_RETRY_DELAY,
+                    );
+                    tokio::time::sleep(ACCESS_KEY_RETRY_DELAY).await;
+                }
+                Err(e) => return Err(anyhow::anyhow!("contract call `{method}` failed: {e}")),
+            }
+        }
+        Err(anyhow::anyhow!(
+            "contract call `{method}` failed: access key not found after {ACCESS_KEY_RETRY_ATTEMPTS} retries"
+        ))
     }
 
     pub async fn call_from(
