@@ -190,7 +190,8 @@ impl ContractState {
                         &state.generating_key,
                         height,
                         state.generated_keys.clone(),
-                    )?,
+                    )
+                    .context("failed to convert initializing key event")?,
                 })
             }
             ProtocolContractState::Running(running_state) => {
@@ -218,7 +219,8 @@ impl ContractState {
                         &state.resharing_key,
                         height,
                         state.reshared_keys.clone(),
-                    )?,
+                    )
+                    .context("failed to convert resharing key event")?,
                 });
 
                 let running_state = state.previous_running_state.clone();

@@ -347,7 +347,7 @@ fn try_get_sign_args(
         SignArgs {
             payload: sign_request.payload,
             path: sign_request.path,
-            domain_id: DomainId(sign_request.domain_id.0),
+            domain_id: sign_request.domain_id.into(),
         },
     ))
 }
@@ -386,7 +386,7 @@ fn try_get_ckd_args(
         CKDArgs {
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
-            domain_id: DomainId(ckd_request.domain_id.0),
+            domain_id: ckd_request.domain_id.into(),
         },
     ))
 }
