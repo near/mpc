@@ -165,3 +165,28 @@ pub enum DownloadConfigType {
     RPC,
     Archival,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
+    /// string "gcp" (see crates/tee-launcher/src/config.rs).
+    /// This test ensures the TOML field name for GCP config is still "gcp".
+    /// If this field is renamed, update the launcher's blocked key list too.
+    #[test]
+    fn gcp_toml_field_name_is_gcp() {
+        let gcp = GcpStartConfig {
+            keyshare_secret_id: "test".into(),
+            project_id: "test".into(),
+        };
+        let mut table = toml::Table::new();
+        table.insert("gcp".to_string(), toml::Value::try_from(&gcp).unwrap());
+        let toml_str = toml::to_string(&table).unwrap();
+        let parsed: toml::Table = toml::from_str(&toml_str).unwrap();
+        assert!(
+            parsed.contains_key("gcp"),
+            "GCP field name changed — update tee-launcher's TEE-restricted key list"
+        );
+    }
+}

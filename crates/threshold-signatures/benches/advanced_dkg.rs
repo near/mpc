@@ -12,6 +12,7 @@ use threshold_signatures::{
     frost_ed25519::Ed25519Sha512,
     frost_secp256k1::Secp256K1Sha256,
     keygen,
+    participants::Participant,
     protocol::Protocol,
     test_utils::{
         run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng, Simulator,
@@ -36,7 +37,9 @@ where
 {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
-    let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
+
+    let setup = setup_dkg_snapshot::<C>(threshold());
+    let size = setup.cached_simulator.get_view_size();
 
     let mut group = c.benchmark_group("dkg");
     group.sample_size(*SAMPLE_SIZE);
@@ -44,17 +47,13 @@ where
         format!("dkg_{name}_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || {
-                    let preps = prepare_simulated_dkg::<C>(threshold());
-                    sizes.push(preps.simulator.get_view_size());
-                    preps
-                },
+                || prepare_simulated_dkg::<C>(&setup, threshold()),
                 |preps| run_simulated_protocol(preps.participant, preps.protocol, preps.simulator),
                 criterion::BatchSize::SmallInput,
             );
         },
     );
-    analyze_received_sizes(&sizes, true);
+    analyze_received_sizes(&[size], true);
 }
 
 fn bench_dkg_secp256k1(c: &mut Criterion) {
@@ -75,10 +74,15 @@ criterion_group!(
 );
 criterion_main!(benches);
 
-/// Used to simulate DKG keygen for benchmarking
-fn prepare_simulated_dkg<C: Ciphersuite>(
-    threshold: ReconstructionLowerBound,
-) -> PreparedSimulatedDkg<C>
+struct DkgSetup {
+    participants: Vec<Participant>,
+    real_participant: Participant,
+    rng_for_protocol: MockCryptoRng,
+    cached_simulator: Simulator,
+}
+
+/// Expensive one-time setup: runs the full N-party protocol to capture snapshots
+fn setup_dkg_snapshot<C: Ciphersuite>(threshold: ReconstructionLowerBound) -> DkgSetup
 where
     Element<C>: Send,
     Scalar<C>: Send,
@@ -94,17 +98,38 @@ where
         .choose(&mut rng)
         .expect("participant list is not empty");
 
-    let real_protocol = keygen::<C>(&participants, real_participant, threshold, rng)
-        .map(|p| Box::new(p) as Box<dyn Protocol<Output = KeygenOutput<C>>>)
-        .expect("Keygen should succeed");
+    let cached_simulator = Simulator::new(real_participant, &protocol_snapshot)
+        .expect("Simulator should not be empty");
 
-    // now preparing the simulator
-    let simulated_protocol =
-        Simulator::new(real_participant, protocol_snapshot).expect("Simulator should not be empty");
+    DkgSetup {
+        participants,
+        real_participant,
+        rng_for_protocol: rng,
+        cached_simulator,
+    }
+}
+
+/// Cheap per-sample setup: creates fresh protocol and clones the cached simulator
+fn prepare_simulated_dkg<C: Ciphersuite>(
+    setup: &DkgSetup,
+    threshold: ReconstructionLowerBound,
+) -> PreparedSimulatedDkg<C>
+where
+    Element<C>: Send,
+    Scalar<C>: Send,
+{
+    let real_protocol = keygen::<C>(
+        &setup.participants,
+        setup.real_participant,
+        threshold,
+        setup.rng_for_protocol.clone(),
+    )
+    .map(|p| Box::new(p) as Box<dyn Protocol<Output = KeygenOutput<C>>>)
+    .expect("Keygen should succeed");
 
     PreparedSimulatedDkg {
-        participant: real_participant,
+        participant: setup.real_participant,
         protocol: real_protocol,
-        simulator: simulated_protocol,
+        simulator: setup.cached_simulator.clone(),
     }
 }

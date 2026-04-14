@@ -41,7 +41,7 @@ impl<C: Ciphersuite> Statement<'_, C> {
 
 /// The private witness for this proof.
 /// This holds the scalar the prover needs to know.
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone)]
 pub struct Witness<C: Ciphersuite>
 where
     crate::Scalar<C>: Zeroize,

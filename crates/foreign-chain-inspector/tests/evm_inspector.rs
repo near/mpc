@@ -85,6 +85,7 @@ macro_rules! evm_inspector_tests {
                 #[values(EvmExtractor::Log { log_index: 1 }, EvmExtractor::BlockHash)]
                 extractor: EvmExtractor,
             ) {
+                // given
                 let tx_id = TxHash::from([3; 32]);
 
                 let block_response = GetBlockByNumberResponse {
@@ -101,16 +102,19 @@ macro_rules! evm_inspector_tests {
                 let mock_client = mock_evm_client(block_response, tx_response);
                 let inspector = Inspector::new(mock_client);
 
+                // when
                 let extracted_values = inspector
                     .extract(tx_id, finality, vec![extractor])
                     .await
                     .unwrap();
 
+                // then
                 assert_eq!(vec![expected], extracted_values);
             }
 
             #[tokio::test]
             async fn extract_succeeds_when_finality_block_equals_tx_block() {
+                // given
                 let tx_id = TxHash::from([3; 32]);
                 let expected_block_hash = BlockHash::from([4; 32]);
 
@@ -128,6 +132,7 @@ macro_rules! evm_inspector_tests {
                 let mock_client = mock_evm_client(block_response, tx_response);
                 let inspector = Inspector::new(mock_client);
 
+                // when
                 let extracted_values = inspector
                     .extract(
                         tx_id,
@@ -137,6 +142,7 @@ macro_rules! evm_inspector_tests {
                     .await
                     .unwrap();
 
+                // then
                 let expected_extractions =
                     vec![ExtractedValue::BlockHash(expected_block_hash)];
                 assert_eq!(expected_extractions, extracted_values);
@@ -144,6 +150,7 @@ macro_rules! evm_inspector_tests {
 
             #[tokio::test]
             async fn extract_returns_error_when_not_finalized() {
+                // given
                 let tx_id = TxHash::from([1; 32]);
 
                 let block_response = GetBlockByNumberResponse {
@@ -159,6 +166,7 @@ macro_rules! evm_inspector_tests {
                 let mock_client = mock_evm_client(block_response, tx_response);
                 let inspector = Inspector::new(mock_client);
 
+                // when
                 let response = inspector
                     .extract(
                         tx_id,
@@ -167,11 +175,13 @@ macro_rules! evm_inspector_tests {
                     )
                     .await;
 
+                // then
                 assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
             }
 
             #[tokio::test]
             async fn extract_returns_error_when_transaction_failed() {
+                // given
                 let tx_id = TxHash::from([1; 32]);
 
                 let block_response = GetBlockByNumberResponse {
@@ -187,6 +197,7 @@ macro_rules! evm_inspector_tests {
                 let mock_client = mock_evm_client(block_response, tx_response);
                 let inspector = Inspector::new(mock_client);
 
+                // when
                 let response = inspector
                     .extract(
                         tx_id,
@@ -195,6 +206,7 @@ macro_rules! evm_inspector_tests {
                     )
                     .await;
 
+                // then
                 assert_matches!(
                     response,
                     Err(ForeignChainInspectionError::TransactionFailed)
@@ -203,6 +215,7 @@ macro_rules! evm_inspector_tests {
 
             #[tokio::test]
             async fn extract_returns_empty_when_no_extractors_provided() {
+                // given
                 let tx_id = TxHash::from([11; 32]);
 
                 let block_response = GetBlockByNumberResponse {
@@ -218,17 +231,20 @@ macro_rules! evm_inspector_tests {
                 let mock_client = mock_evm_client(block_response, tx_response);
                 let inspector = Inspector::new(mock_client);
 
+                // when
                 let extracted_values = inspector
                     .extract(tx_id, EthereumFinality::Finalized, Vec::new())
                     .await
                     .unwrap();
 
+                // then
                 let expected_extractions: Vec<ExtractedValue> = vec![];
                 assert_eq!(expected_extractions, extracted_values);
             }
 
             #[tokio::test]
             async fn extract_propagates_rpc_client_errors() {
+                // given
                 let tx_id = TxHash::from([9; 32]);
 
                 let mock_client = FixedResponseRpcClient::new(|| {
@@ -239,6 +255,7 @@ macro_rules! evm_inspector_tests {
                 });
                 let inspector = Inspector::new(mock_client);
 
+                // when
                 let response = inspector
                     .extract(
                         tx_id,
@@ -247,6 +264,7 @@ macro_rules! evm_inspector_tests {
                     )
                     .await;
 
+                // then
                 assert_matches!(
                     response,
                     Err(ForeignChainInspectionError::ClientError(_))
@@ -255,6 +273,7 @@ macro_rules! evm_inspector_tests {
 
             #[tokio::test]
             async fn inspector_extracts_block_hash_via_http_rpc_client() {
+                // given
                 let server = MockServer::start();
 
                 let tx_id = TxHash::from([9; 32]);
@@ -307,6 +326,7 @@ macro_rules! evm_inspector_tests {
                     build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
                 let inspector = Inspector::new(client);
 
+                // when
                 let extracted_values = inspector
                     .extract(
                         tx_id,
@@ -316,6 +336,7 @@ macro_rules! evm_inspector_tests {
                     .await
                     .unwrap();
 
+                // then
                 let expected_extractions =
                     vec![ExtractedValue::BlockHash(expected_block_hash)];
                 assert_eq!(expected_extractions, extracted_values);
@@ -323,6 +344,7 @@ macro_rules! evm_inspector_tests {
 
             #[tokio::test]
             async fn extract_returns_error_when_log_index_out_of_bounds() {
+                // given
                 let tx_id = TxHash::from([1; 32]);
 
                 let block_response = GetBlockByNumberResponse {
@@ -338,6 +360,7 @@ macro_rules! evm_inspector_tests {
                 let mock_client = mock_evm_client(block_response, tx_response);
                 let inspector = Inspector::new(mock_client);
 
+                // when
                 let response = inspector
                     .extract(
                         tx_id,
@@ -346,6 +369,7 @@ macro_rules! evm_inspector_tests {
                     )
                     .await;
 
+                // then
                 assert_matches!(
                     response,
                     Err(ForeignChainInspectionError::LogIndexOutOfBounds)
@@ -354,6 +378,7 @@ macro_rules! evm_inspector_tests {
 
             #[tokio::test]
             async fn extract_returns_correct_log_by_evm_log_index() {
+                // given: logs with block-level logIndex values (not array positions)
                 let tx_id = TxHash::from([3; 32]);
 
                 let log_at_index_20 = Log {
@@ -393,6 +418,7 @@ macro_rules! evm_inspector_tests {
                 let mock_client = mock_evm_client(block_response, tx_response);
                 let inspector = Inspector::new(mock_client);
 
+                // when: request log by its EVM logIndex (21), not array position (1)
                 let extracted_values = inspector
                     .extract(
                         tx_id,
@@ -402,6 +428,7 @@ macro_rules! evm_inspector_tests {
                     .await
                     .unwrap();
 
+                // then
                 let expected_extractions = vec![ExtractedValue::Log(expected_log)];
                 assert_eq!(expected_extractions, extracted_values);
             }
