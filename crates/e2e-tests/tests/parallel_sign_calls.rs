@@ -1,7 +1,7 @@
 use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
-use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 use serde_json::json;
 
 /// 3 parallel robust ECDSA (V2Secp256k1) sign calls via the test parallel contract.
@@ -18,7 +18,7 @@ async fn parallel_sign_calls__robust_ecdsa() {
         c.threshold = 5;
         c.domains = vec![DomainConfig {
             id: DomainId(0),
-            scheme: SignatureScheme::V2Secp256k1,
+            curve: Curve::V2Secp256k1,
             purpose: Some(DomainPurpose::Sign),
         }];
         c.triples_to_buffer = 0;

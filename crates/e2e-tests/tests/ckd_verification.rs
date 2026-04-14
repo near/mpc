@@ -6,8 +6,8 @@ use group::Group as _;
 use group::ff::Field as _;
 use group::prime::PrimeCurveAffine as _;
 use near_mpc_contract_interface::types::{
-    Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDAppPublicKeyPV, DomainId,
-    DomainPurpose, PublicKey, PublicKeyExtended, RunningContractState, SignatureScheme,
+    Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDAppPublicKeyPV, Curve, DomainId,
+    DomainPurpose, PublicKey, PublicKeyExtended, RunningContractState,
 };
 use rand::SeedableRng;
 use sha3::{Digest, Sha3_256};
@@ -75,9 +75,7 @@ async fn ckd_response__passes_cryptographic_verification() {
         .domains
         .domains
         .iter()
-        .find(|d| {
-            d.scheme == SignatureScheme::Bls12381 && matches!(d.purpose, Some(DomainPurpose::CKD))
-        })
+        .find(|d| d.curve == Curve::Bls12381 && matches!(d.purpose, Some(DomainPurpose::CKD)))
         .expect("no Bls12381 CKD domain found")
         .clone();
 
@@ -134,9 +132,7 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
         .domains
         .domains
         .iter()
-        .find(|d| {
-            d.scheme == SignatureScheme::Bls12381 && matches!(d.purpose, Some(DomainPurpose::CKD))
-        })
+        .find(|d| d.curve == Curve::Bls12381 && matches!(d.purpose, Some(DomainPurpose::CKD)))
         .expect("no Bls12381 CKD domain found")
         .clone();
 

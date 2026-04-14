@@ -1,7 +1,7 @@
 use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
-use near_mpc_contract_interface::types::{DomainPurpose, SignatureScheme};
+use near_mpc_contract_interface::types::{Curve, DomainPurpose};
 use rand::SeedableRng;
 
 const PRESIGNATURES_TO_BUFFER: usize = 8;
@@ -85,11 +85,9 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         .find(|d| matches!(d.purpose, Some(DomainPurpose::Sign)))
     {
         for _ in 0..PRESIGNATURES_TO_BUFFER {
-            let payload = match domain.scheme {
-                SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
-                    common::generate_ecdsa_payload(&mut rng)
-                }
-                SignatureScheme::Ed25519 => common::generate_eddsa_payload(&mut rng),
+            let payload = match domain.curve {
+                Curve::Secp256k1 | Curve::V2Secp256k1 => common::generate_ecdsa_payload(&mut rng),
+                Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
                 _ => break,
             };
             let outcome = cluster
@@ -122,11 +120,9 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         .iter()
         .find(|d| matches!(d.purpose, Some(DomainPurpose::Sign)))
     {
-        let payload = match domain.scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
-                common::generate_ecdsa_payload(&mut rng)
-            }
-            SignatureScheme::Ed25519 => common::generate_eddsa_payload(&mut rng),
+        let payload = match domain.curve {
+            Curve::Secp256k1 | Curve::V2Secp256k1 => common::generate_ecdsa_payload(&mut rng),
+            Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
             _ => return,
         };
         let outcome = cluster
