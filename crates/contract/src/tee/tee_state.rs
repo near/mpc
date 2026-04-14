@@ -769,6 +769,7 @@ mod tests {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(NOW_SECONDS),
+            expected_measurements: None,
         });
 
         tee_state
@@ -801,6 +802,7 @@ mod tests {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(EXPIRY_TIMESTAMP_SECONDS),
+            expected_measurements: None,
         });
 
         tee_state
@@ -840,6 +842,7 @@ mod tests {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(EXPIRY_TIMESTAMP_SECONDS),
+            expected_measurements: None,
         });
 
         tee_state
@@ -1147,6 +1150,7 @@ mod tests {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(expiry_time_secs),
+            expected_measurements: None,
         });
         tee_state
             .add_participant(node_id, expiring_attestation, tee_upgrade_duration)
@@ -1186,6 +1190,7 @@ mod tests {
                     mpc_docker_image_hash: None,
                     launcher_docker_compose_hash: None,
                     expiry_timestamp_seconds: Some(expiry_time_secs),
+                    expected_measurements: None,
                 })
             } else {
                 Attestation::Mock(MockAttestation::Valid)
