@@ -3,4 +3,4 @@
 max_transaction_size = 1572864
 
 # Expected contract WASM size in bytes (reproducible builds must match exactly)
-expected_size = 1477608
+expected_size = 1481277
