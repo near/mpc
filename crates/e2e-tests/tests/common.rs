@@ -184,6 +184,16 @@ pub fn load_contract_wasm() -> Vec<u8> {
 }
 
 pub fn load_parallel_contract_wasm() -> Vec<u8> {
+    if let Ok(path) = std::env::var("MPC_PARALLEL_CONTRACT_WASM") {
+        let wasm_path = PathBuf::from(&path);
+        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
+            panic!(
+                "Failed to read parallel contract WASM at {}: {e}",
+                wasm_path.display()
+            )
+        });
+    }
+
     let default_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/near/test-parallel-contract/test_parallel_contract.wasm");
     if default_path.exists() {
