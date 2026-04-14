@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 
 use mpc_contract::primitives::{
     domain::{Curve, DomainConfig},
-    signature::{Bytes, Payload, SignRequestArgs},
+    signature::{Payload, SignRequestArgs},
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
@@ -171,16 +172,21 @@ struct ParallelSignArgsV2 {
 
 fn make_payload(curve: Curve) -> Payload {
     match curve {
-        Curve::Secp256k1 | Curve::V2Secp256k1 => {
-            Payload::Ecdsa(Bytes::new(rand::random::<[u8; 32]>().to_vec()).unwrap())
-        }
+        Curve::Secp256k1 | Curve::V2Secp256k1 => Payload::Ecdsa(rand::random::<[u8; 32]>().into()),
         Curve::Edwards25519 => {
             let len = rand::random_range(
                 EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
             );
             let mut payload = vec![0; len];
             rand::rng().fill_bytes(&mut payload);
-            Payload::Eddsa(Bytes::new(payload).unwrap())
+
+            let bounded_payload: BoundedVec<
+                u8,
+                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
+                EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+            > = payload.try_into().unwrap();
+
+            Payload::Eddsa(bounded_payload)
         }
         Curve::Bls12381 => {
             unreachable!("make_payload should not be called with `Bls12381` curve")
