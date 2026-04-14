@@ -2,14 +2,14 @@
 
 Secure launcher for initializing and attesting a Docker-based MPC node inside a TEE-enabled environment (e.g., Intel TDX via dstack).
 
-Replaces the previous Python launcher (`tee_launcher/launcher.py`).
+This is the production launcher. It replaces the previous Python launcher (`tee_launcher/launcher.py`), which is now deprecated.
 
 ## What it does
 
 1. Loads a TOML configuration file from `/tapp/user_config`
-2. Selects an approved MPC image hash (from on-disk approved list, override, or default)
-3. Validates the image by resolving it through the Docker registry and pulling by digest
-4. In TEE mode: extends RTMR3 by emitting the image digest to dstack
+2. Selects an approved manifest digest (from on-disk approved list, override, or default)
+3. Pulls the image directly by manifest digest (`docker pull <image>@sha256:<digest>`)
+4. In TEE mode: extends RTMR3 by emitting the manifest digest to dstack
 5. Writes the MPC node config to a shared volume
 6. Launches the MPC container via `docker compose up -d`
 
@@ -29,12 +29,7 @@ The launcher reads its configuration from `/tapp/user_config` as a TOML file. Th
 
 ```toml
 [launcher_config]
-image_tags = ["latest"]
-image_name = "nearone/mpc-node"
-registry = "registry.hub.docker.com"
-rpc_request_timeout_secs = 10
-rpc_request_interval_secs = 1
-rpc_max_attempts = 20
+image_reference = "nearone/mpc-node"
 # Optional: force selection of a specific digest (must be in approved list)
 # mpc_hash_override = "sha256:abcd..."
 port_mappings = [
@@ -54,12 +49,7 @@ port_mappings = [
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `image_tags` | Yes | Docker image tags to search, e.g. `["3.7.0"]` |
-| `image_name` | Yes | Docker image name, e.g. `"nearone/mpc-node"` |
-| `registry` | Yes | Docker registry hostname, e.g. `"registry.hub.docker.com"` |
-| `rpc_request_timeout_secs` | Yes | Per-request timeout for registry API calls (seconds) |
-| `rpc_request_interval_secs` | Yes | Initial retry interval for registry API calls (seconds) |
-| `rpc_max_attempts` | Yes | Maximum registry API retry attempts |
+| `image_reference` | Yes | Docker image reference. A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
 | `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
 | `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
 
@@ -69,23 +59,21 @@ Arbitrary TOML table passed through to the MPC node. The launcher writes this ve
 
 ## Supported Registries
 
-The launcher uses the [OCI Distribution Specification](https://github.com/opencontainers/distribution-spec) for registry communication. Auth endpoints are discovered automatically via the `WWW-Authenticate` challenge on `/v2/`, so there is no hard-coded auth URL.
+The launcher pulls images using `docker pull <image>@sha256:<digest>`. Any registry that Docker supports works out of the box. Set the `image_reference` field to include the registry prefix:
 
-Any OCI-compliant registry hosting **public images** works out of the box. Set the `registry` field in `[launcher_config]` to the registry hostname:
+| Registry | Example `image_reference` |
+|----------|----------------|
+| Docker Hub | `nearone/mpc-node` |
+| GitHub Container Registry | `ghcr.io/myorg/mpc-node` |
+| Google Artifact Registry | `us-docker.pkg.dev/my-project/my-repo/mpc-node` |
+| Amazon ECR Public | `public.ecr.aws/myalias/mpc-node` |
+| Azure Container Registry | `myregistry.azurecr.io/mpc-node` |
+| Self-hosted (Harbor, etc.) | `registry.example.com/myproject/mpc-node` |
 
-| Registry | `registry` value | Example `image_name` |
-|----------|-----------------|---------------------|
-| Docker Hub | `registry.hub.docker.com` | `nearone/mpc-node` |
-| GitHub Container Registry | `ghcr.io` | `myorg/mpc-node` |
-| Google Artifact Registry | `us-docker.pkg.dev` | `my-project/my-repo/mpc-node` |
-| Amazon ECR Public | `public.ecr.aws` | `myalias/mpc-node` |
-| Azure Container Registry | `myregistry.azurecr.io` | `mpc-node` |
-| Self-hosted (Harbor, etc.) | `registry.example.com` | `myproject/mpc-node` |
+### Notes
 
-### Limitations
-
-- **Only public (anonymous-pull) images are supported.** The launcher does not accept registry credentials. Private registry support would require adding a credential source (e.g., environment variables, Docker config, or cloud credential helpers).
-- Multi-platform images are resolved to `linux/amd64` automatically.
+- The launcher uses `docker pull` which supports both public and private registries. For private registries, configure Docker credentials on the host (e.g., via `docker login` or credential helpers).
+- A tag can be included in the `image_reference` field (e.g., `nearone/mpc-node:testnet-release`) to identify the configured version. The manifest digest from the approved hashes file determines the actual image pulled — Docker ignores the tag when a digest is present.
 
 ## Image Hash Selection
 

@@ -122,6 +122,7 @@ signature = { workspace = true }
 test-utils = { workspace = true }
 threshold-signatures = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 zstd = { workspace = true }
 
 [lints]

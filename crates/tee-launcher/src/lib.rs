@@ -8,20 +8,19 @@ use launcher_interface::types::{
 use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
 
 use compose::launch_mpc_container;
-use config::{intercept_node_config, validate_image_name};
+use config::{intercept_node_config, validate_image_reference};
 use constants::{
     DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, IMAGE_DIGEST_FILE, MPC_CONFIG_SHARED_PATH,
 };
 use error::LauncherError;
 use selection::select_image_hash;
 use types::{CliArgs, Config, Platform};
-use validation::validate_image_hash;
+use validation::pull_with_retry;
 
 pub mod compose;
 pub mod config;
 pub mod constants;
 pub mod error;
-pub mod registry;
 pub mod selection;
 pub mod types;
 pub mod validation;
@@ -37,19 +36,28 @@ pub async fn run() -> Result<(), LauncherError> {
 
     let approved_hashes_on_disk = load_approved_hashes(&args.default_image_digest)?;
 
-    let image_hash = select_image_hash(
+    // The approved hashes file now contains manifest digests.
+    // We can pull directly by digest without querying the Docker registry API.
+    let manifest_digest = select_image_hash(
         approved_hashes_on_disk.as_ref(),
         &args.default_image_digest,
         config.launcher_config.mpc_hash_override.as_ref(),
     )?;
 
-    let manifest_digest = validate_image_hash(&config.launcher_config, image_hash.clone()).await?;
+    pull_with_retry(
+        &config.launcher_config.image_reference,
+        &manifest_digest,
+        config.launcher_config.pull_max_retries,
+        config.launcher_config.pull_retry_interval_secs,
+        config.launcher_config.pull_max_delay_secs,
+    )
+    .await?;
 
     if args.platform == Platform::Tee {
-        emit_image_hash_event(&image_hash).await?;
+        emit_image_hash_event(&manifest_digest).await?;
     }
 
-    let tee_config = build_tee_config(args.platform, image_hash);
+    let tee_config = build_tee_config(args.platform, manifest_digest.clone());
     let mpc_node_config =
         intercept_node_config(config.mpc_node_config, &tee_config, args.platform)?;
 
@@ -58,7 +66,7 @@ pub async fn run() -> Result<(), LauncherError> {
     launch_mpc_container(
         args.platform,
         &manifest_digest,
-        &config.launcher_config.image_name,
+        &config.launcher_config.image_reference,
         &config.launcher_config.port_mappings,
     )?;
 
@@ -79,7 +87,7 @@ fn load_config() -> Result<Config, LauncherError> {
             source,
         })?;
 
-    validate_image_name(&config.launcher_config.image_name)?;
+    validate_image_reference(&config.launcher_config.image_reference)?;
 
     Ok(config)
 }
@@ -115,13 +123,13 @@ fn load_approved_hashes(
     }
 }
 
-async fn emit_image_hash_event(image_hash: &DockerSha256Digest) -> Result<(), LauncherError> {
+async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(), LauncherError> {
     let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
     dstack_client
         .emit_event(
             MPC_IMAGE_HASH_EVENT.to_string(),
-            image_hash.as_ref().to_vec(),
+            manifest_digest.as_ref().to_vec(),
         )
         .await
         .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))

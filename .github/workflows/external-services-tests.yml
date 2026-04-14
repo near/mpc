@@ -9,9 +9,10 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
-  # Weekly cron to clear and rebuild Rust cache (https://github.com/Swatinem/rust-cache/issues/181).
+  # Primes the new week's Rust cache on main right after the weekly `prefix-key` rolls
+  # over at UTC Sun 00:00. See near/mpc#2828.
   schedule:
-    - cron: "0 12 * * 6"
+    - cron: "5 0 * * 0"
 
 jobs:
   external-services-tests:
@@ -27,12 +28,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          lookup-only: ${{ github.event_name == 'schedule' }}
+          prefix-key: v0-rust-week-${{ env.WEEK }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
