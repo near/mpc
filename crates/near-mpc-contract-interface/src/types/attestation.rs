@@ -354,3 +354,10 @@ pub struct SubmitParticipantInfoArgs {
     pub proposed_participant_attestation: Attestation,
     pub tls_public_key: Ed25519PublicKey,
 }
+
+/// Arguments for the `register_backup_service_with_attestation` contract call.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegisterBackupServiceWithAttestationArgs {
+    pub attestation: Attestation,
+    pub tls_public_key: Ed25519PublicKey,
+}

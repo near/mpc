@@ -4,13 +4,17 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::{near, store::IterableMap};
 
-use crate::{primitives::participants::ParticipantInfo, storage_keys::StorageKey};
+use crate::{
+    primitives::participants::ParticipantInfo, storage_keys::StorageKey, tee::tee_state::TeeState,
+};
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct NodeMigrations {
+    // TODO(#2840): remove after migrating to TEE-enabled backup service
     backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
     ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
+    pub(crate) backup_service_tee_state: TeeState,
 }
 
 impl Default for NodeMigrations {
@@ -18,14 +22,32 @@ impl Default for NodeMigrations {
         Self {
             backup_services_info: IterableMap::new(StorageKey::BackupServicesInfo),
             ongoing_migrations: IterableMap::new(StorageKey::NodeMigrations),
+            backup_service_tee_state: TeeState::default(),
         }
     }
 }
 
 impl NodeMigrations {
+    /// Construct from old migration state during contract upgrade
+    pub(crate) fn from_old(
+        backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
+        ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
+        backup_service_tee_state: TeeState,
+    ) -> Self {
+        Self {
+            backup_services_info,
+            ongoing_migrations,
+            backup_service_tee_state,
+        }
+    }
+}
+
+impl NodeMigrations {
+    // TODO(#2840): remove after migrating to TEE-enabled backup service
     pub(crate) fn backup_services_info(&self) -> &IterableMap<AccountId, BackupServiceInfo> {
         &self.backup_services_info
     }
+    // TODO(#2840): remove after migrating to TEE-enabled backup service
     pub fn set_backup_service_info(&mut self, account_id: AccountId, info: BackupServiceInfo) {
         self.backup_services_info.insert(account_id, info);
     }
@@ -86,6 +108,7 @@ impl NodeMigrations {
     }
 }
 
+// TODO(#2840): remove after migrating to TEE-enabled backup service
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 #[near(serializers=[borsh, json])]
 pub struct BackupServiceInfo {

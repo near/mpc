@@ -833,6 +833,7 @@ impl MpcContract {
                 },
                 proposed_participant_attestation,
                 tee_upgrade_deadline_duration,
+                mpc_attestation::MPC_IMAGE_HASH_EVENT,
             )
             .map_err(|err| InvalidParameters::InvalidTeeRemoteAttestation {
                 reason: format!("TeeQuoteStatus is invalid: {err}"),
@@ -1630,6 +1631,347 @@ impl MpcContract {
         };
 
         self.tee_state.clean_non_participants(participants);
+        self.node_migrations
+            .backup_service_tee_state
+            .clean_non_participant_accounts(participants);
+        Ok(())
+    }
+}
+
+/// Backup service TEE attestation methods
+#[near]
+impl MpcContract {
+    /// Registers a backup service with TEE attestation.
+    /// Rejects Mock attestations — only Dstack is accepted.
+    ///
+    /// The caller must be an existing or prospective participant.
+    ///
+    /// TODO(#2840): once TEE-enabled backup service is ready, update
+    /// register_backup_service() to accept attestation and remove this separate method
+    #[handle_result]
+    pub fn register_backup_service_with_attestation(
+        &mut self,
+        attestation: dtos::Attestation,
+        tls_public_key: dtos::Ed25519PublicKey,
+    ) -> Result<(), Error> {
+        let attestation: mpc_attestation::attestation::Attestation =
+            attestation.try_into_contract_type()?;
+        let account_key = env::signer_account_pk();
+        let account_id = Self::assert_caller_is_signer();
+
+        log!(
+            "register_backup_service_with_attestation: signer={:?}",
+            account_id,
+        );
+
+        if !self
+            .protocol_state
+            .is_existing_or_prospective_participant(&account_id)?
+        {
+            return Err(errors::InvalidState::NotParticipant {
+                account_id: account_id.clone(),
+            }
+            .into());
+        }
+
+        if matches!(
+            attestation,
+            mpc_attestation::attestation::Attestation::Mock(_)
+        ) {
+            return Err(errors::InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: "Mock attestations are not accepted for backup services".to_string(),
+            }
+            .into());
+        }
+
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        self.node_migrations
+            .backup_service_tee_state
+            .add_participant(
+                NodeId {
+                    account_id: account_id.clone(),
+                    tls_public_key: tls_public_key.into(),
+                    account_public_key: Some(account_key),
+                },
+                attestation,
+                tee_upgrade_deadline_duration,
+                mpc_attestation::BACKUP_SERVICE_IMAGE_HASH_EVENT,
+            )
+            .map_err(
+                |err| errors::InvalidParameters::InvalidTeeRemoteAttestation {
+                    reason: format!("backup service attestation failed: {err}"),
+                },
+            )?;
+
+        Ok(())
+    }
+
+    #[handle_result]
+    pub fn vote_backup_service_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error> {
+        log!(
+            "vote_backup_service_code_hash: signer={}, code_hash={:?}",
+            env::signer_account_id(),
+            code_hash,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(tp) => tp,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for backup service code hash.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let votes = self
+            .node_migrations
+            .backup_service_tee_state
+            .vote(code_hash, &participant);
+
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        if votes >= self.threshold()?.value() {
+            self.node_migrations
+                .backup_service_tee_state
+                .whitelist_tee_proposal(code_hash, tee_upgrade_deadline_duration);
+        }
+
+        Ok(())
+    }
+
+    #[handle_result]
+    pub fn vote_add_backup_service_launcher_hash(
+        &mut self,
+        launcher_hash: LauncherImageHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_add_backup_service_launcher_hash: signer={}, launcher_hash={:?}",
+            env::signer_account_id(),
+            launcher_hash,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(tp) => tp,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for backup service launcher hash.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = LauncherVoteAction::Add(launcher_hash);
+        let votes = self
+            .node_migrations
+            .backup_service_tee_state
+            .vote_launcher(action, &participant);
+
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        if votes >= self.threshold()?.value() {
+            let added = self
+                .node_migrations
+                .backup_service_tee_state
+                .add_launcher_image(launcher_hash, tee_upgrade_deadline_duration);
+            log!("backup service launcher hash add result: {}", added);
+        }
+
+        Ok(())
+    }
+
+    #[handle_result]
+    pub fn vote_remove_backup_service_launcher_hash(
+        &mut self,
+        launcher_hash: LauncherImageHash,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_remove_backup_service_launcher_hash: signer={}, launcher_hash={:?}",
+            env::signer_account_id(),
+            launcher_hash,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(tp) => tp,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote to remove backup service launcher hash.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = LauncherVoteAction::Remove(launcher_hash);
+        let votes = self
+            .node_migrations
+            .backup_service_tee_state
+            .vote_launcher(action, &participant);
+
+        let total_participants = threshold_parameters.participants().len() as u64;
+        if votes >= total_participants {
+            let removed = self
+                .node_migrations
+                .backup_service_tee_state
+                .remove_launcher_image(&launcher_hash);
+            log!("backup service launcher hash remove result: {}", removed);
+        }
+
+        Ok(())
+    }
+
+    #[handle_result]
+    pub fn vote_add_backup_service_os_measurement(
+        &mut self,
+        measurement: ContractExpectedMeasurements,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_add_backup_service_os_measurement: signer={}, measurement={:?}",
+            env::signer_account_id(),
+            measurement,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(tp) => tp,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote for backup service OS measurement.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = MeasurementVoteAction::Add(measurement.clone());
+        let votes = self
+            .node_migrations
+            .backup_service_tee_state
+            .vote_measurement(action, &participant);
+
+        if votes >= self.threshold()?.value() {
+            let added = self
+                .node_migrations
+                .backup_service_tee_state
+                .add_measurement(measurement);
+            log!("backup service OS measurement add result: {}", added);
+        }
+
+        Ok(())
+    }
+
+    #[handle_result]
+    pub fn vote_remove_backup_service_os_measurement(
+        &mut self,
+        measurement: ContractExpectedMeasurements,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_remove_backup_service_os_measurement: signer={}, measurement={:?}",
+            env::signer_account_id(),
+            measurement,
+        );
+        self.voter_or_panic();
+
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
+            Ok(tp) => tp,
+            Err(ContractNotInitialized) => env::panic_str(
+                "Contract is not initialized. Cannot vote to remove backup service OS measurement.",
+            ),
+        };
+
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
+        let action = MeasurementVoteAction::Remove(measurement.clone());
+        let votes = self
+            .node_migrations
+            .backup_service_tee_state
+            .vote_measurement(action, &participant);
+
+        let total_participants = threshold_parameters.participants().len() as u64;
+        if votes >= total_participants {
+            let removed = self
+                .node_migrations
+                .backup_service_tee_state
+                .remove_measurement(&measurement);
+            log!("backup service OS measurement remove result: {}", removed);
+        }
+
+        Ok(())
+    }
+
+    /// Returns allowed backup service Docker image hashes
+    pub fn allowed_backup_service_code_hashes(&self) -> Vec<NodeImageHash> {
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        self.node_migrations
+            .backup_service_tee_state
+            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration)
+    }
+
+    /// Returns allowed backup service launcher compose hashes
+    pub fn allowed_backup_service_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
+        self.node_migrations
+            .backup_service_tee_state
+            .get_allowed_launcher_compose_hashes()
+    }
+
+    /// Returns allowed backup service OS measurements
+    pub fn allowed_backup_service_os_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+        self.node_migrations
+            .backup_service_tee_state
+            .get_allowed_measurements()
+    }
+
+    /// Returns the backup service attestation for the given account ID, if any
+    ///
+    /// TODO(#2840): once TEE-enabled backup service is ready, replace migration_info()
+    /// with this method for looking up backup service TLS keys
+    #[handle_result]
+    pub fn get_backup_service_attestation(
+        &self,
+        account_id: AccountId,
+    ) -> Result<Option<(NodeId, dtos::VerifiedAttestation)>, Error> {
+        log!("get_backup_service_attestation: account_id={}", account_id);
+        Ok(self
+            .node_migrations
+            .backup_service_tee_state
+            .find_node_attestation_by_account(&account_id)
+            .map(|attestation| {
+                (
+                    attestation.node_id.clone(),
+                    attestation.verified_attestation.clone().into_dto_type(),
+                )
+            }))
+    }
+
+    /// Re-verifies all backup service attestations and removes invalid ones
+    #[handle_result]
+    pub fn reverify_backup_services(&mut self) -> Result<(), Error> {
+        log!(
+            "reverify_backup_services: signer={}",
+            env::signer_account_id()
+        );
+        self.voter_or_panic();
+
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        let bs_tee = &self.node_migrations.backup_service_tee_state;
+        let stale_keys: Vec<near_sdk::PublicKey> = bs_tee
+            .stored_attestations
+            .iter()
+            .filter(|(_, node_attestation)| {
+                let status = bs_tee.reverify_participants(
+                    &node_attestation.node_id,
+                    tee_upgrade_deadline_duration,
+                );
+                matches!(status, TeeQuoteStatus::Invalid(_))
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        for key in stale_keys {
+            self.node_migrations
+                .backup_service_tee_state
+                .stored_attestations
+                .remove(&key);
+        }
         Ok(())
     }
 }
@@ -2058,6 +2400,8 @@ impl MpcContract {
 /// Methods for Migration service
 #[near]
 impl MpcContract {
+    // TODO(#2840): replace with get_backup_service_attestation() after migrating
+    // to TEE-enabled backup service
     pub fn migration_info(
         &self,
     ) -> BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)> {
@@ -2070,8 +2414,8 @@ impl MpcContract {
     /// The caller (`signer_account_id`) must be an existing or prospective participant.
     /// Otherwise, the transaction will fail.
     ///
-    /// # Notes
-    /// - A deposit requirement may be added in the future.
+    /// TODO(#2840): remove after migrating to TEE-enabled backup service;
+    /// replace with register_backup_service_with_attestation()
     #[handle_result]
     pub fn register_backup_service(
         &mut self,
@@ -3913,6 +4257,7 @@ mod tests {
                 },
                 valid_participant_attestation,
                 tee_upgrade_duration,
+                mpc_attestation::MPC_IMAGE_HASH_EVENT,
             );
             assert_matches::assert_matches!(
                 insertion_result,
@@ -4577,7 +4922,12 @@ mod tests {
         });
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .add_participant(
+                node_id,
+                expiring_attestation,
+                TEE_UPGRADE_DURATION,
+                mpc_attestation::MPC_IMAGE_HASH_EVENT,
+            )
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison

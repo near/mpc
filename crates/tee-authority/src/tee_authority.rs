@@ -329,7 +329,14 @@ mod tests {
         let timestamp_s = 0u64;
         assert_eq!(
             attestation
-                .verify(report_data.into(), timestamp_s, &[], &[], &[])
+                .verify(
+                    report_data.into(),
+                    timestamp_s,
+                    &[],
+                    &[],
+                    &[],
+                    mpc_attestation::MPC_IMAGE_HASH_EVENT
+                )
                 .is_ok(),
             quote_verification_result
         );
@@ -429,7 +436,8 @@ mod tests {
         let result = backoff_task.await.unwrap();
 
         assert_eq!(result.unwrap_err(), "persistent failure");
-        assert_eq!(call_count.load(Ordering::SeqCst), (MAX_RETRIES + 1) as i32); // Initial attempt + retries
+        assert_eq!(call_count.load(Ordering::SeqCst), (MAX_RETRIES + 1) as i32);
+        // Initial attempt + retries
     }
 
     #[tokio::test(start_paused = true)]

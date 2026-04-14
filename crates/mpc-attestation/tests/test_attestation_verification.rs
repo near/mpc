@@ -21,7 +21,14 @@ fn valid_mock_attestation_succeeds_verification() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_matches!(
-        valid_attestation.verify(report_data.into(), timestamp_s, &[], &[], &[]),
+        valid_attestation.verify(
+            report_data.into(),
+            timestamp_s,
+            &[],
+            &[],
+            &[],
+            launcher_interface::MPC_IMAGE_HASH_EVENT
+        ),
         Ok(VerifiedAttestation::Mock(MockAttestation::Valid))
     );
 }
@@ -36,7 +43,14 @@ fn invalid_mock_attestation_fails_verification() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_matches!(
-        valid_attestation.verify(report_data.into(), timestamp_s, &[], &[], &[]),
+        valid_attestation.verify(
+            report_data.into(),
+            timestamp_s,
+            &[],
+            &[],
+            &[],
+            launcher_interface::MPC_IMAGE_HASH_EVENT
+        ),
         Err(VerificationError::InvalidMockAttestation)
     );
 }
@@ -59,8 +73,9 @@ fn validated_dstack_attestation_can_be_reverified() {
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            launcher_interface::MPC_IMAGE_HASH_EVENT,
         )
-        .expect("Initial verification failed");
+        .expect("verification failed");
 
     // when
     let re_verification_result = validated.re_verify(
@@ -92,8 +107,9 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            launcher_interface::MPC_IMAGE_HASH_EVENT,
         )
-        .expect("Initial verification failed");
+        .expect("verification failed");
 
     // when
     let re_verification_result = validated.re_verify(
@@ -118,7 +134,14 @@ fn validated_mock_attestation_passes_reverification() {
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
 
     let validated = valid_attestation
-        .verify(report_data.into(), 0, &[], &[], &[])
+        .verify(
+            report_data.into(),
+            0,
+            &[],
+            &[],
+            &[],
+            launcher_interface::MPC_IMAGE_HASH_EVENT,
+        )
         .expect("Initial verification failed");
 
     // Mock should generally pass re-verify
@@ -144,6 +167,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            launcher_interface::MPC_IMAGE_HASH_EVENT,
         )
         .expect("Initial verification should succeed");
 
@@ -182,6 +206,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            launcher_interface::MPC_IMAGE_HASH_EVENT,
         )
         .expect("Initial verification should succeed");
 
@@ -225,6 +250,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            launcher_interface::MPC_IMAGE_HASH_EVENT,
         )
         .expect("Initial verification should succeed");
 
@@ -258,6 +284,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            launcher_interface::MPC_IMAGE_HASH_EVENT,
         )
         .expect("Initial verification should succeed");
 

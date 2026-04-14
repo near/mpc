@@ -11,7 +11,6 @@ use include_measurements::include_measurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -137,14 +136,14 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
+        image_hash_event_name: &'static str,
     ) -> Result<VerifiedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
-                // Makes MPC related attestation verification first
                 let mpc_image_hash: NodeImageHash = {
                     let mpc_image_hash_payload = &dstack_attestation
                         .tcb_info
-                        .get_single_event(MPC_IMAGE_HASH_EVENT)?
+                        .get_single_event(image_hash_event_name)?
                         .event_payload;
 
                     // TODO(#2478): decode raw bytes

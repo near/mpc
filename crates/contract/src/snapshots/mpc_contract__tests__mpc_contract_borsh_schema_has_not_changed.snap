@@ -990,6 +990,10 @@ BorshSchemaContainer {
                         "ongoing_migrations",
                         "IterableMap",
                     ),
+                    (
+                        "backup_service_tee_state",
+                        "TeeState",
+                    ),
                 ],
             ),
         },

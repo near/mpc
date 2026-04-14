@@ -11,15 +11,45 @@ use chain_gateway::{
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
-    VERIFY_TEE,
-};
+use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
+
+/// Configurable method names for different TEE-enabled services.
+///
+/// MPC nodes and backup services use different contract methods for
+/// attestation submission and allowed hash queries.
+#[derive(Clone, Debug)]
+pub struct TeeContextConfig {
+    pub submit_attestation_method: &'static str,
+    pub verify_method: &'static str,
+    pub allowed_image_hashes_method: &'static str,
+    pub allowed_launcher_compose_hashes_method: &'static str,
+}
+
+impl TeeContextConfig {
+    pub fn mpc_node() -> Self {
+        Self {
+            submit_attestation_method: method_names::SUBMIT_PARTICIPANT_INFO,
+            verify_method: method_names::VERIFY_TEE,
+            allowed_image_hashes_method: method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+            allowed_launcher_compose_hashes_method: method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
+        }
+    }
+
+    pub fn backup_service() -> Self {
+        Self {
+            submit_attestation_method: method_names::REGISTER_BACKUP_SERVICE_WITH_ATTESTATION,
+            verify_method: method_names::REVERIFY_BACKUP_SERVICES,
+            allowed_image_hashes_method: method_names::ALLOWED_BACKUP_SERVICE_CODE_HASHES,
+            allowed_launcher_compose_hashes_method:
+                method_names::ALLOWED_BACKUP_SERVICE_LAUNCHER_COMPOSE_HASHES,
+        }
+    }
+}
 
 const SUBMIT_ATTESTATION_GAS: Gas = Gas::from_teragas(300);
 const VERIFY_TEE_GAS: Gas = Gas::from_teragas(300);
@@ -33,6 +63,8 @@ const VERIFY_TEE_GAS: Gas = Gas::from_teragas(300);
 pub struct TeeContext<S> {
     /// Contract that manages TEE attestations and allowed hashes.
     governance_contract: AccountId,
+    /// Configurable method names for this service type
+    config: TeeContextConfig,
     /// Allowed TEE hashes from the governance contract.
     allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
     /// Cancels the background hash-watcher task when `TeeContext` is dropped.
@@ -62,17 +94,20 @@ where
     pub async fn new(
         chain_gateway: S,
         governance_contract: AccountId,
+        config: TeeContextConfig,
     ) -> Result<Self, TeeContextError> {
         let cancel = CancellationToken::new();
         let rx = spawn_hash_watcher(
             chain_gateway.clone(),
             governance_contract.clone(),
             cancel.clone(),
+            &config,
         )
         .await?;
 
         Ok(Self {
             governance_contract,
+            config,
             allowed_hashes_rx: rx,
             _watcher_cancel: CancelOnDrop(cancel),
             submitter: chain_gateway,
@@ -104,7 +139,7 @@ where
             .submit_function_call_tx(
                 signer,
                 self.governance_contract.clone(),
-                SUBMIT_PARTICIPANT_INFO.to_string(),
+                self.config.submit_attestation_method.to_string(),
                 args_json,
                 SUBMIT_ATTESTATION_GAS,
             )
@@ -119,7 +154,7 @@ where
             .submit_function_call_tx(
                 signer,
                 self.governance_contract.clone(),
-                VERIFY_TEE.to_string(),
+                self.config.verify_method.to_string(),
                 b"{}".to_vec(),
                 VERIFY_TEE_GAS,
             )
@@ -135,10 +170,18 @@ async fn spawn_hash_watcher(
     chain_gateway: impl SubscribeToContractMethod + Send + 'static,
     governance_contract: AccountId,
     cancel: CancellationToken,
+    config: &TeeContextConfig,
 ) -> Result<watch::Receiver<AllowedTeeHashes>, TeeContextError> {
     let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-    tokio::spawn(watch_hashes(chain_gateway, governance_contract, tx, cancel));
+    tokio::spawn(watch_hashes(
+        chain_gateway,
+        governance_contract,
+        tx,
+        cancel,
+        config.allowed_image_hashes_method,
+        config.allowed_launcher_compose_hashes_method,
+    ));
 
     rx.changed().await.map_err(|_| {
         TeeContextError::ChainGateway(chain_gateway::errors::ChainGatewayError::MonitoringClosed)
@@ -156,18 +199,20 @@ async fn watch_hashes(
     governance_contract: AccountId,
     tx: watch::Sender<AllowedTeeHashes>,
     cancel: CancellationToken,
+    image_hashes_method: &'static str,
+    launcher_compose_hashes_method: &'static str,
 ) {
     let mut image_sub = chain_gateway
         .subscribe_to_contract_method::<Vec<DockerImageHash>>(
             governance_contract.clone(),
-            ALLOWED_DOCKER_IMAGE_HASHES,
+            image_hashes_method,
         )
         .await;
 
     let mut launcher_sub = chain_gateway
         .subscribe_to_contract_method::<Vec<LauncherDockerComposeHash>>(
             governance_contract,
-            ALLOWED_LAUNCHER_COMPOSE_HASHES,
+            launcher_compose_hashes_method,
         )
         .await;
 
@@ -287,7 +332,9 @@ mod tests {
             .with_latest_block(latest_block)
             .with_signed_transaction_submitter_response(submit_response)
             .build();
-        TeeContext::new(mock, governance_account()).await.unwrap()
+        TeeContext::new(mock, governance_account(), TeeContextConfig::mpc_node())
+            .await
+            .unwrap()
     }
 
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
@@ -300,9 +347,13 @@ mod tests {
             .with_latest_block(Ok(default_block_info()))
             .with_signed_transaction_submitter_response(Ok(()))
             .build();
-        let ctx = TeeContext::new(mock_chain_state.clone(), governance_account())
-            .await
-            .unwrap();
+        let ctx = TeeContext::new(
+            mock_chain_state.clone(),
+            governance_account(),
+            TeeContextConfig::mpc_node(),
+        )
+        .await
+        .unwrap();
         (ctx, mock_chain_state)
     }
 
@@ -391,7 +442,12 @@ mod tests {
             .with_query_view_function_response(Err(MockError::ViewClientError))
             .build();
 
-        let result = TeeContext::new(mock.clone(), governance_account()).await;
+        let result = TeeContext::new(
+            mock.clone(),
+            governance_account(),
+            TeeContextConfig::mpc_node(),
+        )
+        .await;
         assert!(result.is_err());
 
         // The task exited on initial failure — no further polling should happen.
@@ -432,7 +488,15 @@ mod tests {
             .build();
         let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-        watch_hashes(mock, governance_account(), tx, CancellationToken::new()).await;
+        watch_hashes(
+            mock,
+            governance_account(),
+            tx,
+            CancellationToken::new(),
+            method_names::ALLOWED_DOCKER_IMAGE_HASHES,
+            method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES,
+        )
+        .await;
 
         assert!(rx.changed().await.is_err(), "sender should be dropped");
     }
@@ -447,7 +511,7 @@ mod tests {
 
         let cancel_clone = cancel.clone();
         tokio::select! {
-            _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
+            _ = watch_hashes(mock, governance_account(), tx, cancel, method_names::ALLOWED_DOCKER_IMAGE_HASHES, method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES) => {}
             _ = async {
                 rx.changed().await.unwrap();
                 cancel_clone.cancel();
@@ -474,7 +538,7 @@ mod tests {
         let mock_clone = mock.clone();
         let expected_image = updated_image.clone();
         tokio::select! {
-            _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
+            _ = watch_hashes(mock, governance_account(), tx, cancel, method_names::ALLOWED_DOCKER_IMAGE_HASHES, method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES) => {}
             _ = async {
                 rx.changed().await.unwrap();
                 // Confirm initial value differs from the update we're about to make.
