@@ -1,9 +1,9 @@
 #[tokio::main]
 async fn main() {
-    // Install the default rustls crypto provider before any TLS usage.
-    // Required because rustls is configured with default-features=false,
-    // and indirect consumers like hyper-rustls (via reqwest) call
-    // ClientConfig::builder() without an explicit provider.
+    // Install the default rustls crypto provider. Currently not needed
+    // (dstack SDK communicates via unix socket, not TLS), but kept as a
+    // safety net: if a dependency adds a TLS code path in the future,
+    // missing this call would cause a runtime panic.
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install default rustls CryptoProvider");

@@ -113,10 +113,10 @@ test_override() {
   # Update TOML configs: add mpc_hash_override and set matching tag
   for i in $(seq 0 $((N - 1))); do
     local toml_file="$WORKDIR/node${i}.toml"
-    log "  node$i: adding mpc_hash_override and setting image_tags to [$override_tag]"
+    log "  node$i: adding mpc_hash_override and updating image to tag $override_tag"
 
-    # Update image_tags
-    sed -i "s/^image_tags = .*/image_tags = [\"$override_tag\"]/" "$toml_file"
+    # Update image field (single field: "registry/name:tag")
+    sed -i "s|^image = .*|image = \"nearone/mpc-node:$override_tag\"|" "$toml_file"
 
     # Add or update mpc_hash_override under [launcher_config]
     if grep -q "^mpc_hash_override" "$toml_file"; then
