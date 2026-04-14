@@ -1211,7 +1211,7 @@ node docker image hash: sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb1
 node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
-The `node manifest digest` is what you vote for. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
+The `node manifest digest` is what you vote for. When submitting the `code_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
 
 * Do your own due diligence on the code/binary
 

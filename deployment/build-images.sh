@@ -1,13 +1,14 @@
 #! /usr/bin/env bash
-# Script to reproducibly the docker images for the node and launcher
+# Script to reproducibly build the docker images for the node and launcher
 #
-# Requirements: docker, docker-buildx, jq, git, find, touch
-# Extra requirements if using --node: repro-env, podman
+# Requirements: docker, docker-buildx, jq, git, find, touch, skopeo
+# Extra requirements if using --node or --rust-launcher: repro-env, podman
+# Extra requirements if using --push: docker must be logged in to registry
 #
 # Usage:
-#   ./deployment/build-images.sh [--node] [--launcher] [--push]
-# If neither --node nor --launcher are used, both images are built
-# If using --pushed, docker must be logged in to registry
+#   ./deployment/build-images.sh [--node] [--node-gcp] [--launcher] [--rust-launcher] [--push]
+# If no image flags are used, all images are built
+# Manifest digests are always computed and printed (skopeo required)
 
 
 set -euo pipefail
@@ -138,8 +139,8 @@ skopeo_compress() {
     # the manifest digest in $td/manifest.json
     skopeo copy --all --dest-compress "docker-daemon:${image_name}:latest" "dir:$td"
     local digest="sha256:$(sha256sum "$td/manifest.json" | cut -d' ' -f1)"
-    eval "${prefix}_manifest_digest=\"$digest\""
-    eval "${prefix}_skopeo_dir=\"$td\""
+    printf -v "${prefix}_manifest_digest" '%s' "$digest"
+    printf -v "${prefix}_skopeo_dir" '%s' "$td"
 }
 
 if $USE_LAUNCHER; then
