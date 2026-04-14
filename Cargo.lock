@@ -11108,7 +11108,6 @@ dependencies = [
  "borsh",
  "elliptic-curve",
  "getrandom 0.2.17",
- "hex",
  "near-mpc-contract-interface",
  "near-sdk",
  "serde",
