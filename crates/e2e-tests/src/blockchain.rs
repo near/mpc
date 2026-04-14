@@ -15,7 +15,7 @@ const ACCESS_KEY_RETRY_DELAY: Duration = Duration::from_millis(500);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
-/// Wraps a `near_kit::Near` client signed as the root/funder account.
+/// Wraps `near_kit::Near` client signed as the root/funder account.
 /// Whether the RPC URL points to a local Docker sandbox or NEAR testnet,
 /// the code path is identical.
 pub struct NearBlockchain {
