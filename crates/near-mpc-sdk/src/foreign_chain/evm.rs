@@ -160,34 +160,43 @@ mod test {
 
     #[test]
     fn with_tx_id_sets_expected_value() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
 
+        // when
         let builder = ForeignChainRequestBuilder::new_abstract().with_tx_id(tx_id.clone());
 
+        // then
         assert_eq!(builder.request.tx_id, tx_id);
     }
 
     #[test]
     fn with_finality_sets_expected_value() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
 
+        // when
         let builder = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized);
 
+        // then
         assert_eq!(builder.request.finality, EvmFinality::Finalized);
     }
 
     #[test]
     fn with_expected_block_hash_sets_expected_value() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
 
+        // when
         let builder = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized)
             .with_expected_block_hash(expected_hash);
 
+        // then
         assert_eq!(
             builder.request.expected_block_hash.as_deref(),
             Some(&expected_hash)
@@ -196,14 +205,17 @@ mod test {
 
     #[test]
     fn with_expected_log_sets_expected_value() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
         let log = test_evm_log(3);
 
+        // when
         let builder = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id)
             .with_finality(EvmFinality::Finalized)
             .with_expected_log(3, log.clone());
 
+        // then
         assert_eq!(builder.request.expected_logs.len(), 1);
         assert_eq!(builder.request.expected_logs[0].log_index, 3);
         assert_eq!(builder.request.expected_logs[0].log, log);
@@ -211,10 +223,12 @@ mod test {
 
     #[test]
     fn with_multiple_expected_logs_produces_correct_extractors_and_values() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
         let log_a = test_evm_log(1);
         let log_b = test_evm_log(2);
 
+        // when
         let (verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
@@ -223,6 +237,7 @@ mod test {
             .with_domain_id(DomainId::from(1))
             .build();
 
+        // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
             assert_eq!(
                 rpc_request.extractors,
@@ -244,11 +259,13 @@ mod test {
 
     #[test]
     fn build_produces_correct_request_args() {
+        // given
         let domain_id = DomainId::from(2);
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
         let log = test_evm_log(5);
 
+        // when
         let (_verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
@@ -257,6 +274,7 @@ mod test {
             .with_domain_id(domain_id)
             .build();
 
+        // then
         let expected = VerifyForeignTransactionRequestArgs {
             request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
                 tx_id,
@@ -272,10 +290,12 @@ mod test {
 
     #[test]
     fn build_produces_correct_verifier() {
+        // given
         let tx_id = EvmTxId::from([123; 32]);
         let expected_hash = [9; 32];
         let log = test_evm_log(5);
 
+        // when
         let (verifier, _request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(tx_id.clone())
             .with_finality(EvmFinality::Finalized)
@@ -284,6 +304,7 @@ mod test {
             .with_domain_id(DomainId::from(1))
             .build();
 
+        // then
         let expected_verifier = ForeignChainSignatureVerifier {
             expected_extracted_values: vec![
                 ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(
@@ -303,23 +324,28 @@ mod test {
 
     #[test]
     fn verifier_request_matches_request_args() {
+        // given
         let (verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(EvmTxId::from([123; 32]))
             .with_finality(EvmFinality::Safe)
             .with_domain_id(DomainId::from(1))
+            // when
             .build();
 
+        // then
         assert_eq!(verifier.request, request_args.request);
     }
 
     #[test]
     fn build_without_extractors_produces_empty_extractors() {
+        // given / when
         let (_verifier, request_args) = ForeignChainRequestBuilder::new_abstract()
             .with_tx_id(EvmTxId::from([42; 32]))
             .with_finality(EvmFinality::Latest)
             .with_domain_id(DomainId::from(1))
             .build();
 
+        // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
             assert_eq!(rpc_request.extractors, vec![]);
         });

@@ -49,12 +49,14 @@ mod test {
 
     #[test]
     fn build_wraps_into_bnb_variant() {
+        // given / when
         let (_verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(EvmTxId::from([1; 32]))
             .with_finality(EvmFinality::Finalized)
             .with_domain_id(DomainId::from(1))
             .build();
 
+        // then
         assert_matches!(request_args.request, ForeignChainRpcRequest::Bnb(_));
     }
 }
