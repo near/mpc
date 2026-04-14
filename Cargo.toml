@@ -29,6 +29,7 @@ members = [
     "crates/tee-authority",
     "crates/tee-context",
     "crates/tee-launcher",
+    "crates/test-large-contract",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-port-allocator",

@@ -87,6 +87,8 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
             staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
+            staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
+            update_code_chunks: LookupMap::new(StorageKey::UpdateCodeChunks),
             foreign_chain_policy,
             foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             config: value.config,

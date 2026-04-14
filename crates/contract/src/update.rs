@@ -10,13 +10,12 @@ use crate::{
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use derive_more::Deref;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::UpdateHash;
 use near_sdk::{
     env, near,
     serde::{Deserialize, Serialize},
     store::IterableMap,
-    Gas, NearToken, Promise,
+    NearToken,
 };
 
 #[cfg_attr(
@@ -72,6 +71,9 @@ impl From<u64> for UpdateId {
 pub enum Update {
     Contract(Vec<u8>),
     Config(near_mpc_contract_interface::types::Config),
+    /// Contract code stored as separate chunks in a LookupMap, not inline.
+    /// This avoids deserializing multi-MiB blobs from a single storage slot.
+    ContractChunked { total_size: u64, num_chunks: u32 },
 }
 
 #[derive(
@@ -121,6 +123,9 @@ pub(super) struct UpdateVotes {
     pub(super) updates: BTreeMap<UpdateId, UpdateHash>,
 }
 
+/// Lightweight metadata for a staged contract upload.
+/// Actual chunk data is stored separately in a `LookupMap` to avoid
+/// reserializing all accumulated data on every chunk append.
 #[derive(
     Clone,
     Debug,
@@ -129,53 +134,42 @@ pub(super) struct UpdateVotes {
     borsh::BorshDeserialize,
 )]
 pub struct StagedContractUpload {
-    pub chunks: Vec<Vec<u8>>,
     pub total_size: u64,
     pub received_bytes: u64,
+    pub num_chunks: u32,
     pub deposited: NearToken,
 }
 
 impl StagedContractUpload {
     pub fn new(total_size: u64) -> Self {
         Self {
-            chunks: Vec::new(),
             total_size,
             received_bytes: 0,
+            num_chunks: 0,
             deposited: NearToken::from_yoctonear(0),
         }
     }
 
-    pub fn append_chunk(&mut self, data: Vec<u8>) -> Result<(), Error> {
-        let new_received = self.received_bytes + data.len() as u64;
+    /// Validates and records a chunk append (does not store the chunk data itself).
+    pub fn record_chunk(&mut self, chunk_len: u64) -> Result<u32, Error> {
+        let new_received = self.received_bytes + chunk_len;
         if new_received > self.total_size {
             return Err(InvalidParameters::MalformedPayload {
                 reason: format!(
                     "Chunk would exceed declared total_size. received_bytes={}, chunk_len={}, total_size={}",
-                    self.received_bytes, data.len(), self.total_size
+                    self.received_bytes, chunk_len, self.total_size
                 ),
             }
             .into());
         }
         self.received_bytes = new_received;
-        self.chunks.push(data);
-        Ok(())
+        let chunk_index = self.num_chunks;
+        self.num_chunks += 1;
+        Ok(chunk_index)
     }
 
-    pub fn assemble(self) -> Result<Vec<u8>, Error> {
-        if self.received_bytes != self.total_size {
-            return Err(InvalidParameters::MalformedPayload {
-                reason: format!(
-                    "Upload incomplete. received_bytes={}, total_size={}",
-                    self.received_bytes, self.total_size
-                ),
-            }
-            .into());
-        }
-        let mut assembled = Vec::with_capacity(self.total_size as usize);
-        for chunk in self.chunks {
-            assembled.extend_from_slice(&chunk);
-        }
-        Ok(assembled)
+    pub fn is_complete(&self) -> bool {
+        self.received_bytes == self.total_size
     }
 
     pub fn required_deposit_for_bytes(len: usize) -> NearToken {
@@ -269,38 +263,14 @@ impl ProposedUpdates {
         Some(())
     }
 
-    pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
+    pub fn do_update(&mut self, id: &UpdateId) -> Option<Update> {
         let entry = self.entries.remove(id)?;
 
         // Clear all entries as they might be no longer valid
         self.entries.clear();
         self.vote_by_participant.clear();
 
-        let mut promise = Promise::new(env::current_account_id());
-        match entry.update {
-            Update::Contract(code) => {
-                // deploy contract then do a `migrate` call to migrate state.
-                promise = promise.deploy_contract(code).function_call(
-                    method_names::MIGRATE,
-                    Vec::new(),
-                    NearToken::from_near(0),
-                    gas,
-                );
-            }
-            Update::Config(config) => {
-                // If we vote for a new config, we should use
-                // the value `contract_upgrade_deposit_tera_gas` from the config
-                // as the new gas value
-                let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
-                promise = promise.function_call(
-                    method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&config,)).unwrap(),
-                    NearToken::from_near(0),
-                    new_config_gas_value,
-                );
-            }
-        }
-        Some(promise)
+        Some(entry.update)
     }
 
     /// Removes the vote for [`AccountId`].
@@ -366,6 +336,11 @@ fn bytes_used(update: &Update) -> u128 {
             let bytes = serde_json::to_vec(&config).unwrap();
             bytes_used += bytes.len() as u128;
         }
+        Update::ContractChunked { total_size, .. } => {
+            // Chunks are stored separately; metadata in the entry is small.
+            // The total_size accounts for chunk storage costs.
+            bytes_used += *total_size as u128;
+        }
     }
 
     bytes_used
@@ -383,7 +358,6 @@ mod tests {
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
     };
     use near_account_id::AccountId;
-    use near_sdk::Gas;
     use std::collections::{BTreeMap, HashSet};
     use test_utils::contract_types::dummy_config;
 
@@ -675,7 +649,7 @@ mod tests {
         assert_eq!(before, expected_before);
 
         // When: executing an update
-        proposed_updates.do_update(&update_id_1, Gas::from_tgas(100));
+        proposed_updates.do_update(&update_id_1);
 
         // Then: all state is cleared (entries and votes)
         let after: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
@@ -877,40 +851,36 @@ mod tests {
         use super::super::StagedContractUpload;
 
         #[test]
-        fn test_append_chunk_tracks_received_bytes() {
+        fn test_record_chunk_tracks_received_bytes() {
             let mut staged = StagedContractUpload::new(100);
-            staged.append_chunk(vec![0u8; 40]).unwrap();
+            let idx = staged.record_chunk(40).unwrap();
+            assert_eq!(idx, 0);
             assert_eq!(staged.received_bytes, 40);
-            assert_eq!(staged.chunks.len(), 1);
+            assert_eq!(staged.num_chunks, 1);
 
-            staged.append_chunk(vec![1u8; 60]).unwrap();
+            let idx = staged.record_chunk(60).unwrap();
+            assert_eq!(idx, 1);
             assert_eq!(staged.received_bytes, 100);
-            assert_eq!(staged.chunks.len(), 2);
+            assert_eq!(staged.num_chunks, 2);
+            assert!(staged.is_complete());
         }
 
         #[test]
-        fn test_append_chunk_rejects_exceeding_total_size() {
+        fn test_record_chunk_rejects_exceeding_total_size() {
             let mut staged = StagedContractUpload::new(50);
-            staged.append_chunk(vec![0u8; 40]).unwrap();
-            let err = staged.append_chunk(vec![0u8; 20]).unwrap_err();
+            staged.record_chunk(40).unwrap();
+            let err = staged.record_chunk(20).unwrap_err();
             assert!(err.to_string().contains("exceed declared total_size"));
         }
 
         #[test]
-        fn test_assemble_concatenates_chunks() {
-            let mut staged = StagedContractUpload::new(6);
-            staged.append_chunk(vec![1, 2, 3]).unwrap();
-            staged.append_chunk(vec![4, 5, 6]).unwrap();
-            let assembled = staged.assemble().unwrap();
-            assert_eq!(assembled, vec![1, 2, 3, 4, 5, 6]);
-        }
-
-        #[test]
-        fn test_assemble_rejects_incomplete_upload() {
+        fn test_is_complete() {
             let mut staged = StagedContractUpload::new(100);
-            staged.append_chunk(vec![0u8; 50]).unwrap();
-            let err = staged.assemble().unwrap_err();
-            assert!(err.to_string().contains("incomplete"));
+            assert!(!staged.is_complete());
+            staged.record_chunk(50).unwrap();
+            assert!(!staged.is_complete());
+            staged.record_chunk(50).unwrap();
+            assert!(staged.is_complete());
         }
     }
 }

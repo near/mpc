@@ -8,7 +8,7 @@ use crate::sandbox::{
             ALL_CURVES, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
             GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
         },
-        contract_build::{current_contract, migration_contract},
+        contract_build::{current_contract, large_contract, migration_contract},
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
@@ -819,4 +819,55 @@ async fn test_clear_staged_contract_allows_restart() {
         .unwrap()
         .into_result()
         .expect("restart after clear should succeed");
+}
+
+/// Upload and deploy a ~2 MiB contract via chunked upload to verify that binaries
+/// exceeding the 1.5 MiB RPC limit can be proposed and deployed.
+#[tokio::test]
+async fn test_chunked_upload_large_contract() {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+
+    let code = large_contract();
+    assert!(
+        code.len() > 1_500_000,
+        "large contract should exceed the 1.5 MiB RPC limit, got {} bytes",
+        code.len()
+    );
+
+    // Storage cost is ~10 NEAR per MiB. Use 11 NEAR per chunk (1 MiB) to have margin.
+    let proposal_id = chunked_upload_contract(
+        &mpc_signer_accounts[0],
+        &contract,
+        code,
+        NearToken::from_near(11),
+    )
+    .await;
+
+    // Use max_gas for votes since deploying a 2 MiB contract is gas-intensive.
+    for voter in &mpc_signer_accounts {
+        let execution = voter
+            .call(contract.id(), method_names::VOTE_UPDATE)
+            .args_json(serde_json::json!({ "id": proposal_id }))
+            .max_gas()
+            .transact()
+            .await
+            .unwrap();
+
+        let update_occurred: bool = execution.json().expect("Vote cast was unsuccessful");
+        if update_occurred {
+            // Verify the deployed code matches what we uploaded
+            let deployed = contract.view_code().await.unwrap();
+            assert_eq!(
+                sha2::Sha256::digest(code).as_slice(),
+                sha2::Sha256::digest(&deployed).as_slice(),
+                "deployed binary must match the large contract we uploaded"
+            );
+            return;
+        }
+    }
+    panic!("Update never completed");
 }

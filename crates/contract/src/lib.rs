@@ -136,6 +136,8 @@ pub struct MpcContract {
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     staged_uploads: IterableMap<AccountId, StagedContractUpload>,
+    staged_chunks: LookupMap<(AccountId, u32), Vec<u8>>,
+    update_code_chunks: LookupMap<(UpdateId, u32), Vec<u8>>,
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
     node_foreign_chain_configurations: NodeForeignChainConfigurations,
@@ -1326,8 +1328,12 @@ impl MpcContract {
             .into());
         }
 
-        staged.append_chunk(args.data)?;
+        let chunk_index = staged.record_chunk(chunk_len as u64)?;
         staged.deposited = staged.deposited.saturating_add(attached);
+
+        // Store the chunk data separately to avoid reserializing all accumulated data.
+        self.staged_chunks
+            .insert((caller.clone(), chunk_index), args.data);
 
         log!(
             "upload_contract_chunk: signer={}, chunk_len={}, received_bytes={}/{}",
@@ -1353,10 +1359,32 @@ impl MpcContract {
                 reason: "No staged upload found. Call start_contract_upload first.".into(),
             })?;
 
-        let code = staged.assemble()?;
-        let update = Update::Contract(code);
+        if !staged.is_complete() {
+            return Err(InvalidParameters::MalformedPayload {
+                reason: format!(
+                    "Upload incomplete. received_bytes={}, total_size={}",
+                    staged.received_bytes, staged.total_size
+                ),
+            }
+            .into());
+        }
+
+        let update = Update::ContractChunked {
+            total_size: staged.total_size,
+            num_chunks: staged.num_chunks,
+        };
 
         let id = self.proposed_updates.propose(update);
+
+        // Move chunks from staging to update-keyed storage.
+        // Each chunk is read/written individually (~1 MiB each) to stay within gas limits.
+        for i in 0..staged.num_chunks {
+            let chunk = self
+                .staged_chunks
+                .remove(&(caller.clone(), i))
+                .expect("chunk must exist");
+            self.update_code_chunks.insert((id, i), chunk);
+        }
 
         log!(
             "finalize_contract_upload: signer={}, id={:?}",
@@ -1378,6 +1406,10 @@ impl MpcContract {
             .ok_or(InvalidParameters::MalformedPayload {
                 reason: "No staged upload found.".into(),
             })?;
+
+        for i in 0..staged.num_chunks {
+            self.staged_chunks.remove(&(caller.clone(), i));
+        }
 
         if staged.deposited > NearToken::from_yoctonear(0) {
             Promise::new(caller).transfer(staged.deposited).detach();
@@ -1438,9 +1470,50 @@ impl MpcContract {
 
         let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
 
-        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
+        let Some(update) = self.proposed_updates.do_update(&id) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
+
+        let base = Promise::new(env::current_account_id());
+        match update {
+            Update::Contract(code) => {
+                let _ = base.deploy_contract(code).function_call(
+                    method_names::MIGRATE,
+                    Vec::new(),
+                    NearToken::from_near(0),
+                    update_gas_deposit,
+                );
+            }
+            Update::ContractChunked {
+                total_size,
+                num_chunks,
+            } => {
+                let mut code = Vec::with_capacity(total_size as usize);
+                for i in 0..num_chunks {
+                    let chunk = self
+                        .update_code_chunks
+                        .remove(&(id, i))
+                        .expect("update code chunk must exist");
+                    code.extend_from_slice(&chunk);
+                }
+                let _ = base.deploy_contract(code).function_call(
+                    method_names::MIGRATE,
+                    Vec::new(),
+                    NearToken::from_near(0),
+                    update_gas_deposit,
+                );
+            }
+            Update::Config(config) => {
+                let new_config_gas_value =
+                    Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
+                let _ = base.function_call(
+                    method_names::UPDATE_CONFIG,
+                    serde_json::to_vec(&(&config,)).unwrap(),
+                    NearToken::from_near(0),
+                    new_config_gas_value,
+                );
+            }
+        }
 
         Ok(true)
     }
@@ -1797,6 +1870,8 @@ impl MpcContract {
             ),
             proposed_updates: ProposedUpdates::default(),
             staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
+            staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
+            update_code_chunks: LookupMap::new(StorageKey::UpdateCodeChunks),
             foreign_chain_policy: Default::default(),
             foreign_chain_policy_votes: Default::default(),
             config: init_config.map(Into::into).unwrap_or_default(),
@@ -1864,6 +1939,8 @@ impl MpcContract {
             ),
             proposed_updates: Default::default(),
             staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
+            staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
+            update_code_chunks: LookupMap::new(StorageKey::UpdateCodeChunks),
             foreign_chain_policy: Default::default(),
             foreign_chain_policy_votes: Default::default(),
             tee_state,
@@ -3581,6 +3658,8 @@ mod tests {
                 accept_requests: true,
                 proposed_updates: Default::default(),
                 staged_uploads: IterableMap::new(StorageKey::StagedContractUploads),
+                staged_chunks: LookupMap::new(StorageKey::StagedContractChunks),
+            update_code_chunks: LookupMap::new(StorageKey::UpdateCodeChunks),
                 foreign_chain_policy: Default::default(),
                 foreign_chain_policy_votes: Default::default(),
                 node_foreign_chain_configurations: Default::default(),

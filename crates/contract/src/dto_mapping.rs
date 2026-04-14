@@ -360,6 +360,15 @@ impl IntoInterfaceType<dtos::UpdateHash> for &Update {
     fn into_dto_type(self) -> dtos::UpdateHash {
         match self {
             Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code)),
+            Update::ContractChunked {
+                total_size,
+                num_chunks,
+            } => {
+                // Hash the metadata since the actual code is stored in separate chunks.
+                let mut data = total_size.to_le_bytes().to_vec();
+                data.extend_from_slice(&num_chunks.to_le_bytes());
+                dtos::UpdateHash::Code(sha256_array(data))
+            }
             Update::Config(config) => dtos::UpdateHash::Config(sha256_array(
                 serde_json::to_vec(config).expect("serde serialization must succeed"),
             )),

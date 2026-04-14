@@ -22,4 +22,6 @@ pub enum StorageKey {
     PendingCKDRequestsV2,
     SupportedForeignChainsVotes,
     StagedContractUploads,
+    StagedContractChunks,
+    UpdateCodeChunks,
 }
