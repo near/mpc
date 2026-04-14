@@ -155,12 +155,24 @@ pub struct MpcContract {
 /// 2. The main contract state becomes usable immediately.
 /// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
 ///    separate transactions to gradually deallocate this storage.
-#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-struct StaleData {}
+struct StaleData {
+    pending_signature_requests_pre_upgrade: LookupMap<v3_8_1_state::SignatureRequest, YieldIndex>,
+}
+
+impl StaleData {
+    fn new() -> Self {
+        Self {
+            pending_signature_requests_pre_upgrade: LookupMap::new(
+                StorageKey::PendingSignatureRequestsV2,
+            ),
+        }
+    }
+}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
@@ -678,7 +690,18 @@ impl MpcContract {
             env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
         } else {
-            Err(InvalidParameters::RequestNotFound.into())
+            // Fall back to the pre-upgrade map for in-flight requests from before the migration.
+            let old_request = v3_8_1_state::SignatureRequest::from(&request);
+            if let Some(YieldIndex { data_id }) = self
+                .stale_data
+                .pending_signature_requests_pre_upgrade
+                .remove(&old_request)
+            {
+                env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
+                Ok(())
+            } else {
+                Err(InvalidParameters::RequestNotFound.into())
+            }
         }
     }
 
@@ -1727,7 +1750,7 @@ impl MpcContract {
                 parameters,
                 AddDomainsVotes::default(),
             )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
@@ -1739,7 +1762,7 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: Default::default(),
+            stale_data: StaleData::new(),
             metrics: Default::default(),
             node_foreign_chain_configurations: Default::default(),
         })
@@ -1793,7 +1816,7 @@ impl MpcContract {
                 parameters,
                 AddDomainsVotes::default(),
             )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
@@ -1804,7 +1827,7 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: Default::default(),
+            stale_data: StaleData::new(),
             metrics: Default::default(),
             node_foreign_chain_configurations: Default::default(),
         })
@@ -1879,7 +1902,16 @@ impl MpcContract {
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        self.pending_signature_requests.get(request).cloned()
+        self.pending_signature_requests
+            .get(request)
+            .cloned()
+            .or_else(|| {
+                let old_request = v3_8_1_state::SignatureRequest::from(request);
+                self.stale_data
+                    .pending_signature_requests_pre_upgrade
+                    .get(&old_request)
+                    .cloned()
+            })
     }
 
     pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
@@ -1972,7 +2004,16 @@ impl MpcContract {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                self.pending_signature_requests.remove(&request);
+                let removed = self.pending_signature_requests.remove(&request).is_some();
+
+                // Fallback, the request must have been made pre-upgrade
+                if !removed {
+                    let old_request = v3_8_1_state::SignatureRequest::from(&request);
+                    self.stale_data
+                        .pending_signature_requests_pre_upgrade
+                        .remove(&old_request);
+                }
+
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
@@ -2712,6 +2753,106 @@ mod tests {
             PromiseOrValue::Promise(_)
         ));
         assert!(contract.get_pending_request(&signature_request).is_none());
+    }
+
+    #[test]
+    fn test_signature_timeout__removes_from_pre_upgrade_stale_map() {
+        // given
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        let old_request = v3_8_1_state::SignatureRequest::from(&signature_request);
+        contract
+            .stale_data
+            .pending_signature_requests_pre_upgrade
+            .insert(
+                old_request.clone(),
+                YieldIndex {
+                    data_id: CryptoHash::default(),
+                },
+            );
+        assert_matches!(contract.get_pending_request(&signature_request), Some(_));
+
+        // when
+        let result = contract.return_signature_and_clean_state_on_success(
+            signature_request.clone(),
+            Err(PromiseError::Failed),
+        );
+
+        // then
+
+        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
+        match result {
+            PromiseOrValue::Promise(_promise) => {}
+            PromiseOrValue::Value(_) => panic!("result should be a promise"),
+        }
+        assert_matches!(contract.get_pending_request(&signature_request), None);
+        assert_matches!(
+            contract
+                .stale_data
+                .pending_signature_requests_pre_upgrade
+                .get(&old_request),
+            None
+        );
+    }
+
+    #[test]
+    fn test_signature_timeout__request_in_neither_map_still_schedules_fail() {
+        // given
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        assert_matches!(contract.get_pending_request(&signature_request), None);
+
+        // when
+        let result = contract.return_signature_and_clean_state_on_success(
+            signature_request,
+            Err(PromiseError::Failed),
+        );
+
+        // then
+        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
+        match result {
+            PromiseOrValue::Promise(_promise) => {}
+            PromiseOrValue::Value(_) => panic!("result should be a promise"),
+        }
+    }
+
+    #[test]
+    fn test_signature_success__returns_value_directly() {
+        // given
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        let signature_response = dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+            big_r: dtos::K256AffinePoint::from(k256::AffinePoint::GENERATOR),
+            s: dtos::K256Scalar::from(k256::Scalar::ONE),
+            recovery_id: 0,
+        });
+
+        // when
+        let result = contract.return_signature_and_clean_state_on_success(
+            signature_request,
+            Ok(signature_response.clone()),
+        );
+
+        // then
+        match result {
+            PromiseOrValue::Value(resp) => assert_eq!(resp, signature_response),
+            PromiseOrValue::Promise(_) => panic!("Expected Value, got Promise"),
+        }
     }
 
     #[test]
@@ -3508,7 +3649,7 @@ mod tests {
         pub fn new_from_protocol_state(protocol_state: ProtocolContractState) -> Self {
             MpcContract {
                 protocol_state,
-                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
                 pending_verify_foreign_tx_requests: LookupMap::new(
                     StorageKey::PendingVerifyForeignTxRequests,
@@ -3521,7 +3662,7 @@ mod tests {
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                stale_data: Default::default(),
+                stale_data: StaleData::new(),
                 metrics: Default::default(),
             }
         }
