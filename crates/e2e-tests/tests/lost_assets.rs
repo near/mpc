@@ -27,13 +27,11 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
     let dead_idx = 0;
     let alive: Vec<usize> = (1..3).collect();
 
-    // Kill the node and wipe its data — its share of every presignature is gone.
-    cluster
-        .kill_nodes(&[dead_idx])
-        .expect("failed to kill node");
-    cluster.wipe_db(&[dead_idx]).expect("failed to wipe DB");
-
-    // when — wait for alive nodes to detect the dead node and purge its presignatures.
+    // Pre-kill: confirm all presignatures have been moved to the cold queue, so
+    // ONLINE reflects the real count.  `setup_cluster` only waits for AVAILABLE
+    // (which includes the hot queue), so ONLINE can still be 0 at that point.
+    // Without this step the kill-then-ONLINE==0 check would trivially pass before
+    // detection ever fired, defeating the purpose of the wait.
     common::wait_metric_on_nodes(
         &cluster,
         &alive,
@@ -42,11 +40,36 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         CLUSTER_WAIT_TIMEOUT,
     )
     .await;
+
+    // Kill the node and wipe its data — its share of every presignature is gone.
+    cluster
+        .kill_nodes(&[dead_idx])
+        .expect("failed to kill node");
+    cluster.wipe_db(&[dead_idx]).expect("failed to wipe DB");
+
+    // when — wait for alive nodes to detect the dead node and rebuild without it.
+    //
+    // The correct indicator that detection has fired is ONLINE dropping to 0:
+    // when update_condition_value() runs and removes node 0 from alive participants,
+    // it resets cold_ready=0, immediately bringing ONLINE to 0.  We confirmed
+    // ONLINE was >= N before the kill, so a 0 here is a genuine transition, not a
+    // trivial pass.  ONLINE stays 0 until entirely new 2-party presignatures are
+    // generated, so the second wait (ONLINE >= N) can only be satisfied by fresh
+    // 2-of-2 presignatures.
     common::wait_metric_on_nodes(
         &cluster,
         &alive,
-        metrics::OWNED_PRESIGNATURES_OFFLINE,
+        metrics::OWNED_PRESIGNATURES_ONLINE,
         |v| v == 0,
+        CLUSTER_WAIT_TIMEOUT,
+    )
+    .await;
+
+    common::wait_metric_on_nodes(
+        &cluster,
+        &alive,
+        metrics::OWNED_PRESIGNATURES_ONLINE,
+        |v| v >= PRESIGNATURES_TO_BUFFER as i64,
         CLUSTER_WAIT_TIMEOUT,
     )
     .await;

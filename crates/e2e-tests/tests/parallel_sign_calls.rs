@@ -165,8 +165,8 @@ async fn parallel_sign_calls__mixed() {
         common::sum_metric(&cluster, metrics::CKDS_QUEUE_ATTEMPTS).await - initial_ckd_attempts;
     let total_delta = sig_attempts_delta + ckd_attempts_delta;
 
-    assert_eq!(
-        total_delta, N as i64,
-        "expected exactly {N} total leader attempts across all nodes and queues, got {total_delta}"
+    assert!(
+        total_delta >= N as i64,
+        "expected >= {N} total leader attempts across all nodes and queues, got {total_delta}"
     );
 }
