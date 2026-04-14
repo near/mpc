@@ -46,7 +46,7 @@ impl TestContract {
             payload_builder: &F,
         ) -> Vec<Promise>
         where
-            F: Fn(Vec<u8>) -> Payload,
+            F: Fn([u8; 32]) -> Payload,
         {
             domain_map
                 .iter()
@@ -54,7 +54,7 @@ impl TestContract {
                     (0..*num_calls).map(move |i| {
                         let mut hasher = Sha256::new();
                         hasher.update(format!("{seed}-{i}").as_str());
-                        let payload_bytes = hasher.finalize().to_vec();
+                        let payload_bytes: [u8; 32] = hasher.finalize().into();
 
                         let args = SignArgs {
                             request: SignRequestArgs {
@@ -108,7 +108,7 @@ impl TestContract {
                 &target_contract,
                 &ecdsa_calls_by_domain,
                 seed,
-                &|bytes| Payload::Ecdsa(bytes.try_into().unwrap()),
+                &|bytes| Payload::Ecdsa(bytes.into()),
             ));
         };
 
@@ -117,7 +117,7 @@ impl TestContract {
                 &target_contract,
                 &eddsa_calls_by_domain,
                 seed + 1_000_000, // tweak seed offset to avoid collision if needed
-                &|bytes| Payload::Eddsa(bytes.try_into().unwrap()),
+                &|bytes| Payload::Eddsa(bytes.into()),
             ));
         };
         if let Some(ckd_calls_by_domain) = ckd_calls_by_domain {
@@ -132,7 +132,7 @@ impl TestContract {
                 &target_contract,
                 &robust_ecdsa_calls_by_domain,
                 seed + 2_000_000,
-                &|bytes| Payload::Ecdsa(bytes.try_into().unwrap()),
+                &|bytes| Payload::Ecdsa(bytes.into()),
             ));
         };
 
