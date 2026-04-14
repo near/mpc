@@ -65,13 +65,11 @@ require_cmds() {
   [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
-require_cmds docker jq git find touch
+require_cmds docker jq git find touch skopeo
 
 if $USE_NODE || $USE_RUST_LAUNCHER; then
     require_cmds repro-env podman
 fi
-
-require_cmds skopeo
 
 if ! docker buildx &>/dev/null; then
   die "Please install docker-buildx"
@@ -127,26 +125,28 @@ get_image_hash() {
     docker inspect $image_name | jq -r .[0].Id
 }
 
-# Compress a locally built image via skopeo and compute its manifest digest.
-# Sets two global variables: <prefix>_manifest_digest and <prefix>_skopeo_dir
-# Usage: skopeo_compress <image_name> <variable_prefix>
+# Compress a locally built image via skopeo to a temp directory.
+# Prints the temp dir path to stdout. The manifest digest can be
+# computed from $dir/manifest.json.
 skopeo_compress() {
     local image_name="$1"
-    local prefix="$2"
     local td
     td=$(mktemp -d)
     # Compress the built image to a local directory, which implicitly computes
     # the manifest digest in $td/manifest.json
-    skopeo copy --all --dest-compress "docker-daemon:${image_name}:latest" "dir:$td"
-    local digest="sha256:$(sha256sum "$td/manifest.json" | cut -d' ' -f1)"
-    printf -v "${prefix}_manifest_digest" '%s' "$digest"
-    printf -v "${prefix}_skopeo_dir" '%s' "$td"
+    skopeo copy --all --dest-compress "docker-daemon:${image_name}:latest" "dir:$td" >&2
+    echo "$td"
+}
+
+manifest_digest_from_dir() {
+    echo "sha256:$(sha256sum "$1/manifest.json" | cut -d' ' -f1)"
 }
 
 if $USE_LAUNCHER; then
     build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER
     launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
-    skopeo_compress "$LAUNCHER_IMAGE_NAME" launcher
+    launcher_skopeo_dir="$(skopeo_compress "$LAUNCHER_IMAGE_NAME")"
+    launcher_manifest_digest="$(manifest_digest_from_dir "$launcher_skopeo_dir")"
 fi
 
 if $USE_RUST_LAUNCHER; then
@@ -155,7 +155,8 @@ if $USE_RUST_LAUNCHER; then
 
     build_reproducible_image $RUST_LAUNCHER_IMAGE_NAME $DOCKERFILE_RUST_LAUNCHER
     rust_launcher_image_hash=$(get_image_hash $RUST_LAUNCHER_IMAGE_NAME)
-    skopeo_compress "$RUST_LAUNCHER_IMAGE_NAME" rust_launcher
+    rust_launcher_skopeo_dir="$(skopeo_compress "$RUST_LAUNCHER_IMAGE_NAME")"
+    rust_launcher_manifest_digest="$(manifest_digest_from_dir "$rust_launcher_skopeo_dir")"
 fi
 
 if $USE_NODE || $USE_NODE_GCP; then
@@ -166,13 +167,15 @@ fi
 if $USE_NODE; then
     build_reproducible_image $NODE_IMAGE_NAME $DOCKERFILE_NODE
     node_image_hash=$(get_image_hash $NODE_IMAGE_NAME)
-    skopeo_compress "$NODE_IMAGE_NAME" node
+    node_skopeo_dir="$(skopeo_compress "$NODE_IMAGE_NAME")"
+    node_manifest_digest="$(manifest_digest_from_dir "$node_skopeo_dir")"
 fi
 
 if $USE_NODE_GCP; then
     build_reproducible_image $NODE_GCP_IMAGE_NAME $DOCKERFILE_NODE_GCP
     node_gcp_image_hash=$(get_image_hash $NODE_GCP_IMAGE_NAME)
-    skopeo_compress "$NODE_GCP_IMAGE_NAME" node_gcp
+    node_gcp_skopeo_dir="$(skopeo_compress "$NODE_GCP_IMAGE_NAME")"
+    node_gcp_manifest_digest="$(manifest_digest_from_dir "$node_gcp_skopeo_dir")"
 fi
 
 if $USE_PUSH; then
