@@ -70,6 +70,20 @@ expression: abi
         }
       },
       {
+        "name": "clean_foreign_chain_data",
+        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "clean_tee_status",
         "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
         "kind": "call",
@@ -618,6 +632,10 @@ expression: abi
                       ],
                       [
                         "remove_non_participant_update_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_foreign_chain_data_tera_gas",
                         "u64"
                       ]
                     ]
@@ -1813,6 +1831,7 @@ expression: abi
           "type": "object",
           "required": [
             "ckd_call_gas_attachment_requirement_tera_gas",
+            "clean_foreign_chain_data_tera_gas",
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
             "contract_upgrade_deposit_tera_gas",
@@ -1827,6 +1846,12 @@ expression: abi
           "properties": {
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_foreign_chain_data_tera_gas": {
+              "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -2363,6 +2388,15 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "clean_foreign_chain_data_tera_gas": {
+              "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "clean_tee_status_tera_gas": {
               "description": "Prepaid gas for a `clean_tee_status` call.",
               "type": [
@@ -2855,6 +2889,16 @@ expression: abi
                 "WithConstraints": {
                   "type": "object",
                   "properties": {
+                    "expected_measurements": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/VerifiedMeasurements"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "expiry_timestamp_seconds": {
                       "description": "Unix time stamp for when this attestation expires.",
                       "type": [
