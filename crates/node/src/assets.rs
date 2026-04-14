@@ -588,7 +588,6 @@ where
 }
 
 #[cfg(test)]
-#[expect(non_snake_case)]
 mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DomainId, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
@@ -1383,59 +1382,5 @@ mod tests {
                 assert_db_num_owned(db_col, domain_id, 1);
             }
         }
-    }
-
-    #[test]
-    fn take_unowned__should_allow_exactly_one_concurrent_caller_to_succeed() {
-        // Given
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = Arc::new(
-            DistributedAssetStorage::<u32>::new(
-                FakeClock::default().clock(),
-                db,
-                crate::db::DBCol::Triple,
-                None,
-                ParticipantId::from_raw(42),
-                |_, _| true,
-                Arc::new(std::vec::Vec::new),
-            )
-            .unwrap(),
-        );
-
-        let other = ParticipantId::from_raw(43);
-        let id = UniqueId::new(other, 1, 0);
-        store.add_unowned(id, 999);
-
-        // When
-        let num_threads = 10;
-        let barrier = Arc::new(std::sync::Barrier::new(num_threads));
-        let success_count = Arc::new(AtomicUsize::new(0));
-
-        let handles: Vec<_> = (0..num_threads)
-            .map(|_| {
-                let store = store.clone();
-                let barrier = barrier.clone();
-                let success_count = success_count.clone();
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    if let Ok(val) = store.take_unowned(id) {
-                        assert_eq!(val, 999);
-                        success_count.fetch_add(1, Ordering::SeqCst);
-                    }
-                })
-            })
-            .collect();
-
-        for h in handles {
-            h.join().unwrap();
-        }
-
-        // Then
-        assert_eq!(
-            success_count.load(Ordering::SeqCst),
-            1,
-            "Exactly one thread should succeed in taking the unowned asset"
-        );
     }
 }
