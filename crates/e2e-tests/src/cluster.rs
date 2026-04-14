@@ -29,6 +29,9 @@ pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
+// AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
+// which costs significantly more than a plain CKD or sign request.
+pub const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 
 /// Configuration for creating a new [`MpcCluster`].
@@ -633,6 +636,19 @@ impl MpcCluster {
         domain_id: DomainId,
         app_public_key: CKDAppPublicKey,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        self.send_ckd_request_with_gas(domain_id, app_public_key, SIGN_GAS)
+            .await
+    }
+
+    /// Like `send_ckd_request` but with an explicit gas limit.
+    /// Use `CKD_PV_GAS` for `AppPublicKeyPV` requests, which do an extra
+    /// on-chain BLS pairing check and require significantly more gas.
+    pub async fn send_ckd_request_with_gas(
+        &self,
+        domain_id: DomainId,
+        app_public_key: CKDAppPublicKey,
+        gas: near_kit::Gas,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let user = self.default_user_account().clone();
         let client = self.user_client(&user)?;
         let args = json!({
@@ -647,7 +663,7 @@ impl MpcCluster {
                 &client,
                 method_names::REQUEST_APP_PRIVATE_KEY,
                 args,
-                SIGN_GAS,
+                gas,
                 SIGN_DEPOSIT,
             )
             .await
