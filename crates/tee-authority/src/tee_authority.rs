@@ -477,9 +477,17 @@ mod tests {
         assert!(elapsed >= Duration::from_secs(total_expected_secs));
     }
 
+    /// Parameterized test for collateral upload endpoints.
+    ///
+    /// - `phala_endpoint`: Tests against Phala's default endpoint.
+    /// - `local_pccs_proxy`: Tests against the local PCCS proxy.
+    ///   Requires the proxy to be running. Override URL via `LOCAL_PCCS_PROXY_URL`.
+    #[rstest::rstest]
+    #[case::phala_endpoint(None)]
+    #[case::local_pccs_proxy(Some("http://localhost:8082/api/v1/attestations/verify"))]
     #[tokio::test]
     #[cfg(feature = "external-services-tests")]
-    async fn test_upload_quote_for_collateral_with_phala_endpoint() {
+    async fn test_upload_quote_for_collateral(#[case] url_override: Option<&str>) {
         let quote_data = quote();
         let quote_hex: String = serde_json::from_str::<Vec<u8>>(
             &serde_json::to_string(&quote_data).expect("Valid quote data"),
@@ -487,65 +495,19 @@ mod tests {
         .expect("Is valid json")
         .encode_hex();
 
-        let tee_authority = TeeAuthority::Dstack(DstackTeeAuthorityConfig::default());
-        let config = DstackTeeAuthorityConfig::default();
-
-        let result = tokio::time::timeout(
-            Duration::from_secs(10),
-            tee_authority.upload_quote_for_collateral(&config.quote_upload_url, &quote_hex),
-        )
-        .await;
-
-        match result {
-            Ok(Ok(collateral)) => {
-                assert!(!collateral.tcb_info_issuer_chain.is_empty());
-                assert!(!collateral.tcb_info.is_empty());
-                assert!(!collateral.tcb_info_signature.is_empty());
-                assert!(!collateral.qe_identity_issuer_chain.is_empty());
-                assert!(!collateral.qe_identity.is_empty());
-                assert!(!collateral.qe_identity_signature.is_empty());
-            }
-            Ok(Err(e)) => panic!("Test failed: {e:?}"),
-            Err(e) => panic!("Test timed out: {e:?}"),
-        }
-    }
-
-    /// Test that the local PCCS proxy (scripts/local-pccs-proxy.py) returns valid collateral.
-    ///
-    /// Requires the proxy to be running. Set `LOCAL_PCCS_PROXY_URL` to override the default
-    /// (`http://localhost:8082/api/v1/attestations/verify`).
-    ///
-    /// Example:
-    /// ```sh
-    /// # Start the proxy (pointing at the local Intel PCCS):
-    /// python3 scripts/local-pccs-proxy.py --port 8082 --pccs-url https://localhost:8081
-    ///
-    /// # Run this test:
-    /// LOCAL_PCCS_PROXY_URL=http://localhost:8082/api/v1/attestations/verify \
-    ///   cargo test -p tee-authority --features external-services-tests \
-    ///     --profile test-release test_upload_quote_for_collateral_with_local_pccs_proxy
-    /// ```
-    #[tokio::test]
-    #[cfg(feature = "external-services-tests")]
-    async fn test_upload_quote_for_collateral_with_local_pccs_proxy() {
-        let quote_data = quote();
-        let quote_hex: String = serde_json::from_str::<Vec<u8>>(
-            &serde_json::to_string(&quote_data).expect("Valid quote data"),
-        )
-        .expect("Is valid json")
-        .encode_hex();
-
-        let default_url = "http://localhost:8082/api/v1/attestations/verify";
-        let local_pccs_url: Url = std::env::var("LOCAL_PCCS_PROXY_URL")
-            .unwrap_or_else(|_| default_url.to_string())
-            .parse()
-            .expect("LOCAL_PCCS_PROXY_URL must be a valid URL");
+        let url: Url = match url_override {
+            Some(default) => std::env::var("LOCAL_PCCS_PROXY_URL")
+                .unwrap_or_else(|_| default.to_string())
+                .parse()
+                .expect("LOCAL_PCCS_PROXY_URL must be a valid URL"),
+            None => DstackTeeAuthorityConfig::default().quote_upload_url,
+        };
 
         let tee_authority = TeeAuthority::Dstack(DstackTeeAuthorityConfig::default());
 
         let result = tokio::time::timeout(
             Duration::from_secs(10),
-            tee_authority.upload_quote_for_collateral(&local_pccs_url, &quote_hex),
+            tee_authority.upload_quote_for_collateral(&url, &quote_hex),
         )
         .await;
 
@@ -561,8 +523,8 @@ mod tests {
                 assert!(!collateral.root_ca_crl.is_empty());
                 assert!(!collateral.pck_crl.is_empty());
             }
-            Ok(Err(e)) => panic!("Local PCCS proxy test failed: {e:?}"),
-            Err(e) => panic!("Local PCCS proxy test timed out: {e:?}"),
+            Ok(Err(e)) => panic!("Collateral upload failed ({url}): {e:?}"),
+            Err(e) => panic!("Collateral upload timed out ({url}): {e:?}"),
         }
     }
 }

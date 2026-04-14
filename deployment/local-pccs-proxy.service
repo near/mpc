@@ -1,0 +1,13 @@
+[Unit]
+Description=Local PCCS Proxy for TDX Attestation Collateral
+After=pccs.service network.target
+Wants=pccs.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -u /opt/mpc/scripts/local-pccs-proxy.py --port 8082
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

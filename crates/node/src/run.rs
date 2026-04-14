@@ -104,7 +104,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let tee_authority = config
         .tee
         .clone()
-        .into_tee_authority(config.quote_upload_url.as_deref())?;
+        .into_tee_authority(config.quote_upload_url.as_ref())?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();

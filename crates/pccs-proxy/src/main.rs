@@ -6,34 +6,32 @@ use axum::routing::{get, post};
 use clap::Parser;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
+
+const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_REQUEST_BODY_SIZE: usize = 1024 * 1024; // 1MB
 
 /// Local PCCS proxy — Phala-compatible collateral endpoint backed by Intel PCCS.
 #[derive(Parser)]
 struct Args {
-    /// Port to listen on.
-    #[arg(long, default_value = "8082")]
-    port: u16,
+    /// Address and port to listen on.
+    #[arg(long, default_value = "0.0.0.0:8082")]
+    listen: SocketAddr,
 
     /// URL of the local Intel PCCS.
     #[arg(long, default_value = "https://localhost:8081")]
-    pccs_url: String,
-
-    /// Address to bind to.
-    #[arg(long, default_value = "0.0.0.0")]
-    bind: String,
+    pccs_url: reqwest::Url,
 }
 
-struct AppState {
-    pccs_base_url: String,
+struct PccsClient {
+    pccs_base_url: reqwest::Url,
     http: Client,
 }
 
-#[derive(Serialize)]
-struct HealthResponse {
-    status: &'static str,
-}
-
+/// Wrapper to match Phala's response format: `{ "quote_collateral": { ... } }`.
+/// The MPC node deserializes this via `UploadResponse { quote_collateral: Collateral }`.
 #[derive(Serialize)]
 struct CollateralWrapper {
     quote_collateral: CollateralResponse,
@@ -72,15 +70,15 @@ struct ErrorResponse {
     error: String,
 }
 
-async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse { status: "ok" })
+async fn health() -> Json<serde_json::Value> {
+    Json(serde_json::json!({"status": "ok"}))
 }
 
 async fn verify_attestation(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<PccsClient>>,
     mut multipart: Multipart,
 ) -> Result<Json<CollateralWrapper>, (StatusCode, Json<ErrorResponse>)> {
-    let quote_hex = extract_hex_field(&mut multipart).await.map_err(|e| {
+    let quote_hex = extract_quote_hex(&mut multipart).await.map_err(|e| {
         tracing::error!("Failed to extract hex field: {e}");
         error_response(StatusCode::BAD_REQUEST, e.to_string())
     })?;
@@ -98,7 +96,8 @@ async fn verify_attestation(
     }))
 }
 
-async fn extract_hex_field(multipart: &mut Multipart) -> anyhow::Result<String> {
+/// Extracts the hex-encoded TDX quote from the `hex` field in the multipart form.
+async fn extract_quote_hex(multipart: &mut Multipart) -> anyhow::Result<String> {
     while let Some(field) = multipart
         .next_field()
         .await
@@ -119,7 +118,7 @@ async fn extract_hex_field(multipart: &mut Multipart) -> anyhow::Result<String> 
     anyhow::bail!("'hex' field not found in multipart form data")
 }
 
-async fn get_collateral(state: &AppState, quote_hex: &str) -> anyhow::Result<CollateralResponse> {
+async fn get_collateral(state: &PccsClient, quote_hex: &str) -> anyhow::Result<CollateralResponse> {
     let quote_bytes = hex::decode(quote_hex)?;
     let quote = dcap_qvl::quote::Quote::parse(&quote_bytes)
         .map_err(|e| anyhow::anyhow!("Failed to parse TDX quote: {e}"))?;
@@ -167,10 +166,14 @@ async fn get_collateral(state: &AppState, quote_hex: &str) -> anyhow::Result<Col
     })
 }
 
-async fn fetch_tcb_info(state: &AppState, fmspc: &str) -> anyhow::Result<(String, String, String)> {
+async fn fetch_tcb_info(
+    state: &PccsClient,
+    fmspc: &str,
+) -> anyhow::Result<(String, String, String)> {
     let url = format!(
         "{}/tdx/certification/v4/tcb?fmspc={}",
-        state.pccs_base_url, fmspc
+        state.pccs_base_url.as_str().trim_end_matches('/'),
+        fmspc
     );
     let resp = state.http.get(&url).send().await?;
     let issuer_chain = url_decode_header(&resp, "TCB-Info-Issuer-Chain")?;
@@ -179,8 +182,11 @@ async fn fetch_tcb_info(state: &AppState, fmspc: &str) -> anyhow::Result<(String
     Ok((tcb_info, body.signature, issuer_chain))
 }
 
-async fn fetch_qe_identity(state: &AppState) -> anyhow::Result<(String, String, String)> {
-    let url = format!("{}/tdx/certification/v4/qe/identity", state.pccs_base_url);
+async fn fetch_qe_identity(state: &PccsClient) -> anyhow::Result<(String, String, String)> {
+    let url = format!(
+        "{}/tdx/certification/v4/qe/identity",
+        state.pccs_base_url.as_str().trim_end_matches('/')
+    );
     let resp = state.http.get(&url).send().await?;
     let issuer_chain = url_decode_header(&resp, "SGX-Enclave-Identity-Issuer-Chain")?;
     let body: QeIdentityResponse = resp.json().await?;
@@ -188,10 +194,11 @@ async fn fetch_qe_identity(state: &AppState) -> anyhow::Result<(String, String, 
     Ok((qe_identity, body.signature, issuer_chain))
 }
 
-async fn fetch_pck_crl(state: &AppState, ca_type: &str) -> anyhow::Result<(String, String)> {
+async fn fetch_pck_crl(state: &PccsClient, ca_type: &str) -> anyhow::Result<(String, String)> {
     let url = format!(
         "{}/sgx/certification/v4/pckcrl?ca={}",
-        state.pccs_base_url, ca_type
+        state.pccs_base_url.as_str().trim_end_matches('/'),
+        ca_type
     );
     let resp = state.http.get(&url).send().await?;
     let issuer_chain = url_decode_header(&resp, "SGX-PCK-CRL-Issuer-Chain")?;
@@ -200,8 +207,11 @@ async fn fetch_pck_crl(state: &AppState, ca_type: &str) -> anyhow::Result<(Strin
     Ok((body, issuer_chain))
 }
 
-async fn fetch_root_ca_crl(state: &AppState) -> anyhow::Result<String> {
-    let url = format!("{}/sgx/certification/v4/rootcacrl", state.pccs_base_url);
+async fn fetch_root_ca_crl(state: &PccsClient) -> anyhow::Result<String> {
+    let url = format!(
+        "{}/sgx/certification/v4/rootcacrl",
+        state.pccs_base_url.as_str().trim_end_matches('/')
+    );
     let resp = state.http.get(&url).send().await?;
     // PCCS returns CRL as hex-encoded text
     Ok(resp.text().await?)
@@ -234,29 +244,28 @@ async fn main() {
 
     let http = Client::builder()
         .danger_accept_invalid_certs(true) // PCCS uses self-signed cert
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(PCCS_REQUEST_TIMEOUT)
         .build()
         .expect("Failed to build HTTP client");
 
-    let state = Arc::new(AppState {
-        pccs_base_url: args.pccs_url.trim_end_matches('/').to_string(),
+    let state = Arc::new(PccsClient {
+        pccs_base_url: args.pccs_url.clone(),
         http,
     });
 
     let app = Router::new()
         .route("/api/v1/attestations/verify", post(verify_attestation))
         .route("/health", get(health))
-        .layer(DefaultBodyLimit::max(1024 * 1024)) // 1MB
+        .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_SIZE))
         .with_state(state);
 
-    let addr = format!("{}:{}", args.bind, args.port);
     tracing::info!(
-        addr = %addr,
+        addr = %args.listen,
         pccs = %args.pccs_url,
         "Starting local PCCS proxy"
     );
 
-    let listener = tokio::net::TcpListener::bind(&addr)
+    let listener = tokio::net::TcpListener::bind(args.listen)
         .await
         .expect("Failed to bind");
     axum::serve(listener, app).await.expect("Server error");

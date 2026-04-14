@@ -10,4 +10,4 @@ filter = 'package(mpc-contract) and test(/sandbox/)'
 test-group = 'contract-sandbox'
 
 [profile.ci-other]
-default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_upload_quote_for_collateral_with_phala_endpoint) and not test(=tee_authority::tests::test_upload_quote_for_collateral_with_local_pccs_proxy) and not (test(/^registry::integration_tests::/) and package(tee-launcher))'
+default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(/^tee_authority::tests::test_upload_quote_for_collateral/) and not (test(/^registry::integration_tests::/) and package(tee-launcher))'
