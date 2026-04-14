@@ -8,7 +8,7 @@ use serde_json::json;
 /// Verifies all calls succeed and the signature queue processes all requests.
 #[tokio::test]
 #[expect(non_snake_case)]
-async fn parallel_sign_calls__rubust_ecdsa() {
+async fn parallel_sign_calls__robust_ecdsa() {
     const N: u64 = 3;
 
     // given
