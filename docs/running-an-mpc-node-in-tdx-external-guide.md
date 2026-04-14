@@ -1198,7 +1198,7 @@ git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 ```
 
 * Compile it using the reproduce build script. For this you need to install
-  `repro-env` and `docker-buildx`, and have the `docker` daemon
+  `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon
   running.
 
 ```bash
