@@ -98,6 +98,40 @@ impl From<PublicKeyExtended> for dtos::PublicKey {
     }
 }
 
+// Remove after #2167.
+#[cfg(feature = "compat")]
+impl TryFrom<dtos::PublicKeyExtended> for PublicKeyExtended {
+    type Error = PublicKeyExtendedConversionError;
+    fn try_from(pk: dtos::PublicKeyExtended) -> Result<Self, Self::Error> {
+        match pk {
+            dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
+                let pk: near_sdk::PublicKey = near_public_key
+                    .parse()
+                    .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
+                Ok(Self::Secp256k1 {
+                    near_public_key: pk,
+                })
+            }
+            dtos::PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                edwards_point,
+            } => {
+                let pk: near_sdk::PublicKey = near_public_key_compressed
+                    .parse()
+                    .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
+                let edwards_point = SerializableEdwardsPoint::from_bytes(&edwards_point)
+                    .into_option()
+                    .ok_or(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)?;
+                Ok(Self::Ed25519 {
+                    near_public_key_compressed: pk,
+                    edwards_point,
+                })
+            }
+            dtos::PublicKeyExtended::Bls12381 { public_key } => Ok(Self::Bls12381 { public_key }),
+        }
+    }
+}
+
 impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
     type Error = PublicKeyExtendedConversionError;
     fn try_from(near_public_key: near_sdk::PublicKey) -> Result<Self, Self::Error> {

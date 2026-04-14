@@ -1,6 +1,6 @@
 use crate::common;
 
-use near_mpc_contract_interface::types::{DomainPurpose, ProtocolContractState, SignatureScheme};
+use near_mpc_contract_interface::types::{Curve, DomainPurpose, ProtocolContractState};
 use rand::SeedableRng;
 
 /// Tests that signature and CKD requests are processed using the previous
@@ -36,7 +36,7 @@ async fn test_request_during_resharing() {
         .domains
         .domains
         .iter()
-        .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
+        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
         .expect("no Secp256k1 Sign domain");
     let ckd_domain = contract_state
         .domains

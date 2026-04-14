@@ -6,7 +6,7 @@ use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
-    CKDAppPublicKey, DomainPurpose, ProtocolContractState, RunningContractState, SignatureScheme,
+    CKDAppPublicKey, Curve, DomainPurpose, ProtocolContractState, RunningContractState,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -235,7 +235,7 @@ pub async fn send_sign_request(
         .domains
         .domains
         .iter()
-        .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
+        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
         .expect("no Secp256k1 Sign domain");
     let outcome = cluster
         .send_sign_request(domain.id, generate_ecdsa_payload(rng))
