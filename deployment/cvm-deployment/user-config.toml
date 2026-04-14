@@ -4,12 +4,7 @@
 # testnet genesis file, which requires ~20 GiB of RAM.
 
 [launcher_config]
-image_tags = ["main-9515e18"]
-image_name = "nearone/mpc-node"
-registry = "registry.hub.docker.com"
-rpc_request_timeout_secs = 10
-rpc_request_interval_secs = 1
-rpc_max_attempts = 20
+image_reference = "nearone/mpc-node"
 port_mappings = [
     { host = 8080, container = 8080 },
 ]

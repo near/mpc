@@ -34,7 +34,7 @@ async fn verify_foreign_transaction__should_succeed(
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    vote_chain_policy(&chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    vote_chain_policy(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
     let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
@@ -151,7 +151,7 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    vote_chain_policy(&chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    vote_chain_policy(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
 
