@@ -30,7 +30,7 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
     // Pre-kill: confirm all presignatures have been moved to the cold queue, so
     // ONLINE reflects the real count.  `setup_cluster` only waits for AVAILABLE
     // (which includes the hot queue), so ONLINE can still be 0 at that point.
-    // Without this step the kill-then-ONLINE==0 check would trivially pass before
+    // Without this step the post-kill ONLINE < N check would trivially pass before
     // detection ever fired, defeating the purpose of the wait.
     common::wait_metric_on_nodes(
         &cluster,
@@ -49,18 +49,20 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
 
     // when — wait for alive nodes to detect the dead node and rebuild without it.
     //
-    // The correct indicator that detection has fired is ONLINE dropping to 0:
-    // when update_condition_value() runs and removes node 0 from alive participants,
-    // it resets cold_ready=0, immediately bringing ONLINE to 0.  We confirmed
-    // ONLINE was >= N before the kill, so a 0 here is a genuine transition, not a
-    // trivial pass.  ONLINE stays 0 until entirely new 2-party presignatures are
-    // generated, so the second wait (ONLINE >= N) can only be satisfied by fresh
-    // 2-of-2 presignatures.
+    // Detection causes each node to reset cold_ready=0, dropping ONLINE to 0.
+    // We confirmed ONLINE >= N before the kill, so any value < N is a genuine
+    // transition (not a trivial pass). We use `< N` rather than `== 0` because
+    // the two alive nodes may detect the dead node at slightly different times;
+    // the first detector starts generating new 2-of-2 presignatures while the
+    // second node's ONLINE is still high. Requiring both nodes to be exactly 0
+    // in the same 500 ms poll is a race that fails under CI load. The `< N`
+    // predicate has a wide window (from detection until the full buffer is
+    // regenerated) so it tolerates the stagger.
     common::wait_metric_on_nodes(
         &cluster,
         &alive,
         metrics::OWNED_PRESIGNATURES_ONLINE,
-        |v| v == 0,
+        |v| v < PRESIGNATURES_TO_BUFFER as i64,
         CLUSTER_WAIT_TIMEOUT,
     )
     .await;
