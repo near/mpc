@@ -10,9 +10,13 @@ Currently an RPC provider is only accepted if and only if ALL mpc nodes have the
 As part of [#2648](https://github.com/near/mpc/issues/2648) We would like to be able configure nodes with RPC providers without requiring all other nodes to have the exact same configuration.
 
 Requirements:
-1. RPC providers can be whitelisted by being voted into the contract by node operators.
-2. Nodes do not need to use all RPC providers that are whitelisted, a threshold number is fine.
-3. 
+1. RPC providers can be whitelisted by being voted into the contract by node operators submitting votes. This will differ in contrast to current solution where the node is the one to submit votes for RPC providers it has in its configuration.
+
+2. Nodes do not need to have local configurations with all RPC providers that are whitelisted, a threshold number of RPC providers is fine.
+
+3. A node partaking in a foreign signature verification request will  
+
+Nodes no longer need a view over RPC providers of its peers. Instead of only querying a single RPC provider assigned with consistent hashing, the node with 
 
 ### Why
 The current setRequiring every node provider
