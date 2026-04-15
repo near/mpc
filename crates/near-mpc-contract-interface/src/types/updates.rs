@@ -14,7 +14,6 @@ type Sha256Digest = [u8; 32];
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
@@ -22,6 +21,7 @@ type Sha256Digest = [u8; 32];
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub struct ProposedUpdates {
     pub votes: BTreeMap<AccountId, u64>,
     pub updates: BTreeMap<u64, UpdateHash>,
@@ -37,7 +37,6 @@ pub struct ProposedUpdates {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
@@ -45,6 +44,7 @@ pub struct ProposedUpdates {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub enum UpdateHash {
     Code(Sha256Digest),
     Config(Sha256Digest),

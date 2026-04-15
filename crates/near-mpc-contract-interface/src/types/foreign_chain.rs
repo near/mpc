@@ -651,7 +651,6 @@ pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<Rpc
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
     derive_more::From,
@@ -662,6 +661,7 @@ pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<Rpc
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
 
 #[derive(
@@ -695,7 +695,6 @@ pub struct RpcProvider {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
@@ -703,6 +702,7 @@ pub struct RpcProvider {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub struct ForeignChainPolicyVotes {
     pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
 }
@@ -717,7 +717,6 @@ pub struct ForeignChainPolicyVotes {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
     derive_more::Deref,
@@ -727,6 +726,7 @@ pub struct ForeignChainPolicyVotes {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub struct NodeForeignChainConfigurations {
     pub foreign_chain_configuration_by_node: BTreeMap<AccountId, ForeignChainConfiguration>,
 }

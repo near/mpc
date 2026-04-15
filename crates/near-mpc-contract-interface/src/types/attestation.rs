@@ -63,7 +63,6 @@ pub enum Attestation {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
@@ -71,6 +70,7 @@ pub enum Attestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub enum VerifiedAttestation {
     Dstack(VerifiedDstackAttestation),
     Mock(MockAttestation),
@@ -85,7 +85,6 @@ pub enum VerifiedAttestation {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
@@ -93,6 +92,7 @@ pub enum VerifiedAttestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub struct VerifiedDstackAttestation {
     /// The digest of the MPC image running.
     pub mpc_image_hash: NodeImageHash,
@@ -249,7 +249,6 @@ impl fmt::Debug for DstackAttestation {
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
@@ -257,6 +256,7 @@ impl fmt::Debug for DstackAttestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub struct AppCompose {
     pub manifest_version: u32,
     pub name: String,
@@ -349,7 +349,8 @@ pub struct EventLog {
 }
 
 /// Arguments for the `submit_participant_info` contract call.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub struct SubmitParticipantInfoArgs {
     pub proposed_participant_attestation: Attestation,
     pub tls_public_key: Ed25519PublicKey,

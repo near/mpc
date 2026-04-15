@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
     PartialOrd,
     Hash,
     Serialize,
-    Deserialize,
     BorshSerialize,
     BorshDeserialize,
 )]
@@ -19,6 +18,7 @@ use serde::{Deserialize, Serialize};
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Deserialize))]
 pub struct Metrics {
     pub sign_with_v1_payload_count: u64,
     pub sign_with_v2_payload_count: u64,
