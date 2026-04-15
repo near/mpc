@@ -51,9 +51,8 @@ impl AttemptId {
         AttemptId(0)
     }
 
-    // Remove after #2167.
-    #[cfg(feature = "compat")]
-    pub fn from_raw(val: u64) -> Self {
+    // TODO(#381): Remove once the node no longer depends on the contract crate.
+    pub(crate) fn from_u64(val: u64) -> Self {
         AttemptId(val)
     }
 }
@@ -160,12 +159,6 @@ impl AuthenticatedParticipantId {
         self.0.clone()
     }
 
-    // Remove after #2167.
-    #[cfg(feature = "compat")]
-    pub fn from_raw(id: ParticipantId) -> Self {
-        Self(id)
-    }
-
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
         participants
@@ -186,12 +179,6 @@ pub struct AuthenticatedAccountId(AccountId);
 impl AuthenticatedAccountId {
     pub fn get(&self) -> &AccountId {
         &self.0
-    }
-
-    // Remove after #2167.
-    #[cfg(feature = "compat")]
-    pub fn from_raw(account_id: AccountId) -> Self {
-        Self(account_id)
     }
 
     pub fn new(participants: &Participants) -> Result<Self, Error> {

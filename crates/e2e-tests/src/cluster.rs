@@ -76,17 +76,17 @@ impl MpcClusterConfig {
                 DomainConfig {
                     id: DomainId(0),
                     curve: Curve::Secp256k1,
-                    purpose: Some(DomainPurpose::Sign),
+                    purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(1),
                     curve: Curve::Edwards25519,
-                    purpose: Some(DomainPurpose::Sign),
+                    purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     curve: Curve::Bls12381,
-                    purpose: Some(DomainPurpose::CKD),
+                    purpose: DomainPurpose::CKD,
                 },
             ],
             binary_paths: vec![default_mpc_binary_path()],

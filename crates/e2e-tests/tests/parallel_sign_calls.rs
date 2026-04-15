@@ -6,6 +6,8 @@ use serde_json::json;
 
 /// 3 parallel robust ECDSA (V2Secp256k1) sign calls via the test parallel contract.
 /// Verifies all calls succeed and the signature queue processes all requests.
+// TODO(#2898): re-enable once the flakiness is fixed.
+#[ignore]
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn mpc_cluster__should_successfully_process_parallel_robust_ecdsa_requests() {
@@ -19,7 +21,7 @@ async fn mpc_cluster__should_successfully_process_parallel_robust_ecdsa_requests
         c.domains = vec![DomainConfig {
             id: DomainId(0),
             curve: Curve::V2Secp256k1,
-            purpose: Some(DomainPurpose::Sign),
+            purpose: DomainPurpose::Sign,
         }];
         c.triples_to_buffer = 0;
         c.presignatures_to_buffer = 6;

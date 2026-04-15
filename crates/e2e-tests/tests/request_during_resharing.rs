@@ -36,13 +36,13 @@ async fn test_request_during_resharing() {
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
+        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
         .expect("no Secp256k1 Sign domain");
     let ckd_domain = contract_state
         .domains
         .domains
         .iter()
-        .find(|d| d.purpose == Some(DomainPurpose::CKD))
+        .find(|d| d.purpose == DomainPurpose::CKD)
         .expect("no CKD domain");
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);

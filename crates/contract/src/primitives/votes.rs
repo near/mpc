@@ -12,16 +12,6 @@ pub struct ThresholdParametersVotes {
 }
 
 impl ThresholdParametersVotes {
-    // Remove after #2167.
-    #[cfg(feature = "compat")]
-    pub fn from_raw(
-        proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
-    ) -> Self {
-        Self {
-            proposal_by_account,
-        }
-    }
-
     /// return the number of votes for `proposal` casted by members of `participants`
     pub fn n_votes(&self, proposal: &ThresholdParameters, participants: &Participants) -> u64 {
         self.proposal_by_account

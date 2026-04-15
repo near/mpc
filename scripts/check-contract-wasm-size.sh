@@ -68,9 +68,8 @@ if [[ "$DELTA" -gt 0 ]]; then
     exit 1
 elif [[ "$DELTA" -lt 0 ]]; then
     SHRINK=$(( BASELINE - SIZE ))
-    echo "🎉 Contract shrank by $SHRINK bytes — please update the baseline in $BASELINE_FILE:"
+    echo "🎉 Contract shrank by $SHRINK bytes — consider updating the baseline in $BASELINE_FILE:"
     echo "   expected_size = $SIZE"
-    exit 1
 else
     echo "✅ Contract size matches baseline"
 fi

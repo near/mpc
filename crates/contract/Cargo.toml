@@ -45,7 +45,7 @@ test-utils = [
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
 # Exposes constructors for DTO-to-internal type conversion in the node.
-# Remove after #2167, once the node no longer depends on internal contract types.
+# TODO(#381): Remove once the node no longer depends on the contract crate.
 compat = []
 dev-utils = [
     "rand",

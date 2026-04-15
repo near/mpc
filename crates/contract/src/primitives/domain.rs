@@ -201,16 +201,6 @@ pub struct AddDomainsVotes {
 }
 
 impl AddDomainsVotes {
-    // Remove after #2167.
-    #[cfg(feature = "compat")]
-    pub fn from_raw(
-        proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
-    ) -> Self {
-        Self {
-            proposal_by_account,
-        }
-    }
-
     /// Votes for the proposal, returning the total number of voters so far who
     /// have proposed the exact same domains to add.
     /// If the participant had voted already, this replaces the existing vote.

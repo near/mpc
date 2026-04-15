@@ -101,8 +101,8 @@ mod tests {
     use crate::providers::ckd::CKDTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_contract::primitives::domain::DomainId;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use near_mpc_contract_interface::types::DomainId;
+    use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use rand::{Rng as _, SeedableRng as _};
     use std::sync::Arc;
     use threshold_signatures::confidential_key_derivation::BLS12381SHA256;
@@ -136,11 +136,11 @@ mod tests {
                 let keyshare = keygens.get(&participant_id.into()).map(|k| k.private_share);
                 let pubkey = keygens.iter().next().unwrap().1.clone().public_key;
                 let old_participants = old_participants.clone();
-                let key_id = KeyEventId::new(
-                    EpochId::new(42),
-                    DomainId::legacy_ecdsa_id(),
-                    AttemptId::legacy_attempt_id(),
-                );
+                let key_id = KeyEventId {
+                    epoch_id: EpochId(42),
+                    domain_id: DomainId(0),
+                    attempt_id: AttemptId(0),
+                };
                 async move {
                     // We'll have the first participant be the leader.
                     let channel = if participant_id == all_participant_ids[0] {

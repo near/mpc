@@ -1,8 +1,7 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
 use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
-use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::state::ProtocolContractState;
+use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
@@ -36,12 +35,12 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
-use mpc_contract::primitives::domain::{Curve, DomainConfig};
 use mpc_contract::primitives::signature::Payload;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
 use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_contract_interface::types::{Curve, DomainConfig};
 use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
@@ -88,11 +87,13 @@ pub fn make_key_storage_config(
 pub async fn get_keyshares(
     home_dir: PathBuf,
     local_encryption_key: [u8; 16],
-    keyset: &Keyset,
+    keyset: &near_mpc_contract_interface::types::Keyset,
 ) -> anyhow::Result<Vec<Keyshare>> {
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
     let keystore = key_storage_config.create().await.unwrap();
-    keystore.get_keyshares(keyset).await
+    let contract_keyset: mpc_contract::primitives::key_state::Keyset =
+        keyset.clone().try_into().unwrap();
+    keystore.get_keyshares(&contract_keyset).await
 }
 
 impl OneNodeTestConfig {

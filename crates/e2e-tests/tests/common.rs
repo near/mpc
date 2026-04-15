@@ -235,7 +235,7 @@ pub async fn send_sign_request(
         .domains
         .domains
         .iter()
-        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
+        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
         .expect("no Secp256k1 Sign domain");
     let outcome = cluster
         .send_sign_request(domain.id, generate_ecdsa_payload(rng))
@@ -257,7 +257,7 @@ pub async fn send_ckd_request(
         .domains
         .domains
         .iter()
-        .find(|d| d.purpose == Some(DomainPurpose::CKD))
+        .find(|d| d.purpose == DomainPurpose::CKD)
         .expect("no CKD domain");
     let outcome = cluster
         .send_ckd_request(domain.id, generate_ckd_app_public_key(rng))
