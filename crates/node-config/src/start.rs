@@ -26,9 +26,6 @@ pub struct StartConfig {
     pub log: LogConfig,
     /// Optional override for the TDX quote collateral endpoint URL.
     /// When set, overrides the URL injected by the launcher in the `[tee]` section.
-    /// This does not affect attestation security — the collateral data is
-    /// cryptographically signed by Intel regardless of where it is fetched from.
-    /// Example: `"http://51.68.219.1:8082/api/v1/attestations/verify"`
     #[serde(default)]
     pub quote_upload_url: Option<url::Url>,
 }
