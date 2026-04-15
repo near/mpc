@@ -2,6 +2,6 @@
 -e ./nearcore_pytest
 blspy
 py-arkworks-bls12381
-pytest==8.3.4
+pytest==9.0.3
 gitpython
 tomli_w
