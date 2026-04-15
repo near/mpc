@@ -72,6 +72,12 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
                     .into_response();
             }
 
+            if svg_buffer.is_empty() {
+                // No CPU samples were captured during the sampling window
+                // (all threads were sleeping in blocked libraries such as libc/pthread).
+                return StatusCode::NO_CONTENT.into_response();
+            }
+
             (
                 StatusCode::OK,
                 [(header::CONTENT_TYPE, CONTENT_TYPE_SVG)],

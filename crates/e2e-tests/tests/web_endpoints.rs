@@ -116,7 +116,9 @@ async fn test_web_endpoints() {
         )
         .await;
 
-        // pprof flamegraph: verify SVG content-type and body.
+        // pprof flamegraph: verify the endpoint is reachable and returns either a
+        // valid SVG (200) or no-content (204 — zero CPU samples captured because all
+        // threads were sleeping in blocked libraries such as libc/pthread).
         let resp = client
             .get(format!(
                 "http://{pprof_addr}/profiler/pprof/flamegraph?sampling_duration_secs=1"
@@ -125,25 +127,27 @@ async fn test_web_endpoints() {
             .send()
             .await
             .unwrap_or_else(|e| panic!("node {i}: pprof request failed: {e}"));
-        assert_eq!(
-            resp.status(),
-            reqwest::StatusCode::OK,
-            "node {i}: pprof status"
-        );
-        let content_type = resp
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+        let status = resp.status();
         assert!(
-            content_type.starts_with("image/svg+xml"),
-            "node {i}: wrong pprof content-type: {content_type}"
+            status == reqwest::StatusCode::OK || status == reqwest::StatusCode::NO_CONTENT,
+            "node {i}: unexpected pprof status {status}"
         );
-        let body = resp.text().await.unwrap();
-        assert!(
-            body.contains("<svg") && body.contains("</svg>"),
-            "node {i}: flamegraph missing svg tags"
-        );
+        if status == reqwest::StatusCode::OK {
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            assert!(
+                content_type.starts_with("image/svg+xml"),
+                "node {i}: wrong pprof content-type: {content_type}"
+            );
+            let body = resp.text().await.unwrap();
+            assert!(
+                body.contains("<svg") && body.contains("</svg>"),
+                "node {i}: flamegraph missing svg tags"
+            );
+        }
 
         tracing::info!(node = i, "all web endpoints verified");
     }
