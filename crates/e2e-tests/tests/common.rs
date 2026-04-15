@@ -6,7 +6,8 @@ use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
-    CKDAppPublicKey, Curve, DomainPurpose, ProtocolContractState, RunningContractState,
+    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainId, DomainPurpose, ProtocolContractState,
+    PublicKey, PublicKeyExtended, RunningContractState,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -20,10 +21,9 @@ pub const SUBMIT_PARTICIPANT_INFO_PORT_SEED: u16 = 5;
 pub const CANCELLATION_OF_RESHARING_PORT_SEED: u16 = 6;
 pub const ROBUST_ECDSA_PORT_SEED: u16 = 7;
 pub const PARALLEL_SIGN_CALLS_PORT_SEED: u16 = 8;
-pub const ROBUST_ECDSA_PARALLEL_PORT_SEED: u16 = 9;
-pub const CKD_VERIFICATION_PORT_SEED: u16 = 10;
-pub const LOST_ASSETS_PORT_SEED: u16 = 11;
-pub const CKD_PV_VERIFICATION_PORT_SEED: u16 = 12;
+pub const CKD_VERIFICATION_PORT_SEED: u16 = 9;
+pub const LOST_ASSETS_PORT_SEED: u16 = 10;
+pub const CKD_PV_VERIFICATION_PORT_SEED: u16 = 11;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -224,6 +224,22 @@ pub fn generate_eddsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
 pub fn generate_ckd_app_public_key(rng: &mut impl rand::Rng) -> CKDAppPublicKey {
     let point = G1Projective::generator() * Scalar::from(rng.next_u64());
     CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey::from(&point))
+}
+
+/// Extract the BLS12381 G2 public key for a given domain from running contract state.
+pub fn bls_public_key(running: &RunningContractState, domain_id: DomainId) -> Bls12381G2PublicKey {
+    let key_for_domain = running
+        .keyset
+        .domains
+        .iter()
+        .find(|k| k.domain_id == domain_id)
+        .expect("no key found for BLS12381 domain");
+    match &key_for_domain.key {
+        PublicKeyExtended::Bls12381 {
+            public_key: PublicKey::Bls12381(g2),
+        } => g2.clone(),
+        other => panic!("expected Bls12381 key, got {other:?}"),
+    }
 }
 
 pub async fn send_sign_request(

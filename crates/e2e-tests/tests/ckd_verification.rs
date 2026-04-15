@@ -1,32 +1,24 @@
 use crate::common;
 
-use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
-use e2e_tests::CKD_PV_GAS;
+use blstrs::{G1Projective, G2Projective, Scalar};
 use group::Group as _;
 use group::ff::Field as _;
-use group::prime::PrimeCurveAffine as _;
+use mpc_contract::crypto_shared::kdf::derive_app_id;
+use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDAppPublicKeyPV, Curve, DomainId,
-    DomainPurpose, PublicKey, PublicKeyExtended, RunningContractState,
+    Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDAppPublicKeyPV, Curve,
+    DomainPurpose,
 };
 use rand::SeedableRng;
-use sha3::{Digest, Sha3_256};
+use threshold_signatures::confidential_key_derivation::{
+    CKDOutput, VerifyingKey, ciphersuite::verify_signature,
+};
 
-const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
-const APP_ID_DERIVATION_PREFIX: &str = "near-mpc v0.1.0 app_id derivation:";
 // derivation_path sent by send_ckd_request
 const DERIVATION_PATH: &str = "test";
 
-fn derive_app_id(account_id: &str, path: &str) -> [u8; 32] {
-    let input = format!("{APP_ID_DERIVATION_PREFIX}{account_id},{path}");
-    let mut h = Sha3_256::new();
-    h.update(input.as_bytes());
-    h.finalize().into()
-}
-
-/// Verify the CKD response: decrypt via ElGamal, then check the BLS pairing.
 fn verify_ckd(
-    account_id: &str,
+    account_id: &AccountId,
     path: &str,
     mpc_public_key: &Bls12381G2PublicKey,
     private_key: Scalar,
@@ -37,30 +29,11 @@ fn verify_ckd(
     let big_c = G1Projective::try_from(big_c).expect("invalid big_c G1 point");
     let mpc_pk = G2Projective::try_from(mpc_public_key).expect("invalid MPC G2 key");
 
-    let secret: G1Affine = (big_c - big_y * private_key).into();
-    let mpc_pk_affine: G2Affine = mpc_pk.into();
-
+    let mpc_vk = VerifyingKey::new(mpc_pk);
+    let confidential_key = CKDOutput::new(big_y, big_c).unmask(private_key);
     let app_id = derive_app_id(account_id, path);
-    let hash_input = [mpc_public_key.as_slice(), &app_id].concat();
-    let hash_point: G1Affine =
-        G1Projective::hash_to_curve(&hash_input, NEAR_CKD_DOMAIN, &[]).into();
 
-    blstrs::pairing(&hash_point, &mpc_pk_affine) == blstrs::pairing(&secret, &G2Affine::generator())
-}
-
-fn bls_public_key(running: &RunningContractState, domain_id: DomainId) -> Bls12381G2PublicKey {
-    let key_for_domain = running
-        .keyset
-        .domains
-        .iter()
-        .find(|k| k.domain_id == domain_id)
-        .expect("no key found for BLS12381 domain");
-    match &key_for_domain.key {
-        PublicKeyExtended::Bls12381 {
-            public_key: PublicKey::Bls12381(g2),
-        } => g2.clone(),
-        other => panic!("expected Bls12381 key, got {other:?}"),
-    }
+    verify_signature(&mpc_vk, app_id.as_ref(), &confidential_key).is_ok()
 }
 
 /// Verify that a CKD response (AppPublicKey variant) is mathematically correct.
@@ -79,7 +52,7 @@ async fn ckd_response__passes_cryptographic_verification() {
         .expect("no Bls12381 CKD domain found")
         .clone();
 
-    let mpc_pk = bls_public_key(&running, bls_domain.id);
+    let mpc_pk = common::bls_public_key(&running, bls_domain.id);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
     let private_key = Scalar::random(&mut rng);
@@ -106,10 +79,9 @@ async fn ckd_response__passes_cryptographic_verification() {
     let big_c: Bls12381G1PublicKey =
         serde_json::from_value(response["big_c"].clone()).expect("failed to parse big_c");
 
-    let account_id = cluster.default_user_account().as_str();
     assert!(
         verify_ckd(
-            account_id,
+            cluster.default_user_account(),
             DERIVATION_PATH,
             &mpc_pk,
             private_key,
@@ -136,7 +108,7 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
         .expect("no Bls12381 CKD domain found")
         .clone();
 
-    let mpc_pk = bls_public_key(&running, bls_domain.id);
+    let mpc_pk = common::bls_public_key(&running, bls_domain.id);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(2);
     let private_key = Scalar::random(&mut rng);
@@ -149,7 +121,7 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
 
     // when
     let outcome = cluster
-        .send_ckd_request_with_gas(bls_domain.id, app_public_key, CKD_PV_GAS)
+        .send_ckd_request(bls_domain.id, app_public_key)
         .await
         .expect("CKD PV request transaction failed");
 
@@ -166,10 +138,9 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
     let big_c: Bls12381G1PublicKey =
         serde_json::from_value(response["big_c"].clone()).expect("failed to parse big_c");
 
-    let account_id = cluster.default_user_account().as_str();
     assert!(
         verify_ckd(
-            account_id,
+            cluster.default_user_account(),
             DERIVATION_PATH,
             &mpc_pk,
             private_key,
