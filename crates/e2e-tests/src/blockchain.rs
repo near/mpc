@@ -7,7 +7,7 @@ const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
-/// Wraps a `near_kit::Near` client signed as the root/funder account.
+/// Wraps `near_kit::Near` client signed as the root/funder account.
 /// Whether the RPC URL points to a local Docker sandbox or NEAR testnet,
 /// the code path is identical.
 pub struct NearBlockchain {
@@ -54,7 +54,8 @@ impl NearBlockchain {
                 .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()));
         }
 
-        tx.send()
+        tx.wait_until(near_kit::TxExecutionStatus::Final)
+            .send()
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account {name}: {e}"))?;
         Ok(())
@@ -73,6 +74,7 @@ impl NearBlockchain {
             .transfer(near_kit::NearToken::from_near(balance_near))
             .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()))
             .deploy(wasm.to_vec())
+            .wait_until(near_kit::TxExecutionStatus::Final)
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account and deploy to {name}: {e}"))?;
