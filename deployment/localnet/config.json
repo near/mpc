@@ -4,7 +4,7 @@
   "validator_key_file": "validator_key.json",
   "node_key_file": "node_key.json",
   "rpc": {
-    "addr": "0.0.0.0:3030",
+    "addr": "127.0.0.1:3030",
     "prometheus_addr": null,
     "cors_allowed_origins": [
       "*"
@@ -33,7 +33,7 @@
     }
   },
   "network": {
-    "addr": "0.0.0.0:24566",
+    "addr": "127.0.0.1:24566",
     "boot_nodes": "",
     "whitelist_nodes": "",
     "max_num_peers": 40,
@@ -78,24 +78,20 @@
     },
     "public_addrs": [],
     "allow_private_ip_in_public_addrs": false,
-    "trusted_stun_servers": [
-      "stun.l.google.com:19302",
-      "stun1.l.google.com:19302",
-      "stun2.l.google.com:19302",
-      "stun3.l.google.com:19302",
-      "stun4.l.google.com:19302"
-    ],
+    "trusted_stun_servers": [],
+    "tier1": {
+      "enable_inbound": false,
+      "enable_outbound": false,
+      "connect_interval": {
+        "secs": 60,
+        "nanos": 0
+      },
+      "new_connections_per_attempt": 50
+    },
     "experimental": {
       "inbound_disabled": false,
       "connect_only_to_boot_nodes": false,
       "skip_sending_tombstones_seconds": 0,
-      "tier1_enable_inbound": true,
-      "tier1_enable_outbound": true,
-      "tier1_connect_interval": {
-        "secs": 60,
-        "nanos": 0
-      },
-      "tier1_new_connections_per_attempt": 50,
       "network_config_overrides": {
         "connect_to_reliable_peers_on_startup": null,
         "max_send_peers": null,
@@ -204,11 +200,11 @@
     "nanos": 0
   },
   "view_client_threads": 4,
-  "view_client_throttle_period": {
+  "state_request_throttle_period": {
     "secs": 30,
     "nanos": 0
   },
-  "view_client_num_state_requests_per_throttle_period": 30,
+  "state_requests_per_throttle_period": 30,
   "trie_viewer_state_size_limit": 50000,
   "store": {
     "path": null,
@@ -262,9 +258,6 @@
   },
   "state_sync_enabled": true,
   "epoch_sync": {
-    "disable_epoch_sync_for_bootstrapping": false,
-    "ignore_epoch_sync_network_requests": false,
-    "epoch_sync_horizon": 216000,
     "timeout_for_epoch_sync": {
       "secs": 60,
       "nanos": 0
