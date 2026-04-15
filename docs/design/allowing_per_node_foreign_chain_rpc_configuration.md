@@ -2,12 +2,18 @@
 
 
 ## Background
-For the foreign chain transaction validation feature supported by the MPC network, individual MPC nodes each query a set of configured RPC providers  to verify the state of a foreign transaction. Each MPC node that partakes in a signing operation for verification of a foreign chain transaction will get an RPC provider randomly assigned with consistent hashing. That means each MPC node only queries 1 RPC provider per verification request.
+For the foreign chain transaction validation feature supported by the MPC network, individual MPC nodes each query a set
+of configured RPC providers  to verify the state of a foreign transaction. Each MPC node that partakes in a signing operation
+for verification of a foreign chain transaction will get an RPC provider randomly assigned with consistent hashing. That means
+each MPC node only queries 1 RPC provider per verification request.
 
-Currently an RPC provider is only accepted if and only if ALL mpc nodes have their local configuration setup to use that RPC provider on a per chain basis. That is for example if an MPC node wants to use Quiknode RPC provider for Solana, then all other MPC nodes must also add Quiknode in their Solana configuration on their nodes.
+Currently an RPC provider is only accepted if and only if ALL mpc nodes have their local configuration setup to use that RPC
+provider on a per chain basis. That is for example if an MPC node wants to use Quiknode RPC provider for Solana, then all other
+MPC nodes must also add Quiknode in their Solana configuration on their nodes.
 
 ## What
-As part of [#2648](https://github.com/near/mpc/issues/2648) We would like to be able configure nodes with RPC providers without requiring all other nodes to have the exact same configuration.
+As part of [#2648](https://github.com/near/mpc/issues/2648) We would like to be able configure nodes with RPC providers without
+requiring all other nodes to have the exact same configuration.
 
 ### Requirements
 1. RPC providers can be whitelisted by being voted into the contract by node operators submitting votes. This will differ in contrast to current solution where the node is the one to submit votes for RPC providers it has in its configuration.
@@ -22,7 +28,7 @@ As part of [#2648](https://github.com/near/mpc/issues/2648) We would like to be 
 The current setup has many limitations and was implemented as an MVP.
 
 ### Availability
-Currently, if a single RPC provider is unresponsive, then a foreign chain validation will fail due to the nodes that are mapped to that RPC provider will fail. 
+Currently, if a single RPC provider is unresponsive, then a foreign chain validation will fail due to the nodes that are mapped to thatRPC provider will fail. 
 ### Security
 By requiring every node to have a valid quorum of RPC providers for a verification, each node does not need to trust the other nodes' RPC configurations.
 ### Flexibility
@@ -80,11 +86,13 @@ On startup, the node will check its [local foreign chain configuration ](https:/
 If an RPC provider with a base url that is not whitelisted is detected, then that RPC entry should be dropped and an error log emitted.
 > We can alternatively hard crash the node, so it's obvious when a misconfiguration is done.
 
-Since the nodes are running in a Trusted Execution Environment (TEE), we use this functionality to have the node guard against node operators that might use malicious RPC urls.
+Since the nodes are running in a Trusted Execution Environment (TEE), we use this functionality to have the node guard against node operators
+that might use malicious RPC urls.
 
 
 ### Individual Node quorum of RPC providers for verification requests
-When a foreign TX verification request is processed by a set of nodes, every node will each individually query all their respectively configured RPC providers. A node will consider the foreign tx verified iff at least a quorum number of RPC providers could verify the transaction.
+When a foreign TX verification request is processed by a set of nodes, every node will each individually query all their respectively configured
+RPC providers. A node will consider the foreign tx verified iff at least a quorum number of RPC providers could verify the transaction.
 
 
 ### Nodes submit onchain the configured foreign chains
