@@ -10,7 +10,7 @@ filter = 'package(mpc-contract) and test(/sandbox/)'
 test-group = 'contract-sandbox'
 
 [test-groups.e2e]
-# TODO(#2898): tune this if parallel_sign_calls test is still
+# TODO(#2898): tune this if parallel_sign_calls test is still flaky.
 max-threads = 4
 
 [profile.ci-e2e]
