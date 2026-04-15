@@ -28,11 +28,7 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
     let dead_idx = 0;
     let alive: Vec<usize> = (1..3).collect();
 
-    // Pre-kill: confirm all presignatures have been moved to the cold queue, so
-    // ONLINE reflects the real count.  `setup_cluster` only waits for AVAILABLE
-    // (which includes the hot queue), so ONLINE can still be 0 at that point.
-    // Without this step the post-kill ONLINE < N check would trivially pass before
-    // detection ever fired, defeating the purpose of the wait.
+    // Wait for buffered presignatures to reach PRESIGNATURES_TO_BUFFER.
     common::wait_metric_on_nodes(
         &cluster,
         &alive,
@@ -42,23 +38,14 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
     )
     .await;
 
+    // when
     // Kill the node and wipe its data — its share of every presignature is gone.
     cluster
         .kill_nodes(&[dead_idx])
         .expect("failed to kill node");
     cluster.wipe_db(&[dead_idx]).expect("failed to wipe DB");
 
-    // when — wait for alive nodes to detect the dead node and rebuild without it.
-    //
-    // Detection causes each node to reset cold_ready=0, dropping ONLINE to 0.
-    // We confirmed ONLINE >= N before the kill, so any value < N is a genuine
-    // transition (not a trivial pass). We use `< N` rather than `== 0` because
-    // the two alive nodes may detect the dead node at slightly different times;
-    // the first detector starts generating new 2-of-2 presignatures while the
-    // second node's ONLINE is still high. Requiring both nodes to be exactly 0
-    // in the same 500 ms poll is a race that fails under CI load. The `< N`
-    // predicate has a wide window (from detection until the full buffer is
-    // regenerated) so it tolerates the stagger.
+    // Wait for buffered presignatures to decrease as a result of killed node.
     common::wait_metric_on_nodes(
         &cluster,
         &alive,
@@ -68,6 +55,8 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
     )
     .await;
 
+    // Wait for buffered presignatures to reach again PRESIGNATURES_TO_BUFFER
+    // among nodes that are still alive.
     common::wait_metric_on_nodes(
         &cluster,
         &alive,
