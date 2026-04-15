@@ -41,7 +41,7 @@ Now, please do the following things:
    We recommend using the GitHub UI to create the branch as it will automatically link it and use a canonical format for the branch name.
 3. Check out the branch and get to work.
 
-Once you've made the relevant changes to fulfill the acceptance criteria and the code lives up to our [engineering standards](./ENGINEERING_STANDARDS.md),
+Once you've made the relevant changes to fulfill the acceptance criteria and the code lives up to our [engineering standards](./docs/engineering-standards.md),
 it's time to open a PR.
 
 When opening the PR, make sure to link the issue in the PR description.
@@ -49,7 +49,7 @@ Add any other notes that will be helpful for reviewers in the description.
 However, in many cases it is sufficient to only reference the issue in the PR description.
 
 # Engineering Standards
-All code must meet the conventions in [ENGINEERING_STANDARDS.md](./ENGINEERING_STANDARDS.md).
+All code must meet the conventions in [engineering-standards.md](./docs/engineering-standards.md).
 
 # PR review guidelines
 This section mainly targets current maintainers of this code authorized

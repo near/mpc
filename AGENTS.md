@@ -94,7 +94,7 @@ NotInitialized → Running ↔ Initializing/Resharing
 
 ## Code Style
 
-**Before writing or modifying code, read [ENGINEERING_STANDARDS.md](./ENGINEERING_STANDARDS.md).** It describes mandatory coding and testing conventions — including test structure, panic policy, and I/O separation — that apply to every change.
+**Before writing or modifying code, read [engineering-standards.md](./docs/engineering-standards.md).** It describes mandatory coding and testing conventions — including test structure, panic policy, and I/O separation — that apply to every change.
 
 ### Test Structure
 New tests must use this form:
@@ -113,7 +113,7 @@ fn <system_under_test>__should_<test_assertion>() {
 }
 ```
 
-See `ENGINEERING_STANDARDS.md` for the full rationale and additional testing conventions.
+See `docs/engineering-standards.md` for the full rationale and additional testing conventions.
 
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
