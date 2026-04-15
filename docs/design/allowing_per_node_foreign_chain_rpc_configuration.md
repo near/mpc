@@ -2,21 +2,21 @@
 
 
 ## Background
-For the foreign chain transaction validation feature supported by the MPC network, individual MPC nodes each each query a set of configured RPC providers  to verify the state of a foreign transaction. Each MPC node that partakes in a signing operation for verification of a foreign chain transaction will get an RPC provider randomly assigned with consistent hashing. That means each MPC node only queries 1 RPC provider per verification request.
+For the foreign chain transaction validation feature supported by the MPC network, individual MPC nodes each query a set of configured RPC providers  to verify the state of a foreign transaction. Each MPC node that partakes in a signing operation for verification of a foreign chain transaction will get an RPC provider randomly assigned with consistent hashing. That means each MPC node only queries 1 RPC provider per verification request.
 
 Currently an RPC provider is only accepted if and only if ALL mpc nodes have their local configuration setup to use that RPC provider on a per chain basis. That is for example if an MPC node wants to use Quiknode RPC provider for Solana, then all other MPC nodes must also add Quiknode in their Solana configuration on their nodes.
 
 ## What
 As part of [#2648](https://github.com/near/mpc/issues/2648) We would like to be able configure nodes with RPC providers without requiring all other nodes to have the exact same configuration.
 
-### __Requirements__:
+### Requirements
 1. RPC providers can be whitelisted by being voted into the contract by node operators submitting votes. This will differ in contrast to current solution where the node is the one to submit votes for RPC providers it has in its configuration.
 
-2. Nodes do not need to have local configurations with all RPC providers that are whitelisted, a threshold number of RPC providers is fine.
+2. Nodes do not need to have local configurations with all RPC providers that are whitelisted, a quorum number of RPC providers is fine.
 
 3. Every node partaking in a foreign signature verification request will query all its locally configured RPC providers independent of other nodes. A quorum of the RPC providers must all agree on the verifications.
 
-Nodes no longer need a view over RPC providers of its peers. Instead of only querying a single RPC provider assigned with consistent hashing, the node with 
+4. A foreign chain is considered supported by the MPC network, iff every node has at least quorum number valid RPC providers. 
 
 ## Why
 The current setup has many limitations and was implemented as an MVP.
@@ -48,11 +48,11 @@ struct MpcContractState {
 }
 
 struct RpcPolicies {
-    foreign_chains: BtreeMap<ForeignChain, RpcPolicy>,
+    foreign_chains: BTreeMap<ForeignChain, RpcPolicy>,
 }
 
 struct RpcPolicy {
-    whitelisted_rpc_providers: BtreeSet<RpcProvider>,
+    whitelisted_rpc_providers: BTreeSet<RpcProvider>,
     // the minimum number of RPC providers that must verify the foreign
     // tx request for a node to consider the tx as verified.
     quorum_threshold: u8,
@@ -62,6 +62,7 @@ enum ForeignChain {
     Solana,
     Bitcoin,
     Ethereum,
+    //.
 }
 
 struct RpcProvider {
@@ -83,8 +84,10 @@ Since the nodes are running in a Trusted Execution Environment (TEE), we use thi
 
 
 ### Individual Node quorum of RPC providers for verification requests
-When a foreign TX verification request is processed by a set of nodes, every node will each individually query all their respectively configured RPC providers. A node will consider 
+When a foreign TX verification request is processed by a set of nodes, every node will each individually query all their respectively configured RPC providers. A node will consider the foreign tx verified iff at least a quorum number of RPC providers could verify the transaction.
 
 
-### Nodes submit votes for 
-Nodes should submit their configuration on chain, to let the network know with chains they have configured and as a consequence support. Functionality for this is already addedon the contract side in [#2784](https://github.com/near/mpc/pull/2784).
+### Nodes submit onchain the configured foreign chains
+Nodes should submit their configuration on chain, to let the network know with chains they have configured and as a consequence support. Functionality for this is already added the contract side in [#2784](https://github.com/near/mpc/pull/2784).
+
+The contract will use this information as a source of truth for which foreign blockchains the MPC network support foreign tx validation requests for.
