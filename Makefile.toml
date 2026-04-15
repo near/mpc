@@ -97,6 +97,11 @@ args = ["scripts/check-kebab-case-files.sh"]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
 
+[tasks.check-contract-size]
+description = "Check reproducible contract WASM size against baseline"
+command = "bash"
+args = ["scripts/check-contract-wasm-size.sh"]
+
 [tasks.assert-matches]
 description = "Check for assert!(matches!(...)) — use assert_matches!() instead"
 command = "bash"
