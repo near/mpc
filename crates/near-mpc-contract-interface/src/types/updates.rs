@@ -8,16 +8,7 @@ use std::collections::BTreeMap;
 type Sha256Digest = [u8; 32];
 
 #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -31,16 +22,7 @@ pub struct ProposedUpdates {
 
 /// An update hash
 #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

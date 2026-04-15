@@ -55,16 +55,7 @@ pub enum Attestation {
 }
 
 #[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -77,16 +68,7 @@ pub enum VerifiedAttestation {
 }
 
 #[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -241,16 +223,7 @@ impl fmt::Debug for DstackAttestation {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

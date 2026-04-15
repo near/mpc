@@ -113,16 +113,7 @@ pub struct AuthenticatedParticipantId(pub crate::types::participants::Participan
 
 /// An account ID that has been authenticated (i.e., the caller is this account).
 #[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
