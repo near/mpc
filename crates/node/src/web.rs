@@ -385,7 +385,7 @@ async fn contract_state(state: State<WebServerState>) -> String {
         // Clone to avoid holding a lock
         .clone();
 
-    // TODO: check if the debug output looks nice, otherwise port protocol_state_to_string
+    // TODO(#2880): share `protocol_state_to_string` with the contract crate.
     format!("{:#?}", protocol_state)
 }
 
