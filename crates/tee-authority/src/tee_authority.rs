@@ -479,11 +479,13 @@ mod tests {
 
     /// Parameterized test for collateral upload endpoints.
     ///
-    /// - `phala_endpoint`: Tests against Phala's default endpoint.
+    /// - `phala_endpoint`: Tests against Phala using the default config path.
+    /// - `phala_via_override`: Tests against Phala using the URL override path.
     /// - `local_pccs_proxy`: Tests against the local PCCS proxy.
     ///   Requires the proxy to be running. Override URL via `LOCAL_PCCS_PROXY_URL`.
     #[rstest::rstest]
     #[case::phala_endpoint(None)]
+    #[case::phala_via_override(Some("https://cloud-api.phala.network/api/v1/attestations/verify"))]
     #[case::local_pccs_proxy(Some("http://localhost:8082/api/v1/attestations/verify"))]
     #[tokio::test]
     #[cfg(feature = "external-services-tests")]
