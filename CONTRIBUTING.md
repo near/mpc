@@ -48,9 +48,6 @@ When opening the PR, make sure to link the issue in the PR description.
 Add any other notes that will be helpful for reviewers in the description.
 However, in many cases it is sufficient to only reference the issue in the PR description.
 
-# Engineering Standards
-All code must meet the conventions in [engineering-standards.md](./docs/engineering-standards.md).
-
 # PR review guidelines
 This section mainly targets current maintainers of this code authorized
 to approve PR requests.
