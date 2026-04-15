@@ -19,6 +19,7 @@ use crate::network::{
 };
 use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
+use crate::primitives::{Curve, DomainId, EpochId};
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
@@ -32,8 +33,6 @@ use crate::web::DebugRequest;
 use anyhow::Context;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::{Curve, DomainId};
-use mpc_contract::primitives::key_state::EpochId;
 use mpc_node_config::ConfigFile;
 use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
@@ -345,12 +344,7 @@ where
         if let Some(my_participant_id) = my_participant_id {
             let current_participants_config = running_state.participants.clone();
             let current_epoch_id = running_state.keyset.epoch_id;
-            let all_domains: Vec<_> = running_state
-                .keyset
-                .get_domain_ids()
-                .into_iter()
-                .map(Into::into)
-                .collect();
+            let all_domains: Vec<_> = running_state.keyset.get_domain_ids();
             let current_epoch_data = EpochData {
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
@@ -535,20 +529,14 @@ where
                     VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
                 );
 
-                let mut ecdsa_keyshares: HashMap<
-                    near_mpc_contract_interface::types::DomainId,
-                    ecdsa::KeygenOutput,
-                > = HashMap::new();
-                let mut robust_ecdsa_keyshares: HashMap<
-                    near_mpc_contract_interface::types::DomainId,
-                    ecdsa::KeygenOutput,
-                > = HashMap::new();
-                let mut eddsa_keyshares: HashMap<
-                    near_mpc_contract_interface::types::DomainId,
-                    eddsa::KeygenOutput,
-                > = HashMap::new();
+                let mut ecdsa_keyshares: HashMap<dtos::DomainId, ecdsa::KeygenOutput> =
+                    HashMap::new();
+                let mut robust_ecdsa_keyshares: HashMap<dtos::DomainId, ecdsa::KeygenOutput> =
+                    HashMap::new();
+                let mut eddsa_keyshares: HashMap<dtos::DomainId, eddsa::KeygenOutput> =
+                    HashMap::new();
                 let mut ckd_keyshares: HashMap<
-                    near_mpc_contract_interface::types::DomainId,
+                    dtos::DomainId,
                     confidential_key_derivation::KeygenOutput,
                 > = HashMap::new();
                 let mut domain_to_curve: HashMap<DomainId, Curve> = HashMap::new();

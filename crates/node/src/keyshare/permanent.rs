@@ -1,8 +1,8 @@
+use crate::primitives::{DomainId, EpochId};
+
 use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::EpochId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -56,7 +56,7 @@ impl PermanentKeyshareData {
         let keyshare = Keyshare::from_legacy(legacy);
         let keyshares = NonEmptyBTreeMap::new(keyshare.key_id.domain_id, keyshare);
         Self {
-            epoch_id: EpochId::new(legacy.epoch),
+            epoch_id: EpochId(legacy.epoch),
             keyshares,
         }
     }
@@ -169,12 +169,12 @@ impl PermanentKeyStorage {
         let existing = self.load().await.context("Checking existing keyshare")?;
         if let Some(existing) = existing {
             let existing_keyset_is_more_recent =
-                existing.epoch_id().get() > keyshare_data.epoch_id().get();
+                *existing.epoch_id() > *keyshare_data.epoch_id();
             if existing_keyset_is_more_recent {
                 anyhow::bail!(
                     "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of older epoch {}",
-                    existing.epoch_id().get(),
-                    keyshare_data.epoch_id().get(),
+                    *existing.epoch_id(),
+                    *keyshare_data.epoch_id(),
                 );
             }
             let existing_keset_has_more_domains =
@@ -186,13 +186,13 @@ impl PermanentKeyStorage {
                     keyshare_data.keyshares().len()
                 );
             }
-            let is_same_epoch_id = existing.epoch_id().get() == keyshare_data.epoch_id().get();
+            let is_same_epoch_id = *existing.epoch_id() == *keyshare_data.epoch_id();
             let does_not_extend_keyset =
                 existing.keyshares().len() >= keyshare_data.keyshares().len();
             if is_same_epoch_id && does_not_extend_keyset {
                 anyhow::bail!(
                     "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of same epoch but equal number of domains",
-                    existing.epoch_id().get(),
+                    *existing.epoch_id(),
                 );
             }
             for (domain_id, existing_keyshare) in existing.keyshares() {
@@ -233,7 +233,7 @@ impl PermanentKeyStorage {
         let data_json = serde_json::to_vec(keyshare_data)?;
         let identifier = format!(
             "epoch_{}_with_{}_domains",
-            keyshare_data.epoch_id().get(),
+            *keyshare_data.epoch_id(),
             keyshare_data.keyshares().len()
         );
         self.backend.store(&data_json, &identifier).await
@@ -261,7 +261,7 @@ mod tests {
     use crate::keyshare::{Keyshare, KeyshareData};
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
-    use mpc_contract::primitives::key_state::EpochId;
+    use crate::primitives::EpochId;
     use rand::SeedableRng as _;
     use threshold_signatures::frost_secp256k1::keys::SigningShare;
     use threshold_signatures::frost_secp256k1::VerifyingKey;
@@ -366,12 +366,12 @@ mod tests {
         // Make the storage. The storage should upgrade the legacy keyshare to the new format.
         let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
-        assert_eq!(loaded.epoch_id().get(), 1);
+        assert_eq!(*loaded.epoch_id(), 1);
         assert_eq!(loaded.keyshares().len(), 1);
         let keyshare = loaded.keyshares().values().next().unwrap();
-        assert_eq!(keyshare.key_id.epoch_id.get(), 1);
+        assert_eq!(*keyshare.key_id.epoch_id, 1);
         assert_eq!(keyshare.key_id.domain_id.0, 0);
-        assert_eq!(keyshare.key_id.attempt_id.get(), 0);
+        assert_eq!(*keyshare.key_id.attempt_id, 0);
         assert_eq!(
             keyshare.data,
             KeyshareData::Secp256k1(threshold_signatures::ecdsa::KeygenOutput {

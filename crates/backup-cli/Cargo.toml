@@ -8,7 +8,6 @@ edition = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
-mpc-contract = { workspace = true, features = ["dev-utils"] }
 mpc-node = { workspace = true }
 near-account-id = { workspace = true }
 near-mpc-contract-interface = { workspace = true }

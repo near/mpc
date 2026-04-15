@@ -26,8 +26,9 @@ use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
+use crate::primitives::{Curve, DomainId};
+// todo: remove this
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
-use mpc_contract::primitives::domain::{Curve, DomainId};
 use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -249,7 +250,7 @@ where
                                 id: signature_id,
                                 receipt_id,
                                 payload: request.payload,
-                                tweak: derive_tweak(&predecessor_id, &request.path),
+                                tweak: near_mpc_contract_interface::types::Tweak(derive_tweak(&predecessor_id, &request.path).as_bytes()),
                                 entropy,
                                 timestamp_nanosec,
                                 domain: request.domain_id.into(),

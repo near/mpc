@@ -218,7 +218,8 @@ async fn test_onboarding() {
         )
         .await
         .unwrap();
-        let expected = get_keyshares(leaving_node.home_dir, leaving_node.storage_key, &keyset)
+        let node_keyset: crate::primitives::Keyset = keyset.clone().try_into().unwrap();
+        let expected = get_keyshares(leaving_node.home_dir, leaving_node.storage_key, &node_keyset)
             .await
             .unwrap();
         assert_eq!(keyshares, expected);
@@ -263,10 +264,11 @@ async fn test_onboarding() {
         .expect("onboarding must succeed");
     {
         tracing::info!("verifying keyshares on disk match expected value");
+        let node_keyset: crate::primitives::Keyset = keyset.clone().try_into().unwrap();
         let found = get_keyshares(
             onboarding_node.home_dir,
             onboarding_node.storage_key,
-            &keyset,
+            &node_keyset,
         )
         .await
         .unwrap();

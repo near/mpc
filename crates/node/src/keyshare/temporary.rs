@@ -1,7 +1,9 @@
 use super::Keyshare;
-use crate::db::{decrypt, encrypt};
+use crate::{
+    db::{decrypt, encrypt},
+    primitives::{EpochId, KeyEventId},
+};
 use aes_gcm::{Aes128Gcm, KeyInit};
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
@@ -28,9 +30,7 @@ impl TemporaryKeyStorage {
     fn keyshare_path(&self, key_id: KeyEventId) -> PathBuf {
         let filename = format!(
             "keyshare_{}_{}_{}",
-            key_id.epoch_id.get(),
-            key_id.domain_id.0,
-            key_id.attempt_id.get()
+            key_id.epoch_id.0, key_id.domain_id.0, key_id.attempt_id.0
         );
         self.storage_dir.join(filename)
     }
@@ -38,9 +38,7 @@ impl TemporaryKeyStorage {
     fn keyshare_started_path(&self, key_id: KeyEventId) -> PathBuf {
         let filename = format!(
             "started_{}_{}_{}",
-            key_id.epoch_id.get(),
-            key_id.domain_id.0,
-            key_id.attempt_id.get()
+            key_id.epoch_id.0, key_id.domain_id.0, key_id.attempt_id.0
         );
         self.storage_dir.join(filename)
     }
@@ -90,7 +88,7 @@ impl TemporaryKeyStorage {
             anyhow::bail!("Invalid keyshare filename: {:?}", filename);
         }
         let epoch_id: u64 = parts[1].parse()?;
-        Ok(Some(EpochId::new(epoch_id)))
+        Ok(Some(EpochId(epoch_id)))
     }
 
     /// Deletes all keyshares and started markers stored in temporary storage that have an epoch ID
@@ -109,7 +107,7 @@ impl TemporaryKeyStorage {
             let Some(existing_epoch_id) = Self::get_epoch_id_from_filename(&filename)? else {
                 continue;
             };
-            if existing_epoch_id.get() < epoch_id.get() {
+            if existing_epoch_id.0 < epoch_id.0 {
                 tokio::fs::remove_file(entry.path()).await?;
             }
         }
@@ -149,7 +147,7 @@ impl PendingKeyshareStorageHandle {
 mod tests {
     use crate::keyshare::temporary::TemporaryKeyStorage;
     use crate::keyshare::test_utils::generate_dummy_keyshare;
-    use mpc_contract::primitives::key_state::EpochId;
+    use crate::primitives::EpochId;
     use rand::SeedableRng as _;
 
     #[tokio::test]

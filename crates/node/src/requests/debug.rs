@@ -234,11 +234,9 @@ mod tests {
         indexer::types::{ChainCKDRespondArgs, ChainSignatureRespondArgs},
         types::{CKDRequest, SignatureRequest},
     };
-    use mpc_contract::primitives::{
-        domain::DomainId,
-        signature::{Payload, Tweak},
-    };
+    use crate::primitives::DomainId;
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types as dtos;
     use rand::seq::SliceRandom;
 
     #[test]
@@ -289,8 +287,8 @@ mod tests {
                 request: SignatureRequest {
                     id: CryptoHash(rand::random()),
                     receipt_id: CryptoHash(rand::random()),
-                    payload: Payload::from_legacy_ecdsa([0; 32]),
-                    tweak: Tweak::new([0; 32]),
+                    payload: dtos::Payload::Ecdsa([0u8; 32].into()),
+                    tweak: dtos::Tweak([0; 32]),
                     entropy: Default::default(),
                     timestamp_nanosec: Default::default(),
                     domain: DomainId::legacy_ecdsa_id(),

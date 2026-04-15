@@ -174,7 +174,7 @@ async fn test_basic_multidomain() {
                 |state| {
                     println!("state: {:?}", state);
                     match state {
-                        ContractState::Running(running) => running.keyset.epoch_id.get() == 1,
+                        ContractState::Running(running) => *running.keyset.epoch_id == 1,
                         _ => false,
                     }
                 }

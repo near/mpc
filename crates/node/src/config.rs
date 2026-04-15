@@ -477,6 +477,7 @@ pub fn auth_config_to_rpc_auth(
 #[expect(non_snake_case)]
 pub mod tests {
     use assert_matches::assert_matches;
+    // claude: remove this dependency
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
         distributions::{Alphanumeric, Uniform},

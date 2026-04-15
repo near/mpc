@@ -4,6 +4,7 @@ use crate::indexer::types::{
     ChainStartKeygenArgs, ChainStartReshareArgs, ChainVoteAbortKeyEventInstanceArgs,
 };
 use crate::network::MeshNetworkClient;
+use crate::primitives::{Curve, DomainConfig, KeyEventId, KeyForDomain, Keyset};
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::EcdsaTaskId;
@@ -20,8 +21,6 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use mpc_contract::primitives::domain::{Curve, DomainConfig};
-use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use std::time::Duration;
@@ -726,8 +725,7 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
     use assert_matches::assert_matches;
-    use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use crate::primitives::{AttemptId, DomainId, DomainPurpose, EpochId};
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -868,13 +866,7 @@ mod tests {
     }
 
     fn make_key_event_id(epoch: u64, domain: u64, attempt: u64) -> KeyEventId {
-        KeyEventId::new(EpochId::new(epoch), DomainId(domain), {
-            let mut id = AttemptId::new();
-            for _ in 0..attempt {
-                id = id.next();
-            }
-            id
-        })
+        KeyEventId::new(EpochId::new(epoch), DomainId(domain), AttemptId(attempt))
     }
 
     fn make_key_event_instance(

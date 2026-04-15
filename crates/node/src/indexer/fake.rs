@@ -26,7 +26,6 @@ use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
     participants::{ParticipantId, ParticipantInfo, Participants},
-    signature::Payload,
     thresholds::{Threshold, ThresholdParameters},
 };
 use mpc_contract::state::{
@@ -47,7 +46,7 @@ pub struct FakeMpcContractState {
     env: Environment,
     // TODO(#1958): Although this is only used in tests, it does not seem correct to
     // group signatures by Payload. We should use the same we use in the contract
-    pub pending_signatures: BTreeMap<Payload, SignatureId>,
+    pub pending_signatures: BTreeMap<dtos::Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     foreign_chain_policy: dtos::ForeignChainPolicy,

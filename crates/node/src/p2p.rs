@@ -1049,8 +1049,7 @@ mod tests {
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_contract::primitives::domain::DomainId;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use crate::primitives::{AttemptId, DomainId, EpochId, KeyEventId};
     use rand::Rng;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -1088,10 +1087,7 @@ mod tests {
                 let domain_id = rand::thread_rng().gen();
                 let epoch_id = rand::thread_rng().gen();
                 let n_attempts = rand::thread_rng().gen::<usize>() % 100;
-                let mut attempt_id = AttemptId::new();
-                for _ in 0..n_attempts {
-                    attempt_id = attempt_id.next();
-                }
+                let attempt_id = AttemptId(n_attempts as u64);
                 let channel_id = ChannelId(UniqueId::generate(participant0));
                 let key_id =
                     KeyEventId::new(EpochId::new(epoch_id), DomainId(domain_id), attempt_id);

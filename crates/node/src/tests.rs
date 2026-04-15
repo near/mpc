@@ -35,7 +35,7 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
-use mpc_contract::primitives::signature::Payload;
+use near_mpc_contract_interface::types::Payload;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
@@ -87,13 +87,11 @@ pub fn make_key_storage_config(
 pub async fn get_keyshares(
     home_dir: PathBuf,
     local_encryption_key: [u8; 16],
-    keyset: &near_mpc_contract_interface::types::Keyset,
+    keyset: &crate::primitives::Keyset,
 ) -> anyhow::Result<Vec<Keyshare>> {
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
     let keystore = key_storage_config.create().await.unwrap();
-    let contract_keyset: mpc_contract::primitives::key_state::Keyset =
-        keyset.clone().try_into().unwrap();
-    keystore.get_keyshares(&contract_keyset).await
+    keystore.get_keyshares(keyset).await
 }
 
 impl OneNodeTestConfig {

@@ -7,7 +7,7 @@ use crate::types::VerifyForeignTxId;
 use anyhow::Context;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::CKDRequest;
-use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
+use mpc_contract::primitives::signature::{SignRequest, SignRequestArgs};
 use near_account_id::AccountId;
 use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
@@ -45,7 +45,7 @@ struct UnvalidatedVerifyForeignTxArgs {
 /// A validated version of the signature request
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SignArgs {
-    pub payload: Payload,
+    pub payload: dtos::Payload,
     pub path: String,
     pub domain_id: DomainId,
 }
@@ -345,7 +345,10 @@ fn try_get_sign_args(
     Some((
         next_receipt_id,
         SignArgs {
-            payload: sign_request.payload,
+            payload: match sign_request.payload {
+                mpc_contract::primitives::signature::Payload::Ecdsa(b) => dtos::Payload::Ecdsa(b),
+                mpc_contract::primitives::signature::Payload::Eddsa(b) => dtos::Payload::Eddsa(b),
+            },
             path: sign_request.path,
             domain_id: sign_request.domain_id.into(),
         },

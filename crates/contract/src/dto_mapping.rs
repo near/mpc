@@ -510,6 +510,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 // --- From DTO to contract types (node-only, not compiled into WASM) ---
 // TODO(#381): Remove once the node no longer depends on the contract crate.
 
+// todo: remove
 #[cfg(feature = "compat")]
 mod from_dto {
     use super::*;

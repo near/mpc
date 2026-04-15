@@ -5,7 +5,7 @@ use k256::{
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
-use mpc_contract::{crypto_shared::CKDResponse, primitives::signature::Tweak};
+use mpc_contract::crypto_shared::CKDResponse;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
@@ -41,13 +41,13 @@ struct SerializableAffinePoint {
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainSignatureRequest {
-    pub tweak: Tweak,
-    pub payload: Payload,
+    pub tweak: dtos::Tweak,
+    pub payload: dtos::Payload,
     pub domain_id: DomainId,
 }
 
 impl ChainSignatureRequest {
-    pub fn new(tweak: Tweak, payload: Payload, domain_id: DomainId) -> Self {
+    pub fn new(tweak: dtos::Tweak, payload: dtos::Payload, domain_id: DomainId) -> Self {
         ChainSignatureRequest {
             tweak,
             payload,
@@ -74,7 +74,7 @@ pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
 pub type ChainVerifyForeignTransactionResponse =
     near_mpc_contract_interface::types::VerifyForeignTransactionResponse;
 
-use mpc_contract::primitives::signature::Payload;
+use crate::types::PayloadExt;
 
 const MAX_RECOVERY_ID: u8 = 3;
 

@@ -1,11 +1,9 @@
 use crate::assets::clean_db;
 use crate::config::ParticipantsConfig;
 use crate::db::{DBCol, SecretDB, EPOCH_ID_KEY};
-use crate::primitives;
+use crate::primitives::{self, DomainId, EpochId, ParticipantId};
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::{PairedTriple, TRIPLE_STORE_DOMAIN_ID};
-use mpc_contract::primitives::key_state::EpochId;
-use near_mpc_contract_interface::types::DomainId;
 use serde::{self, Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -22,7 +20,7 @@ pub struct EpochData {
 pub fn delete_stale_triples_and_presignatures(
     db: &Arc<SecretDB>,
     current_epoch_data: EpochData,
-    my_participant_id: primitives::ParticipantId,
+    my_participant_id: ParticipantId,
     ecdsa_domain_ds: Vec<DomainId>,
 ) -> anyhow::Result<()> {
     let current_epoch_id = current_epoch_data.epoch_id;
@@ -62,7 +60,7 @@ pub fn delete_stale_triples_and_presignatures(
                     DBCol::Presignature,
                     &persitent_participants,
                     my_participant_id,
-                    Some(*domain_id),
+                    Some((*domain_id).into()),
                 )?;
             }
         }
@@ -97,7 +95,7 @@ fn get_epoch_data(db: &Arc<SecretDB>) -> anyhow::Result<Option<EpochDataWrapper>
             .try_into()
             .inspect_err(|bytes| tracing::error!("PREVIOUS EPOCH_ID ENTRY NOT u64: {:?}", bytes))?;
         let epoch_id_number = u64::from_be_bytes(bytes_array);
-        let epoch_id = EpochId::new(epoch_id_number);
+        let epoch_id = EpochId(epoch_id_number);
         return Ok(Some(EpochDataWrapper::Legacy(epoch_id)));
     };
     anyhow::bail!("Can't deserialize EPOCH_ID entry: {:?}", db_res);
@@ -169,7 +167,7 @@ mod tests {
     use crate::assets::test_utils::get_participant_ids;
     use crate::assets::test_utils::random_verifying_key;
     use crate::assets::test_utils::TestContext;
-    use near_mpc_contract_interface::types::DomainId;
+    use crate::primitives::{DomainId, EpochId};
     use std::sync::{Arc, Mutex};
 
     fn assert_epoch_data_in_db_matches(ctx: &TestContext, expected: &EpochData) {
@@ -231,7 +229,7 @@ mod tests {
 
         // change epoch id
         let mut end_data = start_data.clone();
-        end_data.epoch_id = end_data.epoch_id.next();
+        end_data.epoch_id = EpochId::new(*end_data.epoch_id + 1);
         delete_stale_triples_and_presignatures(
             &ctx.db,
             end_data.clone(),

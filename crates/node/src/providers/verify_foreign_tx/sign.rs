@@ -20,7 +20,7 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use mpc_contract::primitives::signature::{Payload, Tweak};
+use near_mpc_contract_interface::types::Payload;
 use mpc_node_config::ForeignChainsConfig;
 use near_indexer_primitives::CryptoHash;
 use near_mpc_bounded_collections::BoundedVec;
@@ -42,7 +42,7 @@ fn build_signature_request(
         id: request.id,
         receipt_id: request.receipt_id,
         payload: Payload::Ecdsa(payload_bytes),
-        tweak: Tweak::new([0u8; 32]),
+        tweak: dtos::Tweak([0u8; 32]),
         entropy: request.entropy,
         timestamp_nanosec: request.timestamp_nanosec,
         domain: request.domain_id,

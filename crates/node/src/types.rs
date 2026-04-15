@@ -1,13 +1,33 @@
 use std::fmt;
 
-use mpc_contract::primitives::{
-    domain::DomainId,
-    signature::{Payload, Tweak},
-};
+use crate::primitives::DomainId;
+
 use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
 
 use near_mpc_contract_interface::types as dtos;
+
+/// Extension trait for `dtos::Payload` providing typed accessors.
+pub trait PayloadExt {
+    fn as_ecdsa(&self) -> Option<&[u8; 32]>;
+    fn as_eddsa(&self) -> Option<&[u8]>;
+}
+
+impl PayloadExt for dtos::Payload {
+    fn as_ecdsa(&self) -> Option<&[u8; 32]> {
+        match self {
+            dtos::Payload::Ecdsa(bytes) => Some(bytes.as_ref()),
+            _ => None,
+        }
+    }
+
+    fn as_eddsa(&self) -> Option<&[u8]> {
+        match self {
+            dtos::Payload::Eddsa(bytes) => Some(bytes.as_slice()),
+            _ => None,
+        }
+    }
+}
 
 pub enum RequestType {
     Signature,
@@ -51,8 +71,8 @@ pub struct SignatureRequest {
     pub id: SignatureId,
     /// The receipt that generated the signature request, which can be used to look up on chain.
     pub receipt_id: CryptoHash,
-    pub payload: Payload,
-    pub tweak: Tweak,
+    pub payload: dtos::Payload,
+    pub tweak: dtos::Tweak,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
     pub domain: DomainId,

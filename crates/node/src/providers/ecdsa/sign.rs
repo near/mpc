@@ -7,11 +7,11 @@ use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::{
     EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
 };
-use crate::types::{SignatureId, SignatureRequest};
+use crate::types::{PayloadExt, SignatureId, SignatureRequest};
 use anyhow::Context;
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
-use mpc_contract::primitives::signature::Tweak;
+use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignOutput, RerandomizedPresignOutput};
@@ -150,7 +150,7 @@ pub struct SignComputation {
     pub threshold: ReconstructionLowerBound,
     pub presign_out: PresignOutput,
     pub msg_hash: [u8; 32],
-    pub tweak: Tweak,
+    pub tweak: dtos::Tweak,
     pub entropy: [u8; 32],
 }
 
@@ -167,7 +167,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let tweak = Scalar::from_repr(self.tweak.as_bytes().into())
+        let tweak = Scalar::from_repr(self.tweak.0.into())
             .into_option()
             .context("Couldn't construct k256 point")?;
         let tweak = threshold_signatures::Tweak::new(tweak);
@@ -220,7 +220,7 @@ pub struct FollowerSignComputation {
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
     pub msg_hash: [u8; 32],
-    pub tweak: Tweak,
+    pub tweak: dtos::Tweak,
     pub entropy: [u8; 32],
 }
 

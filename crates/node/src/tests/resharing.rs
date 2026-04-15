@@ -115,7 +115,7 @@ async fn test_key_resharing_simple(
         .wait_for_contract_state(
             |state| match state {
                 ContractState::Running(running) => {
-                    running.keyset.epoch_id.get() == 1
+                    *running.keyset.epoch_id == 1
                         && running.participants.participants.len() == num_participants
                 }
                 _ => false,
@@ -198,7 +198,7 @@ async fn test_key_resharing_multistage() {
         .wait_for_contract_state(
             |state| match state {
                 ContractState::Running(running) => {
-                    running.keyset.epoch_id.get() == 0
+                    *running.keyset.epoch_id == 0
                         && running.participants.participants.len() == NUM_PARTICIPANTS - 2
                         && running.keyset.domains.len() == 1
                 }
@@ -234,7 +234,7 @@ async fn test_key_resharing_multistage() {
         .wait_for_contract_state(
             |state| match state {
                 ContractState::Running(running) => {
-                    running.keyset.epoch_id.get() == 1
+                    *running.keyset.epoch_id == 1
                         && running.participants.participants.len() == NUM_PARTICIPANTS - 1
                 }
                 _ => false,
@@ -265,7 +265,7 @@ async fn test_key_resharing_multistage() {
         .wait_for_contract_state(
             |state| match state {
                 ContractState::Running(running) => {
-                    running.keyset.epoch_id.get() == 2
+                    *running.keyset.epoch_id == 2
                         && running.participants.participants.len() == NUM_PARTICIPANTS
                 }
                 _ => false,
@@ -299,7 +299,7 @@ async fn test_key_resharing_multistage() {
         .wait_for_contract_state(
             |state| match state {
                 ContractState::Running(running) => {
-                    running.keyset.epoch_id.get() == 3
+                    *running.keyset.epoch_id == 3
                         && running.participants.participants.len() == NUM_PARTICIPANTS - 1
                 }
                 _ => false,
@@ -334,7 +334,7 @@ async fn test_key_resharing_multistage() {
         .wait_for_contract_state(
             |state| match state {
                 ContractState::Running(running) => {
-                    running.keyset.epoch_id.get() == 4
+                    *running.keyset.epoch_id == 4
                         && running.participants.participants.len() == NUM_PARTICIPANTS - 2
                 }
                 _ => false,

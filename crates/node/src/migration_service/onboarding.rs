@@ -4,7 +4,7 @@ use anyhow::Context;
 use backon::{ExponentialBuilder, Retryable};
 use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
-use mpc_contract::primitives::key_state::Keyset;
+use crate::primitives::Keyset;
 use near_account_id::AccountId;
 use tokio::sync::{watch, RwLock};
 use tokio_util::sync::CancellationToken;

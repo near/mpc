@@ -9,9 +9,11 @@ use crate::providers::HasParticipants;
 use crate::{db::DBCol, primitives::ParticipantId};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ProjectivePoint;
-use mpc_contract::primitives::key_state::EpochId;
+// claude: remove this dependency
 use mpc_contract::primitives::test_utils::gen_participants;
+// claude: remove this dependency
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
+use crate::primitives::EpochId;
 use near_mpc_contract_interface::types::DomainId;
 use near_time::FakeClock;
 use rand::rngs::OsRng;
@@ -35,6 +37,8 @@ pub fn gen_four_participants() -> (EpochData, ParticipantId) {
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());
     let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
     let parameters_dto: near_mpc_contract_interface::types::ThresholdParameters = parameters.into();
+    // todo: generate random participants, remove this dependency on ThresholdParameters and
+    // gen_participants
     let participants: ParticipantsConfig = convert_participant_infos(parameters_dto, None).unwrap();
     let epoch_data = EpochData {
         epoch_id,

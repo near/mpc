@@ -4,6 +4,8 @@ use crate::providers::EcdsaTaskId;
 use crate::providers::{ckd::CKDTaskId, verify_foreign_tx::VerifyForeignTxTaskId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_contract_interface::curve25519_dalek::EdwardsPoint;
+use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 use threshold_signatures::participants::Participant;
@@ -196,6 +198,331 @@ impl Debug for ParticipantId {
     }
 }
 
+// todo: move some of these to a new file
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Keyset {
+    pub epoch_id: EpochId,
+    pub domains: Vec<KeyForDomain>,
+}
+
+impl Keyset {
+    pub fn new(epoch_id: EpochId, domains: Vec<KeyForDomain>) -> Self {
+        Keyset { epoch_id, domains }
+    }
+
+    pub fn get_domain_ids(&self) -> Vec<DomainId> {
+        self.domains.iter().map(|d| d.domain_id).collect()
+    }
+
+    pub fn public_key(&self, domain_id: DomainId) -> anyhow::Result<PublicKeyExtended> {
+        self.domains
+            .iter()
+            .find(|k| k.domain_id == domain_id)
+            .map(|k| k.key.clone())
+            .ok_or_else(|| anyhow::anyhow!("No key for domain {:?}", domain_id))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DomainConfig {
+    pub id: DomainId,
+    pub curve: Curve,
+    pub purpose: DomainPurpose,
+}
+
+/// The purpose that a domain serves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum DomainPurpose {
+    /// Domain is used by `sign()`.
+    Sign,
+    /// Domain is used by `verify_foreign_transaction()`.
+    ForeignTx,
+    /// Domain is used by `request_app_private_key()` (Confidential Key Derivation).
+    CKD,
+}
+impl From<dtos::DomainPurpose> for DomainPurpose {
+    fn from(value: dtos::DomainPurpose) -> Self {
+        match value {
+            dtos::DomainPurpose::CKD => Self::CKD,
+            dtos::DomainPurpose::Sign => Self::Sign,
+            dtos::DomainPurpose::ForeignTx => Self::ForeignTx,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Curve {
+    Secp256k1,
+    Edwards25519,
+    Bls12381,
+    V2Secp256k1, // Robust ECDSA
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyForDomain {
+    /// Identifies the domain this key is intended for.
+    pub domain_id: DomainId,
+    /// Identifies the public key. Although technically redundant given that we have the AttemptId,
+    /// we keep it here in the contract so that it can be verified against and queried.
+    pub key: PublicKeyExtended,
+    /// The attempt ID that generated (initially or as a result of resharing) this distributed key.
+    /// Nodes may have made multiple attempts to generate the distributed key, and this uniquely
+    /// identifies which one should ultimately be used.
+    pub attempt: AttemptId,
+}
+
+use elliptic_curve::group::GroupEncoding;
+
+impl TryFrom<dtos::PublicKeyExtended> for PublicKeyExtended {
+    type Error = anyhow::Error;
+    fn try_from(pk: dtos::PublicKeyExtended) -> Result<Self, Self::Error> {
+        match pk {
+            dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
+                let pk: near_sdk::PublicKey = near_public_key
+                    .parse()
+                    .context("PublicKeyExtendedConversionError::PublicKeyLengthMalformed")?;
+                Ok(Self::Secp256k1 {
+                    near_public_key: pk,
+                })
+            }
+            dtos::PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                edwards_point,
+            } => {
+                let pk: near_sdk::PublicKey = near_public_key_compressed
+                    .parse()
+                    .context("PublicKeyExtendedConversionError::PublicKeyLengthMalformed")?;
+                let edwards_point = EdwardsPoint::from_bytes(&edwards_point)
+                    .map(Into::into)
+                    .into_option()
+                    .ok_or(anyhow::anyhow!(
+                        "PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint",
+                    ))?;
+                Ok(Self::Ed25519 {
+                    near_public_key_compressed: pk,
+                    edwards_point,
+                })
+            }
+            dtos::PublicKeyExtended::Bls12381 { public_key } => Ok(Self::Bls12381 { public_key }),
+        }
+    }
+}
+
+impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
+    type Error = anyhow::Error;
+    fn try_from(public_key: dtos::PublicKey) -> Result<Self, Self::Error> {
+        match public_key {
+            dtos::PublicKey::Ed25519(inner_public_key) => {
+                let near_public_key: near_sdk::PublicKey = inner_public_key.into();
+                let public_key_bytes: &[u8; 32] = near_public_key
+                    .as_bytes()
+                    .get(1..)
+                    .map(TryInto::try_into)
+                    .ok_or_else(|| anyhow::anyhow!("PublicKey length malformed"))?
+                    .map_err(|_| anyhow::anyhow!("PublicKey length malformed"))?;
+
+                let edwards_point: SerializableEdwardsPoint =
+                    EdwardsPoint::from_bytes(public_key_bytes)
+                        .map(SerializableEdwardsPoint::from)
+                        .into_option()
+                        .ok_or_else(|| anyhow::anyhow!("Failed decompressing to EdwardsPoint"))?;
+
+                Ok(Self::Ed25519 {
+                    near_public_key_compressed: near_public_key,
+                    edwards_point,
+                })
+            }
+            dtos::PublicKey::Secp256k1(inner_public_key) => {
+                let near_public_key: near_sdk::PublicKey = inner_public_key.into();
+                Ok(Self::Secp256k1 { near_public_key })
+            }
+            dtos::PublicKey::Bls12381(inner_public_key) => Ok(Self::Bls12381 {
+                public_key: dtos::PublicKey::from(inner_public_key),
+            }),
+        }
+    }
+}
+
+impl From<dtos::EpochId> for EpochId {
+    fn from(id: dtos::EpochId) -> Self {
+        EpochId(id.0)
+    }
+}
+
+impl From<dtos::AttemptId> for AttemptId {
+    fn from(id: dtos::AttemptId) -> Self {
+        AttemptId(id.0)
+    }
+}
+
+impl From<dtos::Curve> for Curve {
+    fn from(curve: dtos::Curve) -> Self {
+        match curve {
+            dtos::Curve::Secp256k1 => Curve::Secp256k1,
+            dtos::Curve::Edwards25519 => Curve::Edwards25519,
+            dtos::Curve::Bls12381 => Curve::Bls12381,
+            dtos::Curve::V2Secp256k1 => Curve::V2Secp256k1,
+        }
+    }
+}
+
+impl From<dtos::DomainConfig> for DomainConfig {
+    fn from(config: dtos::DomainConfig) -> Self {
+        DomainConfig {
+            id: DomainId(config.id.0),
+            curve: config.curve.into(),
+            purpose: config.purpose.into(),
+        }
+    }
+}
+
+impl From<dtos::KeyEventId> for KeyEventId {
+    fn from(id: dtos::KeyEventId) -> Self {
+        KeyEventId {
+            epoch_id: id.epoch_id.into(),
+            domain_id: id.domain_id.into(),
+            attempt_id: id.attempt_id.into(),
+        }
+    }
+}
+
+impl TryFrom<dtos::KeyForDomain> for KeyForDomain {
+    type Error = anyhow::Error;
+    fn try_from(kfd: dtos::KeyForDomain) -> Result<Self, Self::Error> {
+        Ok(KeyForDomain {
+            domain_id: DomainId(kfd.domain_id.0),
+            key: kfd
+                .key
+                .try_into()
+                .map_err(|e| anyhow::anyhow!("Failed to convert PublicKeyExtended: {e:?}"))?,
+            attempt: kfd.attempt.into(),
+        })
+    }
+}
+
+impl TryFrom<dtos::Keyset> for Keyset {
+    type Error = anyhow::Error;
+    fn try_from(keyset: dtos::Keyset) -> Result<Self, Self::Error> {
+        let domains: Result<Vec<KeyForDomain>, _> =
+            keyset.domains.into_iter().map(TryFrom::try_from).collect();
+        // we skip validation
+        Ok(Keyset {
+            epoch_id: keyset.epoch_id.into(),
+            domains: domains?,
+        })
+    }
+}
+
+impl From<PublicKeyExtended> for dtos::PublicKeyExtended {
+    fn from(pk: PublicKeyExtended) -> Self {
+        match pk {
+            PublicKeyExtended::Secp256k1 { near_public_key } => {
+                dtos::PublicKeyExtended::Secp256k1 {
+                    near_public_key: near_public_key.to_string(),
+                }
+            }
+            PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                edwards_point,
+            } => dtos::PublicKeyExtended::Ed25519 {
+                near_public_key_compressed: near_public_key_compressed.to_string(),
+                edwards_point: edwards_point.compress().to_bytes(),
+            },
+            PublicKeyExtended::Bls12381 { public_key } => {
+                dtos::PublicKeyExtended::Bls12381 { public_key }
+            }
+        }
+    }
+}
+
+impl From<KeyForDomain> for dtos::KeyForDomain {
+    fn from(kfd: KeyForDomain) -> Self {
+        dtos::KeyForDomain {
+            domain_id: kfd.domain_id.into(),
+            key: kfd.key.into(),
+            attempt: kfd.attempt.into(),
+        }
+    }
+}
+
+impl From<Keyset> for dtos::Keyset {
+    fn from(keyset: Keyset) -> Self {
+        dtos::Keyset {
+            epoch_id: keyset.epoch_id.into(),
+            domains: keyset.domains.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Conversion to the contract-interface PublicKey type
+impl From<PublicKeyExtended> for dtos::PublicKey {
+    fn from(pk: PublicKeyExtended) -> Self {
+        match pk {
+            PublicKeyExtended::Secp256k1 { near_public_key } => {
+                let key_data = near_public_key.as_bytes();
+                // near_sdk PublicKey has a 1-byte prefix (curve type) followed by the key data
+                let pk_bytes: [u8; 64] = key_data[1..]
+                    .try_into()
+                    .expect("Secp256k1 public key should be 64 bytes");
+                dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey(pk_bytes))
+            }
+            PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                ..
+            } => {
+                let key_data = near_public_key_compressed.as_bytes();
+                let pk_bytes: [u8; 32] = key_data[1..]
+                    .try_into()
+                    .expect("Ed25519 public key should be 32 bytes");
+                dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey(pk_bytes))
+            }
+            PublicKeyExtended::Bls12381 { public_key } => public_key,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub enum PublicKeyExtended {
+    Secp256k1 {
+        near_public_key: near_sdk::PublicKey,
+    },
+    // Invariant: `edwards_point` is always the decompressed representation of `near_public_key_compressed`.
+    Ed25519 {
+        /// Serialized compressed Edwards-y point.
+        near_public_key_compressed: near_sdk::PublicKey,
+        /// Decompressed Edwards point used for curve arithmetic operations.
+        edwards_point: SerializableEdwardsPoint,
+    },
+    Bls12381 {
+        public_key: dtos::PublicKey,
+    },
+}
+
+#[derive(
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    Eq,
+    Clone,
+    Copy,
+    derive_more::From,
+    derive_more::AsRef,
+    derive_more::Deref,
+)]
+pub struct SerializableEdwardsPoint(
+    #[cfg_attr(
+        all(feature = "abi", not(target_arch = "wasm32")),
+        schemars(with = "[u8; 32]"),
+        borsh(schema(with_funcs(
+            declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
+            definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
+        ),))
+    )]
+    EdwardsPoint,
+);
+
 /// A batched list of multiple cait-sith protocol messages.
 pub type BatchedMessages = Vec<Vec<u8>>;
 
@@ -284,6 +611,159 @@ pub struct Version {
     pub rustc_version: String,
 }
 
+// below types are copy-paste from the contract-interface crate. Note that we don't want to depend
+// on those, as we don't want contract-interface changes to have an impact on any rocksdb changes
+// we have in the node
+
+/// Identifier for a key event (generation or resharing attempt).
+/// This is duplicated from contract_interface, but for good reason. We don't want a change to the
+/// interface crate requiring database changes on the node.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct KeyEventId {
+    pub epoch_id: EpochId,
+    pub domain_id: DomainId,
+    pub attempt_id: AttemptId,
+}
+
+impl KeyEventId {
+    pub fn new(epoch_id: EpochId, domain_id: DomainId, attempt_id: AttemptId) -> Self {
+        KeyEventId {
+            epoch_id,
+            domain_id,
+            attempt_id,
+        }
+    }
+}
+
+impl From<KeyEventId> for near_mpc_contract_interface::types::KeyEventId {
+    fn from(val: KeyEventId) -> Self {
+        near_mpc_contract_interface::types::KeyEventId {
+            epoch_id: val.epoch_id.into(),
+            domain_id: val.domain_id.into(),
+            attempt_id: val.attempt_id.into(),
+        }
+    }
+}
+
+/// An EpochId uniquely identifies a ThresholdParameters (but not vice-versa).
+/// Every time we change the ThresholdParameters (participants and threshold),
+/// we increment EpochId.
+/// Locally on each node, each keyshare is uniquely identified by the tuple
+/// (EpochId, DomainId, AttemptId).
+#[derive(
+    // todo: search all instances of .0 and replace with *
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    derive_more::Deref,
+)]
+pub struct EpochId(pub(crate) u64);
+
+impl EpochId {
+    pub fn new(epoch_id: u64) -> Self {
+        EpochId(epoch_id)
+    }
+}
+
+impl Display for EpochId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<EpochId> for near_mpc_contract_interface::types::EpochId {
+    fn from(val: EpochId) -> Self {
+        near_mpc_contract_interface::types::EpochId(*val)
+    }
+}
+
+/// Attempt identifier within a key event.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::AsRef,
+    derive_more::Deref,
+)]
+pub struct AttemptId(pub u64);
+
+impl AttemptId {
+    pub fn legacy_attempt_id() -> Self {
+        AttemptId(0)
+    }
+}
+
+impl Display for AttemptId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<AttemptId> for near_mpc_contract_interface::types::AttemptId {
+    fn from(val: AttemptId) -> Self {
+        near_mpc_contract_interface::types::AttemptId(*val)
+    }
+}
+/// Threshold value for distributed key operations.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::AsRef,
+    derive_more::Deref,
+)]
+pub struct DomainId(pub u64);
+
+impl DomainId {
+    pub fn legacy_ecdsa_id() -> Self {
+        DomainId(0)
+    }
+}
+
+impl Display for DomainId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<dtos::DomainId> for DomainId {
+    fn from(id: dtos::DomainId) -> Self {
+        DomainId(id.0)
+    }
+}
+
+impl From<DomainId> for near_mpc_contract_interface::types::DomainId {
+    fn from(val: DomainId) -> Self {
+        near_mpc_contract_interface::types::DomainId(*val)
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

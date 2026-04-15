@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::state::ProtocolContractState;
+use mpc_node::primitives::{KeyForDomain, Keyset};
+use near_mpc_contract_interface::types::ProtocolContractState;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
+
+use near_mpc_contract_interface::types as dtos;
 
 use crate::ports::ContractStateReader;
 
@@ -39,7 +41,6 @@ impl ContractStateFixture {
 
 impl ContractStateReader for ContractStateFixture {
     type Error = Error;
-
     async fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error> {
         let mut destination = File::open(self.contract_state_path.as_path())
             .await
@@ -55,16 +56,28 @@ impl ContractStateReader for ContractStateFixture {
 }
 
 pub fn get_keyset_from_contract_state(
-    contract_state: &ProtocolContractState,
+    contract_state: &dtos::ProtocolContractState,
 ) -> Result<Keyset, Error> {
     match contract_state {
         ProtocolContractState::NotInitialized | ProtocolContractState::Resharing(_) => Err(
-            Error::IncorrectContractState(contract_state.name().to_string()),
+            Error::IncorrectContractState("not initialized or resharing".to_string()),
         ),
         ProtocolContractState::Initializing(state) => {
-            Ok(Keyset::new(state.epoch_id, state.generated_keys.clone()))
+            let keys: Result<Vec<KeyForDomain>, _> = state
+                .generated_keys
+                .iter()
+                .cloned()
+                .map(TryFrom::try_from)
+                .collect();
+            let keys =
+                keys.map_err(|e: anyhow::Error| Error::IncorrectContractState(e.to_string()))?;
+            Ok(Keyset::new(state.epoch_id.into(), keys))
         }
-        ProtocolContractState::Running(state) => Ok(state.keyset.clone()),
+        ProtocolContractState::Running(state) => state
+            .keyset
+            .clone()
+            .try_into()
+            .map_err(|e: anyhow::Error| Error::IncorrectContractState(e.to_string())),
     }
 }
 
@@ -72,7 +85,7 @@ pub fn get_keyset_from_contract_state(
 mod tests {
     use std::path::PathBuf;
 
-    use mpc_contract::primitives::thresholds::Threshold;
+    use near_mpc_contract_interface::types::{ProtocolContractState, Threshold};
 
     use crate::{
         adapters::contract_state_fixture::ContractStateFixture, ports::ContractStateReader,
@@ -89,8 +102,10 @@ mod tests {
         let contract_state = contract_interface.get_contract_state().await.unwrap();
 
         // Then
-        assert_eq!(contract_state.name(), "Running");
-        assert_eq!(contract_state.threshold().unwrap(), Threshold::new(7));
-        assert_eq!(contract_state.domain_registry().unwrap().domains().len(), 2);
+        let ProtocolContractState::Running(running) = &contract_state else {
+            panic!("expected Running state, got {:?}", contract_state);
+        };
+        assert_eq!(running.parameters.threshold, Threshold(7));
+        assert_eq!(running.domains.domains.len(), 2);
     }
 }

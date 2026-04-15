@@ -1,13 +1,8 @@
 use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
-use crate::primitives::ParticipantId;
+use crate::primitives::{DomainConfig, KeyEventId, KeyForDomain, Keyset, ParticipantId};
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::primitives::domain::DomainConfig as ContractDomainConfig;
-use mpc_contract::primitives::key_state::{
-    KeyEventId as ContractKeyEventId, KeyForDomain as ContractKeyForDomain,
-    Keyset as ContractKeyset,
-};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{KeyEvent, ProtocolContractState, ThresholdParameters};
@@ -18,11 +13,11 @@ use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractKeyEventInstance {
-    pub id: ContractKeyEventId,
-    pub domain: ContractDomainConfig,
+    pub id: KeyEventId,
+    pub domain: DomainConfig,
     pub started: bool,
     pub completed: BTreeSet<ParticipantId>,
-    pub completed_domains: Vec<ContractKeyForDomain>,
+    pub completed_domains: Vec<KeyForDomain>,
 }
 
 pub fn convert_key_event_to_instance(
@@ -30,7 +25,7 @@ pub fn convert_key_event_to_instance(
     current_height: u64,
     completed_domains: Vec<dtos::KeyForDomain>,
 ) -> anyhow::Result<ContractKeyEventInstance> {
-    let completed_domains: Vec<ContractKeyForDomain> = completed_domains
+    let completed_domains: Vec<KeyForDomain> = completed_domains
         .into_iter()
         .map(TryInto::try_into)
         .collect::<Result<_, _>>()?;
@@ -71,17 +66,13 @@ pub fn convert_key_event_to_instance(
 impl ContractKeyEventInstance {
     pub fn compare_to_expected_key_event_id(
         &self,
-        expected: &ContractKeyEventId,
+        expected: &KeyEventId,
     ) -> KeyEventIdComparisonResult {
-        let contract_state = (
-            self.id.epoch_id.get(),
-            *self.id.domain_id,
-            self.id.attempt_id.get(),
-        );
+        let contract_state = (*self.id.epoch_id, *self.id.domain_id, *self.id.attempt_id);
         let expected_state = (
-            expected.epoch_id.get(),
+            *expected.epoch_id,
             *expected.domain_id,
-            expected.attempt_id.get(),
+            *expected.attempt_id,
         );
         if contract_state < expected_state {
             KeyEventIdComparisonResult::RemoteBehind
@@ -111,7 +102,7 @@ pub enum KeyEventIdComparisonResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractRunningState {
-    pub keyset: ContractKeyset,
+    pub keyset: Keyset,
     pub participants: ParticipantsConfig,
     pub resharing_state: Option<ContractResharingState>,
 }
@@ -125,7 +116,7 @@ pub struct ContractInitializingState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractResharingState {
     pub new_participants: ParticipantsConfig,
-    pub reshared_keys: ContractKeyset,
+    pub reshared_keys: Keyset,
     pub key_event: ContractKeyEventInstance,
 }
 

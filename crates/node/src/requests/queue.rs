@@ -559,9 +559,9 @@ mod tests {
     use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
     use crate::tests::into_participant_ids;
     use crate::types::{CKDRequest, SignatureRequest};
-    use mpc_contract::primitives::domain::DomainId;
-    use mpc_contract::primitives::signature::{Payload, Tweak};
+    use crate::primitives::DomainId;
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types as dtos;
     use near_time::{Duration, FakeClock};
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
@@ -618,9 +618,9 @@ mod tests {
                 // All other fields are irrelevant for the test.
                 receipt_id: CryptoHash([0; 32]),
                 entropy: [0; 32],
-                payload: Payload::from_legacy_ecdsa([0; 32]),
+                payload: dtos::Payload::Ecdsa([0u8; 32].into()),
                 timestamp_nanosec: 0,
-                tweak: Tweak::new([0; 32]),
+                tweak: dtos::Tweak([0; 32]),
                 domain: DomainId::legacy_ecdsa_id(),
             };
             let leader_selection_order =

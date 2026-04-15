@@ -1,7 +1,6 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
+use crate::primitives::{AttemptId, DomainId, EpochId, KeyEventId, KeyForDomain, Keyset};
 use rand::{CryptoRng, RngCore, SeedableRng};
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
@@ -14,7 +13,7 @@ pub fn make_key_id(epoch_id: u64, domain_id: u64, attempt_id: u64) -> KeyEventId
     KeyEventId::new(
         EpochId::new(epoch_id),
         DomainId(domain_id),
-        serde_json::from_str(&format!("{}", attempt_id)).unwrap(),
+        AttemptId::from(attempt_id),
     )
 }
 /// returns two shares for the same key
@@ -92,13 +91,14 @@ fn permanent_keyshare_from_keyshares(
 }
 
 fn keyset_from_keyshares(epoch_id: u64, keyshares: &[Keyshare]) -> Keyset {
+    use crate::primitives::PublicKeyExtended;
     let keys = keyshares
         .iter()
         .map(|keyshare| {
             let public_key = keyshare.public_key().unwrap();
             KeyForDomain {
                 domain_id: keyshare.key_id.domain_id,
-                key: public_key.try_into().unwrap(),
+                key: PublicKeyExtended::try_from(public_key).unwrap(),
                 attempt: keyshare.key_id.attempt_id,
             }
         })

@@ -90,7 +90,8 @@ async fn test_changing_participant_set_test_keyshare_import() {
         let mpc_contract::state::ProtocolContractState::Running(running) = &contract.state else {
             panic!("done");
         };
-        let keyset: near_mpc_contract_interface::types::Keyset = running.keyset.clone().into();
+        let keyset_dto: near_mpc_contract_interface::types::Keyset = running.keyset.clone().into();
+        let keyset: crate::primitives::Keyset = keyset_dto.try_into().unwrap();
         let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, &keyset)
             .await
             .unwrap();
@@ -99,10 +100,8 @@ async fn test_changing_participant_set_test_keyshare_import() {
         std::fs::create_dir_all(&home_dir_last).unwrap();
         let key_storage_config = make_key_storage_config(home_dir_last, local_encryption_key_last);
         let mut keystore = key_storage_config.create().await.unwrap();
-        let contract_keyset: mpc_contract::primitives::key_state::Keyset =
-            keyset.try_into().unwrap();
         keystore
-            .import_backup(keyshares, &contract_keyset)
+            .import_backup(keyshares, &keyset)
             .await
             .unwrap();
     }

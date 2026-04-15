@@ -1,7 +1,8 @@
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
 
 use hyper::{service::service_fn, Body, Response, StatusCode};
-use mpc_contract::primitives::key_state::Keyset;
+use crate::primitives::Keyset;
+use near_mpc_contract_interface::types::Keyset as DtoKeyset;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
@@ -125,7 +126,9 @@ async fn handle_request(
             tracing::info!("received get_keyshares request");
             let whole_body = hyper::body::to_bytes(req.into_body()).await;
             match whole_body {
-                Ok(bytes) => match serde_json::from_slice::<Keyset>(&bytes) {
+                Ok(bytes) => match serde_json::from_slice::<DtoKeyset>(&bytes).and_then(|dto| {
+                    Keyset::try_from(dto).map_err(serde::de::Error::custom)
+                }) {
                     Ok(keyset) => {
                         let keyshares = match state
                             .keyshare_storage

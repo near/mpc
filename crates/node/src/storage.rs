@@ -212,11 +212,9 @@ impl VerifyForeignTransactionRequestStorage {
 
 #[cfg(test)]
 mod tests {
-    use mpc_contract::primitives::{
-        domain::DomainId,
-        signature::{Payload, Tweak},
-    };
+    use crate::primitives::DomainId;
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types as dtos;
 
     use crate::types::CKDRequest;
     use crate::{
@@ -236,9 +234,9 @@ mod tests {
             // All other fields are irrelevant for the test.
             receipt_id: CryptoHash([0; 32]),
             entropy: [0; 32],
-            payload: Payload::from_legacy_ecdsa([0; 32]),
+            payload: dtos::Payload::Ecdsa([0u8; 32].into()),
             timestamp_nanosec: 0,
-            tweak: Tweak::new([0; 32]),
+            tweak: dtos::Tweak([0; 32]),
             domain: DomainId::legacy_ecdsa_id(),
         };
         assert!(storage.add(&req1));
@@ -252,9 +250,9 @@ mod tests {
             // All other fields are irrelevant for the test.
             receipt_id: CryptoHash([0; 32]),
             entropy: [0; 32],
-            payload: Payload::from_legacy_ecdsa([0; 32]),
+            payload: dtos::Payload::Ecdsa([0u8; 32].into()),
             timestamp_nanosec: 0,
-            tweak: Tweak::new([0; 32]),
+            tweak: dtos::Tweak([0; 32]),
             domain: DomainId::legacy_ecdsa_id(),
         };
         storage.add(&req2);

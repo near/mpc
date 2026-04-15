@@ -3,9 +3,9 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
-use crate::types::SignatureId;
+use crate::types::{PayloadExt, SignatureId};
 use anyhow::Context;
-use mpc_contract::primitives::signature::Tweak;
+use near_mpc_contract_interface::types as dtos;
 use rand::rngs::OsRng;
 use std::time::Duration;
 use threshold_signatures::frost::eddsa::sign::sign;
@@ -138,7 +138,7 @@ pub struct SignComputation {
     pub keygen_output: KeygenOutput,
     pub threshold: ReconstructionLowerBound,
     pub message: Vec<u8>,
-    pub tweak: Tweak,
+    pub tweak: dtos::Tweak,
 }
 
 #[async_trait::async_trait]
@@ -147,7 +147,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
         self,
         channel: &mut NetworkTaskChannel,
     ) -> anyhow::Result<Option<(Signature, VerifyingKey)>> {
-        let tweak = Scalar::<Ed25519Sha512>::from_bytes_mod_order(self.tweak.as_bytes());
+        let tweak = Scalar::<Ed25519Sha512>::from_bytes_mod_order(self.tweak.0);
         let tweak = threshold_signatures::Tweak::new(tweak);
         let derived_keygen_output = KeygenOutput {
             private_share: tweak.derive_signing_share(&self.keygen_output.private_share),

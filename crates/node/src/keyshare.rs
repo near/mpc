@@ -7,8 +7,6 @@ mod temporary;
 pub mod test_utils;
 
 use anyhow::Context;
-use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
 use near_mpc_contract_interface::types::{
     Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
 };
@@ -16,7 +14,7 @@ use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeysha
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
-use near_mpc_contract_interface::types as dtos;
+use crate::primitives::{EpochId, KeyEventId, KeyForDomain, Keyset};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {
@@ -52,7 +50,11 @@ impl Keyshare {
     }
 
     pub fn check_consistency(&self, epoch_id: EpochId, key: &KeyForDomain) -> anyhow::Result<()> {
-        let key_id = KeyEventId::new(epoch_id, key.domain_id, key.attempt);
+        let key_id = KeyEventId {
+            epoch_id,
+            domain_id: key.domain_id,
+            attempt_id: key.attempt,
+        };
         if self.key_id != key_id {
             anyhow::bail!(
                 "Keyshare has incorrect key ID {:?}, should be {:?}",
@@ -60,7 +62,8 @@ impl Keyshare {
                 key_id
             );
         }
-        let public_key: dtos::PublicKey = key.key.clone().into();
+        // Claude: fix this. Not sure what is happening here...
+        let public_key: PublicKey = key.key.clone().into();
         if self.public_key()? != public_key {
             anyhow::bail!(
                 "Keyshare has incorrect public key {:?}, should be {:?}",
@@ -136,11 +139,11 @@ impl KeyshareStorage {
                     already_generated_keys,
                 )?;
                 Some(permanent)
-            } else if permanent.epoch_id().get() > epoch_id.get() {
+            } else if permanent.epoch_id().0 > epoch_id.0 {
                 anyhow::bail!(
                     "Permanent key storage has epoch ID {} which is newer than {}",
-                    permanent.epoch_id().get(),
-                    epoch_id.get()
+                    permanent.epoch_id().0,
+                    epoch_id.0
                 );
             } else {
                 None
@@ -178,11 +181,11 @@ impl KeyshareStorage {
         let permanent = self.permanent.load().await?;
         let epoch_id = key_id_to_generate.epoch_id;
         if let Some(permanent) = permanent {
-            if permanent.epoch_id().get() >= epoch_id.get() {
+            if permanent.epoch_id().0 >= epoch_id.0 {
                 anyhow::bail!(
                     "Permanent key storage has epoch ID {} which is not older than {}",
-                    permanent.epoch_id().get(),
-                    epoch_id.get()
+                    permanent.epoch_id().0,
+                    epoch_id.0
                 );
             }
         }
@@ -246,7 +249,11 @@ impl KeyshareStorage {
                 }
             }
 
-            let key_id = KeyEventId::new(keyset.epoch_id, domain.domain_id, domain.attempt);
+            let key_id = KeyEventId {
+                epoch_id: keyset.epoch_id,
+                domain_id: domain.domain_id,
+                attempt_id: domain.attempt,
+            };
             let keyshare = self
                 .temporary
                 .load_keyshare(key_id)
@@ -341,7 +348,11 @@ impl KeyshareStorage {
         epoch_id: EpochId,
         key: &KeyForDomain,
     ) -> anyhow::Result<Keyshare> {
-        let key_id = KeyEventId::new(epoch_id, key.domain_id, key.attempt);
+        let key_id = KeyEventId {
+            epoch_id,
+            domain_id: key.domain_id,
+            attempt_id: key.attempt,
+        };
         let keyshare = self
             .temporary
             .load_keyshare(key_id)
@@ -515,10 +526,7 @@ pub async fn generate_key_storage() -> (KeyshareStorage, tempfile::TempDir) {
 
 #[cfg(test)]
 pub mod tests {
-    use mpc_contract::primitives::{
-        domain::DomainId,
-        key_state::{AttemptId, EpochId, KeyEventId},
-    };
+    use crate::primitives::{AttemptId, DomainId, EpochId, KeyEventId};
     use rand::SeedableRng as _;
 
     use super::{generate_key_storage, KeyshareStorage};
@@ -622,13 +630,13 @@ pub mod tests {
 
         // Store some more keyshares as part of resharing, for epoch 1.
         let key_1_epoch_1 = Keyshare {
-            key_id: KeyEventId::new(EpochId::new(1), DomainId(1), AttemptId::new().next()),
+            key_id: KeyEventId::new(EpochId::new(1), DomainId(1), AttemptId(1)),
             data: key_1_epoch_0_alternate.data.clone(),
         };
         let key_1_epoch_1_invalid = generate_dummy_keyshare(1, 1, 2, &mut rng);
         let key_2_epoch_1_invalid = generate_dummy_keyshare(1, 2, 1, &mut rng);
         let key_2_epoch_1 = Keyshare {
-            key_id: KeyEventId::new(EpochId::new(1), DomainId(2), AttemptId::new().next().next()),
+            key_id: KeyEventId::new(EpochId::new(1), DomainId(2), AttemptId(2)),
             data: key_2_epoch_0_alternate.data.clone(),
         };
 
@@ -924,7 +932,7 @@ pub mod tests {
             key_id: KeyEventId::new(
                 EpochId::new(previous_epoch),
                 DomainId(1),
-                AttemptId::new().next(),
+                AttemptId(1),
             ),
             data: previous_key_1.data,
         };

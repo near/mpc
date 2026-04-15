@@ -1,7 +1,6 @@
 use super::permanent::LegacyRootKeyshareData;
 use super::{Keyshare, KeyshareData};
-use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+use crate::primitives::{AttemptId, DomainId, EpochId, KeyEventId};
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::frost_core::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
@@ -28,7 +27,7 @@ pub fn legacy_ecdsa_key_from_keyshares(
         );
     };
     Ok(LegacyRootKeyshareData {
-        epoch: keyshare.key_id.epoch_id.get(),
+        epoch: *keyshare.key_id.epoch_id,
         private_share: secp256k1_data.private_share.to_scalar(),
         public_key: secp256k1_data.public_key.to_element().to_affine(),
     })
