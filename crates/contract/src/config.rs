@@ -25,7 +25,7 @@ const DEFAULT_FAIL_ON_TIMEOUT_TERA_GAS: u64 = 2;
 const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// TODO(#1164): benchmark
-const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 3;
+const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 4;
 /// Prepaid gas for a `remove_non_participant_update_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 /// Prepaid gas for a `clean_foreign_chain_data` call
