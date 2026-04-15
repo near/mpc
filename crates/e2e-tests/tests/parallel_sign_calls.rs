@@ -19,7 +19,7 @@ async fn mpc_cluster__should_successfully_process_parallel_robust_ecdsa_requests
         c.domains = vec![DomainConfig {
             id: DomainId(0),
             curve: Curve::V2Secp256k1,
-            purpose: Some(DomainPurpose::Sign),
+            purpose: DomainPurpose::Sign,
         }];
         c.triples_to_buffer = 0;
         c.presignatures_to_buffer = 6;

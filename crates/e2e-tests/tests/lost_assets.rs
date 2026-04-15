@@ -82,7 +82,7 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         .domains
         .domains
         .iter()
-        .find(|d| matches!(d.purpose, Some(DomainPurpose::Sign)))
+        .find(|d| matches!(d.purpose, DomainPurpose::Sign))
     {
         for _ in 0..PRESIGNATURES_TO_BUFFER {
             let payload = match domain.curve {
@@ -118,7 +118,7 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         .domains
         .domains
         .iter()
-        .find(|d| matches!(d.purpose, Some(DomainPurpose::Sign)))
+        .find(|d| matches!(d.purpose, DomainPurpose::Sign))
     {
         let payload = match domain.curve {
             Curve::Secp256k1 | Curve::V2Secp256k1 => common::generate_ecdsa_payload(&mut rng),
