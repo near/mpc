@@ -217,7 +217,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     allowed_image_hashes_in_contract: watch::Receiver<Vec<NodeImageHash>>,
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
-) -> anyhow::Result<()> {
+) {
     let node_id = NodeId {
         account_id: node_account_id.clone(),
         tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
@@ -269,7 +269,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                         .inc();
                     tracing::warn!(
                         error = ?e,
-                        "TEE attestation failed, periodic attestation task will retry",
+                        "TEE attestation failed (collateral upload), will retry on next check",
                     );
                     was_available = is_available;
                     continue;
@@ -278,16 +278,18 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                         .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                         .inc();
-                    return Err(
-                        anyhow::anyhow!(e).context("TEE attestation failed, cannot continue")
+                    tracing::error!(
+                        error = ?e,
+                        "TEE attestation failed with unrecoverable error, shutting down node"
                     );
+                    panic!("TEE attestation failed with unrecoverable error: {e}");
                 }
             };
             let allowed_image_hashes_in_contract =
                 allowed_image_hashes_in_contract.borrow().clone();
             let allowed_launcher_compose_hashes_in_contract =
                 allowed_launcher_compose_hashes_in_contract.borrow().clone();
-            validate_and_submit_remote_attestation(
+            if let Err(e) = validate_and_submit_remote_attestation(
                 tx_sender.clone(),
                 fresh_attestation.clone(),
                 tls_public_key.clone(),
@@ -295,13 +297,19 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 &allowed_image_hashes_in_contract,
                 &allowed_launcher_compose_hashes_in_contract,
             )
-            .await?;
+            .await
+            {
+                tracing::error!(
+                    error = ?e,
+                    %node_account_id,
+                    "failed to submit attestation after removal, shutting down node"
+                );
+                panic!("Failed to submit remote attestation: {e}");
+            }
         }
 
         was_available = is_available;
     }
-
-    Ok(())
 }
 
 /// Allows repeatedly awaiting for something, like a `tokio::time::Interval`.

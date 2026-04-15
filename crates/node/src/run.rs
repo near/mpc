@@ -299,7 +299,7 @@ where
     let allowed_launcher_compose_receiver_clone =
         indexer_api.allowed_launcher_compose_receiver.clone();
     tokio::spawn(async move {
-        if let Err(e) = monitor_attestation_removal(
+        monitor_attestation_removal(
             account_id_clone,
             tee_authority,
             tx_sender_clone,
@@ -309,13 +309,7 @@ where
             allowed_launcher_compose_receiver_clone,
             tee_accounts_receiver,
         )
-        .await
-        {
-            tracing::error!(
-                error = ?e,
-                "attestation removal monitoring task failed"
-            );
-        }
+        .await;
     });
 
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
