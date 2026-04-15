@@ -648,33 +648,6 @@ mod to_dto {
         }
     }
 
-    impl From<Curve> for dtos::Curve {
-        fn from(curve: Curve) -> Self {
-            match curve {
-                Curve::Secp256k1 => dtos::Curve::Secp256k1,
-                Curve::Edwards25519 => dtos::Curve::Edwards25519,
-                Curve::Bls12381 => dtos::Curve::Bls12381,
-                Curve::V2Secp256k1 => dtos::Curve::V2Secp256k1,
-            }
-        }
-    }
-
-    impl From<DomainConfig> for dtos::DomainConfig {
-        fn from(config: DomainConfig) -> Self {
-            dtos::DomainConfig {
-                id: config.id.into(),
-                curve: config.curve.into(),
-                purpose: config.purpose,
-            }
-        }
-    }
-
-    impl From<PublicKeyExtended> for dtos::PublicKeyExtended {
-        fn from(key: PublicKeyExtended) -> Self {
-            (&key).into_dto_type()
-        }
-    }
-
     impl From<KeyForDomain> for dtos::KeyForDomain {
         fn from(kfd: KeyForDomain) -> Self {
             dtos::KeyForDomain {
