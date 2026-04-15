@@ -35,7 +35,7 @@ async fn test_web_endpoints() {
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for domain in &running.domains.domains {
         let outcome = match domain.purpose {
-            Some(DomainPurpose::Sign) => {
+            DomainPurpose::Sign => {
                 let payload = match domain.curve {
                     Curve::Secp256k1 | Curve::V2Secp256k1 => {
                         common::generate_ecdsa_payload(&mut rng)
@@ -48,7 +48,7 @@ async fn test_web_endpoints() {
                     .await
                     .expect("sign request transaction failed")
             }
-            Some(DomainPurpose::CKD) => cluster
+            DomainPurpose::CKD => cluster
                 .send_ckd_request(domain.id, common::generate_ckd_app_public_key(&mut rng))
                 .await
                 .expect("ckd request transaction failed"),
@@ -112,7 +112,7 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/contract"),
-            &["Contract is in Running state"],
+            &["RunningContractState"],
         )
         .await;
 

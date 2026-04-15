@@ -61,7 +61,7 @@ where
 
         let domain_data = self
             .ecdsa_signature_provider
-            .domain_data(foreign_tx_request.domain_id)?;
+            .domain_data(foreign_tx_request.domain_id.into())?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(

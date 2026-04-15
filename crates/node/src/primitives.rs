@@ -172,6 +172,18 @@ impl ParticipantId {
     }
 }
 
+impl From<near_mpc_contract_interface::types::AuthenticatedParticipantId> for ParticipantId {
+    fn from(p: near_mpc_contract_interface::types::AuthenticatedParticipantId) -> Self {
+        ParticipantId(p.0 .0)
+    }
+}
+
+impl From<near_mpc_contract_interface::types::ParticipantId> for ParticipantId {
+    fn from(p: near_mpc_contract_interface::types::ParticipantId) -> Self {
+        ParticipantId(p.0)
+    }
+}
+
 impl Display for ParticipantId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)

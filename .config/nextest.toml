@@ -2,7 +2,8 @@
 # Each sandbox test spins up its own NEAR sandbox instance, so running too many
 # concurrently causes request timeouts on CI.
 [test-groups.contract-sandbox]
-max-threads = 16
+# TODO(#2898): tune this if parallel_sign_calls test is still flaky.
+max-threads = 4
 
 [profile.ci-contract]
 [[profile.ci-contract.overrides]]

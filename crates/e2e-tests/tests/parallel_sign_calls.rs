@@ -24,22 +24,22 @@ async fn mpc_cluster_should_successfully_process_robust_ecdsa_and_mixed_parallel
             DomainConfig {
                 id: DomainId(0),
                 curve: Curve::V2Secp256k1,
-                purpose: Some(DomainPurpose::Sign),
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
                 curve: Curve::Secp256k1,
-                purpose: Some(DomainPurpose::Sign),
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
                 curve: Curve::Edwards25519,
-                purpose: Some(DomainPurpose::Sign),
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
                 curve: Curve::Bls12381,
-                purpose: Some(DomainPurpose::CKD),
+                purpose: DomainPurpose::CKD,
             },
         ];
         c.presignatures_to_buffer = 6;

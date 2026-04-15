@@ -252,7 +252,7 @@ where
                                 tweak: derive_tweak(&predecessor_id, &request.path),
                                 entropy,
                                 timestamp_nanosec,
-                                domain: request.domain_id,
+                                domain: request.domain_id.into(),
                             };
                             // Index the signature requests as soon as we see them. We'll decide
                             // whether to *process* them after.
@@ -283,7 +283,7 @@ where
                                 app_id: request.app_id,
                                 entropy,
                                 timestamp_nanosec,
-                                domain_id: request.domain_id,
+                                domain_id: request.domain_id.into(),
                             };
                             // Index the ckd requests as soon as we see them. We'll decide
                             // whether to *process* them after.

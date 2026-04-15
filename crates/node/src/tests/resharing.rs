@@ -6,13 +6,19 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
-use mpc_contract::primitives::test_utils::infer_purpose_from_curve;
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;
 
 use super::DEFAULT_BLOCK_TIME;
+
+fn infer_purpose_from_curve(curve: Curve) -> DomainPurpose {
+    match curve {
+        Curve::Bls12381 => DomainPurpose::CKD,
+        _ => DomainPurpose::Sign,
+    }
+}
 
 // Test a simple resharing of one node joining a cluster of 4 nodes.
 #[tokio::test]
@@ -194,7 +200,7 @@ async fn test_key_resharing_multistage() {
                 ContractState::Running(running) => {
                     running.keyset.epoch_id.get() == 0
                         && running.participants.participants.len() == NUM_PARTICIPANTS - 2
-                        && running.keyset.get_domain_ids().len() == 1
+                        && running.keyset.domains.len() == 1
                 }
                 _ => false,
             },
