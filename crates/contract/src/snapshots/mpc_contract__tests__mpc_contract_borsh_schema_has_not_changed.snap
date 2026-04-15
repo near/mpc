@@ -500,6 +500,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ForeignChainSupport": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "votes_per_chain",
+                        "IterableMap",
+                    ),
+                ],
+            ),
+        },
         "ForeignChain__Abstract": Struct {
             fields: Empty,
         },

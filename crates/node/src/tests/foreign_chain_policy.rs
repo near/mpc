@@ -4,13 +4,15 @@ use crate::tracking::AutoAbortTask;
 use mpc_node_config::{
     AuthConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
 };
+use near_mpc_contract_interface::types::ForeignChain;
 use near_time::Clock;
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
-async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() {
+async fn supported_foreign_chains_auto_vote_on_startup__should_apply_local_policy() {
     // Given
     const THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
@@ -50,9 +52,7 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         config.config.foreign_chains = foreign_chains.clone();
     }
 
-    let expected_policy = foreign_chains
-        .to_policy()
-        .expect("policy should not be None");
+    let expected_supported_chains = BTreeSet::from([ForeignChain::Solana]).into();
 
     {
         let mut contract = setup.indexer.contract_mut().await;
@@ -70,7 +70,7 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         loop {
             {
                 let contract = setup.indexer.contract_mut().await;
-                if contract.foreign_chain_policy() == &expected_policy {
+                if contract.supported_foreign_chains() == &expected_supported_chains {
                     break;
                 }
             }
@@ -83,9 +83,10 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
     assert!(wait_result.is_ok(), "timed out waiting for policy update");
 
     let contract = setup.indexer.contract_mut().await;
-    assert_eq!(contract.foreign_chain_policy(), &expected_policy);
-    assert!(contract
-        .foreign_chain_policy_votes()
-        .proposal_by_account
-        .is_empty());
+    assert_eq!(
+        contract.supported_foreign_chains(),
+        &expected_supported_chains
+    );
+    // Each node registered its supported chains, so the votes map should not be empty
+    assert!(!contract.supported_foreign_chains_by_node().is_empty());
 }

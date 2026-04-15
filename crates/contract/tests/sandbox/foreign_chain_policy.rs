@@ -7,10 +7,16 @@ use crate::sandbox::utils::consts::{ALL_CURVES, PARTICIPANT_LEN};
 use assert_matches::assert_matches;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names::{
-    GET_FOREIGN_CHAIN_POLICY_PROPOSALS, REGISTER_FOREIGN_CHAIN_CONFIG, VOTE_FOREIGN_CHAIN_POLICY,
+    REGISTER_FOREIGN_CHAIN_CONFIG, VOTE_FOREIGN_CHAIN_POLICY,
 };
 use near_mpc_contract_interface::types as dtos;
 use serde_json::json;
+
+#[expect(
+    deprecated,
+    reason = "regression test of API that will be deprecated in #2712"
+)]
+use near_mpc_contract_interface::method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS;
 
 #[tokio::test]
 async fn vote_foreign_chain_policy__should_reject_empty_rpc_providers() {
@@ -76,6 +82,10 @@ async fn vote_foreign_chain_policy_accepts_valid_policy() {
     );
 }
 
+#[expect(
+    deprecated,
+    reason = "regression test of API that will be deprecated in #2712"
+)]
 #[tokio::test]
 async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
     // Given: a running contract with participants
@@ -129,6 +139,10 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
     );
 }
 
+#[expect(
+    deprecated,
+    reason = "regression test of API that will be deprecated in #2712"
+)]
 #[tokio::test]
 async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
     // Given: a running contract with participants

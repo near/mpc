@@ -5,7 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::types::{ChainSendTransactionRequest, ChainVoteForeignChainPolicyArgs};
+use crate::indexer::types::{ChainRegisterForeignChainConfiguration, ChainSendTransactionRequest};
 use crate::indexer::{tx_sender, IndexerAPI, ReadForeignChainPolicy};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
@@ -29,13 +29,11 @@ use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
-use anyhow::Context;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{Curve, DomainId};
 use mpc_contract::primitives::key_state::EpochId;
 use mpc_node_config::ConfigFile;
-use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -384,14 +382,17 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        if let Err(err) = Self::maybe_vote_foreign_chain_policy(
-            &config_file,
-            &foreign_chain_policy_reader,
-            &chain_txn_sender,
-        )
-        .await
+        // Register locally supported foreign chains with the contract.
+        let locally_supported_chains = config_file.foreign_chains.to_dto();
+        if let Err(err) = chain_txn_sender
+            .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
+                ChainRegisterForeignChainConfiguration {
+                    foreign_chain_configuration: locally_supported_chains,
+                },
+            ))
+            .await
         {
-            tracing::warn!(error = ?err, "failed to auto-vote foreign chain policy");
+            tracing::warn!(error = ?err, "failed to send register supported foreign chains");
         }
 
         tracing::info!("Creating tls mesh");
@@ -733,81 +734,6 @@ where
         }
         Ok(MpcJobResult::Done)
     }
-
-    async fn maybe_vote_foreign_chain_policy(
-        config_file: &ConfigFile,
-        foreign_chain_policy_reader: &ForeignChainPolicyReader,
-        chain_txn_sender: &TransactionSender,
-    ) -> anyhow::Result<()> {
-        let Some(local_policy) = config_file.foreign_chains.to_policy() else {
-            tracing::info!(
-                "foreign_chains config is empty; skipping foreign chain policy auto-vote"
-            );
-            return Ok(());
-        };
-
-        let on_chain_policy = foreign_chain_policy_reader
-            .get_foreign_chain_policy()
-            .await
-            .context("failed to fetch foreign chain policy")?;
-
-        if on_chain_policy == local_policy {
-            tracing::info!("foreign chain policy matches local config; skipping auto-vote");
-            return Ok(());
-        }
-
-        let unsupported_chains: Vec<dtos::ForeignChain> = on_chain_policy
-            .chains
-            .keys()
-            .filter(|chain| !Self::is_supported_foreign_chain(chain))
-            .cloned()
-            .collect();
-
-        if !unsupported_chains.is_empty() {
-            tracing::warn!(
-                ?unsupported_chains,
-                "on-chain foreign chain policy contains unsupported chains; skipping auto-vote"
-            );
-            return Ok(());
-        }
-
-        let proposals = foreign_chain_policy_reader
-            .get_foreign_chain_policy_proposals()
-            .await
-            .context("failed to fetch foreign chain policy proposals")?;
-
-        let my_account_id = dtos::AccountId(config_file.my_near_account_id.to_string());
-        if proposals
-            .proposal_by_account
-            .get(&my_account_id)
-            .is_some_and(|proposal| proposal == &local_policy)
-        {
-            tracing::info!("foreign chain policy already proposed by this node; skipping");
-            return Ok(());
-        }
-
-        chain_txn_sender
-            .send(ChainSendTransactionRequest::VoteForeignChainPolicy(
-                ChainVoteForeignChainPolicyArgs {
-                    policy: local_policy,
-                },
-            ))
-            .await
-            .context("failed to send foreign chain policy vote")?;
-
-        Ok(())
-    }
-
-    fn is_supported_foreign_chain(chain: &dtos::ForeignChain) -> bool {
-        matches!(
-            chain,
-            dtos::ForeignChain::Abstract
-                | dtos::ForeignChain::Solana
-                | dtos::ForeignChain::Bitcoin
-                | dtos::ForeignChain::Ethereum
-                | dtos::ForeignChain::Starknet
-        )
-    }
 }
 
 /// Simple RAII to export current job name to metrics and /debug/tasks.
@@ -966,33 +892,4 @@ fn make_initializing_stop_fn(
             stop_initializing(new_state, key_event.id.epoch_id, &key_event_sender)
         }),
     )
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::Coordinator;
-    use crate::indexer::fake::FakeForeignChainPolicyReader;
-    use crate::tests::common::MockTransactionSender;
-    use near_mpc_contract_interface::types as dtos;
-
-    #[test]
-    fn is_supported_foreign_chain__supports_starknet() {
-        assert!(Coordinator::<
-            MockTransactionSender,
-            FakeForeignChainPolicyReader,
-        >::is_supported_foreign_chain(
-            &dtos::ForeignChain::Starknet
-        ));
-    }
-
-    #[test]
-    fn is_supported_foreign_chain__supports_abstract() {
-        assert!(Coordinator::<
-            MockTransactionSender,
-            FakeForeignChainPolicyReader,
-        >::is_supported_foreign_chain(
-            &dtos::ForeignChain::Abstract
-        ));
-    }
 }

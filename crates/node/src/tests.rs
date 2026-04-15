@@ -21,6 +21,8 @@ use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
 };
+use crate::indexer::tx_sender::TransactionSender;
+use crate::indexer::types::{ChainRegisterForeignChainConfiguration, ChainSendTransactionRequest};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
@@ -143,6 +145,17 @@ impl OneNodeTestConfig {
                 )
                 .await
                 .unwrap();
+
+                // Register supported foreign chains (mirrors run.rs behavior)
+                let locally_supported_chains = self.config.foreign_chains.to_dto();
+                self.indexer
+                    .txn_sender
+                    .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
+                        ChainRegisterForeignChainConfiguration {
+                            foreign_chain_configuration: locally_supported_chains,
+                        },
+                    ))
+                    .await?;
 
                 let coordinator = Coordinator {
                     clock: self.clock,

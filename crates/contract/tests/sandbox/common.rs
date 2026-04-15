@@ -24,6 +24,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
+#[expect(deprecated)]
 use near_mpc_contract_interface::{
     method_names,
     types::{
@@ -585,6 +586,7 @@ pub async fn setup_foreign_tx_env() -> ForeignTxEnv {
 }
 
 /// Build a [`ForeignChainPolicy`] that enables the given chain with a dummy RPC URL.
+#[expect(deprecated)]
 pub fn make_foreign_chain_policy(
     chain: near_mpc_contract_interface::types::ForeignChain,
 ) -> near_mpc_contract_interface::types::ForeignChainPolicy {
