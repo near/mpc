@@ -232,6 +232,7 @@ When the interface DTO uses a weaker type (e.g., `String` for a public key), val
 
 ### Tracking Issues
 - [#381](https://github.com/near/mpc/issues/381) — MPC node should not depend on the contract crate directly (root issue)
+- [#2876](https://github.com/near/mpc/issues/2876) — Document contract interface design (this document)
 - [#2167](https://github.com/near/mpc/issues/2167) — participants.rs should depend on contract-interface, not contract
 
 ### Active PRs
