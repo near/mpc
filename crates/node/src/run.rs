@@ -299,22 +299,38 @@ where
     let allowed_launcher_compose_receiver_clone =
         indexer_api.allowed_launcher_compose_receiver.clone();
     tokio::spawn(async move {
-        if let Err(e) = monitor_attestation_removal(
-            account_id_clone,
-            tee_authority,
-            tx_sender_clone,
-            tls_public_key,
-            account_public_key,
-            allowed_docker_images_receiver_clone,
-            allowed_launcher_compose_receiver_clone,
-            tee_accounts_receiver,
-        )
-        .await
-        {
-            tracing::error!(
-                error = ?e,
-                "attestation removal monitoring task failed"
-            );
+        let mut retry_count: u32 = 0;
+        loop {
+            match monitor_attestation_removal(
+                account_id_clone.clone(),
+                tee_authority.clone(),
+                tx_sender_clone.clone(),
+                tls_public_key,
+                account_public_key,
+                allowed_docker_images_receiver_clone.clone(),
+                allowed_launcher_compose_receiver_clone.clone(),
+                tee_accounts_receiver.clone(),
+            )
+            .await
+            {
+                Ok(()) => {
+                    tracing::info!(
+                        "attestation removal monitoring task exited normally (channel closed)"
+                    );
+                    break;
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    let backoff_secs = std::cmp::min(retry_count * 10, 300) as u64;
+                    tracing::error!(
+                        error = ?e,
+                        retry_count,
+                        backoff_secs,
+                        "attestation removal monitoring task failed, restarting in {backoff_secs}s"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
+                }
+            }
         }
     });
 

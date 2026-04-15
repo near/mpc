@@ -278,16 +278,19 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                         .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                         .inc();
-                    return Err(
-                        anyhow::anyhow!(e).context("TEE attestation failed, cannot continue")
+                    tracing::error!(
+                        error = ?e,
+                        "TEE attestation generation failed, will retry on next status change"
                     );
+                    was_available = is_available;
+                    continue;
                 }
             };
             let allowed_image_hashes_in_contract =
                 allowed_image_hashes_in_contract.borrow().clone();
             let allowed_launcher_compose_hashes_in_contract =
                 allowed_launcher_compose_hashes_in_contract.borrow().clone();
-            validate_and_submit_remote_attestation(
+            if let Err(e) = validate_and_submit_remote_attestation(
                 tx_sender.clone(),
                 fresh_attestation.clone(),
                 tls_public_key.clone(),
@@ -295,7 +298,15 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 &allowed_image_hashes_in_contract,
                 &allowed_launcher_compose_hashes_in_contract,
             )
-            .await?;
+            .await
+            {
+                tracing::error!(
+                    error = ?e,
+                    "attestation resubmission failed, will retry on next status change"
+                );
+                was_available = is_available;
+                continue;
+            }
         }
 
         was_available = is_available;
