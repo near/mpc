@@ -59,8 +59,8 @@ async fn test_keygen() -> anyhow::Result<()> {
     assert_eq!(init.domains.next_domain_id, domain_id + 1);
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
-        scheme: curve.into_interface_type(),
-        purpose: Some(dtos::DomainPurpose::Sign),
+        curve: curve.into_interface_type(),
+        purpose: dtos::DomainPurpose::Sign,
     };
     let found = init
         .domains
@@ -166,8 +166,8 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         };
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
-            scheme: (*curve).into_interface_type(),
-            purpose: Some(expected_purpose),
+            curve: (*curve).into_interface_type(),
+            purpose: expected_purpose,
         };
         let found = init
             .domains

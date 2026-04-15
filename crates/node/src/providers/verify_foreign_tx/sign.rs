@@ -21,10 +21,11 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
+use mpc_contract::primitives::signature::{Payload, Tweak};
 use mpc_node_config::ForeignChainsConfig;
 use near_indexer_primitives::CryptoHash;
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -33,9 +34,11 @@ fn build_signature_request(
     request: &VerifyForeignTxRequest,
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
-    let payload_hash: [u8; 32] = foreign_tx_payload.compute_msg_hash()?.into();
-    let payload_bytes =
-        Bytes::new(payload_hash.to_vec()).map_err(|err| anyhow::format_err!("{err}"))?;
+    let payload_hash: [u8; ECDSA_PAYLOAD_SIZE_BYTES] =
+        foreign_tx_payload.compute_msg_hash()?.into();
+    let payload_bytes: BoundedVec<u8, ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES> =
+        payload_hash.into();
+
     Ok(SignatureRequest {
         id: request.id,
         receipt_id: request.receipt_id,
@@ -59,7 +62,7 @@ where
 
         let domain_data = self
             .ecdsa_signature_provider
-            .domain_data(foreign_tx_request.domain_id)?;
+            .domain_data(foreign_tx_request.domain_id.into())?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(

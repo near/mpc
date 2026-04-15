@@ -14,7 +14,11 @@ use crate::sandbox::{
 };
 use anyhow::Result;
 use mpc_contract::{
-    primitives::{domain::Curve, participants::Participants, thresholds::ThresholdParameters},
+    primitives::{
+        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
+        participants::Participants,
+        thresholds::ThresholdParameters,
+    },
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
@@ -161,10 +165,10 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         };
         running.domains.next_domain_id
     };
-    let domains_to_add = vec![dtos::DomainConfig {
-        id: dtos::DomainId(next_domain_id),
-        scheme: dtos::SignatureScheme::Ed25519,
-        purpose: Some(dtos::DomainPurpose::Sign),
+    let domains_to_add = vec![DomainConfig {
+        id: DomainId(next_domain_id),
+        curve: Curve::Edwards25519,
+        purpose: DomainPurpose::Sign,
     }];
     execute_async_transactions(
         &mpc_signer_accounts[0..2],

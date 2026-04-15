@@ -3,7 +3,7 @@ use crate::common;
 use std::time::Duration;
 
 use e2e_tests::MpcNodeState;
-use near_mpc_contract_interface::types::{DomainPurpose, SignatureScheme};
+use near_mpc_contract_interface::types::{Curve, DomainPurpose};
 use rand::SeedableRng;
 
 /// Fetch a URL and assert the response body contains all of `expected`.
@@ -35,12 +35,12 @@ async fn test_web_endpoints() {
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for domain in &running.domains.domains {
         let outcome = match domain.purpose {
-            Some(DomainPurpose::Sign) => {
-                let payload = match domain.scheme {
-                    SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+            DomainPurpose::Sign => {
+                let payload = match domain.curve {
+                    Curve::Secp256k1 | Curve::V2Secp256k1 => {
                         common::generate_ecdsa_payload(&mut rng)
                     }
-                    SignatureScheme::Ed25519 => common::generate_eddsa_payload(&mut rng),
+                    Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
                     _ => continue,
                 };
                 cluster
@@ -48,7 +48,7 @@ async fn test_web_endpoints() {
                     .await
                     .expect("sign request transaction failed")
             }
-            Some(DomainPurpose::CKD) => cluster
+            DomainPurpose::CKD => cluster
                 .send_ckd_request(domain.id, common::generate_ckd_app_public_key(&mut rng))
                 .await
                 .expect("ckd request transaction failed"),
@@ -112,11 +112,13 @@ async fn test_web_endpoints() {
             &client,
             i,
             &format!("http://{web_addr}/debug/contract"),
-            &["Contract is in Running state"],
+            &["RunningContractState"],
         )
         .await;
 
-        // pprof flamegraph: verify SVG content-type and body.
+        // pprof flamegraph: verify the endpoint is reachable and returns either a
+        // valid SVG (200) or no-content (204 — zero CPU samples captured because all
+        // threads were sleeping in blocked libraries such as libc/pthread).
         let resp = client
             .get(format!(
                 "http://{pprof_addr}/profiler/pprof/flamegraph?sampling_duration_secs=1"
@@ -125,25 +127,27 @@ async fn test_web_endpoints() {
             .send()
             .await
             .unwrap_or_else(|e| panic!("node {i}: pprof request failed: {e}"));
-        assert_eq!(
-            resp.status(),
-            reqwest::StatusCode::OK,
-            "node {i}: pprof status"
-        );
-        let content_type = resp
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+        let status = resp.status();
         assert!(
-            content_type.starts_with("image/svg+xml"),
-            "node {i}: wrong pprof content-type: {content_type}"
+            status == reqwest::StatusCode::OK || status == reqwest::StatusCode::NO_CONTENT,
+            "node {i}: unexpected pprof status {status}"
         );
-        let body = resp.text().await.unwrap();
-        assert!(
-            body.contains("<svg") && body.contains("</svg>"),
-            "node {i}: flamegraph missing svg tags"
-        );
+        if status == reqwest::StatusCode::OK {
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            assert!(
+                content_type.starts_with("image/svg+xml"),
+                "node {i}: wrong pprof content-type: {content_type}"
+            );
+            let body = resp.text().await.unwrap();
+            assert!(
+                body.contains("<svg") && body.contains("</svg>"),
+                "node {i}: flamegraph missing svg tags"
+            );
+        }
 
         tracing::info!(node = i, "all web endpoints verified");
     }

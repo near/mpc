@@ -894,7 +894,7 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod testing {
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
     use crate::primitives::ParticipantId;
@@ -1099,7 +1099,7 @@ mod tests {
                     channel_id,
                     kind: crate::primitives::MpcMessageKind::Start(MpcStartMessage {
                         task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
-                            key_event: key_id,
+                            key_event: key_id.into(),
                         }),
                         participants: vec![participant0, participant1],
                     }),

@@ -1,11 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use backon::{ConstantBuilder, Retryable};
 use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
-    CKDAppPublicKey, DomainPurpose, ProtocolContractState, RunningContractState, SignatureScheme,
+    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainId, DomainPurpose, ProtocolContractState,
+    PublicKey, PublicKeyExtended, RunningContractState,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -18,6 +20,10 @@ pub const REQUEST_DURING_RESHARING_PORT_SEED: u16 = 4;
 pub const SUBMIT_PARTICIPANT_INFO_PORT_SEED: u16 = 5;
 pub const CANCELLATION_OF_RESHARING_PORT_SEED: u16 = 6;
 pub const ROBUST_ECDSA_PORT_SEED: u16 = 7;
+pub const PARALLEL_SIGN_CALLS_PORT_SEED: u16 = 8;
+pub const CKD_VERIFICATION_PORT_SEED: u16 = 9;
+pub const LOST_ASSETS_PORT_SEED: u16 = 10;
+pub const CKD_PV_VERIFICATION_PORT_SEED: u16 = 11;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -107,6 +113,49 @@ pub async fn wait_for_presignatures(
     }
 }
 
+/// Wait until every node in `indices` reports the given metric satisfying `predicate`.
+pub async fn wait_metric_on_nodes(
+    cluster: &e2e_tests::MpcCluster,
+    indices: &[usize],
+    name: &str,
+    predicate: impl Fn(i64) -> bool + Copy,
+    timeout: std::time::Duration,
+) {
+    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
+    (|| async {
+        let values = cluster
+            .get_metric_all_nodes(name)
+            .await
+            .expect("failed to scrape metrics");
+        for &idx in indices {
+            anyhow::ensure!(
+                values[idx].is_some_and(predicate),
+                "node {idx}: metric {name} not satisfied (value: {:?})",
+                values[idx]
+            );
+        }
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(POLL_INTERVAL)
+            .with_max_times(max_times),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{e}"));
+}
+
+/// Sum a metric across all running nodes (stopped nodes contribute 0).
+pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> i64 {
+    cluster
+        .get_metric_all_nodes(name)
+        .await
+        .expect("failed to scrape metrics")
+        .into_iter()
+        .flatten()
+        .sum()
+}
+
 pub fn load_contract_wasm() -> Vec<u8> {
     if let Ok(path) = std::env::var("MPC_CONTRACT_WASM") {
         let wasm_path = PathBuf::from(&path);
@@ -134,6 +183,32 @@ pub fn load_contract_wasm() -> Vec<u8> {
     test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build()
 }
 
+pub fn load_parallel_contract_wasm() -> Vec<u8> {
+    if let Ok(path) = std::env::var("MPC_PARALLEL_CONTRACT_WASM") {
+        let wasm_path = PathBuf::from(&path);
+        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
+            panic!(
+                "Failed to read parallel contract WASM at {}: {e}",
+                wasm_path.display()
+            )
+        });
+    }
+
+    let default_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/near/test-parallel-contract/test_parallel_contract.wasm");
+    if default_path.exists() {
+        return std::fs::read(&default_path).unwrap_or_else(|e| {
+            panic!(
+                "Failed to read parallel contract WASM at {}: {e}",
+                default_path.display()
+            )
+        });
+    }
+    tracing::info!("pre-built parallel contract WASM not found — building");
+    test_utils::contract_build::ContractBuilder::new("crates/test-parallel-contract/Cargo.toml")
+        .build()
+}
+
 pub fn generate_ecdsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
     let mut bytes = [0u8; 32];
     rng.fill(&mut bytes);
@@ -151,6 +226,22 @@ pub fn generate_ckd_app_public_key(rng: &mut impl rand::Rng) -> CKDAppPublicKey 
     CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey::from(&point))
 }
 
+/// Extract the BLS12381 G2 public key for a given domain from running contract state.
+pub fn bls_public_key(running: &RunningContractState, domain_id: DomainId) -> Bls12381G2PublicKey {
+    let key_for_domain = running
+        .keyset
+        .domains
+        .iter()
+        .find(|k| k.domain_id == domain_id)
+        .expect("no key found for BLS12381 domain");
+    match &key_for_domain.key {
+        PublicKeyExtended::Bls12381 {
+            public_key: PublicKey::Bls12381(g2),
+        } => g2.clone(),
+        other => panic!("expected Bls12381 key, got {other:?}"),
+    }
+}
+
 pub async fn send_sign_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
@@ -160,7 +251,7 @@ pub async fn send_sign_request(
         .domains
         .domains
         .iter()
-        .find(|d| d.scheme == SignatureScheme::Secp256k1 && d.purpose == Some(DomainPurpose::Sign))
+        .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
         .expect("no Secp256k1 Sign domain");
     let outcome = cluster
         .send_sign_request(domain.id, generate_ecdsa_payload(rng))
@@ -182,7 +273,7 @@ pub async fn send_ckd_request(
         .domains
         .domains
         .iter()
-        .find(|d| d.purpose == Some(DomainPurpose::CKD))
+        .find(|d| d.purpose == DomainPurpose::CKD)
         .expect("no CKD domain");
     let outcome = cluster
         .send_ckd_request(domain.id, generate_ckd_app_public_key(rng))

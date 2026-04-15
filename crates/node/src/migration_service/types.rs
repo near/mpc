@@ -482,13 +482,22 @@ pub mod tests {
         pub p2p_public_key: VerifyingKey,
     }
 
+    fn from_internal_contract_state(
+        state: &ProtocolContractState,
+        height: u64,
+        port_override: Option<u16>,
+    ) -> anyhow::Result<ContractState> {
+        let dto: near_mpc_contract_interface::types::ProtocolContractState = state.clone().into();
+        ContractState::from_contract_state(&dto, height, port_override)
+    }
+
     const BLOCK_HEIGHT: u64 = 6;
     const PORT_OVERRIDE: Option<u16> = None;
     const NUM_DOMAINS: usize = 5;
     pub(crate) fn make_resharing_contract_case(
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> ContractCase {
-        let contract = ContractState::from_contract_state(
+        let contract = from_internal_contract_state(
             &ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1),
             BLOCK_HEIGHT,
             PORT_OVERRIDE,
@@ -500,7 +509,7 @@ pub mod tests {
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> (ContractCase, Keyset) {
         let running_state = gen_running_state(NUM_DOMAINS);
-        let contract = ContractState::from_contract_state(
+        let contract = from_internal_contract_state(
             &ProtocolContractState::Running(running_state.clone()),
             BLOCK_HEIGHT,
             PORT_OVERRIDE,
@@ -515,7 +524,7 @@ pub mod tests {
     pub(crate) fn make_initializing_contract_case(
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> ContractCase {
-        let contract = ContractState::from_contract_state(
+        let contract = from_internal_contract_state(
             &ProtocolContractState::Initializing(gen_initializing_state(NUM_DOMAINS, 0).1),
             BLOCK_HEIGHT,
             PORT_OVERRIDE,

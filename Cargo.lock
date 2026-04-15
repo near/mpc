@@ -3045,6 +3045,7 @@ dependencies = [
  "group",
  "hex",
  "launcher-interface",
+ "mpc-contract",
  "mpc-node-config",
  "near-account-id 2.6.0",
  "near-indexer-primitives",
@@ -3058,6 +3059,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "test-utils",
+ "threshold-signatures",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
@@ -5689,6 +5691,7 @@ dependencies = [
  "near-crypto 0.28.0",
  "near-jsonrpc-client 0.15.1",
  "near-jsonrpc-primitives 0.28.0",
+ "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-primitives 0.28.0",
  "near-sdk",
@@ -9902,9 +9905,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.10"
+version = "0.103.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
+checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -11108,7 +11111,6 @@ dependencies = [
  "borsh",
  "elliptic-curve",
  "getrandom 0.2.17",
- "hex",
  "near-mpc-contract-interface",
  "near-sdk",
  "serde",

@@ -29,3 +29,10 @@ venv
 .claude
 .codex
 CLAUDE.local.md
+
+# mise tool version manager
+mise.toml
+.mise/
+
+# Local git worktrees
+.worktrees/
