@@ -23,9 +23,6 @@ use super::primitives::DomainId;
     Debug,
     Eq,
     PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
     Serialize,
     Deserialize,
     BorshSerialize,
@@ -48,9 +45,6 @@ pub struct EpochId(pub u64);
     Debug,
     Eq,
     PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
     Serialize,
     Deserialize,
     BorshSerialize,
@@ -73,9 +67,6 @@ pub struct AttemptId(pub u64);
     Debug,
     Eq,
     PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
     Serialize,
     Deserialize,
     BorshSerialize,
@@ -99,7 +90,6 @@ pub struct Threshold(pub u64);
     PartialEq,
     Ord,
     PartialOrd,
-    Hash,
     Serialize,
     Deserialize,
     BorshSerialize,
@@ -137,18 +127,7 @@ pub struct AuthenticatedAccountId(pub AccountId);
 
 /// Elliptic curve used by a domain.
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -166,18 +145,7 @@ pub enum Curve {
 
 /// The purpose that a domain serves.
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -193,9 +161,7 @@ pub enum DomainPurpose {
 }
 
 /// Configuration for a signature domain.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -248,16 +214,7 @@ pub struct Keyset {
 
 /// Identifier for a key event (generation or resharing attempt).
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
+    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

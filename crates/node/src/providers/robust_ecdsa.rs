@@ -102,7 +102,7 @@ impl RobustEcdsaSignatureProvider {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum RobustEcdsaTaskId {
     KeyGeneration {
         key_event: KeyEventId,

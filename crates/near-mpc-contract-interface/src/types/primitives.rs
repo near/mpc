@@ -51,7 +51,6 @@ pub struct Tweak(pub [u8; 32]);
     PartialEq,
     Ord,
     PartialOrd,
-    Hash,
     Serialize,
     Deserialize,
     BorshSerialize,
@@ -62,6 +61,7 @@ pub struct Tweak(pub [u8; 32]);
     derive_more::FromStr,
     Default,
 )]
+#[cfg_attr(feature = "node-extras", derive(Hash))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)

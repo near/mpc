@@ -112,7 +112,7 @@ impl EcdsaSignatureProvider {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum EcdsaTaskId {
     KeyGeneration {
         key_event: KeyEventId,

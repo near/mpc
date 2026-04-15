@@ -4236,7 +4236,7 @@ mod tests {
 
     /// Test helper struct that combines update metadata with its votes for convenient comparison.
     /// Used to convert BTreeMap-based [`ProposedUpdates`] into a sortable vector format for assertions.
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     struct TestUpdate {
         update_id: u64,
         update_hash: dtos::UpdateHash,
@@ -4331,7 +4331,7 @@ mod tests {
 
         let mut expected = vec![code_update, config_update];
         // sorting to have consistent order
-        expected.sort();
+        expected.sort_by_key(|u| u.update_id);
 
         let res = contract.proposed_updates();
 
@@ -4347,7 +4347,7 @@ mod tests {
         // Sort votes within each update
         actual.iter_mut().for_each(|update| update.votes.sort());
         // sorting to have consistent order
-        actual.sort();
+        actual.sort_by_key(|u| u.update_id);
 
         assert_eq!(expected, actual);
     }

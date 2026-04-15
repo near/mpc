@@ -21,7 +21,7 @@ pub use near_mpc_contract_interface::types::{
     VerifyForeignTransactionRequestArgs,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize)]
 pub struct ForeignChainSignatureVerifier {
     expected_extracted_values: Vec<ExtractedValue>,
     request: ForeignChainRpcRequest,

@@ -51,6 +51,7 @@ near-mpc-contract-interface = { workspace = true, features = [
     "ed25519-dalek",
     "blstrs",
     "near",
+    "node-extras",
 ] }
 near-o11y = { workspace = true }
 near-sdk = { workspace = true }

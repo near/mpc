@@ -23,7 +23,7 @@ use crate::{
     types::{CKDId, SignatureId},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum CKDTaskId {
     KeyGeneration { key_event: KeyEventId },
     KeyResharing { key_event: KeyEventId },

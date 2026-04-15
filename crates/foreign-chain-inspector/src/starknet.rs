@@ -5,7 +5,7 @@ pub mod inspector;
 mpc_primitives::define_hash!(StarknetBlockHash, 32);
 mpc_primitives::define_hash!(StarknetTransactionHash, 32);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StarknetExtractedValue {
     BlockHash(StarknetBlockHash),
     Log(StarknetLog),

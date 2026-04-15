@@ -48,7 +48,7 @@ impl EddsaSignatureProvider {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum EddsaTaskId {
     KeyGeneration { key_event: KeyEventId },
     KeyResharing { key_event: KeyEventId },

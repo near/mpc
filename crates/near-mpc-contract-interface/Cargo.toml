@@ -8,6 +8,9 @@ description = "Request and response types for the NEAR MPC signer contract"
 readme = "README.md"
 
 [features]
+# Derives Hash on types needed as HashMap/HashSet keys in the node but not the contract,
+# making the contract WASM size smaller.
+node-extras = []
 abi = [
     "borsh/unstable__schema",
     "mpc-primitives/abi",

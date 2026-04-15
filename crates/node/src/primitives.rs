@@ -251,7 +251,7 @@ pub struct MpcPeerMessage {
     pub message: MpcMessage,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum MpcTaskId {
     EcdsaTaskId(EcdsaTaskId),
     EddsaTaskId(EddsaTaskId),

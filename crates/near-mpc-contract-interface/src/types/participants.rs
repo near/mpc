@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
     PartialEq,
     Ord,
     PartialOrd,
-    Hash,
     Serialize,
     Deserialize,
     BorshSerialize,
@@ -19,25 +18,14 @@ use serde::{Deserialize, Serialize};
     derive_more::From,
     derive_more::Into,
 )]
+#[cfg_attr(feature = "node-extras", derive(Hash))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct ParticipantId(pub u32);
 
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
