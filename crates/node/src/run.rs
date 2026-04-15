@@ -315,9 +315,11 @@ where
             {
                 Ok(()) => {
                     tracing::info!(
-                        "attestation removal monitoring task exited normally (channel closed)"
+                        "attestation removal monitoring task exited (channel closed), restarting in 5s"
                     );
-                    break;
+                    // Channel close may be transient (e.g. hot-reload). Restart with reset backoff.
+                    retry_count = 0;
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 }
                 Err(e) => {
                     retry_count += 1;
