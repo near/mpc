@@ -15,7 +15,7 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
 
     let threshold = EthereumFinality::Finalized;
 
-    // Example transaction on Base mainnet (block 33554432) with 16 logs
+    // Example transaction on Base mainnet (block 33554432) with 16 logs;
     // https://basescan.org/tx/0xa11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1
     let transaction_id: BaseTransactionHash =
         "a11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1"
