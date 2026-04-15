@@ -58,10 +58,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             launcher_interface::types::TeeAuthorityConfig::Local => "local",
         },
         image_hash = %config.tee.image_hash,
-        quote_upload_url = %match (&config.quote_upload_url, &config.tee.authority) {
-            (Some(url), _) => url.as_str(),
-            (None, launcher_interface::types::TeeAuthorityConfig::Dstack { quote_upload_url, .. }) => quote_upload_url.as_str(),
-            (None, launcher_interface::types::TeeAuthorityConfig::Local) => "n/a",
+        quote_upload_url = %match &config.tee.authority {
+            launcher_interface::types::TeeAuthorityConfig::Dstack { quote_upload_url, .. } => {
+                config.quote_upload_url.as_ref().map_or(quote_upload_url.as_str(), |u| u.as_str())
+            },
+            launcher_interface::types::TeeAuthorityConfig::Local => "n/a",
         },
         "TEE config"
     );
