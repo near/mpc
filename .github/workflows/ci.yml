@@ -363,7 +363,7 @@ jobs:
             --manifest-path crates/contract/Cargo.toml
 
       - name: Check contract WASM size
-        run: bash .github/scripts/check-contract-wasm-size.sh target/near/mpc_contract/mpc_contract.wasm
+        run: bash scripts/check-contract-wasm-size.sh
 
   mpc-pytests:
     name: "MPC pytests: ${{ matrix.group }}"

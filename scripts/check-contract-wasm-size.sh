@@ -5,9 +5,9 @@ set -euo pipefail
 # 1. NEAR's max_transaction_size hard limit
 # 2. A committed baseline that ratchets down over time
 #
-# Usage: bash .github/scripts/check-contract-wasm-size.sh <path-to-wasm>
+# Usage: bash scripts/check-contract-wasm-size.sh [path-to-wasm]
 
-WASM_PATH="${1:?Usage: $0 <path-to-wasm>}"
+WASM_PATH="${1:-target/near/mpc_contract/mpc_contract.wasm}"
 BASELINE_FILE=".github/contract-size-baseline.toml"
 
 read_toml_value() {
