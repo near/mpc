@@ -46,6 +46,7 @@ use tokio::sync::{
 };
 use types::ChainSendTransactionRequest;
 
+mod compat;
 pub mod configs;
 pub mod handler;
 pub mod migrations;
@@ -300,7 +301,9 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, ProtocolContractState)> {
-        self.get_mpc_state(mpc_contract_id, STATE).await
+        let (height, dto): (u64, dtos::ProtocolContractState) =
+            self.get_mpc_state(mpc_contract_id, STATE).await?;
+        Ok((height, compat::into_internal(dto)?))
     }
 
     pub(crate) async fn get_mpc_allowed_image_hashes(

@@ -5,19 +5,27 @@ IMAGE_NAME="nearone/mpc-node-gcp:testnet-release"
 ENV_FILE=".env"
 VOLUME_PATH="/home/mpc/data:/data"
 
-# Get currently running container image ID (if exists)
-RUNNING_IMAGE_ID=$(docker inspect --format "{{.Image}}" "$CONTAINER_NAME" 2>/dev/null || echo "")
+# Get the manifest digest of the image used by the running container (if any).
+# RepoDigests contains "image@sha256:<manifest_digest>" after a pull.
+RUNNING_DIGEST=""
+if docker inspect "$CONTAINER_NAME" &>/dev/null; then
+    RUNNING_IMAGE=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER_NAME" 2>/dev/null || echo "")
+    if [ -n "$RUNNING_IMAGE" ]; then
+        RUNNING_DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$RUNNING_IMAGE" 2>/dev/null | grep -oP 'sha256:\K[0-9a-f]{64}' || echo "")
+    fi
+fi
 
 # Pull latest image
-echo "📥 Pulling latest image: $IMAGE_NAME..."
+echo "Pulling latest image: $IMAGE_NAME..."
 docker pull "$IMAGE_NAME"
 
-# Get the latest image ID
-LATEST_IMAGE_ID=$(docker inspect --format "{{.Id}}" "$IMAGE_NAME")
+# Get the manifest digest of the freshly pulled image
+LATEST_DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_NAME" 2>/dev/null | grep -oP 'sha256:\K[0-9a-f]{64}' || echo "")
 
-# Compare the running container’s image with the latest pulled image
-if [ "$RUNNING_IMAGE_ID" == "$LATEST_IMAGE_ID" ]; then
-    echo "✅ No update needed. The running container is already using the latest image."
+if [ -z "$LATEST_DIGEST" ]; then
+    echo "WARNING: Could not determine manifest digest for $IMAGE_NAME, proceeding with update..."
+elif [ "$RUNNING_DIGEST" == "$LATEST_DIGEST" ]; then
+    echo "No update needed. The running container is already using the latest image (manifest digest: $LATEST_DIGEST)."
     exit 0
 fi
 

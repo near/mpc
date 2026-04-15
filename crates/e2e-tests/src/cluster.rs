@@ -8,9 +8,9 @@ use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    EpochId, ParticipantId, ParticipantInfo, Participants, ProtocolContractState, SignatureScheme,
-    Threshold, ThresholdParameters,
+    AccountId as ContractAccountId, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose,
+    EpochId, ParticipantId, ParticipantInfo, Participants, ProtocolContractState, Threshold,
+    ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -29,6 +29,9 @@ pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
+// AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
+// which costs significantly more than a plain CKD or sign request.
+pub const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 
 /// Configuration for creating a new [`MpcCluster`].
@@ -63,7 +66,7 @@ impl MpcClusterConfig {
     /// Sensible defaults for a basic E2E test.
     ///
     /// - 3 nodes, 2-of-3 threshold
-    /// - All 3 standard domains (Secp256k1, Ed25519, Bls12381)
+    /// - All 3 standard domains (Secp256k1, Edwards25519, Bls12381)
     /// - 10 triples, 10 presignatures per node
     pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self {
         Self {
@@ -72,17 +75,17 @@ impl MpcClusterConfig {
             domains: vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
+                    curve: Curve::Secp256k1,
                     purpose: Some(DomainPurpose::Sign),
                 },
                 DomainConfig {
                     id: DomainId(1),
-                    scheme: SignatureScheme::Ed25519,
+                    curve: Curve::Edwards25519,
                     purpose: Some(DomainPurpose::Sign),
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Bls12381,
+                    curve: Curve::Bls12381,
                     purpose: Some(DomainPurpose::CKD),
                 },
             ],
@@ -633,6 +636,19 @@ impl MpcCluster {
         domain_id: DomainId,
         app_public_key: CKDAppPublicKey,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        self.send_ckd_request_with_gas(domain_id, app_public_key, SIGN_GAS)
+            .await
+    }
+
+    /// Like `send_ckd_request` but with an explicit gas limit.
+    /// Use `CKD_PV_GAS` for `AppPublicKeyPV` requests, which do an extra
+    /// on-chain BLS pairing check and require significantly more gas.
+    pub async fn send_ckd_request_with_gas(
+        &self,
+        domain_id: DomainId,
+        app_public_key: CKDAppPublicKey,
+        gas: near_kit::Gas,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let user = self.default_user_account().clone();
         let client = self.user_client(&user)?;
         let args = json!({
@@ -647,7 +663,7 @@ impl MpcCluster {
                 &client,
                 method_names::REQUEST_APP_PRIVATE_KEY,
                 args,
-                SIGN_GAS,
+                gas,
                 SIGN_DEPOSIT,
             )
             .await

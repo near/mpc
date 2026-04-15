@@ -4,6 +4,8 @@ pub use near_mpc_contract_interface::method_names::VERIFY_FOREIGN_TRANSACTION as
 
 pub mod abstract_chain;
 pub mod bitcoin;
+pub mod bnb;
+pub mod evm;
 pub mod starknet;
 
 use near_mpc_contract_interface::types::PublicKey;
@@ -14,8 +16,8 @@ pub use near_mpc_contract_interface::types::{
 
 // raw request arg type
 pub use near_mpc_contract_interface::types::{
-    BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainPolicy,
-    ForeignChainRpcRequest, ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
+    BlockConfirmations, DomainId, ExtractedValue, ForeignChain, ForeignChainRpcRequest,
+    ForeignTxPayloadVersion, ForeignTxSignPayload, ForeignTxSignPayloadV1,
     VerifyForeignTransactionRequestArgs,
 };
 

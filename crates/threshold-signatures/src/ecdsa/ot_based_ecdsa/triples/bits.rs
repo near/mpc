@@ -1,4 +1,5 @@
 use crate::crypto::constants::{NEAR_PRG_CTX, SECURITY_PARAMETER};
+use crate::errors::ProtocolError;
 use auto_ops::impl_op_ex;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -35,9 +36,15 @@ impl BitVector {
     }
 
     /// Get a specific bit from the vector.
+    ///
+    /// # Panics
+    /// Panics if `j >= SECURITY_PARAMETER`.
     pub fn bit(&self, j: usize) -> u8 {
-        // This is safe to do, result is 0 or 1
-        ((self.0[j / 64] >> (j % 64)) & 1) as u8
+        let word = self
+            .0
+            .get(j / 64)
+            .expect("bit index must be < SECURITY_PARAMETER");
+        ((word >> (j % 64)) & 1) as u8
     }
 
     pub fn from_bytes(bytes: &[u8; SEC_PARAM_8]) -> Self {
@@ -57,8 +64,8 @@ impl BitVector {
 
     pub fn bytes(&self) -> [u8; SEC_PARAM_8] {
         let mut out = [0u8; SEC_PARAM_8];
-        for (i, x_i) in self.0.iter().enumerate() {
-            out[8 * i..8 * (i + 1)].copy_from_slice(&x_i.to_le_bytes());
+        for (chunk, x_i) in out.chunks_exact_mut(8).zip(self.0.iter()) {
+            chunk.copy_from_slice(&x_i.to_le_bytes());
         }
         out
     }
@@ -113,15 +120,15 @@ impl BitVector {
         let mut out = [0u64; 2 * SEC_PARAM_64];
 
         for k in (0..64).rev() {
-            for j in 0..SEC_PARAM_64 {
+            for (j, self_word) in self.0.iter().enumerate() {
                 let to_add = Self::conditional_select(
                     &Self::zero(),
                     other,
-                    Choice::from(((self.0[j] >> k) & 1) as u8),
+                    Choice::from(((*self_word >> k) & 1) as u8),
                 );
 
-                for i in 0..SEC_PARAM_64 {
-                    out[j + i] ^= to_add.0[i];
+                for (out_elem, add_elem) in out.iter_mut().skip(j).zip(to_add.0.iter()) {
+                    *out_elem ^= add_elem;
                 }
             }
             if k != 0 {
@@ -226,9 +233,13 @@ impl BitMatrix {
     /// Create a random matrix of a certain chunk size.
     ///
     /// Each chunk will have a security parameter's worth of rows.
-    pub fn random(rng: &mut impl CryptoRngCore, height: usize) -> Self {
-        assert!(height % SECURITY_PARAMETER == 0);
-        Self((0..height).map(|_| BitVector::random(rng)).collect())
+    pub fn random(rng: &mut impl CryptoRngCore, height: usize) -> Result<Self, ProtocolError> {
+        if height % SECURITY_PARAMETER != 0 {
+            return Err(ProtocolError::InvalidInput(format!(
+                "height {height} must be a multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
+            )));
+        }
+        Ok(Self((0..height).map(|_| BitVector::random(rng)).collect()))
     }
 
     /// Create a new matrix from a list of rows.
@@ -250,8 +261,10 @@ impl BitMatrix {
     pub fn column_chunks(&self, j: usize) -> impl Iterator<Item = BitVector> + '_ {
         self.0.chunks_exact(SECURITY_PARAMETER).map(move |chunk| {
             let mut out = BitVector::zero();
-            for (i, c_i) in chunk.iter().enumerate() {
-                out.0[i / 64] |= u64::from(c_i.bit(j)) << (i % 64);
+            for (word, word_chunk) in out.0.iter_mut().zip(chunk.chunks(64)) {
+                for (bit_idx, c_i) in word_chunk.iter().enumerate() {
+                    *word |= u64::from(c_i.bit(j)) << bit_idx;
+                }
             }
             out
         })
@@ -315,8 +328,12 @@ impl TryFrom<BitMatrix> for SquareBitMatrix {
 impl SquareBitMatrix {
     /// Expand transpose expands each row to contain `chunks * SECURITY_PARAMETER` bits, and then transposes
     /// the resulting matrix.
-    pub fn expand_transpose(&self, sid: &[u8], rows: usize) -> BitMatrix {
-        assert!(rows % SECURITY_PARAMETER == 0);
+    pub fn expand_transpose(&self, sid: &[u8], rows: usize) -> Result<BitMatrix, ProtocolError> {
+        if rows % SECURITY_PARAMETER != 0 {
+            return Err(ProtocolError::InvalidInput(format!(
+                "rows {rows} must be a multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
+            )));
+        }
 
         let mut hasher = Shake256::default();
         hasher.update(NEAR_PRG_CTX);
@@ -341,11 +358,16 @@ impl SquareBitMatrix {
             reader.read(&mut expanded);
 
             // Now, write into the correct column
-            for i in 0..rows {
-                out.0[i].0[j / 64] |= u64::from((expanded[i / 8] >> (i % 8)) & 1) << (j % 64);
+            let j_word = j / 64;
+            let j_bit = j % 64;
+            for (i, out_row) in out.0.iter_mut().enumerate() {
+                let byte = expanded.get(i / 8).copied().unwrap_or(0);
+                if let Some(word) = out_row.0.get_mut(j_word) {
+                    *word |= u64::from((byte >> (i % 8)) & 1) << j_bit;
+                }
             }
         }
-        out
+        Ok(out)
     }
 }
 
@@ -359,14 +381,18 @@ impl_secret_debug!(ChoiceVector);
 
 impl ChoiceVector {
     /// Generate a random vector with a certain number of bits.
-    pub fn random(rng: &mut impl CryptoRngCore, size: usize) -> Self {
-        assert!(size > 0 && size % SECURITY_PARAMETER == 0);
+    pub fn random(rng: &mut impl CryptoRngCore, size: usize) -> Result<Self, ProtocolError> {
+        if size == 0 || size % SECURITY_PARAMETER != 0 {
+            return Err(ProtocolError::InvalidInput(format!(
+                "size {size} must be a positive multiple of SECURITY_PARAMETER ({SECURITY_PARAMETER})"
+            )));
+        }
 
         let data = (0..(size / SECURITY_PARAMETER))
             .map(|_| BitVector::random(rng))
             .collect();
 
-        Self(data)
+        Ok(Self(data))
     }
 
     /// Iterate over the bits in this vector.

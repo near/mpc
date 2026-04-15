@@ -9,18 +9,21 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::store::LookupMap;
+use near_sdk::{env, near, store::LookupMap};
 
 use crate::{
+    errors::{Error, InvalidParameters},
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
-        signature::{SignatureRequest, YieldIndex},
+        domain::DomainId,
+        signature::{Tweak, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
-    Config, ForeignChainPolicyVotes, StaleData,
+    ForeignChainPolicyVotes, IntoInterfaceType, NodeForeignChainConfigurations,
 };
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -33,30 +36,307 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
-    config: Config,
+    config: OldConfig,
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
-    stale_data: StaleData,
+    stale_data: OldStaleData,
     metrics: dtos::Metrics,
 }
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
+        let crate::ProtocolContractState::Running(running_state) = &value.protocol_state else {
+            env::panic_str("Contract must be in running state when migrating.");
+        };
+
+        let foreign_chain_policy = value.foreign_chain_policy;
+
+        let mut foreign_chain_support = NodeForeignChainConfigurations::default();
+
+        let participant_account_ids = running_state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .cloned()
+            .map(|(account_id, _, _)| account_id.into_dto_type());
+
+        let current_on_chain_policy = foreign_chain_policy.chains.clone();
+
+        for account_id in participant_account_ids {
+            foreign_chain_support
+                .foreign_chain_configuration_by_node
+                .insert(account_id, current_on_chain_policy.clone().into());
+        }
+
+        // Overlay pending votes: if a participant had proposed a different policy,
+        // merge their proposed chains into their baseline so their intent is preserved.
+        for (voter_account_id, proposed_policy) in
+            value.foreign_chain_policy_votes.proposal_by_account.iter()
+        {
+            foreign_chain_support
+                .foreign_chain_configuration_by_node
+                .insert(
+                    voter_account_id.clone(),
+                    proposed_policy.chains.clone().into(),
+                );
+        }
         Self {
             protocol_state: value.protocol_state,
-            pending_signature_requests: value.pending_signature_requests,
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
             pending_ckd_requests: value.pending_ckd_requests,
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
-            foreign_chain_policy: value.foreign_chain_policy,
+            foreign_chain_policy,
             foreign_chain_policy_votes: value.foreign_chain_policy_votes,
-            config: value.config,
+            config: value.config.into(),
             tee_state: value.tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
-            stale_data: value.stale_data,
+            stale_data: crate::StaleData {
+                pending_signature_requests_pre_upgrade: value.pending_signature_requests,
+            },
             metrics: value.metrics,
+            node_foreign_chain_configurations: foreign_chain_support,
+        }
+    }
+}
+
+/// Previous Config layout without `clean_foreign_chain_data_tera_gas`.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldConfig {
+    key_event_timeout_blocks: u64,
+    tee_upgrade_deadline_duration_seconds: u64,
+    contract_upgrade_deposit_tera_gas: u64,
+    sign_call_gas_attachment_requirement_tera_gas: u64,
+    ckd_call_gas_attachment_requirement_tera_gas: u64,
+    return_signature_and_clean_state_on_success_call_tera_gas: u64,
+    return_ck_and_clean_state_on_success_call_tera_gas: u64,
+    fail_on_timeout_tera_gas: u64,
+    clean_tee_status_tera_gas: u64,
+    cleanup_orphaned_node_migrations_tera_gas: u64,
+    remove_non_participant_update_votes_tera_gas: u64,
+}
+
+impl From<OldConfig> for crate::Config {
+    fn from(old: OldConfig) -> Self {
+        let defaults = crate::Config::default();
+        crate::Config {
+            key_event_timeout_blocks: old.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: old.contract_upgrade_deposit_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: old
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: old
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: old
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: old
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
+            clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: old
+                .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: old
+                .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: defaults.clean_foreign_chain_data_tera_gas,
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use near_mpc_bounded_collections::NonEmptyBTreeSet;
+
+    use super::*;
+
+    fn make_policy(chains: Vec<dtos::ForeignChain>) -> dtos::ForeignChainPolicy {
+        dtos::ForeignChainPolicy {
+            chains: chains
+                .into_iter()
+                .map(|chain| {
+                    (
+                        chain,
+                        NonEmptyBTreeSet::new(dtos::RpcProvider {
+                            rpc_url: "https://rpc.example.com".to_string(),
+                        }),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_migration_derives_supported_foreign_chains_from_policy() {
+        let policy = make_policy(vec![
+            dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Ethereum,
+        ]);
+
+        let supported: dtos::SupportedForeignChains = policy
+            .chains
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into();
+
+        assert!(supported.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(supported.contains(&dtos::ForeignChain::Ethereum));
+        assert_eq!(supported.len(), 2);
+    }
+
+    #[test]
+    fn test_migration_derives_empty_supported_foreign_chains_from_empty_policy() {
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeMap::new(),
+        };
+
+        let supported: dtos::SupportedForeignChains = policy
+            .chains
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into();
+
+        assert!(supported.is_empty());
+    }
+
+    #[test]
+    fn test_migration_supported_foreign_chains_preserves_all_chain_keys() {
+        let all_chains = vec![
+            dtos::ForeignChain::Solana,
+            dtos::ForeignChain::Bitcoin,
+            dtos::ForeignChain::Ethereum,
+            dtos::ForeignChain::Base,
+            dtos::ForeignChain::Bnb,
+            dtos::ForeignChain::Arbitrum,
+        ];
+        let policy = make_policy(all_chains.clone());
+
+        let supported: dtos::SupportedForeignChains = policy
+            .chains
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into();
+
+        assert_eq!(supported.len(), all_chains.len());
+        for chain in &all_chains {
+            assert!(supported.contains(chain));
+        }
+    }
+}
+
+/// Old `StaleData` was an empty struct — must match the on-chain borsh layout exactly.
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+struct OldStaleData {}
+
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, BorshSerialize, BorshDeserialize)]
+pub struct SignatureRequest {
+    pub tweak: Tweak,
+    pub payload: Payload,
+    pub domain_id: DomainId,
+}
+
+/// A signature payload; the right payload must be passed in for the curve.
+/// The json encoding for this payload converts the bytes to hex string.
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[near(serializers=[borsh, json])]
+pub enum Payload {
+    Ecdsa(
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "[u8; 32]"),
+            borsh(schema(with_funcs(
+                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
+                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
+        )]
+        Bytes<32, 32>,
+    ),
+    Eddsa(
+        #[cfg_attr(
+            all(feature = "abi", not(target_arch = "wasm32")),
+            schemars(with = "Vec<u8>"),
+            borsh(schema(with_funcs(
+                declaration = "<Vec<u8> as ::borsh::BorshSchema>::declaration",
+                definitions = "<Vec<u8> as ::borsh::BorshSchema>::add_definitions_recursively"
+            ),))
+        )]
+        Bytes<32, 1232>,
+    ),
+}
+
+impl<const MIN_LEN: usize, const MAX_LEN: usize> Bytes<MIN_LEN, MAX_LEN> {
+    pub fn new(bytes: Vec<u8>) -> Result<Self, Error> {
+        if bytes.len() < MIN_LEN || bytes.len() > MAX_LEN {
+            return Err(InvalidParameters::MalformedPayload {
+                reason: format!(
+                    "expected length between {} and {}, got {}",
+                    MIN_LEN,
+                    MAX_LEN,
+                    bytes.len()
+                ),
+            }
+            .into());
+        }
+        Ok(Self(bytes))
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// A byte array with a statically encoded minimum and maximum length.
+/// The `new` function as well as json deserialization checks that the length is within bounds.
+/// The borsh deserialization does not perform such checks, as the borsh serialization is only
+/// used for internal contract storage.
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[near(serializers=[borsh])]
+pub struct Bytes<const MIN_LEN: usize, const MAX_LEN: usize>(Vec<u8>);
+
+impl<const MIN_LEN: usize, const MAX_LEN: usize> near_sdk::serde::Serialize
+    for Bytes<MIN_LEN, MAX_LEN>
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: near_sdk::serde::Serializer,
+    {
+        near_sdk::serde::Serialize::serialize(&hex::encode(&self.0), serializer)
+    }
+}
+
+impl<'de, const MIN_LEN: usize, const MAX_LEN: usize> near_sdk::serde::Deserialize<'de>
+    for Bytes<MIN_LEN, MAX_LEN>
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: near_sdk::serde::Deserializer<'de>,
+    {
+        let s = <String as near_sdk::serde::Deserialize>::deserialize(deserializer)?;
+        let bytes = hex::decode(&s).map_err(near_sdk::serde::de::Error::custom)?;
+        Self::new(bytes).map_err(near_sdk::serde::de::Error::custom)
+    }
+}
+
+impl From<&crate::primitives::signature::SignatureRequest> for SignatureRequest {
+    fn from(request: &crate::primitives::signature::SignatureRequest) -> Self {
+        let payload = match &request.payload {
+            crate::primitives::signature::Payload::Ecdsa(bytes) => {
+                Payload::Ecdsa(Bytes(bytes.as_slice().to_vec()))
+            }
+            crate::primitives::signature::Payload::Eddsa(bytes) => {
+                Payload::Eddsa(Bytes(bytes.as_slice().to_vec()))
+            }
+        };
+        SignatureRequest {
+            tweak: request.tweak.clone(),
+            payload,
+            domain_id: request.domain_id,
         }
     }
 }

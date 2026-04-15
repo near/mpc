@@ -262,6 +262,10 @@ BorshSchemaContainer {
                         "remove_non_participant_update_votes_tera_gas",
                         "u64",
                     ),
+                    (
+                        "clean_foreign_chain_data_tera_gas",
+                        "u64",
+                    ),
                 ],
             ),
         },
@@ -845,6 +849,10 @@ BorshSchemaContainer {
                         "expiry_timestamp_seconds",
                         "Option<u64>",
                     ),
+                    (
+                        "expected_measurements",
+                        "Option<ExpectedMeasurements>",
+                    ),
                 ],
             ),
         },
@@ -878,6 +886,10 @@ BorshSchemaContainer {
                     (
                         "foreign_chain_policy_votes",
                         "ForeignChainPolicyVotes",
+                    ),
+                    (
+                        "node_foreign_chain_configurations",
+                        "NodeForeignChainConfigurations",
                     ),
                     (
                         "config",
@@ -947,6 +959,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "NodeForeignChainConfigurations": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "foreign_chain_configuration_by_node",
+                        "IterableMap",
+                    ),
+                ],
+            ),
+        },
         "NodeId": Struct {
             fields: NamedFields(
                 [
@@ -1011,6 +1033,21 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "EpochId",
+                ),
+            ],
+        },
+        "Option<ExpectedMeasurements>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "ExpectedMeasurements",
                 ),
             ],
         },
@@ -1353,7 +1390,14 @@ BorshSchemaContainer {
             ),
         },
         "StaleData": Struct {
-            fields: Empty,
+            fields: NamedFields(
+                [
+                    (
+                        "pending_signature_requests_pre_upgrade",
+                        "LookupMap",
+                    ),
+                ],
+            ),
         },
         "String": Sequence {
             length_width: 4,

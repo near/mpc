@@ -3,7 +3,7 @@ use crate::common;
 use std::time::Duration;
 
 use e2e_tests::MpcNodeState;
-use near_mpc_contract_interface::types::{DomainPurpose, SignatureScheme};
+use near_mpc_contract_interface::types::{Curve, DomainPurpose};
 use rand::SeedableRng;
 
 /// Fetch a URL and assert the response body contains all of `expected`.
@@ -36,11 +36,11 @@ async fn test_web_endpoints() {
     for domain in &running.domains.domains {
         let outcome = match domain.purpose {
             Some(DomainPurpose::Sign) => {
-                let payload = match domain.scheme {
-                    SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+                let payload = match domain.curve {
+                    Curve::Secp256k1 | Curve::V2Secp256k1 => {
                         common::generate_ecdsa_payload(&mut rng)
                     }
-                    SignatureScheme::Ed25519 => common::generate_eddsa_payload(&mut rng),
+                    Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
                     _ => continue,
                 };
                 cluster

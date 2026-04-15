@@ -162,7 +162,7 @@ near-indexer = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
 near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
 near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.6"
-near-kit = { version = "0.7.0", default-features = false }
+near-kit = { version = "0.7.1", default-features = false }
 near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
 near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface", version = "0.0.1" }
 near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types", version = "0.0.1" }
@@ -170,7 +170,7 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
 near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
 near-primitives = "0.34.6"
-near-sandbox = "0.3.5"
+near-sandbox = "0.3.9"
 near-sdk = { version = "5.24.1", features = [
     "legacy",
     "unit-testing",
@@ -182,9 +182,6 @@ near-workspaces = { version = "0.22.1" }
 nearcore = { git = "https://github.com/near/nearcore", tag = "2.11.0" }
 node-types = { path = "crates/node-types" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
-oci-client = { version = "0.16", default-features = false, features = [
-    "rustls-tls",
-] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
     "cpp",
@@ -243,12 +240,12 @@ threshold-signatures = { path = "crates/threshold-signatures" }
 
 # Cannot be upgraded until we get MSVR 1.88
 time = "0.3.45"
-tokio = { version = "1.50.0", features = ["full", "test-util"] }
+tokio = { version = "1.51.0", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
-toml = "1.1.0"
+toml = "1.1.2"
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = [

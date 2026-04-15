@@ -44,6 +44,9 @@ test-utils = [
 ]
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
+# Exposes constructors for DTO-to-internal type conversion in the node.
+# Remove after #2167, once the node no longer depends on internal contract types.
+compat = []
 dev-utils = [
     "rand",
     "threshold-signatures",
@@ -122,6 +125,7 @@ signature = { workspace = true }
 test-utils = { workspace = true }
 threshold-signatures = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 zstd = { workspace = true }
 
 [lints]

@@ -253,6 +253,24 @@ pub struct KeyEventInstance {
 }
 
 impl KeyEventInstance {
+    // Remove after #2167.
+    #[cfg(feature = "compat")]
+    pub fn from_raw(
+        attempt_id: AttemptId,
+        started_in: BlockHeight,
+        expires_on: BlockHeight,
+        completed: BTreeSet<AuthenticatedParticipantId>,
+        public_key: Option<PublicKeyExtended>,
+    ) -> Self {
+        Self {
+            attempt_id,
+            started_in,
+            expires_on,
+            completed,
+            public_key,
+        }
+    }
+
     pub fn new(attempt_id: AttemptId, timeout_blocks: u64) -> Self {
         KeyEventInstance {
             attempt_id,

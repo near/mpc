@@ -28,7 +28,6 @@ pub enum Attestation {
     Mock(MockAttestation),
 }
 
-#[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -39,6 +38,7 @@ pub enum VerifiedAttestation {
     Mock(MockAttestation),
 }
 
+#[expect(clippy::large_enum_variant)]
 #[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -56,6 +56,7 @@ pub enum MockAttestation {
         launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
         /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
+        expected_measurements: Option<ExpectedMeasurements>,
     },
 }
 
@@ -113,6 +114,7 @@ impl VerifiedAttestation {
                 mock_attestation,
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,
+                allowed_measurements,
                 timestamp_seconds,
             ),
         }
@@ -204,6 +206,7 @@ impl Attestation {
                     mock_attestation,
                     allowed_mpc_docker_image_hashes,
                     allowed_launcher_docker_compose_hashes,
+                    accepted_measurements,
                     current_timestamp_seconds,
                 )?;
 
@@ -276,6 +279,7 @@ pub(crate) fn verify_mock_attestation(
     mock_attestation: &MockAttestation,
     allowed_mpc_docker_image_hashes: &[NodeImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+    allowed_measurements: &[ExpectedMeasurements],
     timestamp_seconds: u64,
 ) -> Result<(), VerificationError> {
     match mock_attestation {
@@ -285,6 +289,7 @@ pub(crate) fn verify_mock_attestation(
             mpc_docker_image_hash,
             launcher_docker_compose_hash,
             expiry_timestamp_seconds,
+            expected_measurements,
         } => {
             if let Some(hash) = mpc_docker_image_hash {
                 if allowed_mpc_docker_image_hashes.is_empty() {
@@ -324,6 +329,10 @@ pub(crate) fn verify_mock_attestation(
                 })?;
             };
 
+            if let Some(measurements) = expected_measurements {
+                verify_measurements(measurements, allowed_measurements)?;
+            }
+
             Ok(())
         }
     }
@@ -344,6 +353,7 @@ mod tests {
                 mpc_docker_image_hash: Some(allowed_hash),
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: None,
+                expected_measurements: None,
             });
 
         let other_hash = NodeImageHash::from([1; 32]);
@@ -363,6 +373,7 @@ mod tests {
                 mpc_docker_image_hash: Some(restricted_hash),
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: None,
+                expected_measurements: None,
             });
 
         let other_hash = NodeImageHash::from([1; 32]);
@@ -391,6 +402,7 @@ mod tests {
                 mpc_docker_image_hash: Some(restricted_hash),
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: None,
+                expected_measurements: None,
             });
 
         let allowed_mpc_hashes: Vec<NodeImageHash> = vec![];
@@ -414,6 +426,7 @@ mod tests {
                 mpc_docker_image_hash: None,
                 launcher_docker_compose_hash: Some(allowed_hash),
                 expiry_timestamp_seconds: None,
+                expected_measurements: None,
             });
 
         let other_hash = LauncherDockerComposeHash::from([1; 32]);
@@ -434,6 +447,7 @@ mod tests {
                 mpc_docker_image_hash: None,
                 launcher_docker_compose_hash: Some(restricted_hash),
                 expiry_timestamp_seconds: None,
+                expected_measurements: None,
             });
 
         let other_hash = LauncherDockerComposeHash::from([1; 32]);
@@ -459,6 +473,7 @@ mod tests {
                 mpc_docker_image_hash: None,
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+                expected_measurements: None,
             });
 
         time_constrained_attestation
@@ -476,6 +491,7 @@ mod tests {
                 mpc_docker_image_hash: None,
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+                expected_measurements: None,
             });
 
         let verification_result = time_constrained_attestation.re_verify(time_now, &[], &[], &[]);
@@ -487,5 +503,88 @@ mod tests {
                 expiry_time,
             }) if attestation_time == time_now && expiry_time == expiry_timestamp_seconds
         );
+    }
+
+    fn make_measurements(byte: u8) -> ExpectedMeasurements {
+        ExpectedMeasurements {
+            rtmrs: Measurements {
+                mrtd: [byte; 48],
+                rtmr0: [byte; 48],
+                rtmr1: [byte; 48],
+                rtmr2: [byte; 48],
+            },
+            key_provider_event_digest: [byte; 48],
+        }
+    }
+
+    #[test]
+    fn measurements_constraint_passes_if_in_allowed_list() {
+        // given
+        let measurements = make_measurements(42);
+        let attestation = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: None,
+            expected_measurements: Some(measurements),
+        });
+        let allowed = vec![make_measurements(1), measurements];
+
+        // when/then
+        attestation
+            .re_verify(0, &[], &[], &allowed)
+            .expect("measurements are in the allowed list and should pass");
+    }
+
+    #[test]
+    fn measurements_constraint_fails_if_not_in_allowed_list() {
+        // given
+        let measurements = make_measurements(42);
+        let attestation = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: None,
+            expected_measurements: Some(measurements),
+        });
+        let allowed = vec![make_measurements(1)];
+
+        // when
+        let result = attestation.re_verify(0, &[], &[], &allowed);
+
+        // then
+        assert_matches::assert_matches!(result, Err(VerificationError::MeasurementsNotAllowed));
+    }
+
+    #[test]
+    fn measurements_constraint_fails_if_allowed_list_is_empty() {
+        // given
+        let measurements = make_measurements(42);
+        let attestation = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: None,
+            expected_measurements: Some(measurements),
+        });
+
+        // when
+        let result = attestation.re_verify(0, &[], &[], &[]);
+
+        // then
+        assert_matches::assert_matches!(result, Err(VerificationError::EmptyMeasurementsList));
+    }
+
+    #[test]
+    fn no_measurements_constraint_skips_check() {
+        // given
+        let attestation = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: None,
+            expected_measurements: None,
+        });
+
+        // when/then
+        attestation
+            .re_verify(0, &[], &[], &[])
+            .expect("no measurements constraint should skip the check");
     }
 }

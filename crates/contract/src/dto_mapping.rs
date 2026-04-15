@@ -6,7 +6,10 @@
 
 use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
-    attestation::{Attestation, DstackAttestation, MockAttestation, VerifiedAttestation},
+    attestation::{
+        Attestation, DstackAttestation, ExpectedMeasurements, Measurements, MockAttestation,
+        VerifiedAttestation,
+    },
     collateral::{Collateral, QuoteCollateralV3},
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
@@ -74,10 +77,20 @@ impl IntoContractType<MockAttestation> for dtos::MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements,
             } => MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements: expected_measurements.map(|m| ExpectedMeasurements {
+                    rtmrs: Measurements {
+                        mrtd: m.mrtd.into(),
+                        rtmr0: m.rtmr0.into(),
+                        rtmr1: m.rtmr1.into(),
+                        rtmr2: m.rtmr2.into(),
+                    },
+                    key_provider_event_digest: m.key_provider_event_digest.into(),
+                }),
             },
         }
     }
@@ -239,10 +252,18 @@ impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements,
             } => dtos::MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
+                expected_measurements: expected_measurements.map(|m| dtos::VerifiedMeasurements {
+                    mrtd: m.rtmrs.mrtd.into(),
+                    rtmr0: m.rtmrs.rtmr0.into(),
+                    rtmr1: m.rtmrs.rtmr1.into(),
+                    rtmr2: m.rtmrs.rtmr2.into(),
+                    key_provider_event_digest: m.key_provider_event_digest.into(),
+                }),
             },
         }
     }
@@ -424,6 +445,9 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.remove_non_participant_update_votes_tera_gas {
             config.remove_non_participant_update_votes_tera_gas = v;
         }
+        if let Some(v) = config_ext.clean_foreign_chain_data_tera_gas {
+            config.clean_foreign_chain_data_tera_gas = v;
+        }
 
         config
     }
@@ -449,6 +473,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
         }
     }
 }
@@ -473,6 +498,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
         }
     }
 }
@@ -521,13 +547,13 @@ impl IntoInterfaceType<dtos::AuthenticatedAccountId> for &AuthenticatedAccountId
 
 // --- Domain types ---
 
-impl IntoInterfaceType<dtos::SignatureScheme> for Curve {
-    fn into_dto_type(self) -> dtos::SignatureScheme {
+impl IntoInterfaceType<dtos::Curve> for Curve {
+    fn into_dto_type(self) -> dtos::Curve {
         match self {
-            Curve::Secp256k1 => dtos::SignatureScheme::Secp256k1,
-            Curve::Edwards25519 => dtos::SignatureScheme::Ed25519,
-            Curve::Bls12381 => dtos::SignatureScheme::Bls12381,
-            Curve::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
+            Curve::Secp256k1 => dtos::Curve::Secp256k1,
+            Curve::Edwards25519 => dtos::Curve::Edwards25519,
+            Curve::Bls12381 => dtos::Curve::Bls12381,
+            Curve::V2Secp256k1 => dtos::Curve::V2Secp256k1,
         }
     }
 }
@@ -536,7 +562,7 @@ impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
     fn into_dto_type(self) -> dtos::DomainConfig {
         dtos::DomainConfig {
             id: self.id.into_dto_type(),
-            scheme: self.curve.into_dto_type(),
+            curve: self.curve.into_dto_type(),
             purpose: Some(self.purpose),
         }
     }
