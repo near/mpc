@@ -1,6 +1,8 @@
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 
 type Sha256Digest = [u8; 32];
