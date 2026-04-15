@@ -101,12 +101,16 @@ impl TryFrom<ProposeUpdateArgs> for Update {
             (Some(contract), None) => Update::Contract(contract),
             (None, Some(config)) => Update::Config(config),
             (Some(_), Some(_)) => {
-                return Err(ConversionError::DataConversion
-                    .message("Code and config updates are not allowed at the same time"));
+                return Err(ConversionError::DataConversion {
+                    reason: "Code and config updates are not allowed at the same time".into(),
+                }
+                .into());
             }
             _ => {
-                return Err(ConversionError::DataConversion
-                    .message("Expected either code or config update, received none of them"));
+                return Err(ConversionError::DataConversion {
+                    reason: "Expected either code or config update, received none of them".into(),
+                }
+                .into());
             }
         };
         Ok(update)

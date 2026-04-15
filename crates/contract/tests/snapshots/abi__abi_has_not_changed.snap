@@ -70,6 +70,20 @@ expression: abi
         }
       },
       {
+        "name": "clean_foreign_chain_data",
+        "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "clean_tee_status",
         "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
         "kind": "call",
@@ -224,6 +238,16 @@ expression: abi
         }
       },
       {
+        "name": "get_foreign_chain_configurations",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/NodeForeignChainConfigurations"
+          }
+        }
+      },
+      {
         "name": "get_foreign_chain_policy",
         "kind": "view",
         "result": {
@@ -334,16 +358,6 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/SupportedForeignChains"
-          }
-        }
-      },
-      {
-        "name": "get_supported_foreign_chains_votes",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/SupportedForeignChainsVotes"
           }
         }
       },
@@ -618,6 +632,10 @@ expression: abi
                       ],
                       [
                         "remove_non_participant_update_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_foreign_chain_data_tera_gas",
                         "u64"
                       ]
                     ]
@@ -1813,6 +1831,7 @@ expression: abi
           "type": "object",
           "required": [
             "ckd_call_gas_attachment_requirement_tera_gas",
+            "clean_foreign_chain_data_tera_gas",
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
             "contract_upgrade_deposit_tera_gas",
@@ -1827,6 +1846,12 @@ expression: abi
           "properties": {
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_foreign_chain_data_tera_gas": {
+              "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -1931,6 +1956,26 @@ expression: abi
             "V2Secp256k1"
           ]
         },
+        "Curve2": {
+          "description": "Elliptic curve used by a domain.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Secp256k1",
+                "Edwards25519",
+                "Bls12381"
+              ]
+            },
+            {
+              "description": "Robust ECDSA variant.",
+              "type": "string",
+              "enum": [
+                "V2Secp256k1"
+              ]
+            }
+          ]
+        },
         "DestinationNodeInfo": {
           "type": "object",
           "required": [
@@ -1954,7 +1999,7 @@ expression: abi
           "pattern": "^[0-9a-fA-F]+$"
         },
         "DomainConfig": {
-          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.\n\nJSON deserialization accepts both `\"scheme\"` (legacy) and `\"curve\"` (new) field names. Serialization outputs `\"scheme\"` for backward compatibility with the current contract. After 3.8 is released the compat struct should be removed.",
+          "description": "Describes the configuration of a domain: the domain ID and the curve it uses.",
           "type": "object",
           "required": [
             "curve",
@@ -1977,31 +2022,24 @@ expression: abi
           "description": "Configuration for a signature domain.",
           "type": "object",
           "required": [
+            "curve",
             "id",
-            "scheme"
+            "purpose"
           ],
           "properties": {
+            "curve": {
+              "$ref": "#/definitions/Curve2"
+            },
             "id": {
               "$ref": "#/definitions/DomainId2"
             },
             "purpose": {
-              "description": "`None` when reading state from an old contract that predates domain purposes.",
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/DomainPurpose"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "scheme": {
-              "$ref": "#/definitions/SignatureScheme"
+              "$ref": "#/definitions/DomainPurpose"
             }
           }
         },
         "DomainId": {
-          "description": "Each domain corresponds to a specific root key in a specific signature scheme. There may be multiple domains per signature scheme. The domain ID uniquely identifies a domain.",
+          "description": "Each domain corresponds to a specific root key on a specific elliptic curve. There may be multiple domains per curve. The domain ID uniquely identifies a domain.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -2321,6 +2359,18 @@ expression: abi
                 }
               },
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Bnb"
+              ],
+              "properties": {
+                "Bnb": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
             }
           ]
         },
@@ -2328,12 +2378,33 @@ expression: abi
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
+        "HexString_Min32_Max1232": {
+          "type": "string",
+          "maxLength": 2464,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]*$"
+        },
+        "HexString_Min32_Max32": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]*$"
+        },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
           "properties": {
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_foreign_chain_data_tera_gas": {
+              "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
               "type": [
                 "integer",
                 "null"
@@ -2833,6 +2904,16 @@ expression: abi
                 "WithConstraints": {
                   "type": "object",
                   "properties": {
+                    "expected_measurements": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/VerifiedMeasurements"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "expiry_timestamp_seconds": {
                       "description": "Unix time stamp for when this attestation expires.",
                       "type": [
@@ -2874,6 +2955,20 @@ expression: abi
           "maxLength": 96,
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
+        },
+        "NodeForeignChainConfigurations": {
+          "type": "object",
+          "required": [
+            "foreign_chain_configuration_by_node"
+          ],
+          "properties": {
+            "foreign_chain_configuration_by_node": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ForeignChainConfiguration"
+              }
+            }
+          }
         },
         "NodeId": {
           "type": "object",
@@ -3021,14 +3116,7 @@ expression: abi
               ],
               "properties": {
                 "Ecdsa": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
+                  "$ref": "#/definitions/HexString_Min32_Max32"
                 }
               },
               "additionalProperties": false
@@ -3040,12 +3128,7 @@ expression: abi
               ],
               "properties": {
                 "Eddsa": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  }
+                  "$ref": "#/definitions/HexString_Min32_Max1232"
                 }
               },
               "additionalProperties": false
@@ -3641,26 +3724,6 @@ expression: abi
             }
           ]
         },
-        "SignatureScheme": {
-          "description": "Supported signature schemes.",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "Secp256k1",
-                "Ed25519",
-                "Bls12381"
-              ]
-            },
-            {
-              "description": "Robust ECDSA variant.",
-              "type": "string",
-              "enum": [
-                "V2Secp256k1"
-              ]
-            }
-          ]
-        },
         "SolanaExtractor": {
           "oneOf": [
             {
@@ -3821,20 +3884,6 @@ expression: abi
             "$ref": "#/definitions/ForeignChain"
           },
           "uniqueItems": true
-        },
-        "SupportedForeignChainsVotes": {
-          "type": "object",
-          "required": [
-            "supported_chains_by_account"
-          ],
-          "properties": {
-            "supported_chains_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ForeignChainConfiguration"
-              }
-            }
-          }
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",

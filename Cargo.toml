@@ -154,9 +154,9 @@ near-abi = "0.4.4"
 near-account-id = "2.5.0"
 near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.6"
-near-kit = { version = "0.7.0", default-features = false }
+near-kit = { version = "0.7.1", default-features = false }
 near-primitives = "0.34.6"
-near-sandbox = "0.3.5"
+near-sandbox = "0.3.9"
 near-sdk = { version = "5.24.1", features = [
     "legacy",
     "unit-testing",
@@ -164,9 +164,6 @@ near-sdk = { version = "5.24.1", features = [
 ] }
 near-workspaces = { version = "0.22.1" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
-oci-client = { version = "0.16", default-features = false, features = [
-    "rustls-tls",
-] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [
     "cpp",
@@ -203,12 +200,12 @@ syn = "2.0"
 tempfile = "3.27.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
-tokio = { version = "1.50.0", features = ["full", "test-util"] }
+tokio = { version = "1.51.0", features = ["full", "test-util"] }
 tokio-metrics = { version = "0.4.8" }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
-toml = "1.1.0"
+toml = "1.1.2"
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = [
@@ -261,7 +258,7 @@ rand_chacha = "0.3"
 rand_core = "0.6.4"
 
 # Cannot be upgraded until we get MSVR 1.88
-time = "0.3.41"
+time = "0.3.45"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = [
@@ -290,7 +287,7 @@ strip = true
 panic = "abort"
 # Optimize for binary size.
 # See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
-opt-level = "s"
+opt-level = "z"
 
 [profile.reproducible]
 inherits = "release"

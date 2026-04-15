@@ -1,5 +1,6 @@
 pub mod contract_configuration;
 pub mod foreign_chain_policy;
+pub mod foreign_chain_request;
 pub mod participants_gas;
 pub mod sign;
 pub mod tee;

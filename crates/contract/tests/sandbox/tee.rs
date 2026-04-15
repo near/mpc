@@ -12,9 +12,8 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use mpc_contract::{
-    errors::InvalidState,
-    primitives::{domain::Curve, participants::Participants, test_utils::bogus_ed25519_public_key},
+use mpc_contract::primitives::{
+    domain::Curve, participants::Participants, test_utils::bogus_ed25519_public_key,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::method_names;
@@ -154,9 +153,11 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
             "vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list"
         );
     };
-    let expected = format!("{:?}", InvalidState::NotParticipant);
     let err_str = format!("{:?}", err);
-    assert!(err_str.contains(&expected));
+    assert!(
+        err_str.contains("NotParticipant"),
+        "Expected NotParticipant error, got: {err_str}"
+    );
     Ok(())
 }
 
@@ -363,6 +364,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
                 mpc_docker_image_hash: Some((*approved_hash).into()),
                 launcher_docker_compose_hash: None,
                 expiry_timestamp_seconds: None,
+                expected_measurements: None,
             };
             let attestation = Attestation::Mock(mock_attestation);
 
@@ -443,12 +445,14 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_timestamp_seconds: Some(u64::MAX),
+        expected_measurements: None,
     });
 
     let participant_2_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_timestamp_seconds: Some(u64::MAX - 1),
+        expected_measurements: None,
     });
 
     assert_ne!(
@@ -501,12 +505,14 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_timestamp_seconds: Some(u64::MAX),
+        expected_measurements: None,
     });
 
     let second_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_timestamp_seconds: Some(u64::MAX - 1),
+        expected_measurements: None,
     });
 
     assert_ne!(
@@ -632,6 +638,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_timestamp_seconds: Some(expiry_timestamp),
+        expected_measurements: None,
     });
 
     let submit_result = submit_participant_info(

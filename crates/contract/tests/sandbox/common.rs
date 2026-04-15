@@ -1,5 +1,6 @@
+use crate::sandbox::utils::shared_key_utils::new_secp256k1;
 use crate::sandbox::utils::{
-    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE},
+    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
@@ -8,6 +9,7 @@ use crate::sandbox::utils::{
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
+use k256::ecdsa::SigningKey;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -21,13 +23,27 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
+#[expect(deprecated)]
+use near_mpc_contract_interface::{
+    method_names,
+    types::{
+        self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
+        BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality,
+        EvmRpcRequest, EvmTxId, ForeignChainPolicy, ForeignTxSignPayload, ForeignTxSignPayloadV1,
+        MockAttestation, RpcProvider, StarknetExtractedValue, StarknetExtractor, StarknetFelt,
+        StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
+    },
+};
+use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
+use signature::hazmat::PrehashSigner;
 use std::collections::BTreeSet;
+use std::time::Duration;
+use tokio_util::time::FutureExt as _;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -523,6 +539,149 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+pub struct ForeignTxEnv {
+    pub worker: Worker<Sandbox>,
+    pub contract: Contract,
+    pub accounts: Vec<Account>,
+    pub domain_id: DomainId,
+    pub secret_key: threshold_signatures::ecdsa::KeygenOutput,
+}
+
+/// Initialise a contract in Running state with a single ForeignTx Secp256k1
+/// domain.
+pub async fn setup_foreign_tx_env() -> ForeignTxEnv {
+    let (worker, contract) = init().await;
+    let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
+    let params = make_threshold_params(&participants);
+
+    let domain_id = DomainId(0);
+    let (pk, sk) = new_secp256k1();
+    let key: PublicKeyExtended = pk.try_into().unwrap();
+
+    let domain = DomainConfig {
+        id: domain_id,
+        curve: Curve::Secp256k1,
+        purpose: DomainPurpose::ForeignTx,
+    };
+
+    let keyset = Keyset::new(
+        EpochId::new(0),
+        vec![KeyForDomain {
+            attempt: AttemptId::new(),
+            domain_id,
+            key,
+        }],
+    );
+
+    init_contract_running(&contract, vec![domain], 1, keyset, params).await;
+    submit_attestations(&contract, &accounts, &participants).await;
+
+    ForeignTxEnv {
+        worker,
+        contract,
+        accounts,
+        domain_id,
+        secret_key: sk,
+    }
+}
+
+/// Build a [`ForeignChainPolicy`] that enables the given chain with a dummy RPC URL.
+#[expect(deprecated)]
+pub fn make_foreign_chain_policy(
+    chain: near_mpc_contract_interface::types::ForeignChain,
+) -> near_mpc_contract_interface::types::ForeignChainPolicy {
+    let mut chains = std::collections::BTreeMap::new();
+    chains.insert(
+        chain,
+        NonEmptyBTreeSet::new(RpcProvider {
+            rpc_url: format!("https://{chain:?}-rpc.example.com").to_lowercase(),
+        }),
+    );
+    ForeignChainPolicy { chains }
+}
+
+/// Vote the given chain policy from all participants.
+pub async fn vote_chain_policy(
+    chain: near_mpc_contract_interface::types::ForeignChain,
+    contract: &Contract,
+    accounts: &[Account],
+) {
+    let policy = make_foreign_chain_policy(chain);
+    for account in accounts {
+        let result = account
+            .call(contract.id(), method_names::VOTE_FOREIGN_CHAIN_POLICY)
+            .args_json(json!({ "policy": policy }))
+            .transact()
+            .await
+            .unwrap()
+            .into_result();
+        assert!(result.is_ok(), "vote_foreign_chain_policy should succeed");
+    }
+}
+
+/// Poll the contract until a pending foreign-tx request appears (or panic after timeout).
+pub async fn await_pending_foreign_tx_request_observed_on_contract(
+    contract: &Contract,
+    request: &dtos::VerifyForeignTransactionRequest,
+) {
+    const TIMEOUT: Duration = Duration::from_secs(10);
+    const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+    async {
+        let args = json!({ "request": request });
+
+        loop {
+            let result = contract
+                .view(method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST)
+                .args_json(&args)
+                .await;
+            if let Ok(view) = result {
+                // The view returns Option<YieldIndex>; non-null means the request is pending.
+                let value: serde_json::Value = view.json().unwrap();
+                if !value.is_null() {
+                    return;
+                }
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+    }
+    .timeout(TIMEOUT)
+    .await
+    .expect("Timed out waiting for pending foreign-tx request on-chain");
+}
+
+/// Sign a foreign-tx payload hash with the root secret key and return the
+/// payload and contract-level response DTO.
+pub fn sign_foreign_tx_response(
+    request: &near_mpc_contract_interface::types::ForeignChainRpcRequest,
+    extracted_values: Vec<near_mpc_contract_interface::types::ExtractedValue>,
+    sk: &threshold_signatures::ecdsa::KeygenOutput,
+) -> (
+    near_mpc_contract_interface::types::ForeignTxSignPayload,
+    near_mpc_contract_interface::types::VerifyForeignTransactionResponse,
+) {
+    let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+        request: request.clone(),
+        values: extracted_values,
+    });
+    let payload_hash = payload.compute_msg_hash().unwrap();
+
+    let signing_key = SigningKey::from_bytes(&sk.private_share.to_scalar().into()).unwrap();
+    let (signature, recovery_id) = signing_key.sign_prehash(&payload_hash.0).unwrap();
+    let signature_response = near_mpc_contract_interface::types::SignatureResponse::Secp256k1(
+        near_mpc_contract_interface::types::K256Signature::from_ecdsa_recoverable(
+            &signature,
+            recovery_id,
+        ),
+    );
+
+    let response = VerifyForeignTransactionResponse {
+        payload_hash,
+        signature: signature_response,
+    };
+    (payload, response)
+}
+
 pub async fn generate_participant_and_submit_attestation(
     worker: &Worker<Sandbox>,
     contract: &Contract,
@@ -542,4 +701,62 @@ pub async fn generate_participant_and_submit_attestation(
     .expect("Attestation submission for new account must succeed.");
     assert!(result.is_success());
     (new_account, account_id, new_participant)
+}
+
+pub fn ethereum_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn abstract_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Abstract(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn bitcoin_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+        tx_id: BitcoinTxId([0xdd; 32]),
+        confirmations: BlockConfirmations(6),
+        extractors: vec![BitcoinExtractor::BlockHash],
+    })
+}
+
+pub fn starknet_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+        tx_id: StarknetTxId(StarknetFelt([0xee; 32])),
+        finality: StarknetFinality::AcceptedOnL1,
+        extractors: vec![StarknetExtractor::BlockHash],
+    })
+}
+
+pub fn evm_block_hash_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::EvmExtractedValue(
+        EvmExtractedValue::BlockHash(Hash256([0xaa; 32])),
+    )]
+}
+
+pub fn bitcoin_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::BitcoinExtractedValue(
+        BitcoinExtractedValue::BlockHash(Hash256([0xaa; 32])),
+    )]
+}
+
+pub fn starknet_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::StarknetExtractedValue(
+        StarknetExtractedValue::BlockHash(StarknetFelt([0xaa; 32])),
+    )]
+}
+
+pub fn bnb_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Bnb(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
 }

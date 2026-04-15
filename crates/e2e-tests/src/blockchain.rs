@@ -3,9 +3,13 @@ use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
+use crate::conversions::{signing_key_to_near_public_key, signing_key_to_near_secret_key};
+
+const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
-/// Wraps a `near_kit::Near` client signed as the root/funder account.
+/// Wraps `near_kit::Near` client signed as the root/funder account.
 /// Whether the RPC URL points to a local Docker sandbox or NEAR testnet,
 /// the code path is identical.
 pub struct NearBlockchain {
@@ -35,17 +39,23 @@ impl NearBlockchain {
         })
     }
 
-    pub async fn create_account(
+    pub async fn create_account_with_keys(
         &self,
         name: &str,
         balance_near: u128,
-        key: &SigningKey,
+        keys: &[SigningKey],
     ) -> anyhow::Result<()> {
-        self.root_client
+        let mut tx = self
+            .root_client
             .transaction(name)
             .create_account()
-            .transfer(near_kit::NearToken::from_near(balance_near))
-            .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()))
+            .transfer(near_kit::NearToken::from_near(balance_near));
+
+        for key in keys {
+            tx = tx.add_full_access_key(signing_key_to_near_public_key(key));
+        }
+
+        tx.wait_until(near_kit::TxExecutionStatus::Final)
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account {name}: {e}"))?;
@@ -63,8 +73,9 @@ impl NearBlockchain {
             .transaction(name)
             .create_account()
             .transfer(near_kit::NearToken::from_near(balance_near))
-            .add_full_access_key(near_kit::PublicKey::Ed25519(key.verifying_key().to_bytes()))
+            .add_full_access_key(signing_key_to_near_public_key(key))
             .deploy(wasm.to_vec())
+            .wait_until(near_kit::TxExecutionStatus::Final)
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account and deploy to {name}: {e}"))?;
@@ -87,7 +98,7 @@ impl NearBlockchain {
     }
 
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
-        let sk = near_kit::SecretKey::Ed25519(key.to_bytes());
+        let sk = signing_key_to_near_secret_key(key);
         let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)
             .map_err(|e| anyhow::anyhow!("failed to create signer for {account_id}: {e}"))?;
         Ok(self.root_client.with_signer(signer))
@@ -105,15 +116,18 @@ impl DeployedContract {
         &self.contract_id
     }
 
-    pub async fn call(&self, method: &str, args: serde_json::Value) -> anyhow::Result<()> {
+    pub async fn call(
+        &self,
+        method: &str,
+        args: serde_json::Value,
+    ) -> anyhow::Result<FinalExecutionOutcome> {
         self.client
             .call(&self.contract_id, method)
             .args(args)
-            .gas(near_kit::Gas::from_tgas(300))
+            .gas(MAX_GAS)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))?;
-        Ok(())
+            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
 
     pub async fn call_from(
@@ -121,18 +135,15 @@ impl DeployedContract {
         client: &ClientHandle,
         method: &str,
         args: serde_json::Value,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<FinalExecutionOutcome> {
         client
             .inner
             .call(&self.contract_id, method)
             .args(args)
-            .gas(near_kit::Gas::from_tgas(300))
+            .gas(MAX_GAS)
             .send()
             .await
-            .map_err(|e| {
-                anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}")
-            })?;
-        Ok(())
+            .map_err(|e| anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}"))
     }
 
     pub async fn call_from_with_deposit(

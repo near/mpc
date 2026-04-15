@@ -51,7 +51,7 @@ pub struct FakeMpcContractState {
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     pub supported_foreign_chains: dtos::SupportedForeignChains,
-    pub supported_foreign_chains_by_node: dtos::SupportedForeignChainsVotes,
+    pub supported_foreign_chains_by_node: dtos::NodeForeignChainConfigurations,
     pub migration_service: NodeMigrations,
 }
 
@@ -87,7 +87,7 @@ impl FakeMpcContractState {
             pending_ckds: BTreeMap::new(),
             pending_verify_foreign_txs: BTreeMap::new(),
             supported_foreign_chains: dtos::SupportedForeignChains::default(),
-            supported_foreign_chains_by_node: dtos::SupportedForeignChainsVotes::default(),
+            supported_foreign_chains_by_node: dtos::NodeForeignChainConfigurations::default(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -96,7 +96,7 @@ impl FakeMpcContractState {
         &self.supported_foreign_chains
     }
 
-    pub fn supported_foreign_chains_by_node(&self) -> &dtos::SupportedForeignChainsVotes {
+    pub fn supported_foreign_chains_by_node(&self) -> &dtos::NodeForeignChainConfigurations {
         &self.supported_foreign_chains_by_node
     }
 
@@ -128,7 +128,7 @@ impl FakeMpcContractState {
 
         let voter = dtos::AccountId(account_id.to_string());
         self.supported_foreign_chains_by_node
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
             .insert(voter, foreign_chain_configuration);
 
         // Derive supported_foreign_chains as intersection of all active participants' votes
@@ -144,7 +144,7 @@ impl FakeMpcContractState {
             BTreeMap::new();
         for (voter_id, chains) in &self
             .supported_foreign_chains_by_node
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
         {
             for (chain, _rpcs) in chains.iter() {
                 chain_to_supporters
@@ -173,7 +173,8 @@ impl FakeMpcContractState {
         ));
     }
 
-    pub fn add_domains(&mut self, domains: Vec<DomainConfig>) {
+    pub fn add_domains(&mut self, domains: Vec<dtos::DomainConfig>) {
+        let domains: Vec<DomainConfig> = domains.into_iter().map(Into::into).collect();
         let state = match &mut self.state {
             ProtocolContractState::Running(state) => state,
             _ => panic!("Cannot add domains to non-running state"),
@@ -378,7 +379,9 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(running_state) = &self.state else {
             panic!("only allow calling this in `running_state`");
         };
-        if running_state.keyset != args.keyset {
+        let dto_keyset: near_mpc_contract_interface::types::Keyset =
+            running_state.keyset.clone().into();
+        if dto_keyset != args.keyset {
             panic!("keyset mismatch");
         }
         self.migration_service.remove_migration(&account_id);
@@ -470,8 +473,10 @@ impl FakeIndexerCore {
                 loop {
                     {
                         let state = contract.lock().await;
+                        let dto_state: near_mpc_contract_interface::types::ProtocolContractState =
+                            state.state.clone().into();
                         let config = ContractState::from_contract_state(
-                            &state.state,
+                            &dto_state,
                             state.env.block_height,
                             None,
                         )
@@ -610,7 +615,11 @@ impl FakeIndexerCore {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_pk(account_id, vote_pk.key_event_id, vote_pk.public_key);
+                        contract.vote_pk(
+                            account_id,
+                            Into::into(vote_pk.key_event_id),
+                            vote_pk.public_key,
+                        );
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;
@@ -662,7 +671,7 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::VoteReshared(reshared) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_reshared(account_id, reshared.key_event_id);
+                        contract.vote_reshared(account_id, Into::into(reshared.key_event_id));
                     }
                     ChainSendTransactionRequest::RegisterSupportedForeignChains(args) => {
                         let mut contract = contract.lock().await;
@@ -674,15 +683,15 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?
                         let mut contract = contract.lock().await;
-                        contract.vote_start_keygen(account_id, start.key_event_id);
+                        contract.vote_start_keygen(account_id, Into::into(start.key_event_id));
                     }
                     ChainSendTransactionRequest::StartReshare(start) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_start_reshare(account_id, start.key_event_id);
+                        contract.vote_start_reshare(account_id, Into::into(start.key_event_id));
                     }
                     ChainSendTransactionRequest::VoteAbortKeyEventInstance(abort) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_abort_key_event(account_id, abort.key_event_id);
+                        contract.vote_abort_key_event(account_id, Into::into(abort.key_event_id));
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
                     ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {

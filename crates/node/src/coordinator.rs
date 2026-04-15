@@ -343,7 +343,12 @@ where
         if let Some(my_participant_id) = my_participant_id {
             let current_participants_config = running_state.participants.clone();
             let current_epoch_id = running_state.keyset.epoch_id;
-            let all_domains: Vec<DomainId> = running_state.keyset.get_domain_ids();
+            let all_domains: Vec<_> = running_state
+                .keyset
+                .get_domain_ids()
+                .into_iter()
+                .map(Into::into)
+                .collect();
             let current_epoch_data = EpochData {
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
@@ -531,12 +536,20 @@ where
                     VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
                 );
 
-                let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
-                let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
-                    HashMap::new();
-                let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
+                let mut ecdsa_keyshares: HashMap<
+                    near_mpc_contract_interface::types::DomainId,
+                    ecdsa::KeygenOutput,
+                > = HashMap::new();
+                let mut robust_ecdsa_keyshares: HashMap<
+                    near_mpc_contract_interface::types::DomainId,
+                    ecdsa::KeygenOutput,
+                > = HashMap::new();
+                let mut eddsa_keyshares: HashMap<
+                    near_mpc_contract_interface::types::DomainId,
+                    eddsa::KeygenOutput,
+                > = HashMap::new();
                 let mut ckd_keyshares: HashMap<
-                    DomainId,
+                    near_mpc_contract_interface::types::DomainId,
                     confidential_key_derivation::KeygenOutput,
                 > = HashMap::new();
                 let mut domain_to_curve: HashMap<DomainId, Curve> = HashMap::new();
@@ -545,19 +558,19 @@ where
                     let domain_id = keyshare.key_id.domain_id;
                     match keyshare.data {
                         KeyshareData::Secp256k1(data) => {
-                            ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                            ecdsa_keyshares.insert(keyshare.key_id.domain_id.into(), data);
                             domain_to_curve.insert(domain_id, Curve::Secp256k1);
                         }
                         KeyshareData::Ed25519(data) => {
-                            eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                            eddsa_keyshares.insert(keyshare.key_id.domain_id.into(), data);
                             domain_to_curve.insert(domain_id, Curve::Edwards25519);
                         }
                         KeyshareData::Bls12381(data) => {
-                            ckd_keyshares.insert(keyshare.key_id.domain_id, data);
+                            ckd_keyshares.insert(keyshare.key_id.domain_id.into(), data);
                             domain_to_curve.insert(domain_id, Curve::Bls12381);
                         }
                         KeyshareData::V2Secp256k1(data) => {
-                            robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                            robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id.into(), data);
                             domain_to_curve.insert(domain_id, Curve::V2Secp256k1);
                         }
                     }

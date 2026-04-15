@@ -9,5 +9,14 @@ max-threads = 16
 filter = 'package(mpc-contract) and test(/sandbox/)'
 test-group = 'contract-sandbox'
 
+[test-groups.e2e]
+# TODO(#2898): tune this if parallel_sign_calls test is still flaky.
+max-threads = 4
+
+[profile.ci-e2e]
+[[profile.ci-e2e.overrides]]
+filter = 'package(e2e-tests)'
+test-group = 'e2e'
+
 [profile.ci-other]
 default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_upload_quote_for_collateral_with_phala_endpoint) and not (test(/^registry::integration_tests::/) and package(tee-launcher))'

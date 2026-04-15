@@ -50,6 +50,7 @@ pub const START_NODE_MIGRATION: &str = "start_node_migration";
 pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
 pub const CLEANUP_ORPHANED_NODE_MIGRATIONS: &str = "cleanup_orphaned_node_migrations";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
+pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
@@ -70,9 +71,13 @@ pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
+#[deprecated(note = "will be removed in 3.10.0")]
+pub const GET_FOREIGN_CHAIN_POLICY: &str = "get_foreign_chain_policy";
+#[deprecated(note = "will be removed in 3.10.0")]
+pub const GET_FOREIGN_CHAIN_POLICY_PROPOSALS: &str = "get_foreign_chain_policy_proposals";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";
-pub const GET_SUPPORTED_FOREIGN_CHAINS_VOTES: &str = "get_supported_foreign_chains_votes";
+pub const GET_FOREIGN_CHAIN_CONFIGURATIONS: &str = "get_foreign_chain_configurations";
 pub const ALLOWED_DOCKER_IMAGE_HASHES: &str = "allowed_docker_image_hashes";
 pub const ALLOWED_LAUNCHER_COMPOSE_HASHES: &str = "allowed_launcher_compose_hashes";
 pub const ALLOWED_LAUNCHER_IMAGE_HASHES: &str = "allowed_launcher_image_hashes";
@@ -81,8 +86,3 @@ pub const CODE_HASH_VOTES: &str = "code_hash_votes";
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
-
-#[deprecated(note = "will be removed in 3.10.0")]
-pub const GET_FOREIGN_CHAIN_POLICY: &str = "get_foreign_chain_policy";
-#[deprecated(note = "will be removed in 3.10.0")]
-pub const GET_FOREIGN_CHAIN_POLICY_PROPOSALS: &str = "get_foreign_chain_policy_proposals";

@@ -29,7 +29,7 @@ impl EcdsaSignatureProvider {
         presignature: PresignOutputWithParticipants,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
-        let domain_data = self.domain_data(sign_request.domain)?;
+        let domain_data = self.domain_data(sign_request.domain.into())?;
         let participants = presignature.participants.clone();
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
         let threshold = ReconstructionLowerBound::from(threshold);
@@ -69,7 +69,7 @@ impl EcdsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
-        let domain_data = self.domain_data(sign_request.domain)?;
+        let domain_data = self.domain_data(sign_request.domain.into())?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.new_channel_for_task(
@@ -89,7 +89,7 @@ impl EcdsaSignatureProvider {
         presignature_id: UniqueId,
         sign_request: SignatureRequest,
     ) -> anyhow::Result<()> {
-        let domain_data = self.domain_data(sign_request.domain)?;
+        let domain_data = self.domain_data(sign_request.domain.into())?;
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
         let threshold = ReconstructionLowerBound::from(threshold);
 

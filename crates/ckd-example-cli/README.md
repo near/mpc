@@ -48,6 +48,24 @@ Your response: {
 The key is: bc73293faedf534d8028d575bcf9cf5455ffe5f468882928305be9d2be2e838d
 ```
 
+### Publicly verifiable variant
+
+By passing the `--publicly-verifiable` flag, the CLI generates an ephemeral key
+pair on both G1 and G2 (`a·G1`, `a·G2`) and uses `AppPublicKeyPV` in the
+request. This allows the contract to verify the CKD response on-chain.
+
+```console
+❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --derivation-path "mykey" --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw --publicly-verifiable
+
+Call the function request_app_private_key with parameters:
+{"request":{"derivation_path":"mykey","app_public_key":{"AppPublicKeyPV":{"pk1":"bls12381g1:...","pk2":"bls12381g2:..."}},"domain_id":2}}
+Please enter a the response in json format (for example {"big_c": "bls12381g1:...","big_y": "bls12381g1:..."}):
+Your response: {"big_c": "bls12381g1:...","big_y": "bls12381g1:..."}
+The key is: ...
+```
+
+### Deterministic output
+
 If the tool is used again, it will generate a different `app_public_key`, but obtain the same key at the end.
 
 ```console

@@ -164,7 +164,7 @@ impl Participants {
                 return Ok(());
             }
         }
-        Err(crate::errors::InvalidState::NotParticipant.into())
+        Err(crate::errors::InvalidState::NotParticipant { account_id }.into())
     }
 }
 
@@ -175,7 +175,12 @@ impl Participants {
             .iter()
             .find(|(a_id, _, _)| a_id == account_id)
             .map(|(_, p_id, _)| p_id.clone())
-            .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
+            .ok_or_else(|| {
+                crate::errors::InvalidState::NotParticipant {
+                    account_id: account_id.clone(),
+                }
+                .into()
+            })
     }
 
     pub fn account_id(&self, id: &ParticipantId) -> Result<AccountId, Error> {

@@ -25,9 +25,11 @@ const DEFAULT_FAIL_ON_TIMEOUT_TERA_GAS: u64 = 2;
 const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// TODO(#1164): benchmark
-const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 3;
+const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 4;
 /// Prepaid gas for a `remove_non_participant_update_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
+/// Prepaid gas for a `clean_foreign_chain_data` call
+const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 5;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -56,6 +58,8 @@ pub(crate) struct Config {
     pub(crate) cleanup_orphaned_node_migrations_tera_gas: u64,
     /// Prepaid gas for a `remove_non_participant_update_votes` call.
     pub(crate) remove_non_participant_update_votes_tera_gas: u64,
+    /// Prepaid gas for a `clean_foreign_chain_data` call.
+    pub(crate) clean_foreign_chain_data_tera_gas: u64,
 }
 
 impl Default for Config {
@@ -78,6 +82,7 @@ impl Default for Config {
                 DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
             remove_non_participant_update_votes_tera_gas:
                 DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS,
+            clean_foreign_chain_data_tera_gas: DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS,
         }
     }
 }

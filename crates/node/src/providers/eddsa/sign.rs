@@ -46,7 +46,7 @@ impl EddsaSignatureProvider {
             .client
             .new_channel_for_task(EddsaTaskId::Signature { id }, participants.clone())?;
 
-        let Some(keygen_output) = self.keyshares.get(&sign_request.domain).cloned() else {
+        let Some(keygen_output) = self.keyshares.get(&sign_request.domain.into()).cloned() else {
             anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
         };
 
@@ -98,7 +98,7 @@ impl EddsaSignatureProvider {
         let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
         let threshold = ReconstructionLowerBound::from(threshold);
 
-        let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
+        let Some(keygen_output) = self.keyshares.get(&sign_request.domain.into()) else {
             anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
         };
         let participants = channel.participants().to_vec();

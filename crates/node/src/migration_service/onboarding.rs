@@ -220,7 +220,7 @@ async fn send_conclude_onboarding(
 ) -> anyhow::Result<()> {
     let transaction =
         ChainSendTransactionRequest::ConcludeNodeMigration(ConcludeNodeMigrationArgs {
-            keyset: imported_keyset,
+            keyset: imported_keyset.into(),
         });
     tx_sender.send(transaction).await?;
     Ok(())

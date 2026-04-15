@@ -50,6 +50,11 @@ impl AttemptId {
     pub fn legacy_attempt_id() -> Self {
         AttemptId(0)
     }
+
+    // TODO(#381): Remove once the node no longer depends on the contract crate.
+    pub(crate) fn from_u64(val: u64) -> Self {
+        AttemptId(val)
+    }
 }
 
 impl Default for AttemptId {
@@ -153,6 +158,7 @@ impl AuthenticatedParticipantId {
     pub fn get(&self) -> ParticipantId {
         self.0.clone()
     }
+
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
         participants
@@ -160,7 +166,7 @@ impl AuthenticatedParticipantId {
             .iter()
             .find(|(a_id, _, _)| *a_id == signer)
             .map(|(_, p_id, _)| AuthenticatedParticipantId(p_id.clone()))
-            .ok_or_else(|| InvalidState::NotParticipant.into())
+            .ok_or_else(|| InvalidState::NotParticipant { account_id: signer }.into())
     }
 }
 
@@ -174,6 +180,7 @@ impl AuthenticatedAccountId {
     pub fn get(&self) -> &AccountId {
         &self.0
     }
+
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
         if participants
@@ -183,7 +190,7 @@ impl AuthenticatedAccountId {
         {
             Ok(AuthenticatedAccountId(signer))
         } else {
-            Err(InvalidState::NotParticipant.into())
+            Err(InvalidState::NotParticipant { account_id: signer }.into())
         }
     }
 }

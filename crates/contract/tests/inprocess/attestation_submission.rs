@@ -249,6 +249,7 @@ impl TestSetup {
             mpc_docker_image_hash: Some(hash.into()),
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: None,
+            expected_measurements: None,
         })
     }
 }

@@ -107,13 +107,11 @@ fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
     match deposit.checked_sub(minimum_deposit) {
         None => {
             env::panic_str(
-                &InvalidParameters::InsufficientDeposit
-                    .message(format!(
-                        "Require a deposit of {} yoctonear, found: {}",
-                        minimum_deposit.as_yoctonear(),
-                        deposit.as_yoctonear(),
-                    ))
-                    .to_string(),
+                &InvalidParameters::InsufficientDeposit {
+                    attached: deposit.as_yoctonear(),
+                    required: minimum_deposit.as_yoctonear(),
+                }
+                .to_string(),
             );
         }
         Some(diff) => {
@@ -145,9 +143,7 @@ pub struct MpcContract {
     foreign_chain_policy: dtos::ForeignChainPolicy,
     #[deprecated(note = "will be removed in 3.10.0")]
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
-
-    supported_foreign_chains_votes: ForeignChainSupport,
-
+    node_foreign_chain_configurations: NodeForeignChainConfigurations,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -168,12 +164,24 @@ pub struct MpcContract {
 /// 2. The main contract state becomes usable immediately.
 /// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
 ///    separate transactions to gradually deallocate this storage.
-#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-struct StaleData {}
+struct StaleData {
+    pending_signature_requests_pre_upgrade: LookupMap<v3_8_1_state::SignatureRequest, YieldIndex>,
+}
+
+impl StaleData {
+    fn new() -> Self {
+        Self {
+            pending_signature_requests_pre_upgrade: LookupMap::new(
+                StorageKey::PendingSignatureRequestsV2,
+            ),
+        }
+    }
+}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
@@ -208,28 +216,31 @@ impl ForeignChainPolicyVotes {
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-struct ForeignChainSupport {
-    votes_per_chain: IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
+struct NodeForeignChainConfigurations {
+    foreign_chain_configuration_by_node:
+        IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
 }
 
-impl Default for ForeignChainSupport {
+impl Default for NodeForeignChainConfigurations {
     fn default() -> Self {
         Self {
-            votes_per_chain: IterableMap::new(StorageKey::SupportedForeignChainsVotes),
+            foreign_chain_configuration_by_node: IterableMap::new(
+                StorageKey::SupportedForeignChainsVotes,
+            ),
         }
     }
 }
 
-impl ForeignChainSupport {
-    fn to_dto(&self) -> dtos::SupportedForeignChainsVotes {
-        let supported_chains_by_account = self
-            .votes_per_chain
+impl NodeForeignChainConfigurations {
+    fn to_dto(&self) -> dtos::NodeForeignChainConfigurations {
+        let foreign_chain_configuration_by_node = self
+            .foreign_chain_configuration_by_node
             .iter()
             .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
             .collect();
 
-        dtos::SupportedForeignChainsVotes {
-            supported_chains_by_account,
+        dtos::NodeForeignChainConfigurations {
+            foreign_chain_configuration_by_node,
         }
     }
 }
@@ -270,6 +281,103 @@ impl MpcContract {
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
+
+    /// Common preconditions enforced on every user-facing request method (`sign`,
+    /// `request_app_private_key`, `verify_foreign_transaction`):
+    ///
+    /// 1. The target domain exists and its purpose matches `expected_purpose`.
+    /// 2. The caller attached enough prepaid gas to perform the yield/resume flow.
+    /// 3. The caller attached at least `minimum_deposit` (excess is refunded).
+    /// 4. The contract is currently accepting user requests.
+    ///
+    /// Returns the validated domain config and the caller's account id.
+    fn check_request_preconditions(
+        &self,
+        domain_id: DomainId,
+        expected_purpose: DomainPurpose,
+        minimum_gas: Gas,
+        minimum_deposit: NearToken,
+    ) -> (DomainConfig, AccountId) {
+        // 1. Look up the domain and check its purpose.
+        let domains = match self.protocol_state.domain_registry() {
+            Ok(domains) => domains,
+            Err(err) => env::panic_str(&err.to_string()),
+        };
+        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound {
+                    provided: domain_id,
+                }
+                .to_string(),
+            );
+        };
+        if domain_config.purpose != expected_purpose {
+            env::panic_str(
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: expected_purpose,
+                    actual: domain_config.purpose,
+                }
+                .to_string(),
+            );
+        }
+        let domain_config = domain_config.clone();
+
+        // 2. Make sure the call will not run out of gas doing yield/resume logic.
+        let prepaid_gas = env::prepaid_gas();
+        if prepaid_gas < minimum_gas {
+            env::panic_str(
+                &InvalidParameters::InsufficientGas {
+                    provided: prepaid_gas.as_gas(),
+                    required: minimum_gas.as_gas(),
+                }
+                .to_string(),
+            );
+        }
+
+        // 3. Require the minimum deposit and refund any excess.
+        let predecessor = env::predecessor_account_id();
+        require_deposit(minimum_deposit, &predecessor);
+
+        // 4. Refuse the request if the contract is not currently accepting requests
+        //    (e.g. because TEE validation has failed).
+        if !self.accept_requests {
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
+        (domain_config, predecessor)
+    }
+
+    /// Creates a yield-resume promise that calls back into `callback_method` with the
+    /// pre-serialized `callback_args`, and stores the resulting yield id via `insert`.
+    ///
+    /// This function calls `env::promise_return` and so must be the last operation performed
+    /// in the enclosing contract method.
+    fn enqueue_yield_request(
+        &mut self,
+        callback_method: &str,
+        callback_args: Vec<u8>,
+        callback_gas: Gas,
+        insert: impl FnOnce(&mut Self, CryptoHash) -> bool,
+    ) {
+        let promise_index = env::promise_yield_create(
+            callback_method,
+            callback_args,
+            callback_gas,
+            GasWeight(0),
+            DATA_ID_REGISTER,
+        );
+
+        let return_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+            .expect("read_register failed")
+            .try_into()
+            .expect("conversion to CryptoHash failed");
+        if insert(self, return_id) {
+            log!("request already present, overriding callback.")
+        }
+
+        env::promise_return(promise_index);
+    }
 }
 
 // User contract API
@@ -297,30 +405,12 @@ impl MpcContract {
 
         let request: SignRequest = request.try_into().unwrap();
 
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id,
-                }
-                .to_string(),
-            );
-        };
-
-        if domain_config.purpose != DomainPurpose::Sign {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::Sign,
-                    actual: domain_config.purpose,
-                }
-                .message("sign() may only target domains with purpose Sign")
-                .to_string(),
-            );
-        }
+        let (domain_config, predecessor) = self.check_request_preconditions(
+            request.domain_id,
+            DomainPurpose::Sign,
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_SIGN_REQUEST_DEPOSIT,
+        );
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -336,28 +426,9 @@ impl MpcContract {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
             Curve::Bls12381 => {
-                env::panic_str(&InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function").to_string(),);
+                env::panic_str("Bls12381 is not supported for signature responses");
             }
         }
-
-        let gas_required =
-            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure sign call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas
-                    .message(format!(
-                        "Provided: {}, required: {}",
-                        env::prepaid_gas(),
-                        gas_required
-                    ))
-                    .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
 
         let request = SignatureRequest::new(
             request.domain_id,
@@ -366,33 +437,18 @@ impl MpcContract {
             &request.path,
         );
 
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
-
         let callback_gas = Gas::from_tgas(
             self.config
                 .return_signature_and_clean_state_on_success_call_tera_gas,
         );
 
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_signature_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_signature_request(&request, return_sig_id) {
-            log!("signature request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 
     /// This is the root public key combined from all the public keys of the participants.
@@ -471,52 +527,13 @@ impl MpcContract {
             request
         );
 
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let domain_id = request.domain_id.into();
-        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: domain_id,
-                }
-                .to_string(),
-            );
-        };
-        if domain_config.purpose != DomainPurpose::CKD {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::CKD,
-                    actual: domain_config.purpose,
-                }
-                .message("request_app_private_key() may only target domains with purpose CKD")
-                .to_string(),
-            );
-        }
-
-        let gas_required = Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure CKD call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas
-                    .message(format!(
-                        "Provided: {}, required: {}",
-                        env::prepaid_gas(),
-                        gas_required
-                    ))
-                    .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_CKD_REQUEST_DEPOSIT, &predecessor);
-
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
+        let domain_id: DomainId = request.domain_id.into();
+        let (_, predecessor) = self.check_request_preconditions(
+            domain_id,
+            DomainPurpose::CKD,
+            Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_CKD_REQUEST_DEPOSIT,
+        );
 
         match &request.app_public_key {
             dtos::CKDAppPublicKey::AppPublicKey(_) => {}
@@ -527,11 +544,10 @@ impl MpcContract {
             }
         }
 
-        let account_id = env::predecessor_account_id();
         let request = CKDRequest::new(
             request.app_public_key,
             domain_id,
-            &account_id,
+            &predecessor,
             &request.derivation_path,
         );
 
@@ -540,24 +556,13 @@ impl MpcContract {
                 .return_ck_and_clean_state_on_success_call_tera_gas,
         );
 
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_ckd_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_ck_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_ckd_request(&request, return_ck_id) {
-            log!("request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 
     /// Submit a verification + signing request for a foreign chain transaction.
@@ -572,30 +577,12 @@ impl MpcContract {
             request
         );
 
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.into()) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id.into(),
-                }
-                .to_string(),
-            );
-        };
-
-        if domain_config.purpose != DomainPurpose::ForeignTx {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::ForeignTx,
-                    actual: domain_config.purpose,
-                }
-                .message("verify_foreign_transaction() requires a domain with purpose ForeignTx")
-                .to_string(),
-            );
-        }
+        self.check_request_preconditions(
+            request.domain_id.into(),
+            DomainPurpose::ForeignTx,
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_SIGN_REQUEST_DEPOSIT,
+        );
 
         let requested_chain = request.request.chain();
         let supported_chains = self.get_supported_foreign_chains();
@@ -608,54 +595,19 @@ impl MpcContract {
             );
         }
 
-        let gas_required =
-            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas
-                    .message(format!(
-                        "Provided: {}, required: {}",
-                        env::prepaid_gas(),
-                        gas_required
-                    ))
-                    .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
-
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
-
         let callback_gas = Gas::from_tgas(
             self.config
                 .return_signature_and_clean_state_on_success_call_tera_gas,
         );
 
         let request = args_into_verify_foreign_tx_request(request);
-
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_verify_foreign_tx_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_verify_foreign_tx_request(&request, return_sig_id) {
-            log!("signature request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 }
 
@@ -733,10 +685,11 @@ impl MpcContract {
                 .is_ok()
             }
             (signature_response, public_key_requested) => {
-                return Err(RespondError::SignatureSchemeMismatch.message(format!(
-                    "Signature response from MPC: {:?}. Key requested by user {:?}",
-                    signature_response, public_key_requested
-                )));
+                return Err(RespondError::SignatureSchemeMismatch {
+                    mpc_scheme: Box::new(signature_response.clone()),
+                    user_scheme: Box::new(public_key_requested),
+                }
+                .into());
             }
         };
 
@@ -750,7 +703,18 @@ impl MpcContract {
             env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
         } else {
-            Err(InvalidParameters::RequestNotFound.into())
+            // Fall back to the pre-upgrade map for in-flight requests from before the migration.
+            let old_request = v3_8_1_state::SignatureRequest::from(&request);
+            if let Some(YieldIndex { data_id }) = self
+                .stale_data
+                .pending_signature_requests_pre_upgrade
+                .remove(&old_request)
+            {
+                env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
+                Ok(())
+            } else {
+                Err(InvalidParameters::RequestNotFound.into())
+            }
         }
     }
 
@@ -773,11 +737,7 @@ impl MpcContract {
             public_key: dtos::PublicKey::Bls12381(public_key),
         } = self.public_key_extended(request.domain_id)?
         else {
-            env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Selected domain is not compatible with CKD")
-                    .to_string(),
-            );
+            env::panic_str("Domain is not compatible with CKD (expected Bls12381 curve)");
         };
 
         match &request.app_public_key {
@@ -845,10 +805,11 @@ impl MpcContract {
                 .is_ok()
             }
             (signature_response, public_key_requested) => {
-                return Err(RespondError::SignatureSchemeMismatch.message(format!(
-                    "Verify Foreign tx response from MPC: {:?}. Key requested by user {:?}",
-                    signature_response, public_key_requested
-                )));
+                return Err(RespondError::SignatureSchemeMismatch {
+                    mpc_scheme: Box::new(signature_response.clone()),
+                    user_scheme: Box::new(public_key_requested),
+                }
+                .into());
             }
         };
 
@@ -909,9 +870,8 @@ impl MpcContract {
                 proposed_participant_attestation,
                 tee_upgrade_deadline_duration,
             )
-            .map_err(|err| {
-                InvalidParameters::InvalidTeeRemoteAttestation
-                    .message(format!("TeeQuoteStatus is invalid: {err}"))
+            .map_err(|err| InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: format!("TeeQuoteStatus is invalid: {err}"),
             })?;
 
         let caller_is_not_participant = self.voter_account().is_err();
@@ -929,11 +889,11 @@ impl MpcContract {
             let attached = env::attached_deposit();
 
             if attached < cost {
-                return Err(InvalidParameters::InsufficientDeposit.message(format!(
-                    "Attached {}, Required {}",
-                    attached.as_yoctonear(),
-                    cost.as_yoctonear(),
-                )));
+                return Err(InvalidParameters::InsufficientDeposit {
+                    attached: attached.as_yoctonear(),
+                    required: cost.as_yoctonear(),
+                }
+                .into());
             }
 
             // Refund the difference if the proposer attached more than required
@@ -1016,12 +976,13 @@ impl MpcContract {
                     })
                     .collect();
 
-                Err(
-                    InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
+                Err(InvalidParameters::InvalidTeeRemoteAttestation {
+                    reason: format!(
                         "The following participants have invalid TEE status: {:?}",
                         invalid_participants
-                    )),
-                )
+                    ),
+                }
+                .into())
             }
         }
     }
@@ -1062,10 +1023,10 @@ impl MpcContract {
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let voter = dtos::AccountId(voter.get().to_string());
 
-        // Also register the chain keys as supported foreign chains,
+        // Also register the chain keys as configured,
         // so callers of the deprecated API still populate the new data model.
-        self.supported_foreign_chains_votes
-            .votes_per_chain
+        self.node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
             .insert(voter.clone(), policy.chains.clone().into());
 
         if self
@@ -1111,8 +1072,8 @@ impl MpcContract {
             AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let account_id = authenticated_voter.get().into_dto_type();
 
-        self.supported_foreign_chains_votes
-            .votes_per_chain
+        self.node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
             .insert(account_id, foreign_chain_configuration);
 
         Ok(())
@@ -1164,7 +1125,9 @@ impl MpcContract {
             public_key
                 .try_into()
                 .map_err(|err: PublicKeyExtendedConversionError| {
-                    InvalidParameters::MalformedPayload.message(err.to_string())
+                    InvalidParameters::MalformedPayload {
+                        reason: err.to_string(),
+                    }
                 })?;
 
         if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
@@ -1244,6 +1207,15 @@ impl MpcContract {
                     Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
                 )
                 .detach();
+            // Spawn a promise to clean up foreign chain data for non-participants
+            Promise::new(env::current_account_id())
+                .function_call(
+                    method_names::CLEAN_FOREIGN_CHAIN_DATA.to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
+                )
+                .detach();
         }
 
         Ok(())
@@ -1317,11 +1289,11 @@ impl MpcContract {
         let attached = env::attached_deposit();
         let required = ProposedUpdates::required_deposit(&update);
         if attached < required {
-            return Err(InvalidParameters::InsufficientDeposit.message(format!(
-                "Attached {}, Required {}",
-                attached.as_yoctonear(),
-                required.as_yoctonear(),
-            )));
+            return Err(InvalidParameters::InsufficientDeposit {
+                attached: attached.as_yoctonear(),
+                required: required.as_yoctonear(),
+            }
+            .into());
         }
 
         let id = self.proposed_updates.propose(update);
@@ -1707,6 +1679,59 @@ impl MpcContract {
         self.tee_state.clean_non_participants(participants);
         Ok(())
     }
+
+    /// Private endpoint to clean up foreign chain policy votes and node configurations
+    /// for non-participants after resharing.
+    /// This can only be called by the contract itself via a promise.
+    #[private]
+    #[handle_result]
+    pub fn clean_foreign_chain_data(&mut self) -> Result<(), Error> {
+        log!(
+            "clean_foreign_chain_data: signer={}",
+            env::signer_account_id()
+        );
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        let participant_accounts: std::collections::HashSet<dtos::AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| dtos::AccountId(account_id.to_string()))
+            .collect();
+
+        let non_participant_accounts: Vec<dtos::AccountId> = self
+            .foreign_chain_policy_votes
+            .proposal_by_account
+            .keys()
+            .filter(|account| !participant_accounts.contains(account))
+            .cloned()
+            .collect();
+        for account in &non_participant_accounts {
+            self.foreign_chain_policy_votes
+                .proposal_by_account
+                .remove(account);
+        }
+
+        let non_participant_configs: Vec<dtos::AccountId> = self
+            .node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
+            .keys()
+            .filter(|account| !participant_accounts.contains(account))
+            .cloned()
+            .collect();
+        for account in &non_participant_configs {
+            self.node_foreign_chain_configurations
+                .foreign_chain_configuration_by_node
+                .remove(account);
+        }
+
+        Ok(())
+    }
 }
 
 // Contract developer helper API
@@ -1742,7 +1767,7 @@ impl MpcContract {
                 parameters,
                 AddDomainsVotes::default(),
             )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
@@ -1754,9 +1779,9 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: Default::default(),
+            stale_data: StaleData::new(),
             metrics: Default::default(),
-            supported_foreign_chains_votes: Default::default(),
+            node_foreign_chain_configurations: Default::default(),
         })
     }
 
@@ -1808,7 +1833,7 @@ impl MpcContract {
                 parameters,
                 AddDomainsVotes::default(),
             )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
@@ -1819,9 +1844,9 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: Default::default(),
+            stale_data: StaleData::new(),
             metrics: Default::default(),
-            supported_foreign_chains_votes: Default::default(),
+            node_foreign_chain_configurations: Default::default(),
         })
     }
 
@@ -1894,7 +1919,16 @@ impl MpcContract {
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        self.pending_signature_requests.get(request).cloned()
+        self.pending_signature_requests
+            .get(request)
+            .cloned()
+            .or_else(|| {
+                let old_request = v3_8_1_state::SignatureRequest::from(request);
+                self.stale_data
+                    .pending_signature_requests_pre_upgrade
+                    .get(&old_request)
+                    .cloned()
+            })
     }
 
     pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
@@ -1938,7 +1972,11 @@ impl MpcContract {
             BTreeSet<dtos::AccountId>,
         > = BTreeMap::new();
 
-        for (account_id, chains) in self.supported_foreign_chains_votes.votes_per_chain.iter() {
+        for (account_id, chains) in self
+            .node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
+            .iter()
+        {
             for chain in chains.keys() {
                 foreign_chain_to_node_mapping
                     .entry(chain)
@@ -1964,8 +2002,8 @@ impl MpcContract {
             .into()
     }
 
-    pub fn get_supported_foreign_chains_votes(&self) -> dtos::SupportedForeignChainsVotes {
-        self.supported_foreign_chains_votes.to_dto()
+    pub fn get_foreign_chain_configurations(&self) -> dtos::NodeForeignChainConfigurations {
+        self.node_foreign_chain_configurations.to_dto()
     }
 
     // contract version
@@ -1985,7 +2023,16 @@ impl MpcContract {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                self.pending_signature_requests.remove(&request);
+                let removed = self.pending_signature_requests.remove(&request).is_some();
+
+                // Fallback, the request must have been made pre-upgrade
+                if !removed {
+                    let old_request = v3_8_1_state::SignatureRequest::from(&request);
+                    self.stale_data
+                        .pending_signature_requests_pre_upgrade
+                        .remove(&old_request);
+                }
+
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
@@ -2161,7 +2208,10 @@ impl MpcContract {
             .protocol_state
             .is_existing_or_prospective_participant(&account_id)?
         {
-            return Err(errors::InvalidState::NotParticipant.message(format!("account: {} is not in the set of curent or prospective participants and not eligible to store backup service information", account_id)));
+            return Err(errors::InvalidState::NotParticipant {
+                account_id: account_id.clone(),
+            }
+            .into());
         }
         self.node_migrations
             .set_backup_service_info(account_id, backup_service_info);
@@ -2195,14 +2245,14 @@ impl MpcContract {
             destination_node_info
         );
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
-            return Err(errors::InvalidState::ProtocolStateNotRunning.message(
-                "migration of nodes is only possible while the protocol is in `Running` state."
-                    .to_string(),
-            ));
+            return Err(errors::InvalidState::ProtocolStateNotRunning.into());
         };
 
         if !running_state.is_participant_given_account_id(&account_id) {
-            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus not eligible to initiate a node migration.", account_id)));
+            return Err(errors::InvalidState::NotParticipant {
+                account_id: account_id.clone(),
+            }
+            .into());
         }
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
@@ -2234,22 +2284,23 @@ impl MpcContract {
             keyset
         );
         let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
-            return Err(errors::InvalidState::ProtocolStateNotRunning.message(
-                "migration of nodes is only possible while the protocol is in `Running` state."
-                    .to_string(),
-            ));
+            return Err(errors::InvalidState::ProtocolStateNotRunning.into());
         };
 
         if !running_state.is_participant_given_account_id(&account_id) {
-            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus eligible to initiate a node migration.", account_id)));
+            return Err(errors::InvalidState::NotParticipant {
+                account_id: account_id.clone(),
+            }
+            .into());
         }
 
         let expected_keyset = &running_state.keyset;
         if expected_keyset != keyset {
-            return Err(errors::NodeMigrationError::KeysetMismatch.message(format!(
-                "keyset={:?}, expected_keyset={:?}",
-                keyset, expected_keyset
-            )));
+            return Err(errors::NodeMigrationError::KeysetMismatch {
+                found: keyset.clone(),
+                expected: expected_keyset.clone(),
+            }
+            .into());
         }
 
         let Some(expected_destination_node) = self.node_migrations.remove_migration(&account_id)
@@ -2257,12 +2308,11 @@ impl MpcContract {
             return Err(errors::NodeMigrationError::MigrationNotFound.into());
         };
         if expected_destination_node.signer_account_pk != signer_pk {
-            return Err(
-                errors::NodeMigrationError::AccountPublicKeyMismatch.message(format!(
-                    "found  {:?}, expected {:?}",
-                    signer_pk, expected_destination_node.signer_account_pk
-                )),
-            );
+            return Err(errors::NodeMigrationError::AccountPublicKeyMismatch {
+                found: signer_pk,
+                expected: expected_destination_node.signer_account_pk.clone(),
+            }
+            .into());
         }
         // ensure that this node has a valid TEE quote
         let node_id = NodeId {
@@ -2281,7 +2331,10 @@ impl MpcContract {
             ),
             TeeQuoteStatus::Valid
         )) {
-            return Err(errors::InvalidParameters::InvalidTeeRemoteAttestation.into());
+            return Err(errors::InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: "destination node TEE quote is invalid".into(),
+            }
+            .into());
         };
 
         log!(
@@ -2339,7 +2392,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::errors::{ErrorKind, NodeMigrationError};
+    use crate::errors::NodeMigrationError;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
@@ -2722,6 +2775,106 @@ mod tests {
     }
 
     #[test]
+    fn test_signature_timeout__removes_from_pre_upgrade_stale_map() {
+        // given
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        let old_request = v3_8_1_state::SignatureRequest::from(&signature_request);
+        contract
+            .stale_data
+            .pending_signature_requests_pre_upgrade
+            .insert(
+                old_request.clone(),
+                YieldIndex {
+                    data_id: CryptoHash::default(),
+                },
+            );
+        assert_matches!(contract.get_pending_request(&signature_request), Some(_));
+
+        // when
+        let result = contract.return_signature_and_clean_state_on_success(
+            signature_request.clone(),
+            Err(PromiseError::Failed),
+        );
+
+        // then
+
+        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
+        match result {
+            PromiseOrValue::Promise(_promise) => {}
+            PromiseOrValue::Value(_) => panic!("result should be a promise"),
+        }
+        assert_matches!(contract.get_pending_request(&signature_request), None);
+        assert_matches!(
+            contract
+                .stale_data
+                .pending_signature_requests_pre_upgrade
+                .get(&old_request),
+            None
+        );
+    }
+
+    #[test]
+    fn test_signature_timeout__request_in_neither_map_still_schedules_fail() {
+        // given
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        assert_matches!(contract.get_pending_request(&signature_request), None);
+
+        // when
+        let result = contract.return_signature_and_clean_state_on_success(
+            signature_request,
+            Err(PromiseError::Failed),
+        );
+
+        // then
+        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
+        match result {
+            PromiseOrValue::Promise(_promise) => {}
+            PromiseOrValue::Value(_) => panic!("result should be a promise"),
+        }
+    }
+
+    #[test]
+    fn test_signature_success__returns_value_directly() {
+        // given
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        let signature_response = dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+            big_r: dtos::K256AffinePoint::from(k256::AffinePoint::GENERATOR),
+            s: dtos::K256Scalar::from(k256::Scalar::ONE),
+            recovery_id: 0,
+        });
+
+        // when
+        let result = contract.return_signature_and_clean_state_on_success(
+            signature_request,
+            Ok(signature_response.clone()),
+        );
+
+        // then
+        match result {
+            PromiseOrValue::Value(resp) => assert_eq!(resp, signature_response),
+            PromiseOrValue::Promise(_) => panic!("Expected Value, got Promise"),
+        }
+    }
+
+    #[test]
     fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
         let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
@@ -2799,6 +2952,99 @@ mod tests {
             }
             Err(_) => panic!("respond_ckd should not fail"),
         }
+    }
+
+    fn override_context_for_preconditions(deposit: NearToken, prepaid_gas: Gas) {
+        let predecessor: AccountId = "contract_account.near".parse().unwrap();
+        let context = VMContextBuilder::new()
+            .predecessor_account_id(predecessor.clone())
+            .current_account_id(predecessor)
+            .attached_deposit(deposit)
+            .prepaid_gas(prepaid_gas)
+            .build();
+        testing_env!(context);
+    }
+
+    #[test]
+    fn check_request_preconditions__returns_domain_config_and_predecessor_on_valid_call() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        let (config, predecessor) = contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+        assert_eq!(config.id, DomainId::default());
+        assert_eq!(config.curve, Curve::Secp256k1);
+        assert_eq!(config.purpose, DomainPurpose::Sign);
+        assert_eq!(predecessor.as_str(), "contract_account.near");
+    }
+
+    #[test]
+    #[should_panic(expected = "was not found")]
+    fn check_request_preconditions__panics_when_domain_does_not_exist() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.check_request_preconditions(
+            DomainId(999),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "purpose")]
+    fn check_request_preconditions__panics_when_domain_purpose_does_not_match() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::CKD,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Provided gas is lower than required")]
+    fn check_request_preconditions__panics_when_prepaid_gas_is_insufficient() {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        override_context_for_preconditions(NearToken::from_yoctonear(1), Gas::from_tgas(1));
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(100),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Attached deposit is lower than required")]
+    fn check_request_preconditions__panics_when_attached_deposit_is_insufficient() {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        override_context_for_preconditions(NearToken::from_yoctonear(0), Gas::from_tgas(300));
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "TEE validation")]
+    fn check_request_preconditions__panics_when_contract_is_not_accepting_requests() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.accept_requests = false;
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
     }
 
     #[test]
@@ -2993,7 +3239,7 @@ mod tests {
     #[rstest]
     #[case(DomainPurpose::ForeignTx)]
     #[case(DomainPurpose::CKD)]
-    #[should_panic(expected = "sign() may only target domains with purpose Sign")]
+    #[should_panic(expected = "this method requires Sign")]
     fn sign__should_reject_non_sign_domain(#[case] purpose: DomainPurpose) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -3012,9 +3258,7 @@ mod tests {
     #[rstest]
     #[case(DomainPurpose::Sign)]
     #[case(DomainPurpose::CKD)]
-    #[should_panic(
-        expected = "verify_foreign_transaction() requires a domain with purpose ForeignTx"
-    )]
+    #[should_panic(expected = "this method requires ForeignTx")]
     fn verify_foreign_tx__should_reject_non_foreign_tx_domain(#[case] purpose: DomainPurpose) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -3059,7 +3303,7 @@ mod tests {
     #[rstest]
     #[case(DomainPurpose::Sign)]
     #[case(DomainPurpose::ForeignTx)]
-    #[should_panic(expected = "request_app_private_key() may only target domains with purpose CKD")]
+    #[should_panic(expected = "this method requires CKD")]
     fn ckd__should_reject_non_ckd_domain(#[case] purpose: DomainPurpose) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -3424,7 +3668,7 @@ mod tests {
         pub fn new_from_protocol_state(protocol_state: ProtocolContractState) -> Self {
             MpcContract {
                 protocol_state,
-                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
                 pending_verify_foreign_tx_requests: LookupMap::new(
                     StorageKey::PendingVerifyForeignTxRequests,
@@ -3433,11 +3677,11 @@ mod tests {
                 proposed_updates: Default::default(),
                 foreign_chain_policy: Default::default(),
                 foreign_chain_policy_votes: Default::default(),
-                supported_foreign_chains_votes: Default::default(),
+                node_foreign_chain_configurations: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                stale_data: Default::default(),
+                stale_data: StaleData::new(),
                 metrics: Default::default(),
             }
         }
@@ -3512,8 +3756,10 @@ mod tests {
         assert!(contract.migration_info().is_empty());
         let destination_node_info = gen_random_destination_info();
         let res = contract.start_node_migration(destination_node_info);
-        let expected_error_kind = &ErrorKind::InvalidState(InvalidState::ProtocolStateNotRunning);
-        assert_eq!(res.unwrap_err().kind(), expected_error_kind);
+        assert_matches!(
+            res.unwrap_err(),
+            Error::InvalidState(InvalidState::ProtocolStateNotRunning)
+        );
         assert!(contract.migration_info().is_empty());
     }
 
@@ -3542,8 +3788,10 @@ mod tests {
         let non_participant = gen_account_id();
         Environment::new(None, Some(non_participant), None);
         let res = contract.register_backup_service(backup_service_info);
-        let expected_error_kind = &ErrorKind::InvalidState(InvalidState::NotParticipant);
-        assert_eq!(res.unwrap_err().kind(), expected_error_kind);
+        assert_matches!(
+            res.unwrap_err(),
+            Error::InvalidState(InvalidState::NotParticipant { .. })
+        );
         assert!(contract.migration_info().is_empty());
     }
 
@@ -3650,7 +3898,7 @@ mod tests {
                 .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
-                expected_error_kind: None,
+                expected_error_check: None,
                 expected_post_call_info: Some((
                     expected_participant_id.clone(),
                     destination_node_info.destination_node_info.clone(),
@@ -3677,9 +3925,14 @@ mod tests {
                 attestation_tls_key: bogus_ed25519_public_key(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
-                expected_error_kind: Some(ErrorKind::InvalidParameters(
-                    InvalidParameters::InvalidTeeRemoteAttestation,
-                )),
+                expected_error_check: Some(|k| {
+                    matches!(
+                        k,
+                        Error::InvalidParameters(
+                            InvalidParameters::InvalidTeeRemoteAttestation { .. }
+                        )
+                    )
+                }),
                 expected_post_call_info: Some((
                     expected_participant_id.clone(),
                     expected_participant_info.clone(),
@@ -3708,9 +3961,12 @@ mod tests {
                 .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk.clone(),
-                expected_error_kind: Some(ErrorKind::NodeMigrationError(
-                    NodeMigrationError::MigrationNotFound,
-                )),
+                expected_error_check: Some(|k| {
+                    matches!(
+                        k,
+                        Error::NodeMigrationError(NodeMigrationError::MigrationNotFound)
+                    )
+                }),
                 expected_post_call_info: Some((
                     expected_participant_id.clone(),
                     expected_participant_info.clone(),
@@ -3740,9 +3996,12 @@ mod tests {
                 .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
-                expected_error_kind: Some(ErrorKind::NodeMigrationError(
-                    NodeMigrationError::KeysetMismatch,
-                )),
+                expected_error_check: Some(|k| {
+                    matches!(
+                        k,
+                        Error::NodeMigrationError(NodeMigrationError::KeysetMismatch { .. })
+                    )
+                }),
                 expected_post_call_info: Some((
                     expected_participant_id.clone(),
                     expected_participant_info.clone(),
@@ -3768,7 +4027,9 @@ mod tests {
             .unwrap(),
             signer_account_id: non_participant_account_id.clone(),
             signer_account_pk: destination_node_info.signer_account_pk,
-            expected_error_kind: Some(ErrorKind::InvalidState(InvalidState::NotParticipant)),
+            expected_error_check: Some(|k| {
+                matches!(k, Error::InvalidState(InvalidState::NotParticipant { .. }))
+            }),
             expected_post_call_info: None,
         };
         setup.run(&mut contract, &keyset);
@@ -3791,9 +4052,12 @@ mod tests {
                 .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
-                expected_error_kind: Some(ErrorKind::InvalidState(
-                    InvalidState::ProtocolStateNotRunning,
-                )),
+                expected_error_check: Some(|k| {
+                    matches!(
+                        k,
+                        Error::InvalidState(InvalidState::ProtocolStateNotRunning)
+                    )
+                }),
                 expected_post_call_info: Some((
                     expected_participant_id.clone(),
                     expected_participant_info.clone(),
@@ -3843,7 +4107,7 @@ mod tests {
         attestation_tls_key: Ed25519PublicKey,
         signer_account_id: AccountId,
         signer_account_pk: near_sdk::PublicKey,
-        expected_error_kind: Option<ErrorKind>,
+        expected_error_check: Option<fn(&Error) -> bool>,
         expected_post_call_info: Option<(ParticipantId, ParticipantInfo)>,
     }
 
@@ -3885,8 +4149,9 @@ mod tests {
 
             let res = contract.conclude_node_migration(keyset);
 
-            if let Some(expected_error_kind) = &self.expected_error_kind {
-                assert_eq!(res.unwrap_err().kind(), expected_error_kind);
+            if let Some(check) = &self.expected_error_check {
+                let err = res.unwrap_err();
+                assert!(check(&err), "Unexpected error kind: {:?}", err);
             } else {
                 res.expect("Concluding a valid migration should succeed");
             }
@@ -4530,6 +4795,7 @@ mod tests {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
+            expected_measurements: None,
         });
         contract
             .tee_state
@@ -4769,7 +5035,7 @@ mod tests {
         // then
         let error_string = result.unwrap_err().to_string();
         assert!(error_string
-        .contains("Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", &error_string);
+        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", &error_string);
     }
 
     /// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
@@ -4817,7 +5083,7 @@ mod tests {
         // then
         let error_string = result.unwrap_err().to_string();
         assert!(error_string
-        .contains("Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
+        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
     }
 
     #[test]
@@ -4998,10 +5264,10 @@ mod tests {
             .expect("vote should succeed");
 
         // Then — their supported chains are registered
-        let votes = contract.get_supported_foreign_chains_votes();
+        let votes = contract.get_foreign_chain_configurations();
         let first_voter = dtos::AccountId(first_account.to_string());
         let registered = votes
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
             .get(&first_voter)
             .expect("voter should have registered chains");
         assert!(registered.contains_key(&dtos::ForeignChain::Bitcoin));
@@ -5054,10 +5320,10 @@ mod tests {
             .expect("vote should succeed");
 
         // Then — their registered chains are now only Ethereum (overwritten, not merged)
-        let votes = contract.get_supported_foreign_chains_votes();
+        let votes = contract.get_foreign_chain_configurations();
         let first_voter = dtos::AccountId(first_account.to_string());
         let registered = votes
-            .supported_chains_by_account
+            .foreign_chain_configuration_by_node
             .get(&first_voter)
             .expect("voter should have registered chains");
         assert!(registered.contains_key(&dtos::ForeignChain::Ethereum));
@@ -5871,11 +6137,11 @@ mod tests {
             .expect("register should succeed");
 
         // Then
-        let votes = contract.get_supported_foreign_chains_votes();
-        assert_eq!(votes.supported_chains_by_account.len(), 1);
+        let votes = contract.get_foreign_chain_configurations();
+        assert_eq!(votes.foreign_chain_configuration_by_node.len(), 1);
         assert_eq!(
             votes
-                .supported_chains_by_account
+                .foreign_chain_configuration_by_node
                 .get(&dtos::AccountId(first_account.to_string())),
             Some(&foreign_chain_configuration)
         );
@@ -6082,13 +6348,13 @@ mod tests {
         }
 
         // When
-        let votes = contract.get_supported_foreign_chains_votes();
+        let votes = contract.get_foreign_chain_configurations();
 
         // Then — each participant's individual RPC URLs are preserved
         for (i, (account_id, _, _)) in participants.iter().enumerate() {
             let account_dto = dtos::AccountId(account_id.to_string());
             let config = votes
-                .supported_chains_by_account
+                .foreign_chain_configuration_by_node
                 .get(&account_dto)
                 .expect("participant should have a config");
             let btc_providers = config

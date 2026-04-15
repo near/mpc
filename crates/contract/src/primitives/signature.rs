@@ -3,6 +3,7 @@ use crate::errors::{Error, InvalidParameters};
 use crate::DomainId;
 use crypto_shared::derive_tweak;
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::{hex_serde, BoundedVec};
 use near_mpc_contract_interface::types::{
     ECDSA_PAYLOAD_SIZE_BYTES, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
@@ -30,103 +31,44 @@ impl Tweak {
 #[near(serializers=[borsh, json])]
 pub enum Payload {
     Ecdsa(
+        #[serde(with = "hex_serde")]
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "[u8; 32]"),
-            borsh(schema(with_funcs(
-                declaration = "<[u8; 32] as ::borsh::BorshSchema>::declaration",
-                definitions = "<[u8; 32] as ::borsh::BorshSchema>::add_definitions_recursively"
-            ),))
+            schemars(
+                with = "hex_serde::HexString<ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES>"
+            )
         )]
-        Bytes<ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES>,
+        BoundedVec<u8, ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES>,
     ),
     Eddsa(
+        #[serde(with = "hex_serde")]
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "Vec<u8>"),
-            borsh(schema(with_funcs(
-                declaration = "<Vec<u8> as ::borsh::BorshSchema>::declaration",
-                definitions = "<Vec<u8> as ::borsh::BorshSchema>::add_definitions_recursively"
-            ),))
+            schemars(
+                with = "hex_serde::HexString<EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>"
+            )
         )]
-        Bytes<EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
+        BoundedVec<u8, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
     ),
 }
 
 impl Payload {
     pub fn from_legacy_ecdsa(bytes: [u8; 32]) -> Self {
-        Payload::Ecdsa(Bytes::new(bytes.to_vec()).unwrap())
+        Payload::Ecdsa(bytes.into())
     }
 
     pub fn as_ecdsa(&self) -> Option<&[u8; 32]> {
         match self {
-            Payload::Ecdsa(bytes) => Some(bytes.as_fixed_bytes()),
+            Payload::Ecdsa(bytes) => Some(bytes.as_ref()),
             _ => None,
         }
     }
 
     pub fn as_eddsa(&self) -> Option<&[u8]> {
         match self {
-            Payload::Eddsa(bytes) => Some(bytes.as_bytes()),
+            Payload::Eddsa(bytes) => Some(bytes.as_slice()),
             _ => None,
         }
-    }
-}
-
-/// A byte array with a statically encoded minimum and maximum length.
-/// The `new` function as well as json deserialization checks that the length is within bounds.
-/// The borsh deserialization does not perform such checks, as the borsh serialization is only
-/// used for internal contract storage.
-#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[near(serializers=[borsh])]
-pub struct Bytes<const MIN_LEN: usize, const MAX_LEN: usize>(Vec<u8>);
-
-impl<const MIN_LEN: usize, const MAX_LEN: usize> Bytes<MIN_LEN, MAX_LEN> {
-    pub fn new(bytes: Vec<u8>) -> Result<Self, Error> {
-        if bytes.len() < MIN_LEN || bytes.len() > MAX_LEN {
-            return Err(InvalidParameters::MalformedPayload.into());
-        }
-        Ok(Self(bytes))
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl<const N: usize> Bytes<N, N> {
-    pub fn as_fixed_bytes(&self) -> &[u8; N] {
-        self.0.as_slice().try_into().unwrap()
-    }
-}
-
-impl<const MIN_LEN: usize, const MAX_LEN: usize> Debug for Bytes<MIN_LEN, MAX_LEN> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Bytes").field(&hex::encode(&self.0)).finish()
-    }
-}
-
-impl<const MIN_LEN: usize, const MAX_LEN: usize> near_sdk::serde::Serialize
-    for Bytes<MIN_LEN, MAX_LEN>
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: near_sdk::serde::Serializer,
-    {
-        hex::encode(&self.0).serialize(serializer)
-    }
-}
-
-impl<'de, const MIN_LEN: usize, const MAX_LEN: usize> near_sdk::serde::Deserialize<'de>
-    for Bytes<MIN_LEN, MAX_LEN>
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: near_sdk::serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(near_sdk::serde::de::Error::custom)?;
-        Self::new(bytes).map_err(near_sdk::serde::de::Error::custom)
     }
 }
 
@@ -187,7 +129,12 @@ impl TryFrom<SignRequestArgs> for SignRequest {
         let payload = match (args.payload_v2, args.deprecated_payload) {
             (Some(payload), None) => payload,
             (None, Some(payload)) => Payload::from_legacy_ecdsa(payload),
-            _ => return Err(InvalidParameters::MalformedPayload.into()),
+            _ => {
+                return Err(InvalidParameters::MalformedPayload {
+                    reason: "expected exactly one of payload_v2 or deprecated_payload".into(),
+                }
+                .into())
+            }
         };
         let domain_id = match (args.domain_id, args.deprecated_key_version) {
             (Some(domain_id), None) => domain_id,

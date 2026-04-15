@@ -23,7 +23,7 @@ Also review specific MPC configuration in [running-an-mpc-node-in-tdx-external-g
 - `vmm-cli.py` should be located under $basePath/vmm/src/vmm-cli.py
 - Docker Compose template (`$DOCKER_COMPOSE_FILE_PATH`)
 - Deployment configuration in `*.env` file
-- user-config.conf file
+- user-config.toml file (TOML format)
 - See full CLI documentation here: [vmm-cli-user-guide.md](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md)
 
 ---
@@ -34,7 +34,7 @@ Ensure the following files are present in the working directory before running t
 
 - `default.env` – default environment configuration
 - `$DOCKER_COMPOSE_FILE_PATH` – e.g. `launcher_docker_compose.yaml`
-- `$USER_CONFIG_FILE_PATH` – e.g. `user-config.conf`
+- `$USER_CONFIG_FILE_PATH` – e.g. `user-config.toml`
 
 You can also use the example `.env` files under `tee_deployment/configs/`:
 
@@ -141,7 +141,7 @@ OS_IMAGE=dstack-dev-0.5.2
 # Path of the launcher docker_compose_file
 DOCKER_COMPOSE_FILE_PATH=launcher_docker_compose.yaml
 # Path of the user_config file
-USER_CONFIG_FILE_PATH=user-config.conf
+USER_CONFIG_FILE_PATH=user-config.toml
 
 # Resource configuration (defaults shown):
 VCPU=8      # do not change since this is measured in the contract

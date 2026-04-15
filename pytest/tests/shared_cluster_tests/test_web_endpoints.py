@@ -54,7 +54,7 @@ def test_web_endpoints(shared_cluster: shared.MpcCluster):
         assert "id:" in response.text, response.text
 
         response = requests.get(f"http://{socket_address}/debug/contract")
-        assert "Contract is in Running state" in response.text, response.text
+        assert "RunningContractState" in response.text, response.text
 
         assert_pprof_endpoint(node.pprof_address)
 

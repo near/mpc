@@ -5,14 +5,7 @@ use k256::{
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
-use mpc_contract::{
-    crypto_shared::CKDResponse,
-    primitives::{
-        domain::DomainId,
-        key_state::{KeyEventId, Keyset},
-        signature::Tweak,
-    },
-};
+use mpc_contract::{crypto_shared::CKDResponse, primitives::signature::Tweak};
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAIN_CONFIG, RESPOND, RESPOND_CKD,
@@ -23,6 +16,7 @@ pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
+use near_mpc_contract_interface::types::{DomainId, KeyEventId, Keyset};
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -274,7 +268,7 @@ impl ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
-                request.domain,
+                request.domain.into(),
             ),
             response: k256_signature_response(response.big_r, response.s, recovery_id)?,
         })
@@ -293,7 +287,7 @@ impl ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
-                request.domain,
+                request.domain.into(),
             ),
             response: dtos::SignatureResponse::Ed25519 {
                 signature: dtos::Ed25519Signature::from(response),
@@ -330,7 +324,7 @@ impl ChainCKDRespondArgs {
             request: ChainCKDRequest::new(
                 request.app_public_key.clone(),
                 request.app_id.clone(),
-                request.domain_id,
+                request.domain_id.into(),
             ),
             response: response.clone(),
         })

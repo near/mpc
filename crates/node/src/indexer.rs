@@ -15,7 +15,6 @@ use anyhow::Context;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
-    state::ProtocolContractState,
     tee::{
         proposal::{LauncherDockerComposeHash, NodeImageHash},
         tee_state::NodeId,
@@ -285,10 +284,10 @@ impl IndexerViewClient {
             .context("failed to get query for final block")
     }
 
-    pub(crate) async fn get_mpc_contract_state(
+    pub(crate) async fn get_mpc_contract_state_dto(
         &self,
         mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, ProtocolContractState)> {
+    ) -> anyhow::Result<(u64, dtos::ProtocolContractState)> {
         self.get_mpc_state(mpc_contract_id, STATE).await
     }
 

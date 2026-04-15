@@ -94,6 +94,7 @@ async fn contract_configuration_can_be_set_on_initialization() {
         clean_tee_status_tera_gas: Some(99),
         cleanup_orphaned_node_migrations_tera_gas: Some(11),
         remove_non_participant_update_votes_tera_gas: Some(12),
+        clean_foreign_chain_data_tera_gas: Some(13),
     };
 
     let number_of_participants: usize = 2;

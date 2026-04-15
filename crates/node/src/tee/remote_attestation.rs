@@ -138,6 +138,7 @@ pub async fn validate_and_submit_remote_attestation(
     submit_remote_attestation(tx_sender, attestation, tls_public_key).await
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
     tee_authority: TeeAuthority,
     tx_sender: T,
@@ -157,12 +158,23 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
             .generate_attestation(report_data.clone())
             .await
         {
-            Ok(att) => att,
+            Ok(att) => {
+                crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                    .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS])
+                    .inc();
+                att
+            }
             Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+                crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                    .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
+                    .inc();
                 tracing::warn!(error = ?e, "TEE attestation failed, will retry next interval");
                 continue;
             }
             Err(e) => {
+                crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                    .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
+                    .inc();
                 return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
             }
         };
@@ -195,6 +207,7 @@ fn is_node_in_contract_tee_accounts(
 /// This function watches TEE account changes in the contract and resubmits attestations when
 /// the node's TEE attestation is no longer available.
 #[expect(clippy::too_many_arguments)]
+#[tracing::instrument(skip_all)]
 pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     node_account_id: AccountId,
     tee_authority: TeeAuthority,
@@ -244,8 +257,16 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 .generate_attestation(report_data.clone())
                 .await
             {
-                Ok(att) => att,
+                Ok(att) => {
+                    crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                        .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS])
+                        .inc();
+                    att
+                }
                 Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+                    crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                        .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
+                        .inc();
                     tracing::warn!(
                         error = ?e,
                         "TEE attestation failed, periodic attestation task will retry",
@@ -254,6 +275,9 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     continue;
                 }
                 Err(e) => {
+                    crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                        .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
+                        .inc();
                     return Err(
                         anyhow::anyhow!(e).context("TEE attestation failed, cannot continue")
                     );
