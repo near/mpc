@@ -27,16 +27,16 @@ BorshSchemaContainer {
                 "DockerImageHash",
             ],
         },
-        "(AuthenticatedParticipantId, LauncherVoteAction)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "LauncherVoteAction",
-            ],
-        },
         "(AuthenticatedParticipantId, MeasurementVoteAction)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
                 "MeasurementVoteAction",
+            ],
+        },
+        "(AuthenticatedParticipantId, ProposalId)": Tuple {
+            elements: [
+                "AuthenticatedParticipantId",
+                "ProposalId",
             ],
         },
         "(AuthenticatedParticipantId, Vec<DomainConfig>)": Tuple {
@@ -49,6 +49,18 @@ BorshSchemaContainer {
             elements: [
                 "ForeignChain",
                 "NonEmptyBTreeSet<RpcProvider>",
+            ],
+        },
+        "(ProposalHash, ProposalId)": Tuple {
+            elements: [
+                "ProposalHash",
+                "ProposalId",
+            ],
+        },
+        "(ProposalId, VoterSet<AuthenticatedParticipantId>)": Tuple {
+            elements: [
+                "ProposalId",
+                "VoterSet<AuthenticatedParticipantId>",
             ],
         },
         "(PublicKey, NodeAttestation)": Tuple {
@@ -163,15 +175,15 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, DockerImageHash)",
         },
-        "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, LauncherVoteAction)",
-        },
         "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, MeasurementVoteAction)",
+        },
+        "BTreeMap<AuthenticatedParticipantId, ProposalId>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(AuthenticatedParticipantId, ProposalId)",
         },
         "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>": Sequence {
             length_width: 4,
@@ -182,6 +194,16 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(ForeignChain, NonEmptyBTreeSet<RpcProvider>)",
+        },
+        "BTreeMap<ProposalHash, ProposalId>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(ProposalHash, ProposalId)",
+        },
+        "BTreeMap<ProposalId, VoterSet<AuthenticatedParticipantId>>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(ProposalId, VoterSet<AuthenticatedParticipantId>)",
         },
         "BTreeMap<PublicKey, NodeAttestation>": Sequence {
             length_width: 4,
@@ -677,49 +699,10 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "LauncherHashVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>",
-                    ),
-                ],
-            ),
-        },
         "LauncherImageHash": Struct {
             fields: UnnamedFields(
                 [
                     "[u8; 32]",
-                ],
-            ),
-        },
-        "LauncherVoteAction": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Add",
-                    "LauncherVoteAction__Add",
-                ),
-                (
-                    1,
-                    "Remove",
-                    "LauncherVoteAction__Remove",
-                ),
-            ],
-        },
-        "LauncherVoteAction__Add": Struct {
-            fields: UnnamedFields(
-                [
-                    "LauncherImageHash",
-                ],
-            ),
-        },
-        "LauncherVoteAction__Remove": Struct {
-            fields: UnnamedFields(
-                [
-                    "LauncherImageHash",
                 ],
             ),
         },
@@ -1161,6 +1144,38 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ProposalHash": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "ProposalId": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "ProposalRegistry<LauncherVoteAction>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "id_by_proposal",
+                        "BTreeMap<ProposalHash, ProposalId>",
+                    ),
+                    (
+                        "proposals_by_id",
+                        "IterableMap",
+                    ),
+                    (
+                        "next_id",
+                        "ProposalId",
+                    ),
+                ],
+            ),
+        },
         "ProposedUpdates": Struct {
             fields: NamedFields(
                 [
@@ -1421,7 +1436,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "launcher_votes",
-                        "LauncherHashVotes",
+                        "Votes<AuthenticatedParticipantId, LauncherVoteAction>",
                     ),
                     (
                         "stored_attestations",
@@ -1585,6 +1600,41 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "MockAttestation",
+                ],
+            ),
+        },
+        "VoteRegistry<AuthenticatedParticipantId>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "votes_by_voter",
+                        "BTreeMap<AuthenticatedParticipantId, ProposalId>",
+                    ),
+                    (
+                        "votes_by_proposal",
+                        "BTreeMap<ProposalId, VoterSet<AuthenticatedParticipantId>>",
+                    ),
+                ],
+            ),
+        },
+        "VoterSet<AuthenticatedParticipantId>": Struct {
+            fields: UnnamedFields(
+                [
+                    "BTreeSet<AuthenticatedParticipantId>",
+                ],
+            ),
+        },
+        "Votes<AuthenticatedParticipantId, LauncherVoteAction>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_registry",
+                        "ProposalRegistry<LauncherVoteAction>",
+                    ),
+                    (
+                        "vote_registry",
+                        "VoteRegistry<AuthenticatedParticipantId>",
+                    ),
                 ],
             ),
         },
