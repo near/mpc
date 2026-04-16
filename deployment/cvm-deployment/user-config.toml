@@ -11,6 +11,8 @@ port_mappings = [
 
 [mpc_node_config]
 home_dir = "/data"
+# Override the collateral endpoint URL. Defaults to Phala's endpoint if omitted.
+# quote_upload_url = "http://<HOST_IP>:8082/api/v1/attestations/verify"
 
 [mpc_node_config.log]
 format = "plain"
