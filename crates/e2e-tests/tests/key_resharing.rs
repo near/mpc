@@ -24,7 +24,7 @@ async fn test_key_resharing() {
     assert_eq!(running.parameters.participants.participants.len(), 2);
 
     // Send sign + CKD requests to verify liveness.
-    common::send_sign_request(&cluster, &running, &mut rng).await;
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
 
     // Resharing 1: expand from 2 → 4 nodes, threshold 3.
@@ -35,7 +35,7 @@ async fn test_key_resharing() {
         .expect("resharing 1 failed");
     let running = expect_running_state(&cluster).await;
     assert_eq!(running.parameters.participants.participants.len(), 4);
-    common::send_sign_request(&cluster, &running, &mut rng).await;
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
 
     // Resharing 2: shrink to nodes [1,2,3] (drop node 0), threshold 3.
@@ -46,7 +46,7 @@ async fn test_key_resharing() {
         .expect("resharing 2 failed");
     let running = expect_running_state(&cluster).await;
     assert_eq!(running.parameters.participants.participants.len(), 3);
-    common::send_sign_request(&cluster, &running, &mut rng).await;
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
 
     // Resharing 3: add node 4 (has been running and syncing since startup)
     // to replace the dropped node 0. Back to 4 participants, threshold 3.
@@ -58,7 +58,7 @@ async fn test_key_resharing() {
     let running = expect_running_state(&cluster).await;
     assert_eq!(running.parameters.participants.participants.len(), 4);
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
-    common::send_sign_request(&cluster, &running, &mut rng).await;
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
 
     // Resharing 4: increase threshold to 4 (all participants required).
     tracing::info!("resharing 4: increasing threshold to 4");
@@ -78,7 +78,7 @@ async fn test_key_resharing() {
             key.domain_id
         );
     }
-    common::send_sign_request(&cluster, &running, &mut rng).await;
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
 }
 

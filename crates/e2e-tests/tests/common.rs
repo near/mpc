@@ -246,6 +246,7 @@ pub async fn send_sign_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
+    account_id: &near_kit::AccountId,
 ) {
     let domain = running
         .domains
@@ -254,11 +255,7 @@ pub async fn send_sign_request(
         .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
         .expect("no Secp256k1 Sign domain");
     let outcome = cluster
-        .send_sign_request(
-            domain.id,
-            generate_ecdsa_payload(rng),
-            cluster.default_user_account(),
-        )
+        .send_sign_request(domain.id, generate_ecdsa_payload(rng), account_id)
         .await
         .expect("sign request failed");
     assert!(
