@@ -4,6 +4,7 @@ use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use thiserror::Error;
 
 pub mod abstract_chain;
+pub mod base;
 pub mod bitcoin;
 pub mod bnb;
 pub mod contract_interface_conversions;

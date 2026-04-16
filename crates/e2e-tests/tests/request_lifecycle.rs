@@ -29,7 +29,7 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
 
                 // when
                 let outcome = cluster
-                    .send_sign_request(domain.id, payload)
+                    .send_sign_request(domain.id, payload, cluster.default_user_account())
                     .await
                     .expect("sign request transaction failed");
 
@@ -58,7 +58,11 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
             DomainPurpose::CKD => {
                 // when
                 let outcome = cluster
-                    .send_ckd_request(domain.id, common::generate_ckd_app_public_key(&mut rng))
+                    .send_ckd_request(
+                        domain.id,
+                        common::generate_ckd_app_public_key(&mut rng),
+                        cluster.default_user_account(),
+                    )
                     .await
                     .expect("ckd request transaction failed");
 
@@ -105,7 +109,11 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
 
     // when
     let outcome = cluster
-        .send_sign_request(domain.id, common::generate_ecdsa_payload(&mut rng))
+        .send_sign_request(
+            domain.id,
+            common::generate_ecdsa_payload(&mut rng),
+            cluster.default_user_account(),
+        )
         .await
         .expect("sign request transaction failed");
 

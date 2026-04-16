@@ -246,6 +246,7 @@ pub async fn send_sign_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
+    account_id: &near_kit::AccountId,
 ) {
     let domain = running
         .domains
@@ -254,7 +255,7 @@ pub async fn send_sign_request(
         .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
         .expect("no Secp256k1 Sign domain");
     let outcome = cluster
-        .send_sign_request(domain.id, generate_ecdsa_payload(rng))
+        .send_sign_request(domain.id, generate_ecdsa_payload(rng), account_id)
         .await
         .expect("sign request failed");
     assert!(
@@ -268,6 +269,7 @@ pub async fn send_ckd_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
+    account_id: &near_account_id::AccountId,
 ) {
     let domain = running
         .domains
@@ -276,7 +278,7 @@ pub async fn send_ckd_request(
         .find(|d| d.purpose == DomainPurpose::CKD)
         .expect("no CKD domain");
     let outcome = cluster
-        .send_ckd_request(domain.id, generate_ckd_app_public_key(rng))
+        .send_ckd_request(domain.id, generate_ckd_app_public_key(rng), account_id)
         .await
         .expect("ckd request failed");
     assert!(
