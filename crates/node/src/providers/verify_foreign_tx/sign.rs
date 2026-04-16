@@ -1,18 +1,18 @@
 use anyhow::{bail, Context};
-use foreign_chain_inspector::abstract_chain::inspector::{AbstractExtractor, AbstractInspector};
+use foreign_chain_inspector::abstract_chain::inspector::Abstract;
 use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
-use foreign_chain_inspector::bnb::inspector::{BnbExtractor, BnbInspector};
+use foreign_chain_inspector::bnb::inspector::Bnb;
+use foreign_chain_inspector::evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor, EvmInspector};
+use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::starknet::inspector::{
     StarknetExtractor, StarknetFinality, StarknetInspector,
 };
-use foreign_chain_inspector::ForeignChainInspector;
-use foreign_chain_inspector::{self, EthereumFinality};
+use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
-use crate::config::auth_config_to_rpc_auth;
 use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
@@ -29,6 +29,56 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Selects a pre-built HTTP client for a chain using the same deterministic
+/// provider-selection logic. Returns an error when the chain is not configured.
+fn select_client(
+    clients: &[HttpClient],
+    request_id: &CryptoHash,
+    my_participant_index: usize,
+    chain_name: &str,
+) -> anyhow::Result<HttpClient> {
+    let index = select_provider(clients.len(), request_id, my_participant_index)
+        .with_context(|| format!("{chain_name} provider config is missing"))?;
+    Ok(clients[index].clone())
+}
+
+/// Runs extraction on any [`ForeignChainInspector`] with a uniform timeout.
+async fn run_inspection<I: ForeignChainInspector>(
+    inspector: &I,
+    tx_id: I::TransactionId,
+    finality: I::Finality,
+    extractors: Vec<I::Extractor>,
+) -> anyhow::Result<Vec<I::ExtractedValue>> {
+    inspector
+        .extract(tx_id, finality, extractors)
+        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+        .await
+        .context("timed out during execution of foreign chain request")?
+        .map_err(Into::into)
+}
+
+/// Handles inspection for any EVM-compatible chain (Abstract, BNB, Base, …).
+async fn inspect_evm_chain<Chain: EvmChain + Send>(
+    client: HttpClient,
+    request: &dtos::EvmRpcRequest,
+) -> anyhow::Result<Vec<dtos::ExtractedValue>>
+where
+    EvmExtractedValue<Chain>: Into<dtos::ExtractedValue>,
+{
+    let inspector = EvmInspector::<HttpClient, Chain>::new(client);
+    let tx_id: Chain::TransactionHash = request.tx_id.0.into();
+    let finality: EthereumFinality = request.finality.clone().try_into()?;
+    let extractors: Vec<EvmExtractor> = request
+        .extractors
+        .iter()
+        .cloned()
+        .map(TryInto::try_into)
+        .collect::<Result<_, _>>()?;
+
+    let values = run_inspection(&inspector, tx_id, finality, extractors).await?;
+    Ok(values.into_iter().map(Into::into).collect())
+}
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -149,173 +199,58 @@ where
         .await?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
-            dtos::ForeignChainRpcRequest::Ethereum(_request) => {
+            dtos::ForeignChainRpcRequest::Ethereum(_) => {
                 bail!("ForeignChainRpcRequest::Ethereum is unsupported")
             }
-            dtos::ForeignChainRpcRequest::Solana(_request) => {
+            dtos::ForeignChainRpcRequest::Solana(_) => {
                 bail!("ForeignChainRpcRequest::Solana is unsupported")
             }
             dtos::ForeignChainRpcRequest::Bitcoin(request) => {
-                let Some(bitcoin_config) = &self.config.foreign_chains.bitcoin else {
-                    anyhow::bail!("bitcoin provider config is missing")
-                };
-
-                let provider_index = select_provider(
-                    bitcoin_config.providers.len(),
+                let client = select_client(
+                    &self.clients.bitcoin,
                     &request_id,
                     my_participant_index,
-                );
-
-                let bitcoin_provider_config =
-                    provider_index.and_then(|i| bitcoin_config.providers.values().nth(i));
-
-                let Some(bitcoin_provider_config) = bitcoin_provider_config else {
-                    anyhow::bail!("found empty list of providers for bitcoin")
-                };
-
-                let mut public_node_url = bitcoin_provider_config.rpc_url.clone();
-                let rpc_auth = auth_config_to_rpc_auth(
-                    bitcoin_provider_config.auth.clone(),
-                    &mut public_node_url,
+                    "bitcoin",
                 )?;
-
-                let http_client =
-                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
-                let inspector = BitcoinInspector::new(http_client);
-
-                let transaction_id = request.tx_id.0.into();
-                let block_confirmations = request.confirmations.0.into();
+                let inspector = BitcoinInspector::new(client);
+                let tx_id = request.tx_id.0.into();
+                let confirmations = request.confirmations.0.into();
                 let extractors: Vec<BitcoinExtractor> = request
                     .extractors
                     .iter()
                     .cloned()
                     .map(TryInto::try_into)
                     .collect::<Result<_, _>>()?;
-
-                let extracted_values = inspector
-                    .extract(transaction_id, block_confirmations, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??;
-
-                extracted_values.into_iter().map(Into::into).collect()
+                let values = run_inspection(&inspector, tx_id, confirmations, extractors).await?;
+                values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Abstract(request) => {
-                let Some(abstract_config) = &self.config.foreign_chains.abstract_chain else {
-                    anyhow::bail!("abstract provider config is missing")
-                };
-
-                let provider_index = select_provider(
-                    abstract_config.providers.len(),
+                let client = select_client(
+                    &self.clients.abstract_chain,
                     &request_id,
                     my_participant_index,
-                );
-
-                let abstract_provider_config =
-                    provider_index.and_then(|i| abstract_config.providers.values().nth(i));
-
-                let Some(abstract_provider_config) = abstract_provider_config else {
-                    anyhow::bail!("found empty list of providers for abstract")
-                };
-
-                let mut public_node_url = abstract_provider_config.rpc_url.clone();
-                let rpc_auth = auth_config_to_rpc_auth(
-                    abstract_provider_config.auth.clone(),
-                    &mut public_node_url,
+                    "abstract",
                 )?;
-
-                let http_client =
-                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
-                let inspector = AbstractInspector::new(http_client);
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<AbstractExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-
-                let values = inspector
-                    .extract(transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??;
-
-                values.into_iter().map(Into::into).collect()
+                inspect_evm_chain::<Abstract>(client, request).await?
             }
             dtos::ForeignChainRpcRequest::Bnb(request) => {
-                let Some(bnb_config) = &self.config.foreign_chains.bnb else {
-                    anyhow::bail!("bnb provider config is missing")
-                };
-
-                let provider_index = select_provider(
-                    bnb_config.providers.len(),
+                let client = select_client(
+                    &self.clients.bnb,
                     &request_id,
                     my_participant_index,
-                );
-
-                let bnb_provider_config =
-                    provider_index.and_then(|i| bnb_config.providers.values().nth(i));
-
-                let Some(bnb_provider_config) = bnb_provider_config else {
-                    anyhow::bail!("found empty list of providers for bnb")
-                };
-
-                let mut public_node_url = bnb_provider_config.rpc_url.clone();
-                let rpc_auth = auth_config_to_rpc_auth(
-                    bnb_provider_config.auth.clone(),
-                    &mut public_node_url,
+                    "bnb",
                 )?;
-
-                let http_client =
-                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
-                let inspector = BnbInspector::new(http_client);
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<BnbExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-
-                let values = inspector
-                    .extract(transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??;
-
-                values.into_iter().map(Into::into).collect()
+                inspect_evm_chain::<Bnb>(client, request).await?
             }
             dtos::ForeignChainRpcRequest::Starknet(request) => {
-                let Some(starknet_config) = &self.config.foreign_chains.starknet else {
-                    anyhow::bail!("starknet provider config is missing")
-                };
-
-                let provider_index = select_provider(
-                    starknet_config.providers.len(),
+                let client = select_client(
+                    &self.clients.starknet,
                     &request_id,
                     my_participant_index,
-                );
-
-                let starknet_provider_config =
-                    provider_index.and_then(|i| starknet_config.providers.values().nth(i));
-
-                let Some(starknet_provider_config) = starknet_provider_config else {
-                    anyhow::bail!("found empty list of providers for starknet")
-                };
-
-                let mut rpc_url = starknet_provider_config.rpc_url.clone();
-                let rpc_auth =
-                    auth_config_to_rpc_auth(starknet_provider_config.auth.clone(), &mut rpc_url)?;
-
-                let http_client = foreign_chain_inspector::build_http_client(rpc_url, rpc_auth)?;
-                let inspector = StarknetInspector::new(http_client);
-
-                let transaction_id = request.tx_id.0 .0.into();
+                    "starknet",
+                )?;
+                let inspector = StarknetInspector::new(client);
+                let tx_id = request.tx_id.0 .0.into();
                 let finality: StarknetFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<StarknetExtractor> = request
                     .extractors
@@ -323,14 +258,8 @@ where
                     .cloned()
                     .map(TryInto::try_into)
                     .collect::<Result<_, _>>()?;
-
-                let extracted_values = inspector
-                    .extract(transaction_id, finality, extractors)
-                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                    .await
-                    .context("timed out during execution of foreign chain request")??;
-
-                extracted_values.into_iter().map(Into::into).collect()
+                let values = run_inspection(&inspector, tx_id, finality, extractors).await?;
+                values.into_iter().map(Into::into).collect()
             }
             _ => bail!("unsupported foreign chain request"),
         };
