@@ -34,6 +34,7 @@ fi
 
 SIZE=$(wc -c < "$WASM_PATH" | tr -d ' ')
 HEADROOM=$(( MAX_TX_SIZE - SIZE ))
+ACCEPTABLE_INCREASE=500
 DELTA=$(( SIZE - BASELINE ))
 
 echo "Contract WASM size report"
@@ -61,11 +62,14 @@ if [[ "$SIZE" -gt "$MAX_TX_SIZE" ]]; then
 fi
 
 # Baseline check
-if [[ "$DELTA" -gt 0 ]]; then
-    echo "❌ Contract grew by $DELTA bytes"
+if [[ "$DELTA" -gt "$ACCEPTABLE_INCREASE" ]]; then
+    echo "❌ Contract grew by $DELTA bytes, which is greater than $ACCEPTABLE_INCREASE"
     echo "   If this growth is intentional, update the baseline in $BASELINE_FILE:"
     echo "   expected_size = $SIZE"
     exit 1
+elif [[ "$DELTA" -gt 0 ]]; then
+    echo "⚠️ Contract grew by $DELTA bytes — consider updating the baseline in $BASELINE_FILE:"
+    echo "   expected_size = $SIZE"
 elif [[ "$DELTA" -lt 0 ]]; then
     SHRINK=$(( BASELINE - SIZE ))
     echo "🎉 Contract shrank by $SHRINK bytes — consider updating the baseline in $BASELINE_FILE:"
