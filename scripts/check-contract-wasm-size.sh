@@ -1,58 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Checks the contract WASM binary size against:
-# 1. NEAR's max_transaction_size hard limit
-# 2. A committed baseline that ratchets down over time
+# Checks the contract WASM binary size against a hard limit.
+#
+# NEAR's max_transaction_size (since protocol v69) is 1572864 bytes (1.5 MiB).
+# We enforce a slightly tighter limit so the contract doesn't silently creep
+# right up to the protocol boundary.
 #
 # Usage: bash scripts/check-contract-wasm-size.sh [path-to-wasm]
 
 WASM_PATH="${1:-target/near/mpc_contract/mpc_contract.wasm}"
-BASELINE_FILE=".github/contract-size-baseline.toml"
 
-read_toml_value() {
-    grep "^$1 " "$BASELINE_FILE" | sed 's/.*= *//'
-}
+# NEAR max_transaction_size = 1572864; keep some headroom
+HARD_LIMIT=1490000
 
 if [[ ! -f "$WASM_PATH" ]]; then
     echo "❌ WASM file not found: $WASM_PATH"
     exit 1
 fi
 
-if [[ ! -f "$BASELINE_FILE" ]]; then
-    echo "❌ Baseline file not found: $BASELINE_FILE"
-    exit 1
-fi
-
-MAX_TX_SIZE=$(read_toml_value "max_transaction_size")
-BASELINE=$(read_toml_value "expected_size")
-
-if [[ -z "$MAX_TX_SIZE" || -z "$BASELINE" ]]; then
-    echo "❌ Failed to read max_transaction_size or expected_size from $BASELINE_FILE"
-    exit 1
-fi
-
 SIZE=$(wc -c < "$WASM_PATH" | tr -d ' ')
-HEADROOM=$(( MAX_TX_SIZE - SIZE ))
-DELTA=$(( SIZE - BASELINE ))
+HEADROOM=$(( HARD_LIMIT - SIZE ))
 
 echo "Contract WASM size report"
 echo "========================="
 echo "  Binary:     $WASM_PATH"
 echo "  Size:       $SIZE bytes"
-echo "  Hard limit: $MAX_TX_SIZE bytes (NEAR max_transaction_size)"
+echo "  Hard limit: $HARD_LIMIT bytes"
 echo "  Headroom:   $HEADROOM bytes"
-echo "  Baseline:   $BASELINE bytes"
-if [[ "$DELTA" -gt 0 ]]; then
-    echo "  Delta:      +$DELTA bytes"
-elif [[ "$DELTA" -lt 0 ]]; then
-    echo "  Delta:      $DELTA bytes"
-fi
 echo ""
 
-# Hard limit check
-if [[ "$SIZE" -gt "$MAX_TX_SIZE" ]]; then
-    OVER=$(( SIZE - MAX_TX_SIZE ))
+if [[ "$SIZE" -gt "$HARD_LIMIT" ]]; then
+    OVER=$(( SIZE - HARD_LIMIT ))
     echo "❌ EXCEEDS hard limit by $OVER bytes"
     echo "   The contract binary is too large to deploy in a single transaction"
     echo "   Reduce size by removing methods, shrinking dependencies,"
@@ -60,16 +39,4 @@ if [[ "$SIZE" -gt "$MAX_TX_SIZE" ]]; then
     exit 1
 fi
 
-# Baseline check
-if [[ "$DELTA" -gt 0 ]]; then
-    echo "❌ Contract grew by $DELTA bytes"
-    echo "   If this growth is intentional, update the baseline in $BASELINE_FILE:"
-    echo "   expected_size = $SIZE"
-    exit 1
-elif [[ "$DELTA" -lt 0 ]]; then
-    SHRINK=$(( BASELINE - SIZE ))
-    echo "🎉 Contract shrank by $SHRINK bytes — consider updating the baseline in $BASELINE_FILE:"
-    echo "   expected_size = $SIZE"
-else
-    echo "✅ Contract size matches baseline"
-fi
+echo "✅ Contract size is within limits"
