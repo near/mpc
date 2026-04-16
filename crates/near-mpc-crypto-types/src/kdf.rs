@@ -79,15 +79,15 @@ mod tests {
         ];
 
         // When
-        let mut tweaks = vec![];
+        let mut app_ids = vec![];
         for account_id in account_ids {
             for derivation_path in derivation_paths {
-                let tweak = derive_tweak(&account_id.parse().unwrap(), derivation_path);
-                tweaks.push(tweak);
+                let app_id = derive_app_id(&account_id.parse().unwrap(), derivation_path);
+                app_ids.push(app_id);
             }
         }
 
         // Then
-        insta::assert_json_snapshot!(tweaks, {});
+        insta::assert_json_snapshot!(app_ids, {});
     }
 }
