@@ -31,23 +31,23 @@ in
 [
   (buildTool {
     pname = "cargo-shear";
-    version = "1.9.1";
-    hash = "sha256-QRWYVmFCxntEFzC9iqEoZQ5sG57P2gpBUFu8A8aI+7g=";
-    cargoHash = "sha256-yMUdZCIJTWCvi+07a1Erj6SD7i34opnvZ2CZ027PWzU=";
+    version = "1.11.2";
+    hash = "sha256-1NQ9Ws6aMFuMawoCPHjvbVLCP2ztLgAeXvKY4952aqU=";
+    cargoHash = "sha256-PkcRFzwC5M0wFSFXOuuLxWcZWrznzs9GdykE/8AjSMw=";
   })
 
   (buildTool {
     pname = "cargo-sort";
-    version = "2.0.2";
-    hash = "sha256-U/LakNUSPqj6FmYimi5ZNVJCRiS7zM4Vzvu4Gb3w38Q=";
-    cargoHash = "sha256-FoFzBf24mNDTRBfFyTEr9Q7sJjUhs0X/XWRGEoierQ4=";
+    version = "2.1.3";
+    hash = "sha256-mSxXrPDexaIMFunmOPt5ysYkVyF8BCuOOumT+44zrGA=";
+    cargoHash = "sha256-ygMtfhwoUEIZx+q6KB5yOr8/Fj5FRMIs7dXlYDUKb2U=";
   })
 
   (buildTool {
     pname = "cargo-deny";
-    version = "0.19.0";
-    hash = "sha256-jciPa0M8KdKEkjSspSo14lHipPz7dtDDuppsywMZYCE=";
-    cargoHash = "sha256-Lu1KhQmsQGvzgozFTcv9/hY3ZXOuaxkv0I+QPmAdZBU=";
+    version = "0.19.4";
+    hash = "sha256-YQYaJh/XFcgqYVVZQ/H8fQB7nLTpFNAq3stHi6U8q/g=";
+    cargoHash = "sha256-NjGGe5K0fpS9EDfuSOmBi9BGiObh8XITHQoSb7iktWc=";
   })
 
   (buildTool {
@@ -66,9 +66,9 @@ in
 
   (buildTool {
     pname = "zizmor";
-    version = "1.22.0";
-    hash = "sha256-VRw3+MCqG6Kmob7gM9Shv8E61muyuOijIMsg72xQ6cU=";
-    cargoHash = "sha256-GGOLUMhbXmgN8MspiiddA9+irjv9CQCZgWbcrbE7cY8=";
+    version = "1.24.1";
+    hash = "sha256-gbVhFi4wKpwdhHuP7tW/Im+5J2Ky0bTzfqSv8Ht6cgk=";
+    cargoHash = "sha256-xyXUauig4dWpur7sWLoOevtbESNOTNVhspN4MMrgBKk=";
   })
 
   (buildTool {
