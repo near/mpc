@@ -69,7 +69,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
     votes::types::{ProposalHash, ProposalId},
 };
-use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
+use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction};
 use tee::proposal::CodeHashesVotes;
 
 use state::{running::RunningContractState, ProtocolContractState};
@@ -1514,9 +1514,21 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = MeasurementVoteAction::Add(measurement.clone());
-        let votes = self.tee_state.vote_measurement(action, &participant);
+        let votes = self.tee_state.vote_measurement(action, participant);
 
-        if votes >= self.threshold()?.value() {
+        let num_votes = votes.count_for(|authenticated_participant_id| {
+            threshold_parameters
+                .participants()
+                .is_participant_given_participant_id(&authenticated_participant_id.get())
+        });
+
+        if num_votes
+            >= self
+                .threshold()?
+                .value()
+                .try_into()
+                .expect("converting threshold to usize must succeed")
+        {
             let added = self.tee_state.add_measurement(measurement);
             log!("OS measurement add result: {}", added);
         }
@@ -1547,11 +1559,16 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = MeasurementVoteAction::Remove(measurement.clone());
-        let votes = self.tee_state.vote_measurement(action, &participant);
+        let votes = self.tee_state.vote_measurement(action, participant);
 
+        let num_votes = votes.count_for(|authenticated_participant_id| {
+            threshold_parameters
+                .participants()
+                .is_participant_given_participant_id(&authenticated_participant_id.get())
+        });
         // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().len() as u64;
-        if votes >= total_participants {
+        let total_participants = threshold_parameters.participants().len();
+        if num_votes >= total_participants {
             let removed = self.tee_state.remove_measurement(&measurement);
             log!("OS measurement remove result: {}", removed);
         }
@@ -1560,9 +1577,17 @@ impl MpcContract {
     }
 
     /// Returns the current OS measurement votes, showing each participant's vote.
-    pub fn os_measurement_votes(&self) -> MeasurementVotes {
+    pub fn os_measurement_votes(
+        &self,
+    ) -> BTreeMap<
+        ProposalId,
+        (
+            (ProposalHash, MeasurementVoteAction),
+            BTreeSet<AuthenticatedParticipantId>,
+        ),
+    > {
         log!("os_measurement_votes");
-        self.tee_state.measurement_votes.clone()
+        self.tee_state.measurement_votes.snapshot()
     }
 
     /// Returns all currently allowed OS measurements.
@@ -5993,10 +6018,10 @@ mod tests {
         let measurement = make_measurement(0xCC);
 
         // Initially empty
-        assert!(contract.os_measurement_votes().vote_by_account.is_empty());
+        assert!(contract.os_measurement_votes().is_empty());
 
         // Cast one vote
-        let (account_id, _, _) = &participant_list[0];
+        let (account_id, p_id, _) = &participant_list[0];
         testing_env!(VMContextBuilder::new()
             .signer_account_id(account_id.clone())
             .predecessor_account_id(account_id.clone())
@@ -6005,10 +6030,26 @@ mod tests {
             .vote_add_os_measurement(measurement.clone())
             .expect("add vote should succeed");
 
-        let votes = contract.os_measurement_votes();
-        assert_eq!(votes.vote_by_account.len(), 1);
-        let (_, action) = votes.vote_by_account.iter().next().unwrap();
-        assert_eq!(*action, MeasurementVoteAction::Add(measurement));
+        let expected_action = MeasurementVoteAction::Add(measurement);
+        let expected_hash: [u8; PROPOSAL_HASH_BYTES] =
+            sha2::Sha256::digest(borsh::to_vec(&expected_action).unwrap()).into();
+        let expected_hash = ProposalHash::new(expected_hash);
+
+        let auth_p_id = AuthenticatedParticipantId::new(&participants).unwrap();
+        assert_eq!(auth_p_id.get(), *p_id);
+        {
+            let votes = contract.os_measurement_votes();
+            assert_eq!(
+                votes,
+                BTreeMap::from([(
+                    0.into(),
+                    (
+                        (expected_hash, expected_action),
+                        BTreeSet::from([auth_p_id])
+                    )
+                )])
+            );
+        }
     }
 
     /// Tests the allowed_os_measurements view method returns the full structs

@@ -27,12 +27,6 @@ BorshSchemaContainer {
                 "DockerImageHash",
             ],
         },
-        "(AuthenticatedParticipantId, MeasurementVoteAction)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "MeasurementVoteAction",
-            ],
-        },
         "(AuthenticatedParticipantId, ProposalId)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -174,11 +168,6 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, DockerImageHash)",
-        },
-        "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, MeasurementVoteAction)",
         },
         "BTreeMap<AuthenticatedParticipantId, ProposalId>": Sequence {
             length_width: 4,
@@ -716,45 +705,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "MeasurementVoteAction": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Add",
-                    "MeasurementVoteAction__Add",
-                ),
-                (
-                    1,
-                    "Remove",
-                    "MeasurementVoteAction__Remove",
-                ),
-            ],
-        },
-        "MeasurementVoteAction__Add": Struct {
-            fields: UnnamedFields(
-                [
-                    "ContractExpectedMeasurements",
-                ],
-            ),
-        },
-        "MeasurementVoteAction__Remove": Struct {
-            fields: UnnamedFields(
-                [
-                    "ContractExpectedMeasurements",
-                ],
-            ),
-        },
-        "MeasurementVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>",
-                    ),
-                ],
-            ),
-        },
         "Measurements": Struct {
             fields: NamedFields(
                 [
@@ -1176,6 +1126,24 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ProposalRegistry<MeasurementVoteAction>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "id_by_proposal",
+                        "BTreeMap<ProposalHash, ProposalId>",
+                    ),
+                    (
+                        "proposals_by_id",
+                        "IterableMap",
+                    ),
+                    (
+                        "next_id",
+                        "ProposalId",
+                    ),
+                ],
+            ),
+        },
         "ProposedUpdates": Struct {
             fields: NamedFields(
                 [
@@ -1448,7 +1416,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "measurement_votes",
-                        "MeasurementVotes",
+                        "Votes<AuthenticatedParticipantId, MeasurementVoteAction>",
                     ),
                 ],
             ),
@@ -1630,6 +1598,20 @@ BorshSchemaContainer {
                     (
                         "proposal_registry",
                         "ProposalRegistry<LauncherVoteAction>",
+                    ),
+                    (
+                        "vote_registry",
+                        "VoteRegistry<AuthenticatedParticipantId>",
+                    ),
+                ],
+            ),
+        },
+        "Votes<AuthenticatedParticipantId, MeasurementVoteAction>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_registry",
+                        "ProposalRegistry<MeasurementVoteAction>",
                     ),
                     (
                         "vote_registry",

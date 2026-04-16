@@ -131,7 +131,7 @@ impl TeeState {
             allowed_docker_image_hashes: AllowedDockerImageHashes::default(),
             allowed_launcher_images: AllowedLauncherImages::default(),
             allowed_measurements: AllowedMeasurements::default(),
-            measurement_votes: MeasurementVotes::default(),
+            measurement_votes: MeasurementVotes::new(StorageKey::MeasurementVotes),
             votes: CodeHashesVotes::default(),
             launcher_votes: LauncherHashVotes::new(StorageKey::LauncherHashVotes),
             stored_attestations: BTreeMap::new(),
@@ -398,20 +398,20 @@ impl TeeState {
     pub fn vote_measurement(
         &mut self,
         action: MeasurementVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.measurement_votes.vote(action, participant)
+        participant: AuthenticatedParticipantId,
+    ) -> &VoterSet<AuthenticatedParticipantId> {
+        self.measurement_votes.vote(participant, action).1
     }
 
     /// Adds a new measurement set to the allowed list. Clears measurement votes.
     pub fn add_measurement(&mut self, measurement: ContractExpectedMeasurements) -> bool {
-        self.measurement_votes.clear_votes();
+        self.measurement_votes.clear();
         self.allowed_measurements.add(measurement)
     }
 
     /// Removes a measurement set from the allowed list. Clears measurement votes.
     pub fn remove_measurement(&mut self, measurement: &ContractExpectedMeasurements) -> bool {
-        self.measurement_votes.clear_votes();
+        self.measurement_votes.clear();
         self.allowed_measurements.remove(measurement)
     }
 
@@ -459,7 +459,11 @@ impl TeeState {
                 participants
                     .is_participant_given_participant_id(&authenticated_participant_id.get())
             });
-        self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
+        self.launcher_votes
+            .retain_votes(|authenticated_participant_id| {
+                participants
+                    .is_participant_given_participant_id(&authenticated_participant_id.get())
+            });
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.

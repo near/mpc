@@ -593,7 +593,34 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/MeasurementVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "array",
+                  "items": [
+                    {
+                      "$ref": "#/definitions/ProposalHash"
+                    },
+                    {
+                      "$ref": "#/definitions/MeasurementVoteAction"
+                    }
+                  ],
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/AuthenticatedParticipantId"
+                  },
+                  "uniqueItems": true
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            }
           }
         }
       },
@@ -1612,10 +1639,10 @@ expression: abi
           ]
         },
         "AuthenticatedParticipantId": {
-          "description": "A participant ID that has been authenticated (i.e., the caller is this participant).",
+          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
           "allOf": [
             {
-              "$ref": "#/definitions/ParticipantId2"
+              "$ref": "#/definitions/ParticipantId"
             }
           ]
         },
@@ -2873,21 +2900,6 @@ expression: abi
               "additionalProperties": false
             }
           ]
-        },
-        "MeasurementVotes": {
-          "description": "Tracks votes for adding or removing OS measurements. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/MeasurementVoteAction"
-              }
-            }
-          }
         },
         "Metrics": {
           "type": "object",

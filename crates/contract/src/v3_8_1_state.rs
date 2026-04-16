@@ -25,7 +25,7 @@ use crate::{
     state::ProtocolContractState,
     storage_keys::StorageKey,
     tee::{
-        measurements::{AllowedMeasurements, MeasurementVotes},
+        measurements::{AllowedMeasurements, MeasurementVoteAction, MeasurementVotes},
         proposal::{
             AllowedDockerImageHashes, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
             LauncherVoteAction,
@@ -41,6 +41,12 @@ pub struct OldLauncherHashVotes {
     pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
 }
 
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OldMeasurementVotes {
+    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
+}
+
 /// Previous TeeState layout — without `allowed_measurements` and `measurement_votes` fields.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldTeeState {
@@ -50,7 +56,7 @@ struct OldTeeState {
     launcher_votes: OldLauncherHashVotes,
     stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
     allowed_measurements: AllowedMeasurements,
-    measurement_votes: MeasurementVotes,
+    measurement_votes: OldMeasurementVotes,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -115,6 +121,13 @@ impl From<MpcContract> for crate::MpcContract {
             new_launcher_votes.vote(authenticated_id, launcher_vote);
         }
 
+        let mut new_measurement_votes = MeasurementVotes::new(StorageKey::LauncherHashVotes);
+        for (authenticated_id, measurement_vote) in
+            value.tee_state.measurement_votes.vote_by_account
+        {
+            new_measurement_votes.vote(authenticated_id, measurement_vote);
+        }
+
         let new_tee_state = crate::tee::tee_state::TeeState {
             allowed_docker_image_hashes: value.tee_state.allowed_docker_image_hashes,
             allowed_launcher_images: value.tee_state.allowed_launcher_images,
@@ -122,7 +135,7 @@ impl From<MpcContract> for crate::MpcContract {
             launcher_votes: new_launcher_votes,
             stored_attestations: value.tee_state.stored_attestations,
             allowed_measurements: value.tee_state.allowed_measurements,
-            measurement_votes: Default::default(),
+            measurement_votes: new_measurement_votes,
         };
         Self {
             protocol_state: value.protocol_state,
