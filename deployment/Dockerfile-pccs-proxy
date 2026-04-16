@@ -1,0 +1,6 @@
+# TODO(#2928): align with repo's reproducible build pattern (pinned base image digest,
+# repro-sources-list.sh, cached apt mounts) if this image needs to be measured.
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY target/reproducible/pccs-proxy /app/pccs-proxy
+ENTRYPOINT ["/app/pccs-proxy"]

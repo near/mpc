@@ -1,0 +1,19 @@
+[Unit]
+Description=Local PCCS Proxy for TDX Attestation Collateral
+After=pccs.service network.target
+Wants=pccs.service
+
+[Service]
+Type=simple
+ExecStart=/opt/mpc/pccs-proxy --listen 0.0.0.0:8082 --pccs-url https://localhost:8081
+Restart=on-failure
+RestartSec=5
+User=mpc
+Group=mpc
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

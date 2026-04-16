@@ -25,6 +25,7 @@ members = [
     "crates/node",
     "crates/node-config",
     "crates/node-types",
+    "crates/pccs-proxy",
     "crates/primitives",
     "crates/tee-authority",
     "crates/tee-context",
