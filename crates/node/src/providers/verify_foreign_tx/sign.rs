@@ -1,12 +1,7 @@
 use anyhow::{bail, Context};
-use foreign_chain_inspector::abstract_chain::inspector::{Abstract, AbstractInspector};
-use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
-use foreign_chain_inspector::bnb::inspector::Bnb;
-use foreign_chain_inspector::evm::inspector::{EvmExtractor, EvmInspector};
-use foreign_chain_inspector::http_client::HttpClient;
-use foreign_chain_inspector::starknet::inspector::{
-    StarknetExtractor, StarknetFinality, StarknetInspector,
-};
+use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
+use foreign_chain_inspector::evm::inspector::EvmExtractor;
+use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -29,19 +24,6 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Selects a pre-built HTTP client for a chain using the same deterministic
-/// provider-selection logic. Returns an error when the chain is not configured.
-fn select_client(
-    clients: &[HttpClient],
-    request_id: &CryptoHash,
-    my_participant_index: usize,
-    chain_name: &str,
-) -> anyhow::Result<HttpClient> {
-    let index = select_provider(clients.len(), request_id, my_participant_index)
-        .with_context(|| format!("{chain_name} provider config is missing"))?;
-    Ok(clients[index].clone())
-}
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -169,13 +151,12 @@ where
                 bail!("ForeignChainRpcRequest::Solana is unsupported")
             }
             dtos::ForeignChainRpcRequest::Bitcoin(request) => {
-                let client = select_client(
-                    &self.clients.bitcoin,
+                let inspector = select_inspector(
+                    &self.inspectors.bitcoin,
                     &request_id,
                     my_participant_index,
                     "bitcoin",
                 )?;
-                let inspector = BitcoinInspector::new(client);
                 let tx_id = request.tx_id.0.into();
                 let confirmations = request.confirmations.0.into();
                 let extractors: Vec<BitcoinExtractor> = request
@@ -192,13 +173,12 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Abstract(request) => {
-                let client = select_client(
-                    &self.clients.abstract_chain,
+                let inspector = select_inspector(
+                    &self.inspectors.abstract_chain,
                     &request_id,
                     my_participant_index,
                     "abstract",
                 )?;
-                let inspector = AbstractInspector::new(client);
                 let tx_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<EvmExtractor> = request
@@ -215,9 +195,12 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Bnb(request) => {
-                let client =
-                    select_client(&self.clients.bnb, &request_id, my_participant_index, "bnb")?;
-                let inspector = BnbInspector::new(client);
+                let inspector = select_inspector(
+                    &self.inspectors.bnb,
+                    &request_id,
+                    my_participant_index,
+                    "bnb",
+                )?;
                 let tx_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<EvmExtractor> = request
@@ -234,13 +217,12 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Starknet(request) => {
-                let client = select_client(
-                    &self.clients.starknet,
+                let inspector = select_inspector(
+                    &self.inspectors.starknet,
                     &request_id,
                     my_participant_index,
                     "starknet",
                 )?;
-                let inspector = StarknetInspector::new(client);
                 let tx_id = request.tx_id.0 .0.into();
                 let finality: StarknetFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<StarknetExtractor> = request
@@ -321,6 +303,19 @@ async fn validate_foreign_chain_policy(
     }
 
     Ok(())
+}
+
+/// Selects a pre-built inspector for a chain using deterministic provider-selection logic.
+/// Returns an error when the chain is not configured.
+fn select_inspector<'a, T>(
+    inspectors: &'a [T],
+    request_id: &CryptoHash,
+    my_participant_index: usize,
+    chain_name: &str,
+) -> anyhow::Result<&'a T> {
+    let index = select_provider(inspectors.len(), request_id, my_participant_index)
+        .with_context(|| format!("{chain_name} provider config is missing"))?;
+    Ok(&inspectors[index])
 }
 
 /// Deterministically selects a provider index based on the request ID and the node's

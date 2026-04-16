@@ -7,7 +7,11 @@ use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
+use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
+use foreign_chain_inspector::bnb::inspector::BnbInspector;
 use foreign_chain_inspector::http_client::HttpClient;
+use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use mpc_node_config::{ConfigFile, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
@@ -20,17 +24,17 @@ use threshold_signatures::ReconstructionLowerBound;
 ///
 /// Built once at startup so that request handling only needs to select an index
 /// instead of re-parsing config and constructing clients on every call.
-pub(crate) struct ForeignChainClients {
-    pub bitcoin: Vec<HttpClient>,
-    pub abstract_chain: Vec<HttpClient>,
-    pub bnb: Vec<HttpClient>,
-    pub starknet: Vec<HttpClient>,
+pub(crate) struct ForeignChainInspectors<Client> {
+    pub bitcoin: Vec<BitcoinInspector<Client>>,
+    pub abstract_chain: Vec<AbstractInspector<Client>>,
+    pub bnb: Vec<BnbInspector<Client>>,
+    pub starknet: Vec<StarknetInspector<Client>>,
 }
 
-impl ForeignChainClients {
+impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
-        macro_rules! build_clients {
-            ($chain_config:expr) => {
+        macro_rules! build_inspectors {
+            ($chain_config:expr, $Inspector:ident) => {
                 match $chain_config {
                     Some(c) => c
                         .providers
@@ -38,8 +42,8 @@ impl ForeignChainClients {
                         .map(|p| {
                             let mut url = p.rpc_url.clone();
                             let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                            foreign_chain_inspector::build_http_client(url, rpc_auth)
-                                .map_err(anyhow::Error::from)
+                            let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
+                            Ok($Inspector::new(client))
                         })
                         .collect::<anyhow::Result<Vec<_>>>()?,
                     None => vec![],
@@ -48,17 +52,17 @@ impl ForeignChainClients {
         }
 
         Ok(Self {
-            bitcoin: build_clients!(&config.bitcoin),
-            abstract_chain: build_clients!(&config.abstract_chain),
-            bnb: build_clients!(&config.bnb),
-            starknet: build_clients!(&config.starknet),
+            bitcoin: build_inspectors!(&config.bitcoin, BitcoinInspector),
+            abstract_chain: build_inspectors!(&config.abstract_chain, AbstractInspector),
+            bnb: build_inspectors!(&config.bnb, BnbInspector),
+            starknet: build_inspectors!(&config.starknet, StarknetInspector),
         })
     }
 }
 
 pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
-    clients: ForeignChainClients,
+    inspectors: ForeignChainInspectors<HttpClient>,
     foreign_chain_policy_reader: ForeignChainPolicyReader,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
@@ -71,10 +75,10 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {
-        let clients = ForeignChainClients::build(&config.foreign_chains)?;
+        let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
         Ok(Self {
             config,
-            clients,
+            inspectors,
             foreign_chain_policy_reader,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
