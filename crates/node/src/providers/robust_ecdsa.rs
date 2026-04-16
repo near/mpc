@@ -17,7 +17,7 @@ use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::types::DomainId;
+use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::KeygenOutput;

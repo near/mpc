@@ -1,9 +1,8 @@
 use crate::crypto_shared::kdf::TweakNotOnCurve;
-use crate::primitives::domain::DomainId;
 use crate::primitives::key_state::{EpochId, Keyset};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::ForeignChain;
+use near_mpc_contract_interface::types::{Curve, DomainId, DomainPurpose, ForeignChain};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NodeMigrationError {
@@ -105,8 +104,8 @@ pub enum InvalidParameters {
     #[error("Domain {domain_id} has purpose {actual:?}, but this method requires {expected:?}.")]
     WrongDomainPurpose {
         domain_id: DomainId,
-        expected: crate::primitives::domain::DomainPurpose,
-        actual: crate::primitives::domain::DomainPurpose,
+        expected: DomainPurpose,
+        actual: DomainPurpose,
     },
     #[error("Invalid TEE Remote Attestation: {reason}")]
     InvalidTeeRemoteAttestation { reason: String },
@@ -196,8 +195,8 @@ pub enum DomainError {
     DomainsMismatch,
     #[error("Invalid curve-purpose combination: curve {curve:?} is not compatible with purpose {purpose:?}")]
     InvalidCurvePurposeCombination {
-        curve: crate::primitives::domain::Curve,
-        purpose: crate::primitives::domain::DomainPurpose,
+        curve: Curve,
+        purpose: DomainPurpose,
     },
 }
 

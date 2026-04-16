@@ -1,7 +1,8 @@
 use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use mpc_primitives::domain::{Curve, DomainId};
+use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
 use serde_json::json;
 
 /// 9 parallel calls (3 robust ECDSA + 2 ECDSA + 2 EdDSA + 2 CKD) via the test parallel

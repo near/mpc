@@ -1,76 +1,8 @@
-use crate::crypto_shared;
 use crate::errors::{Error, InvalidParameters};
-use crate::DomainId;
-use crypto_shared::derive_tweak;
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::{hex_serde, BoundedVec};
-use near_mpc_contract_interface::types::{
-    ECDSA_PAYLOAD_SIZE_BYTES, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
-};
+use near_mpc_contract_interface::types::kdf::derive_tweak;
+use near_mpc_contract_interface::types::{DomainId, Payload, Tweak};
 use near_sdk::{near, CryptoHash};
-use std::fmt::Debug;
-
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[near(serializers=[borsh, json])]
-pub struct Tweak([u8; 32]);
-
-impl Tweak {
-    pub fn as_bytes(&self) -> [u8; 32] {
-        self.0
-    }
-
-    pub fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-}
-
-/// A signature payload; the right payload must be passed in for the curve.
-/// The json encoding for this payload converts the bytes to hex string.
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[near(serializers=[borsh, json])]
-pub enum Payload {
-    Ecdsa(
-        #[serde(with = "hex_serde")]
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(
-                with = "hex_serde::HexString<ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES>"
-            )
-        )]
-        BoundedVec<u8, ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES>,
-    ),
-    Eddsa(
-        #[serde(with = "hex_serde")]
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(
-                with = "hex_serde::HexString<EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>"
-            )
-        )]
-        BoundedVec<u8, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
-    ),
-}
-
-impl Payload {
-    pub fn from_legacy_ecdsa(bytes: [u8; 32]) -> Self {
-        Payload::Ecdsa(bytes.into())
-    }
-
-    pub fn as_ecdsa(&self) -> Option<&[u8; 32]> {
-        match self {
-            Payload::Ecdsa(bytes) => Some(bytes.as_ref()),
-            _ => None,
-        }
-    }
-
-    pub fn as_eddsa(&self) -> Option<&[u8]> {
-        match self {
-            Payload::Eddsa(bytes) => Some(bytes.as_slice()),
-            _ => None,
-        }
-    }
-}
 
 /// The index into calling the YieldResume feature of NEAR. This will allow to resume
 /// a yield call after the contract has been called back via this index.

@@ -21,7 +21,6 @@ use mpc_contract::primitives::test_utils::infer_purpose_from_curve;
 use mpc_contract::tee::proposal::NodeImageHash;
 use mpc_contract::{
     primitives::{
-        domain::{Curve, DomainConfig, DomainId},
         key_state::EpochId,
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -29,12 +28,14 @@ use mpc_contract::{
     state::ProtocolContractState,
     utils::protocol_state_to_string,
 };
+use mpc_primitives::domain::{Curve, DomainId};
 use near_account_id::AccountId;
 use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::DomainConfig;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::borsh;

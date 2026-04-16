@@ -152,7 +152,7 @@ impl InitializingContractState {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::domain::{AddDomainsVotes, DomainId};
+    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key_extended, gen_account_id, NUM_CURVES,
@@ -162,6 +162,7 @@ pub mod tests {
     use crate::state::running::RunningContractState;
     use crate::state::test_utils::gen_initializing_state;
     use near_account_id::AccountId;
+    use near_mpc_contract_interface::types::DomainId;
     use rstest::rstest;
     use std::collections::BTreeSet;
 

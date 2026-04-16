@@ -1,8 +1,8 @@
-use super::domain::DomainId;
 use super::participants::{ParticipantId, Participants};
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::DomainId;
 use near_sdk::{env, near};
 use std::fmt::Display;
 
@@ -198,13 +198,13 @@ impl AuthenticatedAccountId {
 #[cfg(test)]
 pub mod tests {
     use crate::primitives::{
-        domain::DomainId,
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
             Keyset,
         },
         test_utils::{bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params},
     };
+    use near_mpc_contract_interface::types::DomainId;
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
 

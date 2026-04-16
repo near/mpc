@@ -135,34 +135,7 @@ pub struct AuthenticatedAccountId(pub AccountId);
 // Domain Types
 // =============================================================================
 
-/// Elliptic curve used by a domain.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub enum Curve {
-    Secp256k1,
-    // Accepts "Ed25519" for compat with pre-3.9.0 contracts. Remove after 3.9.0 deployment.
-    #[serde(alias = "Ed25519")]
-    Edwards25519,
-    Bls12381,
-    /// Robust ECDSA variant.
-    V2Secp256k1,
-}
+pub use mpc_primitives::domain::Curve;
 
 /// The purpose that a domain serves.
 #[derive(
@@ -198,7 +171,7 @@ pub enum DomainPurpose {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct DomainConfig {
     pub id: DomainId,

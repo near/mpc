@@ -18,8 +18,9 @@ use crate::tracking::AutoAbortTask;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::state::ProtocolContractState;
+use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose, Keyset};
+use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Keyset};
 use near_time::Clock;
 use rand::rngs::OsRng;
 

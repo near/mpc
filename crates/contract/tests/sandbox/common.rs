@@ -13,7 +13,6 @@ use k256::ecdsa::SigningKey;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         test_utils::{bogus_ed25519_near_public_key, infer_purpose_from_curve},
@@ -24,6 +23,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 use near_mpc_contract_interface::{
     method_names,
     types::{

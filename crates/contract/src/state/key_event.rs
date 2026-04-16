@@ -2,11 +2,11 @@ use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::Error;
 use crate::errors::KeyEventError;
 use crate::errors::VoteError;
-use crate::primitives::domain::DomainConfig;
 use crate::primitives::key_state::KeyEventId;
 use crate::primitives::key_state::{AttemptId, EpochId};
 use crate::primitives::thresholds::ThresholdParameters;
 use crate::state::AuthenticatedParticipantId;
+use near_mpc_contract_interface::types::{DomainConfig, DomainId};
 use near_sdk::BlockHeight;
 use near_sdk::{env, log, near};
 use std::collections::BTreeSet;
@@ -215,7 +215,7 @@ impl KeyEvent {
         self.instance.as_ref().unwrap().completed.len()
     }
 
-    pub fn domain_id(&self) -> crate::primitives::domain::DomainId {
+    pub fn domain_id(&self) -> DomainId {
         self.domain.id
     }
     /// Returns the current key event instance (or none)

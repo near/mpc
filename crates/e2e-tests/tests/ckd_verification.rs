@@ -3,8 +3,8 @@ use crate::common;
 use blstrs::{G1Projective, G2Projective, Scalar};
 use group::Group as _;
 use group::ff::Field as _;
-use mpc_contract::crypto_shared::kdf::derive_app_id;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::kdf::derive_app_id;
 use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDAppPublicKeyPV, Curve,
     DomainPurpose,

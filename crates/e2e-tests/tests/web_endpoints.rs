@@ -3,7 +3,8 @@ use crate::common;
 use std::time::Duration;
 
 use e2e_tests::MpcNodeState;
-use near_mpc_contract_interface::types::{Curve, DomainPurpose};
+use mpc_primitives::domain::Curve;
+use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
 
 /// Fetch a URL and assert the response body contains all of `expected`.

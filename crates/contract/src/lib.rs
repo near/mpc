@@ -24,7 +24,6 @@ use std::{
 };
 
 use crate::{
-    crypto_shared::types::CKDResponse,
     dto_mapping::{
         args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType,
         TryIntoInterfaceType,
@@ -42,7 +41,7 @@ use crate::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
 use crypto_shared::{
-    derive_key_secp256k1, derive_tweak,
+    derive_key_secp256k1,
     kdf::derive_public_key_edwards_point_ed25519,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
@@ -50,12 +49,14 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
-    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    self as dtos, CKDResponse, Metrics, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
+use dtos::{Curve, DomainConfig, DomainId, DomainPurpose};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
     env, log, near,
@@ -64,7 +65,7 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry},
+    domain::DomainRegistry,
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -517,7 +518,7 @@ impl MpcContract {
             request
         );
 
-        let domain_id: DomainId = request.domain_id.into();
+        let domain_id: DomainId = request.domain_id;
         let (_, predecessor) = self.check_request_preconditions(
             domain_id,
             DomainPurpose::CKD,
@@ -568,7 +569,7 @@ impl MpcContract {
         );
 
         self.check_request_preconditions(
-            request.domain_id.into(),
+            request.domain_id,
             DomainPurpose::ForeignTx,
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
             MINIMUM_SIGN_REQUEST_DEPOSIT,
@@ -2379,15 +2380,11 @@ mod tests {
 
     use super::*;
     use crate::errors::NodeMigrationError;
+    use crate::primitives::participants::Participants;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
         gen_participants, infer_purpose_from_curve, NUM_CURVES,
-    };
-    use crate::primitives::{
-        domain::{Curve, DomainConfig, DomainId},
-        participants::Participants,
-        signature::{Payload, Tweak},
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2402,6 +2399,7 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
+    use dtos::{Curve, DomainConfig, DomainId, Payload, Tweak};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
@@ -2874,7 +2872,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2917,7 +2915,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -3071,7 +3069,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -3101,7 +3099,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -3567,7 +3565,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id.clone(),
             &request.derivation_path,
         );

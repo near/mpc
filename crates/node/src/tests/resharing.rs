@@ -6,7 +6,8 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use mpc_primitives::domain::{Curve, DomainId};
+use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;

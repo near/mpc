@@ -14,16 +14,13 @@ use crate::sandbox::{
 };
 use anyhow::Result;
 use mpc_contract::{
-    primitives::{
-        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
-        participants::Participants,
-        thresholds::ThresholdParameters,
-    },
+    primitives::{participants::Participants, thresholds::ThresholdParameters},
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 use near_workspaces::Account;
 use serde_json::json;
 use sha2::Digest;

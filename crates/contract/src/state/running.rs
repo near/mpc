@@ -3,12 +3,13 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
+    domain::{AddDomainsVotes, DomainRegistry},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
 use std::collections::{BTreeSet, HashSet};
 
@@ -208,15 +209,14 @@ impl RunningContractState {
 pub mod running_tests {
     use rstest::rstest;
 
-    use crate::primitives::domain::{
-        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
-    };
+    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::test_utils::{gen_threshold_params, NUM_CURVES};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
     use crate::{
         primitives::votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
     };
+    use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);

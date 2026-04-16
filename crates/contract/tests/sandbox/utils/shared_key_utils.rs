@@ -1,12 +1,7 @@
 use k256::elliptic_curve::{Field as _, Group as _, PrimeField as _};
-use mpc_contract::{
-    crypto_shared::types::PublicKeyExtended,
-    primitives::{
-        domain::{Curve, DomainConfig, DomainId},
-        signature::Tweak,
-    },
-};
+use mpc_contract::crypto_shared::types::PublicKeyExtended;
 use near_mpc_contract_interface::types::{self as dtos, Bls12381G1PublicKey};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, Tweak};
 use rand::rngs::OsRng;
 use rand_core::CryptoRngCore;
 use threshold_signatures::{

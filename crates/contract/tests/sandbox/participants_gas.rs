@@ -16,12 +16,10 @@ use crate::sandbox::{
 };
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
-    primitives::{
-        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-    },
+    primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
 };
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
 use rstest::rstest;

@@ -13,13 +13,13 @@ use anyhow::Context;
 use mpc_contract::{
     errors,
     primitives::{
-        domain::Curve,
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::Curve;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
 use std::time::Duration;
