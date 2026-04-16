@@ -117,7 +117,34 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/CodeHashesVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "array",
+                  "items": [
+                    {
+                      "$ref": "#/definitions/ProposalHash"
+                    },
+                    {
+                      "$ref": "#/definitions/DockerImageHash"
+                    }
+                  ],
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/AuthenticatedParticipantId2"
+                  },
+                  "uniqueItems": true
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            }
           }
         }
       },
@@ -1819,21 +1846,6 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
-        },
-        "CodeHashesVotes": {
-          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/DockerImageHash"
-              }
-            }
-          }
         },
         "Collateral": {
           "type": "object",
