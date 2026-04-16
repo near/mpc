@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 
 use crate::conversions::ToNearKey;
 
-const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
