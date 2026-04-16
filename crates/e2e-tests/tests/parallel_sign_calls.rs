@@ -8,7 +8,7 @@ use serde_json::json;
 /// contract, against a 6-node / threshold-5 cluster that carries all four signing-scheme
 /// domains. Verifies all calls succeed and both the signature and CKD queues drain.
 #[tokio::test]
-async fn mpc_cluster_should_successfully_process_robust_ecdsa_and_mixed_parallel_requests() {
+async fn mpc_cluster_should_successfully_process_parallel_requests() {
     const ROBUST_ECDSA_CALLS: u64 = 3;
     const ECDSA_CALLS: u64 = 2;
     const EDDSA_CALLS: u64 = 2;
@@ -71,44 +71,30 @@ async fn mpc_cluster_should_successfully_process_robust_ecdsa_and_mixed_parallel
         common::sum_metric(&cluster, metrics::SIGNATURES_QUEUE_ATTEMPTS).await;
     let initial_ckd_attempts = common::sum_metric(&cluster, metrics::CKDS_QUEUE_ATTEMPTS).await;
 
-    // when — fire 3 robust ECDSA + (2 ECDSA + 2 EdDSA + 2 CKD) across two concurrent
-    // transactions. All 9 in one tx would exhaust the 300 TGas per-transaction cap
-    // (9 × 30 TGas per sub-call + 10 TGas callback leaves no gas for the entrypoint).
+    // when — fire all 9 calls in a single transaction with 1000 TGas.
     // Domains: 0=V2Secp256k1(Sign), 1=Secp256k1(Sign), 2=Edwards25519(Sign), 3=Bls12381(CKD).
-    let (robust_result, mixed_result) = tokio::join!(
-        parallel_contract.call(
+    let outcome = parallel_contract
+        .call(
             "make_parallel_sign_calls",
             json!({
                 "target_contract": cluster.contract.contract_id(),
                 "robust_ecdsa_calls_by_domain": { "0": ROBUST_ECDSA_CALLS },
-                "seed": 42u64,
-            }),
-        ),
-        parallel_contract.call(
-            "make_parallel_sign_calls",
-            json!({
-                "target_contract": cluster.contract.contract_id(),
                 "ecdsa_calls_by_domain": { "1": ECDSA_CALLS },
                 "eddsa_calls_by_domain": { "2": EDDSA_CALLS },
                 "ckd_calls_by_domain": { "3": CKD_CALLS },
-                "seed": 43u64,
+                "seed": 42u64,
             }),
-        ),
-    );
-    let robust_outcome = robust_result.expect("robust parallel call failed");
-    let mixed_outcome = mixed_result.expect("mixed parallel call failed");
+        )
+        .await
+        .expect("parallel call failed");
 
     // then
-    let robust_completed: u64 = robust_outcome
+    let completed: u64 = outcome
         .json()
-        .expect("failed to parse robust handle_results return value");
-    let mixed_completed: u64 = mixed_outcome
-        .json()
-        .expect("failed to parse mixed handle_results return value");
-    let completed = robust_completed + mixed_completed;
+        .expect("failed to parse handle_results return value");
     assert_eq!(
         completed, N,
-        "expected {N} completed calls, got {completed} ({robust_completed} robust + {mixed_completed} mixed)"
+        "expected {N} completed calls, got {completed}"
     );
 
     cluster

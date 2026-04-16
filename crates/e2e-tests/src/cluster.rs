@@ -610,14 +610,14 @@ impl MpcCluster {
             .expect("cluster should have at least one user account")
     }
 
-    /// Send a sign request from the default user account and return the outcome.
+    /// Send a sign request from the given user account and return the outcome.
     pub async fn send_sign_request(
         &self,
         domain_id: DomainId,
         payload: serde_json::Value,
+        account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let user = self.default_user_account().clone();
-        let client = self.user_client(&user)?;
+        let client = self.user_client(account_id)?;
         let args = json!({
             "request": {
                 "domain_id": domain_id,
@@ -630,20 +630,20 @@ impl MpcCluster {
             .await
     }
 
-    /// Send a CKD (Confidential Key Derivation) request from the default user account.
+    /// Send a CKD (Confidential Key Derivation) request from the given user account.
     ///
     /// Gas is derived from the `CKDAppPublicKey` variant.
     pub async fn send_ckd_request(
         &self,
         domain_id: DomainId,
         app_public_key: CKDAppPublicKey,
+        account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let gas = match app_public_key {
             CKDAppPublicKey::AppPublicKey(_) => SIGN_GAS,
             CKDAppPublicKey::AppPublicKeyPV(_) => CKD_PV_GAS,
         };
-        let user = self.default_user_account().clone();
-        let client = self.user_client(&user)?;
+        let client = self.user_client(account_id)?;
         let args = json!({
             "request": {
                 "domain_id": domain_id,
