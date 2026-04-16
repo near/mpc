@@ -3,7 +3,7 @@ use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
-use crate::conversions::{signing_key_to_near_public_key, signing_key_to_near_secret_key};
+use crate::conversions::ToNearKey;
 
 const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 
@@ -52,7 +52,7 @@ impl NearBlockchain {
             .transfer(near_kit::NearToken::from_near(balance_near));
 
         for key in keys {
-            tx = tx.add_full_access_key(signing_key_to_near_public_key(key));
+            tx = tx.add_full_access_key(key.to_near_public_key());
         }
 
         tx.wait_until(near_kit::TxExecutionStatus::Final)
@@ -73,7 +73,7 @@ impl NearBlockchain {
             .transaction(name)
             .create_account()
             .transfer(near_kit::NearToken::from_near(balance_near))
-            .add_full_access_key(signing_key_to_near_public_key(key))
+            .add_full_access_key(key.to_near_public_key())
             .deploy(wasm.to_vec())
             .wait_until(near_kit::TxExecutionStatus::Final)
             .send()
@@ -98,7 +98,7 @@ impl NearBlockchain {
     }
 
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
-        let sk = signing_key_to_near_secret_key(key);
+        let sk = key.to_near_secret_key();
         let signer = near_kit::InMemorySigner::from_secret_key(account_id, sk)
             .map_err(|e| anyhow::anyhow!("failed to create signer for {account_id}: {e}"))?;
         Ok(self.root_client.with_signer(signer))

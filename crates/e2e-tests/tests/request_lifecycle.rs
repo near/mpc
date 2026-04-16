@@ -58,7 +58,11 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
             DomainPurpose::CKD => {
                 // when
                 let outcome = cluster
-                    .send_ckd_request(domain.id, common::generate_ckd_app_public_key(&mut rng))
+                    .send_ckd_request(
+                        domain.id,
+                        common::generate_ckd_app_public_key(&mut rng),
+                        cluster.default_user_account(),
+                    )
                     .await
                     .expect("ckd request transaction failed");
 

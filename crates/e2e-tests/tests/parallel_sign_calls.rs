@@ -8,7 +8,7 @@ use serde_json::json;
 /// contract, against a 6-node / threshold-5 cluster that carries all four signing-scheme
 /// domains. Verifies all calls succeed and both the signature and CKD queues drain.
 #[tokio::test]
-async fn mpc_cluster_should_successfully_process_robust_ecdsa_and_mixed_parallel_requests() {
+async fn mpc_cluster_should_successfully_process_parallel_requests() {
     const ROBUST_ECDSA_CALLS: u64 = 3;
     const ECDSA_CALLS: u64 = 2;
     const EDDSA_CALLS: u64 = 2;

@@ -60,7 +60,11 @@ async fn test_request_during_resharing() {
 
         tracing::info!(i, "sending CKD request during resharing");
         let outcome = cluster
-            .send_ckd_request(ckd_domain.id, common::generate_ckd_app_public_key(&mut rng))
+            .send_ckd_request(
+                ckd_domain.id,
+                common::generate_ckd_app_public_key(&mut rng),
+                cluster.default_user_account(),
+            )
             .await
             .expect("ckd request failed");
         assert!(

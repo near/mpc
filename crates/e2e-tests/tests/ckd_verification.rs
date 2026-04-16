@@ -53,6 +53,7 @@ async fn ckd_response__passes_cryptographic_verification() {
         .clone();
 
     let mpc_pk = common::bls_public_key(&running, bls_domain.id);
+    let user = cluster.default_user_account().clone();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
     let private_key = Scalar::random(&mut rng);
@@ -62,7 +63,7 @@ async fn ckd_response__passes_cryptographic_verification() {
 
     // when
     let outcome = cluster
-        .send_ckd_request(bls_domain.id, app_public_key)
+        .send_ckd_request(bls_domain.id, app_public_key, &user)
         .await
         .expect("CKD request transaction failed");
 
@@ -80,14 +81,7 @@ async fn ckd_response__passes_cryptographic_verification() {
         serde_json::from_value(response["big_c"].clone()).expect("failed to parse big_c");
 
     assert!(
-        verify_ckd(
-            cluster.default_user_account(),
-            DERIVATION_PATH,
-            &mpc_pk,
-            private_key,
-            &big_y,
-            &big_c
-        ),
+        verify_ckd(&user, DERIVATION_PATH, &mpc_pk, private_key, &big_y, &big_c),
         "CKD response failed cryptographic verification"
     );
 }
@@ -109,6 +103,7 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
         .clone();
 
     let mpc_pk = common::bls_public_key(&running, bls_domain.id);
+    let user = cluster.default_user_account().clone();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(2);
     let private_key = Scalar::random(&mut rng);
@@ -121,7 +116,7 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
 
     // when
     let outcome = cluster
-        .send_ckd_request(bls_domain.id, app_public_key)
+        .send_ckd_request(bls_domain.id, app_public_key, &user)
         .await
         .expect("CKD PV request transaction failed");
 
@@ -139,14 +134,7 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
         serde_json::from_value(response["big_c"].clone()).expect("failed to parse big_c");
 
     assert!(
-        verify_ckd(
-            cluster.default_user_account(),
-            DERIVATION_PATH,
-            &mpc_pk,
-            private_key,
-            &big_y,
-            &big_c
-        ),
+        verify_ckd(&user, DERIVATION_PATH, &mpc_pk, private_key, &big_y, &big_c),
         "CKD PV response failed cryptographic verification"
     );
 }
