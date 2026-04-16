@@ -143,5 +143,85 @@ description = "Check that sandbox Docker image version matches nearcore"
 command = "bash"
 args = ["scripts/check-sandbox-image-version.sh"]
 
+# Build flags below mirror `.github/workflows/ci.yml` so local runs match CI.
+# All three build tasks are skipped when `E2E_SKIP_BUILD` is set (used by
+# `e2e-tests-skip-build`).
+
+[tasks.build-mpc-node]
+description = "Build the mpc-node binary used by the E2E tests"
+condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+command = "cargo"
+args = [
+  "build",
+  "-p",
+  "mpc-node",
+  "--release",
+  "--features",
+  "network-hardship-simulation,test-utils",
+  "--locked",
+]
+
+[tasks.build-mpc-contract]
+description = "Build the mpc-contract WASM used by the E2E tests"
+condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+script = [
+  "cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked",
+  "wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
+]
+
+[tasks.build-test-parallel-contract]
+description = "Build the test-parallel-contract WASM used by the E2E tests"
+condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+script = [
+  "cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked",
+  "wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm",
+]
+
+# Kill orphan mpc-node processes left over from interrupted test runs.
+[tasks._kill-orphan-mpc-nodes]
+private = true
+script = [
+  "pids=$(pgrep -f 'mpc-node start-with-config-file' || true)",
+  "if [ -n \"$pids\" ]; then echo \"Killing orphan mpc-node processes: $pids\"; kill $pids; sleep 1; fi",
+]
+
+# Shared logic for `e2e-tests` and `e2e-tests-skip-build`. Dependencies are
+# skipped automatically when `E2E_SKIP_BUILD` is set.
+[tasks._run-e2e-logic]
+private = true
+dependencies = [
+  "_kill-orphan-mpc-nodes",
+  "build-mpc-node",
+  "build-mpc-contract",
+  "build-test-parallel-contract",
+]
+command = "cargo"
+args = [
+  "nextest",
+  "run",
+  "--cargo-profile=test-release",
+  "-p",
+  "e2e-tests",
+  "--all-features",
+  "--locked",
+  "-j",
+  "4",
+]
+
+[tasks._run-e2e-logic.env]
+MPC_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm"
+MPC_PARALLEL_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm"
+
+# Build the mpc-node binary and both contract WASMs, then run the E2E tests.
+[tasks.e2e-tests]
+description = "Build required binaries and run the E2E tests"
+run_task = "_run-e2e-logic"
+
+# Reuse the binaries from a previous `cargo make e2e-tests` run.
+[tasks.e2e-tests-skip-build]
+description = "Run the E2E tests using previously built binaries"
+env = { "E2E_SKIP_BUILD" = "true" }
+run_task = "_run-e2e-logic"
+
 [config]
 default_to_workspace = false

@@ -38,6 +38,16 @@ node (P2P, web UI, migration UI, pprof, near RPC, near network, 2 reserved)
 times up to 10 nodes = 82 ports total.
 
 
+## Running the tests
+
+```bash
+cargo make e2e-tests                           # Rebuild binaries then run all tests
+cargo make e2e-tests-skip-build                # Reuse binaries from a previous run
+cargo make e2e-tests-skip-build -- <test>      # Run a single test (name filter passed to nextest)
+```
+
+Build flags mirror `.github/workflows/ci.yml`.
+
 ## Design Reference
 
 See `docs/pytest-deprecation.md` (PR #2446) for the full design document
