@@ -143,9 +143,9 @@ description = "Check that sandbox Docker image version matches nearcore"
 command = "bash"
 args = ["scripts/check-sandbox-image-version.sh"]
 
-# Build flags below mirror `.github/workflows/ci.yml` so local runs match CI.
-# All three build tasks are skipped when `E2E_SKIP_BUILD` is set (used by
-# `e2e-tests-skip-build`).
+# These build tasks are the single source of truth for both local and CI builds.
+# CI (`mpc-pytest-build` and `mpc-e2e-tests` jobs) invokes them via `cargo make`.
+# All three are skipped when `E2E_SKIP_BUILD` is set (used by `e2e-tests-skip-build`).
 
 [tasks.build-mpc-node]
 description = "Build the mpc-node binary used by the E2E tests"
