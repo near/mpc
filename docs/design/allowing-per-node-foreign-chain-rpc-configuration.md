@@ -91,7 +91,7 @@ that might use malicious RPC urls.
 
 
 ### Individual Node quorum of RPC providers for verification requests
-When a foreign TX verification request is processed by a set of nodes, every node will each individually query all their respectively configured
+When a foreign TX verification request is processed by a set of nodes, every node will each individually query their respectively configured
 RPC providers. A node will consider the foreign tx verified iff at least a quorum number of RPC providers could verify the transaction.
 
 
