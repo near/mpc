@@ -27,7 +27,6 @@ where
         Self {
             id_by_proposal: BTreeMap::new(),
             proposals_by_id: IterableMap::new(storage_key),
-            // we should probably set this.
             next_id: ProposalId(0),
         }
     }
@@ -35,7 +34,7 @@ where
     /// Stores the proposal if new, or looks up the existing matching proposal.
     /// Returns the proposal id for this proposal.
     pub(super) fn register(&mut self, proposal: P) -> ProposalId {
-        let encoded = borsh::to_vec(&proposal).expect("borsh serialization failed");
+        let encoded = borsh::to_vec(&proposal).expect("borsh serialization must succeed");
         let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(encoded)
             .try_into()
             .expect("require 32 bytes");
@@ -63,7 +62,7 @@ where
         self.proposals_by_id.contains_key(proposal_id)
     }
 
-    /// clears the maps
+    /// removes all registered proposals
     pub(super) fn clear(&mut self) {
         self.id_by_proposal.clear();
         self.proposals_by_id.clear();
