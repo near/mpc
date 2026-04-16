@@ -44,7 +44,12 @@ times up to 10 nodes = 82 ports total.
 cargo make e2e-tests                           # Rebuild binaries then run all tests
 cargo make e2e-tests-skip-build                # Reuse binaries from a previous run
 cargo make e2e-tests-skip-build -- <test>      # Run a single test (name filter passed to nextest)
+cargo make kill-orphan-mpc-nodes              # Kill mpc-node processes left over from interrupted runs
 ```
+
+> **Tip:** Ports are deterministic per test, so orphan `mpc-node` processes from an
+> interrupted run will hold the exact ports the next run needs. If tests fail with
+> "address already in use", run `cargo make kill-orphan-mpc-nodes` first.
 
 ## Design Reference
 

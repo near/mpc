@@ -178,11 +178,12 @@ script = [
 ]
 
 # Kill orphan mpc-node processes left over from interrupted test runs.
-[tasks._kill-orphan-mpc-nodes]
-private = true
+# Ports are deterministic per test, so orphans from a previous run block the next one.
+[tasks.kill-orphan-mpc-nodes]
+description = "Kill orphan mpc-node processes left over from interrupted E2E test runs"
 script = [
   "pids=$(pgrep -f 'mpc-node start-with-config-file' || true)",
-  "if [ -n \"$pids\" ]; then echo \"Killing orphan mpc-node processes: $pids\"; kill $pids; sleep 1; fi",
+  "if [ -n \"$pids\" ]; then echo \"Killing orphan mpc-node processes: $pids\"; kill $pids; sleep 1; else echo \"No orphan mpc-node processes found\"; fi",
 ]
 
 # Shared logic for `e2e-tests` and `e2e-tests-skip-build`. Dependencies are
@@ -190,7 +191,6 @@ script = [
 [tasks._run-e2e-logic]
 private = true
 dependencies = [
-  "_kill-orphan-mpc-nodes",
   "build-mpc-node-network-hardship-simulation",
   "build-mpc-contract-optimized",
   "build-test-parallel-contract-optimized",
