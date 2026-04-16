@@ -35,7 +35,7 @@ impl IntoContractType<Participants> for &dtos::Participants {
                     account_id.0.parse().unwrap(),
                     ParticipantInfo {
                         url: info.url.clone(),
-                        sign_pk: info.sign_pk.parse().unwrap(),
+                        sign_pk: info.sign_pk.clone().into(),
                     },
                     mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
                 )

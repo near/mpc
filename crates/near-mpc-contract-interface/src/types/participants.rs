@@ -1,5 +1,6 @@
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -44,7 +45,7 @@ pub struct ParticipantId(pub u32);
 )]
 pub struct ParticipantInfo {
     pub url: String,
-    pub sign_pk: String,
+    pub sign_pk: Ed25519PublicKey,
 }
 
 /// DTO representation of the contract-internal `Participants` type.
@@ -68,6 +69,12 @@ pub struct Participants {
 mod tests {
     use super::*;
 
+    const TEST_KEY_STR: &str = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp";
+
+    fn test_key() -> Ed25519PublicKey {
+        TEST_KEY_STR.parse().unwrap()
+    }
+
     #[test]
     fn test_serialize_outputs_vec_format() {
         let participants_json = Participants {
@@ -77,22 +84,24 @@ mod tests {
                 ParticipantId(0),
                 ParticipantInfo {
                     url: "https://alice.com".to_string(),
-                    sign_pk: "ed25519:abc".to_string(),
+                    sign_pk: test_key(),
                 },
             )],
         };
 
         let json = serde_json::to_string(&participants_json).unwrap();
-        assert_eq!(
-            json,
-            r#"{"next_id":1,"participants":[["alice.near",0,{"url":"https://alice.com","sign_pk":"ed25519:abc"}]]}"#
+        let expected = format!(
+            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","sign_pk":"{TEST_KEY_STR}"}}]]}}"#,
         );
+        assert_eq!(json, expected);
     }
 
     #[test]
     fn test_deserialize_vec_format() {
-        let json = r#"{"next_id":1,"participants":[["alice.near",0,{"url":"https://alice.com","sign_pk":"ed25519:abc"}]]}"#;
-        let deserialized: Participants = serde_json::from_str(json).unwrap();
+        let json = format!(
+            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","sign_pk":"{TEST_KEY_STR}"}}]]}}"#,
+        );
+        let deserialized: Participants = serde_json::from_str(&json).unwrap();
         assert_eq!(
             deserialized,
             Participants {
@@ -102,7 +111,7 @@ mod tests {
                     ParticipantId(0),
                     ParticipantInfo {
                         url: "https://alice.com".to_string(),
-                        sign_pk: "ed25519:abc".to_string(),
+                        sign_pk: test_key(),
                     },
                 )],
             }

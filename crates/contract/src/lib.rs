@@ -25,7 +25,10 @@ use std::{
 
 use crate::{
     crypto_shared::types::CKDResponse,
-    dto_mapping::{args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType},
+    dto_mapping::{
+        args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType,
+        TryIntoInterfaceType,
+    },
     errors::{Error, RequestError},
     primitives::{
         ckd::{app_public_key_check, ckd_output_check, CKDRequest},
@@ -1861,7 +1864,9 @@ impl MpcContract {
     }
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
-        (&self.protocol_state).into_dto_type()
+        (&self.protocol_state)
+            .try_into_dto_type()
+            .expect("state conversion should not fail")
     }
 
     pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {
