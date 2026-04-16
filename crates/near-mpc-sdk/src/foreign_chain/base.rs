@@ -6,25 +6,25 @@ use crate::{
     sign::NotSet,
 };
 
-pub use crate::foreign_chain::evm::EvmBlockHash as BaseBlockHash;
+pub use crate::foreign_chain::evm::EvmBlockHash as BnbBlockHash;
 pub use crate::foreign_chain::evm::{
     EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId,
     ForeignChainRpcRequest,
 };
 
 #[derive(Debug, Clone)]
-pub struct Base;
+pub struct Bnb;
 
-impl EvmChainVariant for Base {
+impl EvmChainVariant for Bnb {
     fn wrap(request: EvmRpcRequest) -> ForeignChainRpcRequest {
-        ForeignChainRpcRequest::Base(request)
+        ForeignChainRpcRequest::Bnb(request)
     }
 }
 
-pub type BaseRequest<TxId, Finality> = EvmRequest<Base, TxId, Finality>;
+pub type BnbRequest<TxId, Finality> = EvmRequest<Bnb, TxId, Finality>;
 
-impl ForeignChainRequestBuilder<BaseRequest<NotSet, NotSet>, NotSet> {
-    pub fn new_base() -> Self {
+impl ForeignChainRequestBuilder<BnbRequest<NotSet, NotSet>, NotSet> {
+    pub fn new_bnb() -> Self {
         Self {
             request: EvmRequest {
                 tx_id: NotSet,
@@ -48,15 +48,15 @@ mod test {
     use super::*;
 
     #[test]
-    fn build_wraps_into_base_variant() {
+    fn build_wraps_into_bnb_variant() {
         // given / when
-        let (_verifier, request_args) = ForeignChainRequestBuilder::new_base()
+        let (_verifier, request_args) = ForeignChainRequestBuilder::new_bnb()
             .with_tx_id(EvmTxId::from([1; 32]))
             .with_finality(EvmFinality::Finalized)
             .with_domain_id(DomainId::from(1))
             .build();
 
         // then
-        assert_matches!(request_args.request, ForeignChainRpcRequest::Base(_));
+        assert_matches!(request_args.request, ForeignChainRpcRequest::Bnb(_));
     }
 }
