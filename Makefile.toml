@@ -147,7 +147,7 @@ args = ["scripts/check-sandbox-image-version.sh"]
 # CI (`mpc-pytest-build` and `mpc-e2e-tests` jobs) invokes them via `cargo make`.
 # All three are skipped when `E2E_SKIP_BUILD` is set (used by `e2e-tests-skip-build`).
 
-[tasks.build-mpc-node]
+[tasks.build-mpc-node-network-hardship-simulation]
 description = "Build the mpc-node binary used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
 command = "cargo"
@@ -161,7 +161,7 @@ args = [
   "--locked",
 ]
 
-[tasks.build-mpc-contract]
+[tasks.build-mpc-contract-optimized]
 description = "Build the mpc-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
 script = [
@@ -169,7 +169,7 @@ script = [
   "wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm",
 ]
 
-[tasks.build-test-parallel-contract]
+[tasks.build-test-parallel-contract-optimized]
 description = "Build the test-parallel-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
 script = [
@@ -191,9 +191,9 @@ script = [
 private = true
 dependencies = [
   "_kill-orphan-mpc-nodes",
-  "build-mpc-node",
-  "build-mpc-contract",
-  "build-test-parallel-contract",
+  "build-mpc-node-network-hardship-simulation",
+  "build-mpc-contract-optimized",
+  "build-test-parallel-contract-optimized",
 ]
 command = "cargo"
 args = [

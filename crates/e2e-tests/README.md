@@ -46,8 +46,6 @@ cargo make e2e-tests-skip-build                # Reuse binaries from a previous 
 cargo make e2e-tests-skip-build -- <test>      # Run a single test (name filter passed to nextest)
 ```
 
-Build flags mirror `.github/workflows/ci.yml`.
-
 ## Design Reference
 
 See `docs/pytest-deprecation.md` (PR #2446) for the full design document
