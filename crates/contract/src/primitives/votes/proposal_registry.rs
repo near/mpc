@@ -53,7 +53,7 @@ where
     /// Removes the proposal under [`ProposalId`]
     pub(super) fn remove(&mut self, proposal_id: &ProposalId) {
         if let Some((proposal_hash, _)) = self.proposals_by_id.remove(proposal_id) {
-            self.id_by_proposal.remove(&proposal_hash);
+            debug_assert!(self.id_by_proposal.remove(&proposal_hash).is_some());
         }
     }
 
