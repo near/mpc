@@ -59,8 +59,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         },
         image_hash = %config.tee.image_hash,
         quote_upload_url = %match &config.tee.authority {
-            launcher_interface::types::TeeAuthorityConfig::Dstack { .. } => {
-                config.quote_upload_url.as_str()
+            launcher_interface::types::TeeAuthorityConfig::Dstack { quote_upload_url, .. } => {
+                config.quote_upload_url.as_ref().map_or(quote_upload_url.as_str(), |u| u.as_str())
             },
             launcher_interface::types::TeeAuthorityConfig::Local => "n/a",
         },
@@ -110,7 +110,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let tee_authority = config
         .tee
         .clone()
-        .into_tee_authority(&config.quote_upload_url)?;
+        .into_tee_authority(config.quote_upload_url.as_ref())?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();

@@ -10,7 +10,7 @@ pub use foreign_chains::{
 };
 pub use start::{
     ChainId, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
-    SecretsStartConfig, StartConfig, default_quote_upload_url,
+    SecretsStartConfig, StartConfig,
 };
 
 use anyhow::Context;

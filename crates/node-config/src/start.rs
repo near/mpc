@@ -24,15 +24,10 @@ pub struct StartConfig {
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
     pub log: LogConfig,
-    /// TDX quote collateral endpoint URL. Defaults to Phala's public endpoint
-    #[serde(default = "default_quote_upload_url")]
-    pub quote_upload_url: url::Url,
-}
-
-pub fn default_quote_upload_url() -> url::Url {
-    launcher_interface::DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL
-        .parse()
-        .expect("default quote upload URL is valid")
+    /// Optional override for the TDX quote collateral endpoint URL.
+    /// When set, overrides the URL injected by the launcher in the `[tee]` section.
+    #[serde(default)]
+    pub quote_upload_url: Option<url::Url>,
 }
 
 impl StartConfig {

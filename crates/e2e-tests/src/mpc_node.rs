@@ -399,7 +399,7 @@ impl MpcNodeSetup {
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: Default::default(),
             },
-            quote_upload_url: mpc_node_config::default_quote_upload_url(),
+            quote_upload_url: None,
         };
 
         let toml_string =
