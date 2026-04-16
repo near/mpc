@@ -204,8 +204,8 @@ args = [
   "e2e-tests",
   "--all-features",
   "--locked",
-  "-j",
-  "4",
+  "--profile",
+  "ci-e2e",
 ]
 
 [tasks._run-e2e-logic.env]
