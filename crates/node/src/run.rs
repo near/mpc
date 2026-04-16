@@ -58,12 +58,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             launcher_interface::types::TeeAuthorityConfig::Local => "local",
         },
         image_hash = %config.tee.image_hash,
-        quote_upload_url = %match &config.tee.authority {
-            launcher_interface::types::TeeAuthorityConfig::Dstack { .. } => {
-                config.quote_upload_url.as_str()
-            },
-            launcher_interface::types::TeeAuthorityConfig::Local => "n/a",
-        },
+        quote_upload_url = %config.quote_upload_url,
         "TEE config"
     );
     if let Some(ref near_init) = config.near_init {
