@@ -19,11 +19,7 @@ pub struct TeeConfig {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TeeAuthorityConfig {
     Local,
-    Dstack {
-        dstack_endpoint: String,
-        // TODO(#2333): use URL type for this type
-        quote_upload_url: String,
-    },
+    Dstack { dstack_endpoint: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

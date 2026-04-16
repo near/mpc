@@ -109,7 +109,6 @@ mod tests {
         TeeConfig {
             authority: TeeAuthorityConfig::Dstack {
                 dstack_endpoint: "/var/run/dstack.sock".to_string(),
-                quote_upload_url: "https://example.com/quote".to_string(),
             },
             image_hash: sample_digest(),
             latest_allowed_hash_file_path: "/mnt/shared/image-digest.bin".into(),
@@ -191,7 +190,6 @@ key = "value"
         let tee = TeeConfig {
             authority: TeeAuthorityConfig::Dstack {
                 dstack_endpoint: "/my/socket".to_string(),
-                quote_upload_url: "https://example.com".to_string(),
             },
             image_hash: sample_digest(),
             latest_allowed_hash_file_path: "/mnt/shared/image-digest.bin".into(),
@@ -204,10 +202,6 @@ key = "value"
         let tee_table = result["tee"].as_table().unwrap();
         let authority = tee_table["authority"].as_table().unwrap();
         assert_eq!(authority["dstack_endpoint"].as_str(), Some("/my/socket"));
-        assert_eq!(
-            authority["quote_upload_url"].as_str(),
-            Some("https://example.com")
-        );
     }
 
     #[test]
@@ -237,7 +231,6 @@ key = "value"
         let tee = TeeConfig {
             authority: TeeAuthorityConfig::Dstack {
                 dstack_endpoint: "/var/run/dstack.sock".to_string(),
-                quote_upload_url: "https://example.com/quote".to_string(),
             },
             image_hash: digest('b'),
             latest_allowed_hash_file_path: "/some/path".into(),
