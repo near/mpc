@@ -758,3 +758,11 @@ pub fn bnb_evm_request() -> ForeignChainRpcRequest {
         finality: EvmFinality::Finalized,
     })
 }
+
+pub fn base_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Base(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}

@@ -2369,6 +2369,18 @@ expression: abi
                 }
               },
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Base"
+              ],
+              "properties": {
+                "Base": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
             }
           ]
         },
