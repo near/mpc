@@ -142,10 +142,6 @@
             binaryen
             jq
             perl
-          ] ++ lib.optionals stdenv.isLinux [
-            # pgrep is used by the kill-orphan-mpc-nodes cargo-make task.
-            # On macOS pgrep is a built-in system utility with no nix equivalent.
-            pkgs.procps
           ];
 
           buildLibs =
