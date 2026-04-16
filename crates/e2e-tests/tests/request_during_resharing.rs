@@ -49,7 +49,11 @@ async fn test_request_during_resharing() {
     for i in 0..3 {
         tracing::info!(i, "sending sign request during resharing");
         let outcome = cluster
-            .send_sign_request(sign_domain.id, common::generate_ecdsa_payload(&mut rng))
+            .send_sign_request(
+                sign_domain.id,
+                common::generate_ecdsa_payload(&mut rng),
+                cluster.default_user_account(),
+            )
             .await
             .expect("sign request failed");
         assert!(

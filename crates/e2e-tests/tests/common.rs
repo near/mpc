@@ -254,7 +254,11 @@ pub async fn send_sign_request(
         .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
         .expect("no Secp256k1 Sign domain");
     let outcome = cluster
-        .send_sign_request(domain.id, generate_ecdsa_payload(rng))
+        .send_sign_request(
+            domain.id,
+            generate_ecdsa_payload(rng),
+            cluster.default_user_account(),
+        )
         .await
         .expect("sign request failed");
     assert!(

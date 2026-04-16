@@ -44,7 +44,7 @@ async fn test_web_endpoints() {
                     _ => continue,
                 };
                 cluster
-                    .send_sign_request(domain.id, payload)
+                    .send_sign_request(domain.id, payload, cluster.default_user_account())
                     .await
                     .expect("sign request transaction failed")
             }

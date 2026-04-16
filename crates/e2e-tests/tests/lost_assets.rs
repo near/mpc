@@ -80,7 +80,7 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
                 _ => break,
             };
             let outcome = cluster
-                .send_sign_request(domain.id, payload)
+                .send_sign_request(domain.id, payload, cluster.default_user_account())
                 .await
                 .expect("sign request failed");
             assert!(
@@ -115,7 +115,7 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
             _ => return,
         };
         let outcome = cluster
-            .send_sign_request(domain.id, payload)
+            .send_sign_request(domain.id, payload, cluster.default_user_account())
             .await
             .expect("post-restart sign request failed");
         assert!(
