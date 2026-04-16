@@ -10,29 +10,20 @@ use url::Url;
 pub trait TeeAuthorityImpl {
     fn into_tee_authority(
         self,
-        quote_upload_url_override: Option<&Url>,
+        quote_upload_url: &Url,
     ) -> anyhow::Result<TeeAuthority>;
 }
 
 impl TeeAuthorityImpl for TeeConfig {
     fn into_tee_authority(
         self,
-        quote_upload_url_override: Option<&Url>,
+        quote_upload_url: &Url,
     ) -> anyhow::Result<TeeAuthority> {
         Ok(match self.authority {
             TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
             TeeAuthorityConfig::Dstack {
-                dstack_endpoint,
-                quote_upload_url,
-            } => {
-                let url = match quote_upload_url_override {
-                    Some(u) => u.clone(),
-                    None => quote_upload_url
-                        .parse()
-                        .context("invalid quote_upload_url")?,
-                };
-                DstackTeeAuthorityConfig::new(dstack_endpoint, url).into()
-            }
+                dstack_endpoint, ..
+            } => DstackTeeAuthorityConfig::new(dstack_endpoint, quote_upload_url.clone()).into(),
         })
     }
 }
