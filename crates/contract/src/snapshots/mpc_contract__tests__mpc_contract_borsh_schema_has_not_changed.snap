@@ -21,12 +21,6 @@ BorshSchemaContainer {
                 "ThresholdParameters",
             ],
         },
-        "(AuthenticatedParticipantId, DockerImageHash)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "DockerImageHash",
-            ],
-        },
         "(AuthenticatedParticipantId, ProposalId)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -164,11 +158,6 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedAccountId, ThresholdParameters)",
         },
-        "BTreeMap<AuthenticatedParticipantId, DockerImageHash>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, DockerImageHash)",
-        },
         "BTreeMap<AuthenticatedParticipantId, ProposalId>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -213,16 +202,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 96]",
-                ],
-            ),
-        },
-        "CodeHashesVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "proposal_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, DockerImageHash>",
-                    ),
                 ],
             ),
         },
@@ -1108,6 +1087,24 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ProposalRegistry<DockerImageHash>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "id_by_proposal",
+                        "BTreeMap<ProposalHash, ProposalId>",
+                    ),
+                    (
+                        "proposals_by_id",
+                        "IterableMap",
+                    ),
+                    (
+                        "next_id",
+                        "ProposalId",
+                    ),
+                ],
+            ),
+        },
         "ProposalRegistry<LauncherVoteAction>": Struct {
             fields: NamedFields(
                 [
@@ -1400,7 +1397,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "votes",
-                        "CodeHashesVotes",
+                        "Votes<AuthenticatedParticipantId, DockerImageHash>",
                     ),
                     (
                         "launcher_votes",
@@ -1589,6 +1586,20 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "BTreeSet<AuthenticatedParticipantId>",
+                ],
+            ),
+        },
+        "Votes<AuthenticatedParticipantId, DockerImageHash>": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_registry",
+                        "ProposalRegistry<DockerImageHash>",
+                    ),
+                    (
+                        "vote_registry",
+                        "VoteRegistry<AuthenticatedParticipantId>",
+                    ),
                 ],
             ),
         },

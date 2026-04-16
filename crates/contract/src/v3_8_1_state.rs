@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::NodeImageHash;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, near, store::LookupMap};
 
@@ -47,12 +48,18 @@ pub struct OldMeasurementVotes {
     pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
 }
 
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OldCodeHashesVotes {
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
+}
+
 /// Previous TeeState layout — without `allowed_measurements` and `measurement_votes` fields.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldTeeState {
     allowed_docker_image_hashes: AllowedDockerImageHashes,
     allowed_launcher_images: AllowedLauncherImages,
-    votes: CodeHashesVotes,
+    votes: OldCodeHashesVotes,
     launcher_votes: OldLauncherHashVotes,
     stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
     allowed_measurements: AllowedMeasurements,
@@ -121,17 +128,22 @@ impl From<MpcContract> for crate::MpcContract {
             new_launcher_votes.vote(authenticated_id, launcher_vote);
         }
 
-        let mut new_measurement_votes = MeasurementVotes::new(StorageKey::LauncherHashVotes);
+        let mut new_measurement_votes = MeasurementVotes::new(StorageKey::MeasurementVotes);
         for (authenticated_id, measurement_vote) in
             value.tee_state.measurement_votes.vote_by_account
         {
             new_measurement_votes.vote(authenticated_id, measurement_vote);
         }
 
+        let mut new_code_hash_votes = CodeHashesVotes::new(StorageKey::CodeHashVotes);
+        for (authenticated_id, code_hash_vote) in value.tee_state.votes.proposal_by_account {
+            new_code_hash_votes.vote(authenticated_id, code_hash_vote);
+        }
+
         let new_tee_state = crate::tee::tee_state::TeeState {
             allowed_docker_image_hashes: value.tee_state.allowed_docker_image_hashes,
             allowed_launcher_images: value.tee_state.allowed_launcher_images,
-            votes: value.tee_state.votes,
+            votes: new_code_hash_votes,
             launcher_votes: new_launcher_votes,
             stored_attestations: value.tee_state.stored_attestations,
             allowed_measurements: value.tee_state.allowed_measurements,

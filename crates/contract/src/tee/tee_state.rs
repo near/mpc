@@ -132,7 +132,7 @@ impl TeeState {
             allowed_launcher_images: AllowedLauncherImages::default(),
             allowed_measurements: AllowedMeasurements::default(),
             measurement_votes: MeasurementVotes::new(StorageKey::MeasurementVotes),
-            votes: CodeHashesVotes::default(),
+            votes: CodeHashesVotes::new(StorageKey::CodeHashVotes),
             launcher_votes: LauncherHashVotes::new(StorageKey::LauncherHashVotes),
             stored_attestations: BTreeMap::new(),
         }
@@ -315,9 +315,9 @@ impl TeeState {
     pub fn vote(
         &mut self,
         code_hash: NodeImageHash,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.votes.vote(code_hash, participant)
+        participant: AuthenticatedParticipantId,
+    ) -> &VoterSet<AuthenticatedParticipantId> {
+        self.votes.vote(participant, code_hash).1
     }
 
     pub fn get_allowed_mpc_docker_image_hashes(
@@ -343,7 +343,7 @@ impl TeeState {
         tee_proposal: NodeImageHash,
         tee_upgrade_deadline_duration: Duration,
     ) {
-        self.votes.clear_votes();
+        self.votes.clear();
         // Add compose hashes for the new MPC image across all allowed launcher images
         self.allowed_launcher_images
             .add_mpc_image_compose_hashes(&tee_proposal);
@@ -453,7 +453,10 @@ impl TeeState {
         }
 
         // Remove stale votes from non-participants
-        self.votes = self.votes.get_remaining_votes(participants);
+        self.votes.retain_votes(|authenticated_participant_id| {
+            participants.is_participant_given_participant_id(&authenticated_participant_id.get())
+        });
+
         self.launcher_votes
             .retain_votes(|authenticated_participant_id| {
                 participants
@@ -1314,9 +1317,12 @@ mod tests {
             ctx.signer_account_id(account_id.clone());
             testing_env!(ctx.build());
             let auth_id = AuthenticatedParticipantId::new(&all_participants).unwrap();
-            tee_state.votes.vote(malicious_hash, &auth_id);
+            tee_state.votes.vote(auth_id, malicious_hash);
         }
-        assert_eq!(tee_state.votes.proposal_by_account.len(), 2);
+        assert_eq!(
+            tee_state.votes.snapshot().pop_first().unwrap().1 .1.len(),
+            2
+        );
 
         // Resharing removes P0 and P1. New participant set: {P2, P3, P4}.
         let new_participants = all_participants.subset(2..5);
@@ -1325,7 +1331,7 @@ mod tests {
         tee_state.clean_non_participants(&new_participants);
 
         // Stale votes must be removed
-        assert_eq!(tee_state.votes.proposal_by_account.len(), 0);
+        assert_eq!(tee_state.votes.snapshot().len(), 0);
 
         // P2 votes for the same malicious hash — should be only 1 vote, not 3
         let p2_account = &account_ids[2];
@@ -1333,8 +1339,12 @@ mod tests {
         ctx.signer_account_id(p2_account.clone());
         testing_env!(ctx.build());
         let auth_id = AuthenticatedParticipantId::new(&new_participants).unwrap();
-        let vote_count = tee_state.votes.vote(malicious_hash, &auth_id);
-        assert_eq!(vote_count, 1, "Only the fresh vote from P2 should count");
+        let (_, vote_count) = tee_state.votes.vote(auth_id.clone(), malicious_hash);
+        assert_eq!(
+            vote_count.count_for(|p| p.get() == auth_id.get()),
+            1,
+            "Only the fresh vote from P2 should count"
+        );
     }
 
     /// Verifies that clean_non_participants also removes stale launcher and measurement votes.

@@ -24,4 +24,5 @@ pub enum StorageKey {
     PendingSignatureRequestsV3,
     LauncherHashVotes,
     MeasurementVotes,
+    CodeHashVotes,
 }

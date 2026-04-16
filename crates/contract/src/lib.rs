@@ -70,7 +70,6 @@ use primitives::{
     votes::types::{ProposalHash, ProposalId},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction};
-use tee::proposal::CodeHashesVotes;
 
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
@@ -1386,14 +1385,26 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let votes = self.tee_state.vote(code_hash, &participant);
+        let votes = self.tee_state.vote(code_hash, participant);
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
+        let num_votes = votes.count_for(|authenticated_participant_id| {
+            threshold_parameters
+                .participants()
+                .is_participant_given_participant_id(&authenticated_participant_id.get())
+        });
+
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
-        if votes >= self.threshold()?.value() {
+        if num_votes
+            >= self
+                .threshold()?
+                .value()
+                .try_into()
+                .expect("threshold must not exceed usize limit")
+        {
             self.tee_state
                 .whitelist_tee_proposal(code_hash, tee_upgrade_deadline_duration);
         }
@@ -1952,8 +1963,16 @@ impl MpcContract {
     }
 
     /// Returns the current code hash votes, showing each participant's vote.
-    pub fn code_hash_votes(&self) -> CodeHashesVotes {
-        self.tee_state.votes.clone()
+    pub fn code_hash_votes(
+        &self,
+    ) -> BTreeMap<
+        ProposalId,
+        (
+            (ProposalHash, NodeImageHash),
+            BTreeSet<AuthenticatedParticipantId>,
+        ),
+    > {
+        self.tee_state.votes.snapshot()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
@@ -5688,8 +5707,12 @@ mod tests {
         let participant_list = participants.participants();
         let code_hash = NodeImageHash::from([0xAB; 32]);
 
-        assert!(contract.code_hash_votes().proposal_by_account.is_empty());
+        assert!(contract.code_hash_votes().is_empty());
 
+        let expected_hash: [u8; PROPOSAL_HASH_BYTES] =
+            sha2::Sha256::digest(borsh::to_vec(&code_hash).unwrap()).into();
+        let expected_hash = ProposalHash::new(expected_hash);
+        let mut expected_voter_set = BTreeSet::new();
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(account.clone())
@@ -5699,10 +5722,19 @@ mod tests {
                 .vote_code_hash(code_hash)
                 .expect("vote should succeed");
 
-            let votes = &contract.code_hash_votes().proposal_by_account;
+            let auth_p_id = AuthenticatedParticipantId::new(&participants).unwrap();
+            expected_voter_set.insert(auth_p_id.clone());
+            let votes = contract.code_hash_votes();
+
             if i < (threshold - 1) as usize {
-                assert_eq!(votes.len(), i + 1);
-                assert!(votes.values().all(|v| *v == code_hash));
+                let expected = BTreeMap::from([(
+                    0.into(),
+                    (
+                        (expected_hash, code_hash.clone()),
+                        expected_voter_set.clone(),
+                    ),
+                )]);
+                assert_eq!(votes, expected);
             } else {
                 assert!(
                     votes.is_empty(),
