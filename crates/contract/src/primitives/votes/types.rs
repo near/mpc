@@ -5,10 +5,13 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{Deref, From, Into};
 use near_sdk::near;
 
-pub trait ProposalBounds: BorshSerialize + BorshDeserialize + Ord + Clone + Hash {}
+pub const PROPOSAL_HASH_BYTES: usize = 32;
+mpc_primitives::define_hash!(ProposalHash, 32);
+
+pub trait ProposalBounds: BorshSerialize + BorshDeserialize + Ord + Clone {}
 pub trait VoterBounds: BorshSerialize + BorshDeserialize + Ord + Clone {}
 
-impl<T: BorshSerialize + BorshDeserialize + Ord + Clone + Hash> ProposalBounds for T {}
+impl<T: BorshSerialize + BorshDeserialize + Ord + Clone> ProposalBounds for T {}
 impl<T: BorshSerialize + BorshDeserialize + Ord + Clone> VoterBounds for T {}
 
 #[near(serializers=[borsh])]

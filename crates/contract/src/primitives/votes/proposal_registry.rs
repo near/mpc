@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use near_sdk::{near, store::IterableMap, IntoStorageKey};
 
-use super::types::{ProposalBounds, ProposalId};
+use super::types::{ProposalBounds, ProposalHash, ProposalId, PROPOSAL_HASH_BYTES};
 
 /// Keeps track of proposals and assigns stable ids.
 /// `id_by_proposal` and `proposals_by_id` are inverse of one another.
@@ -13,8 +13,8 @@ pub(super) struct ProposalRegistry<P>
 where
     P: ProposalBounds,
 {
-    id_by_proposal: HashMap<P, ProposalId>,
-    proposals_by_id: IterableMap<ProposalId, P>,
+    id_by_proposal: BTreeMap<ProposalHash, ProposalId>,
+    proposals_by_id: IterableMap<ProposalId, (ProposalHash, P)>,
     next_id: ProposalId,
 }
 
@@ -25,7 +25,7 @@ where
     /// builds a new proposal. The caller is responsibe for ensuring that `storage_key` is empty.
     pub(super) fn new(storage_key: impl IntoStorageKey) -> Self {
         Self {
-            id_by_proposal: HashMap::new(),
+            id_by_proposal: BTreeMap::new(),
             proposals_by_id: IterableMap::new(storage_key),
             // we should probably set this.
             next_id: ProposalId(0),
@@ -35,20 +35,26 @@ where
     /// Stores the proposal if new, or looks up the existing matching proposal.
     /// Returns the proposal id for this proposal.
     pub(super) fn register(&mut self, proposal: P) -> ProposalId {
-        if let Some(proposal_id) = self.id_by_proposal.get(&proposal) {
+        let encoded = borsh::to_vec(&proposal).expect("borsh serialization failed");
+        let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(encoded)
+            .try_into()
+            .expect("require 32 bytes");
+        let proposal_hash: ProposalHash = hash.into();
+        if let Some(proposal_id) = self.id_by_proposal.get(&proposal_hash) {
             return *proposal_id;
         }
         let proposal_id = self.next_id;
         self.next_id = self.next_id.next();
-        self.id_by_proposal.insert(proposal.clone(), proposal_id);
-        self.proposals_by_id.insert(proposal_id, proposal);
+        self.id_by_proposal.insert(proposal_hash, proposal_id);
+        self.proposals_by_id
+            .insert(proposal_id, (proposal_hash, proposal));
         proposal_id
     }
 
     /// Removes the proposal under [`ProposalId`]
     pub(super) fn remove(&mut self, proposal_id: &ProposalId) {
-        if let Some(proposal) = self.proposals_by_id.remove(proposal_id) {
-            self.id_by_proposal.remove(&proposal);
+        if let Some((proposal_hash, _)) = self.proposals_by_id.remove(proposal_id) {
+            self.id_by_proposal.remove(&proposal_hash);
         }
     }
 
@@ -64,7 +70,7 @@ where
     }
 
     /// Returns the registry in a form fit for json serialization.
-    pub(super) fn all(&self) -> BTreeMap<ProposalId, P> {
+    pub(super) fn all(&self) -> BTreeMap<ProposalId, (ProposalHash, P)> {
         self.proposals_by_id
             .iter()
             .map(|(id, p)| (*id, p.clone()))
@@ -77,6 +83,7 @@ mod tests {
     use super::*;
     use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
     use near_sdk::BorshStorageKey;
+    use sha2::Digest;
     use std::collections::BTreeMap;
 
     #[derive(BorshSerialize, BorshStorageKey)]
@@ -84,15 +91,27 @@ mod tests {
         Proposals,
     }
 
-    #[derive(
-        Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, BorshDeserialize, BorshSerialize,
-    )]
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestProposal(String);
 
     impl TestProposal {
         fn new(value: &str) -> Self {
             Self(value.to_string())
         }
+    }
+
+    /// Helper to build expected snapshots concisely.
+    fn make_all(
+        entries: &[(ProposalId, TestProposal)],
+    ) -> BTreeMap<ProposalId, (ProposalHash, TestProposal)> {
+        entries
+            .iter()
+            .map(|(pid, p)| {
+                let hash: [u8; PROPOSAL_HASH_BYTES] =
+                    sha2::Sha256::digest(borsh::to_vec(&p).expect("borsh must succeed")).into();
+                ((*pid), (ProposalHash::new(hash), p.clone()))
+            })
+            .collect()
     }
 
     #[test]
@@ -115,7 +134,7 @@ mod tests {
         assert_eq!(*first_id, 0);
         assert_eq!(second_id, first_id);
         assert!(registry.contains(&first_id));
-        assert_eq!(registry.all(), BTreeMap::from([(first_id, proposal)]));
+        assert_eq!(registry.all(), make_all(&[(first_id, proposal)]));
     }
 
     #[test]
@@ -134,10 +153,7 @@ mod tests {
         assert_eq!(*id2, 1);
         assert_eq!(*id3, 2);
 
-        assert_eq!(
-            registry.all(),
-            BTreeMap::from([(id1, p1), (id2, p2), (id3, p3)])
-        );
+        assert_eq!(registry.all(), make_all(&[(id1, p1), (id2, p2), (id3, p3)]));
     }
 
     #[test]
@@ -155,7 +171,7 @@ mod tests {
 
         assert_eq!(*second_id, 1);
         assert_ne!(second_id, first_id);
-        assert_eq!(registry.all(), BTreeMap::from([(second_id, proposal)]));
+        assert_eq!(registry.all(), make_all(&[(second_id, proposal)]));
     }
 
     #[test]

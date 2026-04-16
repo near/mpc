@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, collections::BTreeSet};
 
 use near_sdk::{near, IntoStorageKey};
 use proposal_registry::ProposalRegistry;
-use types::{ProposalBounds, ProposalId, VoterBounds, VoterSet};
+use types::{ProposalBounds, ProposalHash, ProposalId, VoterBounds, VoterSet};
 use votes_registry::{VoteRegistry, VoteResult};
 
 use crate::errors::VoteError;
@@ -103,10 +103,10 @@ where
 
     /// Returns a snapshot of the current state, that can be serde deserialized.
     /// Specifically, returns a map from proposal to votes
-    pub fn snapshot(&self) -> BTreeMap<ProposalId, (P, BTreeSet<V>)> {
+    pub fn snapshot(&self) -> BTreeMap<ProposalId, ((ProposalHash, P), BTreeSet<V>)> {
         let all_proposals = self.proposal_registry.all();
         let all_votes = self.vote_registry.all();
-        let merged: BTreeMap<ProposalId, (P, BTreeSet<V>)> = all_proposals
+        let merged: BTreeMap<ProposalId, ((ProposalHash, P), BTreeSet<V>)> = all_proposals
             .into_iter()
             .map(|(pid, proposal)| {
                 let votes = all_votes.get(&pid).cloned().unwrap_or_default();
@@ -119,9 +119,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{types::PROPOSAL_HASH_BYTES, *};
     use assert_matches::assert_matches;
     use near_sdk::BorshStorageKey;
+    use sha2::Digest;
 
     #[near(serializers=[borsh])]
     #[derive(BorshStorageKey, Hash, Clone, Debug, PartialEq, Eq)]
@@ -130,15 +131,20 @@ mod tests {
     }
 
     /// Helper to build expected snapshots concisely.
-    fn snap(
+    fn make_snapshot(
         entries: &[(ProposalId, (&str, &[&str]))],
-    ) -> BTreeMap<ProposalId, (String, BTreeSet<String>)> {
+    ) -> BTreeMap<ProposalId, ((ProposalHash, String), BTreeSet<String>)> {
         entries
             .iter()
             .map(|(pid, (p, vs))| {
+                let hash: [u8; PROPOSAL_HASH_BYTES] =
+                    sha2::Sha256::digest(borsh::to_vec(&p).expect("borsh must succeed")).into();
                 (
                     (*pid),
-                    (p.to_string(), vs.iter().map(|s| s.to_string()).collect()),
+                    (
+                        (ProposalHash::new(hash), p.to_string()),
+                        vs.iter().map(|s| s.to_string()).collect(),
+                    ),
                 )
             })
             .collect()
@@ -153,12 +159,18 @@ mod tests {
         let mut votes = Votes::new(TestStorageKey::Proposals);
         let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
         assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+        );
         // vote is idempotent
         let (p_id_2, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
         assert_eq!(p_id, p_id_2);
         assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+        );
     }
 
     #[test]
@@ -166,12 +178,18 @@ mod tests {
         let mut votes = Votes::new(TestStorageKey::Proposals);
         let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
         assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+        );
         // vote can be changed
         let (p_id_2, casted) = votes.vote(ALICE.to_string(), PROPOSAL_B.to_string());
         assert_ne!(p_id, p_id_2);
         assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(votes.snapshot(), snap(&[(p_id_2, (PROPOSAL_B, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id_2, (PROPOSAL_B, &[ALICE]))])
+        );
     }
 
     // test vote_for
@@ -180,7 +198,10 @@ mod tests {
         let mut votes = Votes::new(TestStorageKey::Proposals);
         let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
         assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+        );
         let casted = votes.vote_for(BOB.to_string(), p_id).unwrap();
         assert_eq!(
             casted.0,
@@ -188,7 +209,7 @@ mod tests {
         );
         assert_eq!(
             votes.snapshot(),
-            snap(&[(p_id, (PROPOSAL_A, &[ALICE, BOB]))])
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE, BOB]))])
         );
     }
 
@@ -197,7 +218,10 @@ mod tests {
         let mut votes = Votes::new(TestStorageKey::Proposals);
         let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
         assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+        );
 
         let missing_id = p_id.next();
         let casted = votes.vote_for(BOB.to_string(), missing_id);
@@ -206,7 +230,10 @@ mod tests {
             casted,
             Err(VoteError::ProposalIdDoesNotExist(id)) if id == *missing_id
         );
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+        );
     }
 
     #[test]
@@ -227,7 +254,7 @@ mod tests {
 
         assert_eq!(
             votes.snapshot(),
-            snap(&[(p_id_b, (PROPOSAL_B, &[ALICE, BOB]))])
+            make_snapshot(&[(p_id_b, (PROPOSAL_B, &[ALICE, BOB]))])
         );
         assert_ne!(p_id_a, p_id_b);
     }
@@ -258,7 +285,7 @@ mod tests {
 
         assert_eq!(
             votes.snapshot(),
-            snap(&[
+            make_snapshot(&[
                 (p_id_a, (PROPOSAL_A, &[BOB])),
                 (p_id_b, (PROPOSAL_B, &[ALICE, carol])),
             ])
@@ -274,7 +301,7 @@ mod tests {
 
         votes.remove_vote(&ALICE.to_string());
 
-        assert_eq!(votes.snapshot(), snap(&[]));
+        assert_eq!(votes.snapshot(), make_snapshot(&[]));
         // sanity check that the old proposal id is really gone
         assert_matches!(
             votes.vote_for(BOB.to_string(), p_id),
@@ -297,7 +324,10 @@ mod tests {
 
         votes.remove_vote(&ALICE.to_string());
 
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[BOB]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[BOB]))])
+        );
     }
 
     #[test]
@@ -309,7 +339,10 @@ mod tests {
 
         votes.remove_vote(&BOB.to_string());
 
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+        );
     }
 
     #[test]
@@ -332,7 +365,10 @@ mod tests {
 
         votes.remove_proposal(&p_id_a);
 
-        assert_eq!(votes.snapshot(), snap(&[(p_id_b, (PROPOSAL_B, &[carol]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id_b, (PROPOSAL_B, &[carol]))])
+        );
 
         let casted = votes.vote_for(ALICE.to_string(), p_id_b).unwrap();
         assert_eq!(
@@ -342,7 +378,7 @@ mod tests {
 
         assert_eq!(
             votes.snapshot(),
-            snap(&[(p_id_b, (PROPOSAL_B, &[ALICE, carol]))])
+            make_snapshot(&[(p_id_b, (PROPOSAL_B, &[ALICE, carol]))])
         );
     }
 
@@ -355,7 +391,10 @@ mod tests {
 
         votes.remove_proposal(&p_id.next());
 
-        assert_eq!(votes.snapshot(), snap(&[(p_id, (PROPOSAL_A, &[ALICE]))]));
+        assert_eq!(
+            votes.snapshot(),
+            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+        );
     }
 
     #[test]
@@ -384,7 +423,7 @@ mod tests {
 
         assert_eq!(
             votes.snapshot(),
-            snap(&[
+            make_snapshot(&[
                 (p_id_a, (PROPOSAL_A, &[ALICE])),
                 (p_id_b, (PROPOSAL_B, &[carol])),
             ])
@@ -400,7 +439,7 @@ mod tests {
 
         votes.retain_votes(|_| false);
 
-        assert_eq!(votes.snapshot(), snap(&[]));
+        assert_eq!(votes.snapshot(), make_snapshot(&[]));
         assert_matches!(
             votes.vote_for(BOB.to_string(), p_id),
             Err(VoteError::ProposalIdDoesNotExist(id)) if id == *p_id
@@ -419,6 +458,6 @@ mod tests {
 
         votes.clear();
 
-        assert_eq!(votes.snapshot(), snap(&[]));
+        assert_eq!(votes.snapshot(), make_snapshot(&[]));
     }
 }
