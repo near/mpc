@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 mod abstract_chain;
 mod auth;
 mod bitcoin;
+mod bnb;
 mod ethereum;
 mod solana;
 mod starknet;
@@ -16,6 +17,7 @@ mod starknet;
 pub use abstract_chain::{AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig};
 pub use auth::{AuthConfig, TokenConfig};
 pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
+pub use bnb::{BnbApiVariant, BnbChainConfig, BnbProviderConfig};
 pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
 pub use solana::{SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig};
 pub use starknet::{StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig};
@@ -34,6 +36,8 @@ pub struct ForeignChainsConfig {
     pub abstract_chain: Option<AbstractChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub starknet: Option<StarknetChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bnb: Option<BnbChainConfig>,
 }
 
 impl ForeignChainsConfig {
@@ -43,6 +47,7 @@ impl ForeignChainsConfig {
             && self.ethereum.is_none()
             && self.abstract_chain.is_none()
             && self.starknet.is_none()
+            && self.bnb.is_none()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -59,6 +64,9 @@ impl ForeignChainsConfig {
             config.validate()?;
         }
         if let Some(config) = &self.starknet {
+            config.validate()?;
+        }
+        if let Some(config) = &self.bnb {
             config.validate()?;
         }
         Ok(())
@@ -104,6 +112,10 @@ impl ForeignChainsConfig {
                 dtos::ForeignChain::Starknet,
                 providers_to_set(&config.providers),
             );
+        }
+
+        if let Some(config) = &self.bnb {
+            chains.insert(dtos::ForeignChain::Bnb, providers_to_set(&config.providers));
         }
 
         Some(dtos::ForeignChainPolicy { chains })
