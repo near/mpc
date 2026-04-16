@@ -51,4 +51,4 @@ jobs:
 
       - name: Run tee-authority Phala collateral tests
         if: always()
-        run: cargo nextest run -p tee-authority --features external-services-tests --cargo-profile test-release --locked -E 'test(/test_upload_quote_for_collateral::case_[0-9]+_phala/)'
+        run: cargo nextest run -p tee-authority --features external-services-tests --cargo-profile test-release --locked -E 'test(test_upload_quote_for_collateral::case_1_phala_endpoint) | test(test_upload_quote_for_collateral::case_2_phala_via_override)'

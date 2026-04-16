@@ -525,8 +525,8 @@ mod tests {
                 assert!(!collateral.root_ca_crl.is_empty());
                 assert!(!collateral.pck_crl.is_empty());
             }
-            Ok(Err(e)) => panic!("Collateral upload failed ({url}): {e:?}"),
-            Err(e) => panic!("Collateral upload timed out ({url}): {e:?}"),
+            Ok(Err(e)) => panic!("quote upload failed ({url}): {e:?}"),
+            Err(e) => panic!("quote upload timed out ({url}): {e:?}"),
         }
     }
 }
