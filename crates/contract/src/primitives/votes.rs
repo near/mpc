@@ -239,16 +239,11 @@ mod tests {
     }
 
     fn make_all_from_hash(
-        expected: &[(&ProposalHash, &[&TestVoter])],
+        expected: &[(ProposalHash, &[&TestVoter])],
     ) -> BTreeMap<ProposalHash, BTreeSet<TestVoter>> {
         expected
             .iter()
-            .map(|(hash, voter)| {
-                (
-                    (*hash).clone(),
-                    voter.iter().map(|voter| (*voter).clone()).collect(),
-                )
-            })
+            .map(|(hash, voter)| (*hash, voter.iter().map(|voter| (*voter).clone()).collect()))
             .collect()
     }
 
@@ -298,7 +293,7 @@ mod tests {
         assert_eq!(result.0, [ALICE.clone()].into());
 
         assert_eq!(registry.proposal_by_voter.get(&ALICE), Some(&p_hash));
-        assert_eq!(registry.all(), make_all_from_hash(&[(&p_hash, &[&ALICE])]));
+        assert_eq!(registry.all(), make_all_from_hash(&[(p_hash, &[&ALICE])]));
     }
 
     #[test]
@@ -316,7 +311,7 @@ mod tests {
 
         assert_eq!(registry.proposal_by_voter.len(), 1);
         assert_eq!(registry.votes_by_proposal.len(), 1);
-        assert_eq!(registry.all(), make_all_from_hash(&[(&p_hash, &[&ALICE])]));
+        assert_eq!(registry.all(), make_all_from_hash(&[(p_hash, &[&ALICE])]));
     }
 
     #[test]
@@ -346,7 +341,7 @@ mod tests {
 
         assert_eq!(registry.proposal_by_voter.get(&ALICE), None);
         assert_eq!(registry.proposal_by_voter.get(&BOB), Some(&p_hash));
-        assert_eq!(registry.all(), make_all_from_hash(&[(&p_hash, &[&BOB])]));
+        assert_eq!(registry.all(), make_all_from_hash(&[(p_hash, &[&BOB])]));
     }
 
     #[test]
@@ -362,7 +357,7 @@ mod tests {
         assert_eq!(result.0, [ALICE.clone()].into());
 
         assert_eq!(registry.proposal_by_voter.get(&ALICE), Some(&new_pid));
-        assert_eq!(registry.all(), make_all_from_hash(&[(&new_pid, &[&ALICE])]));
+        assert_eq!(registry.all(), make_all_from_hash(&[(new_pid, &[&ALICE])]));
     }
 
     #[test]
@@ -383,7 +378,7 @@ mod tests {
         assert_eq!(registry.proposal_by_voter.get(&BOB), Some(&old_pid));
         assert_eq!(
             registry.all(),
-            make_all_from_hash(&[(&new_pid, &[&ALICE]), (&old_pid, &[&BOB])])
+            make_all_from_hash(&[(new_pid, &[&ALICE]), (old_pid, &[&BOB])])
         );
     }
 
@@ -396,7 +391,7 @@ mod tests {
         registry.register(ALICE.clone(), p_hash);
 
         registry.remove_vote(&BOB);
-        assert_eq!(registry.all(), make_all_from_hash(&[(&p_hash, &[&ALICE])]));
+        assert_eq!(registry.all(), make_all_from_hash(&[(p_hash, &[&ALICE])]));
     }
 
     #[test]
@@ -412,7 +407,7 @@ mod tests {
         registry.remove_votes_for_proposal(&make_proposal_hash(999));
         assert_eq!(
             registry.all(),
-            make_all_from_hash(&[(&proposal_hash_1, &[&ALICE]), (&proposal_hash_2, &[&BOB])])
+            make_all_from_hash(&[(proposal_hash_1, &[&ALICE]), (proposal_hash_2, &[&BOB])])
         );
     }
 
@@ -439,14 +434,14 @@ mod tests {
 
         assert_eq!(
             registry.all(),
-            make_all_from_hash(&[(&proposal_hash_2, &[&carol])])
+            make_all_from_hash(&[(proposal_hash_2, &[&carol])])
         );
 
         let result = registry.register(ALICE.clone(), proposal_hash_2);
         assert_eq!(result.0, [ALICE.clone(), carol.clone()].into());
         assert_eq!(
             registry.all(),
-            make_all_from_hash(&[(&proposal_hash_2, &[&ALICE, &carol])])
+            make_all_from_hash(&[(proposal_hash_2, &[&ALICE, &carol])])
         );
     }
 
@@ -470,9 +465,9 @@ mod tests {
         assert_eq!(
             registry.all(),
             make_all_from_hash(&[
-                (&proposal_hash_1, &[&ALICE, &BOB]),
-                (&proposal_hash_2, &[&carol]),
-                (&proposal_hash_3, &[&dave])
+                (proposal_hash_1, &[&ALICE, &BOB]),
+                (proposal_hash_2, &[&carol]),
+                (proposal_hash_3, &[&dave])
             ])
         );
 
@@ -481,7 +476,7 @@ mod tests {
         // only p_hash 2 and carols vote should remain
         assert_eq!(
             registry.all(),
-            make_all_from_hash(&[(&proposal_hash_2, &[&carol])])
+            make_all_from_hash(&[(proposal_hash_2, &[&carol])])
         );
         // additional sanity checks
         assert_eq!(registry.proposal_by_voter.len(), 1);
