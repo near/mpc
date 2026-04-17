@@ -216,7 +216,7 @@ where
             dtos::ForeignChainRpcRequest::Base(request) => {
                 let inspector =
                     select_inspector(&self.inspectors.base, &request_id, my_participant_index)
-                        .context("no inspector configured for BNB")?;
+                        .context("no inspector configured for Base")?;
 
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
