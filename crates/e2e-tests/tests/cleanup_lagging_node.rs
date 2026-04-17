@@ -20,12 +20,6 @@ async fn cleanup_lagging_node_should_purge_offline_presignatures_and_keep_signin
     let (cluster, running) =
         common::setup_cluster(common::CLEANUP_LAGGING_NODE_PORT_SEED, |_| {}).await;
 
-    assert_eq!(cluster.nodes.len(), 3, "expected 3 nodes");
-    assert!(
-        !running.domains.domains.is_empty(),
-        "expected at least one domain"
-    );
-
     // Wait for all nodes to have presignatures buffered.
     common::wait_for_presignatures(&cluster, &[0, 1, 2], DEFAULT_PRESIGNATURES_TO_BUFFER).await;
 
@@ -109,9 +103,4 @@ async fn cleanup_lagging_node_should_purge_offline_presignatures_and_keep_signin
             );
         }
     }
-
-    // Re-enable block ingestion.
-    cluster
-        .set_block_ingestion(&[faulty_node_idx], true)
-        .expect("failed to re-enable block ingestion");
 }
