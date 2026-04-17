@@ -172,7 +172,7 @@ impl SandboxTestSetup {
         self.keys
             .iter()
             .find(|k| k.domain_config.purpose == DomainPurpose::ForeignTx)
-            .expect("No ForeignTx domain in setup. Did you call .foreign_tx() on the builder?")
+            .expect("No ForeignTx domain in setup. Did you call .with_foreign_tx_domain() on the builder?")
     }
 }
 
@@ -212,14 +212,12 @@ impl SandboxTestSetupBuilder {
         let mut keys = Vec::new();
         let mut domain_configs = Vec::new();
         let mut key_for_domains = Vec::new();
-        let mut domain_id_counter = 0u64;
 
         // Sign-purpose domains from curves
         for curve in &self.curves {
             let (pk, sk) = make_key_for_domain(*curve);
             let purpose = infer_purpose_from_curve(*curve);
-            let domain_id = DomainId(domain_id_counter);
-            domain_id_counter += 2;
+            let domain_id = DomainId(domain_configs.len() as u64);
 
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
@@ -243,8 +241,7 @@ impl SandboxTestSetupBuilder {
         // Optional ForeignTx domain
         if self.foreign_tx {
             let (pk, sk) = make_key_for_domain(Curve::Secp256k1);
-            let domain_id = DomainId(domain_id_counter);
-            domain_id_counter += 2;
+            let domain_id = DomainId(domain_configs.len() as u64);
 
             let key: PublicKeyExtended = pk.try_into().unwrap();
             let config = DomainConfig {
@@ -266,7 +263,7 @@ impl SandboxTestSetupBuilder {
         }
 
         if !domain_configs.is_empty() {
-            let next_domain_id = domain_id_counter;
+            let next_domain_id = domain_configs.len() as u64;
             let keyset = Keyset::new(EpochId::new(5), key_for_domains);
             init_contract_running(
                 &contract,
