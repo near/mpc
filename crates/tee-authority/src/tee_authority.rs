@@ -397,16 +397,12 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "external-services-tests")]
     async fn test_fetch_collateral_from_pccs() {
-        let quote_data = quote();
-        let quote_bytes: Vec<u8> = serde_json::from_str::<Vec<u8>>(
-            &serde_json::to_string(&quote_data).expect("Valid quote data"),
-        )
-        .expect("Is valid json");
+        let quote_bytes: Vec<u8> = quote().into();
 
         let config = DstackTeeAuthorityConfig::default();
 
         let result = tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(30),
             TeeAuthority::fetch_collateral(config.pccs_url.as_str(), &quote_bytes),
         )
         .await;
