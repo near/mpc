@@ -213,6 +213,26 @@ where
                     .context("timed out during execution of foreign chain request")??;
                 values.into_iter().map(Into::into).collect()
             }
+            dtos::ForeignChainRpcRequest::Base(request) => {
+                let inspector =
+                    select_inspector(&self.inspectors.base, &request_id, my_participant_index)
+                        .context("no inspector configured for BNB")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<BnbExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
+            }
             dtos::ForeignChainRpcRequest::Starknet(request) => {
                 let inspector =
                     select_inspector(&self.inspectors.starknet, &request_id, my_participant_index)
