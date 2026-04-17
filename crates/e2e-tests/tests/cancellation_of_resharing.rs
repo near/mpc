@@ -99,8 +99,9 @@ async fn test_cancellation_of_resharing() {
 
     // Verify liveness after cancellation.
     for _ in 0..3 {
-        common::send_sign_request(&cluster, running, &mut rng).await;
-        common::send_ckd_request(&cluster, running, &mut rng).await;
+        common::send_sign_request(&cluster, running, &mut rng, cluster.default_user_account())
+            .await;
+        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account()).await;
     }
 
     // Retry resharing using node 5 (running since startup, fully synced)
@@ -127,7 +128,8 @@ async fn test_cancellation_of_resharing() {
 
     // Final liveness check.
     for _ in 0..3 {
-        common::send_sign_request(&cluster, running, &mut rng).await;
-        common::send_ckd_request(&cluster, running, &mut rng).await;
+        common::send_sign_request(&cluster, running, &mut rng, cluster.default_user_account())
+            .await;
+        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account()).await;
     }
 }

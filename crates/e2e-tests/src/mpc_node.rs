@@ -191,11 +191,8 @@ impl MpcNodeSetup {
         Ok(setup)
     }
 
-    /// The ed25519 public key formatted as `"ed25519:<base58>"`.
-    pub fn p2p_public_key_str(&self) -> String {
-        String::from(&Ed25519PublicKey::from(
-            &self.p2p_signing_key.verifying_key(),
-        ))
+    pub fn p2p_public_key(&self) -> Ed25519PublicKey {
+        Ed25519PublicKey::from(&self.p2p_signing_key.verifying_key())
     }
 
     /// The P2P URL for this node.

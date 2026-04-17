@@ -49,7 +49,11 @@ async fn test_request_during_resharing() {
     for i in 0..3 {
         tracing::info!(i, "sending sign request during resharing");
         let outcome = cluster
-            .send_sign_request(sign_domain.id, common::generate_ecdsa_payload(&mut rng))
+            .send_sign_request(
+                sign_domain.id,
+                common::generate_ecdsa_payload(&mut rng),
+                cluster.default_user_account(),
+            )
             .await
             .expect("sign request failed");
         assert!(
@@ -60,7 +64,11 @@ async fn test_request_during_resharing() {
 
         tracing::info!(i, "sending CKD request during resharing");
         let outcome = cluster
-            .send_ckd_request(ckd_domain.id, common::generate_ckd_app_public_key(&mut rng))
+            .send_ckd_request(
+                ckd_domain.id,
+                common::generate_ckd_app_public_key(&mut rng),
+                cluster.default_user_account(),
+            )
             .await
             .expect("ckd request failed");
         assert!(

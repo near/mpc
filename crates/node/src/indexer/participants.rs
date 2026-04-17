@@ -353,12 +353,8 @@ pub fn convert_participant_infos(
             anyhow::bail!("no port found in participant url {}", info.url);
         };
 
-        let sign_pk: near_mpc_contract_interface::types::Ed25519PublicKey = info
-            .sign_pk
-            .parse()
+        let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.sign_pk)
             .with_context(|| format!("Invalid sign_pk for peer: {:?}", info.sign_pk))?;
-        let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&sign_pk)
-            .with_context(|| format!("Invalid public key for peer: {:?}", info.url))?;
 
         let near_account_id: AccountId = account_id
             .0
@@ -462,7 +458,10 @@ mod tests {
             entries.push((
                 DtoAccountId(account_id),
                 ParticipantId(i as u32),
-                ParticipantInfo { url, sign_pk: pk },
+                ParticipantInfo {
+                    url,
+                    sign_pk: pk.parse().unwrap(),
+                },
             ));
         }
         let next_id = ParticipantId(entries.len() as u32);
@@ -485,7 +484,8 @@ mod tests {
     fn test_participant_ids() {
         let chain_infos = create_chain_participant_infos();
         let mut account_ids: Vec<AccountId> = vec![];
-        let mut account_id_to_pk = HashMap::<AccountId, String>::default();
+        let mut account_id_to_pk =
+            HashMap::<AccountId, near_mpc_contract_interface::types::Ed25519PublicKey>::default();
         for (account_id, _, info) in &chain_infos.participants {
             let near_account_id: AccountId = account_id.0.parse().unwrap();
             account_ids.push(near_account_id.clone());
@@ -501,8 +501,7 @@ mod tests {
         assert_eq!(converted.threshold, 3);
         for (i, p) in converted.participants.iter().enumerate() {
             assert!(p.near_account_id == account_ids[i]);
-            let expected_pk: near_sdk::PublicKey =
-                account_id_to_pk[&account_ids[i]].parse().unwrap();
+            let expected_pk: near_sdk::PublicKey = account_id_to_pk[&account_ids[i]].clone().into();
             assert!(p.p2p_public_key.to_near_sdk_public_key().unwrap() == expected_pk);
             let expected = chain_infos
                 .participants
