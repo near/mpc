@@ -1,5 +1,6 @@
 use anyhow::{bail, Context};
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
+use foreign_chain_inspector::bnb::inspector::BnbExtractor;
 use foreign_chain_inspector::evm::inspector::EvmExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
@@ -151,12 +152,9 @@ where
                 bail!("ForeignChainRpcRequest::Solana is unsupported")
             }
             dtos::ForeignChainRpcRequest::Bitcoin(request) => {
-                let inspector = select_inspector(
-                    &self.inspectors.bitcoin,
-                    &request_id,
-                    my_participant_index,
-                    "bitcoin",
-                )?;
+                let inspector =
+                    select_inspector(&self.inspectors.bitcoin, &request_id, my_participant_index)
+                        .context("no inspector configured for bitcoin")?;
                 let tx_id = request.tx_id.0.into();
                 let confirmations = request.confirmations.0.into();
                 let extractors: Vec<BitcoinExtractor> = request
@@ -177,8 +175,9 @@ where
                     &self.inspectors.abstract_chain,
                     &request_id,
                     my_participant_index,
-                    "abstract",
-                )?;
+                )
+                .context("no inspector configured for abstract")?;
+
                 let tx_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<EvmExtractor> = request
@@ -195,35 +194,31 @@ where
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Bnb(request) => {
-                let inspector = select_inspector(
-                    &self.inspectors.bnb,
-                    &request_id,
-                    my_participant_index,
-                    "bnb",
-                )?;
-                let tx_id = request.tx_id.0.into();
+                let inspector =
+                    select_inspector(&self.inspectors.bnb, &request_id, my_participant_index)
+                        .context("no inspector configured for BNB")?;
+
+                let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<EvmExtractor> = request
+                let extractors: Vec<BnbExtractor> = request
                     .extractors
                     .iter()
                     .cloned()
                     .map(TryInto::try_into)
                     .collect::<Result<_, _>>()?;
                 let values = inspector
-                    .extract(tx_id, finality, extractors)
+                    .extract(transaction_id, finality, extractors)
                     .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                     .await
                     .context("timed out during execution of foreign chain request")??;
                 values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Starknet(request) => {
-                let inspector = select_inspector(
-                    &self.inspectors.starknet,
-                    &request_id,
-                    my_participant_index,
-                    "starknet",
-                )?;
-                let tx_id = request.tx_id.0 .0.into();
+                let inspector =
+                    select_inspector(&self.inspectors.starknet, &request_id, my_participant_index)
+                        .context("no inspector configured for Starknet")?;
+
+                let transaction_id = request.tx_id.0 .0.into();
                 let finality: StarknetFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<StarknetExtractor> = request
                     .extractors
@@ -231,12 +226,14 @@ where
                     .cloned()
                     .map(TryInto::try_into)
                     .collect::<Result<_, _>>()?;
-                let values = inspector
-                    .extract(tx_id, finality, extractors)
+
+                let extracted_values = inspector
+                    .extract(transaction_id, finality, extractors)
                     .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                     .await
                     .context("timed out during execution of foreign chain request")??;
-                values.into_iter().map(Into::into).collect()
+
+                extracted_values.into_iter().map(Into::into).collect()
             }
             _ => bail!("unsupported foreign chain request"),
         };
@@ -306,16 +303,13 @@ async fn validate_foreign_chain_policy(
 }
 
 /// Selects a pre-built inspector for a chain using deterministic provider-selection logic.
-/// Returns an error when the chain is not configured.
 fn select_inspector<'a, T>(
     inspectors: &'a [T],
     request_id: &CryptoHash,
     my_participant_index: usize,
-    chain_name: &str,
-) -> anyhow::Result<&'a T> {
-    let index = select_provider(inspectors.len(), request_id, my_participant_index)
-        .with_context(|| format!("{chain_name} provider config is missing"))?;
-    Ok(&inspectors[index])
+) -> Option<&'a T> {
+    select_provider(inspectors.len(), request_id, my_participant_index)
+        .and_then(|index| inspectors.get(index))
 }
 
 /// Deterministically selects a provider index based on the request ID and the node's
