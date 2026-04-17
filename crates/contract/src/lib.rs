@@ -12,7 +12,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_8_1_state;
+pub mod v3_9_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -160,24 +160,12 @@ pub struct MpcContract {
 /// 2. The main contract state becomes usable immediately.
 /// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
 ///    separate transactions to gradually deallocate this storage.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-struct StaleData {
-    pending_signature_requests_pre_upgrade: LookupMap<v3_8_1_state::SignatureRequest, YieldIndex>,
-}
-
-impl StaleData {
-    fn new() -> Self {
-        Self {
-            pending_signature_requests_pre_upgrade: LookupMap::new(
-                StorageKey::PendingSignatureRequestsV2,
-            ),
-        }
-    }
-}
+struct StaleData {}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
@@ -685,18 +673,7 @@ impl MpcContract {
             env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
         } else {
-            // Fall back to the pre-upgrade map for in-flight requests from before the migration.
-            let old_request = v3_8_1_state::SignatureRequest::from(&request);
-            if let Some(YieldIndex { data_id }) = self
-                .stale_data
-                .pending_signature_requests_pre_upgrade
-                .remove(&old_request)
-            {
-                env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
-                Ok(())
-            } else {
-                Err(InvalidParameters::RequestNotFound.into())
-            }
+            Err(InvalidParameters::RequestNotFound.into())
         }
     }
 
@@ -1757,7 +1734,7 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: StaleData::new(),
+            stale_data: StaleData {},
             metrics: Default::default(),
             node_foreign_chain_configurations: Default::default(),
         })
@@ -1822,7 +1799,7 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: StaleData::new(),
+            stale_data: StaleData {},
             metrics: Default::default(),
             node_foreign_chain_configurations: Default::default(),
         })
@@ -1840,11 +1817,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_8_1_state::MpcContract>() {
+        match try_state_read::<v3_9_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.8.1 state: {:?}", err);
+                log!("failed to deserialize state into v3.9.0 state: {:?}", err);
             }
         };
 
@@ -1899,16 +1876,7 @@ impl MpcContract {
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        self.pending_signature_requests
-            .get(request)
-            .cloned()
-            .or_else(|| {
-                let old_request = v3_8_1_state::SignatureRequest::from(request);
-                self.stale_data
-                    .pending_signature_requests_pre_upgrade
-                    .get(&old_request)
-                    .cloned()
-            })
+        self.pending_signature_requests.get(request).cloned()
     }
 
     pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
@@ -2001,15 +1969,7 @@ impl MpcContract {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                let removed = self.pending_signature_requests.remove(&request).is_some();
-
-                // Fallback, the request must have been made pre-upgrade
-                if !removed {
-                    let old_request = v3_8_1_state::SignatureRequest::from(&request);
-                    self.stale_data
-                        .pending_signature_requests_pre_upgrade
-                        .remove(&old_request);
-                }
+                self.pending_signature_requests.remove(&request);
 
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
@@ -2745,51 +2705,6 @@ mod tests {
             PromiseOrValue::Promise(_)
         ));
         assert!(contract.get_pending_request(&signature_request).is_none());
-    }
-
-    #[test]
-    fn test_signature_timeout__removes_from_pre_upgrade_stale_map() {
-        // given
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([0u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        let old_request = v3_8_1_state::SignatureRequest::from(&signature_request);
-        contract
-            .stale_data
-            .pending_signature_requests_pre_upgrade
-            .insert(
-                old_request.clone(),
-                YieldIndex {
-                    data_id: CryptoHash::default(),
-                },
-            );
-        assert_matches!(contract.get_pending_request(&signature_request), Some(_));
-
-        // when
-        let result = contract.return_signature_and_clean_state_on_success(
-            signature_request.clone(),
-            Err(PromiseError::Failed),
-        );
-
-        // then
-
-        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
-        match result {
-            PromiseOrValue::Promise(_promise) => {}
-            PromiseOrValue::Value(_) => panic!("result should be a promise"),
-        }
-        assert_matches!(contract.get_pending_request(&signature_request), None);
-        assert_matches!(
-            contract
-                .stale_data
-                .pending_signature_requests_pre_upgrade
-                .get(&old_request),
-            None
-        );
     }
 
     #[test]
@@ -3653,7 +3568,7 @@ mod tests {
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                stale_data: StaleData::new(),
+                stale_data: StaleData {},
                 metrics: Default::default(),
             }
         }
