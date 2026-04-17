@@ -1,463 +1,603 @@
-mod proposal_registry;
-pub mod types;
-mod votes_registry;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::hash::Hash;
 
-use std::{collections::BTreeMap, collections::BTreeSet};
+use borsh::{BorshDeserialize, BorshSerialize};
 
-use near_sdk::{near, IntoStorageKey};
-use proposal_registry::ProposalRegistry;
-use types::{ProposalBounds, ProposalHash, ProposalId, VoterBounds, VoterSet};
-use votes_registry::{VoteRegistry, VoteResult};
+use near_sdk::near;
+use near_sdk::require;
+use near_sdk::store::IterableMap;
+use near_sdk::IntoStorageKey;
 
-use crate::errors::VoteError;
-
-/// Keeps track of proposals and votes.
-/// Invariants:
-/// - Each voter has exactly one vote.
-/// - Each proposal has at least one vote.
+/// Helper struct to keep track of submitted votes.
+/// Allows efficient look-up of votes by voter and votes by proposal.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-pub struct Votes<V, P>
+pub struct VoteRegistry<V>
 where
     V: VoterBounds,
-    P: ProposalBounds,
 {
-    proposal_registry: ProposalRegistry<P>,
-    vote_registry: VoteRegistry<V>,
+    proposal_by_voter: IterableMap<V, ProposalHash>,
+    votes_by_proposal: IterableMap<ProposalHash, VoterSet<V>>,
 }
 
-impl<V, P> Votes<V, P>
+impl<V> VoteRegistry<V>
 where
     V: VoterBounds,
-    P: ProposalBounds,
 {
-    /// Constructs a new Votes struct. Proposals will be stored in an iterable map under
-    /// `storage_key`.
-    pub fn new(storage_key: impl IntoStorageKey) -> Self {
+    pub fn new(
+        proposal_by_voter: impl IntoStorageKey,
+        votes_by_proposal: impl IntoStorageKey,
+    ) -> Self {
         Self {
-            proposal_registry: ProposalRegistry::new(storage_key),
-            vote_registry: VoteRegistry::new(),
+            proposal_by_voter: IterableMap::new(proposal_by_voter),
+            votes_by_proposal: IterableMap::new(votes_by_proposal),
         }
     }
 
     /// Registers a vote by `voter` for `proposal`.
     /// Stores proposal in case it is new, removes differing votes by `voter`.
     /// This method is idempotent.
-    /// Returns the [`ProposalId`] and votes for proposal.
-    pub fn vote(&mut self, voter: V, proposal: P) -> (ProposalId, &VoterSet<V>) {
-        let proposal_id = self.proposal_registry.register(proposal);
-        let votes = self
-            .vote_for(voter, proposal_id)
-            .expect("proposal id must exist");
-        (proposal_id, votes)
-    }
-
-    /// Registers a vote by `voter` for proposal with `proposal_id`
-    pub fn vote_for(
+    /// Returns the [`ProposalHash`] and votes for proposal.
+    pub fn vote<P: ProposalHashEncoding>(
         &mut self,
         voter: V,
-        proposal_id: ProposalId,
-    ) -> Result<&VoterSet<V>, VoteError> {
-        if !self.proposal_registry.contains(&proposal_id) {
-            return Err(VoteError::ProposalIdDoesNotExist(*proposal_id));
-        }
-        let VoteResult {
-            votes_for_proposal,
-            proposal_without_votes,
-        } = self.vote_registry.register(voter, proposal_id);
-        if let Some(orphaned_proposal) = proposal_without_votes {
-            self.proposal_registry.remove(&orphaned_proposal);
-        }
-        Ok(votes_for_proposal)
+        proposal: P,
+    ) -> (ProposalHash, &VoterSet<V>) {
+        let encoded = proposal.bytes_for_hash();
+        let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(encoded)
+            .try_into()
+            .expect("require 32 bytes");
+        let proposal_hash = hash.into();
+        let votes = self.register(voter, proposal_hash);
+        (proposal_hash, votes)
     }
 
-    /// removes any votes by `voter`. If no more votes remain, then the proposal is removed from
-    /// the registry.
+    /// Registers a vote by `voter` for [`ProposalHash`].
+    /// In case this voter already has a vote for a different proposal id, the previous vote is removed.
+    /// Returns the [`VoterSet`], containing all votes for the given proposal hash.
+    fn register(&mut self, voter: V, proposal: ProposalHash) -> &VoterSet<V> {
+        // if necessary, remove existing votes
+        if let Some(existing_vote) = self.proposal_by_voter.get(&voter) {
+            // if the voter has an existing vote for a different proposal, remove that vote.
+            if *existing_vote != proposal {
+                self.remove_vote(&voter)
+            } else {
+                // voter has already voted for this proposal, just return the current voter set
+                return self
+                    .votes_by_proposal
+                    .get(&proposal)
+                    .expect("require consistent vote registry");
+            }
+        }
+
+        // register the vote for the voter
+        require!(
+            self.proposal_by_voter
+                .insert(voter.clone(), proposal)
+                .is_none(),
+            "inconsistent voter registry"
+        );
+
+        // register the vote for the proposal
+        let votes_for_proposal = self
+            .votes_by_proposal
+            .entry(proposal)
+            .or_insert_with(VoterSet::new);
+        votes_for_proposal.0.insert(voter);
+
+        votes_for_proposal
+    }
+
+    /// Removes any votes by voter V.
     pub fn remove_vote(&mut self, voter: &V) {
-        if let Some(proposal_id) = self.vote_registry.remove_vote(voter) {
-            // we removed the last vote for this proposal, lets remove the propoal from the
-            // registry.
-            self.proposal_registry.remove(&proposal_id);
+        let Some(proposal) = self.proposal_by_voter.get(voter) else {
+            return;
+        };
+        let casted_votes = self
+            .votes_by_proposal
+            .get_mut(proposal)
+            .expect("inconsistent votes registry");
+        // remove the vote from the proposal
+        let remaining = casted_votes
+            .remove(voter)
+            .expect("inconistent vote registry");
+        if remaining == 0 {
+            // remove the proposal if it has no more votes
+            self.votes_by_proposal.remove(proposal);
+        }
+        // remove the voter
+        self.proposal_by_voter.remove(voter);
+    }
+
+    /// Removes any votes for proposal with [`ProposalHash`], together with any voters that voted for
+    /// [`ProposalHash`].
+    pub fn remove_votes_for_proposal(&mut self, proposal: &ProposalHash) {
+        let Some(voters) = self.votes_by_proposal.remove(proposal) else {
+            return;
+        };
+        for voter in &voters.0 {
+            self.proposal_by_voter.remove(voter);
         }
     }
 
-    /// removes proposal with `proposal_id` and any votes casted for that proposal
-    pub fn remove_proposal(&mut self, proposal_id: &ProposalId) {
-        self.proposal_registry.remove(proposal_id);
-        self.vote_registry.remove_votes_for_proposal(proposal_id);
-    }
-
-    /// Retains votes for which keep(vote) returns true
-    /// Removes proposals without votes
-    pub fn retain_votes(&mut self, keep: impl Fn(&V) -> bool) {
-        let orphaned_proposals = self.vote_registry.retain_votes(keep);
-        for proposal in &orphaned_proposals {
-            self.proposal_registry.remove(proposal);
+    /// Retains votes for which `predicate` returns true
+    /// Returns a vector of any proposal ids that were removed in the process
+    pub fn retain_votes(&mut self, predicate: impl Fn(&V) -> bool) {
+        let votes_to_remove: Vec<V> = self
+            .proposal_by_voter
+            .keys()
+            .filter(|voter| !predicate(voter))
+            .cloned()
+            .collect();
+        for voter in votes_to_remove {
+            self.remove_vote(&voter);
         }
     }
 
     pub fn clear(&mut self) {
-        self.proposal_registry.clear();
-        self.vote_registry.clear();
+        self.proposal_by_voter.clear();
+        self.votes_by_proposal.clear();
     }
 
-    /// Returns a snapshot of the current state, that can be serde deserialized.
-    /// Specifically, returns a map from proposal to votes
-    pub fn snapshot(&self) -> BTreeMap<ProposalId, ((ProposalHash, P), BTreeSet<V>)> {
-        let all_proposals = self.proposal_registry.all();
-        let all_votes = self.vote_registry.all();
-        let merged: BTreeMap<ProposalId, ((ProposalHash, P), BTreeSet<V>)> = all_proposals
-            .into_iter()
-            .map(|(pid, proposal)| {
-                let votes = all_votes.get(&pid).cloned().unwrap_or_default();
-                (pid, (proposal, votes))
-            })
-            .collect();
-        merged
+    pub fn all(&self) -> BTreeMap<ProposalHash, BTreeSet<V>> {
+        self.votes_by_proposal
+            .iter()
+            .map(|(p_hash, voter_set)| (*p_hash, voter_set.0.clone()))
+            .collect()
+    }
+}
+
+pub const PROPOSAL_HASH_BYTES: usize = 32;
+mpc_primitives::define_hash!(ProposalHash, 32);
+
+/// This trait allows the user to create their own proposal hash encoding
+pub trait ProposalHashEncoding {
+    fn bytes_for_hash(&self) -> Vec<u8>;
+}
+
+pub trait VoterBounds: BorshSerialize + BorshDeserialize + Ord + Clone {}
+
+impl<T: BorshSerialize + BorshDeserialize + Ord + Clone> VoterBounds for T {}
+
+/// The set of voters who voted for a particular proposal. Always non-empty when stored
+/// inside `VotesByProposal`.
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub struct VoterSet<V>(pub(super) BTreeSet<V>)
+where
+    V: VoterBounds;
+
+impl<V> VoterSet<V>
+where
+    V: VoterBounds,
+{
+    pub(super) fn new() -> Self {
+        Self(BTreeSet::new())
+    }
+
+    // counts all the votes for which `predicate` returns true
+    pub fn count_for(&self, predicate: impl Fn(&V) -> bool) -> usize {
+        self.0.iter().filter(|voter| predicate(voter)).count()
+    }
+
+    // returns Some(remaining_votes) in case a vote was removed
+    pub(super) fn remove(&mut self, vote: &V) -> Option<usize> {
+        if self.0.remove(vote) {
+            Some(self.0.len())
+        } else {
+            None
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{types::PROPOSAL_HASH_BYTES, *};
-    use assert_matches::assert_matches;
-    use near_sdk::BorshStorageKey;
-    use sha2::Digest;
 
-    #[near(serializers=[borsh])]
-    #[derive(BorshStorageKey, Hash, Clone, Debug, PartialEq, Eq)]
-    enum TestStorageKey {
-        Proposals,
+    use near_sdk::{
+        borsh::{self, BorshDeserialize, BorshSerialize},
+        BorshStorageKey,
+    };
+    use sha2::Digest;
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        sync::LazyLock,
+    };
+
+    use crate::primitives::votes::{ProposalHash, VoteRegistry, VoterSet, PROPOSAL_HASH_BYTES};
+
+    use super::ProposalHashEncoding;
+
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
+    struct TestVoter(String);
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
+    struct TestProposal(String);
+
+    impl ProposalHashEncoding for TestProposal {
+        fn bytes_for_hash(&self) -> Vec<u8> {
+            borsh::to_vec(&self).expect("borsh serialization of String must succeed")
+        }
     }
 
-    /// Helper to build expected snapshots concisely.
-    fn make_snapshot(
-        entries: &[(ProposalId, (&str, &[&str]))],
-    ) -> BTreeMap<ProposalId, ((ProposalHash, String), BTreeSet<String>)> {
-        entries
+    #[derive(Hash, Clone, Debug, PartialEq, Eq, BorshSerialize, BorshStorageKey)]
+    pub enum TestStorageKey {
+        ProposalByVoter,
+        VotesByProposal,
+    }
+
+    fn setup() -> VoteRegistry<TestVoter> {
+        VoteRegistry::<TestVoter>::new(
+            TestStorageKey::ProposalByVoter,
+            TestStorageKey::VotesByProposal,
+        )
+    }
+
+    fn expected_hash(proposal: &TestProposal) -> ProposalHash {
+        let encoded = borsh::to_vec(&proposal).expect("borsh serialization must succeed");
+        let hash: [u8; PROPOSAL_HASH_BYTES] = sha2::Sha256::digest(encoded).into();
+        hash.into()
+    }
+
+    fn make_all_from_hash(
+        expected: &[(&ProposalHash, &[&TestVoter])],
+    ) -> BTreeMap<ProposalHash, BTreeSet<TestVoter>> {
+        expected
             .iter()
-            .map(|(pid, (p, vs))| {
-                let hash: [u8; PROPOSAL_HASH_BYTES] =
-                    sha2::Sha256::digest(borsh::to_vec(&p).expect("borsh must succeed")).into();
+            .map(|(hash, voter)| {
                 (
-                    (*pid),
-                    (
-                        (ProposalHash::new(hash), p.to_string()),
-                        vs.iter().map(|s| s.to_string()).collect(),
-                    ),
+                    (*hash).clone(),
+                    voter.iter().map(|voter| (*voter).clone()).collect(),
                 )
             })
             .collect()
     }
-    const ALICE: &str = "alice";
-    const BOB: &str = "bob";
-    const PROPOSAL_A: &str = "proposal a";
-    const PROPOSAL_B: &str = "proposal b";
+
+    fn make_all(
+        expected: &[(&TestProposal, &[&TestVoter])],
+    ) -> BTreeMap<ProposalHash, BTreeSet<TestVoter>> {
+        expected
+            .iter()
+            .map(|(proposal, voter)| {
+                (
+                    expected_hash(proposal),
+                    voter.iter().map(|voter| (*voter).clone()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn make_proposal_hash(i: usize) -> ProposalHash {
+        let mut bytes = [0u8; 32];
+        bytes[24..].copy_from_slice(&i.to_be_bytes());
+        ProposalHash::new(bytes)
+    }
+
+    static ALICE: LazyLock<TestVoter> = LazyLock::new(|| TestVoter("alice".to_string()));
+    static BOB: LazyLock<TestVoter> = LazyLock::new(|| TestVoter("bob".to_string()));
+
+    static PROPOSAL_A: LazyLock<TestProposal> =
+        LazyLock::new(|| TestProposal("proposal a".to_string()));
+    static PROPOSAL_B: LazyLock<TestProposal> =
+        LazyLock::new(|| TestProposal("proposal b".to_string()));
 
     #[test]
-    fn test_vote_idempotent() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
+    fn new_is_empty() {
+        let registry = setup();
+        assert_eq!(registry.all(), BTreeMap::new());
+        assert_eq!(registry.proposal_by_voter.len(), 0);
+        assert_eq!(registry.votes_by_proposal.len(), 0);
+    }
+
+    #[test]
+    fn register_first_vote_creates_entry_and_returns_current_votes() {
+        let mut registry = setup();
+
+        let p_hash = make_proposal_hash(7);
+        let result = registry.register(ALICE.clone(), p_hash);
+
+        assert_eq!(result.0, [ALICE.clone()].into());
+
+        assert_eq!(registry.proposal_by_voter.get(&ALICE), Some(&p_hash));
+        assert_eq!(registry.all(), make_all_from_hash(&[(&p_hash, &[&ALICE])]));
+    }
+
+    #[test]
+    fn register_is_idempotent() {
+        let mut registry = setup();
+
+        let p_hash = make_proposal_hash(1);
+
+        let first = registry.register(ALICE.clone(), p_hash);
+        assert_eq!(first.0, [ALICE.clone()].into());
+
+        let second = registry.register(ALICE.clone(), p_hash);
+
+        assert_eq!(second.0, [ALICE.clone()].into());
+
+        assert_eq!(registry.proposal_by_voter.len(), 1);
+        assert_eq!(registry.votes_by_proposal.len(), 1);
+        assert_eq!(registry.all(), make_all_from_hash(&[(&p_hash, &[&ALICE])]));
+    }
+
+    #[test]
+    fn remove_vote_removes_orphaned_proposals() {
+        let mut registry = setup();
+
+        let p_hash = make_proposal_hash(9);
+
+        registry.register(ALICE.clone(), p_hash);
+
+        registry.remove_vote(&ALICE);
+
+        assert_eq!(registry.proposal_by_voter.get(&ALICE), None);
+        assert_eq!(registry.all(), make_all_from_hash(&[]));
+    }
+
+    #[test]
+    fn remove_vote_keeps_non_orphaned_proposal() {
+        let mut registry = setup();
+
+        let p_hash = make_proposal_hash(5);
+
+        registry.register(ALICE.clone(), p_hash);
+        registry.register(BOB.clone(), p_hash);
+
+        registry.remove_vote(&ALICE);
+
+        assert_eq!(registry.proposal_by_voter.get(&ALICE), None);
+        assert_eq!(registry.proposal_by_voter.get(&BOB), Some(&p_hash));
+        assert_eq!(registry.all(), make_all_from_hash(&[(&p_hash, &[&BOB])]));
+    }
+
+    #[test]
+    fn register_switches_vote_and_removes_orphaned_proposals() {
+        let mut registry = setup();
+
+        let old_pid = make_proposal_hash(1);
+        let new_pid = make_proposal_hash(2);
+
+        registry.register(ALICE.clone(), old_pid);
+        let result = registry.register(ALICE.clone(), new_pid);
+
+        assert_eq!(result.0, [ALICE.clone()].into());
+
+        assert_eq!(registry.proposal_by_voter.get(&ALICE), Some(&new_pid));
+        assert_eq!(registry.all(), make_all_from_hash(&[(&new_pid, &[&ALICE])]));
+    }
+
+    #[test]
+    fn register_switches_vote_and_keeps_non_orphaned_proposals() {
+        let mut registry = setup();
+
+        let old_pid = make_proposal_hash(1);
+        let new_pid = make_proposal_hash(2);
+
+        registry.register(ALICE.clone(), old_pid);
+        registry.register(BOB.clone(), old_pid);
+
+        let result = registry.register(ALICE.clone(), new_pid);
+
+        assert_eq!(result.0, [ALICE.clone()].into());
+
+        assert_eq!(registry.proposal_by_voter.get(&ALICE), Some(&new_pid));
+        assert_eq!(registry.proposal_by_voter.get(&BOB), Some(&old_pid));
         assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
+            registry.all(),
+            make_all_from_hash(&[(&new_pid, &[&ALICE]), (&old_pid, &[&BOB])])
         );
+    }
+
+    #[test]
+    fn remove_vote_of_unknown_voter_is_noop() {
+        let mut registry = setup();
+
+        let p_hash = make_proposal_hash(3);
+
+        registry.register(ALICE.clone(), p_hash);
+
+        registry.remove_vote(&BOB);
+        assert_eq!(registry.all(), make_all_from_hash(&[(&p_hash, &[&ALICE])]));
+    }
+
+    #[test]
+    fn remove_votes_for_unknown_proposal_is_noop() {
+        let mut registry = setup();
+
+        let proposal_hash_1 = make_proposal_hash(1);
+        let proposal_hash_2 = make_proposal_hash(2);
+
+        registry.register(ALICE.clone(), proposal_hash_1);
+        registry.register(BOB.clone(), proposal_hash_2);
+
+        registry.remove_votes_for_proposal(&make_proposal_hash(999));
+        assert_eq!(
+            registry.all(),
+            make_all_from_hash(&[(&proposal_hash_1, &[&ALICE]), (&proposal_hash_2, &[&BOB])])
+        );
+    }
+
+    #[test]
+    fn remove_votes_for_proposal_removes_both_proposal_and_reverse_index() {
+        let mut registry = setup();
+
+        let proposal_hash_1 = make_proposal_hash(1);
+        let proposal_hash_2 = make_proposal_hash(2);
+        let carol = TestVoter("carol".to_string());
+
+        registry.register(ALICE.clone(), proposal_hash_1);
+        registry.register(BOB.clone(), proposal_hash_1);
+        registry.register(carol.clone(), proposal_hash_2);
+
+        registry.remove_votes_for_proposal(&proposal_hash_1);
+
+        assert_eq!(registry.proposal_by_voter.get(&ALICE), None);
+        assert_eq!(registry.proposal_by_voter.get(&BOB), None);
+        assert_eq!(
+            registry.proposal_by_voter.get(&carol),
+            Some(&proposal_hash_2)
+        );
+
+        assert_eq!(
+            registry.all(),
+            make_all_from_hash(&[(&proposal_hash_2, &[&carol])])
+        );
+
+        let result = registry.register(ALICE.clone(), proposal_hash_2);
+        assert_eq!(result.0, [ALICE.clone(), carol.clone()].into());
+        assert_eq!(
+            registry.all(),
+            make_all_from_hash(&[(&proposal_hash_2, &[&ALICE, &carol])])
+        );
+    }
+
+    #[test]
+    fn retain_votes_removes_disallowed_voters_and_orphaned_proposals() {
+        let mut registry = setup();
+
+        let proposal_hash_1 = make_proposal_hash(1);
+        let proposal_hash_2 = make_proposal_hash(2);
+        let proposal_hash_3 = make_proposal_hash(3);
+
+        let carol = TestVoter("carol".to_string());
+        let dave = TestVoter("dave".to_string());
+
+        registry.register(ALICE.clone(), proposal_hash_1);
+        registry.register(BOB.clone(), proposal_hash_1);
+        registry.register(carol.clone(), proposal_hash_2);
+        registry.register(dave.clone(), proposal_hash_3);
+
+        // only p_hash 2 and carols vote should remain
+        assert_eq!(
+            registry.all(),
+            make_all_from_hash(&[
+                (&proposal_hash_1, &[&ALICE, &BOB]),
+                (&proposal_hash_2, &[&carol]),
+                (&proposal_hash_3, &[&dave])
+            ])
+        );
+
+        registry.retain_votes(|v| v == &carol);
+
+        // only p_hash 2 and carols vote should remain
+        assert_eq!(
+            registry.all(),
+            make_all_from_hash(&[(&proposal_hash_2, &[&carol])])
+        );
+        // additional sanity checks
+        assert_eq!(registry.proposal_by_voter.len(), 1);
+        assert_eq!(
+            registry.proposal_by_voter.get(&carol),
+            Some(&proposal_hash_2)
+        );
+    }
+
+    #[test]
+    fn clear_removes_everything() {
+        let mut registry = setup();
+
+        let proposal_hash_1 = make_proposal_hash(1);
+        let proposal_hash_2 = make_proposal_hash(2);
+
+        registry.register(ALICE.clone(), proposal_hash_1);
+        registry.register(BOB.clone(), proposal_hash_2);
+
+        registry.clear();
+
+        assert_eq!(registry.all(), make_all_from_hash(&[]));
+        assert_eq!(registry.proposal_by_voter.len(), 0);
+        assert_eq!(registry.votes_by_proposal.len(), 0);
+    }
+
+    #[test]
+    fn vote_is_idempotent() {
+        let mut registry = setup();
+        let (p_hash, casted) = registry.vote(ALICE.clone(), PROPOSAL_A.clone());
+        assert_eq!(casted.0, [ALICE.clone()].into_iter().collect());
+        assert_eq!(registry.all(), make_all(&[(&PROPOSAL_A, &[&ALICE])]));
         // vote is idempotent
-        let (p_id_2, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(p_id, p_id_2);
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
-        );
+        let (p_id_2, casted) = registry.vote(ALICE.clone(), PROPOSAL_A.clone());
+        assert_eq!(p_hash, p_id_2);
+        assert_eq!(casted.0, [ALICE.clone()].into_iter().collect());
+        assert_eq!(registry.all(), make_all(&[(&PROPOSAL_A, &[&ALICE])]));
     }
 
     #[test]
-    fn test_vote_can_switch_votes() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
-        );
+    fn vote_can_switch_votes() {
+        let mut registry = setup();
+        let (p_hash, casted) = registry.vote(ALICE.clone(), PROPOSAL_A.clone());
+        assert_eq!(casted.0, [ALICE.clone()].into_iter().collect());
+        assert_eq!(registry.all(), make_all(&[(&PROPOSAL_A, &[&ALICE])]));
         // vote can be changed
-        let (p_id_2, casted) = votes.vote(ALICE.to_string(), PROPOSAL_B.to_string());
-        assert_ne!(p_id, p_id_2);
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id_2, (PROPOSAL_B, &[ALICE]))])
-        );
-    }
-
-    // test vote_for
-    #[test]
-    fn test_vote_for_success() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
-        );
-        let casted = votes.vote_for(BOB.to_string(), p_id).unwrap();
-        assert_eq!(
-            casted.0,
-            [ALICE.to_string(), BOB.to_string()].into_iter().collect()
-        );
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE, BOB]))])
-        );
+        let (p_id_2, casted) = registry.vote(ALICE.clone(), PROPOSAL_B.clone());
+        assert_ne!(p_hash, p_id_2);
+        assert_eq!(casted.0, [ALICE.clone()].into_iter().collect());
+        assert_eq!(registry.all(), make_all(&[(&PROPOSAL_B, &[&ALICE])]));
     }
 
     #[test]
-    fn test_vote_for_errors_if_proposal_does_not_exist() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
-        );
+    fn voter_set_new_is_empty() {
+        let voter_set = VoterSet::<TestVoter>::new();
 
-        let missing_id = p_id.next();
-        let casted = votes.vote_for(BOB.to_string(), missing_id);
-
-        assert_matches!(
-            casted,
-            Err(VoteError::ProposalIdDoesNotExist(id)) if id == *missing_id
-        );
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
-        );
+        assert!(voter_set.0.is_empty());
     }
 
     #[test]
-    fn test_vote_for_can_switch_vote_and_remove_orphaned_proposal() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
+    fn voter_set_count_for_counts_only_matching_votes() {
+        let alice = TestVoter("alice".to_string());
+        let bob = TestVoter("bob".to_string());
+        let carol = TestVoter("carol".to_string());
 
-        let (p_id_a, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
+        let voter_set = VoterSet([alice.clone(), bob.clone(), carol.clone()].into());
 
-        let (p_id_b, casted) = votes.vote(BOB.to_string(), PROPOSAL_B.to_string());
-        assert_eq!(casted.0, [BOB.to_string()].into_iter().collect());
+        let count = voter_set.count_for(|voter| voter.0.contains('a'));
 
-        let casted = votes.vote_for(ALICE.to_string(), p_id_b).unwrap();
-        assert_eq!(
-            casted.0,
-            [ALICE.to_string(), BOB.to_string()].into_iter().collect()
-        );
-
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id_b, (PROPOSAL_B, &[ALICE, BOB]))])
-        );
-        assert_ne!(p_id_a, p_id_b);
+        assert_eq!(count, 2);
     }
 
     #[test]
-    fn test_vote_for_can_switch_vote_without_removing_old_proposal() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
+    fn voter_set_count_for_returns_zero_for_empty_set() {
+        let voter_set = VoterSet::<TestVoter>::new();
 
-        let carol = "carol";
+        let count = voter_set.count_for(|_| true);
 
-        let (p_id_a, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-
-        let casted = votes.vote(BOB.to_string(), PROPOSAL_A.to_string()).1;
-        assert_eq!(
-            casted.0,
-            [ALICE.to_string(), BOB.to_string()].into_iter().collect()
-        );
-
-        let (p_id_b, casted) = votes.vote(carol.to_string(), PROPOSAL_B.to_string());
-        assert_eq!(casted.0, [carol.to_string()].into_iter().collect());
-
-        let casted = votes.vote_for(ALICE.to_string(), p_id_b).unwrap();
-        assert_eq!(
-            casted.0,
-            [ALICE.to_string(), carol.to_string()].into_iter().collect()
-        );
-
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[
-                (p_id_a, (PROPOSAL_A, &[BOB])),
-                (p_id_b, (PROPOSAL_B, &[ALICE, carol])),
-            ])
-        );
+        assert_eq!(count, 0);
     }
 
     #[test]
-    fn test_remove_vote_removes_last_vote_and_proposal() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
+    fn voter_set_remove_existing_vote_returns_remaining_count() {
+        let alice = TestVoter("alice".to_string());
+        let bob = TestVoter("bob".to_string());
 
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
+        let mut voter_set = VoterSet([alice.clone(), bob.clone()].into());
 
-        votes.remove_vote(&ALICE.to_string());
+        let remaining = voter_set.remove(&alice);
 
-        assert_eq!(votes.snapshot(), make_snapshot(&[]));
-        // sanity check that the old proposal id is really gone
-        assert_matches!(
-            votes.vote_for(BOB.to_string(), p_id),
-            Err(VoteError::ProposalIdDoesNotExist(id)) if id == *p_id
-        );
+        assert_eq!(remaining, Some(1));
+        assert_eq!(voter_set.0, [bob.clone()].into());
     }
 
     #[test]
-    fn test_remove_vote_removes_only_voter_if_other_votes_remain() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
+    fn voter_set_remove_last_vote_returns_zero() {
+        let alice = TestVoter("alice".to_string());
 
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
+        let mut voter_set = VoterSet([alice.clone()].into());
 
-        let casted = votes.vote(BOB.to_string(), PROPOSAL_A.to_string()).1;
-        assert_eq!(
-            casted.0,
-            [ALICE.to_string(), BOB.to_string()].into_iter().collect()
-        );
+        let remaining = voter_set.remove(&alice);
 
-        votes.remove_vote(&ALICE.to_string());
-
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[BOB]))])
-        );
+        assert_eq!(remaining, Some(0));
+        assert!(voter_set.0.is_empty());
     }
 
     #[test]
-    fn test_remove_vote_of_unknown_voter_is_noop() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
+    fn voter_set_remove_missing_vote_returns_none_and_leaves_set_unchanged() {
+        let alice = TestVoter("alice".to_string());
+        let bob = TestVoter("bob".to_string());
 
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
+        let mut voter_set = VoterSet([alice.clone()].into());
 
-        votes.remove_vote(&BOB.to_string());
+        let remaining = voter_set.remove(&bob);
 
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
-        );
-    }
-
-    #[test]
-    fn test_remove_proposal_removes_proposal_and_all_its_votes() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-
-        let carol = "carol";
-
-        let (p_id_a, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-
-        let casted = votes.vote(BOB.to_string(), PROPOSAL_A.to_string()).1;
-        assert_eq!(
-            casted.0,
-            [ALICE.to_string(), BOB.to_string()].into_iter().collect()
-        );
-
-        let (p_id_b, casted) = votes.vote(carol.to_string(), PROPOSAL_B.to_string());
-        assert_eq!(casted.0, [carol.to_string()].into_iter().collect());
-
-        votes.remove_proposal(&p_id_a);
-
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id_b, (PROPOSAL_B, &[carol]))])
-        );
-
-        let casted = votes.vote_for(ALICE.to_string(), p_id_b).unwrap();
-        assert_eq!(
-            casted.0,
-            [ALICE.to_string(), carol.to_string()].into_iter().collect()
-        );
-
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id_b, (PROPOSAL_B, &[ALICE, carol]))])
-        );
-    }
-
-    #[test]
-    fn test_remove_proposal_of_unknown_id_is_noop() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-
-        votes.remove_proposal(&p_id.next());
-
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[(p_id, (PROPOSAL_A, &[ALICE]))])
-        );
-    }
-
-    #[test]
-    fn test_retain_votes_keeps_matching_votes_and_removes_orphaned_proposals() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-
-        let carol = "carol";
-        let proposal_c = "proposal c";
-
-        let (p_id_a, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-
-        let casted = votes.vote(BOB.to_string(), PROPOSAL_A.to_string()).1;
-        assert_eq!(
-            casted.0,
-            [ALICE.to_string(), BOB.to_string()].into_iter().collect()
-        );
-
-        let (p_id_b, casted) = votes.vote(carol.to_string(), PROPOSAL_B.to_string());
-        assert_eq!(casted.0, [carol.to_string()].into_iter().collect());
-
-        let (_p_id_c, casted) = votes.vote("dave".to_string(), proposal_c.to_string());
-        assert_eq!(casted.0, ["dave".to_string()].into_iter().collect());
-
-        votes.retain_votes(|voter| voter == ALICE || voter == carol);
-
-        assert_eq!(
-            votes.snapshot(),
-            make_snapshot(&[
-                (p_id_a, (PROPOSAL_A, &[ALICE])),
-                (p_id_b, (PROPOSAL_B, &[carol])),
-            ])
-        );
-    }
-
-    #[test]
-    fn test_retain_votes_can_clear_everything() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-
-        let (p_id, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-
-        votes.retain_votes(|_| false);
-
-        assert_eq!(votes.snapshot(), make_snapshot(&[]));
-        assert_matches!(
-            votes.vote_for(BOB.to_string(), p_id),
-            Err(VoteError::ProposalIdDoesNotExist(id)) if id == *p_id
-        );
-    }
-
-    #[test]
-    fn test_clear_removes_all_votes_and_proposals() {
-        let mut votes = Votes::new(TestStorageKey::Proposals);
-
-        let (_p_id_a, casted) = votes.vote(ALICE.to_string(), PROPOSAL_A.to_string());
-        assert_eq!(casted.0, [ALICE.to_string()].into_iter().collect());
-
-        let (_p_id_b, casted) = votes.vote(BOB.to_string(), PROPOSAL_B.to_string());
-        assert_eq!(casted.0, [BOB.to_string()].into_iter().collect());
-
-        votes.clear();
-
-        assert_eq!(votes.snapshot(), make_snapshot(&[]));
+        assert_eq!(remaining, None);
+        assert_eq!(voter_set.0, [alice.clone()].into());
     }
 }
