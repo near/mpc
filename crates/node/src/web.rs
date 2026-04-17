@@ -9,6 +9,7 @@ use axum::{serve, Json};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
+use mpc_node_config::foreign_chains::{BaseApiVariant, BaseChainConfig, BaseProviderConfig};
 use mpc_node_config::{
     foreign_chains::{BnbApiVariant, BnbChainConfig, BnbProviderConfig},
     AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
@@ -137,6 +138,8 @@ struct ForeignChains {
     starknet: Option<StarknetChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
     bnb: Option<BnbChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base: Option<BaseChain>,
 }
 
 impl From<ForeignChainsConfig> for ForeignChains {
@@ -148,6 +151,7 @@ impl From<ForeignChainsConfig> for ForeignChains {
             abstract_chain: config.abstract_chain.map(Into::into),
             starknet: config.starknet.map(Into::into),
             bnb: config.bnb.map(Into::into),
+            base: config.base.map(Into::into),
         }
     }
 }
@@ -350,6 +354,39 @@ impl From<BnbProviderConfig> for BnbProvider {
     }
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct BaseChain {
+    timeout_sec: u64,
+    max_retries: u64,
+    providers: BTreeMap<String, BaseProvider>,
+}
+
+impl From<BaseChainConfig> for BaseChain {
+    fn from(config: BaseChainConfig) -> Self {
+        let providers: BTreeMap<String, BaseProviderConfig> = config.providers.into();
+        Self {
+            timeout_sec: config.timeout_sec,
+            max_retries: config.max_retries,
+            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+struct BaseProvider {
+    rpc_url: String,
+    api_variant: BaseApiVariant,
+}
+
+impl From<BaseProviderConfig> for BaseProvider {
+    fn from(config: BaseProviderConfig) -> Self {
+        Self {
+            rpc_url: config.rpc_url,
+            api_variant: config.api_variant,
+        }
+    }
+}
+
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
     match state.root_task_handle.get() {
         Some(root_task_handle) => format!("{:?}", root_task_handle.report()),
@@ -536,6 +573,7 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use mpc_node_config::foreign_chains::{BaseApiVariant, BaseChainConfig, BaseProviderConfig};
     use mpc_node_config::{AuthConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -651,6 +689,18 @@ mod tests {
                         BnbProviderConfig {
                             rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
                             api_variant: BnbApiVariant::Standard,
+                            auth: AuthConfig::None,
+                        },
+                    ),
+                }),
+                base: Some(BaseChainConfig {
+                    timeout_sec: 30,
+                    max_retries: 3,
+                    providers: NonEmptyBTreeMap::new(
+                        "public".to_string(),
+                        BaseProviderConfig {
+                            rpc_url: "https://base.publicnode.com".to_string(),
+                            api_variant: BaseApiVariant::Standard,
                             auth: AuthConfig::None,
                         },
                     ),
@@ -788,6 +838,25 @@ mod tests {
             BnbProvider {
                 rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
                 api_variant: BnbApiVariant::Standard,
+            }
+        );
+    }
+
+    #[test]
+    fn node_config_response_from__omits_auth_from_base_provider() {
+        // Given
+        let config = test_config();
+
+        // When
+        let response = NodeConfigResponse::from(config);
+
+        // Then
+        let provider = &response.foreign_chains.base.unwrap().providers["public"];
+        assert_eq!(
+            *provider,
+            BaseProvider {
+                rpc_url: "https://base.publicnode.com".to_string(),
+                api_variant: BaseApiVariant::Standard,
             }
         );
     }
