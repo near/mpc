@@ -60,6 +60,9 @@ pub struct MpcClusterConfig {
     /// An empty vec means all nodes are participants. Set to a subset to start
     /// extra non-participant nodes (useful for resharing and attestation tests).
     pub initial_participant_indices: Vec<usize>,
+    /// Per-node foreign chains configuration. If empty, all nodes get the default
+    /// (empty) config. If non-empty, must have exactly `num_nodes` entries.
+    pub node_foreign_chains_configs: Vec<mpc_node_config::ForeignChainsConfig>,
 }
 
 impl MpcClusterConfig {
@@ -97,6 +100,7 @@ impl MpcClusterConfig {
             sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
+            node_foreign_chains_configs: vec![],
         }
     }
 
@@ -661,6 +665,61 @@ impl MpcCluster {
             )
             .await
     }
+
+    /// View the foreign chain policy from the contract.
+    pub async fn view_foreign_chain_policy(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainPolicy> {
+        self.contract
+            .view(method_names::GET_FOREIGN_CHAIN_POLICY)
+            .await
+    }
+
+    /// View the foreign chain policy proposals from the contract.
+    pub async fn view_foreign_chain_policy_proposals(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainPolicyVotes> {
+        self.contract
+            .view(method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
+            .await
+    }
+
+    /// Vote for a foreign chain policy from a specific node.
+    pub async fn vote_foreign_chain_policy(
+        &self,
+        node_index: usize,
+        policy: serde_json::Value,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let node = &self.nodes[node_index];
+        let client = self
+            .blockchain
+            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
+        self.contract
+            .call_from(
+                &client,
+                method_names::VOTE_FOREIGN_CHAIN_POLICY,
+                json!({ "policy": policy }),
+            )
+            .await
+    }
+
+    /// Send a verify_foreign_transaction request from the default user account.
+    pub async fn send_verify_foreign_transaction(
+        &self,
+        request: serde_json::Value,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let user = self.default_user_account().clone();
+        let client = self.user_client(&user)?;
+        self.contract
+            .call_from_with_deposit(
+                &client,
+                method_names::VERIFY_FOREIGN_TRANSACTION,
+                json!({ "request": request }),
+                SIGN_GAS,
+                SIGN_DEPOSIT,
+            )
+            .await
+    }
 }
 
 impl Drop for MpcCluster {
@@ -871,6 +930,12 @@ fn start_mpc_nodes(
             config.binary_paths[i].clone()
         };
 
+        let foreign_chains_config = if config.node_foreign_chains_configs.is_empty() {
+            Default::default()
+        } else {
+            config.node_foreign_chains_configs[i].clone()
+        };
+
         let setup = MpcNodeSetup::new(MpcNodeSetupArgs {
             node_index: i,
             home_dir: test_dir.join(format!("node{i}")),
@@ -885,6 +950,7 @@ fn start_mpc_nodes(
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
+            foreign_chains_config,
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }

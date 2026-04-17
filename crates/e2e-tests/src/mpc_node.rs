@@ -143,6 +143,9 @@ pub struct MpcNodeSetup {
     triples_to_buffer: usize,
     presignatures_to_buffer: usize,
 
+    // Foreign chains configuration
+    foreign_chains_config: mpc_node_config::ForeignChainsConfig,
+
     // Config file path (written on creation)
     config_path: PathBuf,
 }
@@ -182,6 +185,7 @@ impl MpcNodeSetup {
             backup_encryption_key_hex,
             triples_to_buffer: args.triples_to_buffer,
             presignatures_to_buffer: args.presignatures_to_buffer,
+            foreign_chains_config: args.foreign_chains_config,
             config_path,
         };
 
@@ -394,7 +398,7 @@ impl MpcNodeSetup {
                 signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
-                foreign_chains: Default::default(),
+                foreign_chains: self.foreign_chains_config.clone(),
             },
         };
 
@@ -426,6 +430,8 @@ pub struct MpcNodeSetupArgs {
     pub near_genesis_path: PathBuf,
     /// Boot nodes string: `"ed25519:<pubkey>@127.0.0.1:<port>"`.
     pub near_boot_nodes: String,
+    /// Foreign chains configuration for this node.
+    pub foreign_chains_config: mpc_node_config::ForeignChainsConfig,
 }
 
 /// Ports allocated for a single MPC node.

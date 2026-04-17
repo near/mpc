@@ -3037,6 +3037,7 @@ name = "e2e-tests"
 version = "3.9.0"
 dependencies = [
  "anyhow",
+ "axum",
  "backon",
  "blstrs",
  "bs58 0.5.1",
@@ -3050,6 +3051,7 @@ dependencies = [
  "near-account-id 2.6.0",
  "near-indexer-primitives",
  "near-kit",
+ "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
  "near-sandbox",
