@@ -611,7 +611,7 @@ where
                     foreign_chain_policy_reader.clone(),
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
-                ));
+                )?);
 
                 let mpc_client = Arc::new(MpcClient::new(
                     config_file.into(),
