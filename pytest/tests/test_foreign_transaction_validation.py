@@ -376,6 +376,7 @@ def foreign_tx_validation_cluster():
                 "Abstract": [{"rpc_url": abstract_mock_rpc_url}],
                 "Bnb": [{"rpc_url": bnb_mock_rpc_url}],
                 "Starknet": [{"rpc_url": starknet_mock_rpc_url}],
+                "Base": [{"rpc_url": base_mock_rpc_url}],
             }
         }
     )
