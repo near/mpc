@@ -248,19 +248,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cargo-make
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-make@0.37.24
+
       - name: Build mpc-node
-        run: |
-          cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
+        run: cargo make build-mpc-node-network-hardship-simulation
 
       # We run this build step on main as well to cache the contract build.
       # The non reproducible build will not be used on main since it will be overwritten by the reproducible
       # step below.
       - name: Build mpc-contract
-        run: |
-          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
-          wasm-opt -Oz \
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
-            -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+        run: cargo make build-mpc-contract-optimized
 
       - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
@@ -270,11 +270,7 @@ jobs:
             --out-dir target/wasm32-unknown-unknown/release-contract
 
       - name: Build test-parallel-contract
-        run: |
-          cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
-          wasm-opt -Oz \
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm \
-            -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+        run: cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
         run: |
@@ -623,12 +619,15 @@ jobs:
         with:
           tool: nextest@0.9.126
 
+      - name: Install cargo-make
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-make@0.37.24
+
       - name: Run E2E tests
-        run: |
-          RUST_LOG=info,e2e_tests=debug cargo nextest run --cargo-profile=test-release --profile ci-e2e -p e2e-tests --all-features --locked 2>&1
+        run: cargo make e2e-tests-skip-build
         env:
-          MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-          MPC_PARALLEL_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+          RUST_LOG: info,e2e_tests=debug
 
   ci-extra:
     name: "Extra CI checks"
