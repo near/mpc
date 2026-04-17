@@ -3045,7 +3045,7 @@ expression: abi
           ],
           "properties": {
             "sign_pk": {
-              "type": "string"
+              "$ref": "#/definitions/Ed25519PublicKey"
             },
             "url": {
               "type": "string"

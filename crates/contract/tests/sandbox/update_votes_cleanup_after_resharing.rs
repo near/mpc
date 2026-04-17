@@ -1,10 +1,7 @@
 use crate::sandbox::{
-    common::{init_env, SandboxTestSetup},
+    common::SandboxTestSetup,
     utils::{
-        consts::{
-            CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE,
-            PARTICIPANT_LEN,
-        },
+        consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE},
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
@@ -37,7 +34,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(&[Curve::Secp256k1])
+        .build()
+        .await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -90,7 +90,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
                 account_id.0.parse::<near_account_id::AccountId>().unwrap(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.parse().unwrap(),
+                    sign_pk: participant_info.sign_pk.clone().into(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
@@ -153,7 +153,10 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(&[Curve::Secp256k1])
+        .build()
+        .await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
@@ -198,7 +201,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
                 account_id.0.parse::<near_account_id::AccountId>().unwrap(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.parse().unwrap(),
+                    sign_pk: participant_info.sign_pk.clone().into(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )

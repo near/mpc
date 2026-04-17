@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
-        execute_key_generation_and_add_random_state, init_env, init_with_candidates,
-        propose_and_vote_contract_binary, vote_update_till_completion, SandboxTestSetup,
+        execute_key_generation_and_add_random_state, propose_and_vote_contract_binary,
+        vote_update_till_completion, SandboxTestSetup,
     },
     utils::{
         consts::{
@@ -49,7 +49,10 @@ async fn test_propose_contract_max_size_upload() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     dbg!(contract.id());
 
     // check that we can propose an update with the maximum contract size.
@@ -77,7 +80,10 @@ async fn test_propose_update_config() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     let threshold = assert_running_return_threshold(&contract).await;
     dbg!(contract.id());
 
@@ -184,7 +190,10 @@ async fn test_propose_update_contract() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
 }
 
@@ -194,7 +203,10 @@ async fn test_invalid_contract_deploy() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     dbg!(contract.id());
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
@@ -234,7 +246,10 @@ async fn test_propose_update_contract_many() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     dbg!(contract.id());
 
     const PROPOSAL_COUNT: usize = 2;
@@ -292,7 +307,10 @@ async fn test_vote_update_gas_before_threshold() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::PROPOSE_UPDATE)
@@ -366,7 +384,10 @@ async fn test_propose_incorrect_updates() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     dbg!(contract.id());
 
     let dummy_config = near_mpc_contract_interface::types::InitConfig::default();
@@ -405,7 +426,11 @@ async fn many_sequential_updates() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, number_of_participants).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .with_number_of_participants(number_of_participants)
+        .build()
+        .await;
     dbg!(contract.id());
     let number_of_updates = 3;
     for _ in 0..number_of_updates {
@@ -428,7 +453,11 @@ async fn only_one_vote_from_participant() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, number_of_participants).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .with_number_of_participants(number_of_participants)
+        .build()
+        .await;
     dbg!(contract.id());
 
     let execution = mpc_signer_accounts[0]
@@ -518,8 +547,12 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
-    let (worker, contract, mpc_signer_accounts, _) =
-        init_with_candidates(vec![], None, PARTICIPANT_LEN).await;
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder().build().await;
 
     let participants = assert_running_return_participants(&contract)
         .await
@@ -538,9 +571,14 @@ async fn update_from_current_contract_to_migration_contract() {
 
 #[tokio::test]
 async fn migration_function_rejects_external_callers() {
-    let number_of_participants: usize = 2;
-    let (_worker, contract, mpc_signer_accounts, _) =
-        init_with_candidates(vec![], None, number_of_participants).await;
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_number_of_participants(2)
+        .build()
+        .await;
 
     let execution_error = mpc_signer_accounts[0]
         .call(contract.id(), method_names::MIGRATE)

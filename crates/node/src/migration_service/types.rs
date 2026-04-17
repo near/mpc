@@ -487,7 +487,8 @@ pub mod tests {
         height: u64,
         port_override: Option<u16>,
     ) -> anyhow::Result<ContractState> {
-        let dto: near_mpc_contract_interface::types::ProtocolContractState = state.clone().into();
+        let dto: near_mpc_contract_interface::types::ProtocolContractState =
+            state.clone().try_into().unwrap();
         ContractState::from_contract_state(&dto, height, port_override)
     }
 

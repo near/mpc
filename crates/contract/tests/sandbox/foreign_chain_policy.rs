@@ -1,9 +1,7 @@
 #![allow(non_snake_case)]
 
-use std::collections::BTreeMap;
-
-use crate::sandbox::common::{init_env, SandboxTestSetup};
-use crate::sandbox::utils::consts::{ALL_CURVES, PARTICIPANT_LEN};
+use crate::sandbox::common::SandboxTestSetup;
+use crate::sandbox::utils::consts::ALL_CURVES;
 use assert_matches::assert_matches;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names::{
@@ -11,6 +9,7 @@ use near_mpc_contract_interface::method_names::{
 };
 use near_mpc_contract_interface::types as dtos;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 #[tokio::test]
 async fn vote_foreign_chain_policy__should_reject_empty_rpc_providers() {
@@ -19,7 +18,10 @@ async fn vote_foreign_chain_policy__should_reject_empty_rpc_providers() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: a participant votes with a policy containing an empty RPC providers set
     let transaction_result = mpc_signer_accounts[0]
@@ -51,7 +53,10 @@ async fn vote_foreign_chain_policy_accepts_valid_policy() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: a participant votes with a valid policy containing non-empty RPC providers
     let transaction_result = mpc_signer_accounts[0]
@@ -83,7 +88,10 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: a participant votes with a policy containing duplicate RPC providers
     let transaction_result = mpc_signer_accounts[0]
@@ -136,7 +144,10 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: a participant votes with a policy containing duplicate chain keys.
     // The json! macro cannot represent duplicate object keys, so we use raw JSON bytes.
@@ -196,7 +207,10 @@ async fn register_foreign_chain_config__stores_and_returns_supported_chains() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: ALL participants register the same supported chains
     let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
@@ -251,7 +265,10 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: first participant registers Bitcoin + Starknet
     let bitcoin_and_starknet: dtos::ForeignChainConfiguration = BTreeMap::from([
@@ -324,7 +341,10 @@ async fn register_foreign_chain_config__returns_empty_when_not_all_registered() 
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     // When: only one participant registers
     let bitcoin_only: dtos::ForeignChainConfiguration = BTreeMap::from([(

@@ -469,7 +469,7 @@ impl FakeIndexerCore {
                     {
                         let state = contract.lock().await;
                         let dto_state: near_mpc_contract_interface::types::ProtocolContractState =
-                            state.state.clone().into();
+                            state.state.clone().try_into().unwrap();
                         let config = ContractState::from_contract_state(
                             &dto_state,
                             state.env.block_height,

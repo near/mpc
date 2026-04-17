@@ -1,7 +1,6 @@
 use crate::sandbox::{
-    common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
+    common::{gen_accounts, submit_tee_attestations, SandboxTestSetup},
     utils::{
-        consts::PARTICIPANT_LEN,
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_tee_accounts,
@@ -36,7 +35,10 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(&[Curve::Secp256k1], PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(&[Curve::Secp256k1])
+        .build()
+        .await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
@@ -94,7 +96,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
                 account_id.0.parse::<near_account_id::AccountId>().unwrap(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.parse().unwrap(),
+                    sign_pk: participant_info.sign_pk.clone().into(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
