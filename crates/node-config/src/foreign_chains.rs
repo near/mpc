@@ -52,6 +52,7 @@ impl ForeignChainsConfig {
             && self.abstract_chain.is_none()
             && self.starknet.is_none()
             && self.bnb.is_none()
+            && self.base.is_none()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {

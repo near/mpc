@@ -843,6 +843,25 @@ mod tests {
     }
 
     #[test]
+    fn node_config_response_from__omits_auth_from_base_provider() {
+        // Given
+        let config = test_config();
+
+        // When
+        let response = NodeConfigResponse::from(config);
+
+        // Then
+        let provider = &response.foreign_chains.base.unwrap().providers["public"];
+        assert_eq!(
+            *provider,
+            BaseProvider {
+                rpc_url: "https://base.publicnode.com".to_string(),
+                api_variant: BaseApiVariant::Standard,
+            }
+        );
+    }
+
+    #[test]
     fn node_config_response_from__preserves_chain_level_fields() {
         // Given
         let config = test_config();
