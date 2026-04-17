@@ -200,8 +200,8 @@ pub mod tests {
             domain::{AddDomainsVotes, DomainId},
             key_state::{AttemptId, KeyEventId},
             test_utils::gen_account_id,
+            threshold_votes::ThresholdParametersVotes,
             thresholds::{Threshold, ThresholdParameters},
-            votes::ThresholdParametersVotes,
         },
         state::test_utils::gen_resharing_state,
     };
