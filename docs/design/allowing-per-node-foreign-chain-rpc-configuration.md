@@ -20,9 +20,9 @@ requiring all other nodes to have the exact same configuration.
 
 2. Nodes do not need to have local configurations with all RPC providers that are whitelisted, a quorum number of RPC providers is fine.
 
-3. Every node partaking in a foreign signature verification request will query all its locally configured RPC providers independently of other nodes. A quorum of the RPC providers must all agree on the verification.
+3. Every node partaking in a foreign signature verification request will query all its locally configured RPC providers for the relevant chain, independently of other nodes. A quorum of the RPC providers must all agree on the verification.
 
-4. A foreign chain is considered supported by the MPC network iff every node has at least a quorum number of valid RPC providers.
+4. A foreign chain is considered supported by the MPC network iff every node has at least a quorum number of whitelisted RPC providers configured for that chain. The quorum threshold is per-chain, but the provider whitelist is global.
 
 ## Why
 The current setup has many limitations and was implemented as an MVP.
@@ -50,15 +50,15 @@ We can extend the contract to contain a feature for voting on whitelisting of RP
 struct MpcContractState {
     //..
     //..
-    foreign_chain_rpc_policy: RpcPolicies
+    foreign_chain_rpc_config: ForeignChainRpcConfig
 }
 
-struct RpcPolicies {
-    foreign_chains: BTreeMap<ForeignChain, RpcPolicy>,
+struct ForeignChainRpcConfig {
+    chain_policies: BTreeMap<ForeignChain, RpcPolicy>,
+    trusted_rpc_providers: BTreeSet<RpcProvider>,
 }
 
 struct RpcPolicy {
-    whitelisted_rpc_providers: BTreeSet<RpcProvider>,
     // the minimum number of RPC providers that must verify the foreign
     // tx request for a node to consider the tx as verified.
     quorum_threshold: u8,
@@ -81,7 +81,7 @@ struct RpcProvider {
 
 
 ### Nodes checking if local configuration is valid
-On startup, the node will check its [local foreign chain configuration](https://github.com/near/mpc/blob/4b2e758ee468738579af298f482aa13f9b5d269f/crates/node-config/src/foreign_chains.rs#L23-L37) to assert that all RPC providers are whitelisted on-chain.
+On startup, the node will check its [local foreign chain configuration](https://github.com/near/mpc/blob/4b2e758ee468738579af298f482aa13f9b5d269f/crates/node-config/src/foreign_chains.rs#L23-L37) to assert that all RPC providers are present in the global on-chain whitelist.
 
 If an RPC provider with a base URL that is not whitelisted is detected, then that RPC entry should be dropped and an error log emitted.
 > Alternatively, we can hard-crash the node so it is obvious when a misconfiguration occurs.
