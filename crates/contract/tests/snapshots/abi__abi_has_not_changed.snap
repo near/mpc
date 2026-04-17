@@ -117,7 +117,14 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/CodeHashesVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId2"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -499,7 +506,14 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/LauncherHashVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId2"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -566,7 +580,14 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/MeasurementVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -1585,10 +1606,18 @@ expression: abi
           ]
         },
         "AuthenticatedParticipantId": {
-          "description": "A participant ID that has been authenticated (i.e., the caller is this participant).",
+          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
           "allOf": [
             {
-              "$ref": "#/definitions/ParticipantId2"
+              "$ref": "#/definitions/ParticipantId"
+            }
+          ]
+        },
+        "AuthenticatedParticipantId2": {
+          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ParticipantId"
             }
           ]
         },
@@ -1757,21 +1786,6 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
-        },
-        "CodeHashesVotes": {
-          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/DockerImageHash"
-              }
-            }
-          }
         },
         "Collateral": {
           "type": "object",
@@ -2775,99 +2789,11 @@ expression: abi
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "LauncherHashVotes": {
-          "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/LauncherVoteAction"
-              }
-            }
-          }
-        },
         "LauncherImageHash": {
           "type": "string",
           "maxLength": 64,
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
-        },
-        "LauncherVoteAction": {
-          "description": "The action a participant is voting for on a launcher image hash.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Add"
-              ],
-              "properties": {
-                "Add": {
-                  "$ref": "#/definitions/LauncherImageHash"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Remove"
-              ],
-              "properties": {
-                "Remove": {
-                  "$ref": "#/definitions/LauncherImageHash"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "MeasurementVoteAction": {
-          "description": "The action a participant is voting for on an OS measurement set.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Add"
-              ],
-              "properties": {
-                "Add": {
-                  "$ref": "#/definitions/ContractExpectedMeasurements"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Remove"
-              ],
-              "properties": {
-                "Remove": {
-                  "$ref": "#/definitions/ContractExpectedMeasurements"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "MeasurementVotes": {
-          "description": "Tracks votes for adding or removing OS measurements. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/MeasurementVoteAction"
-              }
-            }
-          }
         },
         "Metrics": {
           "type": "object",
