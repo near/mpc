@@ -18,3 +18,5 @@ pub const CKDS_QUEUE_REQUESTS_INDEXED: &str = "mpc_pending_ckds_queue_requests_i
 pub const CKDS_QUEUE_RESPONSES_INDEXED: &str = "mpc_pending_ckds_queue_responses_indexed";
 pub const CKDS_QUEUE_MATCHING_RESPONSES: &str = "mpc_pending_ckds_queue_matching_responses_indexed";
 pub const CKDS_QUEUE_ATTEMPTS: &str = "mpc_pending_ckds_queue_attempts_generated";
+
+pub const INDEXER_LATEST_BLOCK_HEIGHT: &str = "mpc_indexer_latest_block_height";
