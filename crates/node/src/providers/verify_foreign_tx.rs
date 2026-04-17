@@ -33,6 +33,7 @@ pub(crate) struct ForeignChainInspectors<Client> {
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
+        // using a macro because the chain config and inspector types differ per chain
         macro_rules! build_inspectors {
             ($chain_config:expr, $Inspector:ident) => {
                 match $chain_config {
