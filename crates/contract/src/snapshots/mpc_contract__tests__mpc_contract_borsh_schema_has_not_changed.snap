@@ -51,12 +51,6 @@ BorshSchemaContainer {
                 "NonEmptyBTreeSet<RpcProvider>",
             ],
         },
-        "(PublicKey, NodeAttestation)": Tuple {
-            elements: [
-                "PublicKey",
-                "NodeAttestation",
-            ],
-        },
         "AccountId": Struct {
             fields: UnnamedFields(
                 [
@@ -183,11 +177,6 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(ForeignChain, NonEmptyBTreeSet<RpcProvider>)",
         },
-        "BTreeMap<PublicKey, NodeAttestation>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(PublicKey, NodeAttestation)",
-        },
         "BTreeSet<AuthenticatedParticipantId>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -252,6 +241,10 @@ BorshSchemaContainer {
                     ),
                     (
                         "clean_tee_status_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "clean_invalid_attestations_tera_gas",
                         "u64",
                     ),
                     (
@@ -418,20 +411,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "u64",
-                ],
-            ),
-        },
-        "ExpectedMeasurements": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "rtmrs",
-                        "Measurements",
-                    ),
-                    (
-                        "key_provider_event_digest",
-                        "[u8; 48]",
-                    ),
                 ],
             ),
         },
@@ -772,28 +751,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "Measurements": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "mrtd",
-                        "[u8; 48]",
-                    ),
-                    (
-                        "rtmr0",
-                        "[u8; 48]",
-                    ),
-                    (
-                        "rtmr1",
-                        "[u8; 48]",
-                    ),
-                    (
-                        "rtmr2",
-                        "[u8; 48]",
-                    ),
-                ],
-            ),
-        },
         "Metrics": Struct {
             fields: NamedFields(
                 [
@@ -804,54 +761,6 @@ BorshSchemaContainer {
                     (
                         "sign_with_v2_payload_count",
                         "u64",
-                    ),
-                ],
-            ),
-        },
-        "MockAttestation": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Valid",
-                    "MockAttestation__Valid",
-                ),
-                (
-                    1,
-                    "Invalid",
-                    "MockAttestation__Invalid",
-                ),
-                (
-                    2,
-                    "WithConstraints",
-                    "MockAttestation__WithConstraints",
-                ),
-            ],
-        },
-        "MockAttestation__Invalid": Struct {
-            fields: Empty,
-        },
-        "MockAttestation__Valid": Struct {
-            fields: Empty,
-        },
-        "MockAttestation__WithConstraints": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "mpc_docker_image_hash",
-                        "Option<DockerImageHash>",
-                    ),
-                    (
-                        "launcher_docker_compose_hash",
-                        "Option<LauncherDockerComposeHash>",
-                    ),
-                    (
-                        "expiry_timestamp_seconds",
-                        "Option<u64>",
-                    ),
-                    (
-                        "expected_measurements",
-                        "Option<ExpectedMeasurements>",
                     ),
                 ],
             ),
@@ -945,44 +854,12 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "NodeAttestation": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "node_id",
-                        "NodeId",
-                    ),
-                    (
-                        "verified_attestation",
-                        "VerifiedAttestation",
-                    ),
-                ],
-            ),
-        },
         "NodeForeignChainConfigurations": Struct {
             fields: NamedFields(
                 [
                     (
                         "foreign_chain_configuration_by_node",
                         "IterableMap",
-                    ),
-                ],
-            ),
-        },
-        "NodeId": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "account_id",
-                        "AccountId",
-                    ),
-                    (
-                        "tls_public_key",
-                        "PublicKey",
-                    ),
-                    (
-                        "account_public_key",
-                        "Option<PublicKey>",
                     ),
                 ],
             ),
@@ -1006,21 +883,6 @@ BorshSchemaContainer {
             length_range: 1..=4294967295,
             elements: "RpcProvider",
         },
-        "Option<DockerImageHash>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "DockerImageHash",
-                ),
-            ],
-        },
         "Option<EpochId>": Enum {
             tag_width: 1,
             variants: [
@@ -1033,21 +895,6 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "EpochId",
-                ),
-            ],
-        },
-        "Option<ExpectedMeasurements>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "ExpectedMeasurements",
                 ),
             ],
         },
@@ -1066,36 +913,6 @@ BorshSchemaContainer {
                 ),
             ],
         },
-        "Option<LauncherDockerComposeHash>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "LauncherDockerComposeHash",
-                ),
-            ],
-        },
-        "Option<PublicKey>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "PublicKey",
-                ),
-            ],
-        },
         "Option<PublicKeyExtended>": Enum {
             tag_width: 1,
             variants: [
@@ -1108,21 +925,6 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "PublicKeyExtended",
-                ),
-            ],
-        },
-        "Option<u64>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "u64",
                 ),
             ],
         },
@@ -1425,7 +1227,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "stored_attestations",
-                        "BTreeMap<PublicKey, NodeAttestation>",
+                        "IterableMap",
                     ),
                     (
                         "allowed_measurements",
@@ -1483,28 +1285,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "ValidatedDstackAttestation": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "mpc_image_hash",
-                        "DockerImageHash",
-                    ),
-                    (
-                        "launcher_compose_hash",
-                        "LauncherDockerComposeHash",
-                    ),
-                    (
-                        "expiry_timestamp_seconds",
-                        "u64",
-                    ),
-                    (
-                        "measurements",
-                        "ExpectedMeasurements",
-                    ),
-                ],
-            ),
-        },
         "Vec<(AccountId, ParticipantId, ParticipantInfo)>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -1559,43 +1339,9 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "VerifiedAttestation": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Dstack",
-                    "VerifiedAttestation__Dstack",
-                ),
-                (
-                    1,
-                    "Mock",
-                    "VerifiedAttestation__Mock",
-                ),
-            ],
-        },
-        "VerifiedAttestation__Dstack": Struct {
-            fields: UnnamedFields(
-                [
-                    "ValidatedDstackAttestation",
-                ],
-            ),
-        },
-        "VerifiedAttestation__Mock": Struct {
-            fields: UnnamedFields(
-                [
-                    "MockAttestation",
-                ],
-            ),
-        },
         "[u8; 32]": Sequence {
             length_width: 0,
             length_range: 32..=32,
-            elements: "u8",
-        },
-        "[u8; 48]": Sequence {
-            length_width: 0,
-            length_range: 48..=48,
             elements: "u8",
         },
         "[u8; 64]": Sequence {
