@@ -58,7 +58,7 @@ impl<'de> Deserialize<'de> for SignRequestArgs {
             (Some(_), Some(_)) => {
                 return Err(serde::de::Error::custom(
                     "payload_v2 and payload are mutually exclusive",
-                ))
+                ));
             }
             (None, None) => return Err(serde::de::Error::missing_field("payload_v2")),
         };
@@ -69,7 +69,7 @@ impl<'de> Deserialize<'de> for SignRequestArgs {
             (Some(_), Some(_)) => {
                 return Err(serde::de::Error::custom(
                     "domain_id and key_version are mutually exclusive",
-                ))
+                ));
             }
             (None, None) => return Err(serde::de::Error::missing_field("domain_id")),
         };
@@ -119,6 +119,7 @@ impl SignatureRequest {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use near_mpc_bounded_collections::BoundedVec;
@@ -207,7 +208,7 @@ mod tests {
         let result = serde_json::from_value::<SignRequestArgs>(json);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[test]
@@ -224,7 +225,7 @@ mod tests {
         let result = serde_json::from_value::<SignRequestArgs>(json);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[test]
@@ -255,7 +256,7 @@ mod tests {
         let result = serde_json::from_value::<SignRequestArgs>(json);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[test]
@@ -270,7 +271,7 @@ mod tests {
         let result = serde_json::from_value::<SignRequestArgs>(json);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[test]
@@ -285,7 +286,7 @@ mod tests {
         let result = serde_json::from_value::<SignRequestArgs>(json);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[test]
@@ -351,7 +352,7 @@ mod tests {
         let result = serde_json::from_value::<SignRequestArgs>(json);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[test]
