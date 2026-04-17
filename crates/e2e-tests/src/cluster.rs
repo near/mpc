@@ -60,6 +60,9 @@ pub struct MpcClusterConfig {
     /// An empty vec means all nodes are participants. Set to a subset to start
     /// extra non-participant nodes (useful for resharing and attestation tests).
     pub initial_participant_indices: Vec<usize>,
+    /// Per-node foreign chains configuration. If empty, all nodes get the default
+    /// (empty) config. If non-empty, must have exactly `num_nodes` entries.
+    pub node_foreign_chains_configs: Vec<mpc_node_config::ForeignChainsConfig>,
 }
 
 impl MpcClusterConfig {
@@ -97,6 +100,7 @@ impl MpcClusterConfig {
             sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
+            node_foreign_chains_configs: vec![],
         }
     }
 
@@ -282,6 +286,57 @@ impl MpcCluster {
             self.wait_for_node_healthy(idx).await?;
         }
         Ok(())
+    }
+
+    /// Create a migration target node for the given source node.
+    /// The target shares the same NEAR account as the source but has a different P2P key.
+    /// Returns the node index in the cluster's node list.
+    pub fn create_migration_target(&mut self, source_idx: usize) -> anyhow::Result<usize> {
+        let source = match &self.nodes[source_idx] {
+            MpcNodeState::Running(n) => n.setup(),
+            MpcNodeState::Stopped(s) => s,
+        };
+
+        let target_idx = self.nodes.len();
+
+        // Generate a distinct P2P key for the target using a high seed
+        let p2p_key = generate_deterministic_key(300 + target_idx as u64);
+        // Use the SAME near signer key (same account)
+        let near_signer_key = source.near_signer_key().clone();
+
+        let binary_path = source.binary_path().to_path_buf();
+        let signer_account_id = source.account_id().clone();
+        let mpc_contract_id = source.mpc_contract_id().clone();
+
+        let sandbox = &self.sandbox;
+        let chain_id = sandbox.chain_id()?;
+        let genesis_path = sandbox.genesis_path();
+        let boot_nodes = sandbox.boot_nodes()?;
+
+        let home_dir = self.test_dir.path().join(format!("node{target_idx}"));
+
+        let setup = MpcNodeSetup::new(MpcNodeSetupArgs {
+            node_index: target_idx,
+            home_dir,
+            binary_path,
+            signer_account_id,
+            p2p_signing_key: p2p_key.clone(),
+            near_signer_key,
+            ports: NodePorts::from_allocator(&self.ports, target_idx),
+            mpc_contract_id,
+            triples_to_buffer: 10,
+            presignatures_to_buffer: 10,
+            chain_id,
+            near_genesis_path: genesis_path,
+            near_boot_nodes: boot_nodes,
+            foreign_chains_config: Default::default(),
+        })?;
+
+        self.node_keys.push(p2p_key.clone());
+        self.operator_keys
+            .push(generate_deterministic_key(400 + target_idx as u64));
+        self.nodes.push(MpcNodeState::Stopped(setup));
+        Ok(target_idx)
     }
 
     pub fn kill_all(&mut self) -> anyhow::Result<()> {
@@ -539,6 +594,104 @@ impl MpcCluster {
         })
     }
 
+    /// View the foreign chain policy from the contract.
+    pub async fn view_foreign_chain_policy(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainPolicy> {
+        self.contract
+            .view(method_names::GET_FOREIGN_CHAIN_POLICY)
+            .await
+    }
+
+    /// View the foreign chain policy proposals from the contract.
+    pub async fn view_foreign_chain_policy_proposals(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainPolicyVotes> {
+        self.contract
+            .view(method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
+            .await
+    }
+
+    /// Vote for a foreign chain policy from a specific node.
+    pub async fn vote_foreign_chain_policy(
+        &self,
+        node_index: usize,
+        policy: serde_json::Value,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let node = &self.nodes[node_index];
+        let client = self
+            .blockchain
+            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
+        self.contract
+            .call_from(
+                &client,
+                method_names::VOTE_FOREIGN_CHAIN_POLICY,
+                json!({ "policy": policy }),
+            )
+            .await
+    }
+
+    /// View migration info from the contract.
+    pub async fn view_migration_info(&self) -> anyhow::Result<serde_json::Value> {
+        self.contract.view(method_names::MIGRATION_INFO).await
+    }
+
+    /// Register backup service info for a node.
+    pub async fn register_backup_service(
+        &self,
+        node_index: usize,
+        backup_service_info: serde_json::Value,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let node = &self.nodes[node_index];
+        let client = self
+            .blockchain
+            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
+        self.contract
+            .call_from(
+                &client,
+                method_names::REGISTER_BACKUP_SERVICE,
+                json!({ "backup_service_info": backup_service_info }),
+            )
+            .await
+    }
+
+    /// Start node migration for a specific node.
+    pub async fn start_node_migration(
+        &self,
+        node_index: usize,
+        destination_node_info: serde_json::Value,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let node = &self.nodes[node_index];
+        let client = self
+            .blockchain
+            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
+        self.contract
+            .call_from(
+                &client,
+                method_names::START_NODE_MIGRATION,
+                json!({ "destination_node_info": destination_node_info }),
+            )
+            .await
+    }
+
+    /// Send a verify_foreign_transaction request from the default user account.
+    pub async fn send_verify_foreign_transaction(
+        &self,
+        request: serde_json::Value,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let user = self.default_user_account().clone();
+        let client = self.user_client(&user)?;
+        self.contract
+            .call_from_with_deposit(
+                &client,
+                method_names::VERIFY_FOREIGN_TRANSACTION,
+                json!({ "request": request }),
+                SIGN_GAS,
+                SIGN_DEPOSIT,
+            )
+            .await
+    }
+
     pub fn wipe_db(&self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
             match &self.nodes[idx] {
@@ -696,6 +849,20 @@ impl MpcNodeState {
         match self {
             MpcNodeState::Running(n) => n.setup().p2p_url(),
             MpcNodeState::Stopped(s) => s.p2p_url(),
+        }
+    }
+
+    pub fn backup_encryption_key_hex(&self) -> &str {
+        match self {
+            MpcNodeState::Running(n) => n.setup().backup_encryption_key_hex(),
+            MpcNodeState::Stopped(s) => s.backup_encryption_key_hex(),
+        }
+    }
+
+    pub fn near_signer_public_key_str(&self) -> String {
+        match self {
+            MpcNodeState::Running(n) => n.setup().near_signer_public_key_str(),
+            MpcNodeState::Stopped(s) => s.near_signer_public_key_str(),
         }
     }
 }
@@ -871,6 +1038,12 @@ fn start_mpc_nodes(
             config.binary_paths[i].clone()
         };
 
+        let foreign_chains_config = if config.node_foreign_chains_configs.is_empty() {
+            Default::default()
+        } else {
+            config.node_foreign_chains_configs[i].clone()
+        };
+
         let setup = MpcNodeSetup::new(MpcNodeSetupArgs {
             node_index: i,
             home_dir: test_dir.join(format!("node{i}")),
@@ -885,6 +1058,7 @@ fn start_mpc_nodes(
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
+            foreign_chains_config,
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }

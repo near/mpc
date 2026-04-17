@@ -24,6 +24,11 @@ pub const PARALLEL_SIGN_CALLS_PORT_SEED: u16 = 8;
 pub const CKD_VERIFICATION_PORT_SEED: u16 = 9;
 pub const LOST_ASSETS_PORT_SEED: u16 = 10;
 pub const CKD_PV_VERIFICATION_PORT_SEED: u16 = 11;
+pub const MIGRATION_ENDPOINT_PORT_SEED: u16 = 12;
+pub const FOREIGN_CHAIN_POLICY_PORT_SEED: u16 = 13;
+pub const CLEANUP_LAGGING_NODE_PORT_SEED: u16 = 14;
+pub const MIGRATION_SERVICE_PORT_SEED: u16 = 15;
+pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 16;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///

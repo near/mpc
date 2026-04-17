@@ -3050,6 +3050,7 @@ dependencies = [
  "near-account-id 2.6.0",
  "near-indexer-primitives",
  "near-kit",
+ "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
  "near-sandbox",
