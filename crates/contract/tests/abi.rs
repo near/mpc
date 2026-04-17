@@ -14,8 +14,10 @@ fn compile_project() -> (Vec<u8>, serde_json::Value) {
     };
 
     let contract_path = test_utils::contract_build::build_contract_path(opts);
+    println!("path: {:?}", contract_path);
 
     let wasm = std::fs::read(&contract_path).unwrap();
+    println!("size: {:?}", wasm.len());
     let abi_path = out_dir.join("mpc_contract_abi.json");
     let abi_str = std::fs::read_to_string(abi_path).unwrap();
     let abi = serde_json::from_str::<serde_json::Value>(&abi_str).unwrap();

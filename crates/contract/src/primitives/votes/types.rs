@@ -14,7 +14,7 @@ pub trait VoterBounds: BorshSerialize + BorshDeserialize + Ord + Clone {}
 impl<T: BorshSerialize + BorshDeserialize + Ord + Clone> ProposalBounds for T {}
 impl<T: BorshSerialize + BorshDeserialize + Ord + Clone> VoterBounds for T {}
 
-#[near(serializers=[borsh])]
+#[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, From, Deref, Into)]
 pub struct ProposalId(pub(crate) u64);
 

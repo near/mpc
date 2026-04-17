@@ -7,7 +7,10 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::NodeImageHash;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, near, store::LookupMap};
 
@@ -17,14 +20,51 @@ use crate::{
     primitives::{
         ckd::CKDRequest,
         domain::DomainId,
+        key_state::AuthenticatedParticipantId,
         signature::{Tweak, YieldIndex},
     },
     state::ProtocolContractState,
     storage_keys::StorageKey,
-    tee::tee_state::TeeState,
+    tee::{
+        measurements::{AllowedMeasurements, MeasurementVoteAction, MeasurementVotes},
+        proposal::{
+            AllowedDockerImageHashes, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
+            LauncherVoteAction,
+        },
+        tee_state::NodeAttestation,
+    },
     update::ProposedUpdates,
     ForeignChainPolicyVotes, IntoInterfaceType, NodeForeignChainConfigurations,
 };
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct OldLauncherHashVotes {
+    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
+}
+
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OldMeasurementVotes {
+    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
+}
+
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OldCodeHashesVotes {
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
+}
+
+/// Previous TeeState layout — without `allowed_measurements` and `measurement_votes` fields.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldTeeState {
+    allowed_docker_image_hashes: AllowedDockerImageHashes,
+    allowed_launcher_images: AllowedLauncherImages,
+    votes: OldCodeHashesVotes,
+    launcher_votes: OldLauncherHashVotes,
+    stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: OldMeasurementVotes,
+}
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
@@ -37,7 +77,7 @@ pub struct MpcContract {
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
     config: OldConfig,
-    tee_state: TeeState,
+    tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: OldStaleData,
@@ -82,6 +122,33 @@ impl From<MpcContract> for crate::MpcContract {
                     proposed_policy.chains.clone().into(),
                 );
         }
+
+        let mut new_launcher_votes = LauncherHashVotes::new(StorageKey::LauncherHashVotes);
+        for (authenticated_id, launcher_vote) in value.tee_state.launcher_votes.vote_by_account {
+            new_launcher_votes.vote(authenticated_id, launcher_vote);
+        }
+
+        let mut new_measurement_votes = MeasurementVotes::new(StorageKey::MeasurementVotes);
+        for (authenticated_id, measurement_vote) in
+            value.tee_state.measurement_votes.vote_by_account
+        {
+            new_measurement_votes.vote(authenticated_id, measurement_vote);
+        }
+
+        let mut new_code_hash_votes = CodeHashesVotes::new(StorageKey::CodeHashVotes);
+        for (authenticated_id, code_hash_vote) in value.tee_state.votes.proposal_by_account {
+            new_code_hash_votes.vote(authenticated_id, code_hash_vote);
+        }
+
+        let new_tee_state = crate::tee::tee_state::TeeState {
+            allowed_docker_image_hashes: value.tee_state.allowed_docker_image_hashes,
+            allowed_launcher_images: value.tee_state.allowed_launcher_images,
+            votes: new_code_hash_votes,
+            launcher_votes: new_launcher_votes,
+            stored_attestations: value.tee_state.stored_attestations,
+            allowed_measurements: value.tee_state.allowed_measurements,
+            measurement_votes: new_measurement_votes,
+        };
         Self {
             protocol_state: value.protocol_state,
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
@@ -91,7 +158,7 @@ impl From<MpcContract> for crate::MpcContract {
             foreign_chain_policy,
             foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             config: value.config.into(),
-            tee_state: value.tee_state,
+            tee_state: new_tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {
