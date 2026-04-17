@@ -1390,14 +1390,7 @@ BorshSchemaContainer {
             ),
         },
         "StaleData": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "pending_signature_requests_pre_upgrade",
-                        "LookupMap",
-                    ),
-                ],
-            ),
+            fields: Empty,
         },
         "String": Sequence {
             length_width: 4,
