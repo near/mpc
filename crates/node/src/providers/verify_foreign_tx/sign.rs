@@ -1,5 +1,6 @@
 use anyhow::{bail, Context};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
+use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
@@ -220,7 +221,7 @@ where
 
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<BnbExtractor> = request
+                let extractors: Vec<BaseExtractor> = request
                     .extractors
                     .iter()
                     .cloned()
