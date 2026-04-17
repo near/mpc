@@ -20,9 +20,10 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use mpc_contract::primitives::domain::{Curve, DomainConfig};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
+use mpc_primitives::domain::Curve;
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::DomainConfig;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
@@ -726,8 +727,9 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
     use assert_matches::assert_matches;
-    use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use mpc_primitives::domain::{Curve, DomainId};
+    use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

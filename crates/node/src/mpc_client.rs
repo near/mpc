@@ -26,8 +26,9 @@ use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
-use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
-use mpc_contract::primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::{Curve, DomainId};
+use near_mpc_contract_interface::types::CKDResponse;
+use near_mpc_crypto_types::kdf::derive_tweak;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -252,7 +253,7 @@ where
                                 tweak: derive_tweak(&predecessor_id, &request.path),
                                 entropy,
                                 timestamp_nanosec,
-                                domain: request.domain_id.into(),
+                                domain: request.domain_id,
                             };
                             // Index the signature requests as soon as we see them. We'll decide
                             // whether to *process* them after.
@@ -283,7 +284,7 @@ where
                                 app_id: request.app_id,
                                 entropy,
                                 timestamp_nanosec,
-                                domain_id: request.domain_id.into(),
+                                domain_id: request.domain_id,
                             };
                             // Index the ckd requests as soon as we see them. We'll decide
                             // whether to *process* them after.
@@ -310,7 +311,7 @@ where
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
-                                domain_id: request.domain_id.into(),
+                                domain_id: request.domain_id,
                                 entropy,
                                 payload_version: request.payload_version,
                                 request: request.request,

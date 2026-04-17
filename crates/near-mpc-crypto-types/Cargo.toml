@@ -21,9 +21,13 @@ curve25519-dalek = { workspace = true, optional = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true, optional = true }
 k256 = { workspace = true, optional = true }
+mpc-primitives = { workspace = true }
+near-account-id = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 near-sdk = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
+sha3 = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -33,6 +37,7 @@ schemars = { workspace = true, optional = true }
 assert_matches = { workspace = true }
 borsh = { workspace = true }
 group = { workspace = true }
+insta = { workspace = true }
 near-sdk = { workspace = true }
 rand = { workspace = true }
 serde_json = { workspace = true }

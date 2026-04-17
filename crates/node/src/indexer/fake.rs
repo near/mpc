@@ -21,12 +21,10 @@ use assert_matches::assert_matches;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
-use mpc_contract::primitives::domain::AddDomainsVotes;
 use mpc_contract::primitives::{
-    domain::{DomainConfig, DomainRegistry},
+    domain::{AddDomainsVotes, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
     participants::{ParticipantId, ParticipantInfo, Participants},
-    signature::Payload,
     thresholds::{Threshold, ThresholdParameters},
 };
 use mpc_contract::state::{
@@ -35,6 +33,7 @@ use mpc_contract::state::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{DomainConfig, Payload};
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -117,8 +116,7 @@ impl FakeMpcContractState {
         ));
     }
 
-    pub fn add_domains(&mut self, domains: Vec<dtos::DomainConfig>) {
-        let domains: Vec<DomainConfig> = domains.into_iter().map(Into::into).collect();
+    pub fn add_domains(&mut self, domains: Vec<DomainConfig>) {
         let state = match &mut self.state {
             ProtocolContractState::Running(state) => state,
             _ => panic!("Cannot add domains to non-running state"),

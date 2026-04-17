@@ -5,7 +5,7 @@ use k256::{
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
     AffinePoint, Scalar, Secp256k1,
 };
-use mpc_contract::{crypto_shared::CKDResponse, primitives::signature::Tweak};
+use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
@@ -16,7 +16,8 @@ pub use near_mpc_contract_interface::types::SubmitParticipantInfoArgs;
 use near_mpc_contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
-use near_mpc_contract_interface::types::{DomainId, KeyEventId, Keyset};
+use near_mpc_contract_interface::types::{CKDResponse, Tweak};
+use near_mpc_contract_interface::types::{KeyEventId, Keyset};
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -70,11 +71,11 @@ pub type ChainVerifyForeignTransactionRequest =
     near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 
 pub type ChainSignatureResponse = near_mpc_contract_interface::types::SignatureResponse;
-pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
+pub type ChainCKDResponse = CKDResponse;
 pub type ChainVerifyForeignTransactionResponse =
     near_mpc_contract_interface::types::VerifyForeignTransactionResponse;
 
-use mpc_contract::primitives::signature::Payload;
+use near_mpc_contract_interface::types::Payload;
 
 const MAX_RECOVERY_ID: u8 = 3;
 
@@ -266,7 +267,7 @@ impl ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
-                request.domain.into(),
+                request.domain,
             ),
             response: k256_signature_response(response.big_r, response.s, recovery_id)?,
         })
@@ -285,7 +286,7 @@ impl ChainSignatureRespondArgs {
             request: ChainSignatureRequest::new(
                 request.tweak.clone(),
                 request.payload.clone(),
-                request.domain.into(),
+                request.domain,
             ),
             response: dtos::SignatureResponse::Ed25519 {
                 signature: dtos::Ed25519Signature::from(response),
@@ -322,7 +323,7 @@ impl ChainCKDRespondArgs {
             request: ChainCKDRequest::new(
                 request.app_public_key.clone(),
                 request.app_id.clone(),
-                request.domain_id.into(),
+                request.domain_id,
             ),
             response: response.clone(),
         })
@@ -350,7 +351,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
         Ok(ChainVerifyForeignTransactionRespondArgs {
             request: VerifyForeignTransactionRequest {
                 request: request.request,
-                domain_id: request.domain_id.into(),
+                domain_id: request.domain_id,
                 payload_version: request.payload_version,
             },
             response: VerifyForeignTransactionResponse {

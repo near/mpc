@@ -8,13 +8,14 @@ pub mod test_utils;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
-    domain::{Curve, DomainConfig, DomainId, DomainRegistry},
+    domain::DomainRegistry,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
     thresholds::{Threshold, ThresholdParameters},
 };
 use initializing::InitializingContractState;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId};
 use near_sdk::near;
 use resharing::ResharingContractState;
 use running::RunningContractState;

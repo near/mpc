@@ -1,31 +1,8 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::types::DomainId;
 
-/// AppId for CKD
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct CkdAppId(pub [u8; 32]);
+pub use near_mpc_crypto_types::{CKDAppPublicKey, CKDAppPublicKeyPV, CkdAppId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
@@ -38,78 +15,11 @@ pub struct CKDRequestArgs {
     pub domain_id: DomainId,
 }
 
-#[derive(
-    Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize, BorshSerialize, BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub enum CKDAppPublicKey {
-    AppPublicKey(Bls12381G1PublicKey),
-    AppPublicKeyPV(CKDAppPublicKeyPV),
-}
-
-impl CKDAppPublicKey {
-    pub fn g1_public_key(&self) -> &Bls12381G1PublicKey {
-        match self {
-            CKDAppPublicKey::AppPublicKey(pk) => pk,
-            CKDAppPublicKey::AppPublicKeyPV(pv) => &pv.pk1,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for CKDAppPublicKey {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        enum Tagged {
-            AppPublicKey(Bls12381G1PublicKey),
-            AppPublicKeyPV(CKDAppPublicKeyPV),
-        }
-
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Helper {
-            Tagged(Tagged),
-            Plain(Bls12381G1PublicKey),
-        }
-
-        match Helper::deserialize(deserializer)? {
-            Helper::Tagged(Tagged::AppPublicKey(pk)) => Ok(CKDAppPublicKey::AppPublicKey(pk)),
-            Helper::Tagged(Tagged::AppPublicKeyPV(pk)) => Ok(CKDAppPublicKey::AppPublicKeyPV(pk)),
-            Helper::Plain(pk) => Ok(CKDAppPublicKey::AppPublicKey(pk)),
-        }
-    }
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct CKDAppPublicKeyPV {
-    pub pk1: Bls12381G1PublicKey,
-    pub pk2: Bls12381G2PublicKey,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
     use serde_json::json;
 
     fn dummy_g1() -> Bls12381G1PublicKey {

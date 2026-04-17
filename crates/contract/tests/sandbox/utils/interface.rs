@@ -1,29 +1,11 @@
 // These are temporary conversions to avoid breaking the contract API.
 // Once we complete the migration from near_sdk::PublicKey they should not be
 // needed anymore
-use mpc_contract::primitives::{
-    domain::Curve,
-    participants::{ParticipantInfo, Participants},
-};
+use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
 use near_mpc_contract_interface::types::{self as dtos};
-
-pub trait IntoInterfaceType<InterfaceType> {
-    fn into_interface_type(self) -> InterfaceType;
-}
 
 pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
-}
-
-impl IntoInterfaceType<dtos::Curve> for Curve {
-    fn into_interface_type(self) -> dtos::Curve {
-        match self {
-            Curve::Secp256k1 => dtos::Curve::Secp256k1,
-            Curve::Edwards25519 => dtos::Curve::Edwards25519,
-            Curve::Bls12381 => dtos::Curve::Bls12381,
-            Curve::V2Secp256k1 => dtos::Curve::V2Secp256k1,
-        }
-    }
 }
 
 impl IntoContractType<Participants> for &dtos::Participants {

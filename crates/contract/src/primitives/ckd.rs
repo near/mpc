@@ -1,11 +1,9 @@
-use crate::{
-    crypto_shared::{kdf::derive_app_id, CKDResponse},
-    primitives::domain::DomainId,
-};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective};
 use elliptic_curve::Group as _;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::kdf::derive_app_id;
+use near_mpc_contract_interface::types::{CKDResponse, DomainId};
 use near_sdk::{env, near};
 
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]

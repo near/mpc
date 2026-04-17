@@ -3,6 +3,8 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use thiserror::Error;
 
+pub use jsonrpsee::http_client;
+
 pub mod abstract_chain;
 pub mod base;
 pub mod bitcoin;

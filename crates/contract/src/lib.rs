@@ -12,7 +12,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_8_1_state;
+pub mod v3_9_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -24,7 +24,6 @@ use std::{
 };
 
 use crate::{
-    crypto_shared::types::CKDResponse,
     dto_mapping::{
         args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType,
         TryIntoInterfaceType,
@@ -42,7 +41,7 @@ use crate::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
 use crypto_shared::{
-    derive_key_secp256k1, derive_tweak,
+    derive_key_secp256k1,
     kdf::derive_public_key_edwards_point_ed25519,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
@@ -50,12 +49,14 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
-    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    self as dtos, CKDResponse, Metrics, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
+use dtos::{Curve, DomainConfig, DomainId, DomainPurpose};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
     env, log, near,
@@ -64,9 +65,9 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry},
+    domain::DomainRegistry,
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
-    signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
+    signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
@@ -143,6 +144,7 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+    // TODO(#2937): Remove via state migration.
     metrics: Metrics,
 }
 
@@ -158,24 +160,12 @@ pub struct MpcContract {
 /// 2. The main contract state becomes usable immediately.
 /// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
 ///    separate transactions to gradually deallocate this storage.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-struct StaleData {
-    pending_signature_requests_pre_upgrade: LookupMap<v3_8_1_state::SignatureRequest, YieldIndex>,
-}
-
-impl StaleData {
-    fn new() -> Self {
-        Self {
-            pending_signature_requests_pre_upgrade: LookupMap::new(
-                StorageKey::PendingSignatureRequestsV2,
-            ),
-        }
-    }
-}
+struct StaleData {}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
@@ -385,16 +375,6 @@ impl MpcContract {
             request
         );
 
-        if request.deprecated_payload.is_some() {
-            self.metrics.sign_with_v1_payload_count += 1;
-        }
-
-        if request.payload_v2.is_some() {
-            self.metrics.sign_with_v2_payload_count += 1;
-        }
-
-        let request: SignRequest = request.try_into().unwrap();
-
         let (domain_config, predecessor) = self.check_request_preconditions(
             request.domain_id,
             DomainPurpose::Sign,
@@ -517,7 +497,7 @@ impl MpcContract {
             request
         );
 
-        let domain_id: DomainId = request.domain_id.into();
+        let domain_id: DomainId = request.domain_id;
         let (_, predecessor) = self.check_request_preconditions(
             domain_id,
             DomainPurpose::CKD,
@@ -568,7 +548,7 @@ impl MpcContract {
         );
 
         self.check_request_preconditions(
-            request.domain_id.into(),
+            request.domain_id,
             DomainPurpose::ForeignTx,
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
             MINIMUM_SIGN_REQUEST_DEPOSIT,
@@ -693,18 +673,7 @@ impl MpcContract {
             env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
         } else {
-            // Fall back to the pre-upgrade map for in-flight requests from before the migration.
-            let old_request = v3_8_1_state::SignatureRequest::from(&request);
-            if let Some(YieldIndex { data_id }) = self
-                .stale_data
-                .pending_signature_requests_pre_upgrade
-                .remove(&old_request)
-            {
-                env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
-                Ok(())
-            } else {
-                Err(InvalidParameters::RequestNotFound.into())
-            }
+            Err(InvalidParameters::RequestNotFound.into())
         }
     }
 
@@ -1765,7 +1734,7 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: StaleData::new(),
+            stale_data: StaleData {},
             metrics: Default::default(),
             node_foreign_chain_configurations: Default::default(),
         })
@@ -1830,7 +1799,7 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: StaleData::new(),
+            stale_data: StaleData {},
             metrics: Default::default(),
             node_foreign_chain_configurations: Default::default(),
         })
@@ -1848,11 +1817,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_8_1_state::MpcContract>() {
+        match try_state_read::<v3_9_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.8.1 state: {:?}", err);
+                log!("failed to deserialize state into v3.9.0 state: {:?}", err);
             }
         };
 
@@ -1907,16 +1876,7 @@ impl MpcContract {
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        self.pending_signature_requests
-            .get(request)
-            .cloned()
-            .or_else(|| {
-                let old_request = v3_8_1_state::SignatureRequest::from(request);
-                self.stale_data
-                    .pending_signature_requests_pre_upgrade
-                    .get(&old_request)
-                    .cloned()
-            })
+        self.pending_signature_requests.get(request).cloned()
     }
 
     pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
@@ -2009,15 +1969,7 @@ impl MpcContract {
         match signature {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
-                let removed = self.pending_signature_requests.remove(&request).is_some();
-
-                // Fallback, the request must have been made pre-upgrade
-                if !removed {
-                    let old_request = v3_8_1_state::SignatureRequest::from(&request);
-                    self.stale_data
-                        .pending_signature_requests_pre_upgrade
-                        .remove(&old_request);
-                }
+                self.pending_signature_requests.remove(&request);
 
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
@@ -2379,15 +2331,11 @@ mod tests {
 
     use super::*;
     use crate::errors::NodeMigrationError;
+    use crate::primitives::participants::Participants;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
         gen_participants, infer_purpose_from_curve, NUM_CURVES,
-    };
-    use crate::primitives::{
-        domain::{Curve, DomainConfig, DomainId},
-        participants::Participants,
-        signature::{Payload, Tweak},
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2402,6 +2350,7 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
+    use dtos::{Curve, DomainConfig, DomainId, Payload, Tweak};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
@@ -2654,19 +2603,18 @@ mod tests {
         let payload = Payload::from_legacy_ecdsa(payload_hash);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
-        let request = if legacy_v1_api {
-            SignRequestArgs {
-                deprecated_payload: Some(payload_hash),
-                deprecated_key_version: Some(0),
-                path: key_path.clone(),
-                ..Default::default()
-            }
+        let request: SignRequestArgs = if legacy_v1_api {
+            serde_json::from_value(serde_json::json!({
+                "payload": payload_hash,
+                "key_version": 0,
+                "path": key_path,
+            }))
+            .unwrap()
         } else {
             SignRequestArgs {
-                payload_v2: Some(payload.clone()),
+                payload: payload.clone(),
                 path: key_path.clone(),
-                domain_id: Some(DomainId::legacy_ecdsa_id()),
-                ..Default::default()
+                domain_id: DomainId::legacy_ecdsa_id(),
             }
         };
         let signature_request = SignatureRequest::new(
@@ -2737,10 +2685,9 @@ mod tests {
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
         let request = SignRequestArgs {
-            payload_v2: Some(payload.clone()),
+            payload: payload.clone(),
             path: key_path.clone(),
-            domain_id: Some(DomainId::legacy_ecdsa_id()),
-            ..Default::default()
+            domain_id: DomainId::legacy_ecdsa_id(),
         };
         let signature_request = SignatureRequest::new(
             DomainId::default(),
@@ -2758,51 +2705,6 @@ mod tests {
             PromiseOrValue::Promise(_)
         ));
         assert!(contract.get_pending_request(&signature_request).is_none());
-    }
-
-    #[test]
-    fn test_signature_timeout__removes_from_pre_upgrade_stale_map() {
-        // given
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([0u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        let old_request = v3_8_1_state::SignatureRequest::from(&signature_request);
-        contract
-            .stale_data
-            .pending_signature_requests_pre_upgrade
-            .insert(
-                old_request.clone(),
-                YieldIndex {
-                    data_id: CryptoHash::default(),
-                },
-            );
-        assert_matches!(contract.get_pending_request(&signature_request), Some(_));
-
-        // when
-        let result = contract.return_signature_and_clean_state_on_success(
-            signature_request.clone(),
-            Err(PromiseError::Failed),
-        );
-
-        // then
-
-        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
-        match result {
-            PromiseOrValue::Promise(_promise) => {}
-            PromiseOrValue::Value(_) => panic!("result should be a promise"),
-        }
-        assert_matches!(contract.get_pending_request(&signature_request), None);
-        assert_matches!(
-            contract
-                .stale_data
-                .pending_signature_requests_pre_upgrade
-                .get(&old_request),
-            None
-        );
     }
 
     #[test]
@@ -2874,7 +2776,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2917,7 +2819,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -3071,7 +2973,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -3101,7 +3003,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -3234,10 +3136,9 @@ mod tests {
 
         // When
         contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
+            payload: Payload::from_legacy_ecdsa([7u8; 32]),
             path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
+            domain_id: DomainId::default(),
         });
     }
 
@@ -3567,7 +3468,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id.clone(),
             &request.derivation_path,
         );
@@ -3667,7 +3568,7 @@ mod tests {
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                stale_data: StaleData::new(),
+                stale_data: StaleData {},
                 metrics: Default::default(),
             }
         }
@@ -4606,82 +4507,6 @@ mod tests {
             update_id,
             &expected_voters_after,
         );
-    }
-
-    #[test]
-    fn sign__increments_v1_payload_metric() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-
-        // When
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([7u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 1);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-    }
-
-    #[test]
-    fn sign__increments_v2_payload_metric() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-
-        // When
-        contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
-    }
-
-    #[test]
-    fn sign__metrics_accumulate_across_multiple_calls() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-
-        // When — two v1 calls and one v2 call
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([7u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([8u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-        contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([9u8; 32])),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 2);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
     }
 
     #[rstest]

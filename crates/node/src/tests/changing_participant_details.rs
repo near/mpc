@@ -7,7 +7,8 @@ use crate::tests::{
 };
 use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use mpc_primitives::domain::{Curve, DomainId};
+use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
 use near_time::Clock;
 
 /// Runs a cluster of 3 nodes, but with only 2 participants.

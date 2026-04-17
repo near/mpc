@@ -22,7 +22,7 @@ use crate::{
     crypto_shared::types::PublicKeyExtended,
     errors::{ConversionError, Error},
     primitives::{
-        domain::{AddDomainsVotes, Curve, DomainConfig, DomainId, DomainRegistry},
+        domain::{AddDomainsVotes, DomainRegistry},
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
             KeyForDomain, Keyset,
@@ -569,34 +569,9 @@ mod from_dto {
         }
     }
 
-    impl From<dtos::Curve> for Curve {
-        fn from(curve: dtos::Curve) -> Self {
-            match curve {
-                dtos::Curve::Secp256k1 => Curve::Secp256k1,
-                dtos::Curve::Edwards25519 => Curve::Edwards25519,
-                dtos::Curve::Bls12381 => Curve::Bls12381,
-                dtos::Curve::V2Secp256k1 => Curve::V2Secp256k1,
-            }
-        }
-    }
-
-    impl From<dtos::DomainConfig> for DomainConfig {
-        fn from(config: dtos::DomainConfig) -> Self {
-            DomainConfig {
-                id: config.id.into(),
-                curve: config.curve.into(),
-                purpose: config.purpose,
-            }
-        }
-    }
-
     impl From<dtos::KeyEventId> for KeyEventId {
         fn from(id: dtos::KeyEventId) -> Self {
-            KeyEventId::new(
-                id.epoch_id.into(),
-                id.domain_id.into(),
-                id.attempt_id.into(),
-            )
+            KeyEventId::new(id.epoch_id.into(), id.domain_id, id.attempt_id.into())
         }
     }
 
@@ -604,7 +579,7 @@ mod from_dto {
         type Error = Error;
         fn try_from(kfd: dtos::KeyForDomain) -> Result<Self, Self::Error> {
             Ok(KeyForDomain {
-                domain_id: kfd.domain_id.into(),
+                domain_id: kfd.domain_id,
                 key: kfd
                     .key
                     .try_into()
@@ -647,7 +622,7 @@ mod to_dto {
         fn from(id: KeyEventId) -> Self {
             dtos::KeyEventId {
                 epoch_id: id.epoch_id.into(),
-                domain_id: id.domain_id.into(),
+                domain_id: id.domain_id,
                 attempt_id: id.attempt_id.into(),
             }
         }
@@ -656,7 +631,7 @@ mod to_dto {
     impl From<KeyForDomain> for dtos::KeyForDomain {
         fn from(kfd: KeyForDomain) -> Self {
             dtos::KeyForDomain {
-                domain_id: kfd.domain_id.into(),
+                domain_id: kfd.domain_id,
                 key: (&kfd.key).into_dto_type(),
                 attempt: kfd.attempt.into(),
             }
@@ -701,12 +676,6 @@ impl IntoInterfaceType<dtos::AttemptId> for AttemptId {
     }
 }
 
-impl IntoInterfaceType<dtos::DomainId> for DomainId {
-    fn into_dto_type(self) -> dtos::DomainId {
-        dtos::DomainId(*self) // DomainId derives Deref
-    }
-}
-
 impl IntoInterfaceType<dtos::Threshold> for Threshold {
     fn into_dto_type(self) -> dtos::Threshold {
         dtos::Threshold(self.value())
@@ -725,33 +694,10 @@ impl IntoInterfaceType<dtos::AuthenticatedAccountId> for &AuthenticatedAccountId
     }
 }
 
-// --- Domain types ---
-
-impl IntoInterfaceType<dtos::Curve> for Curve {
-    fn into_dto_type(self) -> dtos::Curve {
-        match self {
-            Curve::Secp256k1 => dtos::Curve::Secp256k1,
-            Curve::Edwards25519 => dtos::Curve::Edwards25519,
-            Curve::Bls12381 => dtos::Curve::Bls12381,
-            Curve::V2Secp256k1 => dtos::Curve::V2Secp256k1,
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
-    fn into_dto_type(self) -> dtos::DomainConfig {
-        dtos::DomainConfig {
-            id: self.id.into_dto_type(),
-            curve: self.curve.into_dto_type(),
-            purpose: self.purpose,
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::DomainRegistry> for &DomainRegistry {
     fn into_dto_type(self) -> dtos::DomainRegistry {
         dtos::DomainRegistry {
-            domains: self.domains().iter().map(|d| d.into_dto_type()).collect(),
+            domains: self.domains().to_vec(),
             next_domain_id: self.next_domain_id(),
         }
     }
@@ -786,7 +732,7 @@ impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
 impl IntoInterfaceType<dtos::KeyForDomain> for &KeyForDomain {
     fn into_dto_type(self) -> dtos::KeyForDomain {
         dtos::KeyForDomain {
-            domain_id: self.domain_id.into_dto_type(),
+            domain_id: self.domain_id,
             key: (&self.key).into_dto_type(),
             attempt: self.attempt.into_dto_type(),
         }
@@ -806,7 +752,7 @@ impl IntoInterfaceType<dtos::KeyEventId> for &KeyEventId {
     fn into_dto_type(self) -> dtos::KeyEventId {
         dtos::KeyEventId {
             epoch_id: self.epoch_id.into_dto_type(),
-            domain_id: self.domain_id.into_dto_type(),
+            domain_id: self.domain_id,
             attempt_id: self.attempt_id.into_dto_type(),
         }
     }
@@ -875,12 +821,7 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
             proposal_by_account: self
                 .proposal_by_account
                 .iter()
-                .map(|(participant, domains)| {
-                    (
-                        participant.into_dto_type(),
-                        domains.iter().map(|d| d.into_dto_type()).collect(),
-                    )
-                })
+                .map(|(participant, domains)| (participant.into_dto_type(), domains.clone()))
                 .collect(),
         }
     }
@@ -905,7 +846,7 @@ impl TryIntoInterfaceType<dtos::KeyEvent> for &KeyEvent {
     fn try_into_dto_type(self) -> Result<dtos::KeyEvent, Self::Error> {
         Ok(dtos::KeyEvent {
             epoch_id: self.epoch_id().into_dto_type(),
-            domain: (&self.domain()).into_dto_type(),
+            domain: self.domain().clone(),
             parameters: self.proposed_parameters().try_into_dto_type()?,
             instance: self.instance().as_ref().map(|i| i.into_dto_type()),
             next_attempt_id: self.next_attempt_id().into_dto_type(),

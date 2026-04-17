@@ -51,7 +51,7 @@ impl CKDProvider {
             .client
             .new_channel_for_task(CKDTaskId::Ckd { id }, participants)?;
 
-        let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id.into()).cloned() else {
+        let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id).cloned() else {
             anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
         };
 
@@ -95,7 +95,7 @@ impl CKDProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_CKD_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id.into()) else {
+        let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id) else {
             anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
         };
         let participants = channel.participants().to_vec();
