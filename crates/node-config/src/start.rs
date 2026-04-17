@@ -24,6 +24,16 @@ pub struct StartConfig {
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
     pub log: LogConfig,
+    /// Base URL of the PCCS server used to fetch TDX attestation collateral.
+    /// Defaults to Phala's PCCS if not set in config.
+    #[serde(default = "default_pccs_url")]
+    pub pccs_url: url::Url,
+}
+
+pub fn default_pccs_url() -> url::Url {
+    launcher_interface::DEFAULT_PCCS_URL
+        .parse()
+        .expect("default PCCS URL is valid")
 }
 
 impl StartConfig {

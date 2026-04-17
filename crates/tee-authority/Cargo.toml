@@ -10,21 +10,20 @@ external-services-tests = []
 [dependencies]
 anyhow = { workspace = true }
 backon = { workspace = true }
+dcap-qvl = { workspace = true, features = ["report"] }
 derive_more = { workspace = true }
 dstack-sdk = { workspace = true }
 hex = { workspace = true }
-http = { workspace = true }
+launcher-interface = { workspace = true }
 mpc-attestation = { workspace = true }
-reqwest = { workspace = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
 rstest = { workspace = true }
-serde_json = { workspace = true }
 test-utils = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 

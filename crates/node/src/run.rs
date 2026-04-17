@@ -58,6 +58,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             launcher_interface::types::TeeAuthorityConfig::Local => "local",
         },
         image_hash = %config.tee.image_hash,
+        pccs_url = %config.pccs_url,
         "TEE config"
     );
     if let Some(ref near_init) = config.near_init {
@@ -101,7 +102,10 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     )?;
 
     // Generate attestation
-    let tee_authority = config.tee.clone().into_tee_authority()?;
+    let tee_authority = config
+        .tee
+        .clone()
+        .into_tee_authority(config.pccs_url.clone())?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
@@ -120,7 +124,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             tracing::info!("TEE attestation generated successfully");
             Some(att)
         }
-        Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+        Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
             crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                 .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                 .inc();

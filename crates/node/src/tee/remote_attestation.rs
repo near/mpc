@@ -164,7 +164,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                     .inc();
                 att
             }
-            Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+            Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
                 crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                     .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                     .inc();
@@ -263,7 +263,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                         .inc();
                     att
                 }
-                Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+                Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
                     crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                         .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                         .inc();
