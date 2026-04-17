@@ -108,6 +108,15 @@ pub struct ChainSignatureRespondArgs {
 
 impl ChainRespondArgs for ChainSignatureRespondArgs {}
 
+#[derive(Debug, Clone)]
+pub enum TrueChainRespondArgs {
+    Signature(ChainSignatureRespondArgs),
+    Ckd(ChainCKDRespondArgs),
+    Foreign(ChainVerifyForeignTransactionRespondArgs),
+}
+
+impl ChainRespondArgs for TrueChainRespondArgs {}
+
 /* These arguments are passed to the `respond_ckd` function of the
  * chain contract. It takes both the details of the
  * original request and the completed ckd.

@@ -1,4 +1,4 @@
-use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
+use super::handler::{ChainBlockUpdate, RequestFromChain, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
 use super::types::{
@@ -14,8 +14,8 @@ use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
-use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
+use crate::types::{SignatureId, TrueRequest};
 use anyhow::Context;
 use assert_matches::assert_matches;
 use derive_more::From;
@@ -531,6 +531,7 @@ impl FakeIndexerCore {
                     }
                 }
             }
+            let mut requests = vec![];
 
             for signature_request in &signature_requests {
                 let mut contract = contract.lock().await;
@@ -538,6 +539,7 @@ impl FakeIndexerCore {
                 contract
                     .pending_signatures
                     .insert(signature_request.request.payload.clone(), signature_id);
+                requests.push(RequestFromChain::Signature(signature_request.clone()));
             }
 
             let mut ckd_requests = Vec::new();
@@ -561,6 +563,7 @@ impl FakeIndexerCore {
                 contract
                     .pending_ckds
                     .insert(ckd_request.request.app_id.clone(), ckd_id);
+                requests.push(RequestFromChain::Ckd(ckd_request.clone()));
             }
 
             let mut verify_foreign_tx_requests = Vec::new();
@@ -585,16 +588,13 @@ impl FakeIndexerCore {
                     verify_foreign_tx_request.request.request.clone(),
                     verify_foreign_tx_id,
                 );
+                requests.push(RequestFromChain::Foreign(verify_foreign_tx_request.clone()));
             }
 
             let mut block_update = ChainBlockUpdate {
                 block: block.to_block_view(),
-                signature_requests,
-                completed_signatures: Vec::new(),
-                ckd_requests,
-                completed_ckds: Vec::new(),
-                verify_foreign_tx_requests,
-                completed_verify_foreign_txs: Vec::new(),
+                requests,
+                completed_requests: Vec::new(),
             };
             contract.lock().await.env.set_block_height(block.height());
             for (txn, uid) in transactions_to_process {
@@ -622,7 +622,7 @@ impl FakeIndexerCore {
                             self.signature_response_sender
                                 .send(respond.clone())
                                 .unwrap();
-                            block_update.completed_signatures.push(signature_id);
+                            block_update.completed_requests.push(signature_id);
                         } else {
                             tracing::warn!(
                                 "Ignoring respond transaction for unknown (possibly already-responded-to) signature: {:?}",
@@ -635,7 +635,7 @@ impl FakeIndexerCore {
                         let ckd_id = contract.pending_ckds.remove(&respond.request.app_id);
                         if let Some(ckd_id) = ckd_id {
                             self.ckd_response_sender.send(respond.clone()).unwrap();
-                            block_update.completed_ckds.push(ckd_id);
+                            block_update.completed_requests.push(ckd_id);
                         } else {
                             tracing::warn!(
                                 "Ignoring respond_ckd transaction for unknown (possibly already-responded-to) ckd: {:?}",
@@ -652,9 +652,7 @@ impl FakeIndexerCore {
                             self.verify_foreign_tx_response_sender
                                 .send(respond.clone())
                                 .unwrap();
-                            block_update
-                                .completed_verify_foreign_txs
-                                .push(verify_foreign_tx_id);
+                            block_update.completed_requests.push(verify_foreign_tx_id);
                         } else {
                             tracing::warn!(
                                 "Ignoring respond_verify_foreign_tx transaction for unknown (possibly already-responded-to) verify foreign tx: {:?}",

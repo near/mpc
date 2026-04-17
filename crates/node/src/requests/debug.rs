@@ -218,7 +218,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
 
         writeln!(f, "Maximum block height known: {}", maximum_height)?;
 
-        writeln!(f, "Recent {}s:", RequestType::get_type())?;
         for (_, _, debug_line) in request_lines {
             writeln!(f, "{}", debug_line)?;
         }

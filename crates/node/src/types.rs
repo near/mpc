@@ -2,10 +2,69 @@ use std::fmt;
 
 use mpc_primitives::domain::DomainId;
 use near_indexer_primitives::CryptoHash;
-use near_mpc_contract_interface::types::{Payload, Tweak};
+use near_mpc_contract_interface::types::{ForeignChainRpcRequest, Payload, Tweak};
 use serde::{Deserialize, Serialize};
 
 use near_mpc_contract_interface::types as dtos;
+
+use crate::indexer::handler::{CKDRequestFromChain, RequestFromChain};
+
+#[derive(Debug, Clone)]
+pub enum TrueRequest {
+    Ckd(CKDRequest),
+    Signature(SignatureRequest),
+    Foreign(VerifyForeignTxRequest),
+}
+
+impl Request for TrueRequest {
+    fn get_id(&self) -> RequestId {
+        match self {
+            Self::Ckd(ckd) => ckd.id,
+            Self::Signature(sig) => sig.id,
+            Self::Foreign(foreign) => foreign.id,
+        }
+    }
+
+    fn get_receipt_id(&self) -> CryptoHash {
+        match self {
+            Self::Ckd(ckd) => ckd.receipt_id,
+            Self::Signature(sig) => sig.receipt_id,
+            Self::Foreign(foreign) => foreign.receipt_id,
+        }
+    }
+
+    fn get_entropy(&self) -> [u8; 32] {
+        match self {
+            Self::Ckd(ckd) => ckd.entropy,
+            Self::Signature(sig) => sig.entropy,
+            Self::Foreign(foreign) => foreign.entropy,
+        }
+    }
+
+    fn get_timestamp_nanosec(&self) -> u64 {
+        match self {
+            Self::Ckd(ckd) => ckd.timestamp_nanosec,
+            Self::Signature(sig) => sig.timestamp_nanosec,
+            Self::Foreign(foreign) => foreign.timestamp_nanosec,
+        }
+    }
+
+    fn get_domain_id(&self) -> DomainId {
+        match self {
+            Self::Ckd(ckd) => ckd.domain_id,
+            Self::Signature(sig) => sig.domain,
+            Self::Foreign(foreign) => foreign.domain_id,
+        }
+    }
+
+    fn get_type(&self) -> RequestType {
+        match self {
+            Self::Ckd(ckd) => RequestType::CKD,
+            Self::Signature(sig) => RequestType::Signature,
+            Self::Foreign(foreign) => RequestType::VerifyForeignTx,
+        }
+    }
+}
 
 pub enum RequestType {
     Signature,
@@ -23,7 +82,7 @@ pub trait Request {
     fn get_entropy(&self) -> [u8; 32];
     fn get_timestamp_nanosec(&self) -> u64;
     fn get_domain_id(&self) -> DomainId;
-    fn get_type() -> RequestType;
+    fn get_type(&self) -> RequestType;
 }
 
 pub type CKDId = CryptoHash;
@@ -102,7 +161,7 @@ impl Request for CKDRequest {
         self.domain_id
     }
 
-    fn get_type() -> RequestType {
+    fn get_type(&self) -> RequestType {
         RequestType::CKD
     }
 }
@@ -128,7 +187,7 @@ impl Request for SignatureRequest {
         self.domain
     }
 
-    fn get_type() -> RequestType {
+    fn get_type(&self) -> RequestType {
         RequestType::Signature
     }
 }
@@ -154,7 +213,7 @@ impl Request for VerifyForeignTxRequest {
         self.domain_id
     }
 
-    fn get_type() -> RequestType {
+    fn get_type(&self) -> RequestType {
         RequestType::VerifyForeignTx
     }
 }

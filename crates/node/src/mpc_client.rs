@@ -1,11 +1,11 @@
 use crate::indexer::handler::{
-    CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
+    CKDRequestFromChain, ChainBlockUpdate, RequestFromChain, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
 };
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
-    ChainVerifyForeignTransactionRespondArgs,
+    ChainVerifyForeignTransactionRespondArgs, TrueChainRespondArgs,
 };
 use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
@@ -21,8 +21,8 @@ use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
-use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, VerifyForeignTxRequest};
+use crate::types::{SignatureRequest, TrueRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
@@ -198,23 +198,7 @@ where
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
-        let mut pending_signatures =
-            PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
-                Clock::real(),
-                self.client.all_participant_ids(),
-                self.client.my_participant_id(),
-                self.client.clone(),
-            );
-        let mut pending_ckds = PendingRequests::<CKDRequest, ChainCKDRespondArgs>::new(
-            Clock::real(),
-            self.client.all_participant_ids(),
-            self.client.my_participant_id(),
-            self.client.clone(),
-        );
-        let mut pending_verify_foreign_txs = PendingRequests::<
-            VerifyForeignTxRequest,
-            ChainVerifyForeignTransactionRespondArgs,
-        >::new(
+        let mut all_queue = PendingRequests::<TrueRequest, TrueChainRespondArgs>::new(
             Clock::real(),
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
@@ -224,8 +208,7 @@ where
         let start_time = Clock::real().now();
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {
-                }
+                _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {}
                 block_update = block_update_receiver.recv() => {
                     let Some(block_update) = block_update else {
                         // If this branch hits, it means the channel is closed, meaning the
@@ -236,351 +219,351 @@ where
                     let entropy: [u8; 32] = block_update.block.entropy.clone().into();
                     let timestamp_nanosec = block_update.block.timestamp_nanosec;
                     self.client.update_indexer_height(block_update.block.height);
-                    let signature_requests = block_update
-                        .signature_requests
+                    let new_requests = block_update
+                        .requests
                         .into_iter()
-                        .map(|signature_request_from_chain| {
-                            let SignatureRequestFromChain {
-                                signature_id,
-                                receipt_id,
-                                request,
-                                predecessor_id,
-                            } = signature_request_from_chain;
-                            let signature_request = SignatureRequest {
-                                id: signature_id,
-                                receipt_id,
-                                payload: request.payload,
-                                tweak: derive_tweak(&predecessor_id, &request.path),
-                                entropy,
-                                timestamp_nanosec,
-                                domain: request.domain_id,
-                            };
-                            // Index the signature requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.sign_request_store.add(&signature_request);
-                            signature_request
+                        .map(|request| {
+                            match request {
+                                RequestFromChain::Signature(SignatureRequestFromChain {
+                                    signature_id,
+                                    receipt_id,
+                                    request,
+                                    predecessor_id,
+                                }) => {
+                                    let signature_request = SignatureRequest {
+                                        id: signature_id,
+                                        receipt_id,
+                                        payload: request.payload,
+                                        tweak: derive_tweak(&predecessor_id, &request.path),
+                                        entropy,
+                                        timestamp_nanosec,
+                                        domain: request.domain_id,
+                                    };
+                                    self.sign_request_store.add(&signature_request);
+                                    TrueRequest::Signature(signature_request)
+                                }
+                                RequestFromChain::Ckd(CKDRequestFromChain {
+                                    ckd_id,
+                                    receipt_id,
+                                    request,
+                                }) => {
+                                    let ckd_request = CKDRequest {
+                                        id: ckd_id,
+                                        receipt_id,
+                                        app_public_key: request.app_public_key,
+                                        app_id: request.app_id,
+                                        entropy,
+                                        timestamp_nanosec,
+                                        domain_id: request.domain_id,
+                                    };
+                                    // Index the ckd requests as soon as we see them. We'll decide
+                                    // whether to *process* them after.
+                                    self.ckd_request_store.add(&ckd_request);
+                                    TrueRequest::Ckd(ckd_request)
+                                }
+                                RequestFromChain::Foreign(VerifyForeignTxRequestFromChain {
+                                    verify_foreign_tx_id,
+                                    receipt_id,
+                                    request,
+                                }) => {
+                                    let verify_foreign_tx_request = VerifyForeignTxRequest {
+                                        id: verify_foreign_tx_id,
+                                        receipt_id,
+                                        domain_id: request.domain_id,
+                                        entropy,
+                                        payload_version: request.payload_version,
+                                        request: request.request,
+                                        timestamp_nanosec,
+                                    };
+                                    // Index the foreign tx requests as soon as we see them. We'll decide
+                                    // whether to *process* them after.
+                                    self.verify_foreign_tx_request_store
+                                        .add(&verify_foreign_tx_request);
+                                    TrueRequest::Foreign(verify_foreign_tx_request)
+                                }
+                            }
                         })
                         .collect::<Vec<_>>();
 
-                    pending_signatures.notify_new_block(
-                        signature_requests,
-                        block_update.completed_signatures,
+                    all_queue.notify_new_block(
+                        new_requests,
+                        block_update.completed_requests,
                         &block_update.block,
                     );
-
-                    let ckd_requests = block_update
-                        .ckd_requests
-                        .into_iter()
-                        .map(|ckd_request_from_chain| {
-                            let CKDRequestFromChain {
-                                ckd_id,
-                                receipt_id,
-                                request,
-                            } = ckd_request_from_chain;
-                            let ckd_request = CKDRequest {
-                                id: ckd_id,
-                                receipt_id,
-                                app_public_key: request.app_public_key,
-                                app_id: request.app_id,
-                                entropy,
-                                timestamp_nanosec,
-                                domain_id: request.domain_id,
-                            };
-                            // Index the ckd requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.ckd_request_store.add(&ckd_request);
-                            ckd_request
-                        })
-                        .collect::<Vec<_>>();
-
-                    pending_ckds.notify_new_block(
-                        ckd_requests,
-                        block_update.completed_ckds,
-                        &block_update.block,
-                    );
-
-                    let verify_foreign_tx_requests = block_update
-                        .verify_foreign_tx_requests
-                        .into_iter()
-                        .map(|verify_foreign_tx_request_from_chain| {
-                            let VerifyForeignTxRequestFromChain {
-                                verify_foreign_tx_id,
-                                receipt_id,
-                                request
-                            } = verify_foreign_tx_request_from_chain;
-                            let verify_foreign_tx_request = VerifyForeignTxRequest {
-                                id: verify_foreign_tx_id,
-                                receipt_id,
-                                domain_id: request.domain_id,
-                                entropy,
-                                payload_version: request.payload_version,
-                                request: request.request,
-                                timestamp_nanosec,
-                            };
-                            // Index the foreign tx requests as soon as we see them. We'll decide
-                            // whether to *process* them after.
-                            self.verify_foreign_tx_request_store.add(&verify_foreign_tx_request);
-                            verify_foreign_tx_request
-                        })
-                        .collect::<Vec<_>>();
-
-                    pending_verify_foreign_txs.notify_new_block(
-                        verify_foreign_tx_requests,
-                        block_update.completed_verify_foreign_txs,
-                        &block_update.block,
-                    );
-
-
-
                 }
                 debug_request = debug_receiver.recv() => {
-                    if let Ok(debug_request) = debug_request {
-                        match debug_request.kind {
-                            DebugRequestKind::RecentBlocks => {
-                                let debug_output = pending_signatures.debug_print_recent_blocks();
-                                debug_request.respond(debug_output);
-                            }
-                            DebugRequestKind::RecentSignatures => {
-                                let debug_output = format!("{:?}", pending_signatures);
-                                debug_request.respond(debug_output);
-                            }
-                            DebugRequestKind::RecentCKDs => {
-                                let debug_output = format!("{:?}", pending_ckds);
-                                debug_request.respond(debug_output);
-                            }
-                            DebugRequestKind::RecentVerifyForeignTxs => {
-                                let debug_output = format!("{:?}", pending_verify_foreign_txs);
-                                debug_request.respond(debug_output);
-                            }
-                        }
-                    }
+                   if let Ok(debug_request) = debug_request {
+                       match debug_request.kind {
+                           DebugRequestKind::RecentBlocks => {
+                               let debug_output = all_queue.debug_print_recent_blocks();
+                               debug_request.respond(debug_output);
+                           }
+                           DebugRequestKind::RecentSignatures => {
+                               let debug_output = format!("{:?}", all_queue);
+                               debug_request.respond(debug_output);
+                           }
+                           DebugRequestKind::RecentCKDs => {
+                           //    let debug_output = format!("{:?}", pending_ckds);
+                           //    debug_request.respond(debug_output);
+                           }
+                           DebugRequestKind::RecentVerifyForeignTxs => {
+                           //    let debug_output = format!("{:?}", pending_verify_foreign_txs);
+                           //    debug_request.respond(debug_output);
+                           }
+                       }
+                   }
                 }
             }
 
             if start_time.elapsed() < INITIAL_STARTUP_PROCESSING_DELAY {
                 continue;
             }
-            let signature_attempts = pending_signatures.get_requests_to_attempt();
+            let attempts = all_queue.get_requests_to_attempt();
 
-            for signature_attempt in signature_attempts {
-                let this = self.clone();
-                let chain_txn_sender_signature = chain_txn_sender.clone();
-                tasks.spawn_checked(
-                    &format!(
-                        "leader for signature request {:?}",
-                        signature_attempt.request.id
-                    ),
-                    async move {
-                        // Only issue a MPC signature computation if we haven't computed it
-                        // in a previous attempt.
-                        let existing_response = signature_attempt
-                            .computation_progress
-                            .lock()
-                            .unwrap()
-                            .computed_response
-                            .clone();
-                        let response = match existing_response {
-                            None => {
-                                metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
-                                    ])
-                                    .inc();
-
-                                let response = match this
-                                    .domain_to_curve
-                                    .get(&signature_attempt.request.domain)
-                                {
-                                    Some(Curve::Secp256k1) => {
-                                        let (signature, public_key) = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response = ChainSignatureRespondArgs::new_ecdsa(
-                                            &signature_attempt.request,
-                                            &signature,
-                                            &public_key,
-                                        )?;
-
-                                        Ok(response)
-                                    }
-                                    Some(Curve::Edwards25519) => {
-                                        let (signature, _) = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.eddsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response = ChainSignatureRespondArgs::new_eddsa(
-                                            &signature_attempt.request,
-                                            &signature,
-                                        )?;
-
-                                        Ok(response)
-                                    }
-                                    Some(Curve::Bls12381) => Err(anyhow::anyhow!(
-                                        "Incorrect protocol for domain: {:?}",
-                                        signature_attempt.request.domain.clone()
-                                    )),
-                                    Some(Curve::V2Secp256k1) => {
-                                        let (signature, public_key) = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.robust_ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response = ChainSignatureRespondArgs::new_ecdsa(
-                                            &signature_attempt.request,
-                                            &signature,
-                                            &public_key,
-                                        )?;
-
-                                        Ok(response)
-                                    }
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        signature_attempt.request.domain.clone()
-                                    )),
-                                }?;
-
-                                metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-                                    ])
-                                    .inc();
-
-                                signature_attempt
+            for attempt in attempts {
+                match &attempt.request {
+                    TrueRequest::Signature(signature_request) => {
+                        let this = self.clone();
+                        let chain_txn_sender_signature = chain_txn_sender.clone();
+                        tasks.spawn_checked(
+                            &format!("leader for signature request {:?}", signature_request.id),
+                            async move {
+                                let TrueRequest::Signature(signature_request) = &attempt.request else {
+                                    panic!("we only enter this loop in case we ave a signature request")
+                                };
+                                // Only issue a MPC signature computation if we haven't computed it
+                                // in a previous attempt.
+                                let existing_response = attempt
                                     .computation_progress
                                     .lock()
                                     .unwrap()
-                                    .computed_response = Some(response.clone());
-                                response
-                            }
-                            Some(response) => response,
-                        };
-                        let _ = chain_txn_sender_signature
-                            .send(ChainSendTransactionRequest::Respond(response))
-                            .await;
-                        signature_attempt
-                            .computation_progress
-                            .lock()
-                            .unwrap()
-                            .last_response_submission = Some(Clock::real().now());
+                                    .computed_response
+                                    .clone();
+                                let response = match existing_response {
+                                    None => {
+                                        metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
+                                            .with_label_values(&[
+                                                metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
+                                            ])
+                                            .inc();
 
-                        anyhow::Ok(())
-                    },
-                );
-            }
-            let ckd_attempts = pending_ckds.get_requests_to_attempt();
+                                        let response = match this
+                                            .domain_to_curve
+                                            .get(&signature_request.domain)
+                                        {
+                                            Some(Curve::Secp256k1) => {
+                                                let (signature, public_key) = timeout(
+                                                    Duration::from_secs(
+                                                        this.config.signature.timeout_sec,
+                                                    ),
+                                                    this.ecdsa_signature_provider
+                                                        .clone()
+                                                        .make_signature(signature_request.id),
+                                                )
+                                                .await??;
 
-            for ckd_attempt in ckd_attempts {
-                let this = self.clone();
-                let chain_txn_sender_ckd = chain_txn_sender.clone();
-                tasks.spawn_checked(
-                    &format!("leader for ckd request {:?}", ckd_attempt.request.id),
-                    async move {
-                        // Only issue an MPC ckd computation if we haven't computed it
-                        // in a previous attempt.
-                        let existing_response = ckd_attempt
-                            .computation_progress
-                            .lock()
-                            .unwrap()
-                            .computed_response
-                            .clone();
-                        let response = match existing_response {
-                            None => {
-                                metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
-                                    ])
-                                    .inc();
+                                                let response =
+                                                    ChainSignatureRespondArgs::new_ecdsa(
+                                                        &signature_request,
+                                                        &signature,
+                                                        &public_key,
+                                                    )?;
 
-                                let response = match this
-                                    .domain_to_curve
-                                    .get(&ckd_attempt.request.domain_id)
-                                {
-                                    Some(Curve::Bls12381) => {
-                                        let response = timeout(
-                                            Duration::from_secs(this.config.ckd.timeout_sec),
-                                            this.ckd_provider
-                                                .clone()
-                                                .make_signature(ckd_attempt.request.id),
-                                        )
-                                        .await??;
+                                                Ok(response)
+                                            }
+                                            Some(Curve::Edwards25519) => {
+                                                let (signature, _) = timeout(
+                                                    Duration::from_secs(
+                                                        this.config.signature.timeout_sec,
+                                                    ),
+                                                    this.eddsa_signature_provider
+                                                        .clone()
+                                                        .make_signature(signature_request.id),
+                                                )
+                                                .await??;
 
-                                        let response = ChainCKDRespondArgs::new_ckd(
-                                            &ckd_attempt.request,
-                                            &CKDResponse {
-                                                big_y: (&response.0 .0).into(),
-                                                big_c: (&response.0 .1).into(),
-                                            },
-                                        )?;
+                                                let response =
+                                                    ChainSignatureRespondArgs::new_eddsa(
+                                                        &signature_request,
+                                                        &signature,
+                                                    )?;
 
-                                        Ok(response)
+                                                Ok(response)
+                                            }
+                                            Some(Curve::Bls12381) => Err(anyhow::anyhow!(
+                                                "Incorrect protocol for domain: {:?}",
+                                                signature_request.domain.clone()
+                                            )),
+                                            Some(Curve::V2Secp256k1) => {
+                                                let (signature, public_key) = timeout(
+                                                    Duration::from_secs(
+                                                        this.config.signature.timeout_sec,
+                                                    ),
+                                                    this.robust_ecdsa_signature_provider
+                                                        .clone()
+                                                        .make_signature(signature_request.id),
+                                                )
+                                                .await??;
+
+                                                let response =
+                                                    ChainSignatureRespondArgs::new_ecdsa(
+                                                        &signature_request,
+                                                        &signature,
+                                                        &public_key,
+                                                    )?;
+
+                                                Ok(response)
+                                            }
+                                            None => Err(anyhow::anyhow!(
+                                                "Signature scheme is not found for domain: {:?}",
+                                                signature_request.domain.clone()
+                                            )),
+                                        }?;
+
+                                        metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
+                                            .with_label_values(&[
+                                                metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+                                            ])
+                                            .inc();
+
+                                        attempt
+                                            .computation_progress
+                                            .lock()
+                                            .unwrap()
+                                            .computed_response =
+                                            Some(TrueChainRespondArgs::Signature(response.clone()));
+                                        response
                                     }
-                                    Some(Curve::Secp256k1)
-                                    | Some(Curve::V2Secp256k1)
-                                    | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                }?;
+                                    Some(response) => {
 
-                                metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-                                    ])
-                                    .inc();
+                                        let TrueChainRespondArgs::Signature(response) = response else {
+panic!("require signature response");
+                                        };
+                                        response
+},
+                                };
+                                        let _ = chain_txn_sender_signature
+                                            .send(ChainSendTransactionRequest::Respond(response))
+                                            .await;
+                                        attempt
+                                            .computation_progress
+                                            .lock()
+                                            .unwrap()
+                                            .last_response_submission = Some(Clock::real().now());
+                                anyhow::Ok(())
+                                
+                            },
+                        );
+                    }
 
-                                ckd_attempt
+                    TrueRequest::Ckd(ckd_request) => {
+                        let this = self.clone();
+                        let chain_txn_sender_ckd = chain_txn_sender.clone();
+                        tasks.spawn_checked(
+                            &format!("leader for ckd request {:?}", ckd_request.id),
+                            async move {
+                                let TrueRequest::Ckd(ckd_request) = &attempt.request else {
+                                    panic!("we only enter this loop in case we ave a ckd request")
+                                };
+                                // Only issue an MPC ckd computation if we haven't computed it
+                                // in a previous attempt.
+                                let existing_response = attempt
                                     .computation_progress
                                     .lock()
                                     .unwrap()
-                                    .computed_response = Some(response.clone());
-                                response
-                            }
-                            Some(response) => response,
-                        };
-                        let _ = chain_txn_sender_ckd
-                            .send(ChainSendTransactionRequest::CKDRespond(response))
-                            .await;
-                        ckd_attempt
-                            .computation_progress
-                            .lock()
-                            .unwrap()
-                            .last_response_submission = Some(Clock::real().now());
+                                    .computed_response
+                                    .clone();
+                                let response = match existing_response {
+                                    None => {
+                                        metrics::MPC_NUM_CKD_COMPUTATIONS_LED
+                                            .with_label_values(&[
+                                                metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
+                                            ])
+                                            .inc();
 
-                        anyhow::Ok(())
-                    },
-                );
-            }
+                                        let response = match this
+                                            .domain_to_curve
+                                            .get(&ckd_request.domain_id)
+                                        {
+                                            Some(Curve::Bls12381) => {
+                                                let response = timeout(
+                                                    Duration::from_secs(
+                                                        this.config.ckd.timeout_sec,
+                                                    ),
+                                                    this.ckd_provider
+                                                        .clone()
+                                                        .make_signature(ckd_request.id),
+                                                )
+                                                .await??;
 
-            let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt();
+                                                let response = ChainCKDRespondArgs::new_ckd(
+                                                    &ckd_request,
+                                                    &CKDResponse {
+                                                        big_y: (&response.0 .0).into(),
+                                                        big_c: (&response.0 .1).into(),
+                                                    },
+                                                )?;
 
-            for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
+                                                Ok(response)
+                                            }
+                                            Some(Curve::Secp256k1)
+                                            | Some(Curve::V2Secp256k1)
+                                            | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
+                                                "Signature scheme is not allowed for domain: {:?}",
+                                                ckd_request.domain_id.clone()
+                                            )),
+                                            None => Err(anyhow::anyhow!(
+                                                "Signature scheme is not found for domain: {:?}",
+                                                ckd_request.domain_id.clone()
+                                            )),
+                                        }?;
+
+                                        metrics::MPC_NUM_CKD_COMPUTATIONS_LED
+                                            .with_label_values(&[
+                                                metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+                                            ])
+                                            .inc();
+
+                                        attempt
+                                            .computation_progress
+                                            .lock()
+                                            .unwrap()
+                                            .computed_response = Some(TrueChainRespondArgs::Ckd(response.clone()));
+                                        response
+                                    }
+                                    Some(response) => {
+            let TrueChainRespondArgs::Ckd(response) = response else {panic!("expect ckd response")};
+                                        response
+                                    },
+                                };
+                                let _ = chain_txn_sender_ckd
+                                    .send(ChainSendTransactionRequest::CKDRespond(response))
+                                    .await;
+                                attempt
+                                    .computation_progress
+                                    .lock()
+                                    .unwrap()
+                                    .last_response_submission = Some(Clock::real().now());
+
+                                anyhow::Ok(())
+                            },
+                        );
+                    }
+                    TrueRequest::Foreign(verify_foreign_tx_attempt) => {
                 let this = self.clone();
                 let chain_txn_sender_verify_foreign_tx = chain_txn_sender.clone();
                 tasks.spawn_checked(
                     &format!(
                         "leader for verify_foreign_tx request {:?}",
-                        verify_foreign_tx_attempt.request.id
+                        verify_foreign_tx_attempt.id
                     ),
                     async move {
+                                let TrueRequest::Foreign(verify_foreign_tx_attempt) = &attempt.request else {
+                                    panic!("we only enter this loop in case we ave a foreignchain tx request")
+                                };
                         // Only issue an MPC verify_foreign_tx computation if we haven't computed it
                         // in a previous attempt.
-                        let existing_response = verify_foreign_tx_attempt
+                        let existing_response = attempt
                             .computation_progress
                             .lock()
                             .unwrap()
@@ -596,13 +579,13 @@ where
 
                                 let response = match this
                                     .domain_to_curve
-                                    .get(&verify_foreign_tx_attempt.request.domain_id)
+                                    .get(&verify_foreign_tx_attempt.domain_id)
                                 {
                                     Some(Curve::Secp256k1) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
                                             this.verify_foreign_tx_provider.clone().make_signature(
-                                                verify_foreign_tx_attempt.request.id,
+                                                verify_foreign_tx_attempt.id,
                                             ),
                                         )
                                         .await??;
@@ -610,7 +593,7 @@ where
                                         let payload_hash = response.0 .0.compute_msg_hash()?;
                                         let response =
                                             ChainVerifyForeignTransactionRespondArgs::new(
-                                                verify_foreign_tx_attempt.request.clone(),
+                                                verify_foreign_tx_attempt.clone(),
                                                 payload_hash,
                                                 response.0 .1,
                                                 response.1,
@@ -622,11 +605,11 @@ where
                                     | Some(Curve::V2Secp256k1)
                                     | Some(Curve::Edwards25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
-                                        verify_foreign_tx_attempt.request.domain_id.clone()
+                                        verify_foreign_tx_attempt.domain_id.clone()
                                     )),
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
-                                        verify_foreign_tx_attempt.request.domain_id.clone()
+                                        verify_foreign_tx_attempt.domain_id.clone()
                                     )),
                                 }?;
 
@@ -636,14 +619,17 @@ where
                                     ])
                                     .inc();
 
-                                verify_foreign_tx_attempt
+                                attempt
                                     .computation_progress
                                     .lock()
                                     .unwrap()
-                                    .computed_response = Some(response.clone());
+                                    .computed_response = Some(TrueChainRespondArgs::Foreign(response.clone()));
                                 response
                             }
-                            Some(response) => response,
+                            Some(response) => {
+
+            let TrueChainRespondArgs::Foreign(response) = response else {panic!("expect foreign chain transaction response")};
+                                        response},
                         };
                         let _ = chain_txn_sender_verify_foreign_tx
                             .send(
@@ -652,7 +638,7 @@ where
                                 ),
                             )
                             .await;
-                        verify_foreign_tx_attempt
+                        attempt
                             .computation_progress
                             .lock()
                             .unwrap()
@@ -661,7 +647,13 @@ where
                         anyhow::Ok(())
                     },
                 );
+                    }
+                }
             }
+            //let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt();
+
+            //for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
+            //}
         }
     }
 

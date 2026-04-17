@@ -310,8 +310,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             request_response_latency_blocks,
             request_response_latency_seconds,
             mpc_pending_requests_queue_requests_indexed,
-        ) = match RequestType::get_type() {
-            types::RequestType::CKD => (
+        ) = {
+            (
+                // todo: figure out if we want to presereve granularity of requests
                 &metrics::MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED,
@@ -319,25 +320,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 &metrics::CKD_REQUEST_RESPONSE_LATENCY_BLOCKS,
                 &metrics::CKD_REQUEST_RESPONSE_LATENCY_SECONDS,
                 &metrics::MPC_PENDING_CKDS_QUEUE_REQUESTS_INDEXED,
-            ),
-            types::RequestType::Signature => (
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
-                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
-            ),
-            types::RequestType::VerifyForeignTx => (
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_RESPONSES_INDEXED_TOTAL,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL,
-                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS,
-                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_REQUESTS_INDEXED_TOTAL,
-            ),
+            )
         };
 
         mpc_pending_queue_blocks_indexed.inc();
@@ -455,16 +438,16 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 | CheckBlockResult::OptimisticAndCanonical
                 | CheckBlockResult::Unknown => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
-                        tracing::debug!(target: "request", "Leader for {} request {:?} from block {} is {}", RequestType::get_type(), request.request.get_id(), request.block_height, leader);
+                        tracing::debug!(target: "request", "Leader for {} request {:?} from block {} is {}", request.request.get_type(), request.request.get_id(), request.block_height, leader);
                         let mut progress = request.computation_progress.lock().unwrap();
                         progress.selected_leader = Some(leader);
                         if leader == self.my_participant_id {
                             {
                                 if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
-                                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {} because it has been attempted too many ({}) times", RequestType::get_type(), request.request.get_id(), request.block_height, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER);
+                                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {} because it has been attempted too many ({}) times", request.request.get_type(), request.request.get_id(), request.block_height, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER);
                                     // Increment metric for max retries exceeded (only for signature requests)
                                     if matches!(
-                                        RequestType::get_type(),
+                                        request.request.get_type(),
                                         types::RequestType::Signature
                                     ) {
                                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
@@ -477,7 +460,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                                 if progress.last_response_submission.is_some_and(|t| {
                                     now < t + MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE
                                 }) {
-                                    tracing::debug!(target: "request", "Skipping {} request {:?} from block {} because the last response was submitted too recently", RequestType::get_type(), request.request.get_id(), request.block_height);
+                                    tracing::debug!(target: "request", "Skipping {} request {:?} from block {} because the last response was submitted too recently", request.request.get_type(), request.request.get_id(), request.block_height);
                                     continue;
                                 }
                                 progress.attempts += 1;
@@ -494,12 +477,12 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 CheckBlockResult::OptimisticButNotCanonical => {
                     // Don't act on it yet. If it becomes canonical later, we'll try to generate
                     // the request.
-                    tracing::debug!(target: "request", "Ignoring non-canonical {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                    tracing::debug!(target: "request", "Ignoring non-canonical {} request {:?} from block {}", request.request.get_type(), request.request.get_id(), request.block_height);
                 }
                 CheckBlockResult::NotIncluded | CheckBlockResult::OlderThanRecentWindow => {
-                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                    tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", request.request.get_type(), request.request.get_id(), request.block_height);
                     // Increment metric for timeout (only for signature requests)
-                    if matches!(RequestType::get_type(), types::RequestType::Signature) {
+                    if matches!(request.request.get_type(), types::RequestType::Signature) {
                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
                             .with_label_values(&["timeout"])
                             .inc();
@@ -521,24 +504,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     });
             }
         }
-        let (mpc_pending_requests_queue_size, mpc_pending_requests_queue_attempts_generated) =
-            match RequestType::get_type() {
-                types::RequestType::CKD => (
-                    &metrics::MPC_PENDING_CKDS_QUEUE_SIZE,
-                    &metrics::MPC_PENDING_CKDS_QUEUE_ATTEMPTS_GENERATED,
-                ),
-                types::RequestType::Signature => (
-                    &metrics::MPC_PENDING_SIGNATURES_QUEUE_SIZE,
-                    &metrics::MPC_PENDING_SIGNATURES_QUEUE_ATTEMPTS_GENERATED,
-                ),
-                types::RequestType::VerifyForeignTx => (
-                    &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_QUEUE_SIZE_TOTAL,
-                    &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_QUEUE_ATTEMPTS_GENERATED_TOTAL,
-                ),
-            };
-
-        mpc_pending_requests_queue_size.set(self.requests.len() as i64);
-        mpc_pending_requests_queue_attempts_generated.inc_by(result.len() as u64);
+        metrics::MPC_PENDING_REQUEST_QUEUE_SIZE.set(self.requests.len() as i64);
+        metrics::MPC_PENDING_REQUEST_QUEUE_ATTEMPTS_GENERATED.inc_by(result.len() as u64);
         result
     }
 

@@ -81,14 +81,17 @@ pub struct VerifyForeignTxRequestFromChain {
 }
 
 #[derive(Clone)]
+pub enum RequestFromChain {
+    Signature(SignatureRequestFromChain),
+    Ckd(CKDRequestFromChain),
+    Foreign(VerifyForeignTxRequestFromChain),
+}
+
+#[derive(Clone)]
 pub struct ChainBlockUpdate {
     pub block: BlockViewLite,
-    pub signature_requests: Vec<SignatureRequestFromChain>,
-    pub completed_signatures: Vec<SignatureId>,
-    pub ckd_requests: Vec<CKDRequestFromChain>,
-    pub completed_ckds: Vec<CKDId>,
-    pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
-    pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
+    pub requests: Vec<RequestFromChain>,
+    pub completed_requests: Vec<CryptoHash>,
 }
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -157,12 +160,8 @@ async fn handle_message(
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
-    let mut signature_requests = vec![];
-    let mut completed_signatures = vec![];
-    let mut ckd_requests = vec![];
-    let mut completed_ckds = vec![];
-    let mut verify_foreign_tx_requests = vec![];
-    let mut completed_verify_foreign_txs = vec![];
+    let mut requests = vec![];
+    let mut completed_requests = vec![];
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
@@ -179,12 +178,14 @@ async fn handle_message(
                             if let Some((signature_id, sign_args)) =
                                 try_get_sign_args(&receipt, next_receipt_id, args, method_name)
                             {
-                                signature_requests.push(SignatureRequestFromChain {
-                                    signature_id,
-                                    receipt_id: receipt.receipt_id,
-                                    request: sign_args,
-                                    predecessor_id: receipt.predecessor_id.clone(),
-                                });
+                                requests.push(RequestFromChain::Signature(
+                                    SignatureRequestFromChain {
+                                        signature_id,
+                                        receipt_id: receipt.receipt_id,
+                                        request: sign_args,
+                                        predecessor_id: receipt.predecessor_id.clone(),
+                                    },
+                                ));
                                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                             }
                         }
@@ -192,11 +193,11 @@ async fn handle_message(
                             if let Some((ckd_id, ckd_args)) =
                                 try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
                             {
-                                ckd_requests.push(CKDRequestFromChain {
+                                requests.push(RequestFromChain::Ckd(CKDRequestFromChain {
                                     ckd_id,
                                     receipt_id: receipt.receipt_id,
                                     request: ckd_args,
-                                });
+                                }));
                                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
                             }
                         }
@@ -209,11 +210,13 @@ async fn handle_message(
                                     method_name,
                                 )
                             {
-                                verify_foreign_tx_requests.push(VerifyForeignTxRequestFromChain {
-                                    verify_foreign_tx_id,
-                                    receipt_id: receipt.receipt_id,
-                                    request: verify_foreign_tx_args,
-                                });
+                                requests.push(RequestFromChain::Foreign(
+                                    VerifyForeignTxRequestFromChain {
+                                        verify_foreign_tx_id,
+                                        receipt_id: receipt.receipt_id,
+                                        request: verify_foreign_tx_args,
+                                    },
+                                ));
                                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
                             }
                         }
@@ -226,15 +229,15 @@ async fn handle_message(
                 if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
                     match method_name.as_str() {
                         RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
-                            completed_signatures.push(request_id);
+                            completed_requests.push(request_id);
                             metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
                         }
                         RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
-                            completed_ckds.push(request_id);
+                            completed_requests.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
                         RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
-                            completed_verify_foreign_txs.push(request_id);
+                            completed_requests.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
                         }
                         _ => {}
@@ -256,12 +259,8 @@ async fn handle_message(
                 entropy: streamer_message.block.header.random_value.into(),
                 timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
             },
-            signature_requests,
-            completed_signatures,
-            ckd_requests,
-            completed_ckds,
-            verify_foreign_tx_requests,
-            completed_verify_foreign_txs,
+            requests,
+            completed_requests,
         })
         .inspect_err(|err| {
             tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
