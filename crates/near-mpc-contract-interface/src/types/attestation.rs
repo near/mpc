@@ -32,7 +32,6 @@ use serde_with::{hex::Hex, serde_as};
 #[serde(transparent)]
 pub struct HexVec(#[serde_as(as = "Hex")] pub Vec<u8>);
 
-#[expect(clippy::large_enum_variant)]
 #[derive(
     Clone,
     Debug,
@@ -55,7 +54,6 @@ pub enum Attestation {
     Mock(MockAttestation),
 }
 
-#[expect(clippy::large_enum_variant)]
 #[derive(
     Clone,
     Debug,
@@ -154,6 +152,7 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
+#[expect(clippy::large_enum_variant)]
 #[derive(
     Clone,
     Debug,
@@ -182,6 +181,7 @@ pub enum MockAttestation {
         launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
         /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
+        expected_measurements: Option<VerifiedMeasurements>,
     },
 }
 

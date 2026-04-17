@@ -33,6 +33,7 @@ use super::primitives::DomainId;
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
+    derive_more::Display,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -57,6 +58,7 @@ pub struct EpochId(pub u64);
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
+    derive_more::Display,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -133,7 +135,7 @@ pub struct AuthenticatedAccountId(pub AccountId);
 // Domain Types
 // =============================================================================
 
-/// Supported signature schemes.
+/// Elliptic curve used by a domain.
 #[derive(
     Clone,
     Copy,
@@ -152,9 +154,11 @@ pub struct AuthenticatedAccountId(pub AccountId);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub enum SignatureScheme {
+pub enum Curve {
     Secp256k1,
-    Ed25519,
+    // Accepts "Ed25519" for compat with pre-3.9.0 contracts. Remove after 3.9.0 deployment.
+    #[serde(alias = "Ed25519")]
+    Edwards25519,
     Bls12381,
     /// Robust ECDSA variant.
     V2Secp256k1,
@@ -198,10 +202,10 @@ pub enum DomainPurpose {
 )]
 pub struct DomainConfig {
     pub id: DomainId,
-    pub scheme: SignatureScheme,
-    /// `None` when reading state from an old contract that predates domain purposes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub purpose: Option<DomainPurpose>,
+    // Accepts "scheme" for compat with pre-3.9.0 contracts. Remove after 3.9.0 deployment.
+    #[serde(alias = "scheme")]
+    pub curve: Curve,
+    pub purpose: DomainPurpose,
 }
 
 /// Registry of all signature domains.
@@ -244,7 +248,16 @@ pub struct Keyset {
 
 /// Identifier for a key event (generation or resharing attempt).
 #[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

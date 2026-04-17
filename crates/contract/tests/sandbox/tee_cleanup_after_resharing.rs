@@ -96,7 +96,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
                 account_id.0.parse::<near_account_id::AccountId>().unwrap(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.parse().unwrap(),
+                    sign_pk: participant_info.sign_pk.clone().into(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )

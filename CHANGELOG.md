@@ -5,6 +5,164 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.9.0] - 2026-04-16
+
+### 🚀 Features
+
+- [#2727](https://github.com/near/mpc/pull/2727)(@barakeinav1): Add metrics for TEE attestation generation attempts (#2727)
+
+- [#2818](https://github.com/near/mpc/pull/2818)(@DSharifi): Support BNB chain in the contract (#2818)
+
+- [#2784](https://github.com/near/mpc/pull/2784)(@DSharifi): *(contract)* API to submit foreign chain config without RPC url consensus (#2784)
+
+- [#2822](https://github.com/near/mpc/pull/2822)(@DSharifi): Bnb support in foreign chain inspector (#2822)
+
+- [#2824](https://github.com/near/mpc/pull/2824)(@DSharifi): Support BNB foreign transactions in the near-mpc-sdk crate (#2824)
+
+- [#2823](https://github.com/near/mpc/pull/2823)(@DSharifi): Node handles BNB foreign chain transactions (#2823)
+
+- [#2917](https://github.com/near/mpc/pull/2917)(@DSharifi): Mpc contract accepts base foreign chain requests (#2917)
+
+
+### 🐛 Bug Fixes
+
+- [#2729](https://github.com/near/mpc/pull/2729)(@DSharifi): Set default crypto provider in tee-launcher to avoid rustls panic (#2729)
+
+- [#2706](https://github.com/near/mpc/pull/2706)(@barakeinav1): Add missing docker-cli package and merge Rust launcher CI jobs to use latest launcher code for CI testing (#2706)
+
+- [#2762](https://github.com/near/mpc/pull/2762)(@netrome): Replace API key placeholder into RPC URL when path auth is used (#2762)
+
+- [#2711](https://github.com/near/mpc/pull/2711)(@barakeinav1): Don't crash when TEE attestation fails on startup (#2711)
+
+- [#2746](https://github.com/near/mpc/pull/2746)(@SimonRastikian): Assert in crypto layer replaced by proper error handling (#2746)
+
+- [#2748](https://github.com/near/mpc/pull/2748)(@SimonRastikian): Witness should not inherit serde traits (#2748)
+
+- [#2827](https://github.com/near/mpc/pull/2827)(@barakeinav1): Block GCP keyshare storage config in TEE mode (#2827)
+
+- [#2851](https://github.com/near/mpc/pull/2851)(@gilcu3): Remove stale foreign chain votes from non-participants (#2851)
+
+- [#2861](https://github.com/near/mpc/pull/2861)(@netrome): Remove race condition in `take_unowned` (#2861)
+
+- [#2896](https://github.com/near/mpc/pull/2896)(@gilcu3): *(test)* Localnet script deleting non-existing validator config file (#2896)
+
+- [#2892](https://github.com/near/mpc/pull/2892)(@netrome): Use `curve` instead of `scheme` in `vote_add_domain` parameters for localnet (#2892)
+
+- [#2903](https://github.com/near/mpc/pull/2903)(@gilcu3): *(test)* Localnet  fixes for nearcore 2.11 (#2903)
+
+- [#2908](https://github.com/near/mpc/pull/2908)(@anodar): Web_server web_endpoints (#2908)
+
+
+### 💼 Other
+
+- [#2780](https://github.com/near/mpc/pull/2780)(@barakeinav1): Switch MPC node image push to skopeo with --preserve-digests (#2780)
+
+- [#2863](https://github.com/near/mpc/pull/2863)(@barakeinav1): Compute manifest digest locally without requiring --push (#2863)
+
+- [#2916](https://github.com/near/mpc/pull/2916)(@DSharifi): *(nix)* Bump near-cli-rs version to meet localnet requirements (#2916)
+
+
+### 🚜 Refactor
+
+- [#2702](https://github.com/near/mpc/pull/2702)(@pbeza): Replace per-field `#[serde_as(as = "Hex")]` with newtype wrappers (#2702)
+
+- [#2777](https://github.com/near/mpc/pull/2777)(@kevindeforth): Simplify contract error handling (#2777)
+
+- [#2735](https://github.com/near/mpc/pull/2735)(@SimonRastikian): Getting rid of clippy slicing (#2735)
+
+- [#2832](https://github.com/near/mpc/pull/2832)(@gilcu3): Make preconditions uniform for requests in the contract (#2832)
+
+- [#2785](https://github.com/near/mpc/pull/2785)(@barakeinav1): Simplify launcher image validation by accepting manifest digest directly (#2785)
+
+- [#2858](https://github.com/near/mpc/pull/2858)(@pbeza): Use canonical types from contract interface in `test-parallel-contract` (#2858)
+
+- [#2870](https://github.com/near/mpc/pull/2870)(@gilcu3): Participants should depend on contract interface not contract (#2870)
+
+- [#2907](https://github.com/near/mpc/pull/2907)(@anodar): Merge parallel tests, refactor code, reword comments (#2907)
+
+
+### 📚 Documentation
+
+- [#2672](https://github.com/near/mpc/pull/2672)(@barakeinav1): Pin QEMU 8.2.2 and add --qemu-version to dstack-mr command (#2672)
+
+- [#2909](https://github.com/near/mpc/pull/2909)(@barakeinav1): Fix scheme to curve in contract README vote_add_domains example (#2909)
+
+- [#2864](https://github.com/near/mpc/pull/2864)(@netrome): Refer to the bug bounty program instead of our security email (#2864)
+
+
+### ⚡ Performance
+
+- [#2775](https://github.com/near/mpc/pull/2775)(@gilcu3): *(bench)* Make snap-then-simulate benchmarks faster (#2775)
+
+
+### 🧪 Testing
+
+- [#2744](https://github.com/near/mpc/pull/2744)(@gilcu3): Remove async account creation workaround (#2744)
+
+- [#2759](https://github.com/near/mpc/pull/2759)(@anodar): Improve e2e framework, implement tests for web_endpoints, submit_participant_info, robust_ecdsa (#2759)
+
+- [#2751](https://github.com/near/mpc/pull/2751)(@gilcu3): Add benchmarks with latency PoC (#2751)
+
+- [#2760](https://github.com/near/mpc/pull/2760)(@anodar): Implement request_during_resharing test (#2760)
+
+- [#2820](https://github.com/near/mpc/pull/2820)(@DSharifi): Add integration tests for foreign chain requests (#2820)
+
+- [#2761](https://github.com/near/mpc/pull/2761)(@anodar): Implement key_resharing, cancellation_of_resharing tests (#2761)
+
+- [#2859](https://github.com/near/mpc/pull/2859)(@anodar): Migrate cdk_verification, cdk_pv_verification, lost_assets, parallel_sign_calls tests from pytests (#2859)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#2724](https://github.com/near/mpc/pull/2724)(@gilcu3): Fix scheduled rust cache clean II (#2724)
+
+- [#2709](https://github.com/near/mpc/pull/2709)(@barakeinav1): Add startup logging to start-with-config-file path (#2709)
+
+- [#2742](https://github.com/near/mpc/pull/2742)(@DSharifi): Increase resources for contract sandbox tests (#2742)
+
+- [#2726](https://github.com/near/mpc/pull/2726)(@DSharifi): Fix cargo clippy lint on MacOs (#2726)
+
+- [#2731](https://github.com/near/mpc/pull/2731)(@gilcu3): Unify test-utils in the node and ts crates (#2731)
+
+- [#2755](https://github.com/near/mpc/pull/2755)(@DSharifi): Fix localnet template by removing duplicate attribute (#2755)
+
+- [#2736](https://github.com/near/mpc/pull/2736)(@pbeza): Clean up stale TODO comments and update issue references (#2736)
+
+- [#2749](https://github.com/near/mpc/pull/2749)(@pbeza): Check for TODOs referencing closed issues (#2749)
+
+- [#2763](https://github.com/near/mpc/pull/2763)(@gilcu3): Update contract migration after 3.8.1 release (#2763)
+
+- [#2767](https://github.com/near/mpc/pull/2767)(@gilcu3): Remove legacy support of CKDAppPublicKey in the node (#2767)
+
+- [#2787](https://github.com/near/mpc/pull/2787)(@dependabot[bot]): Bump the cargo group across 1 directory with 2 updates (#2787)
+
+- [#2768](https://github.com/near/mpc/pull/2768)(@gilcu3): Add public verifiability support in ckd-example-cli (#2768)
+
+- [#2830](https://github.com/near/mpc/pull/2830)(@gilcu3): Make rust-cache key depend on week (#2830)
+
+- [#2835](https://github.com/near/mpc/pull/2835)(@gilcu3): Bump actions versions to avoid node 20 warning (#2835)
+
+- [#2837](https://github.com/near/mpc/pull/2837)(@DSharifi): Add `.codex` file to git ignore (#2837)
+
+- [#2773](https://github.com/near/mpc/pull/2773)(@barakeinav1): Use restricted access keys instead of full access keys for MPC nodes (#2773)
+
+- [#2845](https://github.com/near/mpc/pull/2845)(@dependabot[bot]): Bump the rust-minor-and-patch group with 4 updates (#2845)
+
+- [#2855](https://github.com/near/mpc/pull/2855)(@gilcu3): Add ExpectedMeasurements to MockAttestation (#2855)
+
+- [#2771](https://github.com/near/mpc/pull/2771)(@kevindeforth): *(contract)* Remove DomainConfigCompat and CurveCompat (#2771)
+
+- [#2165](https://github.com/near/mpc/pull/2165)(@DSharifi): Use contract interface sign request args instead of internal type in contract (#2165)
+
+- [#2878](https://github.com/near/mpc/pull/2878)(@gilcu3): Add mise and worktrees to gitignore (#2878)
+
+- [#2886](https://github.com/near/mpc/pull/2886)(@netrome): Bump rustls-webpki (#2886)
+
+- [#2869](https://github.com/near/mpc/pull/2869)(@pbeza): Reduce contract WASM size and add CI size check (#2869)
+
+- [#2911](https://github.com/near/mpc/pull/2911)(@netrome): Make llm agents better at following our testing conventions (#2911)
+
+
 ## [3.8.1] - 2026-04-07
 
 ### 🚀 Features
@@ -27,6 +185,10 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#2694](https://github.com/near/mpc/pull/2694)(@pbeza): Add workflow to automate `nearcore` version bumps (#2694)
 
 - [#2699](https://github.com/near/mpc/pull/2699)(@gilcu3): Unify testing contract build steps (#2699)
+
+- [#2720](https://github.com/near/mpc/pull/2720)(@gilcu3): Fix rust-tee launcher failing with OOM (#2720)
+
+- [#2722](https://github.com/near/mpc/pull/2722)(@netrome): Bump changelog, crate versions and upgrade third-party licenses for 3.8.1 release (#2722)
 
 
 ## [3.8.0] - 2026-04-02

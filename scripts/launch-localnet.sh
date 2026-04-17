@@ -142,11 +142,10 @@ EOF
   for ((i = 1; i <= N; i++)); do
 
     node_name="mpc-node-$i.test.near"
-    mpc-node init --dir ~/.near/$node_name --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24566"
+    mpc-node init --dir ~/.near/$node_name --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@127.0.0.1:24566"
     cp ~/.near/mpc-localnet/genesis.json ~/.near/$node_name/genesis.json
-    RPC_PORT=$((BASE_RPC_PORT + i)) INDEXER_PORT=$((BASE_INDEXER_PORT + i)) jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/$node_name/config.json >~/.near/$node_name/tmp.json
+    RPC_PORT=$((BASE_RPC_PORT + i)) INDEXER_PORT=$((BASE_INDEXER_PORT + i)) jq '.network.addr = "127.0.0.1:" + env.INDEXER_PORT | .rpc.addr = "127.0.0.1:" + env.RPC_PORT' ~/.near/$node_name/config.json >~/.near/$node_name/tmp.json
     mv ~/.near/$node_name/tmp.json ~/.near/$node_name/config.json
-    rm ~/.near/$node_name/validator_key.json
 
     WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) NEAR_ACCOUNT_NAME=$node_name envsubst <docs/localnet/mpc-configs/config.yaml.template >~/.near/$node_name/config.yaml
 

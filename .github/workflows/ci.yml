@@ -248,19 +248,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cargo-make
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-make@0.37.24
+
       - name: Build mpc-node
-        run: |
-          cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
+        run: cargo make build-mpc-node-network-hardship-simulation
 
       # We run this build step on main as well to cache the contract build.
       # The non reproducible build will not be used on main since it will be overwritten by the reproducible
       # step below.
       - name: Build mpc-contract
-        run: |
-          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
-          wasm-opt -Oz \
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
-            -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+        run: cargo make build-mpc-contract-optimized
 
       - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
@@ -270,11 +270,7 @@ jobs:
             --out-dir target/wasm32-unknown-unknown/release-contract
 
       - name: Build test-parallel-contract
-        run: |
-          cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
-          wasm-opt -Oz \
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm \
-            -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+        run: cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
         run: |
@@ -340,7 +336,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
-          
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -361,6 +357,9 @@ jobs:
         run: |
           cargo near build reproducible-wasm \
             --manifest-path crates/contract/Cargo.toml
+
+      - name: Check contract WASM size
+        run: bash scripts/check-contract-wasm-size.sh
 
   mpc-pytests:
     name: "MPC pytests: ${{ matrix.group }}"
@@ -536,22 +535,22 @@ jobs:
       - name: Install cargo-shear
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-shear@1.9.1
+          tool: cargo-shear@1.11.2
 
       - name: Install cargo-sort
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-sort@2.0.2
+          tool: cargo-sort@2.1.3
 
       - name: Install zizmor
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: zizmor@1.22.0
+          tool: zizmor@1.24.1
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-deny@0.19.0
+          tool: cargo-deny@0.19.4
 
       - name: Install lychee
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -577,7 +576,7 @@ jobs:
   mpc-e2e-tests:
     name: "MPC E2E tests"
     needs: mpc-pytest-build
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2404-x64-32x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -620,11 +619,15 @@ jobs:
         with:
           tool: nextest@0.9.126
 
+      - name: Install cargo-make
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-make@0.37.24
+
       - name: Run E2E tests
-        run: |
-          RUST_LOG=info,e2e_tests=debug cargo nextest run --cargo-profile=test-release -p e2e-tests --all-features --locked 2>&1
+        run: cargo make e2e-tests-skip-build
         env:
-          MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+          RUST_LOG: info,e2e_tests=debug
 
   ci-extra:
     name: "Extra CI checks"
@@ -640,7 +643,7 @@ jobs:
       - name: Install cargo-deny
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-deny@0.19.0
+          tool: cargo-deny@0.19.4
 
       - name: Install cargo-make
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28

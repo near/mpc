@@ -53,6 +53,9 @@ pub enum LauncherError {
     #[error("User config contains reserved key [{0}] — remove it from mpc_node_config")]
     ReservedConfigKey(String),
 
+    #[error("[{0}] is not allowed in TEE mode")]
+    TeeRestrictedConfigKey(String),
+
     #[error("Image pull failed: {0}")]
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),
 }

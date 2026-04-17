@@ -8,8 +8,8 @@ use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    EpochId, ParticipantId, ParticipantInfo, Participants, ProtocolContractState, SignatureScheme,
+    AccountId as ContractAccountId, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose,
+    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, ProtocolContractState,
     Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
@@ -29,6 +29,9 @@ pub const DEFAULT_TRIPLES_TO_BUFFER: usize = 20;
 pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
+// AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
+// which costs significantly more than a plain CKD or sign request.
+const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 
 /// Configuration for creating a new [`MpcCluster`].
@@ -63,7 +66,7 @@ impl MpcClusterConfig {
     /// Sensible defaults for a basic E2E test.
     ///
     /// - 3 nodes, 2-of-3 threshold
-    /// - All 3 standard domains (Secp256k1, Ed25519, Bls12381)
+    /// - All 3 standard domains (Secp256k1, Edwards25519, Bls12381)
     /// - 10 triples, 10 presignatures per node
     pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self {
         Self {
@@ -72,18 +75,18 @@ impl MpcClusterConfig {
             domains: vec![
                 DomainConfig {
                     id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
-                    purpose: Some(DomainPurpose::Sign),
+                    curve: Curve::Secp256k1,
+                    purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(1),
-                    scheme: SignatureScheme::Ed25519,
-                    purpose: Some(DomainPurpose::Sign),
+                    curve: Curve::Edwards25519,
+                    purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
-                    scheme: SignatureScheme::Bls12381,
-                    purpose: Some(DomainPurpose::CKD),
+                    curve: Curve::Bls12381,
+                    purpose: DomainPurpose::CKD,
                 },
             ],
             binary_paths: vec![default_mpc_binary_path()],
@@ -607,14 +610,14 @@ impl MpcCluster {
             .expect("cluster should have at least one user account")
     }
 
-    /// Send a sign request from the default user account and return the outcome.
+    /// Send a sign request from the given user account and return the outcome.
     pub async fn send_sign_request(
         &self,
         domain_id: DomainId,
         payload: serde_json::Value,
+        account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let user = self.default_user_account().clone();
-        let client = self.user_client(&user)?;
+        let client = self.user_client(account_id)?;
         let args = json!({
             "request": {
                 "domain_id": domain_id,
@@ -627,14 +630,20 @@ impl MpcCluster {
             .await
     }
 
-    /// Send a CKD (Confidential Key Derivation) request from the default user account.
+    /// Send a CKD (Confidential Key Derivation) request from the given user account.
+    ///
+    /// Gas is derived from the `CKDAppPublicKey` variant.
     pub async fn send_ckd_request(
         &self,
         domain_id: DomainId,
         app_public_key: CKDAppPublicKey,
+        account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let user = self.default_user_account().clone();
-        let client = self.user_client(&user)?;
+        let gas = match app_public_key {
+            CKDAppPublicKey::AppPublicKey(_) => SIGN_GAS,
+            CKDAppPublicKey::AppPublicKeyPV(_) => CKD_PV_GAS,
+        };
+        let client = self.user_client(account_id)?;
         let args = json!({
             "request": {
                 "domain_id": domain_id,
@@ -647,7 +656,7 @@ impl MpcCluster {
                 &client,
                 method_names::REQUEST_APP_PRIVATE_KEY,
                 args,
-                SIGN_GAS,
+                gas,
                 SIGN_DEPOSIT,
             )
             .await
@@ -676,10 +685,10 @@ impl MpcNodeState {
         }
     }
 
-    pub fn p2p_public_key_str(&self) -> String {
+    pub fn p2p_public_key(&self) -> Ed25519PublicKey {
         match self {
-            MpcNodeState::Running(n) => n.setup().p2p_public_key_str(),
-            MpcNodeState::Stopped(s) => s.p2p_public_key_str(),
+            MpcNodeState::Running(n) => n.setup().p2p_public_key(),
+            MpcNodeState::Stopped(s) => s.p2p_public_key(),
         }
     }
 
@@ -913,7 +922,7 @@ fn build_participants(
             ParticipantId(participant_id as u32),
             ParticipantInfo {
                 url: format!("http://127.0.0.1:{}", ports.p2p_port(i)),
-                sign_pk: String::from(&pubkey),
+                sign_pk: pubkey,
             },
         ));
     }
@@ -949,7 +958,7 @@ fn build_participants_from_nodes(
             id,
             ParticipantInfo {
                 url: nodes[node_idx].p2p_url(),
-                sign_pk: nodes[node_idx].p2p_public_key_str(),
+                sign_pk: nodes[node_idx].p2p_public_key(),
             },
         ));
     }

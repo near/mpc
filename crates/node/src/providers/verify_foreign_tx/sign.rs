@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use foreign_chain_inspector::abstract_chain::inspector::{AbstractExtractor, AbstractInspector};
 use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
+use foreign_chain_inspector::bnb::inspector::{BnbExtractor, BnbInspector};
 use foreign_chain_inspector::starknet::inspector::{
     StarknetExtractor, StarknetFinality, StarknetInspector,
 };
@@ -20,10 +21,11 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
+use mpc_contract::primitives::signature::{Payload, Tweak};
 use mpc_node_config::ForeignChainsConfig;
 use near_indexer_primitives::CryptoHash;
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
 use tokio::time::{timeout, Duration};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -32,9 +34,11 @@ fn build_signature_request(
     request: &VerifyForeignTxRequest,
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
-    let payload_hash: [u8; 32] = foreign_tx_payload.compute_msg_hash()?.into();
-    let payload_bytes =
-        Bytes::new(payload_hash.to_vec()).map_err(|err| anyhow::format_err!("{err}"))?;
+    let payload_hash: [u8; ECDSA_PAYLOAD_SIZE_BYTES] =
+        foreign_tx_payload.compute_msg_hash()?.into();
+    let payload_bytes: BoundedVec<u8, ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES> =
+        payload_hash.into();
+
     Ok(SignatureRequest {
         id: request.id,
         receipt_id: request.receipt_id,
@@ -58,7 +62,7 @@ where
 
         let domain_data = self
             .ecdsa_signature_provider
-            .domain_data(foreign_tx_request.domain_id)?;
+            .domain_data(foreign_tx_request.domain_id.into())?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
@@ -227,6 +231,51 @@ where
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<AbstractExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+
+                values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Bnb(request) => {
+                let Some(bnb_config) = &self.config.foreign_chains.bnb else {
+                    anyhow::bail!("bnb provider config is missing")
+                };
+
+                let provider_index = select_provider(
+                    bnb_config.providers.len(),
+                    &request_id,
+                    my_participant_index,
+                );
+
+                let bnb_provider_config =
+                    provider_index.and_then(|i| bnb_config.providers.values().nth(i));
+
+                let Some(bnb_provider_config) = bnb_provider_config else {
+                    anyhow::bail!("found empty list of providers for bnb")
+                };
+
+                let mut public_node_url = bnb_provider_config.rpc_url.clone();
+                let rpc_auth = auth_config_to_rpc_auth(
+                    bnb_provider_config.auth.clone(),
+                    &mut public_node_url,
+                )?;
+
+                let http_client =
+                    foreign_chain_inspector::build_http_client(public_node_url, rpc_auth)?;
+                let inspector = BnbInspector::new(http_client);
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<BnbExtractor> = request
                     .extractors
                     .iter()
                     .cloned()

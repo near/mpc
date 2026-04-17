@@ -14,7 +14,7 @@ PRIORITY CHECKS (report only if found):
    - Backward compatibility issues with existing APIs/data formats
 
 2. Project Engineering Standards
-   - Enforce all standards defined in [CONTRIBUTING.md] (don't panic, local reasonability, safe arithmetic, separate business logic from I/O, tests required, etc.)
+   - Enforce all standards defined in [engineering-standards.md] (don't panic, local reasonability, safe arithmetic, separate business logic from I/O, tests required, etc.)
 
 3. Production Safety
    - Breaking changes that could fail during rolling updates
@@ -60,3 +60,4 @@ Please always use `gh pr comment` to post your review instead.
 [CLAUDE.md]: ../../CLAUDE.md
 [CONTRIBUTING.md]: ../../CONTRIBUTING.md
 [AGENTS.md]: ../../AGENTS.md
+[engineering-standards.md]: ../../docs/engineering-standards.md

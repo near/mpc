@@ -1198,7 +1198,7 @@ git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 ```
 
 * Compile it using the reproduce build script. For this you need to install
-  `repro-env` and `docker-buildx`, and have the `docker` daemon
+  `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon
   running.
 
 ```bash
@@ -1208,10 +1208,10 @@ commit hash: 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 SOURCE_DATE_EPOCH used: 0
 node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721bc
 node docker image hash: sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
+node manifest digest: sha256:331cfec941671ac343c52847e255eb36a280da65535d2a1e4d002c4c64686e19
 ```
 
-<!-- TODO(#2843): build script should output manifest digest without --push -->
-The `node docker image hash` is the config digest of the locally built image. To get the manifest digest (what you vote for), look it up on DockerHub for the same image tag. The launcher pulls the image directly by manifest digest — Docker verifies the content matches during the pull.
+The `node manifest digest` is what you vote for. When submitting the `code_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest. The launcher pulls the image directly by this digest — Docker verifies the content matches during the pull.
 
 * Do your own due diligence on the code/binary
 
