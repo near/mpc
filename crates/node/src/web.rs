@@ -699,7 +699,7 @@ mod tests {
                     providers: NonEmptyBTreeMap::new(
                         "public".to_string(),
                         BaseProviderConfig {
-                            rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
+                            rpc_url: "https://base.publicnode.com".to_string(),
                             api_variant: BaseApiVariant::Standard,
                             auth: AuthConfig::None,
                         },
