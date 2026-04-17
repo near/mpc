@@ -67,7 +67,7 @@ use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
-    signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
+    signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
@@ -144,6 +144,7 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+    // TODO(#2937): Remove via state migration.
     metrics: Metrics,
 }
 
@@ -385,16 +386,6 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
-
-        if request.deprecated_payload.is_some() {
-            self.metrics.sign_with_v1_payload_count += 1;
-        }
-
-        if request.payload_v2.is_some() {
-            self.metrics.sign_with_v2_payload_count += 1;
-        }
-
-        let request: SignRequest = request.try_into().unwrap();
 
         let (domain_config, predecessor) = self.check_request_preconditions(
             request.domain_id,
@@ -2652,19 +2643,18 @@ mod tests {
         let payload = Payload::from_legacy_ecdsa(payload_hash);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
-        let request = if legacy_v1_api {
-            SignRequestArgs {
-                deprecated_payload: Some(payload_hash),
-                deprecated_key_version: Some(0),
-                path: key_path.clone(),
-                ..Default::default()
-            }
+        let request: SignRequestArgs = if legacy_v1_api {
+            serde_json::from_value(serde_json::json!({
+                "payload": payload_hash,
+                "key_version": 0,
+                "path": key_path,
+            }))
+            .unwrap()
         } else {
             SignRequestArgs {
-                payload_v2: Some(payload.clone()),
+                payload: payload.clone(),
                 path: key_path.clone(),
-                domain_id: Some(DomainId::legacy_ecdsa_id()),
-                ..Default::default()
+                domain_id: DomainId::legacy_ecdsa_id(),
             }
         };
         let signature_request = SignatureRequest::new(
@@ -2735,10 +2725,9 @@ mod tests {
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
         let request = SignRequestArgs {
-            payload_v2: Some(payload.clone()),
+            payload: payload.clone(),
             path: key_path.clone(),
-            domain_id: Some(DomainId::legacy_ecdsa_id()),
-            ..Default::default()
+            domain_id: DomainId::legacy_ecdsa_id(),
         };
         let signature_request = SignatureRequest::new(
             DomainId::default(),
@@ -3232,10 +3221,9 @@ mod tests {
 
         // When
         contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
+            payload: Payload::from_legacy_ecdsa([7u8; 32]),
             path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
+            domain_id: DomainId::default(),
         });
     }
 
@@ -4604,82 +4592,6 @@ mod tests {
             update_id,
             &expected_voters_after,
         );
-    }
-
-    #[test]
-    fn sign__increments_v1_payload_metric() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-
-        // When
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([7u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 1);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-    }
-
-    #[test]
-    fn sign__increments_v2_payload_metric() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-
-        // When
-        contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
-    }
-
-    #[test]
-    fn sign__metrics_accumulate_across_multiple_calls() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-
-        // When — two v1 calls and one v2 call
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([7u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([8u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-        contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([9u8; 32])),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 2);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
     }
 
     #[rstest]

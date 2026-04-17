@@ -16,7 +16,7 @@ pub use primitives::{
     EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Ed25519Signature, K256AffinePoint, K256Scalar,
     K256Signature, Payload, SignatureResponse, Tweak,
 };
-pub use sign::{LegacySignRequestArgs, SignRequest, SignRequestError};
+pub use sign::{SignRequestArgs, SignatureRequest};
 
 #[cfg(feature = "blstrs")]
 pub use blstrs;

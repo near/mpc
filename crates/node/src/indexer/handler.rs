@@ -23,14 +23,14 @@ use near_mpc_contract_interface::types::CKDRequestArgs;
 use near_mpc_contract_interface::types::Payload;
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs;
 use near_mpc_crypto_types::ckd::CKDRequest;
-use near_mpc_crypto_types::sign::{LegacySignRequestArgs, SignRequest};
+use near_mpc_crypto_types::sign::SignRequestArgs;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct UnvalidatedSignArgs {
-    request: LegacySignRequestArgs,
+    request: SignRequestArgs,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -327,28 +327,21 @@ fn try_get_sign_args(
         }
     };
 
-    let sign_request: SignRequest = match sign_args.request.try_into() {
-        Ok(request) => request,
-        Err(err) => {
-            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
-            return None;
-        }
-    };
-
+    let request = sign_args.request;
     tracing::info!(
         target: "mpc",
         receipt_id = %receipt.receipt_id,
         next_receipt_id = %next_receipt_id,
         caller_id = receipt.predecessor_id.to_string(),
-        request = ?sign_request,
+        request = ?request,
         "indexed new `{}` function call", expected_name
     );
     Some((
         next_receipt_id,
         SignArgs {
-            payload: sign_request.payload,
-            path: sign_request.path,
-            domain_id: sign_request.domain_id,
+            payload: request.payload,
+            path: request.path,
+            domain_id: request.domain_id,
         },
     ))
 }

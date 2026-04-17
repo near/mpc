@@ -13,7 +13,6 @@ pub mod types {
     pub use ckd::{CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, CkdAppId};
     pub use near_mpc_crypto_types::CKDResponse;
     pub use near_mpc_crypto_types::ckd::CKDRequest;
-    pub use near_mpc_crypto_types::sign::{LegacySignRequestArgs, SignRequest, SignRequestError};
 
     pub use metrics::Metrics;
     pub use near_mpc_crypto_types::kdf;

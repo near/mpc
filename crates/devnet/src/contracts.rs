@@ -5,7 +5,7 @@ use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        CKDAppPublicKey, CKDRequestArgs, Curve, DomainConfig, LegacySignRequestArgs, Payload,
+        CKDAppPublicKey, CKDRequestArgs, Curve, DomainConfig, Payload, SignRequestArgs,
         EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
     },
 };
@@ -86,11 +86,10 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             actions: vec![make_action(
                 method_names::SIGN,
                 &serde_json::to_vec(&SignArgsV2 {
-                    request: LegacySignRequestArgs {
-                        domain_id: Some(args.domain_config.id),
+                    request: SignRequestArgs {
+                        domain_id: args.domain_config.id,
                         path: "".to_string(),
-                        payload_v2: Some(make_payload(args.domain_config.curve)),
-                        ..Default::default()
+                        payload: make_payload(args.domain_config.curve),
                     },
                 })
                 .unwrap(),
@@ -149,7 +148,7 @@ struct SignRequestV1 {
 
 #[derive(Serialize)]
 struct SignArgsV2 {
-    pub request: LegacySignRequestArgs,
+    pub request: SignRequestArgs,
 }
 
 #[derive(Serialize)]
