@@ -33,6 +33,7 @@ tracing = { workspace = true }
 blstrs = { workspace = true }
 group = { workspace = true }
 mpc-contract = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 test-utils = { workspace = true }
 threshold-signatures = { workspace = true }
 tracing-subscriber = { workspace = true }
