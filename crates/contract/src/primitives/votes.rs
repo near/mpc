@@ -13,7 +13,7 @@ use near_sdk::IntoStorageKey;
 /// Allows efficient look-up of votes by voter and votes by proposal.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-pub struct VoteRegistry<V>
+pub struct Votes<V>
 where
     V: VoterBounds,
 {
@@ -21,7 +21,7 @@ where
     votes_by_proposal: IterableMap<ProposalHash, VoterSet<V>>,
 }
 
-impl<V> VoteRegistry<V>
+impl<V> Votes<V>
 where
     V: VoterBounds,
 {
@@ -204,7 +204,7 @@ mod tests {
         sync::LazyLock,
     };
 
-    use crate::primitives::votes::{ProposalHash, VoteRegistry, VoterSet, PROPOSAL_HASH_BYTES};
+    use crate::primitives::votes::{ProposalHash, VoterSet, Votes, PROPOSAL_HASH_BYTES};
 
     use super::ProposalHashEncoding;
 
@@ -225,8 +225,8 @@ mod tests {
         VotesByProposal,
     }
 
-    fn setup() -> VoteRegistry<TestVoter> {
-        VoteRegistry::<TestVoter>::new(
+    fn setup() -> Votes<TestVoter> {
+        Votes::<TestVoter>::new(
             TestStorageKey::ProposalByVoter,
             TestStorageKey::VotesByProposal,
         )
