@@ -2,10 +2,10 @@ use std::io::Write;
 use std::path::Path;
 
 use clap::Parser;
+use launcher_interface::MPC_IMAGE_HASH_EVENT;
 use launcher_interface::types::{
     ApprovedHashes, DockerSha256Digest, TeeAuthorityConfig, TeeConfig,
 };
-use launcher_interface::{DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL, MPC_IMAGE_HASH_EVENT};
 
 use compose::launch_mpc_container;
 use config::{intercept_node_config, validate_image_reference};
@@ -138,8 +138,7 @@ async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(
 fn build_tee_config(platform: Platform, image_hash: DockerSha256Digest) -> TeeConfig {
     let authority = match platform {
         Platform::Tee => TeeAuthorityConfig::Dstack {
-            dstack_endpoint: DSTACK_UNIX_SOCKET.to_string(),
-            quote_upload_url: DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL.to_string(),
+            dstack_endpoint: DSTACK_UNIX_SOCKET.into(),
         },
         Platform::NonTee => TeeAuthorityConfig::Local,
     };
