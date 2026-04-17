@@ -11,6 +11,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, near, store::LookupMap};
 
+use std::collections::BTreeMap;
+
 use crate::{
     errors::{Error, InvalidParameters},
     node_migrations::NodeMigrations,
@@ -21,7 +23,13 @@ use crate::{
     },
     state::ProtocolContractState,
     storage_keys::StorageKey,
-    tee::tee_state::TeeState,
+    tee::{
+        measurements::{AllowedMeasurements, MeasurementVotes},
+        proposal::{
+            AllowedDockerImageHashes, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
+        },
+        tee_state::{NodeAttestation, TeeState},
+    },
     update::ProposedUpdates,
     ForeignChainPolicyVotes, IntoInterfaceType, NodeForeignChainConfigurations,
 };
@@ -37,7 +45,7 @@ pub struct MpcContract {
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
     config: OldConfig,
-    tee_state: TeeState,
+    tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: OldStaleData,
@@ -91,7 +99,7 @@ impl From<MpcContract> for crate::MpcContract {
             foreign_chain_policy,
             foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             config: value.config.into(),
-            tee_state: value.tee_state,
+            tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {
@@ -136,12 +144,42 @@ impl From<OldConfig> for crate::Config {
                 .return_ck_and_clean_state_on_success_call_tera_gas,
             fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
             clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: defaults.clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: old
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: old
                 .remove_non_participant_update_votes_tera_gas,
             clean_foreign_chain_data_tera_gas: defaults.clean_foreign_chain_data_tera_gas,
         }
+    }
+}
+
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+pub struct OldTeeState {
+    allowed_docker_image_hashes: AllowedDockerImageHashes,
+    allowed_launcher_images: AllowedLauncherImages,
+    votes: CodeHashesVotes,
+    launcher_votes: LauncherHashVotes,
+    stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: MeasurementVotes,
+}
+
+impl From<OldTeeState> for TeeState {
+    fn from(old: OldTeeState) -> Self {
+        let mut new = TeeState {
+            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
+            allowed_launcher_images: old.allowed_launcher_images,
+            votes: old.votes,
+            launcher_votes: old.launcher_votes,
+            stored_attestations: near_sdk::store::IterableMap::new(StorageKey::StoredAttestations),
+            allowed_measurements: old.allowed_measurements,
+            measurement_votes: old.measurement_votes,
+        };
+        for (tls_pk, attestation) in old.stored_attestations {
+            new.stored_attestations.insert(tls_pk, attestation);
+        }
+        new
     }
 }
 

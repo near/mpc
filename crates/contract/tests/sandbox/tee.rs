@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
@@ -277,11 +279,13 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     Ok(())
 }
 
-/// **TEE cleanup functionality** - Tests that the clean_tee_status contract method works correctly when called by the contract itself.
-/// Unlike the access control test above, this demonstrates the positive case: the contract can successfully clean up
-/// TEE data for accounts that are no longer participants. Uses the test method to populate initial TEE state.
+/// **`clean_tee_status` when called by the contract itself** — the call succeeds and the
+/// endpoint leaves `stored_attestations` untouched. Attestation pruning is handled by the
+/// separate `clean_invalid_attestations` endpoint.
 #[tokio::test]
-async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
+async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_attestations_alone(
+) -> Result<()> {
+    // Given
     let SandboxTestSetup {
         worker,
         contract,
@@ -308,12 +312,10 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
-    assert_eq!(
-        tee_participants_before,
-        &additional_uids | &participant_uids
-    );
+    let expected_union = &additional_uids | &participant_uids;
+    assert_eq!(tee_participants_before, expected_union);
 
-    // Contract should be able to call clean_tee_status on itself
+    // When: contract calls clean_tee_status on itself.
     let result = contract
         .as_account()
         .call(contract.id(), method_names::CLEAN_TEE_STATUS)
@@ -323,10 +325,84 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 
     assert!(result.is_success());
 
-    // Verify cleanup worked: only current participants should have TEE data
+    // Then: stored attestations are unchanged — vote-only cleanup.
     let tee_participants_after = get_tee_accounts(&contract).await?;
-    assert_eq!(tee_participants_after.len(), mpc_signer_accounts.len());
-    assert_eq!(participant_uids, tee_participants_after);
+    assert_eq!(tee_participants_after, expected_union);
+
+    Ok(())
+}
+
+/// **`clean_invalid_attestations` end-to-end** — an attestation whose expiry has passed
+/// is evicted from `stored_attestations` when the endpoint is invoked. Restores the
+/// functional cleanup-path coverage previously asserted via `clean_tee_status`.
+#[tokio::test]
+async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<()> {
+    // `verify()` at insert time rejects attestations that are already expired, so the
+    // expiring attestation is submitted with an expiry a few seconds in the future and
+    // the test then fast-forwards past it. 100 blocks is enough that the block
+    // timestamp reliably advances past a 5-second expiry window.
+    const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+    const BLOCKS_TO_FAST_FORWARD: u64 = 100;
+
+    // Given
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mut mpc_signer_accounts,
+        ..
+    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+
+    // Submit a structurally-valid attestation for every current participant so those
+    // entries survive the sweep.
+    let participant_uids = {
+        let p: Participants =
+            (&assert_running_return_participants(&contract).await?).into_contract_type();
+        p.get_node_ids()
+    };
+    submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_uids).await?;
+
+    // Submit an attestation from a non-participant that will expire shortly.
+    let (stale_accounts, _stale_participants) = gen_accounts(&worker, 1).await;
+    let stale_account = &stale_accounts[0];
+    let stale_tls_key: dtos::Ed25519PublicKey = p2p_tls_key().into();
+    let block_info = worker.view_block().await?;
+    let expiry_timestamp_seconds =
+        block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
+    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+        expected_measurements: None,
+    });
+    let submit_result = submit_participant_info(
+        stale_account,
+        &contract,
+        &expiring_attestation,
+        &stale_tls_key,
+    )
+    .await?;
+    assert!(submit_result.is_success());
+
+    let before_cleanup = get_tee_accounts(&contract).await?;
+    assert_eq!(before_cleanup.len(), participant_uids.len() + 1);
+
+    // Advance past the expiry.
+    worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
+
+    // When: any account calls `clean_invalid_attestations` with a scan budget large enough
+    // to cover every stored entry.
+    let scan_budget: u32 = (before_cleanup.len() as u32) + 1;
+    let result = contract
+        .as_account()
+        .call(contract.id(), method_names::CLEAN_INVALID_ATTESTATIONS)
+        .args_json(serde_json::json!({ "max_scan": scan_budget }))
+        .transact()
+        .await?;
+    assert!(result.is_success());
+
+    // Then: the expired entry is evicted while the valid participant entries remain.
+    let after_cleanup = get_tee_accounts(&contract).await?;
+    assert_eq!(after_cleanup, participant_uids);
 
     Ok(())
 }
