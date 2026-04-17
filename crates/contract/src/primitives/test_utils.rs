@@ -1,4 +1,4 @@
-use super::domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry};
+use super::domain::DomainRegistry;
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -8,6 +8,7 @@ use crate::{
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 // Re-export for convenience

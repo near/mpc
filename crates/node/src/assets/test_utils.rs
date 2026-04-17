@@ -12,7 +12,7 @@ use k256::ProjectivePoint;
 use mpc_contract::primitives::key_state::EpochId;
 use mpc_contract::primitives::test_utils::gen_participants;
 use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
-use near_mpc_contract_interface::types::DomainId;
+use mpc_primitives::domain::DomainId;
 use near_time::FakeClock;
 use rand::rngs::OsRng;
 use rand::RngCore;

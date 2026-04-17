@@ -101,7 +101,7 @@ mod tests {
     use crate::providers::eddsa::EddsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use near_mpc_contract_interface::types::DomainId;
+    use mpc_primitives::domain::DomainId;
     use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use rand::{Rng as _, SeedableRng as _};
     use std::sync::Arc;

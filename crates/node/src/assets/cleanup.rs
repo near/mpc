@@ -5,7 +5,7 @@ use crate::primitives;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::{PairedTriple, TRIPLE_STORE_DOMAIN_ID};
 use mpc_contract::primitives::key_state::EpochId;
-use near_mpc_contract_interface::types::DomainId;
+use mpc_primitives::domain::DomainId;
 use serde::{self, Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -169,7 +169,7 @@ mod tests {
     use crate::assets::test_utils::get_participant_ids;
     use crate::assets::test_utils::random_verifying_key;
     use crate::assets::test_utils::TestContext;
-    use near_mpc_contract_interface::types::DomainId;
+    use mpc_primitives::domain::DomainId;
     use std::sync::{Arc, Mutex};
 
     fn assert_epoch_data_in_db_matches(ctx: &TestContext, expected: &EpochData) {

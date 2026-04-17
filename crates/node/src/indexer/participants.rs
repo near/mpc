@@ -3,7 +3,6 @@ use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::primitives::domain::DomainConfig as ContractDomainConfig;
 use mpc_contract::primitives::key_state::{
     KeyEventId as ContractKeyEventId, KeyForDomain as ContractKeyForDomain,
     Keyset as ContractKeyset,
@@ -19,7 +18,7 @@ use url::Url;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractKeyEventInstance {
     pub id: ContractKeyEventId,
-    pub domain: ContractDomainConfig,
+    pub domain: dtos::DomainConfig,
     pub started: bool,
     pub completed: BTreeSet<ParticipantId>,
     pub completed_domains: Vec<ContractKeyForDomain>,
@@ -43,7 +42,7 @@ pub fn convert_key_event_to_instance(
                     attempt_id: current_instance.attempt_id,
                 }
                 .into(),
-                domain: key_event.domain.clone().into(),
+                domain: key_event.domain.clone(),
                 started: true,
                 completed: current_instance
                     .completed
@@ -60,7 +59,7 @@ pub fn convert_key_event_to_instance(
                 attempt_id: key_event.next_attempt_id,
             }
             .into(),
-            domain: key_event.domain.clone().into(),
+            domain: key_event.domain.clone(),
             started: false,
             completed: BTreeSet::new(),
             completed_domains,

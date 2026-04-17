@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use mpc_contract::primitives::domain::Curve;
+use near_mpc_contract_interface::types::Curve;
 use near_sdk::{Gas, NearToken};
 
 /* --- Protocol defaults --- */

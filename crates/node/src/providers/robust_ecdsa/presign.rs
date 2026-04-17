@@ -15,7 +15,7 @@ use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
-use near_mpc_contract_interface::types::DomainId;
+use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};

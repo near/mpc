@@ -11,7 +11,7 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
-use mpc_contract::primitives::signature::Tweak;
+use near_mpc_contract_interface::types::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ecdsa::robust_ecdsa::{PresignOutput, RerandomizedPresignOutput};
@@ -28,7 +28,7 @@ impl RobustEcdsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
-        let domain_data = self.domain_data(sign_request.domain.into())?;
+        let domain_data = self.domain_data(sign_request.domain)?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.client.new_channel_for_task(
@@ -88,7 +88,7 @@ impl RobustEcdsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let domain_data = self.domain_data(sign_request.domain.into())?;
+        let domain_data = self.domain_data(sign_request.domain)?;
         let number_of_participants = self.mpc_config.participants.participants.len();
         let threshold = self.mpc_config.participants.threshold.try_into()?;
         let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;

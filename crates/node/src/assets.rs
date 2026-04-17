@@ -7,7 +7,7 @@ use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use futures::FutureExt;
-use near_mpc_contract_interface::types::DomainId;
+use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use serde::de::DeserializeOwned;
 use serde::Serialize;

@@ -72,7 +72,7 @@ impl SignRequestBuilder<String, Payload, DomainId> {
     pub fn build(self) -> SignRequestArgs {
         SignRequestArgs {
             path: self.path,
-            payload_v2: self.payload,
+            payload: self.payload,
             domain_id: self.domain_id,
         }
     }
@@ -99,13 +99,9 @@ mod test {
             .build();
 
         // then
-        let expected = SignRequestArgs {
-            path,
-            payload_v2: payload,
-            domain_id,
-        };
-
-        assert_eq!(built_sign_request_args, expected);
+        assert_eq!(built_sign_request_args.path, path);
+        assert_eq!(built_sign_request_args.payload, payload);
+        assert_eq!(built_sign_request_args.domain_id, domain_id);
     }
 
     #[test]

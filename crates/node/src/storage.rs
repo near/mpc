@@ -212,11 +212,9 @@ impl VerifyForeignTransactionRequestStorage {
 
 #[cfg(test)]
 mod tests {
-    use mpc_contract::primitives::{
-        domain::DomainId,
-        signature::{Payload, Tweak},
-    };
+    use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types::{Payload, Tweak};
 
     use crate::types::CKDRequest;
     use crate::{

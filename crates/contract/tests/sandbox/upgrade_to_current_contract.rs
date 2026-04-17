@@ -11,18 +11,15 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
-use mpc_contract::{
-    crypto_shared::CKDResponse,
-    primitives::{
-        domain::{Curve, DomainConfig, DomainPurpose},
-        key_state::{EpochId, Keyset},
-        participants::Participants,
-        thresholds::{Threshold, ThresholdParameters},
-    },
+use mpc_contract::primitives::{
+    key_state::{EpochId, Keyset},
+    participants::Participants,
+    thresholds::{Threshold, ThresholdParameters},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::{CKDResponse, Curve, DomainConfig, DomainPurpose};
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
