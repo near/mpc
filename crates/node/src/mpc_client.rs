@@ -303,10 +303,12 @@ where
                                debug_request.respond(debug_output);
                            }
                            DebugRequestKind::RecentCKDs => {
+                                // todo
                            //    let debug_output = format!("{:?}", pending_ckds);
                            //    debug_request.respond(debug_output);
                            }
                            DebugRequestKind::RecentVerifyForeignTxs => {
+                                // todo
                            //    let debug_output = format!("{:?}", pending_verify_foreign_txs);
                            //    debug_request.respond(debug_output);
                            }
@@ -328,8 +330,11 @@ where
                         tasks.spawn_checked(
                             &format!("leader for signature request {:?}", signature_request.id),
                             async move {
-                                let TrueRequest::Signature(signature_request) = &attempt.request else {
-                                    panic!("we only enter this loop in case we ave a signature request")
+                                let TrueRequest::Signature(signature_request) = &attempt.request
+                                else {
+                                    panic!(
+                                        "we only enter this loop in case we ave a signature request"
+                                    )
                                 };
                                 // Only issue a MPC signature computation if we haven't computed it
                                 // in a previous attempt.
@@ -435,23 +440,22 @@ where
                                         response
                                     }
                                     Some(response) => {
-
-                                        let TrueChainRespondArgs::Signature(response) = response else {
-panic!("require signature response");
+                                        let TrueChainRespondArgs::Signature(response) = response
+                                        else {
+                                            panic!("require signature response");
                                         };
                                         response
-},
+                                    }
                                 };
-                                        let _ = chain_txn_sender_signature
-                                            .send(ChainSendTransactionRequest::Respond(response))
-                                            .await;
-                                        attempt
-                                            .computation_progress
-                                            .lock()
-                                            .unwrap()
-                                            .last_response_submission = Some(Clock::real().now());
+                                let _ = chain_txn_sender_signature
+                                    .send(ChainSendTransactionRequest::Respond(response))
+                                    .await;
+                                attempt
+                                    .computation_progress
+                                    .lock()
+                                    .unwrap()
+                                    .last_response_submission = Some(Clock::real().now());
                                 anyhow::Ok(())
-                                
                             },
                         );
                     }
@@ -528,13 +532,16 @@ panic!("require signature response");
                                             .computation_progress
                                             .lock()
                                             .unwrap()
-                                            .computed_response = Some(TrueChainRespondArgs::Ckd(response.clone()));
+                                            .computed_response =
+                                            Some(TrueChainRespondArgs::Ckd(response.clone()));
                                         response
                                     }
                                     Some(response) => {
-            let TrueChainRespondArgs::Ckd(response) = response else {panic!("expect ckd response")};
+                                        let TrueChainRespondArgs::Ckd(response) = response else {
+                                            panic!("expect ckd response")
+                                        };
                                         response
-                                    },
+                                    }
                                 };
                                 let _ = chain_txn_sender_ckd
                                     .send(ChainSendTransactionRequest::CKDRespond(response))
@@ -550,9 +557,9 @@ panic!("require signature response");
                         );
                     }
                     TrueRequest::Foreign(verify_foreign_tx_attempt) => {
-                let this = self.clone();
-                let chain_txn_sender_verify_foreign_tx = chain_txn_sender.clone();
-                tasks.spawn_checked(
+                        let this = self.clone();
+                        let chain_txn_sender_verify_foreign_tx = chain_txn_sender.clone();
+                        tasks.spawn_checked(
                     &format!(
                         "leader for verify_foreign_tx request {:?}",
                         verify_foreign_tx_attempt.id
@@ -627,9 +634,11 @@ panic!("require signature response");
                                 response
                             }
                             Some(response) => {
-
-            let TrueChainRespondArgs::Foreign(response) = response else {panic!("expect foreign chain transaction response")};
-                                        response},
+                                let TrueChainRespondArgs::Foreign(response) = response else {
+                                    panic!("expect foreign chain transaction response")
+                                };
+                                response
+                            },
                         };
                         let _ = chain_txn_sender_verify_foreign_tx
                             .send(
@@ -650,10 +659,6 @@ panic!("require signature response");
                     }
                 }
             }
-            //let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt();
-
-            //for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
-            //}
         }
     }
 
