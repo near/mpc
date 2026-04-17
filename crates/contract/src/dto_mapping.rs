@@ -620,6 +620,12 @@ mod from_dto {
             Ok(Keyset::new(keyset.epoch_id.into(), domains?))
         }
     }
+
+    impl From<dtos::ParticipantInfo> for ParticipantInfo {
+        fn from(info: dtos::ParticipantInfo) -> Self {
+            info.into_contract_type()
+        }
+    }
 }
 
 // TODO(#381): Remove once the node no longer depends on the contract crate.
@@ -679,6 +685,20 @@ mod to_dto {
         type Error = ConversionError;
         fn try_from(params: ThresholdParameters) -> Result<Self, Self::Error> {
             (&params).try_into_dto_type()
+        }
+    }
+
+    impl TryFrom<ParticipantInfo> for dtos::ParticipantInfo {
+        type Error = ConversionError;
+        fn try_from(info: ParticipantInfo) -> Result<Self, Self::Error> {
+            Ok(dtos::ParticipantInfo {
+                url: info.url,
+                sign_pk: dtos::Ed25519PublicKey::try_from(&info.sign_pk).map_err(|e| {
+                    ConversionError::DataConversion {
+                        reason: format!("participant sign_pk is not ed25519: {e}"),
+                    }
+                })?,
+            })
         }
     }
 }

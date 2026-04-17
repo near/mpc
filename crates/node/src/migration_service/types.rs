@@ -1,16 +1,13 @@
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::{
-    node_migrations::{BackupServiceInfo, DestinationNodeInfo},
-    primitives::key_state::Keyset,
-};
+use mpc_contract::primitives::key_state::Keyset;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{NodeStatus, ParticipantStatus},
     indexer::{migrations::ContractMigrationInfo, participants::ContractState},
-    providers::PublicKeyConversion,
 };
 
 pub struct NodeBackupServiceInfo {
@@ -131,11 +128,9 @@ fn infer_migration_status(
     destination_node_info
         .as_ref()
         .map(|info| {
-            ed25519_dalek::VerifyingKey::from_near_sdk_public_key(
-                &info.destination_node_info.sign_pk,
-            )
-            .inspect_err(|_| tracing::warn!(target: "Migration Service", "Error parsing public key from chain."))
-            .is_ok_and(|key| key == *my_p2p_public_key)
+            ed25519_dalek::VerifyingKey::try_from(&info.destination_node_info.sign_pk)
+                .inspect_err(|_| tracing::warn!(target: "Migration Service", "Error parsing public key from chain."))
+                .is_ok_and(|key| key == *my_p2p_public_key)
         })
         .unwrap_or(false)
 }
@@ -144,7 +139,6 @@ fn infer_migration_status(
 pub mod tests {
     use ed25519_dalek::VerifyingKey;
     use mpc_contract::{
-        node_migrations::{BackupServiceInfo, DestinationNodeInfo},
         primitives::{
             key_state::Keyset,
             test_utils::{
@@ -157,6 +151,9 @@ pub mod tests {
         },
     };
     use near_account_id::AccountId;
+    use near_mpc_contract_interface::types::{
+        BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey,
+    };
 
     use crate::{
         config,
@@ -203,9 +200,10 @@ pub mod tests {
         let (account_id_0, participant_info_0) = gen_participant(0);
         let (account_id_1, _) = gen_participant(1);
         let signer_account_pk = bogus_ed25519_near_public_key();
+        let participant_sign_pk = Ed25519PublicKey::try_from(&participant_info_0.sign_pk).unwrap();
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: signer_account_pk.clone(),
-            destination_node_info: participant_info_0.clone(),
+            signer_account_pk: Ed25519PublicKey::try_from(&signer_account_pk).unwrap(),
+            destination_node_info: participant_info_0.clone().try_into().unwrap(),
         };
 
         let backup_service_info = BackupServiceInfo {
@@ -219,8 +217,7 @@ pub mod tests {
             ),
         );
         let participating_key =
-            ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&participant_info_0.sign_pk)
-                .unwrap();
+            ed25519_dalek::VerifyingKey::try_from(&participant_sign_pk).unwrap();
         let non_participating_key =
             ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&signer_account_pk).unwrap();
 
