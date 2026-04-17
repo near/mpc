@@ -3,6 +3,8 @@ mod ckd_verification;
 mod common;
 mod key_resharing;
 mod lost_assets;
+mod migration_endpoint;
+mod migration_service;
 mod parallel_sign_calls;
 mod request_during_resharing;
 mod request_lifecycle;
