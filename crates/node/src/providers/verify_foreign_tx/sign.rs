@@ -1,7 +1,7 @@
 use anyhow::{bail, Context};
+use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
-use foreign_chain_inspector::evm::inspector::EvmExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use rand::seq::SliceRandom;
@@ -145,30 +145,30 @@ where
         .await?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
-            dtos::ForeignChainRpcRequest::Ethereum(_) => {
+            dtos::ForeignChainRpcRequest::Ethereum(_request) => {
                 bail!("ForeignChainRpcRequest::Ethereum is unsupported")
             }
-            dtos::ForeignChainRpcRequest::Solana(_) => {
+            dtos::ForeignChainRpcRequest::Solana(_request) => {
                 bail!("ForeignChainRpcRequest::Solana is unsupported")
             }
             dtos::ForeignChainRpcRequest::Bitcoin(request) => {
                 let inspector =
                     select_inspector(&self.inspectors.bitcoin, &request_id, my_participant_index)
                         .context("no inspector configured for bitcoin")?;
-                let tx_id = request.tx_id.0.into();
-                let confirmations = request.confirmations.0.into();
+                let transaction_id = request.tx_id.0.into();
+                let block_confirmations = request.confirmations.0.into();
                 let extractors: Vec<BitcoinExtractor> = request
                     .extractors
                     .iter()
                     .cloned()
                     .map(TryInto::try_into)
                     .collect::<Result<_, _>>()?;
-                let values = inspector
-                    .extract(tx_id, confirmations, extractors)
+                let extracted_values = inspector
+                    .extract(transaction_id, block_confirmations, extractors)
                     .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                     .await
                     .context("timed out during execution of foreign chain request")??;
-                values.into_iter().map(Into::into).collect()
+                extracted_values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Abstract(request) => {
                 let inspector = select_inspector(
@@ -178,16 +178,16 @@ where
                 )
                 .context("no inspector configured for abstract")?;
 
-                let tx_id = request.tx_id.0.into();
+                let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<EvmExtractor> = request
+                let extractors: Vec<AbstractExtractor> = request
                     .extractors
                     .iter()
                     .cloned()
                     .map(TryInto::try_into)
                     .collect::<Result<_, _>>()?;
                 let values = inspector
-                    .extract(tx_id, finality, extractors)
+                    .extract(transaction_id, finality, extractors)
                     .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                     .await
                     .context("timed out during execution of foreign chain request")??;
