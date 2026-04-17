@@ -126,7 +126,10 @@ impl ForeignChainsConfig {
         }
 
         if let Some(config) = &self.base {
-            chains.insert(dtos::ForeignChain::Bnb, providers_to_set(&config.providers));
+            chains.insert(
+                dtos::ForeignChain::Base,
+                providers_to_set(&config.providers),
+            );
         }
 
         Some(dtos::ForeignChainPolicy { chains })
