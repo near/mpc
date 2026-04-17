@@ -1,7 +1,8 @@
 use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
-use near_mpc_contract_interface::types::{Curve, DomainPurpose};
+use mpc_primitives::domain::Curve;
+use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
 
 const PRESIGNATURES_TO_BUFFER: usize = 8;

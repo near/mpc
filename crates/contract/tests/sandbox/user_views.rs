@@ -1,5 +1,5 @@
-use mpc_contract::primitives::domain::Curve;
 use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::Curve;
 use near_sdk::{CurveType, PublicKey};
 use serde_json::json;
 use std::str::FromStr;

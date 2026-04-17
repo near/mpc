@@ -1,5 +1,5 @@
 ---
-source: crates/contract/src/crypto_shared/kdf.rs
+source: crates/near-mpc-crypto-types/src/kdf.rs
 expression: tweaks
 ---
 [

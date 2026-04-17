@@ -1,67 +1,9 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use derive_more::{Deref, From};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
-use std::fmt::Display;
-
-pub use near_mpc_contract_interface::types::DomainPurpose;
-
-/// Each domain corresponds to a specific root key on a specific elliptic curve. There may be
-/// multiple domains per curve. The domain ID uniquely identifies a domain.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Deref)]
-pub struct DomainId(pub u64);
-
-impl From<near_mpc_contract_interface::types::DomainId> for DomainId {
-    fn from(id: near_mpc_contract_interface::types::DomainId) -> Self {
-        Self(id.0)
-    }
-}
-
-impl From<DomainId> for near_mpc_contract_interface::types::DomainId {
-    fn from(id: DomainId) -> Self {
-        Self(id.0)
-    }
-}
-
-impl Default for DomainId {
-    fn default() -> Self {
-        Self::legacy_ecdsa_id()
-    }
-}
-
-impl DomainId {
-    /// Returns the DomainId of the single ECDSA key present in the contract before V2.
-    pub fn legacy_ecdsa_id() -> Self {
-        Self(0)
-    }
-}
-
-impl Display for DomainId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-/// Elliptic curve used by a domain.
-/// More curves may be added in the future. When adding new curves, both Borsh
-/// *and* JSON serialization must be kept compatible.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Curve {
-    Secp256k1,
-    Edwards25519,
-    Bls12381,
-    V2Secp256k1, // Robust ECDSA
-}
-
-impl Default for Curve {
-    fn default() -> Self {
-        Self::Secp256k1
-    }
-}
 
 /// Returns whether the given curve is valid for the given purpose.
 pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool {
@@ -73,15 +15,6 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
             | (DomainPurpose::ForeignTx, Curve::Secp256k1)
             | (DomainPurpose::CKD, Curve::Bls12381)
     )
-}
-
-/// Describes the configuration of a domain: the domain ID and the curve it uses.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DomainConfig {
-    pub id: DomainId,
-    pub curve: Curve,
-    pub purpose: DomainPurpose,
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure

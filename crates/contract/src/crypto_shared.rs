@@ -1,8 +1,8 @@
 pub mod kdf;
 pub mod types;
 
-pub use kdf::{derive_key_secp256k1, derive_tweak};
-pub use types::{ed25519_types, k256_types, CKDResponse};
+pub use kdf::derive_key_secp256k1;
+pub use types::{ed25519_types, k256_types};
 
 // Our wasm runtime doesn't support good synchronous entropy.
 // We could use something VRF + pseudorandom here, but someone would likely shoot themselves in the foot with it.

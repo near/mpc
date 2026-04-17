@@ -14,17 +14,14 @@ use near_sdk::{env, near, store::LookupMap};
 use crate::{
     errors::{Error, InvalidParameters},
     node_migrations::NodeMigrations,
-    primitives::{
-        ckd::CKDRequest,
-        domain::DomainId,
-        signature::{Tweak, YieldIndex},
-    },
+    primitives::{ckd::CKDRequest, signature::YieldIndex},
     state::ProtocolContractState,
     storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
     ForeignChainPolicyVotes, IntoInterfaceType, NodeForeignChainConfigurations,
 };
+use dtos::{DomainId, Tweak};
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
@@ -326,12 +323,8 @@ impl<'de, const MIN_LEN: usize, const MAX_LEN: usize> near_sdk::serde::Deseriali
 impl From<&crate::primitives::signature::SignatureRequest> for SignatureRequest {
     fn from(request: &crate::primitives::signature::SignatureRequest) -> Self {
         let payload = match &request.payload {
-            crate::primitives::signature::Payload::Ecdsa(bytes) => {
-                Payload::Ecdsa(Bytes(bytes.as_slice().to_vec()))
-            }
-            crate::primitives::signature::Payload::Eddsa(bytes) => {
-                Payload::Eddsa(Bytes(bytes.as_slice().to_vec()))
-            }
+            dtos::Payload::Ecdsa(bytes) => Payload::Ecdsa(Bytes(bytes.as_slice().to_vec())),
+            dtos::Payload::Eddsa(bytes) => Payload::Eddsa(Bytes(bytes.as_slice().to_vec())),
         };
         SignatureRequest {
             tweak: request.tweak.clone(),

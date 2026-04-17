@@ -16,16 +16,6 @@ use near_mpc_contract_interface::types as dtos;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema)
-)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct CKDResponse {
-    pub big_y: dtos::Bls12381G1PublicKey,
-    pub big_c: dtos::Bls12381G1PublicKey,
-}
-
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
     derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]

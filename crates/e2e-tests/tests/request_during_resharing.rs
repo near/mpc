@@ -1,6 +1,7 @@
 use crate::common;
 
-use near_mpc_contract_interface::types::{Curve, DomainPurpose, ProtocolContractState};
+use mpc_primitives::domain::Curve;
+use near_mpc_contract_interface::types::{DomainPurpose, ProtocolContractState};
 use rand::SeedableRng;
 
 /// Tests that signature and CKD requests are processed using the previous

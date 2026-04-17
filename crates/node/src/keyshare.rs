@@ -515,10 +515,8 @@ pub async fn generate_key_storage() -> (KeyshareStorage, tempfile::TempDir) {
 
 #[cfg(test)]
 pub mod tests {
-    use mpc_contract::primitives::{
-        domain::DomainId,
-        key_state::{AttemptId, EpochId, KeyEventId},
-    };
+    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use mpc_primitives::domain::DomainId;
     use rand::SeedableRng as _;
 
     use super::{generate_key_storage, KeyshareStorage};

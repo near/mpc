@@ -7,16 +7,18 @@ use crate::sandbox::{
     utils::{
         consts::{ALL_CURVES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-        interface::{IntoContractType, IntoInterfaceType},
+        interface::IntoContractType,
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
         transactions::execute_async_transactions,
     },
 };
 use assert_matches::assert_matches;
-use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
+use dtos::{
+    AttemptId, Curve, DomainConfig, DomainPurpose, KeyEventId, ProtocolContractState,
+    RunningContractState,
+};
 use mpc_contract::primitives::{
-    domain::{Curve, DomainConfig, DomainPurpose},
     test_utils::infer_purpose_from_curve,
     thresholds::{Threshold, ThresholdParameters},
 };
@@ -62,7 +64,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     assert_eq!(init.domains.next_domain_id, domain_id + 1);
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
-        curve: curve.into_interface_type(),
+        curve,
         purpose: dtos::DomainPurpose::Sign,
     };
     let found = init
@@ -172,7 +174,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         };
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
-            curve: (*curve).into_interface_type(),
+            curve: *curve,
             purpose: expected_purpose,
         };
         let found = init

@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
+// TODO(#2937): Remove this struct via a state migration.
 pub struct Metrics {
     pub sign_with_v1_payload_count: u64,
     pub sign_with_v2_payload_count: u64,

@@ -58,7 +58,7 @@ impl TestContract {
 
                         let args = SignArgs {
                             request: SignRequestArgs {
-                                payload_v2: payload_builder(payload_bytes),
+                                payload: payload_builder(payload_bytes),
                                 path: "".to_string(),
                                 domain_id: DomainId(*domain_id),
                             },

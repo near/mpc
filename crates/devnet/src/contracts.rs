@@ -1,16 +1,12 @@
 use std::collections::BTreeMap;
 
-use mpc_contract::primitives::{
-    domain::{Curve, DomainConfig},
-    signature::{Payload, SignRequestArgs},
-};
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
-        CKDAppPublicKey, CKDRequestArgs, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+        CKDAppPublicKey, CKDRequestArgs, Curve, DomainConfig, Payload, SignRequestArgs,
+        EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
     },
 };
 use near_primitives::action::Action;
@@ -91,10 +87,9 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                 method_names::SIGN,
                 &serde_json::to_vec(&SignArgsV2 {
                     request: SignRequestArgs {
-                        domain_id: Some(args.domain_config.id),
+                        domain_id: args.domain_config.id,
                         path: "".to_string(),
-                        payload_v2: Some(make_payload(args.domain_config.curve)),
-                        ..Default::default()
+                        payload: make_payload(args.domain_config.curve),
                     },
                 })
                 .unwrap(),
@@ -125,7 +120,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                 &serde_json::to_vec(&CKDArgs {
                     request: CKDRequestArgs {
                         derivation_path: "".to_string(),
-                        domain_id: args.domain_config.id.into(),
+                        domain_id: args.domain_config.id,
                         app_public_key: CKDAppPublicKey::AppPublicKey(
                             mpc_contract::utils::random_app_public_key(),
                         ),
