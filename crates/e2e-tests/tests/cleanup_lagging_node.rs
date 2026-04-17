@@ -14,7 +14,8 @@ const INDEXER_MAX_HEIGHT_DIFF: i64 = 50;
 /// presignatures that involved it (offline presignatures go to 0),
 /// retain their own presignatures, and can still handle signature requests.
 #[tokio::test]
-async fn cleanup_lagging_node_should_purge_offline_presignatures_and_keep_signing() {
+#[expect(non_snake_case)]
+async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signing() {
     // given
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     let (cluster, running) =
