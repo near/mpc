@@ -44,11 +44,7 @@ where
         voter: V,
         proposal: P,
     ) -> (ProposalHash, &VoterSet<V>) {
-        let encoded = proposal.bytes_for_hash();
-        let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(encoded)
-            .try_into()
-            .expect("require 32 bytes");
-        let proposal_hash = hash.into();
+        let proposal_hash = proposal.into();
         let votes = self.register(voter, proposal_hash);
         (proposal_hash, votes)
     }
@@ -150,6 +146,19 @@ where
 
 pub const PROPOSAL_HASH_BYTES: usize = 32;
 mpc_primitives::define_hash!(ProposalHash, 32);
+
+impl<T> From<T> for ProposalHash
+where
+    T: ProposalHashEncoding,
+{
+    fn from(value: T) -> Self {
+        let encoded = value.bytes_for_hash();
+        let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(encoded)
+            .try_into()
+            .expect("require 32 bytes");
+        hash.into()
+    }
+}
 
 /// This trait allows the user to create their own proposal hash encoding
 pub trait ProposalHashEncoding {
