@@ -7,6 +7,7 @@ use mpc_attestation::{
     collateral::Collateral,
     report_data::ReportData,
 };
+use std::path::PathBuf;
 use thiserror::Error;
 use tracing::error;
 use url::Url;
@@ -28,6 +29,9 @@ pub enum AttestationError {
 
     #[error("collateral fetch failed: {0:#}")]
     CollateralFetch(#[source] anyhow::Error),
+
+    #[error("dstack_endpoint path is not valid UTF-8")]
+    InvalidEndpoint,
 }
 
 /// The maximum duration to wait for retrying requests.
@@ -55,7 +59,7 @@ impl Default for LocalTeeAuthorityConfig {
 #[derive(Constructor, Clone)]
 pub struct DstackTeeAuthorityConfig {
     /// Endpoint to contact dstack service. Defaults to [`DEFAULT_DSTACK_ENDPOINT`]
-    dstack_endpoint: String,
+    dstack_endpoint: PathBuf,
     /// Base URL of the PCCS server used to fetch TDX attestation collateral.
     pccs_url: Url,
 }
@@ -63,7 +67,7 @@ pub struct DstackTeeAuthorityConfig {
 impl Default for DstackTeeAuthorityConfig {
     fn default() -> Self {
         Self {
-            dstack_endpoint: String::from(DEFAULT_DSTACK_ENDPOINT),
+            dstack_endpoint: PathBuf::from(DEFAULT_DSTACK_ENDPOINT),
             pccs_url: launcher_interface::DEFAULT_PCCS_URL
                 .parse()
                 .expect("default PCCS URL is valid"),
@@ -107,7 +111,11 @@ impl TeeAuthority {
         config: &DstackTeeAuthorityConfig,
         report_data: ReportData,
     ) -> Result<Attestation, AttestationError> {
-        let client = DstackClient::new(Some(config.dstack_endpoint.as_str()));
+        let endpoint = config
+            .dstack_endpoint
+            .to_str()
+            .ok_or(AttestationError::InvalidEndpoint)?;
+        let client = DstackClient::new(Some(endpoint));
 
         let client_info_response = get_with_backoff(|| client.info(), "dstack client info", None)
             .await

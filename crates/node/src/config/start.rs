@@ -15,11 +15,7 @@ impl TeeAuthorityImpl for TeeConfig {
         Ok(match self.authority {
             TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
             TeeAuthorityConfig::Dstack { dstack_endpoint } => {
-                let endpoint = dstack_endpoint
-                    .to_str()
-                    .context("dstack_endpoint is not valid UTF-8")?
-                    .to_string();
-                DstackTeeAuthorityConfig::new(endpoint, pccs_url).into()
+                DstackTeeAuthorityConfig::new(dstack_endpoint, pccs_url).into()
             }
         })
     }
