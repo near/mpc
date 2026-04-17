@@ -29,6 +29,16 @@ impl DomainKey {
     pub fn domain_id(&self) -> DomainId {
         self.domain_config.id
     }
+
+    pub fn as_secp256k1(&self) -> &ts_ecdsa::KeygenOutput {
+        match &self.domain_secret_key {
+            SharedSecretKey::Secp256k1(sk) => sk,
+            other => panic!(
+                "Expected Secp256k1 key, got {:?}",
+                std::mem::discriminant(other)
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
