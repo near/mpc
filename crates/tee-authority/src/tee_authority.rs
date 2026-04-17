@@ -26,12 +26,15 @@ pub enum AttestationError {
     #[error("TDX quote decoding failed: {0:#}")]
     QuoteDecode(#[source] anyhow::Error),
 
-    #[error("collateral upload failed: {0:#}")]
-    CollateralUpload(#[source] anyhow::Error),
+    #[error("collateral fetch failed: {0:#}")]
+    CollateralFetch(#[source] anyhow::Error),
 }
 
 /// The maximum duration to wait for retrying requests.
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
+
+/// Per-request timeout for fetching collateral from PCCS.
+const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Default path for dstack Unix socket endpoint.
 pub const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
@@ -128,7 +131,7 @@ impl TeeAuthority {
 
         let collateral = Self::fetch_collateral(config.pccs_url.as_str(), &quote_bytes)
             .await
-            .map_err(AttestationError::CollateralUpload)?;
+            .map_err(AttestationError::CollateralFetch)?;
 
         Ok(Attestation::Dstack(DstackAttestation::new(
             quote_bytes.into(),
@@ -140,10 +143,14 @@ impl TeeAuthority {
     /// Fetches attestation collateral from a PCCS server for the given TDX quote.
     async fn fetch_collateral(pccs_url: &str, quote: &[u8]) -> anyhow::Result<Collateral> {
         let fetch = async || {
-            dcap_qvl::collateral::get_collateral(pccs_url, quote)
-                .await
-                .map(Collateral::from)
-                .map_err(|e| anyhow::anyhow!(e))
+            tokio::time::timeout(
+                PCCS_REQUEST_TIMEOUT,
+                dcap_qvl::collateral::get_collateral(pccs_url, quote),
+            )
+            .await
+            .map_err(|_| anyhow::anyhow!("timed out fetching collateral from PCCS"))?
+            .map(Collateral::from)
+            .map_err(|e| anyhow::anyhow!(e))
         };
 
         get_with_backoff(fetch, "fetch collateral from PCCS", Some(1)).await
