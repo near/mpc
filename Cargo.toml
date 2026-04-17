@@ -215,7 +215,7 @@ tracing-subscriber = { version = "0.3.23", features = [
     "json",
 ] }
 tracing-test = "0.2.6"
-url = "2"
+url = { version = "2", features = ["serde"] }
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
