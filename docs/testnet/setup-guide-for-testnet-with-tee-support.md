@@ -146,11 +146,11 @@ Define 2 external IPs available on the server that will be used by each MPC node
 ### Replace config placeholders inside the config files
 
 ```bash
-envsubst < deployment/testnet/frodo.conf > "/tmp/$USER/frodo.conf"
+envsubst < deployment/testnet/frodo.toml > "/tmp/$USER/frodo.toml"
 ```
 
 ```bash
-envsubst < deployment/testnet/sam.conf > "/tmp/$USER/sam.conf"
+envsubst < deployment/testnet/sam.toml > "/tmp/$USER/sam.toml"
 ```
 
 ```bash

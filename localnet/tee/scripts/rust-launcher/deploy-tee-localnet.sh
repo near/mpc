@@ -152,7 +152,9 @@ ENV_TPL="$REPO_ROOT/localnet/tee/scripts/node.env.tpl"
 if [ "$MODE" = "localnet" ]; then
   CONF_TPL="$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl"
 else
-  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/node.conf.tpl"
+  # TODO(#2615): add a Rust-launcher-compatible TOML template for testnet mode.
+  err "testnet MODE not yet supported by rust-launcher deploy script"
+  exit 1
 fi
 
 # Convert comma-separated "host:container" port string to TOML inline table array entries.

@@ -171,7 +171,7 @@ envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.toml > "/tmp/$USER/sam.to
 ./deploy-launcher.sh \
   --env-file ../deployment/localnet/tee/frodo.env \
   --base-path $BASE_PATH \
-  --python-exec python
+  --python-exec python3
 ```
 
 #### 5. Start the Sam MPC Node
@@ -180,7 +180,7 @@ envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.toml > "/tmp/$USER/sam.to
 ./deploy-launcher.sh \
   --env-file ../deployment/localnet/tee/sam.env \
   --base-path $BASE_PATH \
-  --python-exec python
+  --python-exec python3
 ```
 
 If successful, each command will output an **App ID** and confirm creation of a **CVM instance** (e.g., `Created VM with ID: …`).  
