@@ -232,3 +232,8 @@ bash localnet/tee/scripts/rust-launcher/test-verify-and-upgrade.sh verify
 - Script is designed for iterative debugging and safe restarts
 - The launcher uses TOML config
 - MPC node image must support `start-with-config-file` (commit `9515e18` or later)
+- `NEAR_BOOT_NODES` points the CVM at `10.0.2.2:24566` — the QEMU slirp gateway
+  that routes to the host's loopback. This works regardless of whether `neard`
+  binds to `0.0.0.0` or `127.0.0.1`, so the same config works across localnet
+  variants. `MACHINE_IP` is still used elsewhere (public-data endpoints,
+  telemetry) and should remain set to the host's external IP.

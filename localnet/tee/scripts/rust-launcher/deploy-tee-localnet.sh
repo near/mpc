@@ -779,7 +779,10 @@ render_node_files_range() {
     export PORTS="8080:8080,24566:24566,${future_port}:${future_port}"
     export PORTS_TOML
     PORTS_TOML="$(ports_to_toml "$PORTS")"
-    export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566"
+    # Use QEMU slirp gateway (10.0.2.2) so the CVM reaches the host's neard
+    # over loopback — works regardless of whether neard binds to 0.0.0.0 or
+    # 127.0.0.1 on the host.
+    export NEAR_BOOT_NODES="ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@10.0.2.2:24566"
 
     envsubst <"$ENV_TPL" >"$env_out"
     envsubst <"$CONF_TPL" >"$conf_out"
