@@ -51,46 +51,6 @@ jobs:
           export NODE_IMAGE_NAME=test_image_tag_ci
           ./scripts/check-mpc-node-docker-starts.sh
 
-  launcher-nontee-check:
-    name: "MPC Launcher non-tee check"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Check mpc-node docker image can initialize through the launcher and start
-        run: |
-          ./scripts/check-mpc-node-docker-starts.sh --launcher
-
-  docker-launcher-build-and-verify:
-    name: "Build MPC Launcher Docker image and verify"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install skopeo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo
-
-      - name: Build launcher docker image and verify its hash
-        shell: bash
-        run: |
-          ./scripts/build-and-verify-launcher-docker-image.sh
-
   docker-rust-launcher-build-and-verify:
     name: "Build Rust Launcher Docker image and verify"
     runs-on: warp-ubuntu-2404-x64-8x
@@ -476,37 +436,6 @@ jobs:
             target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
             target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
             libs/nearcore/target/release/neard
-
-  tee-launcher-tests:
-    name: "TEE Launcher: pytests"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.11"
-
-      - name: Setup virtualenv
-        run: |
-          python3 -m venv tee_launcher/venv
-          source tee_launcher/venv/bin/activate
-          cd tee_launcher 
-          pip install -r requirements.txt
-
-      - name: Run pytest
-        run: |
-          source tee_launcher/venv/bin/activate
-          cd tee_launcher 
-          PYTHONPATH=. pytest -vsx
 
   fast-ci-checks:
     name: "Fast CI checks"

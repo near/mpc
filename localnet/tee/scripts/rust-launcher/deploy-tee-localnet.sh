@@ -655,7 +655,7 @@ preflight() {
   need_cmd awk
   need_cmd python3
 
-  [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing tee_launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
+  [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
   [ -f "$COMPOSE_YAML" ] || { err "Missing $COMPOSE_YAML"; exit 1; }
   [ -f "$ADD_DOMAIN_JSON" ] || { err "Missing $ADD_DOMAIN_JSON"; exit 1; }
   [ -f "$ENV_TPL" ] || { err "Missing template $ENV_TPL"; exit 1; }
@@ -869,7 +869,7 @@ deploy_nodes_range() {
   local start_i="$1"
   local end_i="$2"
 
-  log "Deploying CVMs via tee_launcher/deploy-launcher.sh (nodes $start_i..$end_i)"
+  log "Deploying CVMs via deployment/cvm-deployment/deploy-launcher.sh (nodes $start_i..$end_i)"
   cd "$TEE_LAUNCHER_DIR"
   [ -x "./deploy-launcher.sh" ] || { err "$TEE_LAUNCHER_DIR/deploy-launcher.sh not executable"; exit 1; }
 
