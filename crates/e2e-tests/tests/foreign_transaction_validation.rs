@@ -1,5 +1,6 @@
 use crate::common;
 
+use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use e2e_tests::E2ePortAllocator;
 use e2e_tests::foreign_chain_mock::{
@@ -99,22 +100,26 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
     })
     .await;
 
-    common::retry_until(
-        "waiting for foreign chain policy to be applied",
-        CLUSTER_WAIT_TIMEOUT,
-        || async {
-            let policy = cluster
-                .view_foreign_chain_policy()
-                .await
-                .expect("failed to view policy");
-            anyhow::ensure!(
-                !policy.chains.is_empty(),
-                "foreign chain policy not yet applied"
-            );
-            Ok(())
-        },
+    (|| async {
+        let policy = cluster
+            .view_foreign_chain_policy()
+            .await
+            .expect("failed to view policy");
+        anyhow::ensure!(
+            !policy.chains.is_empty(),
+            "foreign chain policy not yet applied"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
     )
-    .await;
+    .await
+    .expect("timed out waiting for foreign chain policy to be applied");
 
     let state = cluster
         .get_contract_state()

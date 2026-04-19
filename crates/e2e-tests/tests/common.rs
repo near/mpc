@@ -148,24 +148,6 @@ pub async fn wait_metric_on_nodes(
     .unwrap_or_else(|e| panic!("{e}"));
 }
 
-/// Retry an async check until it succeeds or `timeout` elapses.
-/// Polls every `POLL_INTERVAL`. Panics with `context` on timeout.
-pub async fn retry_until<F, Fut>(context: &str, timeout: Duration, check: F)
-where
-    F: Fn() -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<()>>,
-{
-    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
-    (check)
-        .retry(
-            ConstantBuilder::default()
-                .with_delay(POLL_INTERVAL)
-                .with_max_times(max_times),
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{context}: {e}"));
-}
-
 /// Sum a metric across all running nodes (stopped nodes contribute 0).
 pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> i64 {
     cluster

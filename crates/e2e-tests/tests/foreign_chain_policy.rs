@@ -1,5 +1,6 @@
 use crate::common;
 
+use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use mpc_node_config::{
     ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
@@ -47,32 +48,36 @@ async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
     .await;
 
     // when — wait for 2 partial votes to appear without policy application
-    common::retry_until(
-        "waiting for 2 partial votes",
-        CLUSTER_WAIT_TIMEOUT,
-        || async {
-            let proposals = cluster
-                .view_foreign_chain_policy_proposals()
-                .await
-                .expect("failed to view proposals");
-            let policy = cluster
-                .view_foreign_chain_policy()
-                .await
-                .expect("failed to view policy");
+    (|| async {
+        let proposals = cluster
+            .view_foreign_chain_policy_proposals()
+            .await
+            .expect("failed to view proposals");
+        let policy = cluster
+            .view_foreign_chain_policy()
+            .await
+            .expect("failed to view policy");
 
-            anyhow::ensure!(
-                proposals.proposal_by_account.len() == 2,
-                "expected 2 votes, got {}",
-                proposals.proposal_by_account.len()
-            );
-            anyhow::ensure!(
-                policy.chains.is_empty(),
-                "policy should not be applied before unanimous voting"
-            );
-            Ok(())
-        },
+        anyhow::ensure!(
+            proposals.proposal_by_account.len() == 2,
+            "expected 2 votes, got {}",
+            proposals.proposal_by_account.len()
+        );
+        anyhow::ensure!(
+            policy.chains.is_empty(),
+            "policy should not be applied before unanimous voting"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
     )
-    .await;
+    .await
+    .expect("timed out waiting for 2 partial votes");
 
     // when — node 2 votes with the same policy as the existing proposals.
     // Fetch an existing proposal verbatim so the vote matches regardless of
@@ -97,30 +102,34 @@ async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
     );
 
     // then — wait for policy to be applied and votes to be cleared
-    common::retry_until(
-        "waiting for policy application after unanimous voting",
-        CLUSTER_WAIT_TIMEOUT,
-        || async {
-            let proposals = cluster
-                .view_foreign_chain_policy_proposals()
-                .await
-                .expect("failed to view proposals");
-            let policy = cluster
-                .view_foreign_chain_policy()
-                .await
-                .expect("failed to view policy");
+    (|| async {
+        let proposals = cluster
+            .view_foreign_chain_policy_proposals()
+            .await
+            .expect("failed to view proposals");
+        let policy = cluster
+            .view_foreign_chain_policy()
+            .await
+            .expect("failed to view policy");
 
-            anyhow::ensure!(
-                !policy.chains.is_empty(),
-                "policy should be applied after unanimous voting"
-            );
-            anyhow::ensure!(
-                proposals.proposal_by_account.is_empty(),
-                "votes should be cleared after policy is applied, got {} votes",
-                proposals.proposal_by_account.len()
-            );
-            Ok(())
-        },
+        anyhow::ensure!(
+            !policy.chains.is_empty(),
+            "policy should be applied after unanimous voting"
+        );
+        anyhow::ensure!(
+            proposals.proposal_by_account.is_empty(),
+            "votes should be cleared after policy is applied, got {} votes",
+            proposals.proposal_by_account.len()
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
     )
-    .await;
+    .await
+    .expect("timed out waiting for policy application after unanimous voting");
 }
