@@ -15,6 +15,9 @@ pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 /// Handle returned by [`start_mock_server`].
 /// Dropping the guard signals the server to shut down (the oneshot channel closes).
 pub struct MockServerGuard {
+    /// Dropping this sender closes the channel, which the server's graceful-shutdown
+    /// future awaits. The leading underscore is intentional: the field is never read,
+    /// but dropping it is load-bearing.
     _shutdown: tokio::sync::oneshot::Sender<()>,
 }
 

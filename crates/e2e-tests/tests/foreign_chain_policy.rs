@@ -1,6 +1,5 @@
 use crate::common;
 
-use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use mpc_node_config::{
     ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
@@ -35,7 +34,8 @@ fn solana_foreign_chains_config() -> ForeignChainsConfig {
 /// 2. After node 2 manually votes (achieving unanimity), the policy is applied.
 /// 3. Once applied, all proposal votes are cleared.
 #[tokio::test]
-async fn foreign_chain_policy_should_require_unanimity_for_auto_voting() {
+#[expect(non_snake_case)]
+async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
     // given — 3-node cluster with foreign chains on nodes 0 and 1 only
     let (cluster, _running) = common::setup_cluster(common::FOREIGN_CHAIN_POLICY_PORT_SEED, |c| {
         c.node_foreign_chains_configs = vec![
@@ -47,47 +47,47 @@ async fn foreign_chain_policy_should_require_unanimity_for_auto_voting() {
     .await;
 
     // when — wait for 2 partial votes to appear without policy application
-    (|| async {
-        let proposals = cluster
-            .view_foreign_chain_policy_proposals()
-            .await
-            .expect("failed to view proposals");
-        let policy = cluster
-            .view_foreign_chain_policy()
-            .await
-            .expect("failed to view policy");
+    common::retry_until(
+        "waiting for 2 partial votes",
+        CLUSTER_WAIT_TIMEOUT,
+        || async {
+            let proposals = cluster
+                .view_foreign_chain_policy_proposals()
+                .await
+                .expect("failed to view proposals");
+            let policy = cluster
+                .view_foreign_chain_policy()
+                .await
+                .expect("failed to view policy");
 
-        anyhow::ensure!(
-            proposals.proposal_by_account.len() == 2,
-            "expected 2 votes, got {}",
-            proposals.proposal_by_account.len()
-        );
-        anyhow::ensure!(
-            policy.chains.is_empty(),
-            "policy should not be applied before unanimous voting"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
+            anyhow::ensure!(
+                proposals.proposal_by_account.len() == 2,
+                "expected 2 votes, got {}",
+                proposals.proposal_by_account.len()
+            );
+            anyhow::ensure!(
+                policy.chains.is_empty(),
+                "policy should not be applied before unanimous voting"
+            );
+            Ok(())
+        },
     )
-    .await
-    .expect("timed out waiting for 2 partial votes");
+    .await;
 
-    // when — node 2 votes for the same policy, achieving unanimity
-    let expected_policy = serde_json::json!({
-        "chains": {
-            "Solana": [
-                { "rpc_url": "https://rpc.public.example.com" }
-            ],
-        }
-    });
+    // when — node 2 votes with the same policy as the existing proposals.
+    // Fetch an existing proposal verbatim so the vote matches regardless of
+    // how the contract serializes the policy.
+    let proposals = cluster
+        .view_foreign_chain_policy_proposals()
+        .await
+        .expect("failed to view proposals");
+    let existing_policy = proposals
+        .proposal_by_account
+        .values()
+        .next()
+        .expect("expected at least one proposal");
     let outcome = cluster
-        .vote_foreign_chain_policy(2, expected_policy)
+        .vote_foreign_chain_policy(2, serde_json::to_value(existing_policy).unwrap())
         .await
         .expect("failed to vote foreign chain policy from node 2");
     assert!(
@@ -97,34 +97,30 @@ async fn foreign_chain_policy_should_require_unanimity_for_auto_voting() {
     );
 
     // then — wait for policy to be applied and votes to be cleared
-    (|| async {
-        let proposals = cluster
-            .view_foreign_chain_policy_proposals()
-            .await
-            .expect("failed to view proposals");
-        let policy = cluster
-            .view_foreign_chain_policy()
-            .await
-            .expect("failed to view policy");
+    common::retry_until(
+        "waiting for policy application after unanimous voting",
+        CLUSTER_WAIT_TIMEOUT,
+        || async {
+            let proposals = cluster
+                .view_foreign_chain_policy_proposals()
+                .await
+                .expect("failed to view proposals");
+            let policy = cluster
+                .view_foreign_chain_policy()
+                .await
+                .expect("failed to view policy");
 
-        anyhow::ensure!(
-            !policy.chains.is_empty(),
-            "policy should be applied after unanimous voting"
-        );
-        anyhow::ensure!(
-            proposals.proposal_by_account.is_empty(),
-            "votes should be cleared after policy is applied, got {} votes",
-            proposals.proposal_by_account.len()
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
+            anyhow::ensure!(
+                !policy.chains.is_empty(),
+                "policy should be applied after unanimous voting"
+            );
+            anyhow::ensure!(
+                proposals.proposal_by_account.is_empty(),
+                "votes should be cleared after policy is applied, got {} votes",
+                proposals.proposal_by_account.len()
+            );
+            Ok(())
+        },
     )
-    .await
-    .expect("timed out waiting for policy application after unanimous voting");
+    .await;
 }
