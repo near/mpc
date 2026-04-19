@@ -1,8 +1,6 @@
-# Rust Launcher Localnet Scripts
+# Launcher Localnet Scripts
 
-Scripts for deploying and testing MPC nodes with the **Rust launcher** on localnet (TDX CVMs via dstack).
-
-These scripts are separate from the Python launcher scripts in `localnet/tee/scripts/`.
+Scripts for deploying and testing MPC nodes with the launcher on localnet (TDX CVMs via dstack).
 
 ## Prerequisites
 
