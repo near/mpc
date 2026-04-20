@@ -16,7 +16,10 @@ use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
-use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
+use crate::requests::queue::{
+    PendingRequests, CHECK_EACH_REQUEST_INTERVAL, REQUEST_EXPIRATION_BLOCKS,
+};
+use crate::requests::recent_blocks_tracker::RecentBlocksTracker;
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
@@ -198,6 +201,9 @@ where
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
+
+        let mut recent_blocks_tracker = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
+
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, ChainSignatureRespondArgs>::new(
                 Clock::real(),
@@ -236,6 +242,9 @@ where
                     let entropy: [u8; 32] = block_update.block.entropy.clone().into();
                     let timestamp_nanosec = block_update.block.timestamp_nanosec;
                     self.client.update_indexer_height(block_update.block.height);
+
+                    let add_block_result = recent_blocks_tracker.add_block(&block_update.block);
+
                     let signature_requests = block_update
                         .signature_requests
                         .into_iter()
@@ -266,6 +275,7 @@ where
                         signature_requests,
                         block_update.completed_signatures,
                         &block_update.block,
+                        &add_block_result,
                     );
 
                     let ckd_requests = block_update
@@ -297,6 +307,7 @@ where
                         ckd_requests,
                         block_update.completed_ckds,
                         &block_update.block,
+                        &add_block_result,
                     );
 
                     let verify_foreign_tx_requests = block_update
@@ -328,6 +339,7 @@ where
                         verify_foreign_tx_requests,
                         block_update.completed_verify_foreign_txs,
                         &block_update.block,
+                        &add_block_result,
                     );
 
 
@@ -337,7 +349,7 @@ where
                     if let Ok(debug_request) = debug_request {
                         match debug_request.kind {
                             DebugRequestKind::RecentBlocks => {
-                                let debug_output = pending_signatures.debug_print_recent_blocks();
+                               let debug_output = format!("{:?}", recent_blocks_tracker);
                                 debug_request.respond(debug_output);
                             }
                             DebugRequestKind::RecentSignatures => {
@@ -360,7 +372,8 @@ where
             if start_time.elapsed() < INITIAL_STARTUP_PROCESSING_DELAY {
                 continue;
             }
-            let signature_attempts = pending_signatures.get_requests_to_attempt();
+            let signature_attempts =
+                pending_signatures.get_requests_to_attempt(&mut recent_blocks_tracker);
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
@@ -479,7 +492,7 @@ where
                     },
                 );
             }
-            let ckd_attempts = pending_ckds.get_requests_to_attempt();
+            let ckd_attempts = pending_ckds.get_requests_to_attempt(&mut recent_blocks_tracker);
 
             for ckd_attempt in ckd_attempts {
                 let this = self.clone();
@@ -567,7 +580,8 @@ where
                 );
             }
 
-            let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt();
+            let verify_foreign_tx_attempts =
+                pending_verify_foreign_txs.get_requests_to_attempt(&mut recent_blocks_tracker);
 
             for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
                 let this = self.clone();
