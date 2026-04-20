@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 /// Tracks votes for ThresholdParameters (new participants and threshold).
 /// Each current participant can maintain one vote.
-// TODO(#2825): Replace with Votes<AuthenticatedAccountId, ThresholdParameters> from generic_votes.rs
+// TODO(#2825): Replace with Votes<AuthenticatedAccountId> from votes.rs
 // once this type is moved out of RunningContractState (which requires Clone + PartialEq + JSON).
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub struct ThresholdParametersVotes {
 }
 
 impl ThresholdParametersVotes {
-    /// return the number of votes for `proposal` casted by members of `participants`
+    /// return the number of votes for `proposal` cast by members of `participants`
     pub fn n_votes(&self, proposal: &ThresholdParameters, participants: &Participants) -> u64 {
         self.proposal_by_account
             .iter()

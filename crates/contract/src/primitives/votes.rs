@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::hash::Hash;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -35,7 +34,7 @@ where
     }
 
     /// Registers a vote by `voter` for [`ProposalHash`].
-    /// In case this voter already has a vote for a different proposal id, the previous vote is removed.
+    /// In case this voter already has a vote for a different proposal hash, the previous vote is removed.
     /// Returns the [`VoterSet`], containing all votes for the given proposal hash.
     pub fn vote(&mut self, voter: V, proposal: ProposalHash) -> &VoterSet<V> {
         // if necessary, remove existing votes
@@ -103,7 +102,6 @@ where
     }
 
     /// Retains votes for which `predicate` returns true
-    /// Returns a vector of any proposal ids that were removed in the process
     pub fn retain_votes(&mut self, predicate: impl Fn(&V) -> bool) {
         let votes_to_remove: Vec<V> = self
             .proposal_by_voter
@@ -190,6 +188,7 @@ mod tests {
     };
     use std::{
         collections::{BTreeMap, BTreeSet},
+        hash::Hash,
         sync::LazyLock,
     };
 
