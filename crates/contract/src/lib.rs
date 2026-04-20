@@ -832,7 +832,7 @@ impl MpcContract {
             .tee_state
             .add_participant(
                 NodeId {
-                    account_id: dtos::AccountId(account_id.to_string()),
+                    account_id: account_id.clone(),
                     tls_public_key,
                     account_public_key: Some(account_public_key),
                 },
@@ -986,7 +986,7 @@ impl MpcContract {
         };
 
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let voter = dtos::AccountId(voter.get().to_string());
+        let voter = voter.get().clone();
 
         // Also register the chain keys as configured,
         // so callers of the deprecated API still populate the new data model.
@@ -1011,7 +1011,7 @@ impl MpcContract {
             .filter(|(account_id, _, _)| {
                 self.foreign_chain_policy_votes
                     .proposal_by_account
-                    .get(&dtos::AccountId(account_id.to_string()))
+                    .get(account_id)
                     .is_some_and(|prop| prop == &policy)
             })
             .count();
@@ -1035,7 +1035,7 @@ impl MpcContract {
 
         let authenticated_voter =
             AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let account_id = authenticated_voter.get().into_dto_type();
+        let account_id = authenticated_voter.get().clone();
 
         self.node_foreign_chain_configurations
             .foreign_chain_configuration_by_node
@@ -1665,14 +1665,14 @@ impl MpcContract {
         let participant_accounts: std::collections::HashSet<dtos::AccountId> = participants
             .participants()
             .iter()
-            .map(|(account_id, _, _)| dtos::AccountId(account_id.to_string()))
+            .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
         let non_participant_accounts: Vec<dtos::AccountId> = self
             .foreign_chain_policy_votes
             .proposal_by_account
             .keys()
-            .filter(|account| !participant_accounts.contains(account))
+            .filter(|account| !participant_accounts.contains(*account))
             .cloned()
             .collect();
         for account in &non_participant_accounts {
@@ -1685,7 +1685,7 @@ impl MpcContract {
             .node_foreign_chain_configurations
             .foreign_chain_configuration_by_node
             .keys()
-            .filter(|account| !participant_accounts.contains(account))
+            .filter(|account| !participant_accounts.contains(*account))
             .cloned()
             .collect();
         for account in &non_participant_configs {
@@ -1918,7 +1918,7 @@ impl MpcContract {
             .active_participants()
             .participants()
             .iter()
-            .map(|(account_id, _, _)| account_id.clone().into_dto_type())
+            .map(|(account_id, _, _)| account_id.clone())
             .collect::<BTreeSet<_>>();
 
         let mut foreign_chain_to_node_mapping: BTreeMap<
@@ -2276,7 +2276,7 @@ impl MpcContract {
             reason: "destination node sign_pk must be Ed25519".to_string(),
         })?;
         let node_id = NodeId {
-            account_id: dtos::AccountId(account_id.to_string()),
+            account_id: account_id.clone(),
             account_public_key: Some(account_public_key),
             tls_public_key,
         };
@@ -2605,15 +2605,14 @@ mod tests {
             .clone();
 
         // Build a new simulated environment with this node as caller
-        let near_account_id: AccountId = node_id.account_id.0.parse().unwrap();
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .signer_account_id(near_account_id.clone())
-            .predecessor_account_id(near_account_id.clone())
+            .signer_account_id(node_id.account_id.clone())
+            .predecessor_account_id(node_id.account_id.clone())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
-        near_account_id
+        node_id.account_id.clone()
     }
 
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
@@ -4038,7 +4037,7 @@ mod tests {
 
             let insertion_result = contract.tee_state.add_participant(
                 NodeId {
-                    account_id: dtos::AccountId(self.signer_account_id.to_string()),
+                    account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone(),
                     account_public_key: Some(
                         dtos::Ed25519PublicKey::try_from(&self.signer_account_pk)
@@ -4158,10 +4157,7 @@ mod tests {
             .vote(&update_id, account_id_1.clone())
             .unwrap();
 
-        let mut expected_votes = vec![
-            dtos::AccountId(account_id_0.to_string()),
-            dtos::AccountId(account_id_1.to_string()),
-        ];
+        let mut expected_votes = vec![account_id_0.clone(), account_id_1.clone()];
         expected_votes.sort();
         expected_votes
     }
@@ -4332,7 +4328,7 @@ mod tests {
 
             // Check that participant vote was added
             let mut expected_voters: Vec<_> = test_update.votes.to_vec();
-            expected_voters.push(account_id.clone().into_dto_type());
+            expected_voters.push(account_id.clone());
             let actual_voters: Vec<_> = proposed_updates
                 .votes
                 .iter()
@@ -4382,7 +4378,7 @@ mod tests {
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let account_id = test_update.votes.choose(&mut rng).unwrap();
-        let account_id: AccountId = account_id.0.parse().unwrap();
+        let account_id: AccountId = account_id.clone();
         testing_env!(VMContextBuilder::new()
             .signer_account_id(account_id.clone())
             .predecessor_account_id(account_id)
@@ -4490,11 +4486,7 @@ mod tests {
         let test_update = propose_and_vote_code(update_id_u64, &mut contract);
         let update_id: UpdateId = update_id_u64.into();
 
-        let non_participants: HashSet<AccountId> = test_update
-            .votes
-            .iter()
-            .map(|dto_id| dto_id.0.parse().unwrap())
-            .collect();
+        let non_participants: HashSet<AccountId> = test_update.votes.iter().cloned().collect();
 
         // Add votes from 2 current participants
         let participants = participants.participants();
@@ -4624,7 +4616,7 @@ mod tests {
 
         // Replace the target's attestation with an expired one
         let node_id = NodeId {
-            account_id: dtos::AccountId(target_account_id.to_string()),
+            account_id: target_account_id.clone(),
             tls_public_key: dtos::Ed25519PublicKey::try_from(&target_participant_info.sign_pk)
                 .expect("sign_pk must be Ed25519"),
             account_public_key: Some(bogus_ed25519_account_public_key()),
@@ -4954,12 +4946,7 @@ mod tests {
         // Then
         let votes = contract.get_foreign_chain_policy_proposals();
         assert_eq!(votes.proposal_by_account.len(), 1);
-        assert_eq!(
-            votes
-                .proposal_by_account
-                .get(&dtos::AccountId(first_account.to_string())),
-            Some(&policy)
-        );
+        assert_eq!(votes.proposal_by_account.get(&first_account), Some(&policy));
         assert_eq!(
             contract.get_foreign_chain_policy(),
             dtos::ForeignChainPolicy::default()
@@ -5028,7 +5015,7 @@ mod tests {
         contract
             .foreign_chain_policy_votes
             .proposal_by_account
-            .insert(dtos::AccountId(non_participant.to_string()), policy.clone());
+            .insert(non_participant.clone(), policy.clone());
         let _env = Environment::new(None, Some(first_account.clone()), None);
 
         // When
@@ -5044,10 +5031,10 @@ mod tests {
         let votes = contract.get_foreign_chain_policy_proposals();
         assert!(votes
             .proposal_by_account
-            .contains_key(&dtos::AccountId(non_participant.to_string())));
+            .contains_key(&non_participant.clone()));
         assert!(votes
             .proposal_by_account
-            .contains_key(&dtos::AccountId(first_account.to_string())));
+            .contains_key(&first_account.clone()));
     }
 
     #[test]
@@ -5087,7 +5074,7 @@ mod tests {
 
         // Then — their supported chains are registered
         let votes = contract.get_foreign_chain_configurations();
-        let first_voter = dtos::AccountId(first_account.to_string());
+        let first_voter = first_account.clone();
         let registered = votes
             .foreign_chain_configuration_by_node
             .get(&first_voter)
@@ -5139,7 +5126,7 @@ mod tests {
 
         // Then — their registered chains are now only Ethereum (overwritten, not merged)
         let votes = contract.get_foreign_chain_configurations();
-        let first_voter = dtos::AccountId(first_account.to_string());
+        let first_voter = first_account.clone();
         let registered = votes
             .foreign_chain_configuration_by_node
             .get(&first_voter)
@@ -5960,7 +5947,7 @@ mod tests {
         assert_eq!(
             votes
                 .foreign_chain_configuration_by_node
-                .get(&dtos::AccountId(first_account.to_string())),
+                .get(&first_account.clone()),
             Some(&foreign_chain_configuration)
         );
     }
@@ -6170,7 +6157,7 @@ mod tests {
 
         // Then — each participant's individual RPC URLs are preserved
         for (i, (account_id, _, _)) in participants.iter().enumerate() {
-            let account_dto = dtos::AccountId(account_id.to_string());
+            let account_dto = account_id.clone();
             let config = votes
                 .foreign_chain_configuration_by_node
                 .get(&account_dto)

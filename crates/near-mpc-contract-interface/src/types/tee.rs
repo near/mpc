@@ -55,7 +55,7 @@ mod tests {
 
     fn node_id_with_account_key(account_key: Option<Ed25519PublicKey>) -> NodeId {
         NodeId {
-            account_id: AccountId("alice.near".to_string()),
+            account_id: "alice.near".parse().unwrap(),
             tls_public_key: tls_key(),
             account_public_key: account_key,
         }

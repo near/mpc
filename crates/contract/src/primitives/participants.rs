@@ -228,7 +228,7 @@ impl Participants {
         self.participants()
             .iter()
             .map(|(account_id, _, p_info)| NodeId {
-                account_id: near_mpc_contract_interface::types::AccountId(account_id.to_string()),
+                account_id: account_id.clone(),
                 tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
                     &p_info.sign_pk,
                 )

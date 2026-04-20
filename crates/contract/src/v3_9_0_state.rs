@@ -109,7 +109,7 @@ impl From<OldTeeState> for TeeState {
                     .as_ref()
                     .and_then(|pk| dtos::Ed25519PublicKey::try_from(pk).ok());
                 let node_id = dtos::NodeId {
-                    account_id: dtos::AccountId(old_attestation.node_id.account_id.to_string()),
+                    account_id: old_attestation.node_id.account_id,
                     tls_public_key: new_tls_key.clone(),
                     account_public_key,
                 };

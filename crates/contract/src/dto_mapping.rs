@@ -13,7 +13,6 @@ use mpc_attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
 
@@ -376,12 +375,6 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::AccountId> for &AccountId {
-    fn into_dto_type(self) -> dtos::AccountId {
-        dtos::AccountId(self.clone().into())
-    }
-}
-
 impl IntoInterfaceType<dtos::UpdateHash> for &Update {
     fn into_dto_type(self) -> dtos::UpdateHash {
         match self {
@@ -400,7 +393,7 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
         let votes = all
             .votes
             .into_iter()
-            .map(|(account, update_id)| (account.into_dto_type(), update_id.0))
+            .map(|(account, update_id)| (account, update_id.0))
             .collect();
 
         let updates = all
@@ -690,7 +683,7 @@ impl IntoInterfaceType<dtos::AuthenticatedParticipantId> for &AuthenticatedParti
 
 impl IntoInterfaceType<dtos::AuthenticatedAccountId> for &AuthenticatedAccountId {
     fn into_dto_type(self) -> dtos::AuthenticatedAccountId {
-        dtos::AuthenticatedAccountId(dtos::AccountId(self.get().to_string()))
+        dtos::AuthenticatedAccountId(self.get().clone())
     }
 }
 
@@ -773,7 +766,7 @@ impl TryIntoInterfaceType<dtos::Participants> for &Participants {
                     }
                 })?;
                 Ok((
-                    dtos::AccountId(account_id.to_string()),
+                    account_id.clone(),
                     dtos::ParticipantId(participant_id.get()),
                     dtos::ParticipantInfo {
                         url: info.url.clone(),

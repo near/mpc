@@ -14,7 +14,7 @@ use mpc_attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
-use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
+use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_sdk::env;
 use std::collections::BTreeMap;
 use std::{collections::HashSet, time::Duration};
@@ -98,7 +98,7 @@ impl TeeState {
                 continue;
             };
             let node_id = NodeId {
-                account_id: dtos::AccountId(account_id.to_string()),
+                account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
                 account_public_key: None,
             };
@@ -230,7 +230,7 @@ impl TeeState {
                 let maybe_node = self.find_node_id_by_tls_key(&tls_public_key);
 
                 let node_id = NodeId {
-                    account_id: dtos::AccountId(account_id.to_string()),
+                    account_id: account_id.clone(),
                     tls_public_key,
 
                     // In transition (mock attestation) mode — try to reuse known key, else None.
@@ -445,7 +445,7 @@ impl TeeState {
             .get(&tls_key)
             .ok_or(AttestationCheckError::AttestationNotFound)?;
 
-        if attestation.node_id.account_id.0 != signer_id.as_str() {
+        if attestation.node_id.account_id != signer_id {
             return Err(AttestationCheckError::AttestationOwnerMismatch);
         }
 
@@ -512,7 +512,7 @@ mod tests {
             .participants()
             .iter()
             .map(|(account_id, _, p_info)| NodeId {
-                account_id: dtos::AccountId(account_id.to_string()),
+                account_id: account_id.clone(),
                 tls_public_key: Ed25519PublicKey::try_from(&p_info.sign_pk).unwrap(),
                 account_public_key: Some(bogus_ed25519_account_public_key()),
             })
@@ -522,7 +522,7 @@ mod tests {
         let local_attestation = Attestation::Mock(MockAttestation::Valid);
 
         let non_participant_uid = NodeId {
-            account_id: dtos::AccountId(non_participant.to_string()),
+            account_id: non_participant.clone(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
             tls_public_key: bogus_ed25519_public_key(),
         };
@@ -585,7 +585,7 @@ mod tests {
         let local_attestation = Attestation::Mock(MockAttestation::Valid);
 
         let participant_id = NodeId {
-            account_id: dtos::AccountId(participant.to_string()),
+            account_id: participant.clone(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
             tls_public_key: bogus_ed25519_public_key(),
         };
@@ -619,7 +619,7 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
-            account_id: dtos::AccountId("alice.near".to_string()),
+            account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
@@ -643,7 +643,7 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
-            account_id: dtos::AccountId("alice.near".to_string()),
+            account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
@@ -668,7 +668,7 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
-            account_id: dtos::AccountId("alice.near".to_string()),
+            account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
@@ -697,13 +697,13 @@ mod tests {
         let mut tee_state = TeeState::default();
 
         let node_1 = NodeId {
-            account_id: dtos::AccountId("alice.near".to_string()),
+            account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
 
         let node_2 = NodeId {
-            account_id: dtos::AccountId("bob.near".to_string()),
+            account_id: "bob.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
@@ -739,7 +739,7 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
-            account_id: dtos::AccountId("fresh.near".to_string()),
+            account_id: "fresh.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
@@ -771,7 +771,7 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
-            account_id: dtos::AccountId("about_to_be_expired.near".to_string()),
+            account_id: "about_to_be_expired.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
@@ -810,7 +810,7 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
-            account_id: dtos::AccountId("valid_check.near".to_string()),
+            account_id: "valid_check.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
@@ -848,7 +848,7 @@ mod tests {
         // given
         let tee_state = TeeState::default();
         let node_id = NodeId {
-            account_id: dtos::AccountId("ghost.near".to_string()),
+            account_id: "ghost.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         };
@@ -877,7 +877,7 @@ mod tests {
         // 3. Register the attestation in TeeState
         // The TLS key comes from participant_info, the Account Key must match the signer_pk
         let node_id = NodeId {
-            account_id: dtos::AccountId(account_id.to_string()),
+            account_id: account_id.clone(),
             tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
             account_public_key: Some(Ed25519PublicKey::try_from(&signer_pk).unwrap()),
         };
@@ -908,7 +908,7 @@ mod tests {
 
         // Register attestation with None for account_public_key
         let node_id = NodeId {
-            account_id: dtos::AccountId(account_id.to_string()),
+            account_id: account_id.clone(),
             tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
             account_public_key: None,
         };
@@ -971,7 +971,7 @@ mod tests {
         let other_account: AccountId = "imposter.near".parse().unwrap();
 
         let node_id = NodeId {
-            account_id: dtos::AccountId(other_account.to_string()), // Mismatch here
+            account_id: other_account.clone(), // Mismatch here
             tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
             account_public_key: Some(Ed25519PublicKey::try_from(&signer_pk).unwrap()),
         };
@@ -1007,7 +1007,7 @@ mod tests {
                 .unwrap();
 
         let node_id = NodeId {
-            account_id: dtos::AccountId(account_id.to_string()),
+            account_id: account_id.clone(),
             tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
             account_public_key: Some(old_signer_pk), // Mismatch here
         };
@@ -1034,7 +1034,7 @@ mod tests {
     /// Helper to create a NodeId from participant data
     fn create_node_id(account_id: &AccountId, sign_pk: &near_sdk::PublicKey) -> NodeId {
         NodeId {
-            account_id: dtos::AccountId(account_id.to_string()),
+            account_id: account_id.clone(),
             tls_public_key: Ed25519PublicKey::try_from(sign_pk).unwrap(),
             account_public_key: Some(bogus_ed25519_account_public_key()),
         }

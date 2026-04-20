@@ -80,7 +80,7 @@ mod tests {
         let participants_json = Participants {
             next_id: ParticipantId(1),
             participants: vec![(
-                AccountId("alice.near".to_string()),
+                "alice.near".parse().unwrap(),
                 ParticipantId(0),
                 ParticipantInfo {
                     url: "https://alice.com".to_string(),
@@ -107,7 +107,7 @@ mod tests {
             Participants {
                 next_id: ParticipantId(1),
                 participants: vec![(
-                    AccountId("alice.near".to_string()),
+                    "alice.near".parse().unwrap(),
                     ParticipantId(0),
                     ParticipantInfo {
                         url: "https://alice.com".to_string(),

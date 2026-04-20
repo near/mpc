@@ -133,7 +133,7 @@ impl TestSetupBuilder {
             .participants_list
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
-                account_id: near_mpc_contract_interface::types::AccountId(account_id.to_string()),
+                account_id: account_id.clone(),
                 tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
                     &participant_info.sign_pk,
                 )
@@ -239,7 +239,7 @@ impl TestSetup {
         self.participants_list
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
-                account_id: near_mpc_contract_interface::types::AccountId(account_id.to_string()),
+                account_id: account_id.clone(),
                 tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
                     &participant_info.sign_pk,
                 )
@@ -270,7 +270,7 @@ fn create_context_for_participant(account_id: &AccountId) -> VMContext {
 fn create_context_for_dto_participant(
     account_id: &near_mpc_contract_interface::types::AccountId,
 ) -> VMContext {
-    create_context_for_participant(&account_id.0.parse().unwrap())
+    create_context_for_participant(account_id)
 }
 
 fn set_system_time(nano_seconds_since_unix_epoch: u64) {
@@ -305,7 +305,7 @@ fn test_clean_tee_status_removes_non_participants() {
         .take(2)
         .cloned()
         .map(|(account_id, _, participant_info)| NodeId {
-            account_id: near_mpc_contract_interface::types::AccountId(account_id.to_string()),
+            account_id: account_id.clone(),
             tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
                 &participant_info.sign_pk,
             )
@@ -319,9 +319,7 @@ fn test_clean_tee_status_removes_non_participants() {
 
     // Add TEE account for someone who is NOT a current participant
     let removed_participant_node = NodeId {
-        account_id: near_mpc_contract_interface::types::AccountId(
-            "removed.participant.near".to_string(),
-        ),
+        account_id: "removed.participant.near".parse().unwrap(),
         tls_public_key: bogus_ed25519_public_key(),
         account_public_key: Some(bogus_ed25519_account_public_key()),
     };

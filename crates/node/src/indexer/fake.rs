@@ -304,7 +304,7 @@ impl FakeMpcContractState {
             return;
         }
 
-        let voter = dtos::AccountId(account_id.to_string());
+        let voter = account_id.clone();
         let _previous = self
             .foreign_chain_policy_votes
             .proposal_by_account
@@ -318,7 +318,7 @@ impl FakeMpcContractState {
             .filter(|(participant_id, _, _)| {
                 self.foreign_chain_policy_votes
                     .proposal_by_account
-                    .get(&dtos::AccountId(participant_id.to_string()))
+                    .get(participant_id)
                     .is_some_and(|prop| prop == &policy)
             })
             .count();

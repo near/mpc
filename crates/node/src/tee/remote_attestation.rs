@@ -219,7 +219,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
     let node_id = NodeId {
-        account_id: near_mpc_contract_interface::types::AccountId(node_account_id.to_string()),
+        account_id: node_account_id.clone(),
         tls_public_key: tls_public_key.clone(),
         account_public_key: Some(account_public_key.clone()),
     };
@@ -449,7 +449,7 @@ mod tests {
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
 
         let node_id = NodeId {
-            account_id: near_mpc_contract_interface::types::AccountId(node_account_id.to_string()),
+            account_id: node_account_id.clone(),
             tls_public_key: tls_public_key.clone(),
             account_public_key: Some(account_public_key.clone()),
         };

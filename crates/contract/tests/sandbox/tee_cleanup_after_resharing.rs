@@ -66,7 +66,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // add a new TEE quote for an existing participant, but with a different signer key
     let new_uid = NodeId {
-        account_id: dtos::AccountId(mpc_signer_accounts[0].id().to_string()),
+        account_id: mpc_signer_accounts[0].id().clone(),
         tls_public_key: bogus_ed25519_public_key(),
         account_public_key: Some(bogus_ed25519_account_public_key()),
     };
@@ -95,7 +95,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     {
         new_participants
             .insert_with_id(
-                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
                     sign_pk: participant_info.sign_pk.clone().into(),

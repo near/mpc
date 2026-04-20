@@ -5,12 +5,13 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = ["borsh/unstable__schema", "schemars"]
+abi = ["borsh/unstable__schema", "near-account-id/schemars-v0_8", "schemars"]
 
 [dependencies]
 borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
+near-account-id = { workspace = true, features = ["borsh", "serde"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
 
@@ -19,6 +20,7 @@ schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+insta = { workspace = true }
 rand = { workspace = true }
 serde_json = { workspace = true }
 

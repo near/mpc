@@ -3,8 +3,11 @@
 
 extern crate alloc;
 
+pub mod account_id;
 pub mod domain;
 pub mod hash;
+
+pub use account_id::AccountId;
 
 /// Re-exports used by the [`define_hash!`] macro. Not part of the public API.
 #[doc(hidden)]
