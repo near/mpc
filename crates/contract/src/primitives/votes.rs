@@ -12,9 +12,10 @@ use near_sdk::IntoStorageKey;
 /// Helper struct to keep track of submitted votes.
 /// Allows efficient look-up of votes by voter and votes by proposal.
 #[near(serializers=[borsh])]
+#[derive(Debug)]
 pub struct Votes<V>
 where
-    V: BorshSerialize + Ord,
+    V: BorshSerialize + BorshDeserialize + Ord,
 {
     proposal_by_voter: IterableMap<V, ProposalHash>,
     votes_by_proposal: IterableMap<ProposalHash, VoterSet<V>>,
