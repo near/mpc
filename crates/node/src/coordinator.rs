@@ -32,9 +32,9 @@ use crate::web::DebugRequest;
 use anyhow::Context;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::{Curve, DomainId};
 use mpc_contract::primitives::key_state::EpochId;
 use mpc_node_config::ConfigFile;
+use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
@@ -345,7 +345,7 @@ where
         if let Some(my_participant_id) = my_participant_id {
             let current_participants_config = running_state.participants.clone();
             let current_epoch_id = running_state.keyset.epoch_id;
-            let all_domains: Vec<DomainId> = running_state.keyset.get_domain_ids();
+            let all_domains: Vec<_> = running_state.keyset.get_domain_ids();
             let current_epoch_data = EpochData {
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
@@ -530,12 +530,20 @@ where
                     VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
                 );
 
-                let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
-                let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
-                    HashMap::new();
-                let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
+                let mut ecdsa_keyshares: HashMap<
+                    mpc_primitives::domain::DomainId,
+                    ecdsa::KeygenOutput,
+                > = HashMap::new();
+                let mut robust_ecdsa_keyshares: HashMap<
+                    mpc_primitives::domain::DomainId,
+                    ecdsa::KeygenOutput,
+                > = HashMap::new();
+                let mut eddsa_keyshares: HashMap<
+                    mpc_primitives::domain::DomainId,
+                    eddsa::KeygenOutput,
+                > = HashMap::new();
                 let mut ckd_keyshares: HashMap<
-                    DomainId,
+                    mpc_primitives::domain::DomainId,
                     confidential_key_derivation::KeygenOutput,
                 > = HashMap::new();
                 let mut domain_to_curve: HashMap<DomainId, Curve> = HashMap::new();
@@ -603,7 +611,7 @@ where
                     foreign_chain_policy_reader.clone(),
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
-                ));
+                )?);
 
                 let mpc_client = Arc::new(MpcClient::new(
                     config_file.into(),

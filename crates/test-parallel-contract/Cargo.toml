@@ -15,7 +15,6 @@ assert_matches = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 elliptic-curve = { workspace = true }
-hex = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["blstrs"] }
 near-sdk = { workspace = true }
 serde = { workspace = true }

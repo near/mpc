@@ -3,7 +3,7 @@ use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::types::SignatureResponse;
 use crate::types::primitives::{AccountId, DomainId};
@@ -145,6 +145,7 @@ pub enum ForeignChainRpcRequest {
     Bitcoin(BitcoinRpcRequest),
     Starknet(StarknetRpcRequest),
     Bnb(EvmRpcRequest),
+    Base(EvmRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -156,6 +157,7 @@ impl ForeignChainRpcRequest {
             Self::Bitcoin(_) => ForeignChain::Bitcoin,
             Self::Starknet(_) => ForeignChain::Starknet,
             Self::Bnb(_) => ForeignChain::Bnb,
+            Self::Base(_) => ForeignChain::Base,
         }
     }
 }
@@ -567,6 +569,7 @@ pub enum StarknetExtractedValue {
 
 #[derive(
     Debug,
+    Copy,
     Clone,
     Eq,
     PartialEq,
@@ -619,6 +622,53 @@ pub struct ForeignChainPolicy {
 #[derive(
     Debug,
     Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>);
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::From,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
+
+#[derive(
+    Debug,
+    Clone,
     Eq,
     PartialEq,
     Ord,
@@ -657,6 +707,30 @@ pub struct RpcProvider {
 )]
 pub struct ForeignChainPolicyVotes {
     pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+    derive_more::From,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct NodeForeignChainConfigurations {
+    pub foreign_chain_configuration_by_node: BTreeMap<AccountId, ForeignChainConfiguration>,
 }
 
 #[derive(
@@ -1055,6 +1129,14 @@ mod tests {
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Bnb,
+    )]
+    #[case::base(
+        ForeignChainRpcRequest::Base(EvmRpcRequest {
+            tx_id: EvmTxId([0; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Base,
     )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,

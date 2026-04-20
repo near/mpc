@@ -197,7 +197,7 @@ pub mod tests {
     use crate::state::{key_event::tests::find_leader, running::RunningContractState};
     use crate::{
         primitives::{
-            domain::{AddDomainsVotes, DomainId},
+            domain::AddDomainsVotes,
             key_state::{AttemptId, KeyEventId},
             test_utils::gen_account_id,
             thresholds::{Threshold, ThresholdParameters},
@@ -206,6 +206,7 @@ pub mod tests {
         state::test_utils::gen_resharing_state,
     };
     use near_account_id::AccountId;
+    use near_mpc_contract_interface::types::DomainId;
     use rstest::rstest;
     use std::collections::BTreeSet;
 

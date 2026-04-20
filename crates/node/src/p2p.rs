@@ -894,7 +894,7 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod testing {
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
     use crate::primitives::ParticipantId;
@@ -1049,8 +1049,8 @@ mod tests {
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use mpc_primitives::domain::DomainId;
     use rand::Rng;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -1099,7 +1099,7 @@ mod tests {
                     channel_id,
                     kind: crate::primitives::MpcMessageKind::Start(MpcStartMessage {
                         task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
-                            key_event: key_id,
+                            key_event: key_id.into(),
                         }),
                         participants: vec![participant0, participant1],
                     }),

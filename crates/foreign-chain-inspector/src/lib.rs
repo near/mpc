@@ -3,9 +3,14 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use thiserror::Error;
 
+pub use jsonrpsee::http_client;
+
 pub mod abstract_chain;
+pub mod base;
 pub mod bitcoin;
+pub mod bnb;
 pub mod contract_interface_conversions;
+pub mod evm;
 pub mod starknet;
 
 pub trait ForeignChainInspector {

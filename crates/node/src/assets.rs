@@ -7,11 +7,11 @@ use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use futures::FutureExt;
-use mpc_contract::primitives::domain::DomainId;
+use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 /// The cold queue contains a collection of assets and a condition function.
@@ -350,6 +350,10 @@ where
     my_participant_id: ParticipantId,
     owned_queue: DoubleQueue<T, Vec<ParticipantId>>,
     last_id: Mutex<Option<UniqueId>>,
+    /// Guards against concurrent `take_unowned` calls for the same ID.
+    /// An ID is inserted before the DB read and removed after the delete commits,
+    /// so two racing callers cannot both succeed for the same asset.
+    unowned_in_flight: Mutex<HashSet<UniqueId>>,
 }
 
 /// Iterates over a key range in column `db_col`, determined by  [`DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, domain_id)`],
@@ -413,6 +417,7 @@ where
             my_participant_id,
             owned_queue,
             last_id: Mutex::new(last_id),
+            unowned_in_flight: Mutex::new(HashSet::new()),
         })
     }
 
@@ -547,8 +552,28 @@ where
     }
 
     /// Removes an unowned asset from the storage and returns it. Returns
-    /// an error if we do not have the asset in our database.
+    /// an error if we do not have the asset in our database or if a concurrent
+    /// call is already taking the same asset.
     pub fn take_unowned(&self, id: UniqueId) -> anyhow::Result<T> {
+        // Prevent two concurrent callers from both reading the same asset
+        // before either commits the delete (read-then-delete race).
+        {
+            let mut in_flight = self.unowned_in_flight.lock().unwrap();
+            if !in_flight.insert(id) {
+                anyhow::bail!(
+                    "Unowned {} is already being taken by another task: {:?}",
+                    self.col,
+                    id
+                );
+            }
+        }
+        let result = self.take_unowned_inner(id);
+        // Always remove from in-flight, whether the take succeeded or not.
+        self.unowned_in_flight.lock().unwrap().remove(&id);
+        result
+    }
+
+    fn take_unowned_inner(&self, id: UniqueId) -> anyhow::Result<T> {
         let key = self.make_key(id);
         let value_ser = self.db.get(self.col, &key)?.ok_or_else(|| {
             anyhow::anyhow!("Unowned {} not found in the database: {:?}", self.col, id)

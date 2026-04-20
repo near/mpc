@@ -9,22 +9,23 @@ use k256::{
     FieldBytes,
 };
 use mpc_contract::{
-    crypto_shared::{derive_tweak, kdf::derive_app_id, CKDResponse},
     errors,
     primitives::{
         ckd::CKDRequest,
-        domain::DomainId,
-        signature::{Bytes, Payload, SignatureRequest, YieldIndex},
+        signature::{SignatureRequest, YieldIndex},
     },
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     SIGN,
 };
+use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
     self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
 };
+use near_mpc_contract_interface::types::{CKDResponse, DomainId, Payload};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{
@@ -231,7 +232,7 @@ impl CKDRequestTest {
         let args = CKDRequestArgs {
             derivation_path,
             app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key),
-            domain_id: domain_id.into(),
+            domain_id,
         };
 
         CKDRequestTest {
@@ -251,7 +252,7 @@ impl CKDRequestTest {
         let args = CKDRequestArgs {
             derivation_path,
             app_public_key: request.app_public_key.clone(),
-            domain_id: domain_id.into(),
+            domain_id,
         };
 
         CKDRequestTest {
@@ -574,7 +575,7 @@ fn create_response_ed25519(
         .try_into()
         .unwrap();
 
-    let bytes = Bytes::new(payload.into()).unwrap();
+    let bytes = BoundedVec::from(payload);
     let payload = Payload::Eddsa(bytes);
 
     let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);

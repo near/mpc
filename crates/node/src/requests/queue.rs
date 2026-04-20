@@ -559,9 +559,9 @@ mod tests {
     use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
     use crate::tests::into_participant_ids;
     use crate::types::{CKDRequest, SignatureRequest};
-    use mpc_contract::primitives::domain::DomainId;
-    use mpc_contract::primitives::signature::{Payload, Tweak};
+    use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
+    use near_mpc_contract_interface::types::{Payload, Tweak};
     use near_time::{Duration, FakeClock};
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};

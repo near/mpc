@@ -11,15 +11,19 @@ pub mod types {
     pub use participants::{ParticipantId, ParticipantInfo, Participants};
 
     pub use ckd::{CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, CkdAppId};
+    pub use near_mpc_crypto_types::CKDResponse;
+    pub use near_mpc_crypto_types::ckd::CKDRequest;
+
     pub use metrics::Metrics;
+    pub use near_mpc_crypto_types::kdf;
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
-        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
+        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
         DomainConfig, DomainPurpose, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
         KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState,
-        ResharingContractState, RunningContractState, SignatureScheme, Threshold,
-        ThresholdParameters, ThresholdParametersVotes,
+        ResharingContractState, RunningContractState, Threshold, ThresholdParameters,
+        ThresholdParametersVotes,
     };
     pub use updates::{ProposedUpdates, UpdateHash};
 

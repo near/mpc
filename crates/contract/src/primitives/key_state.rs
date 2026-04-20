@@ -1,8 +1,8 @@
-use super::domain::DomainId;
 use super::participants::{ParticipantId, Participants};
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::DomainId;
 use near_sdk::{env, near};
 use std::fmt::Display;
 
@@ -49,6 +49,11 @@ impl AttemptId {
     }
     pub fn legacy_attempt_id() -> Self {
         AttemptId(0)
+    }
+
+    // TODO(#381): Remove once the node no longer depends on the contract crate.
+    pub(crate) fn from_u64(val: u64) -> Self {
+        AttemptId(val)
     }
 }
 
@@ -153,6 +158,7 @@ impl AuthenticatedParticipantId {
     pub fn get(&self) -> ParticipantId {
         self.0.clone()
     }
+
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
         participants
@@ -174,6 +180,7 @@ impl AuthenticatedAccountId {
     pub fn get(&self) -> &AccountId {
         &self.0
     }
+
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
         if participants
@@ -191,13 +198,13 @@ impl AuthenticatedAccountId {
 #[cfg(test)]
 pub mod tests {
     use crate::primitives::{
-        domain::DomainId,
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
             Keyset,
         },
         test_utils::{bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params},
     };
+    use near_mpc_contract_interface::types::DomainId;
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
 

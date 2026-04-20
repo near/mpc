@@ -20,9 +20,10 @@ use crate::{
         CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
     },
 };
-use mpc_contract::primitives::domain::{Curve, DomainConfig};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
+use mpc_primitives::domain::Curve;
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::DomainConfig;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::{
@@ -105,7 +106,7 @@ pub async fn keygen_computation_inner(
     );
     chain_txn_sender
         .send(ChainSendTransactionRequest::VotePk(ChainVotePkArgs {
-            key_event_id: key_id,
+            key_event_id: key_id.into(),
             public_key,
         }))
         .await?;
@@ -144,7 +145,7 @@ async fn keygen_computation(
                 Err(err) => {
                     tracing::error!("Key generation attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
                     chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs {
-                        key_event_id: key_id,
+                        key_event_id: key_id.into(),
                     })).await?;
                 },
             }
@@ -316,7 +317,7 @@ async fn resharing_computation_inner(
     chain_txn_sender
         .send(ChainSendTransactionRequest::VoteReshared(
             ChainVoteResharedArgs {
-                key_event_id: key_id,
+                key_event_id: key_id.into(),
             },
         ))
         .await?;
@@ -355,7 +356,7 @@ async fn resharing_computation(
                 Err(err) => {
                     tracing::error!("Key resharing attempt {:?} failed: {:?}; sending vote_abort_key_event_instance", key_id, err);
                     chain_txn_sender.send(ChainSendTransactionRequest::VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs {
-                        key_event_id: key_id,
+                        key_event_id: key_id.into(),
                     })).await?;
                 },
             }
@@ -430,7 +431,9 @@ pub async fn keygen_leader(
         // wait for it. If it doesn't happen after some time, we try again.
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartKeygen(
-                ChainStartKeygenArgs { key_event_id },
+                ChainStartKeygenArgs {
+                    key_event_id: key_event_id.into(),
+                },
             ))
             .await?;
 
@@ -464,7 +467,7 @@ pub async fn keygen_leader(
         let participants = client.all_participant_ids();
         let Ok(channel) = client.new_channel_for_task(
             EcdsaTaskId::KeyGeneration {
-                key_event: key_event_id,
+                key_event: key_event_id.into(),
             },
             participants,
         ) else {
@@ -526,7 +529,7 @@ pub async fn keygen_follower(
                 channel,
                 keyshare_storage.clone(),
                 chain_txn_sender.clone(),
-                key_event_id,
+                key_event_id.into(),
                 threshold,
             ),
         );
@@ -562,7 +565,9 @@ pub async fn resharing_leader(
 
         chain_txn_sender
             .send(ChainSendTransactionRequest::StartReshare(
-                ChainStartReshareArgs { key_event_id },
+                ChainStartReshareArgs {
+                    key_event_id: key_event_id.into(),
+                },
             ))
             .await
             .inspect_err(|e| {
@@ -603,7 +608,7 @@ pub async fn resharing_leader(
         let participants = client.all_participant_ids();
         let channel = match client.new_channel_for_task(
             EcdsaTaskId::KeyResharing {
-                key_event: key_event_id,
+                key_event: key_event_id.into(),
             },
             participants,
         ) {
@@ -668,7 +673,7 @@ pub async fn resharing_follower(
                 channel,
                 keyshare_storage.clone(),
                 chain_txn_sender.clone(),
-                key_event_id,
+                key_event_id.into(),
                 args.clone(),
             ),
         );
@@ -722,8 +727,9 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
     use assert_matches::assert_matches;
-    use mpc_contract::primitives::domain::{Curve, DomainConfig, DomainId, DomainPurpose};
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use mpc_primitives::domain::{Curve, DomainId};
+    use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

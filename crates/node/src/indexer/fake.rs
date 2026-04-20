@@ -21,12 +21,10 @@ use assert_matches::assert_matches;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
-use mpc_contract::primitives::domain::AddDomainsVotes;
 use mpc_contract::primitives::{
-    domain::{DomainConfig, DomainRegistry},
+    domain::{AddDomainsVotes, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
     participants::{ParticipantId, ParticipantInfo, Participants},
-    signature::Payload,
     thresholds::{Threshold, ThresholdParameters},
 };
 use mpc_contract::state::{
@@ -35,6 +33,7 @@ use mpc_contract::state::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{DomainConfig, Payload};
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -373,7 +372,9 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(running_state) = &self.state else {
             panic!("only allow calling this in `running_state`");
         };
-        if running_state.keyset != args.keyset {
+        let dto_keyset: near_mpc_contract_interface::types::Keyset =
+            running_state.keyset.clone().into();
+        if dto_keyset != args.keyset {
             panic!("keyset mismatch");
         }
         self.migration_service.remove_migration(&account_id);
@@ -465,8 +466,10 @@ impl FakeIndexerCore {
                 loop {
                     {
                         let state = contract.lock().await;
+                        let dto_state: near_mpc_contract_interface::types::ProtocolContractState =
+                            state.state.clone().try_into().unwrap();
                         let config = ContractState::from_contract_state(
-                            &state.state,
+                            &dto_state,
                             state.env.block_height,
                             None,
                         )
@@ -605,7 +608,11 @@ impl FakeIndexerCore {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_pk(account_id, vote_pk.key_event_id, vote_pk.public_key);
+                        contract.vote_pk(
+                            account_id,
+                            Into::into(vote_pk.key_event_id),
+                            vote_pk.public_key,
+                        );
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;
@@ -657,7 +664,7 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::VoteReshared(reshared) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_reshared(account_id, reshared.key_event_id);
+                        contract.vote_reshared(account_id, Into::into(reshared.key_event_id));
                     }
                     ChainSendTransactionRequest::VoteForeignChainPolicy(vote) => {
                         let mut contract = contract.lock().await;
@@ -666,15 +673,15 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?
                         let mut contract = contract.lock().await;
-                        contract.vote_start_keygen(account_id, start.key_event_id);
+                        contract.vote_start_keygen(account_id, Into::into(start.key_event_id));
                     }
                     ChainSendTransactionRequest::StartReshare(start) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_start_reshare(account_id, start.key_event_id);
+                        contract.vote_start_reshare(account_id, Into::into(start.key_event_id));
                     }
                     ChainSendTransactionRequest::VoteAbortKeyEventInstance(abort) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_abort_key_event(account_id, abort.key_event_id);
+                        contract.vote_abort_key_event(account_id, Into::into(abort.key_event_id));
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
                     ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {

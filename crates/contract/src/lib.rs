@@ -12,17 +12,22 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_8_1_state;
+pub mod v3_9_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
 mod dto_mapping;
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use crate::{
-    crypto_shared::types::CKDResponse,
-    dto_mapping::{args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType},
+    dto_mapping::{
+        args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType,
+        TryIntoInterfaceType,
+    },
     errors::{Error, RequestError},
     primitives::{
         ckd::{app_public_key_check, ckd_output_check, CKDRequest},
@@ -36,7 +41,7 @@ use crate::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
 use crypto_shared::{
-    derive_key_secp256k1, derive_tweak,
+    derive_key_secp256k1,
     kdf::derive_public_key_edwards_point_ed25519,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError},
 };
@@ -44,12 +49,14 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
-    self as dtos, Metrics, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    self as dtos, CKDResponse, Metrics, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
+use dtos::{Curve, DomainConfig, DomainId, DomainPurpose};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_sdk::{
     env, log, near,
@@ -58,9 +65,9 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry},
+    domain::DomainRegistry,
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
-    signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
+    signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
@@ -131,11 +138,13 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
+    node_foreign_chain_configurations: NodeForeignChainConfigurations,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+    // TODO(#2937): Remove via state migration.
     metrics: Metrics,
 }
 
@@ -185,6 +194,37 @@ impl ForeignChainPolicyVotes {
     }
 }
 
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+struct NodeForeignChainConfigurations {
+    foreign_chain_configuration_by_node:
+        IterableMap<dtos::AccountId, dtos::ForeignChainConfiguration>,
+}
+
+impl Default for NodeForeignChainConfigurations {
+    fn default() -> Self {
+        Self {
+            foreign_chain_configuration_by_node: IterableMap::new(
+                StorageKey::SupportedForeignChainsVotes,
+            ),
+        }
+    }
+}
+
+impl NodeForeignChainConfigurations {
+    fn to_dto(&self) -> dtos::NodeForeignChainConfigurations {
+        let foreign_chain_configuration_by_node = self
+            .foreign_chain_configuration_by_node
+            .iter()
+            .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
+            .collect();
+
+        dtos::NodeForeignChainConfigurations {
+            foreign_chain_configuration_by_node,
+        }
+    }
+}
+
 impl MpcContract {
     pub(crate) fn public_key_extended(
         &self,
@@ -221,6 +261,103 @@ impl MpcContract {
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
+
+    /// Common preconditions enforced on every user-facing request method (`sign`,
+    /// `request_app_private_key`, `verify_foreign_transaction`):
+    ///
+    /// 1. The target domain exists and its purpose matches `expected_purpose`.
+    /// 2. The caller attached enough prepaid gas to perform the yield/resume flow.
+    /// 3. The caller attached at least `minimum_deposit` (excess is refunded).
+    /// 4. The contract is currently accepting user requests.
+    ///
+    /// Returns the validated domain config and the caller's account id.
+    fn check_request_preconditions(
+        &self,
+        domain_id: DomainId,
+        expected_purpose: DomainPurpose,
+        minimum_gas: Gas,
+        minimum_deposit: NearToken,
+    ) -> (DomainConfig, AccountId) {
+        // 1. Look up the domain and check its purpose.
+        let domains = match self.protocol_state.domain_registry() {
+            Ok(domains) => domains,
+            Err(err) => env::panic_str(&err.to_string()),
+        };
+        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound {
+                    provided: domain_id,
+                }
+                .to_string(),
+            );
+        };
+        if domain_config.purpose != expected_purpose {
+            env::panic_str(
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: expected_purpose,
+                    actual: domain_config.purpose,
+                }
+                .to_string(),
+            );
+        }
+        let domain_config = domain_config.clone();
+
+        // 2. Make sure the call will not run out of gas doing yield/resume logic.
+        let prepaid_gas = env::prepaid_gas();
+        if prepaid_gas < minimum_gas {
+            env::panic_str(
+                &InvalidParameters::InsufficientGas {
+                    provided: prepaid_gas.as_gas(),
+                    required: minimum_gas.as_gas(),
+                }
+                .to_string(),
+            );
+        }
+
+        // 3. Require the minimum deposit and refund any excess.
+        let predecessor = env::predecessor_account_id();
+        require_deposit(minimum_deposit, &predecessor);
+
+        // 4. Refuse the request if the contract is not currently accepting requests
+        //    (e.g. because TEE validation has failed).
+        if !self.accept_requests {
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
+        (domain_config, predecessor)
+    }
+
+    /// Creates a yield-resume promise that calls back into `callback_method` with the
+    /// pre-serialized `callback_args`, and stores the resulting yield id via `insert`.
+    ///
+    /// This function calls `env::promise_return` and so must be the last operation performed
+    /// in the enclosing contract method.
+    fn enqueue_yield_request(
+        &mut self,
+        callback_method: &str,
+        callback_args: Vec<u8>,
+        callback_gas: Gas,
+        insert: impl FnOnce(&mut Self, CryptoHash) -> bool,
+    ) {
+        let promise_index = env::promise_yield_create(
+            callback_method,
+            callback_args,
+            callback_gas,
+            GasWeight(0),
+            DATA_ID_REGISTER,
+        );
+
+        let return_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+            .expect("read_register failed")
+            .try_into()
+            .expect("conversion to CryptoHash failed");
+        if insert(self, return_id) {
+            log!("request already present, overriding callback.")
+        }
+
+        env::promise_return(promise_index);
+    }
 }
 
 // User contract API
@@ -238,39 +375,12 @@ impl MpcContract {
             request
         );
 
-        if request.deprecated_payload.is_some() {
-            self.metrics.sign_with_v1_payload_count += 1;
-        }
-
-        if request.payload_v2.is_some() {
-            self.metrics.sign_with_v2_payload_count += 1;
-        }
-
-        let request: SignRequest = request.try_into().unwrap();
-
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id,
-                }
-                .to_string(),
-            );
-        };
-
-        if domain_config.purpose != DomainPurpose::Sign {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::Sign,
-                    actual: domain_config.purpose,
-                }
-                .to_string(),
-            );
-        }
+        let (domain_config, predecessor) = self.check_request_preconditions(
+            request.domain_id,
+            DomainPurpose::Sign,
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_SIGN_REQUEST_DEPOSIT,
+        );
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -290,23 +400,6 @@ impl MpcContract {
             }
         }
 
-        let gas_required =
-            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure sign call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas {
-                    provided: env::prepaid_gas().as_gas(),
-                    required: gas_required.as_gas(),
-                }
-                .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
-
         let request = SignatureRequest::new(
             request.domain_id,
             request.payload,
@@ -314,33 +407,18 @@ impl MpcContract {
             &request.path,
         );
 
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
-
         let callback_gas = Gas::from_tgas(
             self.config
                 .return_signature_and_clean_state_on_success_call_tera_gas,
         );
 
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_signature_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_signature_request(&request, return_sig_id) {
-            log!("signature request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 
     /// This is the root public key combined from all the public keys of the participants.
@@ -419,49 +497,13 @@ impl MpcContract {
             request
         );
 
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let domain_id = request.domain_id.into();
-        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: domain_id,
-                }
-                .to_string(),
-            );
-        };
-        if domain_config.purpose != DomainPurpose::CKD {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::CKD,
-                    actual: domain_config.purpose,
-                }
-                .to_string(),
-            );
-        }
-
-        let gas_required = Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure CKD call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas {
-                    provided: env::prepaid_gas().as_gas(),
-                    required: gas_required.as_gas(),
-                }
-                .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_CKD_REQUEST_DEPOSIT, &predecessor);
-
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
+        let domain_id: DomainId = request.domain_id;
+        let (_, predecessor) = self.check_request_preconditions(
+            domain_id,
+            DomainPurpose::CKD,
+            Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_CKD_REQUEST_DEPOSIT,
+        );
 
         match &request.app_public_key {
             dtos::CKDAppPublicKey::AppPublicKey(_) => {}
@@ -472,11 +514,10 @@ impl MpcContract {
             }
         }
 
-        let account_id = env::predecessor_account_id();
         let request = CKDRequest::new(
             request.app_public_key,
             domain_id,
-            &account_id,
+            &predecessor,
             &request.derivation_path,
         );
 
@@ -485,24 +526,13 @@ impl MpcContract {
                 .return_ck_and_clean_state_on_success_call_tera_gas,
         );
 
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_ckd_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_ck_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_ckd_request(&request, return_ck_id) {
-            log!("request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 
     /// Submit a verification + signing request for a foreign chain transaction.
@@ -517,63 +547,22 @@ impl MpcContract {
             request
         );
 
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.into()) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: request.domain_id.into(),
-                }
-                .to_string(),
-            );
-        };
-
-        if domain_config.purpose != DomainPurpose::ForeignTx {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: DomainPurpose::ForeignTx,
-                    actual: domain_config.purpose,
-                }
-                .to_string(),
-            );
-        }
+        self.check_request_preconditions(
+            request.domain_id,
+            DomainPurpose::ForeignTx,
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
+            MINIMUM_SIGN_REQUEST_DEPOSIT,
+        );
 
         let requested_chain = request.request.chain();
-        if !self
-            .foreign_chain_policy
-            .chains
-            .contains_key(&requested_chain)
-        {
+        let supported_chains = self.get_supported_foreign_chains();
+        if !supported_chains.contains(&requested_chain) {
             env::panic_str(
-                &InvalidParameters::ChainNotInPolicy {
+                &InvalidParameters::ForeignChainNotSupported {
                     requested: requested_chain,
                 }
                 .to_string(),
             );
-        }
-
-        let gas_required =
-            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
-
-        // Make sure call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < gas_required {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas {
-                    provided: env::prepaid_gas().as_gas(),
-                    required: gas_required.as_gas(),
-                }
-                .to_string(),
-            );
-        }
-
-        let predecessor = env::predecessor_account_id();
-        require_deposit(MINIMUM_SIGN_REQUEST_DEPOSIT, &predecessor);
-
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
         let callback_gas = Gas::from_tgas(
@@ -582,25 +571,13 @@ impl MpcContract {
         );
 
         let request = args_into_verify_foreign_tx_request(request);
-
-        let promise_index = env::promise_yield_create(
+        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
+        self.enqueue_yield_request(
             method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
-            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_args,
             callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
+            move |this, id| this.add_verify_foreign_tx_request(&request, id),
         );
-
-        // Store the request in the contract's local state
-        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        if self.add_verify_foreign_tx_request(&request, return_sig_id) {
-            log!("signature request already present, overriding callback.")
-        }
-
-        env::promise_return(promise_index);
     }
 }
 
@@ -1003,6 +980,12 @@ impl MpcContract {
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let voter = dtos::AccountId(voter.get().to_string());
 
+        // Also register the chain keys as configured,
+        // so callers of the deprecated API still populate the new data model.
+        self.node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
+            .insert(voter.clone(), policy.chains.clone().into());
+
         if self
             .foreign_chain_policy_votes
             .proposal_by_account
@@ -1029,6 +1012,26 @@ impl MpcContract {
             self.foreign_chain_policy = policy;
             self.foreign_chain_policy_votes.proposal_by_account.clear();
         }
+
+        Ok(())
+    }
+
+    #[handle_result]
+    pub fn register_foreign_chain_config(
+        &mut self,
+        foreign_chain_configuration: dtos::ForeignChainConfiguration,
+    ) -> Result<(), Error> {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
+        };
+
+        let authenticated_voter =
+            AuthenticatedAccountId::new(running_state.parameters.participants())?;
+        let account_id = authenticated_voter.get().into_dto_type();
+
+        self.node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
+            .insert(account_id, foreign_chain_configuration);
 
         Ok(())
     }
@@ -1158,6 +1161,15 @@ impl MpcContract {
                     vec![],
                     NearToken::from_yoctonear(0),
                     Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
+                )
+                .detach();
+            // Spawn a promise to clean up foreign chain data for non-participants
+            Promise::new(env::current_account_id())
+                .function_call(
+                    method_names::CLEAN_FOREIGN_CHAIN_DATA.to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
                 )
                 .detach();
         }
@@ -1623,6 +1635,59 @@ impl MpcContract {
         self.tee_state.clean_non_participants(participants);
         Ok(())
     }
+
+    /// Private endpoint to clean up foreign chain policy votes and node configurations
+    /// for non-participants after resharing.
+    /// This can only be called by the contract itself via a promise.
+    #[private]
+    #[handle_result]
+    pub fn clean_foreign_chain_data(&mut self) -> Result<(), Error> {
+        log!(
+            "clean_foreign_chain_data: signer={}",
+            env::signer_account_id()
+        );
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        let participant_accounts: std::collections::HashSet<dtos::AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| dtos::AccountId(account_id.to_string()))
+            .collect();
+
+        let non_participant_accounts: Vec<dtos::AccountId> = self
+            .foreign_chain_policy_votes
+            .proposal_by_account
+            .keys()
+            .filter(|account| !participant_accounts.contains(account))
+            .cloned()
+            .collect();
+        for account in &non_participant_accounts {
+            self.foreign_chain_policy_votes
+                .proposal_by_account
+                .remove(account);
+        }
+
+        let non_participant_configs: Vec<dtos::AccountId> = self
+            .node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
+            .keys()
+            .filter(|account| !participant_accounts.contains(account))
+            .cloned()
+            .collect();
+        for account in &non_participant_configs {
+            self.node_foreign_chain_configurations
+                .foreign_chain_configuration_by_node
+                .remove(account);
+        }
+
+        Ok(())
+    }
 }
 
 // Contract developer helper API
@@ -1657,7 +1722,7 @@ impl MpcContract {
                 parameters,
                 AddDomainsVotes::default(),
             )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
@@ -1669,8 +1734,9 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: Default::default(),
+            stale_data: StaleData {},
             metrics: Default::default(),
+            node_foreign_chain_configurations: Default::default(),
         })
     }
 
@@ -1722,7 +1788,7 @@ impl MpcContract {
                 parameters,
                 AddDomainsVotes::default(),
             )),
-            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+            pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequests,
@@ -1733,8 +1799,9 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            stale_data: Default::default(),
+            stale_data: StaleData {},
             metrics: Default::default(),
+            node_foreign_chain_configurations: Default::default(),
         })
     }
 
@@ -1750,11 +1817,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_8_1_state::MpcContract>() {
+        match try_state_read::<v3_9_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into v3.8.1 state: {:?}", err);
+                log!("failed to deserialize state into v3.9.0 state: {:?}", err);
             }
         };
 
@@ -1766,7 +1833,9 @@ impl MpcContract {
     }
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
-        (&self.protocol_state).into_dto_type()
+        (&self.protocol_state)
+            .try_into_dto_type()
+            .expect("state conversion should not fail")
     }
 
     pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {
@@ -1835,6 +1904,54 @@ impl MpcContract {
         self.foreign_chain_policy_votes.to_dto()
     }
 
+    pub fn get_supported_foreign_chains(&self) -> dtos::SupportedForeignChains {
+        let active_participant_account_ids = self
+            .protocol_state
+            .active_participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone().into_dto_type())
+            .collect::<BTreeSet<_>>();
+
+        let mut foreign_chain_to_node_mapping: BTreeMap<
+            &dtos::ForeignChain,
+            BTreeSet<dtos::AccountId>,
+        > = BTreeMap::new();
+
+        for (account_id, chains) in self
+            .node_foreign_chain_configurations
+            .foreign_chain_configuration_by_node
+            .iter()
+        {
+            for chain in chains.keys() {
+                foreign_chain_to_node_mapping
+                    .entry(chain)
+                    .or_default()
+                    .insert(account_id.clone());
+            }
+        }
+
+        foreign_chain_to_node_mapping
+            .into_iter()
+            .filter_map(|(foreign_chain, nodes_supporting_chain)| {
+                let all_active_nodes_supports_chain =
+                    nodes_supporting_chain.is_superset(&active_participant_account_ids);
+
+                if all_active_nodes_supports_chain {
+                    Some(foreign_chain)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect::<BTreeSet<dtos::ForeignChain>>()
+            .into()
+    }
+
+    pub fn get_foreign_chain_configurations(&self) -> dtos::NodeForeignChainConfigurations {
+        self.node_foreign_chain_configurations.to_dto()
+    }
+
     // contract version
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
@@ -1853,6 +1970,7 @@ impl MpcContract {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
                 self.pending_signature_requests.remove(&request);
+
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
@@ -2213,15 +2331,11 @@ mod tests {
 
     use super::*;
     use crate::errors::NodeMigrationError;
+    use crate::primitives::participants::Participants;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
         gen_participants, infer_purpose_from_curve, NUM_CURVES,
-    };
-    use crate::primitives::{
-        domain::{Curve, DomainConfig, DomainId},
-        participants::Participants,
-        signature::{Payload, Tweak},
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2236,6 +2350,7 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
+    use dtos::{Curve, DomainConfig, DomainId, Payload, Tweak};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::{self, ecdsa::SigningKey, elliptic_curve, Secp256k1};
@@ -2410,14 +2525,38 @@ mod tests {
         (context, contract, sk)
     }
 
-    fn bitcoin_foreign_chain_policy() -> dtos::ForeignChainPolicy {
-        dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://btc.example.com".to_string(),
-                }),
-            )]),
+    /// Register the given foreign chains as supported by all active participants.
+    fn register_supported_chains(
+        contract: &mut MpcContract,
+        chains: impl IntoIterator<Item = dtos::ForeignChain>,
+    ) {
+        let foreign_chain_configuration: dtos::ForeignChainConfiguration = chains
+            .into_iter()
+            .map(|foreign_chain| {
+                (
+                    foreign_chain,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "dummy_url.com".to_string(),
+                    }),
+                )
+            })
+            .collect::<BTreeMap<dtos::ForeignChain, NonEmptyBTreeSet<dtos::RpcProvider>>>()
+            .into();
+
+        // pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>);
+
+        let participants: Vec<_> = contract
+            .protocol_state
+            .active_participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        for account_id in participants {
+            let _env = Environment::new(None, Some(account_id), None);
+            contract
+                .register_foreign_chain_config(foreign_chain_configuration.clone())
+                .expect("register should succeed");
         }
     }
 
@@ -2464,19 +2603,18 @@ mod tests {
         let payload = Payload::from_legacy_ecdsa(payload_hash);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
-        let request = if legacy_v1_api {
-            SignRequestArgs {
-                deprecated_payload: Some(payload_hash),
-                deprecated_key_version: Some(0),
-                path: key_path.clone(),
-                ..Default::default()
-            }
+        let request: SignRequestArgs = if legacy_v1_api {
+            serde_json::from_value(serde_json::json!({
+                "payload": payload_hash,
+                "key_version": 0,
+                "path": key_path,
+            }))
+            .unwrap()
         } else {
             SignRequestArgs {
-                payload_v2: Some(payload.clone()),
+                payload: payload.clone(),
                 path: key_path.clone(),
-                domain_id: Some(DomainId::legacy_ecdsa_id()),
-                ..Default::default()
+                domain_id: DomainId::legacy_ecdsa_id(),
             }
         };
         let signature_request = SignatureRequest::new(
@@ -2547,10 +2685,9 @@ mod tests {
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
         let request = SignRequestArgs {
-            payload_v2: Some(payload.clone()),
+            payload: payload.clone(),
             path: key_path.clone(),
-            domain_id: Some(DomainId::legacy_ecdsa_id()),
-            ..Default::default()
+            domain_id: DomainId::legacy_ecdsa_id(),
         };
         let signature_request = SignatureRequest::new(
             DomainId::default(),
@@ -2571,6 +2708,61 @@ mod tests {
     }
 
     #[test]
+    fn test_signature_timeout__request_in_neither_map_still_schedules_fail() {
+        // given
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        assert_matches!(contract.get_pending_request(&signature_request), None);
+
+        // when
+        let result = contract.return_signature_and_clean_state_on_success(
+            signature_request,
+            Err(PromiseError::Failed),
+        );
+
+        // then
+        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
+        match result {
+            PromiseOrValue::Promise(_promise) => {}
+            PromiseOrValue::Value(_) => panic!("result should be a promise"),
+        }
+    }
+
+    #[test]
+    fn test_signature_success__returns_value_directly() {
+        // given
+        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let signature_request = SignatureRequest::new(
+            DomainId::default(),
+            Payload::from_legacy_ecdsa([0u8; 32]),
+            &context.predecessor_account_id,
+            "m/44'\''/60'\''/0'\''/0/0",
+        );
+        let signature_response = dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+            big_r: dtos::K256AffinePoint::from(k256::AffinePoint::GENERATOR),
+            s: dtos::K256Scalar::from(k256::Scalar::ONE),
+            recovery_id: 0,
+        });
+
+        // when
+        let result = contract.return_signature_and_clean_state_on_success(
+            signature_request,
+            Ok(signature_response.clone()),
+        );
+
+        // then
+        match result {
+            PromiseOrValue::Value(resp) => assert_eq!(resp, signature_response),
+            PromiseOrValue::Promise(_) => panic!("Expected Value, got Promise"),
+        }
+    }
+
+    #[test]
     fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
         let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
@@ -2584,7 +2776,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2627,7 +2819,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2648,6 +2840,99 @@ mod tests {
             }
             Err(_) => panic!("respond_ckd should not fail"),
         }
+    }
+
+    fn override_context_for_preconditions(deposit: NearToken, prepaid_gas: Gas) {
+        let predecessor: AccountId = "contract_account.near".parse().unwrap();
+        let context = VMContextBuilder::new()
+            .predecessor_account_id(predecessor.clone())
+            .current_account_id(predecessor)
+            .attached_deposit(deposit)
+            .prepaid_gas(prepaid_gas)
+            .build();
+        testing_env!(context);
+    }
+
+    #[test]
+    fn check_request_preconditions__returns_domain_config_and_predecessor_on_valid_call() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        let (config, predecessor) = contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+        assert_eq!(config.id, DomainId::default());
+        assert_eq!(config.curve, Curve::Secp256k1);
+        assert_eq!(config.purpose, DomainPurpose::Sign);
+        assert_eq!(predecessor.as_str(), "contract_account.near");
+    }
+
+    #[test]
+    #[should_panic(expected = "was not found")]
+    fn check_request_preconditions__panics_when_domain_does_not_exist() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.check_request_preconditions(
+            DomainId(999),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "purpose")]
+    fn check_request_preconditions__panics_when_domain_purpose_does_not_match() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::CKD,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Provided gas is lower than required")]
+    fn check_request_preconditions__panics_when_prepaid_gas_is_insufficient() {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        override_context_for_preconditions(NearToken::from_yoctonear(1), Gas::from_tgas(1));
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(100),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Attached deposit is lower than required")]
+    fn check_request_preconditions__panics_when_attached_deposit_is_insufficient() {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        override_context_for_preconditions(NearToken::from_yoctonear(0), Gas::from_tgas(300));
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "TEE validation")]
+    fn check_request_preconditions__panics_when_contract_is_not_accepting_requests() {
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+        contract.accept_requests = false;
+        contract.check_request_preconditions(
+            DomainId::default(),
+            DomainPurpose::Sign,
+            Gas::from_tgas(1),
+            NearToken::from_yoctonear(1),
+        );
     }
 
     #[test]
@@ -2688,7 +2973,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2718,7 +3003,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id,
             &request.derivation_path,
         );
@@ -2738,9 +3023,10 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, secret_key) =
+        let (context, mut contract, secret_key) =
             basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
-        contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2806,9 +3092,10 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _secret_key) =
+        let (context, mut contract, _secret_key) =
             basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
-        contract.foreign_chain_policy = bitcoin_foreign_chain_policy();
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
@@ -2849,10 +3136,9 @@ mod tests {
 
         // When
         contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
+            payload: Payload::from_legacy_ecdsa([7u8; 32]),
             path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
+            domain_id: DomainId::default(),
         });
     }
 
@@ -2879,21 +3165,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "not present in the active foreign chain policy")]
+    #[should_panic(expected = "Requested foreign chain, Bitcoin, is not supported.")]
     fn verify_foreign_tx__should_reject_chain_not_in_policy() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
+        let (context, mut contract, _sk) =
             basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::ForeignTx, &mut rng);
-        // Policy has Solana but not Bitcoin
-        contract.foreign_chain_policy = dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Solana,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://sol.example.com".to_string(),
-                }),
-            )]),
-        };
+        // Supported chains has Solana but not Bitcoin
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Solana]);
+        testing_env!(context.clone());
 
         // When - requesting Bitcoin which is not in the policy
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
@@ -3188,7 +3468,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id.into(),
+            request.domain_id,
             &context.predecessor_account_id.clone(),
             &request.derivation_path,
         );
@@ -3275,7 +3555,7 @@ mod tests {
         pub fn new_from_protocol_state(protocol_state: ProtocolContractState) -> Self {
             MpcContract {
                 protocol_state,
-                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV3),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV2),
                 pending_verify_foreign_tx_requests: LookupMap::new(
                     StorageKey::PendingVerifyForeignTxRequests,
@@ -3284,10 +3564,11 @@ mod tests {
                 proposed_updates: Default::default(),
                 foreign_chain_policy: Default::default(),
                 foreign_chain_policy_votes: Default::default(),
+                node_foreign_chain_configurations: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                stale_data: Default::default(),
+                stale_data: StaleData {},
                 metrics: Default::default(),
             }
         }
@@ -4228,82 +4509,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn sign__increments_v1_payload_metric() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-
-        // When
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([7u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 1);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-    }
-
-    #[test]
-    fn sign__increments_v2_payload_metric() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 0);
-
-        // When
-        contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([7u8; 32])),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 0);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
-    }
-
-    #[test]
-    fn sign__metrics_accumulate_across_multiple_calls() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_purpose(Curve::Secp256k1, DomainPurpose::Sign, &mut rng);
-
-        // When — two v1 calls and one v2 call
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([7u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-        contract.sign(SignRequestArgs {
-            deprecated_payload: Some([8u8; 32]),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-        contract.sign(SignRequestArgs {
-            payload_v2: Some(Payload::from_legacy_ecdsa([9u8; 32])),
-            path: "test".to_string(),
-            domain_id: Some(DomainId::default()),
-            ..Default::default()
-        });
-
-        // Then
-        assert_eq!(contract.metrics.sign_with_v1_payload_count, 2);
-        assert_eq!(contract.metrics.sign_with_v2_payload_count, 1);
-    }
-
     #[rstest]
     #[case(ProtocolContractState::Running(gen_running_state(NUM_DOMAINS)))]
     #[case(ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1))]
@@ -4401,6 +4606,7 @@ mod tests {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
+            expected_measurements: None,
         });
         contract
             .tee_state
@@ -4815,6 +5021,109 @@ mod tests {
         assert!(votes
             .proposal_by_account
             .contains_key(&dtos::AccountId(first_account.to_string())));
+    }
+
+    #[test]
+    fn vote_foreign_chain_policy__should_also_register_supported_chains() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let first_account = participants[0].0.clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeMap::from([
+                (
+                    dtos::ForeignChain::Bitcoin,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://btc.example.com".to_string(),
+                    }),
+                ),
+                (
+                    dtos::ForeignChain::Ethereum,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://eth.example.com".to_string(),
+                    }),
+                ),
+            ]),
+        };
+        let mut env = Environment::new(None, Some(first_account.clone()), None);
+
+        // When — first participant votes
+        contract
+            .vote_foreign_chain_policy(policy.clone())
+            .expect("vote should succeed");
+
+        // Then — their supported chains are registered
+        let votes = contract.get_foreign_chain_configurations();
+        let first_voter = dtos::AccountId(first_account.to_string());
+        let registered = votes
+            .foreign_chain_configuration_by_node
+            .get(&first_voter)
+            .expect("voter should have registered chains");
+        assert!(registered.contains_key(&dtos::ForeignChain::Bitcoin));
+        assert!(registered.contains_key(&dtos::ForeignChain::Ethereum));
+        assert_eq!(registered.len(), 2);
+
+        // And — after all participants vote, get_supported_foreign_chains returns them
+        for (account_id, _, _) in &participants[1..] {
+            env.set_signer(account_id);
+            contract
+                .vote_foreign_chain_policy(policy.clone())
+                .expect("vote should succeed");
+        }
+        let supported = contract.get_supported_foreign_chains();
+        assert!(supported.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(supported.contains(&dtos::ForeignChain::Ethereum));
+        assert_eq!(supported.len(), 2);
+    }
+
+    #[test]
+    fn vote_foreign_chain_policy__should_overwrite_previously_registered_chains() {
+        // Given — all participants have registered Bitcoin support
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+
+        // When — first participant votes a policy with Ethereum (not Bitcoin)
+        let policy_with_ethereum = dtos::ForeignChainPolicy {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Ethereum,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://eth.example.com".to_string(),
+                }),
+            )]),
+        };
+        let first_account = participants[0].0.clone();
+        let _env = Environment::new(None, Some(first_account.clone()), None);
+        contract
+            .vote_foreign_chain_policy(policy_with_ethereum)
+            .expect("vote should succeed");
+
+        // Then — their registered chains are now only Ethereum (overwritten, not merged)
+        let votes = contract.get_foreign_chain_configurations();
+        let first_voter = dtos::AccountId(first_account.to_string());
+        let registered = votes
+            .foreign_chain_configuration_by_node
+            .get(&first_voter)
+            .expect("voter should have registered chains");
+        assert!(registered.contains_key(&dtos::ForeignChain::Ethereum));
+        assert!(!registered.contains_key(&dtos::ForeignChain::Bitcoin));
+        assert_eq!(registered.len(), 1);
+
+        // And — Bitcoin is no longer unanimously supported (first participant dropped it)
+        let supported = contract.get_supported_foreign_chains();
+        assert!(!supported.contains(&dtos::ForeignChain::Bitcoin));
     }
 
     fn make_launcher_hash(byte: u8) -> LauncherImageHash {
@@ -5580,5 +5889,285 @@ mod tests {
     fn mpc_contract_borsh_schema_has_not_changed() {
         let schema = borsh::schema::BorshSchemaContainer::for_type::<MpcContract>();
         insta::assert_debug_snapshot!(schema);
+    }
+
+    #[test]
+    fn register_foreign_chain_config__should_store_supported_chains_for_participant() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let first_account = participants[0].0.clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
+            (
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://btc.example.com".to_string(),
+                }),
+            ),
+            (
+                dtos::ForeignChain::Ethereum,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://eth.example.com".to_string(),
+                }),
+            ),
+        ])
+        .into();
+
+        let _env = Environment::new(None, Some(first_account.clone()), None);
+
+        // When
+        contract
+            .register_foreign_chain_config(foreign_chain_configuration.clone())
+            .expect("register should succeed");
+
+        // Then
+        let votes = contract.get_foreign_chain_configurations();
+        assert_eq!(votes.foreign_chain_configuration_by_node.len(), 1);
+        assert_eq!(
+            votes
+                .foreign_chain_configuration_by_node
+                .get(&dtos::AccountId(first_account.to_string())),
+            Some(&foreign_chain_configuration)
+        );
+    }
+
+    #[test]
+    fn register_foreign_chain_config__should_reject_non_participant() {
+        // Given
+        let running_state = gen_running_state(1);
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
+            dtos::ForeignChain::Bitcoin,
+            NonEmptyBTreeSet::new(dtos::RpcProvider {
+                rpc_url: "https://btc.example.com".to_string(),
+            }),
+        )])
+        .into();
+
+        let non_participant = gen_account_id();
+        let _env = Environment::new(None, Some(non_participant), None);
+
+        // When
+        let result = contract.register_foreign_chain_config(foreign_chain_configuration);
+
+        // Then
+        result.expect_err("non-participant should not be able to register");
+    }
+
+    #[test]
+    fn get_supported_foreign_chains__should_return_chains_supported_by_all_participants() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        // Both participants support Bitcoin and Ethereum
+        let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
+            (
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://btc.example.com".to_string(),
+                }),
+            ),
+            (
+                dtos::ForeignChain::Ethereum,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://eth.example.com".to_string(),
+                }),
+            ),
+        ])
+        .into();
+
+        for (account_id, _, _) in &participants {
+            let _env = Environment::new(None, Some(account_id.clone()), None);
+            contract
+                .register_foreign_chain_config(foreign_chain_configuration.clone())
+                .expect("register should succeed");
+        }
+
+        // When
+        let result = contract.get_supported_foreign_chains();
+
+        // Then
+        assert!(result.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(result.contains(&dtos::ForeignChain::Ethereum));
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn get_supported_foreign_chains__should_exclude_chains_not_supported_by_all() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        // All participants except the last support Bitcoin + Ethereum
+        for (account_id, _, _) in &participants[..participants.len() - 1] {
+            let _env = Environment::new(None, Some(account_id.clone()), None);
+            let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
+                (
+                    dtos::ForeignChain::Bitcoin,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://btc.example.com".to_string(),
+                    }),
+                ),
+                (
+                    dtos::ForeignChain::Ethereum,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: "https://eth.example.com".to_string(),
+                    }),
+                ),
+            ])
+            .into();
+            contract
+                .register_foreign_chain_config(foreign_chain_configuration)
+                .expect("register should succeed");
+        }
+
+        // Last participant supports only Bitcoin
+        {
+            let last = &participants[participants.len() - 1].0;
+            let _env = Environment::new(None, Some(last.clone()), None);
+            let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: "https://btc.example.com".to_string(),
+                }),
+            )])
+            .into();
+            contract
+                .register_foreign_chain_config(foreign_chain_configuration)
+                .expect("register should succeed");
+        }
+
+        // When
+        let result = contract.get_supported_foreign_chains();
+
+        // Then - only Bitcoin is unanimous
+        assert!(result.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(!result.contains(&dtos::ForeignChain::Ethereum));
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn get_supported_foreign_chains__different_rpc_urls_per_participant_is_fine() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        // Each participant registers the same chains but with different RPC URLs
+        for (i, (account_id, _, _)) in participants.iter().enumerate() {
+            let _env = Environment::new(None, Some(account_id.clone()), None);
+            let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
+                (
+                    dtos::ForeignChain::Bitcoin,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: format!("https://btc-node-{i}.example.com"),
+                    }),
+                ),
+                (
+                    dtos::ForeignChain::Ethereum,
+                    NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        rpc_url: format!("https://eth-node-{i}.example.com"),
+                    }),
+                ),
+            ])
+            .into();
+            contract
+                .register_foreign_chain_config(foreign_chain_configuration)
+                .expect("register should succeed");
+        }
+
+        // When
+        let result = contract.get_supported_foreign_chains();
+
+        // Then — both chains are supported despite different RPC URLs
+        assert!(result.contains(&dtos::ForeignChain::Bitcoin));
+        assert!(result.contains(&dtos::ForeignChain::Ethereum));
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn register_foreign_chain_config__preserves_per_participant_rpc_urls() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        // Each participant registers the same chains but with different RPC URLs
+        for (i, (account_id, _, _)) in participants.iter().enumerate() {
+            let _env = Environment::new(None, Some(account_id.clone()), None);
+            let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    rpc_url: format!("https://btc-node-{i}.example.com"),
+                }),
+            )])
+            .into();
+            contract
+                .register_foreign_chain_config(foreign_chain_configuration)
+                .expect("register should succeed");
+        }
+
+        // When
+        let votes = contract.get_foreign_chain_configurations();
+
+        // Then — each participant's individual RPC URLs are preserved
+        for (i, (account_id, _, _)) in participants.iter().enumerate() {
+            let account_dto = dtos::AccountId(account_id.to_string());
+            let config = votes
+                .foreign_chain_configuration_by_node
+                .get(&account_dto)
+                .expect("participant should have a config");
+            let btc_providers = config
+                .get(&dtos::ForeignChain::Bitcoin)
+                .expect("Bitcoin should be present");
+            assert!(btc_providers
+                .iter()
+                .any(|p| p.rpc_url == format!("https://btc-node-{i}.example.com")));
+        }
+    }
+
+    #[test]
+    fn get_supported_foreign_chains__should_return_empty_when_no_votes() {
+        // Given
+        let running_state = gen_running_state(1);
+        let contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        // When
+        let result = contract.get_supported_foreign_chains();
+
+        // Then
+        assert!(result.is_empty());
     }
 }

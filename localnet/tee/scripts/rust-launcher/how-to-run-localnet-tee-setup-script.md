@@ -87,10 +87,14 @@ export MACHINE_IP=<EXTERNAL_SERVER_IP>
 export BASE_PATH=/path/to/meta-dstack/dstack  # must contain vmm/src/vmm-cli.py
 export VMM_RPC=http://127.0.0.1:10000
 
-# MPC node image (must support TOML config / start-with-config-file)
-export MPC_IMAGE_NAME=nearone/mpc-node
-export MPC_IMAGE_TAGS=main-9515e18
-export MPC_REGISTRY=registry.hub.docker.com
+# MPC node image name (repository)
+export MPC_IMAGE=nearone/mpc-node
+# For non-Docker Hub registries, include the registry prefix:
+#   export MPC_IMAGE=ghcr.io/nearone/mpc-node
+
+# Manifest digest of the MPC node image (for DEFAULT_IMAGE_DIGEST and voting)
+# Get with: docker pull nearone/mpc-node:<tag> 2>&1 | grep Digest
+export MPC_MANIFEST_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
 
 # NEAR localnet
 export NEAR_NETWORK_CONFIG=mpc-localnet
@@ -226,5 +230,5 @@ bash localnet/tee/scripts/rust-launcher/test-verify-and-upgrade.sh verify
 - Node-to-node ports are per-node (`13001+i`)
 - Telemetry uses port `18082` with per-node IPs
 - Script is designed for iterative debugging and safe restarts
-- The Rust launcher uses TOML config (not `.conf` env format like the Python launcher)
+- The launcher uses TOML config
 - MPC node image must support `start-with-config-file` (commit `9515e18` or later)

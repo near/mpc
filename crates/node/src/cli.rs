@@ -143,6 +143,7 @@ impl StartCmd {
                 format: log_format,
                 filter: std::env::var("RUST_LOG").ok(),
             },
+            pccs_url: mpc_node_config::default_pccs_url(),
         }
     }
 }

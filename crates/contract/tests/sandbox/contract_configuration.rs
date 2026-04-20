@@ -1,5 +1,5 @@
 use crate::sandbox::{
-    common::init_with_candidates,
+    common::SandboxTestSetup,
     upgrade_from_current_contract::current_contract_proposal,
     utils::consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
 };
@@ -34,11 +34,17 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         ..Default::default()
     };
 
-    let number_of_participants: usize = 3;
-    let (_, contract, accounts, _) =
-        init_with_candidates(vec![], Some(init_config), number_of_participants).await;
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_init_config(init_config)
+        .with_number_of_participants(3)
+        .build()
+        .await;
 
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(current_contract_proposal())
         .max_gas()
@@ -53,7 +59,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
     let mut saw_completion = false;
     let mut saw_failure = false;
 
-    for voter in accounts {
+    for voter in mpc_signer_accounts {
         let execution = voter
             .call(contract.id(), method_names::VOTE_UPDATE)
             .args_json(serde_json::json!({ "id": proposal_id }))
@@ -94,11 +100,14 @@ async fn contract_configuration_can_be_set_on_initialization() {
         clean_tee_status_tera_gas: Some(99),
         cleanup_orphaned_node_migrations_tera_gas: Some(11),
         remove_non_participant_update_votes_tera_gas: Some(12),
+        clean_foreign_chain_data_tera_gas: Some(13),
     };
 
-    let number_of_participants: usize = 2;
-    let (_, contract, _, _) =
-        init_with_candidates(vec![], Some(init_config.clone()), number_of_participants).await;
+    let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()
+        .with_init_config(init_config.clone())
+        .with_number_of_participants(2)
+        .build()
+        .await;
 
     let stored_config: near_mpc_contract_interface::types::InitConfig = contract
         .view(method_names::CONFIG)

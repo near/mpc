@@ -60,8 +60,8 @@ mod tests {
     use crate::providers::ecdsa::{EcdsaTaskId, KeygenOutput};
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use mpc_contract::primitives::domain::DomainId;
-    use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use mpc_primitives::domain::DomainId;
+    use near_mpc_contract_interface::types::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use threshold_signatures::test_utils::generate_participants;
     use threshold_signatures::ReconstructionLowerBound;
@@ -91,11 +91,11 @@ mod tests {
         let channel = if participant_id == all_participant_ids[0] {
             client.new_channel_for_task(
                 EcdsaTaskId::KeyGeneration {
-                    key_event: KeyEventId::new(
-                        EpochId::new(42),
-                        DomainId::legacy_ecdsa_id(),
-                        AttemptId::legacy_attempt_id(),
-                    ),
+                    key_event: KeyEventId {
+                        epoch_id: EpochId(42),
+                        domain_id: DomainId(0),
+                        attempt_id: AttemptId(0),
+                    },
                 },
                 client.all_participant_ids(),
             )?

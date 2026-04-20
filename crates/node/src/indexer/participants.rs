@@ -1,16 +1,15 @@
 use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::primitives::ParticipantId;
-use crate::providers::PublicKeyConversion;
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::primitives::{
-    domain::DomainConfig,
-    key_state::{KeyEventId, KeyForDomain, Keyset},
-    thresholds::ThresholdParameters,
+use mpc_contract::primitives::key_state::{
+    KeyEventId as ContractKeyEventId, KeyForDomain as ContractKeyForDomain,
+    Keyset as ContractKeyset,
 };
-use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{KeyEvent, ProtocolContractState, ThresholdParameters};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -18,63 +17,69 @@ use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractKeyEventInstance {
-    pub id: KeyEventId,
-    pub domain: DomainConfig,
+    pub id: ContractKeyEventId,
+    pub domain: dtos::DomainConfig,
     pub started: bool,
     pub completed: BTreeSet<ParticipantId>,
-    pub completed_domains: Vec<KeyForDomain>,
+    pub completed_domains: Vec<ContractKeyForDomain>,
 }
 
 pub fn convert_key_event_to_instance(
     key_event: &KeyEvent,
     current_height: u64,
-    completed_domains: Vec<KeyForDomain>,
-) -> ContractKeyEventInstance {
-    match key_event.instance() {
-        Some(current_instance) if current_height < current_instance.expires_on() => {
+    completed_domains: Vec<dtos::KeyForDomain>,
+) -> anyhow::Result<ContractKeyEventInstance> {
+    let completed_domains: Vec<ContractKeyForDomain> = completed_domains
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<_, _>>()?;
+    Ok(match &key_event.instance {
+        Some(current_instance) if current_height < current_instance.expires_on => {
             ContractKeyEventInstance {
-                id: KeyEventId {
-                    epoch_id: key_event.epoch_id(),
-                    domain_id: key_event.domain_id(),
-                    attempt_id: current_instance.attempt_id(),
-                },
-                domain: key_event.domain(),
+                id: dtos::KeyEventId {
+                    epoch_id: key_event.epoch_id,
+                    domain_id: key_event.domain.id,
+                    attempt_id: current_instance.attempt_id,
+                }
+                .into(),
+                domain: key_event.domain.clone(),
                 started: true,
                 completed: current_instance
-                    .completed()
+                    .completed
                     .iter()
-                    .map(|p| p.get().into())
+                    .map(|p| (*p).into())
                     .collect(),
                 completed_domains,
             }
         }
         _ => ContractKeyEventInstance {
-            id: KeyEventId {
-                epoch_id: key_event.epoch_id(),
-                domain_id: key_event.domain_id(),
-                attempt_id: key_event.next_attempt_id(),
-            },
-            domain: key_event.domain(),
+            id: dtos::KeyEventId {
+                epoch_id: key_event.epoch_id,
+                domain_id: key_event.domain.id,
+                attempt_id: key_event.next_attempt_id,
+            }
+            .into(),
+            domain: key_event.domain.clone(),
             started: false,
             completed: BTreeSet::new(),
             completed_domains,
         },
-    }
+    })
 }
 
 impl ContractKeyEventInstance {
     pub fn compare_to_expected_key_event_id(
         &self,
-        expected: &KeyEventId,
+        expected: &ContractKeyEventId,
     ) -> KeyEventIdComparisonResult {
         let contract_state = (
             self.id.epoch_id.get(),
-            self.id.domain_id.0,
+            *self.id.domain_id,
             self.id.attempt_id.get(),
         );
         let expected_state = (
             expected.epoch_id.get(),
-            expected.domain_id.0,
+            *expected.domain_id,
             expected.attempt_id.get(),
         );
         if contract_state < expected_state {
@@ -105,7 +110,7 @@ pub enum KeyEventIdComparisonResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractRunningState {
-    pub keyset: Keyset,
+    pub keyset: ContractKeyset,
     pub participants: ParticipantsConfig,
     pub resharing_state: Option<ContractResharingState>,
 }
@@ -119,7 +124,7 @@ pub struct ContractInitializingState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractResharingState {
     pub new_participants: ParticipantsConfig,
-    pub reshared_keys: Keyset,
+    pub reshared_keys: ContractKeyset,
     pub key_event: ContractKeyEventInstance,
 }
 
@@ -177,19 +182,20 @@ impl ContractState {
             ProtocolContractState::Initializing(state) => {
                 ContractState::Initializing(ContractInitializingState {
                     participants: convert_participant_infos(
-                        state.generating_key.proposed_parameters().clone(),
+                        state.generating_key.parameters.clone(),
                         port_override,
                     )?,
                     key_event: convert_key_event_to_instance(
                         &state.generating_key,
                         height,
                         state.generated_keys.clone(),
-                    ),
+                    )
+                    .context("failed to convert initializing key event")?,
                 })
             }
             ProtocolContractState::Running(running_state) => {
                 ContractState::Running(ContractRunningState {
-                    keyset: running_state.keyset.clone(),
+                    keyset: running_state.keyset.clone().try_into()?,
                     participants: convert_participant_infos(
                         running_state.parameters.clone(),
                         port_override,
@@ -200,24 +206,26 @@ impl ContractState {
             ProtocolContractState::Resharing(state) => {
                 let resharing_state = Some(ContractResharingState {
                     new_participants: convert_participant_infos(
-                        state.resharing_key.proposed_parameters().clone(),
+                        state.resharing_key.parameters.clone(),
                         port_override,
                     )?,
-                    reshared_keys: Keyset {
-                        epoch_id: state.prospective_epoch_id(),
+                    reshared_keys: dtos::Keyset {
+                        epoch_id: state.resharing_key.epoch_id,
                         domains: state.reshared_keys.clone(),
-                    },
+                    }
+                    .try_into()?,
                     key_event: convert_key_event_to_instance(
                         &state.resharing_key,
                         height,
                         state.reshared_keys.clone(),
-                    ),
+                    )
+                    .context("failed to convert resharing key event")?,
                 });
 
                 let running_state = state.previous_running_state.clone();
 
                 ContractState::Running(ContractRunningState {
-                    keyset: running_state.keyset.clone(),
+                    keyset: running_state.keyset.clone().try_into()?,
                     participants: convert_participant_infos(
                         running_state.parameters.clone(),
                         port_override,
@@ -260,7 +268,7 @@ impl ContractState {
 pub async fn monitor_contract_state(
     indexer_state: Arc<IndexerState>,
     port_override: Option<u16>,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
+    protocol_state_sender: watch::Sender<dtos::ProtocolContractState>,
 ) -> watch::Receiver<ContractState> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut refresh_interval_tick = tokio::time::interval(CONTRACT_STATE_REFRESH_INTERVAL);
@@ -279,7 +287,7 @@ pub async fn monitor_contract_state(
 
             let (height, protocol_state) = match indexer_state
                 .view_client
-                .get_mpc_contract_state(indexer_state.mpc_contract_id.clone())
+                .get_mpc_contract_state_dto(indexer_state.mpc_contract_id.clone())
                 .await
             {
                 Ok(contract_state) => contract_state,
@@ -334,7 +342,7 @@ pub fn convert_participant_infos(
     port_override: Option<u16>,
 ) -> anyhow::Result<ParticipantsConfig> {
     let mut converted = Vec::new();
-    for (account_id, id, info) in threshold_parameters.participants().participants() {
+    for (account_id, id, info) in &threshold_parameters.participants.participants {
         let url = Url::parse(&info.url)
             .with_context(|| format!("could not parse participant url {}", info.url))?;
         let Some(address) = url.host_str() else {
@@ -344,21 +352,25 @@ pub fn convert_participant_infos(
             anyhow::bail!("no port found in participant url {}", info.url);
         };
 
-        let p2p_public_key =
-            ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&info.sign_pk)
-                .with_context(|| format!("Invalid public key length for peer: {:?}", info.url))?;
+        let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.sign_pk)
+            .with_context(|| format!("Invalid sign_pk for peer: {:?}", info.sign_pk))?;
+
+        let near_account_id: AccountId = account_id
+            .0
+            .parse()
+            .with_context(|| format!("Invalid account id: {}", account_id.0))?;
 
         converted.push(ParticipantInfo {
-            id: ParticipantId::from_raw(id.get()),
+            id: (*id).into(),
             address: address.to_string(),
             port,
             p2p_public_key,
-            near_account_id: account_id.clone(),
+            near_account_id,
         });
     }
     Ok(ParticipantsConfig {
         participants: converted,
-        threshold: threshold_parameters.threshold().value(),
+        threshold: threshold_parameters.threshold.0,
     })
 }
 
@@ -389,13 +401,12 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{indexer::participants::convert_participant_infos, providers::PublicKeyConversion};
-    use mpc_contract::primitives::{
-        participants::{ParticipantInfo, Participants},
-        thresholds::{Threshold, ThresholdParameters},
-    };
     use near_indexer_primitives::types::AccountId;
+    use near_mpc_contract_interface::types::AccountId as DtoAccountId;
+    use near_mpc_contract_interface::types::{
+        ParticipantId, ParticipantInfo, Participants, Threshold, ThresholdParameters,
+    };
     use std::collections::HashMap;
-    use std::str::FromStr;
 
     fn create_participant_data_raw() -> Vec<(String, String, String)> {
         vec![
@@ -418,7 +429,6 @@ mod tests {
     }
 
     fn create_invalid_participant_data_raw() -> Vec<(String, String, String)> {
-        // The on-chain participant data is strongly typed with AccountId and near_sdk::PublicKey.
         // It's really only possible to have bad data in the urls, which are arbitrary strings.
         vec![
             // Bad URL format (missing host)
@@ -436,26 +446,36 @@ mod tests {
         ]
     }
 
-    fn create_chain_participant_infos_from_raw(raw: Vec<(String, String, String)>) -> Participants {
-        let mut participants = Participants::new();
+    fn create_dto_participants_from_raw(raw: Vec<(String, String, String)>) -> Participants {
+        let mut entries: Vec<(DtoAccountId, ParticipantId, ParticipantInfo)> = Vec::new();
 
-        for (account_id, url, pk) in raw {
-            let account_id = AccountId::from_str(&account_id).unwrap();
-            let url = url.to_string();
-            let sign_pk = near_sdk::PublicKey::from_str(&pk).unwrap();
-            participants
-                .insert(account_id.clone(), ParticipantInfo { url, sign_pk })
-                .unwrap();
+        // Sort by account_id to match contract behavior
+        let mut sorted_raw = raw;
+        sorted_raw.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (i, (account_id, url, pk)) in sorted_raw.into_iter().enumerate() {
+            entries.push((
+                DtoAccountId(account_id),
+                ParticipantId(i as u32),
+                ParticipantInfo {
+                    url,
+                    sign_pk: pk.parse().unwrap(),
+                },
+            ));
         }
-        participants
+        let next_id = ParticipantId(entries.len() as u32);
+        Participants {
+            next_id,
+            participants: entries,
+        }
     }
 
     fn create_chain_participant_infos() -> Participants {
-        create_chain_participant_infos_from_raw(create_participant_data_raw())
+        create_dto_participants_from_raw(create_participant_data_raw())
     }
 
     fn create_invalid_chain_participant_infos() -> Participants {
-        create_chain_participant_infos_from_raw(create_invalid_participant_data_raw())
+        create_dto_participants_from_raw(create_invalid_participant_data_raw())
     }
 
     // Check that the participant ids are assigned 0 to N-1 by AccountId order
@@ -463,29 +483,32 @@ mod tests {
     fn test_participant_ids() {
         let chain_infos = create_chain_participant_infos();
         let mut account_ids: Vec<AccountId> = vec![];
-        let mut account_id_to_pk = HashMap::<AccountId, near_sdk::PublicKey>::default();
-        for (account_id, _, info) in chain_infos.participants() {
-            account_ids.push(account_id.clone());
-            account_id_to_pk.insert(account_id.clone(), info.sign_pk.clone());
+        let mut account_id_to_pk =
+            HashMap::<AccountId, near_mpc_contract_interface::types::Ed25519PublicKey>::default();
+        for (account_id, _, info) in &chain_infos.participants {
+            let near_account_id: AccountId = account_id.0.parse().unwrap();
+            account_ids.push(near_account_id.clone());
+            account_id_to_pk.insert(near_account_id, info.sign_pk.clone());
         }
         assert!(account_ids.is_sorted());
-        let params = ThresholdParameters::new(chain_infos.clone(), Threshold::new(3)).unwrap();
+        let params = ThresholdParameters {
+            participants: chain_infos.clone(),
+            threshold: Threshold(3),
+        };
 
         let converted = convert_participant_infos(params, None).unwrap();
         assert_eq!(converted.threshold, 3);
         for (i, p) in converted.participants.iter().enumerate() {
             assert!(p.near_account_id == account_ids[i]);
-            assert!(
-                p.p2p_public_key.to_near_sdk_public_key().unwrap()
-                    == account_id_to_pk[&account_ids[i]]
-            );
+            let expected_pk: near_sdk::PublicKey = account_id_to_pk[&account_ids[i]].clone().into();
+            assert!(p.p2p_public_key.to_near_sdk_public_key().unwrap() == expected_pk);
             let expected = chain_infos
-                .participants()
+                .participants
                 .iter()
-                .find(|(a_id, _, _)| a_id == &account_ids[i])
-                .map(|(_, p_id, _)| p_id.clone())
+                .find(|(a_id, _, _)| a_id.0.as_str() == account_ids[i].as_str())
+                .map(|(_, p_id, _)| *p_id)
                 .unwrap();
-            assert!(p.id.raw() == expected.get());
+            assert!(p.id.raw() == expected.0);
         }
     }
 
@@ -494,7 +517,10 @@ mod tests {
     fn test_port_override() {
         let chain_infos = create_chain_participant_infos();
 
-        let params = ThresholdParameters::new(chain_infos.clone(), Threshold::new(3)).unwrap();
+        let params = ThresholdParameters {
+            participants: chain_infos,
+            threshold: Threshold(3),
+        };
         let converted = convert_participant_infos(params.clone(), None)
             .unwrap()
             .participants;
@@ -512,12 +538,26 @@ mod tests {
     #[test]
     fn test_bad_participant_data() {
         let chain_infos = create_chain_participant_infos();
-        for (account_id, _, bad_data) in create_invalid_chain_participant_infos().participants() {
-            let mut new_infos = chain_infos.clone();
-            new_infos
-                .insert(account_id.clone(), bad_data.clone())
-                .unwrap();
-            let params = ThresholdParameters::new(new_infos.clone(), Threshold::new(3)).unwrap();
+        for (account_id, _, bad_data) in &create_invalid_chain_participant_infos().participants {
+            let mut new_entries = chain_infos.participants.clone();
+            // Replace or add the bad entry
+            if let Some(entry) = new_entries.iter_mut().find(|(a, _, _)| a == account_id) {
+                entry.2 = bad_data.clone();
+            } else {
+                new_entries.push((
+                    account_id.clone(),
+                    ParticipantId(new_entries.len() as u32),
+                    bad_data.clone(),
+                ));
+            }
+            let new_infos = Participants {
+                next_id: ParticipantId(new_entries.len() as u32),
+                participants: new_entries,
+            };
+            let params = ThresholdParameters {
+                participants: new_infos,
+                threshold: Threshold(3),
+            };
             print!("\n\nmy params: \n{:?}\n", params);
             let converted = convert_participant_infos(params, None);
             print!("\n\nmyconverted: \n{:?}\n", converted);

@@ -1,8 +1,8 @@
 use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
-use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::EpochId;
+use mpc_primitives::domain::DomainId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

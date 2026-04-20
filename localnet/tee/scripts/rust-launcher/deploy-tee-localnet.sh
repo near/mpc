@@ -42,7 +42,7 @@ MPC_ENV="${MPC_ENV:-$NEAR_NETWORK_CONFIG}"
 : "${BASE_PATH:?Must set BASE_PATH to dstack base path (contains vmm/src/vmm-cli.py)}"
 : "${MACHINE_IP:?Must set MACHINE_IP (external IP for localnet node comms)}"
 
-: "${MPC_IMAGE_TAGS:?Must set MPC_IMAGE_TAGS (e.g. export MPC_IMAGE_TAGS=3.3.0)}"
+: "${MPC_MANIFEST_DIGEST:?Must set MPC_MANIFEST_DIGEST (e.g. export MPC_MANIFEST_DIGEST=sha256:abc...)}"
 
 # If set, use this funded testnet account instead of faucet to create/top-up the ROOT account.
 # Example: export FUNDER_ACCOUNT=barak_tee_test1.testnet
@@ -152,7 +152,9 @@ ENV_TPL="$REPO_ROOT/localnet/tee/scripts/node.env.tpl"
 if [ "$MODE" = "localnet" ]; then
   CONF_TPL="$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl"
 else
-  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/node.conf.tpl"
+  # TODO(#2952): add a Rust-launcher-compatible TOML template for testnet mode.
+  err "testnet MODE not yet supported by rust-launcher deploy script"
+  exit 1
 fi
 
 # Convert comma-separated "host:container" port string to TOML inline table array entries.
@@ -389,7 +391,13 @@ near_add_key_skip_if_exists() {
   local pk="$2"
   local label="$3"
 
-  local cmd=(near account add-key "$acct" grant-full-access
+  # Use restricted function-call access key instead of full access.
+  # The key can only call node-facing methods on the MPC contract.
+  local node_methods="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+  local cmd=(near account add-key "$acct" grant-function-call-access
+             --allowance '1 NEAR'
+             --contract-account-id "$MPC_CONTRACT_ACCOUNT"
+             --function-names "$node_methods"
              use-manually-provided-public-key "$pk"
              network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send)
 
@@ -649,7 +657,7 @@ preflight() {
   need_cmd awk
   need_cmd python3
 
-  [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing tee_launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
+  [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
   [ -f "$COMPOSE_YAML" ] || { err "Missing $COMPOSE_YAML"; exit 1; }
   [ -f "$ADD_DOMAIN_JSON" ] || { err "Missing $ADD_DOMAIN_JSON"; exit 1; }
   [ -f "$ENV_TPL" ] || { err "Missing template $ENV_TPL"; exit 1; }
@@ -717,7 +725,7 @@ render_node_files_range() {
   log "Rendering node env/conf files into $WORKDIR (nodes $start_i..$end_i)"
   log "Threshold (for env): $threshold / $N"
   log "OS_IMAGE=$OS_IMAGE  SEALING_KEY_TYPE=$SEALING_KEY_TYPE  VMM_RPC=$VMM_RPC"
-  log "MPC_IMAGE_TAGS=$MPC_IMAGE_TAGS"
+  log "MPC_MANIFEST_DIGEST=$MPC_MANIFEST_DIGEST"
   log "Contract account: $MPC_CONTRACT_ACCOUNT"
   log "Node naming: node{i}.${ROOT_ACCOUNT}"
 
@@ -764,9 +772,7 @@ render_node_files_range() {
 
     export MPC_ENV
 
-    export MPC_IMAGE_NAME="nearone/mpc-node"
-    export MPC_IMAGE_TAGS="$MPC_IMAGE_TAGS"
-    export MPC_REGISTRY="registry.hub.docker.com"
+    export MPC_IMAGE="nearone/mpc-node"
     export MPC_ACCOUNT_ID="$account"
     export MPC_SECRET_STORE_KEY="$(printf '%032x' "$i")"
     export MPC_CONTRACT_ID="$MPC_CONTRACT_ACCOUNT"
@@ -865,7 +871,7 @@ deploy_nodes_range() {
   local start_i="$1"
   local end_i="$2"
 
-  log "Deploying CVMs via tee_launcher/deploy-launcher.sh (nodes $start_i..$end_i)"
+  log "Deploying CVMs via deployment/cvm-deployment/deploy-launcher.sh (nodes $start_i..$end_i)"
   cd "$TEE_LAUNCHER_DIR"
   [ -x "./deploy-launcher.sh" ] || { err "$TEE_LAUNCHER_DIR/deploy-launcher.sh not executable"; exit 1; }
 
@@ -1082,10 +1088,10 @@ init_contract() {
 }
 
 extract_code_hash() {
-  local digest
-  digest="$(grep -E "DEFAULT_IMAGE_DIGEST=sha256:" "$COMPOSE_YAML" | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')"
+  # Use MPC_MANIFEST_DIGEST directly (strip sha256: prefix)
+  local digest="${MPC_MANIFEST_DIGEST#sha256:}"
   if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-    err "Could not extract DEFAULT_IMAGE_DIGEST from $COMPOSE_YAML"
+    err "MPC_MANIFEST_DIGEST is not a valid sha256 digest: $MPC_MANIFEST_DIGEST"
     exit 1
   fi
   echo "$digest"
@@ -1486,7 +1492,7 @@ print_summary() {
   echo " CONTRACT_BAL        : $CONTRACT_INITIAL_BALANCE"
   echo " NODE_BAL            : $NODE_INITIAL_BALANCE"
   echo " MAX_NODES_TO_FUND   : $MAX_NODES_TO_FUND"
-  echo " MPC_IMAGE_TAGS      : $MPC_IMAGE_TAGS"
+  echo " MPC_MANIFEST_DIGEST : $MPC_MANIFEST_DIGEST"
   echo " CODE_HASH           : $code_hash"
   echo " LAUNCHER_HASH       : $launcher_hash"
   echo " ADD_NODES           : $ADD_NODES"

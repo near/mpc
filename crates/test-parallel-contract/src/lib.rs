@@ -1,37 +1,16 @@
 use elliptic_curve::group::Group;
 use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{
+    Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainId, Payload, SignRequestArgs,
+};
 use near_sdk::serde::Serialize;
 use near_sdk::{env, near, serde_json, AccountId, Gas, NearToken, Promise};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
-use near_mpc_contract_interface::types::Bls12381G1PublicKey;
-
-// TODO(#1057): all these types should come from mpc_contract
 #[derive(Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum Payload {
-    Ecdsa(String),
-    Eddsa(String),
-}
-
-#[derive(Serialize)]
-pub struct SignRequest {
-    pub path: String,
-    pub payload_v2: Option<Payload>,
-    pub domain_id: Option<u64>,
-}
-
-#[derive(Serialize)]
-pub struct SignArgs {
-    pub request: SignRequest,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct CKDRequestArgs {
-    pub derivation_path: String,
-    pub app_public_key: Bls12381G1PublicKey,
-    pub domain_id: u64,
+struct SignArgs {
+    pub request: SignRequestArgs,
 }
 
 #[derive(Serialize)]
@@ -39,10 +18,10 @@ struct CKDArgs {
     pub request: CKDRequestArgs,
 }
 
-pub fn generate_app_public_key(seed: u64) -> Bls12381G1PublicKey {
+pub fn generate_app_public_key(seed: u64) -> CKDAppPublicKey {
     let x = blstrs::Scalar::from(seed);
     let big_x = blstrs::G1Projective::generator() * x;
-    Bls12381G1PublicKey::from(&big_x)
+    CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey::from(&big_x))
 }
 
 #[near(contract_state)]
@@ -67,7 +46,7 @@ impl TestContract {
             payload_builder: &F,
         ) -> Vec<Promise>
         where
-            F: Fn(String) -> Payload,
+            F: Fn([u8; 32]) -> Payload,
         {
             domain_map
                 .iter()
@@ -75,13 +54,13 @@ impl TestContract {
                     (0..*num_calls).map(move |i| {
                         let mut hasher = Sha256::new();
                         hasher.update(format!("{seed}-{i}").as_str());
-                        let hex_payload = hex::encode(hasher.finalize());
+                        let payload_bytes: [u8; 32] = hasher.finalize().into();
 
                         let args = SignArgs {
-                            request: SignRequest {
-                                payload_v2: Some(payload_builder(hex_payload)),
+                            request: SignRequestArgs {
+                                payload: payload_builder(payload_bytes),
                                 path: "".to_string(),
-                                domain_id: Some(*domain_id), // assuming DomainId is Copy
+                                domain_id: DomainId(*domain_id),
                             },
                         };
 
@@ -107,7 +86,7 @@ impl TestContract {
                         let args = CKDArgs {
                             request: CKDRequestArgs {
                                 derivation_path: "".to_string(),
-                                domain_id: *domain_id,
+                                domain_id: DomainId(*domain_id),
                                 app_public_key: generate_app_public_key(seed + i + 2),
                             },
                         };
@@ -129,7 +108,7 @@ impl TestContract {
                 &target_contract,
                 &ecdsa_calls_by_domain,
                 seed,
-                &|hex| Payload::Ecdsa(hex),
+                &|bytes| Payload::Ecdsa(bytes.into()),
             ));
         };
 
@@ -138,7 +117,7 @@ impl TestContract {
                 &target_contract,
                 &eddsa_calls_by_domain,
                 seed + 1_000_000, // tweak seed offset to avoid collision if needed
-                &|hex| Payload::Eddsa(hex),
+                &|bytes| Payload::Eddsa(bytes.into()),
             ));
         };
         if let Some(ckd_calls_by_domain) = ckd_calls_by_domain {
@@ -153,7 +132,7 @@ impl TestContract {
                 &target_contract,
                 &robust_ecdsa_calls_by_domain,
                 seed + 2_000_000,
-                &|hex| Payload::Ecdsa(hex),
+                &|bytes| Payload::Ecdsa(bytes.into()),
             ));
         };
 

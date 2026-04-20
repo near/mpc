@@ -2,7 +2,7 @@ pub mod key_generation;
 pub mod presign;
 mod sign;
 
-use mpc_contract::primitives::key_state::KeyEventId;
+use near_mpc_contract_interface::types::KeyEventId;
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 pub mod key_resharing;
@@ -22,7 +22,7 @@ use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_contract::primitives::domain::DomainId;
+use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::KeygenOutput;

@@ -1,67 +1,9 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use derive_more::{Deref, From};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
-use std::fmt::Display;
-
-pub use near_mpc_contract_interface::types::DomainPurpose;
-
-/// Each domain corresponds to a specific root key in a specific signature scheme. There may be
-/// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Deref)]
-pub struct DomainId(pub u64);
-
-impl From<near_mpc_contract_interface::types::DomainId> for DomainId {
-    fn from(id: near_mpc_contract_interface::types::DomainId) -> Self {
-        Self(id.0)
-    }
-}
-
-impl From<DomainId> for near_mpc_contract_interface::types::DomainId {
-    fn from(id: DomainId) -> Self {
-        Self(id.0)
-    }
-}
-
-impl Default for DomainId {
-    fn default() -> Self {
-        Self::legacy_ecdsa_id()
-    }
-}
-
-impl DomainId {
-    /// Returns the DomainId of the single ECDSA key present in the contract before V2.
-    pub fn legacy_ecdsa_id() -> Self {
-        Self(0)
-    }
-}
-
-impl Display for DomainId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-/// Elliptic curve used by a domain.
-/// More curves may be added in the future. When adding new curves, both Borsh
-/// *and* JSON serialization must be kept compatible.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Curve {
-    Secp256k1,
-    Edwards25519,
-    Bls12381,
-    V2Secp256k1, // Robust ECDSA
-}
-
-impl Default for Curve {
-    fn default() -> Self {
-        Self::Secp256k1
-    }
-}
 
 /// Returns whether the given curve is valid for the given purpose.
 pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool {
@@ -73,86 +15,6 @@ pub fn is_valid_curve_for_purpose(purpose: DomainPurpose, curve: Curve) -> bool 
             | (DomainPurpose::ForeignTx, Curve::Secp256k1)
             | (DomainPurpose::CKD, Curve::Bls12381)
     )
-}
-
-/// Describes the configuration of a domain: the domain ID and the curve it uses.
-///
-/// JSON deserialization accepts both `"scheme"` (legacy) and `"curve"` (new) field names.
-/// Serialization outputs `"scheme"` for backward compatibility with the current contract.
-/// After 3.8 is released the compat struct should be removed.
-#[near(serializers=[borsh, json])]
-#[serde(from = "DomainConfigCompat", into = "DomainConfigCompat")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DomainConfig {
-    pub id: DomainId,
-    pub curve: Curve,
-    pub purpose: DomainPurpose,
-}
-
-/// Curve variant names as they appear in the legacy JSON wire format.
-/// Maps `Edwards25519` ↔ `Ed25519`. Remove after 3.8 release.
-#[derive(serde::Serialize, serde::Deserialize)]
-enum CurveCompat {
-    Secp256k1,
-    #[serde(alias = "Edwards25519")]
-    Ed25519,
-    Bls12381,
-    V2Secp256k1,
-}
-
-impl From<Curve> for CurveCompat {
-    fn from(c: Curve) -> Self {
-        match c {
-            Curve::Secp256k1 => Self::Secp256k1,
-            Curve::Edwards25519 => Self::Ed25519,
-            Curve::Bls12381 => Self::Bls12381,
-            Curve::V2Secp256k1 => Self::V2Secp256k1,
-        }
-    }
-}
-
-impl From<CurveCompat> for Curve {
-    fn from(c: CurveCompat) -> Self {
-        match c {
-            CurveCompat::Secp256k1 => Self::Secp256k1,
-            CurveCompat::Ed25519 => Self::Edwards25519,
-            CurveCompat::Bls12381 => Self::Bls12381,
-            CurveCompat::V2Secp256k1 => Self::V2Secp256k1,
-        }
-    }
-}
-
-/// JSON-only compatibility helper for [`DomainConfig`]:
-/// - Deserializes both `"scheme"` (legacy) and `"curve"` (new) field names.
-/// - Serializes as `"scheme"` for backward compatibility with the current contract.
-///
-/// After 3.8 is released this compat struct should be removed.
-#[derive(serde::Serialize, serde::Deserialize)]
-struct DomainConfigCompat {
-    id: DomainId,
-    #[serde(alias = "curve")]
-    scheme: CurveCompat,
-    purpose: DomainPurpose,
-}
-
-impl From<DomainConfigCompat> for DomainConfig {
-    fn from(value: DomainConfigCompat) -> Self {
-        Self {
-            id: value.id,
-            curve: value.scheme.into(),
-            purpose: value.purpose,
-        }
-    }
-}
-
-impl From<DomainConfig> for DomainConfigCompat {
-    fn from(value: DomainConfig) -> Self {
-        Self {
-            id: value.id,
-            scheme: value.curve.into(),
-            purpose: value.purpose,
-        }
-    }
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -315,8 +177,8 @@ impl AddDomainsVotes {
 #[cfg(test)]
 pub mod tests {
     use super::{
-        is_valid_curve_for_purpose, AddDomainsVotes, Curve, CurveCompat, DomainConfig, DomainId,
-        DomainPurpose, DomainRegistry, Participants,
+        is_valid_curve_for_purpose, AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose,
+        DomainRegistry, Participants,
     };
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
@@ -455,38 +317,7 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn test_serialization_format() {
-        let domain_config = DomainConfig {
-            id: DomainId(3),
-            curve: Curve::Secp256k1,
-            purpose: DomainPurpose::Sign,
-        };
-        // Serializes as "scheme" for backward compat; remove after 3.8 release.
-        let json = serde_json::to_string(&domain_config).unwrap();
-        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#);
-
-        let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(domain_config.id, DomainId(3));
-        assert_eq!(domain_config.curve, Curve::Secp256k1);
-        assert_eq!(domain_config.purpose, DomainPurpose::Sign);
-
-        // Edwards25519 serializes as "Ed25519" via CurveCompat; remove after 3.8 release.
-        let domain_config = DomainConfig {
-            id: DomainId(1),
-            curve: Curve::Edwards25519,
-            purpose: DomainPurpose::Sign,
-        };
-        let json = serde_json::to_string(&domain_config).unwrap();
-        assert_eq!(json, r#"{"id":1,"scheme":"Ed25519","purpose":"Sign"}"#);
-    }
-
     #[rstest]
-    #[case(
-        r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#,
-        Curve::Secp256k1,
-        DomainPurpose::Sign
-    )]
     #[case(
         r#"{"id":3,"curve":"Secp256k1","purpose":"Sign"}"#,
         Curve::Secp256k1,
@@ -498,16 +329,11 @@ pub mod tests {
         DomainPurpose::CKD
     )]
     #[case(
-        r#"{"id":1,"scheme":"Ed25519","purpose":"Sign"}"#,
-        Curve::Edwards25519,
-        DomainPurpose::Sign
-    )]
-    #[case(
         r#"{"id":1,"curve":"Edwards25519","purpose":"Sign"}"#,
         Curve::Edwards25519,
         DomainPurpose::Sign
     )]
-    fn test_deserialize_scheme_and_curve_keys(
+    fn test_deserialize_domain_config(
         #[case] json: &str,
         #[case] expected_curve: Curve,
         #[case] expected_purpose: DomainPurpose,
@@ -515,25 +341,6 @@ pub mod tests {
         let config: DomainConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.curve, expected_curve);
         assert_eq!(config.purpose, expected_purpose);
-    }
-
-    #[rstest]
-    #[case("\"Secp256k1\"", Curve::Secp256k1, "\"Secp256k1\"")]
-    #[case("\"Ed25519\"", Curve::Edwards25519, "\"Ed25519\"")]
-    #[case("\"Edwards25519\"", Curve::Edwards25519, "\"Ed25519\"")]
-    #[case("\"Bls12381\"", Curve::Bls12381, "\"Bls12381\"")]
-    #[case("\"V2Secp256k1\"", Curve::V2Secp256k1, "\"V2Secp256k1\"")]
-    fn test_curve_compat_wire_format(
-        #[case] input_json: &str,
-        #[case] expected_curve: Curve,
-        #[case] expected_serialized: &str,
-    ) {
-        let compat: CurveCompat = serde_json::from_str(input_json).unwrap();
-        let curve: Curve = compat.into();
-        assert_eq!(curve, expected_curve);
-
-        let re_serialized = serde_json::to_string(&CurveCompat::from(curve)).unwrap();
-        assert_eq!(re_serialized, expected_serialized);
     }
 
     #[rstest]

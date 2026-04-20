@@ -1,12 +1,7 @@
 use k256::elliptic_curve::{Field as _, Group as _, PrimeField as _};
-use mpc_contract::{
-    crypto_shared::types::PublicKeyExtended,
-    primitives::{
-        domain::{Curve, DomainConfig, DomainId},
-        signature::Tweak,
-    },
-};
+use mpc_contract::crypto_shared::types::PublicKeyExtended;
 use near_mpc_contract_interface::types::{self as dtos, Bls12381G1PublicKey};
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, Tweak};
 use rand::rngs::OsRng;
 use rand_core::CryptoRngCore;
 use threshold_signatures::{
@@ -28,6 +23,16 @@ pub struct DomainKey {
 impl DomainKey {
     pub fn domain_id(&self) -> DomainId {
         self.domain_config.id
+    }
+
+    pub fn as_secp256k1(&self) -> &ts_ecdsa::KeygenOutput {
+        match &self.domain_secret_key {
+            SharedSecretKey::Secp256k1(sk) => sk,
+            other => panic!(
+                "Expected Secp256k1 key, got {:?}",
+                std::mem::discriminant(other)
+            ),
+        }
     }
 }
 

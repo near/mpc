@@ -21,7 +21,7 @@
 #
 # Usage:
 #   bash test-verify-and-upgrade.sh verify              # Scenario 1 only
-#   bash test-verify-and-upgrade.sh upgrade <new_tag>    # Scenario 2 (includes verify before & after)
+#   bash test-verify-and-upgrade.sh upgrade <manifest_digest>  # Scenario 2 (includes verify before & after)
 #
 # Environment variables (from set-localnet-env.sh or deploy script):
 #   NEAR_NETWORK_CONFIG, MPC_CONTRACT_ACCOUNT, N, MACHINE_IP,
@@ -215,57 +215,22 @@ verify_cluster() {
 # SCENARIO 2: ROLLING UPGRADE
 # =============================================================================
 
-# Get the Docker image config digest for a given tag from the registry.
-# This is what the rust launcher compares against the approved hashes.
-fetch_image_config_digest() {
-  local image_name="$1" tag="$2" registry="${3:-registry.hub.docker.com}"
-
-  # Get auth token
-  local token
-  token="$(curl -sf "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${image_name}:pull" \
-    | jq -r '.token')"
-
-  # Get manifest (fat manifest for multi-arch)
-  local manifest
-  manifest="$(curl -sf \
-    -H "Authorization: Bearer $token" \
-    -H "Accept: application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json" \
-    "https://${registry}/v2/${image_name}/manifests/${tag}")"
-
-  # Try to get config digest directly (single-arch manifest)
-  local config_digest
-  config_digest="$(echo "$manifest" | jq -r '.config.digest // empty')"
-
-  if [ -n "$config_digest" ]; then
-    echo "${config_digest#sha256:}"
-    return 0
-  fi
-
-  # Multi-arch: find amd64 manifest, then get its config digest
-  local amd64_digest
-  amd64_digest="$(echo "$manifest" | jq -r '.manifests[] | select(.platform.architecture=="amd64" and .platform.os=="linux") | .digest')"
-  if [ -z "$amd64_digest" ]; then
-    err "Could not find amd64 manifest for $image_name:$tag"
-    return 1
-  fi
-
-  local arch_manifest
-  arch_manifest="$(curl -sf \
-    -H "Authorization: Bearer $token" \
-    -H "Accept: application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json" \
-    "https://${registry}/v2/${image_name}/manifests/${amd64_digest}")"
-
-  config_digest="$(echo "$arch_manifest" | jq -r '.config.digest')"
-  echo "${config_digest#sha256:}"
-}
 
 upgrade_cluster() {
-  local new_tag="$1"
-  local image_name="${MPC_IMAGE_NAME:-nearone/mpc-node}"
-  local registry="${MPC_REGISTRY:-registry.hub.docker.com}"
+  local new_digest="$1"
+  local image_name="${MPC_IMAGE:-nearone/mpc-node}"
+  # Strip sha256: prefix if present for voting
+  local new_hash="${new_digest#sha256:}"
+
+  if [ ${#new_hash} -ne 64 ]; then
+    err "Invalid manifest digest: $new_digest (expected sha256:<64 hex chars>)"
+    exit 1
+  fi
 
   log "============================================================"
-  log "SCENARIO 2: Rolling Upgrade to $image_name:$new_tag"
+  log "SCENARIO 2: Rolling Upgrade"
+  log "  Image: $image_name"
+  log "  New manifest digest: $new_hash"
   log "============================================================"
 
   # --- Pre-upgrade verification ---
@@ -273,16 +238,6 @@ upgrade_cluster() {
   verify_cluster || true
   local pre_failures=$FAILURES
   FAILURES=0
-
-  # --- 2.1 Get new image config digest ---
-  log "Fetching config digest for $image_name:$new_tag from registry..."
-  local new_hash
-  new_hash="$(fetch_image_config_digest "$image_name" "$new_tag" "$registry")"
-  if [ -z "$new_hash" ] || [ ${#new_hash} -ne 64 ]; then
-    err "Failed to fetch config digest for $image_name:$new_tag"
-    exit 1
-  fi
-  log "New MPC image config digest: $new_hash"
 
   # Check if already approved
   local current_hashes
@@ -354,8 +309,8 @@ upgrade_cluster() {
     warn "Could not confirm hash detection from logs (nodes may still pick it up on restart)"
   fi
 
-  # --- 2.3 Restart CVMs with new image tag ---
-  log "Restarting CVMs with new image tag: $new_tag"
+  # --- 2.3 Restart CVMs ---
+  log "Restarting CVMs with new manifest digest: $new_hash"
 
   # Find running VM IDs
   local vm_ids=()
@@ -371,7 +326,7 @@ upgrade_cluster() {
     log "  node$i VM ID: $vm_id"
   done
 
-  # Update TOML configs with new image tag, stop, update-user-config, start
+  # Update TOML configs with new image, stop, update-user-config, start
   for i in $(seq 0 $((N - 1))); do
     local toml_file="$WORKDIR/node${i}.toml"
     if [ ! -f "$toml_file" ]; then
@@ -379,9 +334,7 @@ upgrade_cluster() {
       return 1
     fi
 
-    # Update image_tags in TOML
-    log "  node$i: updating TOML image_tags to [$new_tag]"
-    sed -i "s/^image_tags = .*/image_tags = [\"$new_tag\"]/" "$toml_file"
+    log "  node$i: restarting VM ${vm_ids[$i]}"
 
     log "  node$i: stopping VM ${vm_ids[$i]}"
     $CLI stop "${vm_ids[$i]}" 2>/dev/null
@@ -446,8 +399,7 @@ upgrade_cluster() {
 
   log "============================================================"
   log "Upgrade Summary"
-  log "  Image tag: $new_tag"
-  log "  Config digest: $new_hash"
+  log "  Manifest digest: $new_hash"
   log "  Pre-upgrade failures: $pre_failures"
   log "  Post-upgrade failures: $FAILURES"
   log "============================================================"
@@ -461,11 +413,11 @@ usage() {
   echo
   echo "Commands:"
   echo "  verify                    Run cluster verification (Scenario 1)"
-  echo "  upgrade <new_image_tag>   Run rolling upgrade test (Scenario 2)"
+  echo "  upgrade <manifest_digest>   Run rolling upgrade test (Scenario 2)"
   echo
   echo "Examples:"
   echo "  $0 verify"
-  echo "  $0 upgrade 3.8.0"
+  echo "  $0 upgrade sha256:abc123..."
 }
 
 case "${1:-}" in
@@ -475,7 +427,7 @@ case "${1:-}" in
     ;;
   upgrade)
     if [ -z "${2:-}" ]; then
-      err "Missing argument: new image tag"
+      err "Missing argument: manifest digest (e.g. sha256:abc123...)"
       usage
       exit 1
     fi

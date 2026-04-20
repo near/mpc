@@ -11,18 +11,15 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
-use mpc_contract::{
-    crypto_shared::CKDResponse,
-    primitives::{
-        domain::{Curve, DomainConfig, DomainPurpose},
-        key_state::{EpochId, Keyset},
-        participants::Participants,
-        thresholds::{Threshold, ThresholdParameters},
-    },
+use mpc_contract::primitives::{
+    key_state::{EpochId, Keyset},
+    participants::Participants,
+    thresholds::{Threshold, ThresholdParameters},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::{CKDResponse, Curve, DomainConfig, DomainPurpose};
 use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
@@ -408,12 +405,10 @@ async fn upgrade_allows_new_request_types(
     }
 }
 
-/// Verifies that `mpc_contract::state::ProtocolContractState` (the internal type) can be
-/// deserialized from the JSON produced by an older contract that lacks the `purpose` field
-/// in `DomainConfig`.
-///
-/// This matters because the node deserializes `state()` into the internal type
-/// (see `crates/node/src/indexer.rs`), so it must tolerate JSON from older contracts.
+/// Verifies that the DTO `ProtocolContractState` can be deserialized from JSON
+/// produced by an older contract (which uses `"scheme"/"Ed25519"` instead of
+/// `"curve"/"Edwards25519"`). This matters because the node reads old contract
+/// state via the DTO's serde aliases.
 #[rstest]
 #[tokio::test]
 async fn protocol_contract_state__should_deserialize_from_old_contract_json(
@@ -434,18 +429,14 @@ async fn protocol_contract_state__should_deserialize_from_old_contract_json(
     )
     .await;
 
-    // When: we read the raw JSON bytes and deserialize into the internal type
-    let view_result = contract.view(method_names::STATE).await.unwrap();
-    let state: mpc_contract::state::ProtocolContractState =
-        serde_json::from_slice(&view_result.result)
-            .expect("should deserialize old contract state into internal ProtocolContractState");
+    // When: we read the raw JSON and deserialize into the DTO type (which
+    // accepts both old "scheme"/"Ed25519" and new "curve"/"Edwards25519" via
+    // serde aliases). This is the same path the node takes.
+    let state: ProtocolContractState = get_state(&contract).await;
 
     // Then: the state is Running
     assert!(
-        matches!(
-            state,
-            mpc_contract::state::ProtocolContractState::Running(_)
-        ),
+        matches!(state, ProtocolContractState::Running(_)),
         "Expected Running state, got: {:?}",
         state
     );

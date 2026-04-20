@@ -26,8 +26,9 @@ use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use mpc_node_config::ConfigFile;
 
-use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
-use mpc_contract::primitives::domain::{Curve, DomainId};
+use mpc_primitives::domain::{Curve, DomainId};
+use near_mpc_contract_interface::types::CKDResponse;
+use near_mpc_crypto_types::kdf::derive_tweak;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -310,7 +311,7 @@ where
                             let verify_foreign_tx_request = VerifyForeignTxRequest {
                                 id: verify_foreign_tx_id,
                                 receipt_id,
-                                domain_id: request.domain_id.into(),
+                                domain_id: request.domain_id,
                                 entropy,
                                 payload_version: request.payload_version,
                                 request: request.request,

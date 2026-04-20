@@ -11,9 +11,12 @@ on:
   push:
     branches:
       - main
-  # Weekly cron to clear and rebuild Rust cache (https://github.com/Swatinem/rust-cache/issues/181).
+  # Primes the new week's Rust cache on main right after the weekly `prefix-key` rolls
+  # over at UTC Sun 00:00. Without this, the first PR on Sunday pays a full cold-build
+  # cost and (since `save-if` requires main) doesn't save, so every subsequent Sunday
+  # PR keeps cold-building until something merges to main. See near/mpc#2828.
   schedule:
-    - cron: "0 12 * * 6"
+    - cron: "5 0 * * 0"
 
 jobs:
   docker-tee-build:
@@ -48,46 +51,6 @@ jobs:
           export NODE_IMAGE_NAME=test_image_tag_ci
           ./scripts/check-mpc-node-docker-starts.sh
 
-  launcher-nontee-check:
-    name: "MPC Launcher non-tee check"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Check mpc-node docker image can initialize through the launcher and start
-        run: |
-          ./scripts/check-mpc-node-docker-starts.sh --launcher
-
-  docker-launcher-build-and-verify:
-    name: "Build MPC Launcher Docker image and verify"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install skopeo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo
-
-      - name: Build launcher docker image and verify its hash
-        shell: bash
-        run: |
-          ./scripts/build-and-verify-launcher-docker-image.sh
-
   docker-rust-launcher-build-and-verify:
     name: "Build Rust Launcher Docker image and verify"
     runs-on: warp-ubuntu-2404-x64-8x
@@ -114,13 +77,6 @@ jobs:
           wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
           echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
           sudo install -m755 repro-env -t /usr/bin
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          cache-provider: "warpbuild"
-          lookup-only: ${{ github.event_name == 'schedule' }}
 
       - name: Build Rust launcher docker image and verify its hash
         shell: bash
@@ -163,13 +119,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y liblzma-dev
 
+      - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v0-rust-tests-${{ matrix.group }}
-          lookup-only: ${{ github.event_name == 'schedule' }}
+          prefix-key: v0-rust-tests-${{ matrix.group }}-week-${{ env.WEEK }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -219,12 +175,13 @@ jobs:
       - name: Initialize submodules
         run: git submodule update --init --recursive
 
+      - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          lookup-only: ${{ github.event_name == 'schedule' }}
+          prefix-key: v0-rust-week-${{ env.WEEK }}
 
       - name: Install build dependencies
         run: |
@@ -251,19 +208,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cargo-make
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-make@0.37.24
+
       - name: Build mpc-node
-        run: |
-          cargo build -p mpc-node --release --features network-hardship-simulation,test-utils --locked
+        run: cargo make build-mpc-node-network-hardship-simulation
 
       # We run this build step on main as well to cache the contract build.
       # The non reproducible build will not be used on main since it will be overwritten by the reproducible
       # step below.
       - name: Build mpc-contract
-        run: |
-          cargo build -p mpc-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
-          wasm-opt -Oz \
-            target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm \
-            -o target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+        run: cargo make build-mpc-contract-optimized
 
       - name: Build mpc-contract reproducibly
         if: github.ref == 'refs/heads/main'
@@ -273,11 +230,7 @@ jobs:
             --out-dir target/wasm32-unknown-unknown/release-contract
 
       - name: Build test-parallel-contract
-        run: |
-          cargo build -p test-parallel-contract --target=wasm32-unknown-unknown --profile=release-contract --locked
-          wasm-opt -Oz \
-            target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm \
-            -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
+        run: cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
         run: |
@@ -321,7 +274,7 @@ jobs:
           cargo build -p neard --release
 
       - name: Save pytest binaries cache
-        uses: WarpBuilds/cache/save@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache/save@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
           path: |
@@ -343,7 +296,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
-          
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -364,6 +317,9 @@ jobs:
         run: |
           cargo near build reproducible-wasm \
             --manifest-path crates/contract/Cargo.toml
+
+      - name: Check contract WASM size
+        run: bash scripts/check-contract-wasm-size.sh
 
   mpc-pytests:
     name: "MPC pytests: ${{ matrix.group }}"
@@ -419,7 +375,7 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Restore pytest binaries cache
-        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache/restore@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
           fail-on-cache-miss: true
@@ -437,7 +393,7 @@ jobs:
 
       - name: Cache python virtualenv
         id: venv-cache
-        uses: WarpBuilds/cache@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           path: pytest/venv
           key: pytest-venv-${{ hashFiles('pytest/requirements.txt', 'libs/nearcore/pytest/requirements.txt') }}
@@ -470,7 +426,7 @@ jobs:
 
     steps:
       - name: Delete pytest binaries cache
-        uses: WarpBuilds/cache@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           delete-cache: true
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
@@ -480,37 +436,6 @@ jobs:
             target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
             target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
             libs/nearcore/target/release/neard
-
-  tee-launcher-tests:
-    name: "TEE Launcher: pytests"
-    runs-on: warp-ubuntu-2404-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.11"
-
-      - name: Setup virtualenv
-        run: |
-          python3 -m venv tee_launcher/venv
-          source tee_launcher/venv/bin/activate
-          cd tee_launcher 
-          pip install -r requirements.txt
-
-      - name: Run pytest
-        run: |
-          source tee_launcher/venv/bin/activate
-          cd tee_launcher 
-          PYTHONPATH=. pytest -vsx
 
   fast-ci-checks:
     name: "Fast CI checks"
@@ -523,37 +448,38 @@ jobs:
         with:
           persist-credentials: false
 
+      - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          lookup-only: ${{ github.event_name == 'schedule' }}
+          prefix-key: v0-rust-week-${{ env.WEEK }}
 
       - name: Install ruff
-        uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
+        uses: astral-sh/ruff-action@0ce1b0bf8b818ef400413f810f8a11cdbda0034b # v4.0.0
         with:
           args: "--version" # workaround to avoid running ruff check here
 
       - name: Install cargo-shear
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-shear@1.9.1
+          tool: cargo-shear@1.11.2
 
       - name: Install cargo-sort
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-sort@2.0.2
+          tool: cargo-sort@2.1.3
 
       - name: Install zizmor
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: zizmor@1.22.0
+          tool: zizmor@1.24.1
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-deny@0.19.0
+          tool: cargo-deny@0.19.4
 
       - name: Install lychee
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -579,7 +505,7 @@ jobs:
   mpc-e2e-tests:
     name: "MPC E2E tests"
     needs: mpc-pytest-build
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2404-x64-32x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -597,16 +523,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y liblzma-dev
 
+      - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-          prefix-key: v0-rust-e2e
-          lookup-only: ${{ github.event_name == 'schedule' }}
+          prefix-key: v0-rust-e2e-week-${{ env.WEEK }}
 
       - name: Restore pytest binaries cache
-        uses: WarpBuilds/cache/restore@8e2c4dd9bdfe2460f9f0d558ce34d030589e1556 # v1
+        uses: WarpBuilds/cache/restore@f643a1ba29942d56621d07fc2d4284c7219868ad # v1.4.10
         with:
           key: ${{ env.MPC_PYTEST_BINARIES_CACHE_KEY }}
           fail-on-cache-miss: true
@@ -622,11 +548,15 @@ jobs:
         with:
           tool: nextest@0.9.126
 
+      - name: Install cargo-make
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-make@0.37.24
+
       - name: Run E2E tests
-        run: |
-          RUST_LOG=info,e2e_tests=debug cargo nextest run --cargo-profile=test-release -p e2e-tests --all-features --locked 2>&1
+        run: cargo make e2e-tests-skip-build
         env:
-          MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+          RUST_LOG: info,e2e_tests=debug
 
   ci-extra:
     name: "Extra CI checks"
@@ -642,7 +572,7 @@ jobs:
       - name: Install cargo-deny
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
         with:
-          tool: cargo-deny@0.19.0
+          tool: cargo-deny@0.19.4
 
       - name: Install cargo-make
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28

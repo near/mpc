@@ -1,7 +1,6 @@
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{Curve, DomainConfig, DomainId, DomainPurpose},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
         test_utils::{bogus_ed25519_near_public_key, gen_participants},
@@ -13,6 +12,7 @@ use mpc_contract::{
 use near_mpc_contract_interface::types::{
     Attestation, InitConfig, MockAttestation, ProtocolContractState,
 };
+use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
@@ -249,6 +249,7 @@ impl TestSetup {
             mpc_docker_image_hash: Some(hash.into()),
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: None,
+            expected_measurements: None,
         })
     }
 }

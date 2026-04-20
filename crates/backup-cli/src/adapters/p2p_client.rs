@@ -51,9 +51,10 @@ impl ports::P2PClient for MpcP2PClient {
         .await
         .map_err(Error::ServerConnection)?;
 
+        let keyset_dto: near_mpc_contract_interface::types::Keyset = keyset.clone().into();
         let keyshares = client::make_keyshare_get_request(
             &mut send_request,
-            keyset,
+            &keyset_dto,
             &self.backup_encryption_key,
         )
         .await

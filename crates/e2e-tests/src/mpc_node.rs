@@ -19,7 +19,7 @@ use crate::port_allocator::E2ePortAllocator;
 const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
-const LISTEN_BLOCKS_FILE: &str = "listen_blocks";
+const LISTEN_BLOCKS_FILE: &str = "listen_blocks.flag";
 
 const TEMP_KEYS_FILE: &str = "temporary_keys";
 
@@ -191,11 +191,8 @@ impl MpcNodeSetup {
         Ok(setup)
     }
 
-    /// The ed25519 public key formatted as `"ed25519:<base58>"`.
-    pub fn p2p_public_key_str(&self) -> String {
-        String::from(&Ed25519PublicKey::from(
-            &self.p2p_signing_key.verifying_key(),
-        ))
+    pub fn p2p_public_key(&self) -> Ed25519PublicKey {
+        Ed25519PublicKey::from(&self.p2p_signing_key.verifying_key())
     }
 
     /// The P2P URL for this node.
@@ -399,6 +396,7 @@ impl MpcNodeSetup {
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: Default::default(),
             },
+            pccs_url: mpc_node_config::default_pccs_url(),
         };
 
         let toml_string =

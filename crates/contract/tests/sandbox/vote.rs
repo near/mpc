@@ -1,22 +1,24 @@
 // TODO(#1686): split this file
 use crate::sandbox::{
     common::{
-        gen_account, gen_participant_info, generate_participant_and_submit_attestation, init_env,
+        gen_account, gen_participant_info, generate_participant_and_submit_attestation,
         SandboxTestSetup,
     },
     utils::{
         consts::{ALL_CURVES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-        interface::{IntoContractType, IntoInterfaceType},
+        interface::IntoContractType,
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
         transactions::execute_async_transactions,
     },
 };
 use assert_matches::assert_matches;
-use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
+use dtos::{
+    AttemptId, Curve, DomainConfig, DomainPurpose, KeyEventId, ProtocolContractState,
+    RunningContractState,
+};
 use mpc_contract::primitives::{
-    domain::{Curve, DomainConfig, DomainPurpose},
     test_utils::infer_purpose_from_curve,
     thresholds::{Threshold, ThresholdParameters},
 };
@@ -31,7 +33,10 @@ async fn test_keygen() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     let init_state = get_state(&contract).await;
     let ProtocolContractState::Running(ref init_running) = init_state else {
         panic!("expected running state");
@@ -59,8 +64,8 @@ async fn test_keygen() -> anyhow::Result<()> {
     assert_eq!(init.domains.next_domain_id, domain_id + 1);
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
-        scheme: curve.into_interface_type(),
-        purpose: Some(dtos::DomainPurpose::Sign),
+        curve,
+        purpose: dtos::DomainPurpose::Sign,
     };
     let found = init
         .domains
@@ -132,7 +137,10 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
     let init_state = get_state(&contract).await;
     let ProtocolContractState::Running(ref init_running) = init_state else {
         panic!("expected running state");
@@ -166,8 +174,8 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         };
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
-            scheme: (*curve).into_interface_type(),
-            purpose: Some(expected_purpose),
+            curve: *curve,
+            purpose: expected_purpose,
         };
         let found = init
             .domains
@@ -319,7 +327,11 @@ async fn setup_resharing_state(
         contract,
         mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, number_of_participants).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .with_number_of_participants(number_of_participants)
+        .build()
+        .await;
 
     let state: ProtocolContractState = get_state(&contract).await;
     let ProtocolContractState::Running(initial_running_state) = state else {
@@ -750,7 +762,10 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         contract,
         mut mpc_signer_accounts,
         ..
-    } = init_env(ALL_CURVES, PARTICIPANT_LEN).await;
+    } = SandboxTestSetup::builder()
+        .with_curves(ALL_CURVES)
+        .build()
+        .await;
 
     let state = get_state(&contract).await;
     let ProtocolContractState::Running(ref running_state) = state else {
