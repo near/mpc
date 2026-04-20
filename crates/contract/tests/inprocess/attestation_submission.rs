@@ -118,9 +118,14 @@ impl TestSetupBuilder {
         testing_env!(context);
 
         let init_config = self.init_config;
-        let contract =
-            MpcContract::init_running(domains, 1, keyset, parameters.clone(), init_config.clone())
-                .unwrap();
+        let contract = MpcContract::init_running(
+            domains,
+            1,
+            keyset,
+            parameters.clone().try_into().unwrap(),
+            init_config.clone(),
+        )
+        .unwrap();
 
         let mut setup = TestSetup {
             contract,
@@ -180,7 +185,10 @@ impl TestSetupBuilder {
 
                     setup
                         .contract
-                        .vote_new_parameters(EpochId::new(6), parameters.clone())
+                        .vote_new_parameters(
+                            EpochId::new(6),
+                            parameters.clone().try_into().unwrap(),
+                        )
                         .unwrap();
                 }
 

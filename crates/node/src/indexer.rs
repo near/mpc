@@ -13,13 +13,7 @@ use crate::{
 use self::stats::IndexerStats;
 use anyhow::Context;
 use handler::ChainBlockUpdate;
-use mpc_contract::{
-    primitives::signature::YieldIndex,
-    tee::{
-        proposal::{LauncherDockerComposeHash, NodeImageHash},
-        tee_state::NodeId,
-    },
-};
+use mpc_contract::tee::proposal::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
@@ -36,7 +30,7 @@ use near_mpc_contract_interface::method_names::{
     GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
     STATE,
 };
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{self as dtos, NodeId, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};

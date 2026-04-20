@@ -25,8 +25,8 @@ use std::{
 
 use crate::{
     dto_mapping::{
-        args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType,
-        TryIntoInterfaceType,
+        args_into_verify_foreign_tx_request, IntoContractType, IntoInterfaceType,
+        TryIntoContractType, TryIntoInterfaceType,
     },
     errors::{Error, RequestError},
     primitives::{
@@ -904,8 +904,9 @@ impl MpcContract {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: ThresholdParameters,
+        proposal: dtos::ThresholdParameters,
     ) -> Result<(), Error> {
+        let proposal: ThresholdParameters = proposal.into_contract_type();
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
@@ -1704,9 +1705,10 @@ impl MpcContract {
     #[handle_result]
     #[init]
     pub fn init(
-        parameters: ThresholdParameters,
+        parameters: dtos::ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
+        let parameters: ThresholdParameters = parameters.into_contract_type();
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
@@ -1756,9 +1758,10 @@ impl MpcContract {
         domains: Vec<DomainConfig>,
         next_domain_id: u64,
         keyset: Keyset,
-        parameters: ThresholdParameters,
+        parameters: dtos::ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
+        let parameters: ThresholdParameters = parameters.into_contract_type();
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
@@ -2540,7 +2543,14 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-        let contract = MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
+        let contract = MpcContract::init_running(
+            domains,
+            1,
+            keyset,
+            (&parameters).try_into_dto_type().unwrap(),
+            None,
+        )
+        .unwrap();
         (context, contract, sk)
     }
 
@@ -3245,7 +3255,7 @@ mod tests {
 
         let threshold = Threshold::new(threshold_value);
         let parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
-        let contract = MpcContract::init(parameters, None).unwrap();
+        let contract = MpcContract::init((&parameters).try_into_dto_type().unwrap(), None).unwrap();
 
         (contract, participants, first_participant_id)
     }
@@ -3307,7 +3317,7 @@ mod tests {
         testing_env!(voting_context);
 
         let proposal = ThresholdParameters::new(participants, threshold).unwrap();
-        contract.vote_new_parameters(EpochId::new(1), proposal)
+        contract.vote_new_parameters(EpochId::new(1), (&proposal).try_into_dto_type().unwrap())
     }
 
     /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants have
@@ -3809,7 +3819,7 @@ mod tests {
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_check: None,
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     destination_node_info.destination_node_info.clone(),
                 )),
             };
@@ -3843,7 +3853,7 @@ mod tests {
                     )
                 }),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -3877,7 +3887,7 @@ mod tests {
                     )
                 }),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -3912,7 +3922,7 @@ mod tests {
                     )
                 }),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -3968,7 +3978,7 @@ mod tests {
                     )
                 }),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -4604,9 +4614,14 @@ mod tests {
         };
         let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
 
-        let mut contract =
-            MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
-                .unwrap();
+        let mut contract = MpcContract::init_running(
+            domains.clone(),
+            1,
+            keyset.clone(),
+            (&parameters).try_into_dto_type().unwrap(),
+            None,
+        )
+        .unwrap();
 
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
 
@@ -4667,7 +4682,7 @@ mod tests {
             ParticipantId(PARTICIPANT_COUNT as u32),
             participant_list[0..2]
                 .iter()
-                .map(|(acc, id, info)| (acc.clone(), id.clone(), info.clone()))
+                .map(|(acc, id, info)| (acc.clone(), *id, info.clone()))
                 .collect(),
         );
         let expected_params =

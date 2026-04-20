@@ -6,8 +6,14 @@ extern crate alloc;
 pub mod account_id;
 pub mod domain;
 pub mod hash;
+pub mod participant_id;
+pub mod threshold;
+pub mod yield_index;
 
 pub use account_id::AccountId;
+pub use participant_id::ParticipantId;
+pub use threshold::Threshold;
+pub use yield_index::YieldIndex;
 
 /// Re-exports used by the [`define_hash!`] macro. Not part of the public API.
 #[doc(hidden)]

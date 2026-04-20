@@ -66,29 +66,7 @@ pub struct EpochId(pub u64);
 )]
 pub struct AttemptId(pub u64);
 
-/// Threshold value for distributed key operations.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::AsRef,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct Threshold(pub u64);
+pub use mpc_primitives::Threshold;
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(

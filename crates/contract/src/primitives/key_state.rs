@@ -156,7 +156,7 @@ impl Keyset {
 pub struct AuthenticatedParticipantId(ParticipantId);
 impl AuthenticatedParticipantId {
     pub fn get(&self) -> ParticipantId {
-        self.0.clone()
+        self.0
     }
 
     pub fn new(participants: &Participants) -> Result<Self, Error> {
@@ -165,7 +165,7 @@ impl AuthenticatedParticipantId {
             .participants()
             .iter()
             .find(|(a_id, _, _)| *a_id == signer)
-            .map(|(_, p_id, _)| AuthenticatedParticipantId(p_id.clone()))
+            .map(|(_, p_id, _)| AuthenticatedParticipantId(*p_id))
             .ok_or_else(|| InvalidState::NotParticipant { account_id: signer }.into())
     }
 }

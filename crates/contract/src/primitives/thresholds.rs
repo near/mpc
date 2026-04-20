@@ -4,26 +4,10 @@ use near_account_id::AccountId;
 use near_sdk::near;
 use std::collections::BTreeMap;
 
+pub use near_mpc_contract_interface::types::Threshold;
+
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
-
-/// Stores the cryptographic threshold for a distributed key.
-/// ```
-/// use mpc_contract::primitives::thresholds::Threshold;
-/// let dt = Threshold::new(8);
-/// assert!(dt.value() == 8);
-/// ```
-#[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Threshold(u64);
-impl Threshold {
-    pub fn new(val: u64) -> Self {
-        Threshold(val)
-    }
-    pub fn value(&self) -> u64 {
-        self.0
-    }
-}
 
 /// Stores information about the threshold key parameters:
 /// - owners of key shares
@@ -39,7 +23,7 @@ impl ThresholdParameters {
     /// Constructs Threshold parameters from `participants` and `threshold` if the
     /// threshold meets the absolute and relative validation criteria.
     pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
-        match Self::validate_threshold(participants.len() as u64, threshold.clone()) {
+        match Self::validate_threshold(participants.len() as u64, threshold) {
             Ok(_) => Ok(ThresholdParameters {
                 participants,
                 threshold,
@@ -90,8 +74,8 @@ impl ThresholdParameters {
         let mut old_by_id: BTreeMap<ParticipantId, AccountId> = BTreeMap::new();
         let mut old_by_acc: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)> = BTreeMap::new();
         for (acc, id, info) in self.participants().participants() {
-            old_by_id.insert(id.clone(), acc.clone());
-            old_by_acc.insert(acc.clone(), (id.clone(), info.clone()));
+            old_by_id.insert(*id, acc.clone());
+            old_by_acc.insert(acc.clone(), (*id, info.clone()));
         }
         let new_participants = proposal.participants().participants();
         let mut new_min_id = u32::MAX;
@@ -151,7 +135,7 @@ impl ThresholdParameters {
     }
 
     pub fn threshold(&self) -> Threshold {
-        self.threshold.clone()
+        self.threshold
     }
     /// Returns the map of Participants.
     pub fn participants(&self) -> &Participants {
@@ -231,7 +215,7 @@ mod tests {
             .unwrap_err();
         for k in min_threshold..(n + 1) {
             let threshold = Threshold::new(k as u64);
-            let tp = ThresholdParameters::new(participants.clone(), threshold.clone());
+            let tp = ThresholdParameters::new(participants.clone(), threshold);
             let tp = tp.expect("Threshold parameters should be valid for the given threshold");
             tp.validate().expect("Threshold parameters should validate");
             assert_eq!(tp.threshold(), threshold);
@@ -268,8 +252,7 @@ mod tests {
             .participants
             .subset(0..params.threshold.value() as usize);
         new_participants.add_random_participants_till_n(params.participants.len());
-        let proposal =
-            ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
+        let proposal = ThresholdParameters::new_unvalidated(new_participants, params.threshold);
 
         assert_matches!(
             params.validate_incoming_proposal(&proposal),
@@ -286,7 +269,7 @@ mod tests {
         let mut new_participants = large_params.participants.subset(0..5); // 5 < threshold of 6
         new_participants.add_random_participants_till_n(10);
         let proposal =
-            ThresholdParameters::new_unvalidated(new_participants, large_params.threshold.clone());
+            ThresholdParameters::new_unvalidated(new_participants, large_params.threshold);
         assert_eq!(
             large_params
                 .validate_incoming_proposal(&proposal)
@@ -299,8 +282,7 @@ mod tests {
             .participants
             .subset(0..params.threshold.value() as usize);
         new_participants.add_random_participants_till_n(50);
-        let proposal =
-            ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
+        let proposal = ThresholdParameters::new_unvalidated(new_participants, params.threshold);
         let _ = params.validate_incoming_proposal(&proposal).unwrap_err();
     }
 
@@ -319,11 +301,11 @@ mod tests {
             .skip(1)
             .cloned()
             .collect();
-        new_participants_vec.push((account.clone(), wrong_id.clone(), info));
+        new_participants_vec.push((account.clone(), wrong_id, info));
 
         let proposal = ThresholdParameters::new_unvalidated(
             Participants::init(ParticipantId(wrong_id.get() + 1), new_participants_vec),
-            params.threshold.clone(),
+            params.threshold,
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),
@@ -354,7 +336,7 @@ mod tests {
 
         let proposal = ThresholdParameters::new_unvalidated(
             Participants::init(params.participants.next_id(), new_participants_vec),
-            params.threshold.clone(),
+            params.threshold,
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),
@@ -382,11 +364,11 @@ mod tests {
             .skip(1)
             .cloned()
             .collect();
-        new_participants_vec.push((new_account.clone(), reused_id.clone(), new_info));
+        new_participants_vec.push((new_account.clone(), reused_id, new_info));
 
         let proposal = ThresholdParameters::new_unvalidated(
             Participants::init(params.participants.next_id(), new_participants_vec),
-            params.threshold.clone(),
+            params.threshold,
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),
@@ -415,7 +397,7 @@ mod tests {
 
         let tampered_params = ThresholdParameters {
             participants: tampered_participants,
-            threshold: params.threshold.clone(),
+            threshold: params.threshold,
         };
 
         assert_eq!(
@@ -463,8 +445,7 @@ mod tests {
             .participants
             .subset(0..params.threshold.value() as usize);
 
-        let new_params =
-            ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
+        let new_params = ThresholdParameters::new(new_participants, params.threshold).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
         result.unwrap();
@@ -479,8 +460,7 @@ mod tests {
         new_participants.add_random_participants_till_n(n + 2);
         let new_participants = new_participants.subset(2..n + 2);
 
-        let new_params =
-            ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
+        let new_params = ThresholdParameters::new(new_participants, params.threshold).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
         result.unwrap();
@@ -497,7 +477,7 @@ mod tests {
         // next_id too high (skipping an ID).
         let (new_account, new_info) = gen_participant(999);
         let mut new_participants_vec: Vec<_> = params.participants.participants().to_vec();
-        new_participants_vec.push((new_account, next_id.clone(), new_info));
+        new_participants_vec.push((new_account, next_id, new_info));
 
         // 6 participants with threshold 5: validate_threshold passes (60% of 6 = 4 <= 5 <= 6)
         let proposal = ThresholdParameters::new_unvalidated(

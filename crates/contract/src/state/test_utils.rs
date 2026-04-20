@@ -24,26 +24,26 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
     let mut old_ids: BTreeSet<ParticipantId> = current_participants
         .participants()
         .iter()
-        .map(|(_, id, _)| id.clone())
+        .map(|(_, id, _)| *id)
         .collect();
     let mut new_ids = BTreeSet::new();
     while new_ids.len() < (n_old_participants as usize) {
         let x: usize = rng.gen::<usize>() % old_ids.len();
-        let c = old_ids.iter().nth(x).unwrap().clone();
-        new_ids.insert(c.clone());
+        let c = *old_ids.iter().nth(x).unwrap();
+        new_ids.insert(c);
         old_ids.remove(&c);
     }
     let mut new_participants = Participants::default();
     for id in new_ids {
         let account_id = current_participants.account_id(&id).unwrap();
         let info = current_participants.info(&account_id).unwrap();
-        let _ = new_participants.insert_with_id(account_id, info.clone(), id.clone());
+        let _ = new_participants.insert_with_id(account_id, info.clone(), id);
     }
     let max_added: usize = rng.gen_range(0..10);
     let mut next_id = current_participants.next_id();
     for i in 0..max_added {
         let (account_id, info) = gen_participant(i);
-        let _ = new_participants.insert_with_id(account_id, info, next_id.clone());
+        let _ = new_participants.insert_with_id(account_id, info, next_id);
         next_id = next_id.next();
     }
 
