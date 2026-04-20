@@ -19,7 +19,7 @@ use crate::port_allocator::E2ePortAllocator;
 const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
-const LISTEN_BLOCKS_FILE: &str = "listen_blocks";
+const LISTEN_BLOCKS_FILE: &str = "listen_blocks.flag";
 
 const TEMP_KEYS_FILE: &str = "temporary_keys";
 
