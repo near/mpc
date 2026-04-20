@@ -66,11 +66,11 @@ where
         let casted_votes = self
             .votes_by_proposal
             .get_mut(proposal)
-            .expect("inconsistent votes registry");
+            .expect("votes by proposal must contain proposal");
         // remove the vote from the proposal
         let remaining = casted_votes
             .remove(voter)
-            .expect("inconsistent vote registry");
+            .expect("casted votes must contain voter");
         if remaining == 0 {
             // remove the proposal if it has no more votes
             self.votes_by_proposal.remove(proposal);
