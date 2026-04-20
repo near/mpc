@@ -25,6 +25,11 @@ use std::{
 
 const DEFAULT_PPROF_PORT: u16 = 34001;
 
+/// The maximum block-height difference between two nodes before one is
+/// considered offline / lagging. Used by the mesh network to filter out
+/// participants that are too far behind in the indexer height.
+pub const MAX_INDEXER_HEIGHT_DIFF: u64 = 50;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TripleConfig {
     pub concurrency: usize,
