@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use derive_more::{From, FromStr};
 use serde::{Deserialize, Serialize};
 
 /// A Near AccountId
@@ -14,6 +15,8 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    From,
+    FromStr,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

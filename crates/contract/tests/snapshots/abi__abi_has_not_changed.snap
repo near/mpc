@@ -2946,6 +2946,7 @@ expression: abi
           }
         },
         "NodeId": {
+          "description": "Identity of an MPC node.\n\nEquality and hashing intentionally ignore `account_public_key`: two `NodeId` values are considered equal when they share the same `account_id` and `tls_public_key`, even if one is still missing the account key. The derived `Ord`/`PartialOrd` impls remain lexicographic over all fields and are used for stable ordering in `BTreeSet`/`BTreeMap`.",
           "type": "object",
           "required": [
             "account_id",
@@ -2953,18 +2954,31 @@ expression: abi
           ],
           "properties": {
             "account_id": {
-              "description": "Operator account",
-              "type": "string"
+              "description": "Operator account.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AccountId"
+                }
+              ]
             },
             "account_public_key": {
-              "type": [
-                "string",
-                "null"
+              "description": "Full-access Ed25519 public key of the operator account. The node always generates an Ed25519 signer key, so non-Ed25519 keys never reach this field. `None` is allowed for legacy/mock nodes that were registered before this field became mandatory.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                },
+                {
+                  "type": "null"
+                }
               ]
             },
             "tls_public_key": {
-              "description": "TLS public key, MUST BE of type Ed25519",
-              "type": "string"
+              "description": "TLS public key used by the node for peer-to-peer communication.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                }
+              ]
             }
           }
         },

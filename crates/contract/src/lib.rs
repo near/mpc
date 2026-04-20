@@ -817,14 +817,24 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
+        // The node always signs submissions with an Ed25519 key
+        // (`near_signer_key`), so the signer key here is Ed25519 in practice.
+        // Reject non-Ed25519 signer keys rather than silently storing a value
+        // we could never match against in `is_caller_an_attested_participant`.
+        let account_public_key = dtos::Ed25519PublicKey::try_from(&account_key).map_err(|_| {
+            InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: "signer account key must be Ed25519".to_string(),
+            }
+        })?;
+
         // Add the participant information to the contract state
         let attestation_insertion_result = self
             .tee_state
             .add_participant(
                 NodeId {
-                    account_id: account_id.clone(),
-                    tls_public_key: tls_public_key.into(),
-                    account_public_key: Some(account_key),
+                    account_id: dtos::AccountId(account_id.to_string()),
+                    tls_public_key,
+                    account_public_key: Some(account_public_key),
                 },
                 proposed_participant_attestation,
                 tee_upgrade_deadline_duration,
@@ -871,8 +881,6 @@ impl MpcContract {
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
     ) -> Result<Option<dtos::VerifiedAttestation>, Error> {
-        let tls_public_key: near_sdk::PublicKey = tls_public_key.into();
-
         Ok(self
             .tee_state
             .stored_attestations
@@ -2252,14 +2260,25 @@ impl MpcContract {
             }
             .into());
         }
-        // ensure that this node has a valid TEE quote
+        // ensure that this node has a valid TEE quote. Both keys must be
+        // Ed25519 — a non-Ed25519 TLS key could never have an attestation
+        // stored (the map is keyed by Ed25519), and a non-Ed25519 signer key
+        // could never sign this very transaction.
+        let account_public_key =
+            dtos::Ed25519PublicKey::try_from(&expected_destination_node.signer_account_pk)
+                .map_err(|_| InvalidParameters::InvalidTeeRemoteAttestation {
+                    reason: "destination node signer key must be Ed25519".to_string(),
+                })?;
+        let tls_public_key = dtos::Ed25519PublicKey::try_from(
+            &expected_destination_node.destination_node_info.sign_pk,
+        )
+        .map_err(|_| InvalidParameters::InvalidTeeRemoteAttestation {
+            reason: "destination node sign_pk must be Ed25519".to_string(),
+        })?;
         let node_id = NodeId {
-            account_id: account_id.clone(),
-            account_public_key: Some(expected_destination_node.signer_account_pk.clone()),
-            tls_public_key: expected_destination_node
-                .destination_node_info
-                .sign_pk
-                .clone(),
+            account_id: dtos::AccountId(account_id.to_string()),
+            account_public_key: Some(account_public_key),
+            tls_public_key,
         };
 
         if !(matches!(
@@ -2334,8 +2353,8 @@ mod tests {
     use crate::primitives::participants::Participants;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        gen_participants, infer_purpose_from_curve, NUM_CURVES,
+        bogus_ed25519_account_public_key, bogus_ed25519_near_public_key, bogus_ed25519_public_key,
+        gen_account_id, gen_participant, gen_participants, infer_purpose_from_curve, NUM_CURVES,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -2564,12 +2583,15 @@ mod tests {
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     /// Returns the `AccountId` of the node used.
     pub fn with_active_participant_and_attested_context(contract: &MpcContract) -> AccountId {
-        let active_participant_pks: Vec<_> = contract
+        let active_participant_pks: Vec<dtos::Ed25519PublicKey> = contract
             .protocol_state
             .active_participants()
             .participants()
             .iter()
-            .map(|(_, _, participant_info)| participant_info.sign_pk.clone())
+            .map(|(_, _, participant_info)| {
+                dtos::Ed25519PublicKey::try_from(&participant_info.sign_pk)
+                    .expect("sign_pk must be Ed25519")
+            })
             .collect();
 
         let node_id = contract
@@ -2583,14 +2605,15 @@ mod tests {
             .clone();
 
         // Build a new simulated environment with this node as caller
+        let near_account_id: AccountId = node_id.account_id.0.parse().unwrap();
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .signer_account_id(node_id.account_id.clone())
-            .predecessor_account_id(node_id.account_id.clone())
+            .signer_account_id(near_account_id.clone())
+            .predecessor_account_id(near_account_id.clone())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
-        node_id.account_id.clone()
+        near_account_id
     }
 
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
@@ -4015,9 +4038,12 @@ mod tests {
 
             let insertion_result = contract.tee_state.add_participant(
                 NodeId {
-                    account_id: self.signer_account_id.clone(),
-                    tls_public_key: self.attestation_tls_key.clone().into(),
-                    account_public_key: Some(self.signer_account_pk.clone()),
+                    account_id: dtos::AccountId(self.signer_account_id.to_string()),
+                    tls_public_key: self.attestation_tls_key.clone(),
+                    account_public_key: Some(
+                        dtos::Ed25519PublicKey::try_from(&self.signer_account_pk)
+                            .expect("test signer_account_pk must be Ed25519"),
+                    ),
                 },
                 valid_participant_attestation,
                 tee_upgrade_duration,
@@ -4598,9 +4624,10 @@ mod tests {
 
         // Replace the target's attestation with an expired one
         let node_id = NodeId {
-            account_id: target_account_id.clone(),
-            tls_public_key: target_participant_info.sign_pk.clone(),
-            account_public_key: Some(bogus_ed25519_near_public_key()),
+            account_id: dtos::AccountId(target_account_id.to_string()),
+            tls_public_key: dtos::Ed25519PublicKey::try_from(&target_participant_info.sign_pk)
+                .expect("sign_pk must be Ed25519"),
+            account_public_key: Some(bogus_ed25519_account_public_key()),
         };
         let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,

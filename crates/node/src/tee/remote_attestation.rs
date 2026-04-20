@@ -219,9 +219,9 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
     let node_id = NodeId {
-        account_id: node_account_id.clone(),
-        tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
-        account_public_key: Some(near_sdk::PublicKey::from(account_public_key.clone())),
+        account_id: near_mpc_contract_interface::types::AccountId(node_account_id.to_string()),
+        tls_public_key: tls_public_key.clone(),
+        account_public_key: Some(account_public_key.clone()),
     };
 
     let initially_available =
@@ -414,8 +414,8 @@ mod tests {
         let (dummy_sender, _) = watch::channel(vec![]);
         let dummy_node_id = NodeId {
             account_id: "dummy.near".parse().unwrap(),
-            tls_public_key: near_sdk::PublicKey::from(Ed25519PublicKey::from([0u8; 32])),
-            account_public_key: Some(near_sdk::PublicKey::from(Ed25519PublicKey::from([0u8; 32]))),
+            tls_public_key: Ed25519PublicKey::from([0u8; 32]),
+            account_public_key: Some(Ed25519PublicKey::from([0u8; 32])),
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
@@ -449,9 +449,9 @@ mod tests {
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
 
         let node_id = NodeId {
-            account_id: node_account_id.clone(),
-            tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
-            account_public_key: Some(near_sdk::PublicKey::from(account_public_key.clone())),
+            account_id: near_mpc_contract_interface::types::AccountId(node_account_id.to_string()),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: Some(account_public_key.clone()),
         };
 
         // Create initial TEE accounts list including our node

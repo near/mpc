@@ -25,6 +25,7 @@ pub mod types {
         ResharingContractState, RunningContractState, Threshold, ThresholdParameters,
         ThresholdParametersVotes,
     };
+    pub use tee::NodeId;
     pub use updates::{ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields
@@ -46,6 +47,7 @@ pub mod types {
     mod primitives;
     mod sign;
     mod state;
+    mod tee;
     mod updates;
 }
 

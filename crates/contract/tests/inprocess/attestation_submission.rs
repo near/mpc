@@ -3,7 +3,9 @@ use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{bogus_ed25519_near_public_key, gen_participants},
+        test_utils::{
+            bogus_ed25519_account_public_key, bogus_ed25519_public_key, gen_participants,
+        },
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
@@ -131,9 +133,12 @@ impl TestSetupBuilder {
             .participants_list
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: participant_info.sign_pk.clone(),
-                account_public_key: Some(bogus_ed25519_near_public_key()),
+                account_id: near_mpc_contract_interface::types::AccountId(account_id.to_string()),
+                tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
+                    &participant_info.sign_pk,
+                )
+                .expect("sign_pk must be Ed25519"),
+                account_public_key: Some(bogus_ed25519_account_public_key()),
             })
             .collect();
 
@@ -143,7 +148,7 @@ impl TestSetupBuilder {
             // Start key generation to go into initalization
             ContractProtocolState::Initializing => {
                 for node_id in &all_nodes {
-                    let context = create_context_for_participant(&node_id.account_id);
+                    let context = create_context_for_dto_participant(&node_id.account_id);
                     testing_env!(context);
 
                     setup
@@ -172,7 +177,7 @@ impl TestSetupBuilder {
                 }
 
                 for node_id in threshold_nodes {
-                    let context = create_context_for_participant(&node_id.account_id);
+                    let context = create_context_for_dto_participant(&node_id.account_id);
                     testing_env!(context);
 
                     setup
@@ -205,13 +210,10 @@ impl TestSetup {
         node_id: &NodeId,
         attestation: Attestation,
     ) -> Result<(), mpc_contract::errors::Error> {
-        let context = create_context_for_participant(&node_id.account_id);
+        let context = create_context_for_dto_participant(&node_id.account_id);
         testing_env!(context);
-        self.contract.submit_participant_info(
-            attestation,
-            near_mpc_contract_interface::types::Ed25519PublicKey::try_from(&node_id.tls_public_key)
-                .expect("expected ED25519 key"),
-        )
+        self.contract
+            .submit_participant_info(attestation, node_id.tls_public_key.clone())
     }
 
     /// Switches testing context to a given participant at a specific timestamp
@@ -237,8 +239,11 @@ impl TestSetup {
         self.participants_list
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: participant_info.sign_pk.clone(),
+                account_id: near_mpc_contract_interface::types::AccountId(account_id.to_string()),
+                tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
+                    &participant_info.sign_pk,
+                )
+                .expect("sign_pk must be Ed25519"),
                 account_public_key: None,
             })
             .collect()
@@ -260,6 +265,12 @@ fn create_context_for_participant(account_id: &AccountId) -> VMContext {
         .predecessor_account_id(account_id.clone())
         .block_timestamp(near_sdk::env::block_timestamp())
         .build()
+}
+
+fn create_context_for_dto_participant(
+    account_id: &near_mpc_contract_interface::types::AccountId,
+) -> VMContext {
+    create_context_for_participant(&account_id.0.parse().unwrap())
 }
 
 fn set_system_time(nano_seconds_since_unix_epoch: u64) {
@@ -294,9 +305,12 @@ fn test_clean_tee_status_removes_non_participants() {
         .take(2)
         .cloned()
         .map(|(account_id, _, participant_info)| NodeId {
-            account_id,
-            tls_public_key: participant_info.sign_pk,
-            account_public_key: Some(bogus_ed25519_near_public_key()),
+            account_id: near_mpc_contract_interface::types::AccountId(account_id.to_string()),
+            tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
+                &participant_info.sign_pk,
+            )
+            .expect("sign_pk must be Ed25519"),
+            account_public_key: Some(bogus_ed25519_account_public_key()),
         })
         .collect();
     for node_id in &participant_nodes {
@@ -305,9 +319,11 @@ fn test_clean_tee_status_removes_non_participants() {
 
     // Add TEE account for someone who is NOT a current participant
     let removed_participant_node = NodeId {
-        account_id: "removed.participant.near".parse().unwrap(),
-        tls_public_key: bogus_ed25519_near_public_key(),
-        account_public_key: Some(bogus_ed25519_near_public_key()),
+        account_id: near_mpc_contract_interface::types::AccountId(
+            "removed.participant.near".to_string(),
+        ),
+        tls_public_key: bogus_ed25519_public_key(),
+        account_public_key: Some(bogus_ed25519_account_public_key()),
     };
 
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);

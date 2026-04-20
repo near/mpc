@@ -271,13 +271,13 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
             .await
             .unwrap()
             .into_iter()
-            .map(|node_id| node_id.account_id)
+            .map(|node_id| node_id.account_id.0.parse::<AccountId>().unwrap())
             .collect();
 
     let participant_set: HashSet<AccountId> = initial_participants
         .participants
         .iter()
-        .map(|(account_id, _, _)| account_id.0.parse::<near_account_id::AccountId>().unwrap())
+        .map(|(account_id, _, _)| account_id.0.parse::<AccountId>().unwrap())
         .collect();
 
     assert_eq!(

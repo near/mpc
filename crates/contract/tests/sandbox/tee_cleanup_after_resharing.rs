@@ -12,7 +12,8 @@ use crate::sandbox::{
 use anyhow::Result;
 use mpc_contract::{
     primitives::{
-        participants::Participants, test_utils::bogus_ed25519_near_public_key,
+        participants::Participants,
+        test_utils::{bogus_ed25519_account_public_key, bogus_ed25519_public_key},
         thresholds::ThresholdParameters,
     },
     tee::tee_state::NodeId,
@@ -65,16 +66,16 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // add a new TEE quote for an existing participant, but with a different signer key
     let new_uid = NodeId {
-        account_id: mpc_signer_accounts[0].id().clone(),
-        tls_public_key: bogus_ed25519_near_public_key(),
-        account_public_key: Some(bogus_ed25519_near_public_key()),
+        account_id: dtos::AccountId(mpc_signer_accounts[0].id().to_string()),
+        tls_public_key: bogus_ed25519_public_key(),
+        account_public_key: Some(bogus_ed25519_account_public_key()),
     };
     let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key
     let result = submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
         &attestation,
-        &dtos::Ed25519PublicKey::try_from(&new_uid.tls_public_key).expect("expected ED25519 key"),
+        &new_uid.tls_public_key,
     )
     .await?;
     assert!(result.is_success());

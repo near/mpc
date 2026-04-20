@@ -82,6 +82,14 @@ pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
     .unwrap()
 }
 
+/// Generates a random [`near_mpc_contract_interface::types::Ed25519PublicKey`]
+/// suitable for use as the `account_public_key` field of a
+/// [`near_mpc_contract_interface::types::NodeId`]. The node's signer key is
+/// always Ed25519, so this mirrors real submissions.
+pub fn bogus_ed25519_account_public_key() -> near_mpc_contract_interface::types::Ed25519PublicKey {
+    bogus_ed25519_public_key()
+}
+
 #[test]
 fn test_random_public_key() {
     let pk1 = bogus_ed25519_near_public_key();
