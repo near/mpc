@@ -427,25 +427,25 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
         max_scan: usize,
     ) -> u32 {
+        let has_invalid_attestation = |node_id: &NodeId| {
+            !matches!(
+                self.reverify_participants(node_id, tee_upgrade_deadline_duration),
+                TeeQuoteStatus::Valid
+            )
+        };
+
         // Materialize candidates before any mutation to avoid iterator invalidation.
-        let candidates: Vec<NodeId> = self
+        let invalid_tls_keys: Vec<near_sdk::PublicKey> = self
             .stored_attestations
             .iter()
             .take(max_scan)
-            .map(|(_, node_attestation)| node_attestation.node_id.clone())
+            .filter(|(_, node_attestation)| has_invalid_attestation(&node_attestation.node_id))
+            .map(|(tls_pk, _)| tls_pk.clone())
             .collect();
 
-        let mut invalid_tls_keys: Vec<near_sdk::PublicKey> = Vec::new();
-        for node_id in candidates {
-            if !matches!(
-                self.reverify_participants(&node_id, tee_upgrade_deadline_duration),
-                TeeQuoteStatus::Valid
-            ) {
-                invalid_tls_keys.push(node_id.tls_public_key);
-            }
-        }
+        let removed = u32::try_from(invalid_tls_keys.len())
+            .expect("u32 should always be convertible from usize on wasm32");
 
-        let removed = invalid_tls_keys.len() as u32;
         for tls_pk in invalid_tls_keys {
             self.stored_attestations.remove(&tls_pk);
         }
