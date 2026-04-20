@@ -1,45 +1,58 @@
 use crate::common;
 
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 
-use assert_cmd::Command;
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use rand::SeedableRng;
 
+fn backup_cli_path() -> PathBuf {
+    let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    for profile in ["debug", "release"] {
+        let path = target_dir.join(profile).join("backup-cli");
+        if path.exists() {
+            return path;
+        }
+    }
+    tracing::info!("backup-cli binary not found — building");
+    let status = Command::new("cargo")
+        .args(["build", "-p", "backup-cli"])
+        .status()
+        .expect("failed to run cargo build for backup-cli");
+    assert!(status.success(), "backup-cli build failed");
+    target_dir.join("debug/backup-cli")
+}
+
 struct BackupService {
     home_dir: tempfile::TempDir,
+    binary_path: PathBuf,
 }
 
 impl BackupService {
     fn new() -> Self {
         Self {
             home_dir: tempfile::tempdir().expect("failed to create backup service home dir"),
+            binary_path: backup_cli_path(),
         }
     }
 
-    fn cmd() -> Command {
-        Command::cargo_bin("backup-cli").unwrap_or_else(|_| {
-            tracing::info!("backup-cli binary not found — building");
-            let status = std::process::Command::new("cargo")
-                .args(["build", "-p", "backup-cli"])
-                .status()
-                .expect("failed to run cargo build for backup-cli");
-            assert!(status.success(), "backup-cli build failed");
-            Command::cargo_bin("backup-cli").expect("backup-cli not found after building")
-        })
-    }
-
     fn generate_keys(&self) {
-        Self::cmd()
+        let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
                 self.home_dir.path().to_str().unwrap(),
                 "generate-keys",
             ])
-            .assert()
-            .success();
+            .output()
+            .expect("failed to run backup-cli generate-keys");
+        assert!(
+            output.status.success(),
+            "backup-cli generate-keys failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     fn public_key(&self) -> String {
@@ -68,7 +81,7 @@ impl BackupService {
         node_p2p_key: &str,
         backup_encryption_key_hex: &str,
     ) {
-        Self::cmd()
+        let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
                 self.home_dir.path().to_str().unwrap(),
@@ -80,8 +93,13 @@ impl BackupService {
                 "--backup-encryption-key-hex",
                 backup_encryption_key_hex,
             ])
-            .assert()
-            .success();
+            .output()
+            .expect("failed to run backup-cli get-keyshares");
+        assert!(
+            output.status.success(),
+            "backup-cli get-keyshares failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     fn put_keyshares(
@@ -90,7 +108,7 @@ impl BackupService {
         node_p2p_key: &str,
         backup_encryption_key_hex: &str,
     ) {
-        Self::cmd()
+        let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
                 self.home_dir.path().to_str().unwrap(),
@@ -102,8 +120,13 @@ impl BackupService {
                 "--backup-encryption-key-hex",
                 backup_encryption_key_hex,
             ])
-            .assert()
-            .success();
+            .output()
+            .expect("failed to run backup-cli put-keyshares");
+        assert!(
+            output.status.success(),
+            "backup-cli put-keyshares failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 

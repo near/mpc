@@ -73,7 +73,6 @@ threshold-signatures = { path = "crates/threshold-signatures" }
 utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
-assert_cmd = "2.0"
 anyhow = "1.0.102"
 assert_matches = "1.5.0"
 async-trait = "0.1.89"
