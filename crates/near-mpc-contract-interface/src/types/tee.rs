@@ -4,13 +4,7 @@ use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
-/// Identity of an MPC node.
-///
-/// Equality and hashing intentionally ignore `account_public_key`: two `NodeId`
-/// values are considered equal when they share the same `account_id` and
-/// `tls_public_key`, even if one is still missing the account key. The derived
-/// `Ord`/`PartialOrd` impls remain lexicographic over all fields and are used
-/// for stable ordering in `BTreeSet`/`BTreeMap`.
+// `Eq`/`Hash` ignore `account_public_key`; `Ord` covers all fields.
 #[derive(
     Clone, Debug, Ord, PartialOrd, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
@@ -23,10 +17,7 @@ pub struct NodeId {
     pub account_id: AccountId,
     /// TLS public key used by the node for peer-to-peer communication.
     pub tls_public_key: Ed25519PublicKey,
-    /// Full-access Ed25519 public key of the operator account. The node
-    /// always generates an Ed25519 signer key, so non-Ed25519 keys never
-    /// reach this field. `None` is allowed for legacy/mock nodes that were
-    /// registered before this field became mandatory.
+    /// Full-access Ed25519 public key of the operator account.
     pub account_public_key: Option<Ed25519PublicKey>,
 }
 
