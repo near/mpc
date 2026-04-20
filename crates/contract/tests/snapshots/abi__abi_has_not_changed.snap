@@ -84,8 +84,34 @@ expression: abi
         }
       },
       {
+        "name": "clean_invalid_attestations",
+        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists). Returns the number of entries removed. Callable by\n anyone while the protocol is in `Running`.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "max_scan",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      {
         "name": "clean_tee_status",
-        "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
+        "doc": " Private endpoint to drop votes cast by non-participants after resharing.\n Attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].",
         "kind": "call",
         "modifiers": [
           "private"
@@ -624,6 +650,10 @@ expression: abi
                       ],
                       [
                         "clean_tee_status_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_invalid_attestations_tera_gas",
                         "u64"
                       ],
                       [
@@ -1824,6 +1854,7 @@ expression: abi
           "required": [
             "ckd_call_gas_attachment_requirement_tera_gas",
             "clean_foreign_chain_data_tera_gas",
+            "clean_invalid_attestations_tera_gas",
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
             "contract_upgrade_deposit_tera_gas",
@@ -1844,6 +1875,12 @@ expression: abi
             },
             "clean_foreign_chain_data_tera_gas": {
               "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_invalid_attestations_tera_gas": {
+              "description": "Prepaid gas for the reshare-time `clean_invalid_attestations` promise.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -2372,6 +2409,15 @@ expression: abi
             },
             "clean_foreign_chain_data_tera_gas": {
               "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_invalid_attestations_tera_gas": {
+              "description": "Prepaid gas for the reshare-time `clean_invalid_attestations` promise.",
               "type": [
                 "integer",
                 "null"

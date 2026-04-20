@@ -89,6 +89,10 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
+/// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
+/// callers may pick a different value; this only governs the automatic invocation.
+const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
+
 /// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
 ///
 /// A non-zero deposit is required so that the transaction must be signed by a
@@ -1154,13 +1158,25 @@ impl MpcContract {
                     Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
                 )
                 .detach();
-            // Spawn a promise to clean up TEE information for non-participants
+            // Spawn a promise to drop votes cast by non-participants.
             Promise::new(env::current_account_id())
                 .function_call(
                     method_names::CLEAN_TEE_STATUS.to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
                     Gas::from_tgas(self.config.clean_tee_status_tera_gas),
+                )
+                .detach();
+            // Spawn a bounded sweep over stored attestations to prune invalid / expired entries.
+            Promise::new(env::current_account_id())
+                .function_call(
+                    method_names::CLEAN_INVALID_ATTESTATIONS.to_string(),
+                    serde_json::to_vec(&serde_json::json!({
+                        "max_scan": RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN
+                    }))
+                    .unwrap(),
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(self.config.clean_invalid_attestations_tera_gas),
                 )
                 .detach();
             // Spawn a promise to clean up orphaned node migrations for non-participants
@@ -1627,8 +1643,8 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Private endpoint to clean up TEE information for non-participants after resharing.
-    /// This can only be called by the contract itself via a promise.
+    /// Private endpoint to drop votes cast by non-participants after resharing.
+    /// Attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].
     #[private]
     #[handle_result]
     pub fn clean_tee_status(&mut self) -> Result<(), Error> {
@@ -1641,8 +1657,30 @@ impl MpcContract {
             }
         };
 
-        self.tee_state.clean_non_participants(participants);
+        self.tee_state.clean_non_participant_votes(participants);
         Ok(())
+    }
+
+    /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
+    /// referencing stale whitelists). Returns the number of entries removed. Callable by
+    /// anyone while the protocol is in `Running`.
+    #[handle_result]
+    pub fn clean_invalid_attestations(&mut self, max_scan: u32) -> Result<u32, Error> {
+        log!(
+            "clean_invalid_attestations: signer={}, max_scan={}",
+            env::signer_account_id(),
+            max_scan
+        );
+        // Running-only: keygen / resharing may reference attestations that have not yet
+        // been activated, so cleanup is off-limits during those phases.
+        if !matches!(self.protocol_state, ProtocolContractState::Running(_)) {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        }
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        Ok(self
+            .tee_state
+            .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize))
     }
 
     /// Private endpoint to clean up foreign chain policy votes and node configurations

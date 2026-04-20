@@ -21,6 +21,7 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::{
         measurements::{AllowedMeasurements, MeasurementVotes},
         proposal::{
@@ -98,39 +99,43 @@ impl From<OldTeeState> for TeeState {
         // node's actual key (the contract always signed with Ed25519), so
         // dropping it is safe — we prefer silent skip over panic to avoid
         // bricking the migration transaction on pathological stored state.
-        let stored_attestations = old
-            .stored_attestations
-            .into_iter()
-            .filter_map(|(tls_pk, old_attestation)| {
-                let new_tls_key = dtos::Ed25519PublicKey::try_from(&tls_pk).ok()?;
-                let account_public_key = dtos::Ed25519PublicKey::try_from(
-                    old_attestation.node_id.account_public_key.as_ref()?,
-                )
-                .ok()?;
-                let node_id = dtos::NodeId {
-                    account_id: old_attestation.node_id.account_id,
-                    tls_public_key: new_tls_key.clone(),
-                    account_public_key,
-                };
-                Some((
-                    new_tls_key,
-                    NodeAttestation {
-                        node_id,
-                        verified_attestation: old_attestation.verified_attestation,
-                    },
-                ))
-            })
-            .collect();
-
-        TeeState {
+        let mut new = TeeState {
             allowed_docker_image_hashes: old.allowed_docker_image_hashes,
             allowed_launcher_images: old.allowed_launcher_images,
             votes: old.votes,
             launcher_votes: old.launcher_votes,
-            stored_attestations,
+            stored_attestations: near_sdk::store::IterableMap::new(StorageKey::StoredAttestations),
             allowed_measurements: old.allowed_measurements,
             measurement_votes: old.measurement_votes,
+        };
+
+        for (tls_pk, old_attestation) in old.stored_attestations {
+            let Some(new_tls_key) = dtos::Ed25519PublicKey::try_from(&tls_pk).ok() else {
+                continue;
+            };
+            let Some(account_public_key) = old_attestation
+                .node_id
+                .account_public_key
+                .as_ref()
+                .and_then(|pk| dtos::Ed25519PublicKey::try_from(pk).ok())
+            else {
+                continue;
+            };
+            let node_id = dtos::NodeId {
+                account_id: old_attestation.node_id.account_id,
+                tls_public_key: new_tls_key.clone(),
+                account_public_key,
+            };
+            new.stored_attestations.insert(
+                new_tls_key,
+                NodeAttestation {
+                    node_id,
+                    verified_attestation: old_attestation.verified_attestation,
+                },
+            );
         }
+
+        new
     }
 }
 
