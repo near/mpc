@@ -230,5 +230,5 @@ bash localnet/tee/scripts/rust-launcher/test-verify-and-upgrade.sh verify
 - Node-to-node ports are per-node (`13001+i`)
 - Telemetry uses port `18082` with per-node IPs
 - Script is designed for iterative debugging and safe restarts
-- The Rust launcher uses TOML config (not `.conf` env format like the Python launcher)
+- The launcher uses TOML config
 - MPC node image must support `start-with-config-file` (commit `9515e18` or later)

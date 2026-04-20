@@ -152,7 +152,9 @@ ENV_TPL="$REPO_ROOT/localnet/tee/scripts/node.env.tpl"
 if [ "$MODE" = "localnet" ]; then
   CONF_TPL="$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl"
 else
-  CONF_TPL="$REPO_ROOT/localnet/tee/scripts/node.conf.tpl"
+  # TODO(#2952): add a Rust-launcher-compatible TOML template for testnet mode.
+  err "testnet MODE not yet supported by rust-launcher deploy script"
+  exit 1
 fi
 
 # Convert comma-separated "host:container" port string to TOML inline table array entries.
@@ -655,7 +657,7 @@ preflight() {
   need_cmd awk
   need_cmd python3
 
-  [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing tee_launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
+  [ -d "$TEE_LAUNCHER_DIR" ] || { err "Missing launcher dir at $TEE_LAUNCHER_DIR"; exit 1; }
   [ -f "$COMPOSE_YAML" ] || { err "Missing $COMPOSE_YAML"; exit 1; }
   [ -f "$ADD_DOMAIN_JSON" ] || { err "Missing $ADD_DOMAIN_JSON"; exit 1; }
   [ -f "$ENV_TPL" ] || { err "Missing template $ENV_TPL"; exit 1; }
@@ -869,7 +871,7 @@ deploy_nodes_range() {
   local start_i="$1"
   local end_i="$2"
 
-  log "Deploying CVMs via tee_launcher/deploy-launcher.sh (nodes $start_i..$end_i)"
+  log "Deploying CVMs via deployment/cvm-deployment/deploy-launcher.sh (nodes $start_i..$end_i)"
   cd "$TEE_LAUNCHER_DIR"
   [ -x "./deploy-launcher.sh" ] || { err "$TEE_LAUNCHER_DIR/deploy-launcher.sh not executable"; exit 1; }
 

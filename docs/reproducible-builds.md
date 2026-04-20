@@ -34,7 +34,7 @@ The build script is located at `deployment/build-images.sh` and must be run from
 **Build only the launcher image**:
 
 ```bash
-./deployment/build-images.sh --launcher
+./deployment/build-images.sh --rust-launcher
 ```
 
 The script will output the image hashes and other build information, which can be used to verify the reproducibility of the build.

@@ -146,11 +146,11 @@ Define 2 external IPs available on the server that will be used by each MPC node
 ### Replace config placeholders inside the config files
 
 ```bash
-envsubst < deployment/testnet/frodo.conf > "/tmp/$USER/frodo.conf"
+envsubst < deployment/testnet/frodo.toml > "/tmp/$USER/frodo.toml"
 ```
 
 ```bash
-envsubst < deployment/testnet/sam.conf > "/tmp/$USER/sam.conf"
+envsubst < deployment/testnet/sam.toml > "/tmp/$USER/sam.toml"
 ```
 
 ```bash
@@ -171,10 +171,10 @@ Allow reserved port forwarding (e.g 80) for the CVMs.
 sudo setcap 'cap_net_bind_service=+ep' $(which qemu-system-x86_64)
 ```
 
-#### 1. Move into the `tee_launcher` directory
+#### 1. Move into the `deployment/cvm-deployment` directory
 
 ```bash
-cd tee_launcher
+cd deployment/cvm-deployment
 ```
 
 #### 2. Ensure the script is executable
@@ -398,7 +398,7 @@ The launcher image hash must also be voted in for compose hashes to be derived a
 Extract it from the compose file:
 
 ```bash
-export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' tee_launcher/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
+export LAUNCHER_HASH=$(grep -E 'nearone/mpc-launcher@sha256:' deployment/cvm-deployment/launcher_docker_compose.yaml | head -n1 | sed -E 's/.*sha256:([0-9a-f]{64}).*/\1/')
 ```
 
 ### Frodo votes

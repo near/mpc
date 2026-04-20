@@ -13,7 +13,7 @@ curl http://<MPC_NODE_IP>:<MPC_NODE_PORT>/public_data -o public_data.json
 ```
 
 
-See [single-node-readme.md](../../../localnet/tee/scripts/single-node-readme.md)
+See [single-node-readme.md](../../../localnet/tee/scripts/rust-launcher/single-node-readme.md)
 for an automation script that will launch a TEE MPC node, collect the attestation, and save the public data to a temp directory (path printed by the script).
 
 

@@ -6,14 +6,13 @@
 # Extra requirements if using --push: docker must be logged in to registry
 #
 # Usage:
-#   ./deployment/build-images.sh [--node] [--node-gcp] [--launcher] [--rust-launcher] [--push]
+#   ./deployment/build-images.sh [--node] [--node-gcp] [--rust-launcher] [--push]
 # If no image flags are used, all images are built
 # Manifest digests are always computed and printed (skopeo required)
 
 
 set -euo pipefail
 
-USE_LAUNCHER=false
 USE_RUST_LAUNCHER=false
 USE_NODE=false
 USE_NODE_GCP=false
@@ -28,9 +27,6 @@ do
     --node-gcp)
       USE_NODE_GCP=true
       ;;
-    --launcher)
-      USE_LAUNCHER=true
-      ;;
     --rust-launcher)
       USE_RUST_LAUNCHER=true
       ;;
@@ -39,14 +35,13 @@ do
       ;;
     *)
       echo "Unknown parameter: $arg"
-      echo "Usage: $0 [--node] [--launcher] [--rust-launcher] [--push]"
+      echo "Usage: $0 [--node] [--rust-launcher] [--push]"
       exit 1
       ;;
   esac
 done
 
-if ! $USE_LAUNCHER && ! $USE_RUST_LAUNCHER && ! $USE_NODE && ! $USE_NODE_GCP; then
-    USE_LAUNCHER=true
+if ! $USE_RUST_LAUNCHER && ! $USE_NODE && ! $USE_NODE_GCP; then
     USE_RUST_LAUNCHER=true
     USE_NODE=true
     USE_NODE_GCP=true
@@ -85,9 +80,6 @@ DOCKERFILE_NODE=deployment/Dockerfile-node
 
 DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
 : "${NODE_GCP_IMAGE_NAME:=mpc-node-gcp}"
-
-DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
-: "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
 
 DOCKERFILE_RUST_LAUNCHER=deployment/Dockerfile-rust-launcher
 : "${RUST_LAUNCHER_IMAGE_NAME:=mpc-rust-launcher}"
@@ -142,13 +134,6 @@ manifest_digest_from_dir() {
     echo "sha256:$(sha256sum "$1/manifest.json" | cut -d' ' -f1)"
 }
 
-if $USE_LAUNCHER; then
-    build_reproducible_image $LAUNCHER_IMAGE_NAME $DOCKERFILE_LAUNCHER
-    launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
-    launcher_skopeo_dir="$(skopeo_compress "$LAUNCHER_IMAGE_NAME")"
-    launcher_manifest_digest="$(manifest_digest_from_dir "$launcher_skopeo_dir")"
-fi
-
 if $USE_RUST_LAUNCHER; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p tee-launcher --profile reproducible --locked
     rust_launcher_binary_hash=$(sha256sum target/reproducible/tee-launcher | cut -d' ' -f1)
@@ -192,10 +177,6 @@ if $USE_PUSH; then
     echo "Using branch-hash tag: $image_tag"
 
     # Push from the already-compressed local directory, preserving the manifest digest.
-    if $USE_LAUNCHER; then
-        skopeo copy --preserve-digests "dir:$launcher_skopeo_dir" "docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$image_tag"
-    fi
-
     if $USE_NODE; then
         skopeo copy --preserve-digests "dir:$node_skopeo_dir" "docker://docker.io/nearone/$NODE_IMAGE_NAME:$image_tag"
     fi
@@ -221,10 +202,6 @@ fi
 if $USE_NODE_GCP; then
     echo "node gcp docker image hash: $node_gcp_image_hash"
     echo "node gcp manifest digest: $node_gcp_manifest_digest"
-fi
-if $USE_LAUNCHER; then
-    echo "launcher docker image hash: $launcher_image_hash"
-    echo "launcher manifest digest: $launcher_manifest_digest"
 fi
 if $USE_RUST_LAUNCHER; then
     echo "rust launcher binary hash: $rust_launcher_binary_hash"
