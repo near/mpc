@@ -24,8 +24,9 @@ pub const PARALLEL_SIGN_CALLS_PORT_SEED: u16 = 8;
 pub const CKD_VERIFICATION_PORT_SEED: u16 = 9;
 pub const LOST_ASSETS_PORT_SEED: u16 = 10;
 pub const CKD_PV_VERIFICATION_PORT_SEED: u16 = 11;
-// 12, 14, 15 reserved for remaining #2889 subtasks (cleanup_lagging_node, migration_endpoint, migration_service)
+pub const CLEANUP_LAGGING_NODE_PORT_SEED: u16 = 12;
 pub const FOREIGN_CHAIN_POLICY_PORT_SEED: u16 = 13;
+// 12, 14, 15 reserved for remaining #2889 subtasks (cleanup_lagging_node, migration_endpoint, migration_service)
 pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 16;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
@@ -135,6 +136,40 @@ pub async fn wait_metric_on_nodes(
                 values[idx].is_some_and(predicate),
                 "node {idx}: metric {name} not satisfied (value: {:?})",
                 values[idx]
+            );
+        }
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(POLL_INTERVAL)
+            .with_max_times(max_times),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{e}"));
+}
+
+/// Wait until every node in `alive_nodes` is at least `min_height_diff` blocks
+/// ahead of `faulty_node` according to the indexer block-height metric.
+pub async fn wait_for_indexer_lag(
+    cluster: &MpcCluster,
+    faulty_node: usize,
+    alive_nodes: &[usize],
+    min_height_diff: i64,
+    timeout: Duration,
+) {
+    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
+    (|| async {
+        let heights = cluster
+            .get_metric_all_nodes(metrics::INDEXER_LATEST_BLOCK_HEIGHT)
+            .await
+            .expect("failed to get metrics");
+        let faulty = heights[faulty_node].unwrap_or(0);
+        for &idx in alive_nodes {
+            anyhow::ensure!(
+                heights[idx].unwrap_or(0) >= faulty + min_height_diff,
+                "node {idx} not yet {min_height_diff} blocks ahead of faulty node (alive={:?}, faulty={faulty})",
+                heights[idx],
             );
         }
         Ok(())

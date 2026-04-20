@@ -19,7 +19,7 @@ errors like:
 ## 1) Create a docker image with the new launcher
 
 Use the existing CI workflow for building the launcher image.
-<https://github.com/near/mpc/actions/workflows/docker_build_launcher.yml>
+<https://github.com/near/mpc/actions/workflows/docker_build_rust_launcher.yml>
 
 This will produce a new docker image in
 <https://hub.docker.com/r/nearone/mpc-launcher>
@@ -34,10 +34,8 @@ sha256:<NEW>
 
 These are what operators actually run.
 
-- `deployment/cvm-deployment/launcher_docker_compose.yaml` (Rust launcher, TEE)
-- `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` (Rust launcher, non-TEE)
-- `tee_launcher/launcher_docker_compose.yaml` (Python launcher, TEE)
-- `tee_launcher/launcher_docker_compose_nontee.yaml` (Python launcher, non-TEE)
+- `deployment/cvm-deployment/launcher_docker_compose.yaml` (TEE)
+- `deployment/cvm-deployment/launcher_docker_compose_nontee.yaml` (non-TEE)
 
 Keep the launcher image digest (and related env like `DEFAULT_IMAGE_DIGEST`)
 consistent with the intended release.
@@ -46,8 +44,8 @@ consistent with the intended release.
 
 ## 3) Regenerate/refresh test assets (follow the README)
 
-1. Manually or use the script in `localnet/tee/scripts/single-node.sh` (follow
-   the instructions in `localnet/tee/scripts/single-node-readme.md`) to generate
+1. Manually or use the script in `localnet/tee/scripts/rust-launcher/single-node.sh` (follow
+   the instructions in `localnet/tee/scripts/rust-launcher/single-node-readme.md`) to generate
    a new attestation with the updated launcher, then extract the measurements
    and update the test fixtures accordingly.
 

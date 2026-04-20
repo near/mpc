@@ -19,7 +19,7 @@ use crate::port_allocator::E2ePortAllocator;
 const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
-const LISTEN_BLOCKS_FILE: &str = "listen_blocks";
+const LISTEN_BLOCKS_FILE: &str = "listen_blocks.flag";
 
 const TEMP_KEYS_FILE: &str = "temporary_keys";
 
@@ -400,6 +400,7 @@ impl MpcNodeSetup {
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: self.foreign_chains_config.clone(),
             },
+            pccs_url: mpc_node_config::default_pccs_url(),
         };
 
         let toml_string =

@@ -275,6 +275,9 @@ def foreign_tx_validation_cluster():
     abstract_mock_server, abstract_mock_port = _start_mock_rpc(_EvmRpcHandler)
     abstract_mock_rpc_url = f"http://127.0.0.1:{abstract_mock_port}"
 
+    base_mock_server, base_mock_port = _start_mock_rpc(_EvmRpcHandler)
+    base_mock_rpc_url = f"http://127.0.0.1:{base_mock_port}"
+
     bnb_mock_server, bnb_mock_port = _start_mock_rpc(_EvmRpcHandler)
     bnb_mock_rpc_url = f"http://127.0.0.1:{bnb_mock_port}"
 
@@ -307,6 +310,19 @@ def foreign_tx_validation_cluster():
                 "mock": {
                     "api_variant": "standard",
                     "rpc_url": abstract_mock_rpc_url,
+                    "auth": {
+                        "kind": "none",
+                    },
+                }
+            },
+        },
+        "base": {
+            "timeout_sec": 30,
+            "max_retries": 3,
+            "providers": {
+                "mock": {
+                    "api_variant": "standard",
+                    "rpc_url": base_mock_rpc_url,
                     "auth": {
                         "kind": "none",
                     },
@@ -360,6 +376,7 @@ def foreign_tx_validation_cluster():
                 "Abstract": [{"rpc_url": abstract_mock_rpc_url}],
                 "Bnb": [{"rpc_url": bnb_mock_rpc_url}],
                 "Starknet": [{"rpc_url": starknet_mock_rpc_url}],
+                "Base": [{"rpc_url": base_mock_rpc_url}],
             }
         }
     )
@@ -379,6 +396,7 @@ def foreign_tx_validation_cluster():
     cluster.kill_all()
     bitcoin_mock_server.shutdown()
     abstract_mock_server.shutdown()
+    base_mock_server.shutdown()
     bnb_mock_server.shutdown()
     starknet_mock_server.shutdown()
     atexit._run_exitfuncs()
@@ -507,6 +525,49 @@ def test_verify_foreign_transaction_abstract(
 
 
 @pytest.mark.no_atexit_cleanup
+def test_verify_foreign_transaction_base(
+    foreign_tx_validation_cluster: tuple[MpcCluster, list],
+):
+    """
+    Submit a verify_foreign_transaction request for BASE and verify
+    the MPC nodes return a valid signed response with the expected payload.
+    """
+    cluster, _mpc_nodes = foreign_tx_validation_cluster
+
+    # Find the Secp256k1 domain
+    contract_state = cluster.contract_state()
+    domains = contract_state.get_running_domains()
+    secp_domain = next(d for d in domains if d.curve == "Secp256k1")
+
+    # Build the verify_foreign_transaction args
+    args = {
+        "request": {
+            "request": {
+                "Base": {
+                    "tx_id": MOCK_TX_ID,
+                    "finality": "Finalized",
+                    "extractors": ["BlockHash", {"Log": {"log_index": 0}}],
+                }
+            },
+            "domain_id": secp_domain.id,
+            "payload_version": 1,
+        }
+    }
+
+    tx = cluster.request_node.sign_tx(
+        cluster.mpc_contract_account(),
+        "verify_foreign_transaction",
+        args,
+        gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
+        deposit=VERIFY_FOREIGN_TX_DEPOSIT,
+    )
+
+    cluster.request_node.send_await_check_txs_parallel(
+        "verify_foreign_transaction", [tx], verify_response
+    )
+
+
+@pytest.mark.no_atexit_cleanup
 def test_verify_foreign_transaction_bnb(
     foreign_tx_validation_cluster: tuple[MpcCluster, list],
 ):
@@ -519,7 +580,6 @@ def test_verify_foreign_transaction_bnb(
     # Find the Secp256k1 domain
     contract_state = cluster.contract_state()
     domains = contract_state.get_running_domains()
-    print(f"domains: {domains}, types: {[(type(d), dir(d)) for d in domains]}")
     secp_domain = next(d for d in domains if d.curve == "Secp256k1")
 
     # Build the verify_foreign_transaction args
