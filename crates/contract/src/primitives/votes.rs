@@ -82,7 +82,7 @@ where
         // remove the vote from the proposal
         let remaining = casted_votes
             .remove(voter)
-            .expect("inconistent vote registry");
+            .expect("inconsistent vote registry");
         if remaining == 0 {
             // remove the proposal if it has no more votes
             self.votes_by_proposal.remove(proposal);
@@ -240,175 +240,189 @@ mod tests {
     static BOB: LazyLock<TestVoter> = LazyLock::new(|| TestVoter("bob".to_string()));
 
     #[test]
-    fn new_is_empty() {
-        let registry = setup();
-        assert_eq!(registry.all(), BTreeMap::new());
-        assert_eq!(registry.proposal_by_voter.len(), 0);
-        assert_eq!(registry.votes_by_proposal.len(), 0);
+    #[expect(non_snake_case)]
+    fn votes_new__should_be_empty() {
+        let votes_registry = setup();
+        assert_eq!(votes_registry.all(), BTreeMap::new());
+        assert_eq!(votes_registry.proposal_by_voter.len(), 0);
+        assert_eq!(votes_registry.votes_by_proposal.len(), 0);
     }
 
     #[test]
-    fn register_first_vote_creates_entry_and_returns_current_votes() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn vote__should_create_entry_and_return_current_votes() {
+        let mut votes_registry = setup();
 
         let p_hash = make_proposal_hash(7);
-        let result = registry.vote(ALICE.clone(), p_hash);
+        let result = votes_registry.vote(ALICE.clone(), p_hash);
 
         assert_eq!(result.0, [ALICE.clone()].into());
 
-        assert_eq!(registry.proposal_by_voter.get(&ALICE), Some(&p_hash));
-        assert_eq!(registry.all(), make_all(&[(p_hash, &[&ALICE])]));
+        assert_eq!(votes_registry.proposal_by_voter.get(&ALICE), Some(&p_hash));
+        assert_eq!(votes_registry.all(), make_all(&[(p_hash, &[&ALICE])]));
     }
 
     #[test]
-    fn register_is_idempotent() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn vote__should_be_idempotent() {
+        let mut votes_registry = setup();
 
         let p_hash = make_proposal_hash(1);
 
-        let first = registry.vote(ALICE.clone(), p_hash);
+        let first = votes_registry.vote(ALICE.clone(), p_hash);
         assert_eq!(first.0, [ALICE.clone()].into());
 
-        let second = registry.vote(ALICE.clone(), p_hash);
+        let second = votes_registry.vote(ALICE.clone(), p_hash);
 
         assert_eq!(second.0, [ALICE.clone()].into());
 
-        assert_eq!(registry.proposal_by_voter.len(), 1);
-        assert_eq!(registry.votes_by_proposal.len(), 1);
-        assert_eq!(registry.all(), make_all(&[(p_hash, &[&ALICE])]));
+        assert_eq!(votes_registry.proposal_by_voter.len(), 1);
+        assert_eq!(votes_registry.votes_by_proposal.len(), 1);
+        assert_eq!(votes_registry.all(), make_all(&[(p_hash, &[&ALICE])]));
     }
 
     #[test]
-    fn remove_vote_removes_orphaned_proposals() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn remove_vote__should_remove_orphaned_proposals() {
+        let mut votes_registry = setup();
 
         let p_hash = make_proposal_hash(9);
 
-        registry.vote(ALICE.clone(), p_hash);
+        votes_registry.vote(ALICE.clone(), p_hash);
 
-        registry.remove_vote(&ALICE);
+        votes_registry.remove_vote(&ALICE);
 
-        assert_eq!(registry.proposal_by_voter.get(&ALICE), None);
-        assert_eq!(registry.all(), make_all(&[]));
+        assert_eq!(votes_registry.proposal_by_voter.get(&ALICE), None);
+        assert_eq!(votes_registry.all(), make_all(&[]));
     }
 
     #[test]
-    fn remove_vote_keeps_non_orphaned_proposal() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn remove_vote__should_keep_non_orphaned_proposal() {
+        let mut votes_registry = setup();
 
         let p_hash = make_proposal_hash(5);
 
-        registry.vote(ALICE.clone(), p_hash);
-        registry.vote(BOB.clone(), p_hash);
+        votes_registry.vote(ALICE.clone(), p_hash);
+        votes_registry.vote(BOB.clone(), p_hash);
 
-        registry.remove_vote(&ALICE);
+        votes_registry.remove_vote(&ALICE);
 
-        assert_eq!(registry.proposal_by_voter.get(&ALICE), None);
-        assert_eq!(registry.proposal_by_voter.get(&BOB), Some(&p_hash));
-        assert_eq!(registry.all(), make_all(&[(p_hash, &[&BOB])]));
+        assert_eq!(votes_registry.proposal_by_voter.get(&ALICE), None);
+        assert_eq!(votes_registry.proposal_by_voter.get(&BOB), Some(&p_hash));
+        assert_eq!(votes_registry.all(), make_all(&[(p_hash, &[&BOB])]));
     }
 
     #[test]
-    fn register_switches_vote_and_removes_orphaned_proposals() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn vote__should_switch_vote_and_remove_orphaned_proposal() {
+        let mut votes_registry = setup();
 
         let old_pid = make_proposal_hash(1);
         let new_pid = make_proposal_hash(2);
 
-        registry.vote(ALICE.clone(), old_pid);
-        let result = registry.vote(ALICE.clone(), new_pid);
+        votes_registry.vote(ALICE.clone(), old_pid);
+        let result = votes_registry.vote(ALICE.clone(), new_pid);
 
         assert_eq!(result.0, [ALICE.clone()].into());
 
-        assert_eq!(registry.proposal_by_voter.get(&ALICE), Some(&new_pid));
-        assert_eq!(registry.all(), make_all(&[(new_pid, &[&ALICE])]));
+        assert_eq!(votes_registry.proposal_by_voter.get(&ALICE), Some(&new_pid));
+        assert_eq!(votes_registry.all(), make_all(&[(new_pid, &[&ALICE])]));
     }
 
     #[test]
-    fn register_switches_vote_and_keeps_non_orphaned_proposals() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn vote__should_switch_vote_and_keep_non_orphaned_proposals() {
+        let mut votes_registry = setup();
 
         let old_pid = make_proposal_hash(1);
         let new_pid = make_proposal_hash(2);
 
-        registry.vote(ALICE.clone(), old_pid);
-        registry.vote(BOB.clone(), old_pid);
+        votes_registry.vote(ALICE.clone(), old_pid);
+        votes_registry.vote(BOB.clone(), old_pid);
 
-        let result = registry.vote(ALICE.clone(), new_pid);
+        let result = votes_registry.vote(ALICE.clone(), new_pid);
 
         assert_eq!(result.0, [ALICE.clone()].into());
 
-        assert_eq!(registry.proposal_by_voter.get(&ALICE), Some(&new_pid));
-        assert_eq!(registry.proposal_by_voter.get(&BOB), Some(&old_pid));
+        assert_eq!(votes_registry.proposal_by_voter.get(&ALICE), Some(&new_pid));
+        assert_eq!(votes_registry.proposal_by_voter.get(&BOB), Some(&old_pid));
         assert_eq!(
-            registry.all(),
+            votes_registry.all(),
             make_all(&[(new_pid, &[&ALICE]), (old_pid, &[&BOB])])
         );
     }
 
     #[test]
-    fn remove_vote_of_unknown_voter_is_noop() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn remove_vote__should_be_noop_for_unknown_voter() {
+        let mut votes_registry = setup();
 
         let p_hash = make_proposal_hash(3);
 
-        registry.vote(ALICE.clone(), p_hash);
+        votes_registry.vote(ALICE.clone(), p_hash);
 
-        registry.remove_vote(&BOB);
-        assert_eq!(registry.all(), make_all(&[(p_hash, &[&ALICE])]));
+        votes_registry.remove_vote(&BOB);
+        assert_eq!(votes_registry.all(), make_all(&[(p_hash, &[&ALICE])]));
     }
 
     #[test]
-    fn remove_votes_for_unknown_proposal_is_noop() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn remove_votes__should_be_noop_for_unknown_proposal() {
+        let mut votes_registry = setup();
 
         let proposal_hash_1 = make_proposal_hash(1);
         let proposal_hash_2 = make_proposal_hash(2);
 
-        registry.vote(ALICE.clone(), proposal_hash_1);
-        registry.vote(BOB.clone(), proposal_hash_2);
+        votes_registry.vote(ALICE.clone(), proposal_hash_1);
+        votes_registry.vote(BOB.clone(), proposal_hash_2);
 
-        registry.remove_votes_for_proposal(&make_proposal_hash(999));
+        votes_registry.remove_votes_for_proposal(&make_proposal_hash(999));
         assert_eq!(
-            registry.all(),
+            votes_registry.all(),
             make_all(&[(proposal_hash_1, &[&ALICE]), (proposal_hash_2, &[&BOB])])
         );
     }
 
     #[test]
-    fn remove_votes_for_proposal_removes_both_proposal_and_reverse_index() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn remove_votes_for_proposal__should_remove_both_proposal_and_reverse_index() {
+        let mut votes_registry = setup();
 
         let proposal_hash_1 = make_proposal_hash(1);
         let proposal_hash_2 = make_proposal_hash(2);
         let carol = TestVoter("carol".to_string());
 
-        registry.vote(ALICE.clone(), proposal_hash_1);
-        registry.vote(BOB.clone(), proposal_hash_1);
-        registry.vote(carol.clone(), proposal_hash_2);
+        votes_registry.vote(ALICE.clone(), proposal_hash_1);
+        votes_registry.vote(BOB.clone(), proposal_hash_1);
+        votes_registry.vote(carol.clone(), proposal_hash_2);
 
-        registry.remove_votes_for_proposal(&proposal_hash_1);
+        votes_registry.remove_votes_for_proposal(&proposal_hash_1);
 
-        assert_eq!(registry.proposal_by_voter.get(&ALICE), None);
-        assert_eq!(registry.proposal_by_voter.get(&BOB), None);
+        assert_eq!(votes_registry.proposal_by_voter.get(&ALICE), None);
+        assert_eq!(votes_registry.proposal_by_voter.get(&BOB), None);
         assert_eq!(
-            registry.proposal_by_voter.get(&carol),
+            votes_registry.proposal_by_voter.get(&carol),
             Some(&proposal_hash_2)
         );
 
-        assert_eq!(registry.all(), make_all(&[(proposal_hash_2, &[&carol])]));
+        assert_eq!(
+            votes_registry.all(),
+            make_all(&[(proposal_hash_2, &[&carol])])
+        );
 
-        let result = registry.vote(ALICE.clone(), proposal_hash_2);
+        let result = votes_registry.vote(ALICE.clone(), proposal_hash_2);
         assert_eq!(result.0, [ALICE.clone(), carol.clone()].into());
         assert_eq!(
-            registry.all(),
+            votes_registry.all(),
             make_all(&[(proposal_hash_2, &[&ALICE, &carol])])
         );
     }
 
     #[test]
-    fn retain_votes_removes_disallowed_voters_and_orphaned_proposals() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn retain_votes__should_remove_disallowed_voters_and_orphaned_proposals() {
+        let mut votes_registry = setup();
 
         let proposal_hash_1 = make_proposal_hash(1);
         let proposal_hash_2 = make_proposal_hash(2);
@@ -417,14 +431,14 @@ mod tests {
         let carol = TestVoter("carol".to_string());
         let dave = TestVoter("dave".to_string());
 
-        registry.vote(ALICE.clone(), proposal_hash_1);
-        registry.vote(BOB.clone(), proposal_hash_1);
-        registry.vote(carol.clone(), proposal_hash_2);
-        registry.vote(dave.clone(), proposal_hash_3);
+        votes_registry.vote(ALICE.clone(), proposal_hash_1);
+        votes_registry.vote(BOB.clone(), proposal_hash_1);
+        votes_registry.vote(carol.clone(), proposal_hash_2);
+        votes_registry.vote(dave.clone(), proposal_hash_3);
 
         // only p_hash 2 and carols vote should remain
         assert_eq!(
-            registry.all(),
+            votes_registry.all(),
             make_all(&[
                 (proposal_hash_1, &[&ALICE, &BOB]),
                 (proposal_hash_2, &[&carol]),
@@ -432,44 +446,50 @@ mod tests {
             ])
         );
 
-        registry.retain_votes(|v| v == &carol);
+        votes_registry.retain_votes(|v| v == &carol);
 
         // only p_hash 2 and carols vote should remain
-        assert_eq!(registry.all(), make_all(&[(proposal_hash_2, &[&carol])]));
-        // additional sanity checks
-        assert_eq!(registry.proposal_by_voter.len(), 1);
         assert_eq!(
-            registry.proposal_by_voter.get(&carol),
+            votes_registry.all(),
+            make_all(&[(proposal_hash_2, &[&carol])])
+        );
+        // additional sanity checks
+        assert_eq!(votes_registry.proposal_by_voter.len(), 1);
+        assert_eq!(
+            votes_registry.proposal_by_voter.get(&carol),
             Some(&proposal_hash_2)
         );
     }
 
     #[test]
-    fn clear_removes_everything() {
-        let mut registry = setup();
+    #[expect(non_snake_case)]
+    fn clear__should_remove_everything() {
+        let mut votes_registry = setup();
 
         let proposal_hash_1 = make_proposal_hash(1);
         let proposal_hash_2 = make_proposal_hash(2);
 
-        registry.vote(ALICE.clone(), proposal_hash_1);
-        registry.vote(BOB.clone(), proposal_hash_2);
+        votes_registry.vote(ALICE.clone(), proposal_hash_1);
+        votes_registry.vote(BOB.clone(), proposal_hash_2);
 
-        registry.clear();
+        votes_registry.clear();
 
-        assert_eq!(registry.all(), make_all(&[]));
-        assert_eq!(registry.proposal_by_voter.len(), 0);
-        assert_eq!(registry.votes_by_proposal.len(), 0);
+        assert_eq!(votes_registry.all(), make_all(&[]));
+        assert_eq!(votes_registry.proposal_by_voter.len(), 0);
+        assert_eq!(votes_registry.votes_by_proposal.len(), 0);
     }
 
     #[test]
-    fn voter_set_new_is_empty() {
+    #[expect(non_snake_case)]
+    fn voter_set_new__should_be_empty() {
         let voter_set = VoterSet::<TestVoter>::new();
 
         assert!(voter_set.0.is_empty());
     }
 
     #[test]
-    fn voter_set_count_for_counts_only_matching_votes() {
+    #[expect(non_snake_case)]
+    fn voter_set_count_for__should_count_only_matching_votes() {
         let alice = TestVoter("alice".to_string());
         let bob = TestVoter("bob".to_string());
         let carol = TestVoter("carol".to_string());
@@ -482,7 +502,8 @@ mod tests {
     }
 
     #[test]
-    fn voter_set_count_for_returns_zero_for_empty_set() {
+    #[expect(non_snake_case)]
+    fn voter_set_count_for__should_return_zero_for_empty_set() {
         let voter_set = VoterSet::<TestVoter>::new();
 
         let count = voter_set.count_for(|_| true);
@@ -491,7 +512,8 @@ mod tests {
     }
 
     #[test]
-    fn voter_set_remove_existing_vote_returns_remaining_count() {
+    #[expect(non_snake_case)]
+    fn voter_set_remove__should_return_remaining_count() {
         let alice = TestVoter("alice".to_string());
         let bob = TestVoter("bob".to_string());
 
@@ -504,7 +526,8 @@ mod tests {
     }
 
     #[test]
-    fn voter_set_remove_last_vote_returns_zero() {
+    #[expect(non_snake_case)]
+    fn voter_set_remove__should_return_zero_when_removing_last_vote() {
         let alice = TestVoter("alice".to_string());
 
         let mut voter_set = VoterSet([alice.clone()].into());
@@ -516,7 +539,8 @@ mod tests {
     }
 
     #[test]
-    fn voter_set_remove_missing_vote_returns_none_and_leaves_set_unchanged() {
+    #[expect(non_snake_case)]
+    fn voter_set_remove__should_return_none_and_leave_set_unchanged_when_removing_unknown_vote() {
         let alice = TestVoter("alice".to_string());
         let bob = TestVoter("bob".to_string());
 

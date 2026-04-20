@@ -72,8 +72,6 @@ pub enum VoteError {
         "Candidates can only cast a vote after `threshold` participants casted one to admit them"
     )]
     VoterPending,
-    #[error("proposal id {0} does not exist.")]
-    ProposalIdDoesNotExist(u64),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
