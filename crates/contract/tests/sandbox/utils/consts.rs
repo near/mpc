@@ -17,7 +17,7 @@ pub const ALL_CURVES: &[Curve; 4] = &[
 /// gas attachment; in practice, nodes usually attach the maximum available gas. For testing,
 /// we use this constant to attach a fixed amount to each call and detect if gas usage
 /// increases unexpectedly in the future.
-pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);
+pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(44);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_CANCEL_KEYGEN: Gas = Gas::from_tgas(5);
 pub const GAS_FOR_VOTE_CANCEL_RESHARING: Gas = Gas::from_tgas(5);

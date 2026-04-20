@@ -106,6 +106,7 @@ async fn test_propose_update_config() {
         return_ck_and_clean_state_on_success_call_tera_gas: 77,
         fail_on_timeout_tera_gas: 88,
         clean_tee_status_tera_gas: 99,
+        clean_invalid_attestations_tera_gas: 101,
         cleanup_orphaned_node_migrations_tera_gas: 11,
         remove_non_participant_update_votes_tera_gas: 12,
         clean_foreign_chain_data_tera_gas: 13,

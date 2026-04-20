@@ -50,6 +50,7 @@ pub const START_NODE_MIGRATION: &str = "start_node_migration";
 pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
 pub const CLEANUP_ORPHANED_NODE_MIGRATIONS: &str = "cleanup_orphaned_node_migrations";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
+pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
 pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
