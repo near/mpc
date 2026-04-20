@@ -34,22 +34,11 @@ where
     }
 
     /// Registers a vote by `voter` for [`ProposalHash`].
-    /// In case this voter already has a vote for a different proposal hash, the previous vote is removed.
+    /// In case this voter already has a vote, the previous vote is removed.
     /// Returns the [`VoterSet`], containing all votes for the given proposal hash.
     pub fn vote(&mut self, voter: V, proposal: ProposalHash) -> &VoterSet<V> {
         // if necessary, remove existing votes
-        if let Some(existing_vote) = self.proposal_by_voter.get(&voter) {
-            // if the voter has an existing vote for a different proposal, remove that vote.
-            if *existing_vote != proposal {
-                self.remove_vote(&voter)
-            } else {
-                // voter has already voted for this proposal, just return the current voter set
-                return self
-                    .votes_by_proposal
-                    .get(&proposal)
-                    .expect("require consistent vote registry");
-            }
-        }
+        self.remove_vote(&voter);
 
         // register the vote for the voter
         require!(
