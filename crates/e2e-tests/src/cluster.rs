@@ -943,7 +943,7 @@ fn build_participants_from_nodes(
     let mut next_id = current.next_id;
     let mut list = Vec::new();
     for &node_idx in indices {
-        let account: ContractAccountId = nodes[node_idx].account_id().to_string().parse().unwrap();
+        let account: ContractAccountId = nodes[node_idx].account_id().clone();
         let id = current
             .participants
             .iter()

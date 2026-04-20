@@ -148,7 +148,7 @@ impl TestSetupBuilder {
             // Start key generation to go into initalization
             ContractProtocolState::Initializing => {
                 for node_id in &all_nodes {
-                    let context = create_context_for_dto_participant(&node_id.account_id);
+                    let context = create_context_for_participant(&node_id.account_id);
                     testing_env!(context);
 
                     setup
@@ -177,7 +177,7 @@ impl TestSetupBuilder {
                 }
 
                 for node_id in threshold_nodes {
-                    let context = create_context_for_dto_participant(&node_id.account_id);
+                    let context = create_context_for_participant(&node_id.account_id);
                     testing_env!(context);
 
                     setup
@@ -210,7 +210,7 @@ impl TestSetup {
         node_id: &NodeId,
         attestation: Attestation,
     ) -> Result<(), mpc_contract::errors::Error> {
-        let context = create_context_for_dto_participant(&node_id.account_id);
+        let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
@@ -265,12 +265,6 @@ fn create_context_for_participant(account_id: &AccountId) -> VMContext {
         .predecessor_account_id(account_id.clone())
         .block_timestamp(near_sdk::env::block_timestamp())
         .build()
-}
-
-fn create_context_for_dto_participant(
-    account_id: &near_mpc_contract_interface::types::AccountId,
-) -> VMContext {
-    create_context_for_participant(account_id)
 }
 
 fn set_system_time(nano_seconds_since_unix_epoch: u64) {
