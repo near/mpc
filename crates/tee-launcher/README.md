@@ -2,7 +2,7 @@
 
 Secure launcher for initializing and attesting a Docker-based MPC node inside a TEE-enabled environment (e.g., Intel TDX via dstack).
 
-This is the production launcher. It replaces the previous Python launcher (`tee_launcher/launcher.py`), which is now deprecated.
+This is the production launcher.
 
 ## What it does
 
@@ -25,7 +25,7 @@ All arguments are read from environment variables (set via docker-compose `envir
 
 ## Configuration (TOML)
 
-The launcher reads its configuration from `/tapp/user_config` as a TOML file. This is a change from the previous Python launcher which used a `.env`-style file.
+The launcher reads its configuration from `/tapp/user_config` as a TOML file.
 
 ```toml
 [launcher_config]
