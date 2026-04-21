@@ -96,18 +96,18 @@ curve25519-dalek = { version = "4.1.3", features = [
     "group",
     "serde",
 ], default-features = false }
-# Pinned to Phala-Network/dcap-qvl#144 (feat/cert-backend-trait, HEAD
-# 68de626c37f3ff89447236e3529e4475979fd3fd at time of import) so we can use
-# the new `Config` trait + `verify_with::<C>` entry point. `default-x509` is
-# intentionally NOT in the features list here — dropping it is what removes
-# `der` / `x509-cert` from builds that don't need them. Contract-side code
-# (`crates/attestation` → `dcap_qvl::verify::verify_with::<Asn1DerConfig>`)
-# runs without it; node-side code that needs `get_collateral` enables
-# `default-x509` (via the `report` feature) per-crate in its own manifest.
+# Pinned to Phala-Network/dcap-qvl master (includes the merged PR #144
+# introducing the pluggable `Config` trait + `verify_with::<C>` entry point).
+# `default-x509` is intentionally NOT in the features list — dropping it is
+# what removes `der` / `x509-cert` from builds that don't need them.
+# Contract-side code (`crates/attestation` →
+# `dcap_qvl::verify::verify_with::<Asn1DerConfig>`) runs without it;
+# node-side code that needs `get_collateral` enables `default-x509` (via the
+# `report` feature) per-crate in its own manifest.
 #
-# Post-merge of #144 and a crates.io release, swap `git`/`branch` for
-# `version = "X.Y.Z"`.
-dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl.git", branch = "feat/cert-backend-trait", default-features = false, features = [
+# TODO(#2962): once `dcap-qvl` cuts a release containing #144, swap
+# `git`/`branch` for `version = "X.Y.Z"`.
+dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl.git", branch = "master", default-features = false, features = [
     "contract",
     "borsh",
     "std",
