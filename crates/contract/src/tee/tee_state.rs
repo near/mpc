@@ -97,10 +97,15 @@ impl TeeState {
             else {
                 continue;
             };
+            // `Participants` does not carry the operator's account public key,
+            // so a mocked entry cannot record the real one. The all-zero key is
+            // a placeholder that never matches a live signer; it keeps the
+            // participant from being kicked out of an empty `TeeState` until a
+            // real `submit_participant_info` call replaces it (keyed by TLS).
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
-                account_public_key: None,
+                account_public_key: Ed25519PublicKey::from([0u8; 32]),
             };
 
             participants_attestations.insert(
@@ -132,20 +137,11 @@ impl TeeState {
         attestation: Attestation,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
-        // Derive the Ed25519 bytes that need to appear in the report data.
-        // Legacy/mock nodes may not have `account_public_key` set yet; we
-        // fall back to zeros so the attestation can still be verified.
-        //
-        // TODO(#1710): Remove this fallback once `account_public_key` is made
-        //              non-optional on `NodeId`.
-        let account_key_bytes = node_id
-            .account_public_key
-            .as_ref()
-            .map(|pk| *pk.as_bytes())
-            .unwrap_or([0u8; 32]);
-
-        let expected_report_data: ReportData =
-            ReportDataV1::new(*node_id.tls_public_key.as_bytes(), account_key_bytes).into();
+        let expected_report_data: ReportData = ReportDataV1::new(
+            *node_id.tls_public_key.as_bytes(),
+            *node_id.account_public_key.as_bytes(),
+        )
+        .into();
 
         let accepted_measurements = self.get_accepted_measurements();
         let verified_attestation = attestation.verify(
@@ -216,7 +212,7 @@ impl TeeState {
         let participants_with_valid_attestation: Vec<_> = participants
             .participants()
             .iter()
-            .filter(|(account_id, _, participant_info)| {
+            .filter(|(_, _, participant_info)| {
                 // A non-Ed25519 sign_pk can never have a matching attestation
                 // (the attestation map is keyed by Ed25519), so treat the
                 // participant as invalid.
@@ -226,17 +222,12 @@ impl TeeState {
                     return false;
                 };
 
-                // Try to find an existing NodeId with account_public_key filled
-                let maybe_node = self.find_node_id_by_tls_key(&tls_public_key);
-
-                let node_id = NodeId {
-                    account_id: account_id.clone(),
-                    tls_public_key,
-
-                    // In transition (mock attestation) mode — try to reuse known key, else None.
-                    // TODO(#1710): remove this fallback once `account_public_key` is made
-                    //              non-optional on `NodeId`.
-                    account_public_key: maybe_node.and_then(|n| n.account_public_key.clone()),
+                // Use the stored NodeId (keyed by TLS public key) so the real
+                // `account_public_key` participates in re-verification. If
+                // there is no stored attestation for this TLS key, the
+                // participant is invalid.
+                let Some(node_id) = self.find_node_id_by_tls_key(&tls_public_key) else {
+                    return false;
                 };
 
                 let tee_status =
@@ -449,14 +440,12 @@ impl TeeState {
             return Err(AttestationCheckError::AttestationOwnerMismatch);
         }
 
-        if let Some(expected_account_pk) = attestation.node_id.account_public_key.as_ref() {
-            // Stored account keys are Ed25519 by construction; a non-Ed25519
-            // signer necessarily mismatches.
-            let signer_ed25519 = Ed25519PublicKey::try_from(&signer_account_pk)
-                .map_err(|_| AttestationCheckError::AttestationKeyMismatch)?;
-            if *expected_account_pk != signer_ed25519 {
-                return Err(AttestationCheckError::AttestationKeyMismatch);
-            }
+        // Stored account keys are Ed25519 by construction; a non-Ed25519
+        // signer necessarily mismatches.
+        let signer_ed25519 = Ed25519PublicKey::try_from(&signer_account_pk)
+            .map_err(|_| AttestationCheckError::AttestationKeyMismatch)?;
+        if attestation.node_id.account_public_key != signer_ed25519 {
+            return Err(AttestationCheckError::AttestationKeyMismatch);
         }
 
         Ok(())
@@ -513,7 +502,7 @@ mod tests {
             .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: Ed25519PublicKey::try_from(&p_info.sign_pk).unwrap(),
-                account_public_key: Some(bogus_ed25519_public_key()),
+                account_public_key: bogus_ed25519_public_key(),
             })
             .collect();
 
@@ -522,7 +511,7 @@ mod tests {
 
         let non_participant_uid = NodeId {
             account_id: non_participant.clone(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
             tls_public_key: bogus_ed25519_public_key(),
         };
 
@@ -585,7 +574,7 @@ mod tests {
 
         let participant_id = NodeId {
             account_id: participant.clone(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
             tls_public_key: bogus_ed25519_public_key(),
         };
 
@@ -620,7 +609,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
         let attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -644,7 +633,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
         let attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -669,7 +658,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
         let attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -698,13 +687,13 @@ mod tests {
         let node_1 = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
 
         let node_2 = NodeId {
             account_id: "bob.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
 
         // when
@@ -740,7 +729,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "fresh.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
 
         const NOW_SECONDS: u64 = 1000;
@@ -772,7 +761,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "about_to_be_expired.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
 
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
@@ -811,7 +800,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "valid_check.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
 
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
@@ -849,7 +838,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "ghost.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
 
         // when
@@ -878,7 +867,7 @@ mod tests {
         let node_id = NodeId {
             account_id: account_id.clone(),
             tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
-            account_public_key: Some(Ed25519PublicKey::try_from(&signer_pk).unwrap()),
+            account_public_key: Ed25519PublicKey::try_from(&signer_pk).unwrap(),
         };
         tee_state
             .add_participant(
@@ -892,35 +881,6 @@ mod tests {
         tee_state
             .is_caller_an_attested_participant(&participants)
             .expect("Attested participant should be accepted");
-    }
-
-    #[test]
-    fn test_is_caller_attested_success_legacy_no_account_key() {
-        // Tests the case where account_public_key is None (legacy/mock nodes)
-        let tee_upgrade_duration = Duration::MAX;
-        let mut tee_state = TeeState::default();
-        let participants = gen_participants(1);
-        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
-
-        let signer_pk = bogus_ed25519_near_public_key();
-        set_signer(account_id, &signer_pk);
-
-        // Register attestation with None for account_public_key
-        let node_id = NodeId {
-            account_id: account_id.clone(),
-            tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
-            account_public_key: None,
-        };
-        tee_state
-            .add_participant(
-                node_id,
-                Attestation::Mock(MockAttestation::Valid),
-                tee_upgrade_duration,
-            )
-            .expect("Attestation is valid on insertion");
-
-        let result = tee_state.is_caller_an_attested_participant(&participants);
-        assert_matches!(result, Ok(()));
     }
 
     #[test]
@@ -972,7 +932,7 @@ mod tests {
         let node_id = NodeId {
             account_id: other_account.clone(), // Mismatch here
             tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
-            account_public_key: Some(Ed25519PublicKey::try_from(&signer_pk).unwrap()),
+            account_public_key: Ed25519PublicKey::try_from(&signer_pk).unwrap(),
         };
         tee_state
             .add_participant(
@@ -1008,7 +968,7 @@ mod tests {
         let node_id = NodeId {
             account_id: account_id.clone(),
             tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
-            account_public_key: Some(old_signer_pk), // Mismatch here
+            account_public_key: old_signer_pk, // Mismatch here
         };
         tee_state
             .add_participant(
@@ -1035,7 +995,7 @@ mod tests {
         NodeId {
             account_id: account_id.clone(),
             tls_public_key: Ed25519PublicKey::try_from(sign_pk).unwrap(),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         }
     }
 

@@ -982,7 +982,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "account_public_key",
-                        "Option<Ed25519PublicKey>",
+                        "Ed25519PublicKey",
                     ),
                 ],
             ),
@@ -1018,21 +1018,6 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "DockerImageHash",
-                ),
-            ],
-        },
-        "Option<Ed25519PublicKey>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "Ed25519PublicKey",
                 ),
             ],
         },

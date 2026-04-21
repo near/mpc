@@ -1,5 +1,5 @@
 use crate::sandbox::{
-    common::{gen_accounts, submit_tee_attestations, SandboxTestSetup},
+    common::{build_sandbox_node_ids, gen_accounts, submit_tee_attestations, SandboxTestSetup},
     utils::{
         consts::ALL_CURVES,
         interface::IntoContractType,
@@ -309,11 +309,9 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
         .build()
         .await;
 
-    let participant_uids = {
-        let p: Participants =
-            (&assert_running_return_participants(&contract).await?).into_contract_type();
-        p.get_node_ids()
-    };
+    let participants: Participants =
+        (&assert_running_return_participants(&contract).await?).into_contract_type();
+    let participant_uids = build_sandbox_node_ids(&participants, &mpc_signer_accounts);
     submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_uids).await?;
 
     // Verify current participants have TEE data
@@ -323,15 +321,12 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
     let (mut additional_accounts, additional_participants) =
         gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await;
-    let additional_uids = additional_participants.get_node_ids();
+    let additional_uids = build_sandbox_node_ids(&additional_participants, &additional_accounts);
     submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids).await?;
 
     // Verify we have TEE data for all accounts before cleanup
-    let tee_participants_before = get_tee_accounts(&contract).await?;
-    assert_eq!(
-        tee_participants_before,
-        &additional_uids | &participant_uids
-    );
+    let tee_accounts_before = get_tee_accounts(&contract).await?;
+    assert_eq!(tee_accounts_before, &additional_uids | &participant_uids);
 
     // Contract should be able to call clean_tee_status on itself
     let result = contract
@@ -344,9 +339,9 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     assert!(result.is_success());
 
     // Verify cleanup worked: only current participants should have TEE data
-    let tee_participants_after = get_tee_accounts(&contract).await?;
-    assert_eq!(tee_participants_after.len(), mpc_signer_accounts.len());
-    assert_eq!(participant_uids, tee_participants_after);
+    let tee_accounts_after = get_tee_accounts(&contract).await?;
+    assert_eq!(tee_accounts_after.len(), mpc_signer_accounts.len());
+    assert_eq!(participant_uids, tee_accounts_after);
 
     Ok(())
 }
@@ -667,8 +662,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     // Submit an expiring attestation for the last participant
     let target_account = &mpc_signer_accounts[2];
     let internal_participants: Participants = (&initial_participants).into_contract_type();
-    let target_node_id = internal_participants
-        .get_node_ids()
+    let target_node_id = build_sandbox_node_ids(&internal_participants, &mpc_signer_accounts)
         .into_iter()
         .find(|node| node.account_id == *target_account.id())
         .expect("target participant not found");
