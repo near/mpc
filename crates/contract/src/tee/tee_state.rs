@@ -476,8 +476,7 @@ mod tests {
     use super::*;
     use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
-        bogus_ed25519_account_public_key, bogus_ed25519_near_public_key, bogus_ed25519_public_key,
-        gen_participant, gen_participants,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_participant, gen_participants,
     };
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
@@ -514,7 +513,7 @@ mod tests {
             .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: Ed25519PublicKey::try_from(&p_info.sign_pk).unwrap(),
-                account_public_key: Some(bogus_ed25519_account_public_key()),
+                account_public_key: Some(bogus_ed25519_public_key()),
             })
             .collect();
 
@@ -523,7 +522,7 @@ mod tests {
 
         let non_participant_uid = NodeId {
             account_id: non_participant.clone(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
             tls_public_key: bogus_ed25519_public_key(),
         };
 
@@ -586,7 +585,7 @@ mod tests {
 
         let participant_id = NodeId {
             account_id: participant.clone(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
             tls_public_key: bogus_ed25519_public_key(),
         };
 
@@ -621,7 +620,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
         let attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -645,7 +644,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
         let attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -670,7 +669,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
         let attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -699,13 +698,13 @@ mod tests {
         let node_1 = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
 
         let node_2 = NodeId {
             account_id: "bob.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
 
         // when
@@ -741,7 +740,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "fresh.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
 
         const NOW_SECONDS: u64 = 1000;
@@ -773,7 +772,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "about_to_be_expired.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
 
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
@@ -812,7 +811,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "valid_check.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
 
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
@@ -850,7 +849,7 @@ mod tests {
         let node_id = NodeId {
             account_id: "ghost.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
 
         // when
@@ -1036,7 +1035,7 @@ mod tests {
         NodeId {
             account_id: account_id.clone(),
             tls_public_key: Ed25519PublicKey::try_from(sign_pk).unwrap(),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         }
     }
 

@@ -2353,8 +2353,8 @@ mod tests {
     use crate::primitives::participants::Participants;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
-        bogus_ed25519_account_public_key, bogus_ed25519_near_public_key, bogus_ed25519_public_key,
-        gen_account_id, gen_participant, gen_participants, infer_purpose_from_curve, NUM_CURVES,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
+        gen_participants, infer_purpose_from_curve, NUM_CURVES,
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::key_event::KeyEvent;
@@ -4619,7 +4619,7 @@ mod tests {
             account_id: target_account_id.clone(),
             tls_public_key: dtos::Ed25519PublicKey::try_from(&target_participant_info.sign_pk)
                 .expect("sign_pk must be Ed25519"),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         };
         let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,

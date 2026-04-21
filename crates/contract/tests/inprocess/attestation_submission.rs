@@ -3,9 +3,7 @@ use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{
-            bogus_ed25519_account_public_key, bogus_ed25519_public_key, gen_participants,
-        },
+        test_utils::{bogus_ed25519_public_key, gen_participants},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
@@ -138,7 +136,7 @@ impl TestSetupBuilder {
                     &participant_info.sign_pk,
                 )
                 .expect("sign_pk must be Ed25519"),
-                account_public_key: Some(bogus_ed25519_account_public_key()),
+                account_public_key: Some(bogus_ed25519_public_key()),
             })
             .collect();
 
@@ -304,7 +302,7 @@ fn test_clean_tee_status_removes_non_participants() {
                 &participant_info.sign_pk,
             )
             .expect("sign_pk must be Ed25519"),
-            account_public_key: Some(bogus_ed25519_account_public_key()),
+            account_public_key: Some(bogus_ed25519_public_key()),
         })
         .collect();
     for node_id in &participant_nodes {
@@ -315,7 +313,7 @@ fn test_clean_tee_status_removes_non_participants() {
     let removed_participant_node = NodeId {
         account_id: "removed.participant.near".parse().unwrap(),
         tls_public_key: bogus_ed25519_public_key(),
-        account_public_key: Some(bogus_ed25519_account_public_key()),
+        account_public_key: Some(bogus_ed25519_public_key()),
     };
 
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
