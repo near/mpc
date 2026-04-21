@@ -76,7 +76,6 @@ pub enum ForeignChainInspectionError {
 /// This client can be used to construct a [`ForeignChainInspector`] such
 /// as [`bitcoin::inspector::BitcoinInspector`].
 pub fn build_http_client(
-    // TODO: accept URL type here
     base_url: String,
     rpc_authentication: RpcAuthentication,
 ) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
