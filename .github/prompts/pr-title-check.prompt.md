@@ -25,7 +25,7 @@ You are a CI bot that validates whether a PR title uses the correct conventional
 ## Rules
 
 - The type should reflect the **primary intent** of the changes.
-- If source code files (e.g., under `crates/*/src/`, `tee_launcher/`) are changed, types like `feat`, `fix`, `refactor`, `perf` are typically appropriate.
+- If source code files (e.g., under `crates/*/src/`) are changed, types like `feat`, `fix`, `refactor`, `perf` are typically appropriate.
 - If ONLY CI files (`.github/`) are changed, the type should be `ci` or `chore`, not `feat` or `fix`.
 - If ONLY documentation/markdown files are changed, the type should be `docs` or `chore`.
 - If ONLY test files are changed, the type should be `test` or `chore`.

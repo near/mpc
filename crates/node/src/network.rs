@@ -108,9 +108,6 @@ impl NetworkTaskChannelManager {
 const LRU_CAPACITY: usize = 10000;
 
 impl MeshNetworkClient {
-    /// The maximum height difference that we are willing to accept.
-    /// This is used to filter out participants that are too far behind in the indexer height.
-    const MAX_HEIGHT_DIFF: u64 = 50;
     fn new(
         transport_sender: Arc<dyn MeshNetworkTransportSender>,
         channels: Arc<Mutex<NetworkTaskChannelManager>>,
@@ -194,7 +191,7 @@ impl MeshNetworkClient {
                 continue;
             }
             let peer_height = *indexer_heights.get(&participant).unwrap_or(&0);
-            if my_height <= peer_height + Self::MAX_HEIGHT_DIFF
+            if my_height <= peer_height + mpc_node_config::MAX_INDEXER_HEIGHT_DIFF
                 && self
                     .transport_sender
                     .connectivity(participant)

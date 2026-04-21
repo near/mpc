@@ -535,9 +535,9 @@ Including
 
 * Creating a Near account for your node
 
-* Preparing a configuration file based on [user-config.conf](https://github.com/near/mpc/blob/main/tee_launcher/user-config.conf)
+* Preparing a configuration file based on [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 
-* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/tee_launcher/launcher_docker_compose.yaml).  
+* Creating a docker compose file for the launcher based on [launcher\_docker\_compose.yaml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/launcher_docker_compose.yaml).  
 * Configuring and starting your CVM with the MPC node.  
 * Accessing mpc docker logs.
 * Retrieve keys from the CVM.
@@ -1261,27 +1261,53 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](se
 
 **Steps:**
 
-1. Verify the new launcher image hash and/or OS measurements.
-2. Participants vote to approve the new launcher image hash and/or OS measurements.
+1. Verify the new launcher manifest digest and/or OS measurements.
+2. Participants vote to approve the new launcher manifest digest and/or OS measurements.
 3. Operator deploys a new CVM with the new launcher image and/or OS.
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](node-migration-guide.md).
-5. After all operators have migrated, participants vote to remove the old launcher hash and/or OS measurements.
+5. After all operators have migrated, participants vote to remove the old launcher manifest digest and/or OS measurements.
 
 ### Launcher image voting
 
 #### Launcher image/code inspection
 
-TBD - add launcher image verification steps.
+The following steps allow you to inspect the code used to build the launcher image and verify its manifest digest before voting.
 
-#### Adding a launcher image hash
+* The launcher manifest digest is shown on DockerHub and in the reproducible build script output. To verify it, build the launcher yourself from the same commit and compare the manifest digest.
 
-Requires a threshold of participants to vote.
+* Download the MPC code from this repository:
+
+```bash
+git clone https://github.com/near/mpc
+cd mpc/
+git checkout <commit-hash>
+```
+
+* Compile it using the reproducible build script. For this you need to install `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon running.
+
+```bash
+$ ./deployment/build-images.sh --rust-launcher
+...
+rust launcher binary hash: <hex>
+rust launcher docker image hash: sha256:<hex>
+rust launcher manifest digest: sha256:<hex>
+```
+
+The `rust launcher manifest digest` is what you vote for. When submitting the `launcher_hash` value in the voting command, strip the `sha256:` prefix and provide only the hex digest.
+
+* Do your own due diligence on the code/binary.
+
+> **Important:** Each operator is responsible for verifying that the manifest digest being voted for corresponds to the intended Git commit, and for performing their own due diligence on the code.
+
+#### Adding a launcher manifest digest
+
+Requires a threshold of participants to vote. The `launcher_hash` argument must be an SHA-256 hex digest (without the `sha256:` prefix).
 
 ```bash
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_add_launcher_hash \
-  json-args '{"launcher_hash": "<LAUNCHER_IMAGE_HASH>"}' \
+  json-args '{"launcher_hash": "<LAUNCHER_MANIFEST_DIGEST>"}' \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1290,15 +1316,15 @@ near contract call-function as-transaction \
   send
 ```
 
-#### Removing a launcher image hash
+#### Removing a launcher manifest digest
 
-Requires **all** participants to vote. The last launcher hash cannot be removed.
+Requires **all** participants to vote. The last launcher manifest digest cannot be removed.
 
 ```bash
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
   vote_remove_launcher_hash \
-  json-args '{"launcher_hash": "<LAUNCHER_IMAGE_HASH>"}' \
+  json-args '{"launcher_hash": "<LAUNCHER_MANIFEST_DIGEST>"}' \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \
   sign-as <your-account-id> \
@@ -1307,7 +1333,9 @@ near contract call-function as-transaction \
   send
 ```
 
-#### Query allowed launcher image hashes
+#### Query allowed launcher manifest digests
+
+The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests.
 
 ```bash
 near contract call-function as-read-only \
@@ -1391,13 +1419,13 @@ near contract call-function as-read-only \
 
 ### Deploy new CVM and migrate key shares
 
-After the new launcher hash and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
+After the new launcher manifest digest and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
 
 For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](migration-service.md).
 
-### Remove old launcher hash / OS measurements
+### Remove old launcher manifest digest / OS measurements
 
-After all operators have migrated to the new CVM, participants should vote to remove the old launcher hash using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
+After all operators have migrated to the new CVM, participants should vote to remove the old launcher manifest digest using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
 
 ## Updating the CVM `user-config.toml` with new image information
 
