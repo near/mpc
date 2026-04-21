@@ -17,11 +17,9 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
-use mpc_contract::tee::{
-    proposal::{LauncherDockerComposeHash, NodeImageHash},
-    tee_state::NodeId,
-};
+use mpc_contract::tee::proposal::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);

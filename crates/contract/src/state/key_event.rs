@@ -325,6 +325,6 @@ pub mod tests {
             .iter()
             .min_by_key(|(_, id, _)| id)
             .unwrap();
-        (account_id.clone(), participant_id.clone())
+        (account_id.clone(), *participant_id)
     }
 }

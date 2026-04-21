@@ -403,8 +403,7 @@ pub mod tests {
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
-        let new_params_1 =
-            ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
+        let new_params_1 = ThresholdParameters::new(new_participants_1, new_threshold).unwrap();
         let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
         state
             .previous_running_state

@@ -3,28 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Deref,
-    derive_more::From,
-    derive_more::Into,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ParticipantId(pub u32);
+pub use mpc_primitives::ParticipantId;
 
 #[derive(
     Clone,
