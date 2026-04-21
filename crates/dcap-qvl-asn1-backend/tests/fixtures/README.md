@@ -1,8 +1,10 @@
 # Test fixtures
 
 Vendored from the `Phala-Network/dcap-qvl` sample corpus at commit
-`68de626c37f3ff89447236e3529e4475979fd3fd` (the HEAD of PR #144 at the
-time this crate was imported).
+`8a533f5d7ef3e231fc4a0c864fde8129737dbc90` — the same revision the
+workspace `Cargo.toml` pins the `dcap-qvl` git dependency to, so the
+conformance suite runs against fixtures produced by the same upstream
+code it's testing against.
 
 Source URLs:
 
