@@ -2,7 +2,7 @@ use crate::p2p::testing::PortSeed;
 use crate::tests::{IntegrationTestSetup, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::{
-    AuthConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
+    AuthConfig, ForeignChainsConfig, RpcProvider, SolanaChainConfig, SolanaProviderConfig,
 };
 use near_time::Clock;
 use std::time::Duration;
@@ -30,7 +30,7 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         "public".to_string(),
         SolanaProviderConfig {
             rpc_url: "https://rpc.public.example.com".to_string(),
-            api_variant: SolanaApiVariant::Standard,
+            api_variant: RpcProvider::Standard,
             auth: AuthConfig::None,
         },
     );

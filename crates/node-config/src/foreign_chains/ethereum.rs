@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
-use crate::foreign_chains::auth;
 use crate::foreign_chains::{self, ForeignChainProviderConfig};
+use crate::foreign_chains::{RpcProvider, auth};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumChainConfig {
@@ -27,7 +27,7 @@ impl EthereumChainConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumProviderConfig {
     pub rpc_url: String,
-    pub api_variant: EthereumApiVariant,
+    pub api_variant: RpcProvider,
     #[serde(default)]
     pub auth: auth::AuthConfig,
 }
@@ -40,14 +40,4 @@ impl ForeignChainProviderConfig for EthereumProviderConfig {
     fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
         auth::validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
     }
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum EthereumApiVariant {
-    Standard,
-    Alchemy,
-    Infura,
-    Quicknode,
-    Ankr,
 }

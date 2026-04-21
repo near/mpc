@@ -15,14 +15,14 @@ mod ethereum;
 mod solana;
 mod starknet;
 
-pub use abstract_chain::{AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig};
+pub use abstract_chain::{AbstractChainConfig, AbstractProviderConfig};
 pub use auth::{AuthConfig, TokenConfig};
-pub use base::{BaseApiVariant, BaseChainConfig, BaseProviderConfig};
-pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
-pub use bnb::{BnbApiVariant, BnbChainConfig, BnbProviderConfig};
-pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
-pub use solana::{SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig};
-pub use starknet::{StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig};
+pub use base::{BaseChainConfig, BaseProviderConfig};
+pub use bitcoin::{BitcoinChainConfig, BitcoinProviderConfig};
+pub use bnb::{BnbChainConfig, BnbProviderConfig};
+pub use ethereum::{EthereumChainConfig, EthereumProviderConfig};
+pub use solana::{SolanaChainConfig, SolanaProviderConfig};
+pub use starknet::{StarknetChainConfig, StarknetProviderConfig};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -42,6 +42,21 @@ pub struct ForeignChainsConfig {
     pub bnb: Option<BnbChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base: Option<BaseChainConfig>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum RpcProvider {
+    Standard,
+    Alchemy,
+    Helius,
+    Quicknode,
+    Ankr,
+    Infura,
+    Blast,
+    #[serde(alias = "blockstream")]
+    #[serde(alias = "mempool-space")]
+    Esplora,
 }
 
 impl ForeignChainsConfig {
@@ -409,7 +424,7 @@ foreign_chains:
     }
 
     #[test]
-    fn config_parsing__should_fail_when_api_variant_is_invalid_for_chain() {
+    fn config_parsing__should_fail_when_api_variant_is_unknown() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -447,7 +462,7 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: infura
+        api_variant: not-a-real-provider
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header

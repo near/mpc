@@ -360,7 +360,7 @@ mod tests {
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
     use mpc_node_config::{
-        BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig,
+        BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig, RpcProvider,
     };
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
     use std::collections::BTreeMap;
@@ -378,7 +378,7 @@ mod tests {
             "public".to_string(),
             BitcoinProviderConfig {
                 rpc_url: "https://blockstream.info/api".to_string(),
-                api_variant: BitcoinApiVariant::Esplora,
+                api_variant: RpcProvider::Esplora,
                 auth: Default::default(),
             },
         );

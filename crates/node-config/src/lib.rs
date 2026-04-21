@@ -2,11 +2,10 @@ pub mod foreign_chains;
 pub mod start;
 
 pub use foreign_chains::{
-    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, AuthConfig, BitcoinApiVariant,
-    BitcoinChainConfig, BitcoinProviderConfig, EthereumApiVariant, EthereumChainConfig,
-    EthereumProviderConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig,
-    SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
-    TokenConfig,
+    AbstractChainConfig, AbstractProviderConfig, AuthConfig, BitcoinChainConfig,
+    BitcoinProviderConfig, EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig,
+    RpcProvider, SolanaChainConfig, SolanaProviderConfig, StarknetChainConfig,
+    StarknetProviderConfig, TokenConfig,
 };
 pub use start::{
     ChainId, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
