@@ -42,7 +42,6 @@ pub struct ForeignChainConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-
 pub struct ForeignChainProviderConfig {
     pub rpc_url: String,
     pub api_variant: RpcProvider,
@@ -52,23 +51,11 @@ pub struct ForeignChainProviderConfig {
 
 impl ForeignChainsConfig {
     pub fn validate_chain_config(&self) -> anyhow::Result<()> {
-        let foreign_chains = [
-            self.solana.as_ref(),
-            self.bitcoin.as_ref(),
-            self.ethereum.as_ref(),
-            self.abstract_chain.as_ref(),
-            self.starknet.as_ref(),
-            self.bnb.as_ref(),
-            self.base.as_ref(),
-        ];
+        let configured_chains = self.all_configured_chains();
 
         let mut seen_rpc_urls = BTreeSet::new();
 
-        for foreign_chain in foreign_chains {
-            let Some(foreign_chain) = foreign_chain else {
-                continue;
-            };
-
+        for foreign_chain in configured_chains {
             for provider in foreign_chain.providers.values() {
                 let rpc_url = &provider.rpc_url;
 
@@ -82,10 +69,38 @@ impl ForeignChainsConfig {
                     "found a duplicate URL entry for an RPC provider. RPC provider URLs must be unique across configuration of all chains. {:?}",
                     rpc_url
                 );
+
+                // valid auth configuration
+                provider.validate_auth_config()?;
             }
         }
 
         Ok(())
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let foreign_chains = self.all_configured_chains();
+
+        foreign_chains
+            .into_iter()
+            .flat_map(|foreign_chain_config| foreign_chain_config.providers.values())
+            .map(|rpc_provider_config| rpc_provider_config.validate_auth_config())
+            .collect()
+    }
+
+    fn all_configured_chains(&self) -> Vec<&ForeignChainConfig> {
+        [
+            self.solana.as_ref(),
+            self.bitcoin.as_ref(),
+            self.ethereum.as_ref(),
+            self.abstract_chain.as_ref(),
+            self.starknet.as_ref(),
+            self.bnb.as_ref(),
+            self.base.as_ref(),
+        ]
+        .into_iter()
+        .filter_map(|item| item)
+        .collect()
     }
 }
 
@@ -93,7 +108,7 @@ impl ForeignChainConfig {
     pub(crate) fn providers_to_set(&self) -> NonEmptyBTreeSet<dtos::RpcProvider> {
         self.providers
             .map_to_set(|_name, provider| dtos::RpcProvider {
-                rpc_url: provider.rpc_url.to_string(),
+                rpc_url: provider.rpc_url().to_string(),
             })
     }
 }
@@ -103,8 +118,8 @@ impl ForeignChainProviderConfig {
         self.auth.strip_placeholder(&self.rpc_url)
     }
 
-    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
-        auth::validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
+    fn validate_auth_config(&self) -> anyhow::Result<()> {
+        auth::validate_auth_config(&self.auth, &self.rpc_url)
     }
 }
 
