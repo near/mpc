@@ -166,7 +166,7 @@ impl ConfigFile {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        self.foreign_chains.validate_chain_config()
+        self.foreign_chains.validate()
     }
 }
 

@@ -126,7 +126,7 @@ impl ForeignChainsConfig {
         Some(dtos::ForeignChainPolicy { chains })
     }
 
-    pub fn validate_chain_config(&self) -> anyhow::Result<()> {
+    pub fn validate(&self) -> anyhow::Result<()> {
         let configured_chains = self.all_configured_chains();
 
         let mut seen_rpc_urls = BTreeSet::new();
@@ -152,15 +152,6 @@ impl ForeignChainsConfig {
         }
 
         Ok(())
-    }
-
-    pub fn validate(&self) -> anyhow::Result<()> {
-        let foreign_chains = self.all_configured_chains();
-
-        foreign_chains
-            .into_iter()
-            .flat_map(|foreign_chain_config| foreign_chain_config.providers.values())
-            .try_for_each(|rpc_provider_config| rpc_provider_config.validate_auth_config())
     }
 
     fn all_configured_chains(&self) -> Vec<&ForeignChainConfig> {
