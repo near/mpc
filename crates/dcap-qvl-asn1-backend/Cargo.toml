@@ -1,0 +1,25 @@
+[package]
+name = "dcap-qvl-asn1-backend"
+version = { workspace = true }
+license = { workspace = true }
+edition = "2021"
+repository = { workspace = true }
+description = "asn1_der-based dcap-qvl Config backend to avoid pulling der + x509-cert into the MPC contract wasm"
+
+[dependencies]
+anyhow = { workspace = true }
+asn1_der = { version = "0.7", default-features = false, features = ["native_types", "std"] }
+dcap-qvl = { workspace = true }
+
+[dev-dependencies]
+# default-x509 at test time only so conformance tests can compare against DefaultConfig.
+# Cargo unifies features per dep within a build: `cargo test` sees default-x509,
+# `cargo build` does not (the contract path pulls us in via `attestation`, which
+# keeps its dcap-qvl dep lean).
+dcap-qvl = { workspace = true, features = ["default-x509"] }
+chrono = "0.4.42"
+pem = "3"
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

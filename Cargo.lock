@@ -969,6 +969,7 @@ dependencies = [
  "assert_matches",
  "borsh",
  "dcap-qvl",
+ "dcap-qvl-asn1-backend",
  "derive_more 2.1.1",
  "dstack-sdk-types",
  "hex",
@@ -2597,8 +2598,7 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 [[package]]
 name = "dcap-qvl"
 version = "0.3.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67e7842b81018f3b991dc65ec0a95ff347332de58478c4ac43459095af00cc89"
+source = "git+https://github.com/Phala-Network/dcap-qvl.git?branch=feat%2Fcert-backend-trait#68de626c37f3ff89447236e3529e4475979fd3fd"
 dependencies = [
  "anyhow",
  "asn1_der",
@@ -2627,6 +2627,18 @@ dependencies = [
  "urlencoding",
  "wasm-bindgen-futures",
  "x509-cert",
+]
+
+[[package]]
+name = "dcap-qvl-asn1-backend"
+version = "3.9.0"
+dependencies = [
+ "anyhow",
+ "asn1_der",
+ "chrono",
+ "dcap-qvl",
+ "pem",
+ "serde_json",
 ]
 
 [[package]]

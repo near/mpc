@@ -129,9 +129,10 @@ impl DstackAttestation {
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<ExpectedMeasurements, VerificationError> {
-        let verification_result =
-            dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
-                .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
+        let verification_result = dcap_qvl::verify::verify_with::<
+            dcap_qvl_asn1_backend::Asn1DerConfig,
+        >(&self.quote, &self.collateral, timestamp_seconds)
+        .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
 
         let report_data = verification_result
             .report

@@ -10,6 +10,7 @@ borsh-schema = ["borsh/unstable__schema"]
 [dependencies]
 borsh = { workspace = true }
 dcap-qvl = { workspace = true }
+dcap-qvl-asn1-backend = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
