@@ -53,7 +53,7 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
     }
 
     let expected_policy = foreign_chains
-        .to_policy()
+        .configured_chains()
         .expect("policy should not be None");
 
     {

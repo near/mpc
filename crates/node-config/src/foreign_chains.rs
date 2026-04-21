@@ -80,7 +80,7 @@ impl ForeignChainsConfig {
         Ok(())
     }
 
-    pub fn supported_chains(&self) -> dtos::SupportedForeignChains {
+    pub fn configured_chains(&self) -> dtos::SupportedForeignChains {
         let mut supported_chains = dtos::SupportedForeignChains::default();
 
         if self.solana.is_some() {
@@ -719,7 +719,7 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let supported = config.foreign_chains.supported_chains();
+        let supported = config.foreign_chains.configured_chains();
 
         // Then
         assert!(supported.contains(&near_mpc_contract_interface::types::ForeignChain::Solana));
@@ -891,7 +891,7 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let supported = config.foreign_chains.supported_chains();
+        let supported = config.foreign_chains.configured_chains();
 
         // Then
         assert!(supported.contains(&near_mpc_contract_interface::types::ForeignChain::Ethereum));

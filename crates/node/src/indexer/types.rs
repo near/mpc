@@ -160,8 +160,8 @@ pub struct ChainVoteResharedArgs {
 }
 
 #[derive(Serialize, Debug)]
-pub struct ChainVoteForeignChainPolicyArgs {
-    pub policy: dtos::ForeignChainPolicy,
+pub struct ChainRegisterForeignChainConfigArgs {
+    pub foreign_chain_configuration: dtos::ForeignChainConfiguration,
 }
 
 #[derive(Serialize, Debug)]
@@ -192,7 +192,7 @@ pub enum ChainSendTransactionRequest {
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
-    VoteForeignChainPolicy(ChainVoteForeignChainPolicyArgs),
+    RegisterForeignChainConfig(ChainRegisterForeignChainConfigArgs),
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
@@ -215,7 +215,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::CKDRespond(_) => RESPOND_CKD,
             ChainSendTransactionRequest::VotePk(_) => VOTE_PK,
             ChainSendTransactionRequest::VoteReshared(_) => VOTE_RESHARED,
-            ChainSendTransactionRequest::VoteForeignChainPolicy(_) => VOTE_FOREIGN_CHAIN_POLICY,
+            ChainSendTransactionRequest::RegisterForeignChainConfig(_) => VOTE_FOREIGN_CHAIN_POLICY,
             ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,
             ChainSendTransactionRequest::StartKeygen(_) => START_KEYGEN_INSTANCE,
             ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
@@ -236,7 +236,7 @@ impl ChainSendTransactionRequest {
             | Self::CKDRespond(_)
             | Self::VotePk(_)
             | Self::VoteReshared(_)
-            | Self::VoteForeignChainPolicy(_)
+            | Self::RegisterForeignChainConfig(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)

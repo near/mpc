@@ -138,7 +138,7 @@ where
         my_participant_index: usize,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        validate_foreign_chain_policy(
+        chain_is_supported(
             &self.config.foreign_chains,
             &self.foreign_chain_policy_reader,
             request,
@@ -272,55 +272,55 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-enum ValidateForeignChainPolicyError {
-    #[error("local foreign_chains config is empty; cannot process foreign chain request")]
-    LocalConfigEmpty,
+enum ForeignChainSupportError {
     #[error("failed to fetch on-chain foreign chain policy")]
     FetchOnChainPolicy(#[source] anyhow::Error),
     #[error(
-        "local foreign chain policy does not match on-chain policy: local={local:?}, on_chain={on_chain:?}"
+        "requested chain {requested:?} is not present in the list of supported foreign chains on the MPC contract"
     )]
-    PolicyMismatch {
-        local: dtos::ForeignChainPolicy,
-        on_chain: dtos::ForeignChainPolicy,
-    },
-    #[error("requested chain {requested:?} is not present in the on-chain foreign chain policy")]
-    ChainNotInPolicy { requested: dtos::ForeignChain },
+    ChainNotSupported { requested: dtos::ForeignChain },
+    // TODO: this variant is not needed, since the caller will fail to get a handle to an inspector if this was the case.
+    #[error(
+        "requested chain {requested:?} is not present in the list of configured foreign chains in the node's local configuration"
+    )]
+    ChainNotConfiguredLocally { requested: dtos::ForeignChain },
 }
 
-async fn validate_foreign_chain_policy(
-    foreign_chains_config: &ForeignChainsConfig,
+async fn chain_is_supported(
+    local_foreign_chains_config: &ForeignChainsConfig,
     policy_reader: &impl ReadForeignChainPolicy,
     request: &dtos::ForeignChainRpcRequest,
-) -> Result<(), ValidateForeignChainPolicyError> {
-    let local_policy = foreign_chains_config
-        .to_policy()
-        .ok_or(ValidateForeignChainPolicyError::LocalConfigEmpty)?;
-
-    let on_chain_policy = policy_reader
-        .get_foreign_chain_policy()
+) -> Result<(), ForeignChainSupportError> {
+    let on_chain_foreign_chains_support = policy_reader
+        .get_supported_chains()
         .await
-        .map_err(ValidateForeignChainPolicyError::FetchOnChainPolicy)?;
-
-    if on_chain_policy != local_policy {
-        return Err(ValidateForeignChainPolicyError::PolicyMismatch {
-            local: local_policy,
-            on_chain: on_chain_policy,
-        });
-    }
+        .map_err(ForeignChainSupportError::FetchOnChainPolicy)?;
 
     let requested_chain = request.chain();
-    if !on_chain_policy
-        .chains
-        .iter()
-        .any(|(chain, _)| *chain == requested_chain)
-    {
-        return Err(ValidateForeignChainPolicyError::ChainNotInPolicy {
+
+    let foreign_chain_is_supported_locally = local_foreign_chains_config
+        .configured_chains()
+        .contains(&requested_chain);
+
+    if !foreign_chain_is_supported_locally {
+        return Err(ForeignChainSupportError::ChainNotConfiguredLocally {
             requested: requested_chain,
         });
     }
 
-    Ok(())
+    let foreign_chain_is_supported_on_chain =
+        on_chain_foreign_chains_support.contains(&requested_chain);
+
+    let foreign_chain_is_supported =
+        foreign_chain_is_supported_locally && foreign_chain_is_supported_on_chain;
+
+    if foreign_chain_is_supported {
+        Ok(())
+    } else {
+        Err(ForeignChainSupportError::ChainNotSupported {
+            requested: requested_chain,
+        })
+    }
 }
 
 /// Selects a pre-built inspector for a chain using deterministic provider-selection logic.
