@@ -156,14 +156,16 @@ Example:
 export BASE_PATH="dstask base path"
 ```
 
-#### 4. Replace ${MACHINE_IP} inside the config files
-```bash
-envsubst '${MACHINE_IP}' < deployment/localnet/tee/frodo.toml > "/tmp/$USER/frodo.toml"
-```
+#### 4. Copy the TOML config files into place
+
+The `.env` files reference `/tmp/$USER/frodo.toml` and `/tmp/$USER/sam.toml` via `USER_CONFIG_FILE_PATH`, so the checked-in templates need to land there before deployment:
 
 ```bash
-envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.toml > "/tmp/$USER/sam.toml"
+cp deployment/localnet/tee/frodo.toml "/tmp/$USER/frodo.toml"
+cp deployment/localnet/tee/sam.toml   "/tmp/$USER/sam.toml"
 ```
+
+The TOML files already contain a working `boot_nodes` entry pointing at `10.0.2.2:24566` — the QEMU slirp gateway inside the CVM, which routes to the host's loopback and works regardless of whether `neard` binds to `0.0.0.0` or `127.0.0.1` on the host (see #2949). `MACHINE_IP` is still needed for externally-reachable endpoints (public-data, telemetry) and should remain set.
 
 #### 5. Start the Frodo MPC Node
 
