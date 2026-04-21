@@ -49,7 +49,83 @@ pub struct ForeignChainProviderConfig {
     pub auth: auth::AuthConfig,
 }
 
+impl ForeignChainConfig {
+    pub(crate) fn providers_to_set(&self) -> NonEmptyBTreeSet<dtos::RpcProvider> {
+        self.providers
+            .map_to_set(|_name, provider| dtos::RpcProvider {
+                rpc_url: provider.rpc_url().to_string(),
+            })
+    }
+}
+
+impl ForeignChainProviderConfig {
+    fn rpc_url(&self) -> Cow<'_, str> {
+        self.auth.strip_placeholder(&self.rpc_url)
+    }
+
+    fn validate_auth_config(&self) -> anyhow::Result<()> {
+        auth::validate_auth_config(&self.auth, &self.rpc_url)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum RpcProvider {
+    Standard,
+    Alchemy,
+    Helius,
+    Quicknode,
+    Ankr,
+    Infura,
+    Blast,
+    #[serde(alias = "blockstream")]
+    #[serde(alias = "mempool-space")]
+    Esplora,
+}
+
 impl ForeignChainsConfig {
+    pub fn is_empty(&self) -> bool {
+        self.all_configured_chains().is_empty()
+    }
+
+    pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let mut chains = BTreeMap::new();
+
+        if let Some(config) = &self.solana {
+            chains.insert(dtos::ForeignChain::Solana, config.providers_to_set());
+        }
+
+        if let Some(config) = &self.bitcoin {
+            chains.insert(dtos::ForeignChain::Bitcoin, config.providers_to_set());
+        }
+
+        if let Some(config) = &self.ethereum {
+            chains.insert(dtos::ForeignChain::Ethereum, config.providers_to_set());
+        }
+
+        if let Some(config) = &self.abstract_chain {
+            chains.insert(dtos::ForeignChain::Abstract, config.providers_to_set());
+        }
+
+        if let Some(config) = &self.starknet {
+            chains.insert(dtos::ForeignChain::Starknet, config.providers_to_set());
+        }
+
+        if let Some(config) = &self.bnb {
+            chains.insert(dtos::ForeignChain::Bnb, config.providers_to_set());
+        }
+
+        if let Some(config) = &self.base {
+            chains.insert(dtos::ForeignChain::Base, config.providers_to_set());
+        }
+
+        Some(dtos::ForeignChainPolicy { chains })
+    }
+
     pub fn validate_chain_config(&self) -> anyhow::Result<()> {
         let configured_chains = self.all_configured_chains();
 
@@ -100,90 +176,6 @@ impl ForeignChainsConfig {
         .into_iter()
         .flatten() // filters None entries
         .collect()
-    }
-}
-
-impl ForeignChainConfig {
-    pub(crate) fn providers_to_set(&self) -> NonEmptyBTreeSet<dtos::RpcProvider> {
-        self.providers
-            .map_to_set(|_name, provider| dtos::RpcProvider {
-                rpc_url: provider.rpc_url().to_string(),
-            })
-    }
-}
-
-impl ForeignChainProviderConfig {
-    fn rpc_url(&self) -> Cow<'_, str> {
-        self.auth.strip_placeholder(&self.rpc_url)
-    }
-
-    fn validate_auth_config(&self) -> anyhow::Result<()> {
-        auth::validate_auth_config(&self.auth, &self.rpc_url)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum RpcProvider {
-    Standard,
-    Alchemy,
-    Helius,
-    Quicknode,
-    Ankr,
-    Infura,
-    Blast,
-    #[serde(alias = "blockstream")]
-    #[serde(alias = "mempool-space")]
-    Esplora,
-}
-
-impl ForeignChainsConfig {
-    pub fn is_empty(&self) -> bool {
-        self.solana.is_none()
-            && self.bitcoin.is_none()
-            && self.ethereum.is_none()
-            && self.abstract_chain.is_none()
-            && self.starknet.is_none()
-            && self.bnb.is_none()
-            && self.base.is_none()
-    }
-
-    pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
-        if self.is_empty() {
-            return None;
-        }
-
-        let mut chains = BTreeMap::new();
-
-        if let Some(config) = &self.solana {
-            chains.insert(dtos::ForeignChain::Solana, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.bitcoin {
-            chains.insert(dtos::ForeignChain::Bitcoin, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.ethereum {
-            chains.insert(dtos::ForeignChain::Ethereum, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.abstract_chain {
-            chains.insert(dtos::ForeignChain::Abstract, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.starknet {
-            chains.insert(dtos::ForeignChain::Starknet, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.bnb {
-            chains.insert(dtos::ForeignChain::Bnb, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.base {
-            chains.insert(dtos::ForeignChain::Base, config.providers_to_set());
-        }
-
-        Some(dtos::ForeignChainPolicy { chains })
     }
 }
 
