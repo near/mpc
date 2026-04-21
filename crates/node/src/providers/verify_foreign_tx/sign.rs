@@ -377,7 +377,7 @@ mod tests {
         let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
             "public".to_string(),
             ForeignChainProviderConfig {
-                rpc_url: "https://blockstream.info/api".parse().unwrap(),
+                rpc_url: "https://blockstream.info/api".to_string(),
                 api_variant: RpcProvider::Esplora,
                 auth: Default::default(),
             },
