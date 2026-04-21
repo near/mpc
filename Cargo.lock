@@ -5811,6 +5811,8 @@ dependencies = [
  "borsh",
  "derive_more 2.1.1",
  "hex",
+ "insta",
+ "near-account-id 2.6.0",
  "rand 0.8.6",
  "schemars 0.8.22",
  "serde",

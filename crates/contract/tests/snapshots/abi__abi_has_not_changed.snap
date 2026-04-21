@@ -1515,10 +1515,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AccountId": {
-          "description": "A Near AccountId",
-          "type": "string"
-        },
         "AddDomainsVotes": {
           "description": "Votes for adding new domains.",
           "type": "object",
@@ -1578,11 +1574,7 @@ expression: abi
         },
         "AuthenticatedAccountId": {
           "description": "An account ID that has been authenticated (i.e., the caller is this account).",
-          "allOf": [
-            {
-              "$ref": "#/definitions/AccountId"
-            }
-          ]
+          "type": "string"
         },
         "AuthenticatedParticipantId": {
           "description": "A participant ID that has been authenticated (i.e., the caller is this participant).",
@@ -2953,18 +2945,27 @@ expression: abi
           ],
           "properties": {
             "account_id": {
-              "description": "Operator account",
+              "description": "Operator account.",
               "type": "string"
             },
             "account_public_key": {
-              "type": [
-                "string",
-                "null"
+              "description": "Full-access Ed25519 public key of the operator account.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                },
+                {
+                  "type": "null"
+                }
               ]
             },
             "tls_public_key": {
-              "description": "TLS public key, MUST BE of type Ed25519",
-              "type": "string"
+              "description": "TLS public key used by the node for peer-to-peer communication.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                }
+              ]
             }
           }
         },
@@ -3066,7 +3067,8 @@ expression: abi
                 "type": "array",
                 "items": [
                   {
-                    "$ref": "#/definitions/AccountId"
+                    "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                    "type": "string"
                   },
                   {
                     "$ref": "#/definitions/ParticipantId2"

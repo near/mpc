@@ -355,10 +355,7 @@ pub fn convert_participant_infos(
         let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.sign_pk)
             .with_context(|| format!("Invalid sign_pk for peer: {:?}", info.sign_pk))?;
 
-        let near_account_id: AccountId = account_id
-            .0
-            .parse()
-            .with_context(|| format!("Invalid account id: {}", account_id.0))?;
+        let near_account_id: AccountId = account_id.clone();
 
         converted.push(ParticipantInfo {
             id: (*id).into(),
@@ -455,7 +452,7 @@ mod tests {
 
         for (i, (account_id, url, pk)) in sorted_raw.into_iter().enumerate() {
             entries.push((
-                DtoAccountId(account_id),
+                account_id.parse().unwrap(),
                 ParticipantId(i as u32),
                 ParticipantInfo {
                     url,
@@ -486,9 +483,8 @@ mod tests {
         let mut account_id_to_pk =
             HashMap::<AccountId, near_mpc_contract_interface::types::Ed25519PublicKey>::default();
         for (account_id, _, info) in &chain_infos.participants {
-            let near_account_id: AccountId = account_id.0.parse().unwrap();
-            account_ids.push(near_account_id.clone());
-            account_id_to_pk.insert(near_account_id, info.sign_pk.clone());
+            account_ids.push(account_id.clone());
+            account_id_to_pk.insert(account_id.clone(), info.sign_pk.clone());
         }
         assert!(account_ids.is_sorted());
         let params = ThresholdParameters {
@@ -505,7 +501,7 @@ mod tests {
             let expected = chain_infos
                 .participants
                 .iter()
-                .find(|(a_id, _, _)| a_id.0.as_str() == account_ids[i].as_str())
+                .find(|(a_id, _, _)| *a_id == account_ids[i])
                 .map(|(_, p_id, _)| *p_id)
                 .unwrap();
             assert!(p.id.raw() == expected.0);

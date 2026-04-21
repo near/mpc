@@ -19,7 +19,7 @@ const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 const OUTPUT_SECRET_SIZE: usize = 32;
 
 pub fn run(args: Args) -> Result<()> {
-    let account_id = AccountId(args.signer_account_id);
+    let account_id: AccountId = args.signer_account_id.parse()?;
     let app_id = derive_app_id(&account_id, &args.derivation_path);
 
     let (ephemeral_private_key, app_public_key) = if args.publicly_verifiable {
@@ -150,7 +150,7 @@ fn derive_strong_key(
 const APP_ID_DERIVATION_PREFIX: &str = "near-mpc v0.1.0 app_id derivation:";
 
 pub fn derive_app_id(account_id: &AccountId, path: &str) -> CkdAppId {
-    let derivation_path = format!("{APP_ID_DERIVATION_PREFIX}{},{}", account_id.0, path);
+    let derivation_path = format!("{APP_ID_DERIVATION_PREFIX}{},{}", account_id, path);
     let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);
     let hash: [u8; 32] = hasher.finalize().into();

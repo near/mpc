@@ -1,0 +1,12 @@
+---
+source: crates/primitives/src/account_id.rs
+expression: json
+---
+[
+  "alice.near",
+  "bob.near",
+  "carol-42.near",
+  "node0.mpc-test.testnet",
+  "a.b",
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+]

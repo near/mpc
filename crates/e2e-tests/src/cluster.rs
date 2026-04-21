@@ -443,7 +443,7 @@ impl MpcCluster {
         let current_accounts: std::collections::HashSet<_> = current_participants
             .participants
             .iter()
-            .map(|(a, _, _)| a.0.clone())
+            .map(|(a, _, _)| a.to_string())
             .collect();
 
         let mut participants_first: Vec<usize> = Vec::new();
@@ -915,7 +915,8 @@ fn build_participants(
 ) -> Participants {
     let mut list = Vec::new();
     for (participant_id, &i) in indices.iter().enumerate() {
-        let account_id = ContractAccountId(format!("node{i}.{SANDBOX_ROOT_ACCOUNT}"));
+        let account_id: ContractAccountId =
+            format!("node{i}.{SANDBOX_ROOT_ACCOUNT}").parse().unwrap();
         let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&p2p_keys[i].verifying_key());
         list.push((
             account_id,
@@ -942,7 +943,7 @@ fn build_participants_from_nodes(
     let mut next_id = current.next_id;
     let mut list = Vec::new();
     for &node_idx in indices {
-        let account = ContractAccountId(nodes[node_idx].account_id().to_string());
+        let account: ContractAccountId = nodes[node_idx].account_id().clone();
         let id = current
             .participants
             .iter()

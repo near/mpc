@@ -84,7 +84,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     {
         new_participants
             .insert_with_id(
-                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
                     sign_pk: participant_info.sign_pk.clone().into(),
@@ -132,11 +132,11 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .map(|(account, _)| account)
         .collect();
     assert_eq!(votes_for_update.len(), 1);
-    let voter_id: AccountId = votes_for_update[0].0.parse().unwrap();
+    let voter_id: &AccountId = votes_for_update[0];
     assert!(final_participants
         .participants
         .iter()
-        .any(|(a, _, _)| a.0.as_str() == voter_id.as_str()));
+        .any(|(a, _, _)| a == voter_id));
 
     Ok(())
 }
@@ -195,7 +195,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     {
         new_participants
             .insert_with_id(
-                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
                     sign_pk: participant_info.sign_pk.clone().into(),
@@ -249,7 +249,7 @@ pub fn assert_expected_proposed_update(
 ) {
     let mut expected_votes: Vec<_> = expected_voter_accounts
         .iter()
-        .map(|a| dtos::AccountId(a.id().to_string()))
+        .map(|a| a.id().clone())
         .collect();
     expected_votes.sort();
 

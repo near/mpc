@@ -52,7 +52,7 @@ pub async fn start_keygen_instance(
         .min_by_key(|a| {
             active
                 .iter()
-                .find(|(account_id, _, _)| account_id.0 == *a.id())
+                .find(|(account_id, _, _)| account_id == a.id())
                 .map(|(_, pid, _)| *pid)
                 .unwrap()
         })

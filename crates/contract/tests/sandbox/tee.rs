@@ -670,7 +670,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let target_node_id = internal_participants
         .get_node_ids()
         .into_iter()
-        .find(|node| &node.account_id == target_account.id())
+        .find(|node| node.account_id == *target_account.id())
         .expect("target participant not found");
 
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
@@ -684,8 +684,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         target_account,
         &contract,
         &expiring_attestation,
-        &dtos::Ed25519PublicKey::try_from(&target_node_id.tls_public_key)
-            .expect("expected ED25519 key"),
+        &target_node_id.tls_public_key,
     )
     .await?
     .is_success();
@@ -739,7 +738,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let final_accounts: Vec<String> = final_participants
         .participants
         .iter()
-        .map(|(account_id, _, _)| account_id.0.clone())
+        .map(|(account_id, _, _)| account_id.to_string())
         .collect();
     let expected_accounts: Vec<String> = remaining_accounts
         .iter()

@@ -380,14 +380,9 @@ pub async fn submit_tee_attestations(
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
         assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
-        let result = submit_participant_info(
-            account,
-            contract,
-            &attestation,
-            &dtos::Ed25519PublicKey::try_from(&node_id.tls_public_key)
-                .expect("expected ED25519 key"),
-        )
-        .await?;
+        let result =
+            submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
+                .await?;
         assert!(result.is_success());
     }
     Ok(())
