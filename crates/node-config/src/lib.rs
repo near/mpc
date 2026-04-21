@@ -2,10 +2,8 @@ pub mod foreign_chains;
 pub mod start;
 
 pub use foreign_chains::{
-    AbstractChainConfig, AbstractProviderConfig, AuthConfig, BitcoinChainConfig,
-    BitcoinProviderConfig, EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig,
-    RpcProvider, SolanaChainConfig, SolanaProviderConfig, StarknetChainConfig,
-    StarknetProviderConfig, TokenConfig,
+    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, RpcProvider,
+    TokenConfig,
 };
 pub use start::{
     ChainId, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
@@ -168,7 +166,7 @@ impl ConfigFile {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        self.foreign_chains.validate()
+        self.foreign_chains.validate_chain_config()
     }
 }
 

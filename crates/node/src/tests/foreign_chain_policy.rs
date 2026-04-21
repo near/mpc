@@ -2,9 +2,10 @@ use crate::p2p::testing::PortSeed;
 use crate::tests::{IntegrationTestSetup, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::{
-    AuthConfig, ForeignChainsConfig, RpcProvider, SolanaChainConfig, SolanaProviderConfig,
+    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, RpcProvider,
 };
 use near_time::Clock;
+use std::num::NonZeroU64;
 use std::time::Duration;
 
 #[tokio::test]
@@ -28,17 +29,17 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
 
     let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
         "public".to_string(),
-        SolanaProviderConfig {
-            rpc_url: "https://rpc.public.example.com".to_string(),
+        ForeignChainProviderConfig {
+            rpc_url: "https://rpc.public.example.com".parse().unwrap(),
             api_variant: RpcProvider::Standard,
             auth: AuthConfig::None,
         },
     );
 
     let foreign_chains = ForeignChainsConfig {
-        solana: Some(SolanaChainConfig {
-            timeout_sec: 30,
-            max_retries: 3,
+        solana: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
             providers,
         }),
         bitcoin: None,

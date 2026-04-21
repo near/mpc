@@ -9,6 +9,7 @@ use axum::{serve, Json};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
+use mpc_node_config::foreign_chains::{ForeignChainConfig, ForeignChainProviderConfig};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
     RpcProvider, SignatureConfig, TripleConfig,
@@ -21,6 +22,7 @@ use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::num::NonZeroU64;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -140,66 +142,31 @@ struct ForeignChains {
 impl From<ForeignChainsConfig> for ForeignChains {
     fn from(config: ForeignChainsConfig) -> Self {
         Self {
-            solana: config.solana.map(|c| {
-                ForeignChain::new(c.timeout_sec, c.max_retries, c.providers.into(), |p| {
-                    ForeignChainProvider::new(p.rpc_url, p.api_variant)
-                })
-            }),
-            bitcoin: config.bitcoin.map(|c| {
-                ForeignChain::new(c.timeout_sec, c.max_retries, c.providers.into(), |p| {
-                    ForeignChainProvider::new(p.rpc_url, p.api_variant)
-                })
-            }),
-            ethereum: config.ethereum.map(|c| {
-                ForeignChain::new(c.timeout_sec, c.max_retries, c.providers.into(), |p| {
-                    ForeignChainProvider::new(p.rpc_url, p.api_variant)
-                })
-            }),
-            abstract_chain: config.abstract_chain.map(|c| {
-                ForeignChain::new(c.timeout_sec, c.max_retries, c.providers.into(), |p| {
-                    ForeignChainProvider::new(p.rpc_url, p.api_variant)
-                })
-            }),
-            starknet: config.starknet.map(|c| {
-                ForeignChain::new(c.timeout_sec, c.max_retries, c.providers.into(), |p| {
-                    ForeignChainProvider::new(p.rpc_url, p.api_variant)
-                })
-            }),
-            bnb: config.bnb.map(|c| {
-                ForeignChain::new(c.timeout_sec, c.max_retries, c.providers.into(), |p| {
-                    ForeignChainProvider::new(p.rpc_url, p.api_variant)
-                })
-            }),
-            base: config.base.map(|c| {
-                ForeignChain::new(c.timeout_sec, c.max_retries, c.providers.into(), |p| {
-                    ForeignChainProvider::new(p.rpc_url, p.api_variant)
-                })
-            }),
+            solana: config.solana.map(Into::into),
+            bitcoin: config.bitcoin.map(Into::into),
+            ethereum: config.ethereum.map(Into::into),
+            abstract_chain: config.abstract_chain.map(Into::into),
+            starknet: config.starknet.map(Into::into),
+            bnb: config.bnb.map(Into::into),
+            base: config.base.map(Into::into),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 struct ForeignChain {
-    timeout_sec: u64,
-    max_retries: u64,
+    timeout_sec: NonZeroU64,
+    max_retries: NonZeroU64,
     providers: BTreeMap<String, ForeignChainProvider>,
 }
 
-impl ForeignChain {
-    fn new<P>(
-        timeout_sec: u64,
-        max_retries: u64,
-        providers: BTreeMap<String, P>,
-        mut to_provider: impl FnMut(P) -> ForeignChainProvider,
-    ) -> Self {
+impl From<ForeignChainConfig> for ForeignChain {
+    fn from(config: ForeignChainConfig) -> Self {
+        let providers: BTreeMap<String, ForeignChainProviderConfig> = config.providers.into();
         Self {
-            timeout_sec,
-            max_retries,
-            providers: providers
-                .into_iter()
-                .map(|(k, v)| (k, to_provider(v)))
-                .collect(),
+            timeout_sec: config.timeout_sec,
+            max_retries: config.max_retries,
+            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
         }
     }
 }
@@ -210,11 +177,11 @@ struct ForeignChainProvider {
     api_variant: RpcProvider,
 }
 
-impl ForeignChainProvider {
-    fn new(rpc_url: String, api_variant: RpcProvider) -> Self {
+impl From<ForeignChainProviderConfig> for ForeignChainProvider {
+    fn from(provider: ForeignChainProviderConfig) -> Self {
         Self {
-            rpc_url,
-            api_variant,
+            rpc_url: provider.rpc_url,
+            api_variant: provider.api_variant,
         }
     }
 }
@@ -405,17 +372,31 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::foreign_chains::{BaseChainConfig, BaseProviderConfig};
-    use mpc_node_config::foreign_chains::{BnbChainConfig, BnbProviderConfig};
-    use mpc_node_config::{
-        AbstractChainConfig, AbstractProviderConfig, AuthConfig, BitcoinChainConfig,
-        BitcoinProviderConfig, EthereumChainConfig, EthereumProviderConfig, SolanaChainConfig,
-        SolanaProviderConfig, StarknetChainConfig, StarknetProviderConfig, SyncMode, TokenConfig,
-    };
+    use mpc_node_config::{AuthConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
+
+    fn test_chain(
+        provider_name: &str,
+        rpc_url: &str,
+        api_variant: RpcProvider,
+        auth: AuthConfig,
+    ) -> ForeignChainConfig {
+        ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                provider_name.to_string(),
+                ForeignChainProviderConfig {
+                    rpc_url: rpc_url.to_string(),
+                    api_variant,
+                    auth,
+                },
+            ),
+        }
+    }
 
     /// Builds a [`ConfigFile`] with one provider per chain, each exercising a
     /// different [`AuthConfig`] variant so every conversion path is covered.
@@ -450,116 +431,69 @@ mod tests {
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig {
-                // Header auth with Val token
-                solana: Some(SolanaChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "alchemy".to_string(),
-                        SolanaProviderConfig {
-                            rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
-                            api_variant: RpcProvider::Alchemy,
-                            auth: AuthConfig::Header {
-                                name: http::HeaderName::from_static("authorization"),
-                                scheme: Some("Bearer".to_string()),
-                                token: TokenConfig::Val {
-                                    val: "sk-SUPER-SECRET-KEY".to_string(),
-                                },
-                            },
+                solana: Some(test_chain(
+                    "alchemy",
+                    "https://solana-mainnet.g.alchemy.com/v2/",
+                    RpcProvider::Alchemy,
+                    AuthConfig::Header {
+                        name: http::HeaderName::from_static("authorization"),
+                        scheme: Some("Bearer".to_string()),
+                        token: TokenConfig::Val {
+                            val: "sk-SUPER-SECRET-KEY".to_string(),
                         },
-                    ),
-                }),
-                // Path auth with Val token (URL contains placeholder)
-                bitcoin: Some(BitcoinChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "ankr".to_string(),
-                        BitcoinProviderConfig {
-                            rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
-                            api_variant: RpcProvider::Standard,
-                            auth: AuthConfig::Path {
-                                placeholder: "{api_key}".to_string(),
-                                token: TokenConfig::Val {
-                                    val: "ankr-secret-token".to_string(),
-                                },
-                            },
+                    },
+                )),
+                bitcoin: Some(test_chain(
+                    "ankr",
+                    "https://rpc.ankr.com/btc/{api_key}",
+                    RpcProvider::Standard,
+                    AuthConfig::Path {
+                        placeholder: "{api_key}".to_string(),
+                        token: TokenConfig::Val {
+                            val: "ankr-secret-token".to_string(),
                         },
-                    ),
-                }),
-                // Query auth with Env token
-                ethereum: Some(EthereumChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "alchemy".to_string(),
-                        EthereumProviderConfig {
-                            rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
-                            api_variant: RpcProvider::Alchemy,
-                            auth: AuthConfig::Query {
-                                name: "api_key".to_string(),
-                                token: TokenConfig::Env {
-                                    env: "ALCHEMY_API_KEY".to_string(),
-                                },
-                            },
+                    },
+                )),
+                ethereum: Some(test_chain(
+                    "alchemy",
+                    "https://eth-mainnet.g.alchemy.com/v2/",
+                    RpcProvider::Alchemy,
+                    AuthConfig::Query {
+                        name: "api_key".to_string(),
+                        token: TokenConfig::Env {
+                            env: "ALCHEMY_API_KEY".to_string(),
                         },
-                    ),
-                }),
-                // No auth
-                abstract_chain: Some(AbstractChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        AbstractProviderConfig {
-                            rpc_url: "https://api.testnet.abs.xyz".to_string(),
-                            api_variant: RpcProvider::Standard,
-                            auth: AuthConfig::None,
+                    },
+                )),
+                abstract_chain: Some(test_chain(
+                    "public",
+                    "https://api.testnet.abs.xyz",
+                    RpcProvider::Standard,
+                    AuthConfig::None,
+                )),
+                bnb: Some(test_chain(
+                    "public",
+                    "https://bsc-rpc.publicnode.com",
+                    RpcProvider::Standard,
+                    AuthConfig::None,
+                )),
+                base: Some(test_chain(
+                    "public",
+                    "https://base.publicnode.com",
+                    RpcProvider::Standard,
+                    AuthConfig::None,
+                )),
+                starknet: Some(test_chain(
+                    "blast",
+                    "https://starknet-mainnet.blastapi.io/",
+                    RpcProvider::Blast,
+                    AuthConfig::Query {
+                        name: "api_key".to_string(),
+                        token: TokenConfig::Val {
+                            val: "blast-secret".to_string(),
                         },
-                    ),
-                }),
-                bnb: Some(BnbChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        BnbProviderConfig {
-                            rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
-                            api_variant: RpcProvider::Standard,
-                            auth: AuthConfig::None,
-                        },
-                    ),
-                }),
-                base: Some(BaseChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        BaseProviderConfig {
-                            rpc_url: "https://base.publicnode.com".to_string(),
-                            api_variant: RpcProvider::Standard,
-                            auth: AuthConfig::None,
-                        },
-                    ),
-                }),
-                // Query auth with Val token
-                starknet: Some(StarknetChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "blast".to_string(),
-                        StarknetProviderConfig {
-                            rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
-                            api_variant: RpcProvider::Blast,
-                            auth: AuthConfig::Query {
-                                name: "api_key".to_string(),
-                                token: TokenConfig::Val {
-                                    val: "blast-secret".to_string(),
-                                },
-                            },
-                        },
-                    ),
-                }),
+                    },
+                )),
             },
             cores: Some(4),
         }
@@ -708,8 +642,8 @@ mod tests {
 
         // Then
         let solana = response.foreign_chains.solana.unwrap();
-        assert_eq!(solana.timeout_sec, 30);
-        assert_eq!(solana.max_retries, 3);
+        assert_eq!(solana.timeout_sec.get(), 30);
+        assert_eq!(solana.max_retries.get(), 3);
     }
 
     #[test]

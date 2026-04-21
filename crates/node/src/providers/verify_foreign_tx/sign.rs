@@ -360,10 +360,10 @@ mod tests {
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
     use mpc_node_config::{
-        BitcoinChainConfig, BitcoinProviderConfig, ForeignChainsConfig, RpcProvider,
+        ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, RpcProvider,
     };
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, num::NonZeroU64};
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -376,16 +376,16 @@ mod tests {
     fn bitcoin_foreign_chains_config() -> ForeignChainsConfig {
         let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
             "public".to_string(),
-            BitcoinProviderConfig {
-                rpc_url: "https://blockstream.info/api".to_string(),
+            ForeignChainProviderConfig {
+                rpc_url: "https://blockstream.info/api".parse().unwrap(),
                 api_variant: RpcProvider::Esplora,
                 auth: Default::default(),
             },
         );
         ForeignChainsConfig {
-            bitcoin: Some(BitcoinChainConfig {
-                timeout_sec: 30,
-                max_retries: 3,
+            bitcoin: Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(30).unwrap(),
+                max_retries: NonZeroU64::new(3).unwrap(),
                 providers,
             }),
             ..Default::default()

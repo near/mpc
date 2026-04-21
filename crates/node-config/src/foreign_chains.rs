@@ -1,47 +1,111 @@
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::{borrow::Cow, collections::BTreeMap};
+use std::num::NonZeroU64;
 
-use anyhow::Context;
-use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
+use anyhow::Context as _;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
-mod abstract_chain;
-mod auth;
-mod base;
-mod bitcoin;
-mod bnb;
-mod ethereum;
-mod solana;
-mod starknet;
-
-pub use abstract_chain::{AbstractChainConfig, AbstractProviderConfig};
 pub use auth::{AuthConfig, TokenConfig};
-pub use base::{BaseChainConfig, BaseProviderConfig};
-pub use bitcoin::{BitcoinChainConfig, BitcoinProviderConfig};
-pub use bnb::{BnbChainConfig, BnbProviderConfig};
-pub use ethereum::{EthereumChainConfig, EthereumProviderConfig};
-pub use solana::{SolanaChainConfig, SolanaProviderConfig};
-pub use starknet::{StarknetChainConfig, StarknetProviderConfig};
+
+mod auth;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ForeignChainsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub solana: Option<SolanaChainConfig>,
+    pub solana: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bitcoin: Option<BitcoinChainConfig>,
+    pub bitcoin: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ethereum: Option<EthereumChainConfig>,
+    pub ethereum: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "abstract")]
-    pub abstract_chain: Option<AbstractChainConfig>,
+    pub abstract_chain: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub starknet: Option<StarknetChainConfig>,
+    pub starknet: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bnb: Option<BnbChainConfig>,
+    pub bnb: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base: Option<BaseChainConfig>,
+    pub base: Option<ForeignChainConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ForeignChainConfig {
+    pub timeout_sec: NonZeroU64,
+    pub max_retries: NonZeroU64,
+    // TODO: what is the key here?
+    pub providers: NonEmptyBTreeMap<String, ForeignChainProviderConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+
+pub struct ForeignChainProviderConfig {
+    pub rpc_url: String,
+    pub api_variant: RpcProvider,
+    #[serde(default)]
+    pub auth: auth::AuthConfig,
+}
+
+impl ForeignChainsConfig {
+    pub fn validate_chain_config(&self) -> anyhow::Result<()> {
+        let foreign_chains = [
+            self.solana.as_ref(),
+            self.bitcoin.as_ref(),
+            self.ethereum.as_ref(),
+            self.abstract_chain.as_ref(),
+            self.starknet.as_ref(),
+            self.bnb.as_ref(),
+            self.base.as_ref(),
+        ];
+
+        let mut seen_rpc_urls = BTreeSet::new();
+
+        for foreign_chain in foreign_chains {
+            let Some(foreign_chain) = foreign_chain else {
+                continue;
+            };
+
+            for provider in foreign_chain.providers.values() {
+                let rpc_url = &provider.rpc_url;
+
+                // is a valid URL
+                url::Url::parse(&rpc_url)
+                    .with_context(|| format!("provided RPC URL is invalid: `{rpc_url}`"))?;
+
+                // no duplication
+                anyhow::ensure!(
+                    seen_rpc_urls.insert(provider.rpc_url.clone()),
+                    "found a duplicate URL entry for an RPC provider. RPC provider URLs must be unique across configuration of all chains. {:?}",
+                    rpc_url
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl ForeignChainConfig {
+    pub(crate) fn providers_to_set(&self) -> NonEmptyBTreeSet<dtos::RpcProvider> {
+        self.providers
+            .map_to_set(|_name, provider| dtos::RpcProvider {
+                rpc_url: provider.rpc_url.to_string(),
+            })
+    }
+}
+
+impl ForeignChainProviderConfig {
+    fn rpc_url(&self) -> Cow<'_, str> {
+        self.auth.strip_placeholder(&self.rpc_url)
+    }
+
+    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
+        auth::validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -70,31 +134,6 @@ impl ForeignChainsConfig {
             && self.base.is_none()
     }
 
-    pub fn validate(&self) -> anyhow::Result<()> {
-        if let Some(config) = &self.solana {
-            config.validate()?;
-        }
-        if let Some(config) = &self.bitcoin {
-            config.validate()?;
-        }
-        if let Some(config) = &self.ethereum {
-            config.validate()?;
-        }
-        if let Some(config) = &self.abstract_chain {
-            config.validate()?;
-        }
-        if let Some(config) = &self.starknet {
-            config.validate()?;
-        }
-        if let Some(config) = &self.bnb {
-            config.validate()?;
-        }
-        if let Some(config) = &self.base {
-            config.validate()?;
-        }
-        Ok(())
-    }
-
     pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
         if self.is_empty() {
             return None;
@@ -103,105 +142,35 @@ impl ForeignChainsConfig {
         let mut chains = BTreeMap::new();
 
         if let Some(config) = &self.solana {
-            chains.insert(
-                dtos::ForeignChain::Solana,
-                providers_to_set(&config.providers),
-            );
+            chains.insert(dtos::ForeignChain::Solana, config.providers_to_set());
         }
 
         if let Some(config) = &self.bitcoin {
-            chains.insert(
-                dtos::ForeignChain::Bitcoin,
-                providers_to_set(&config.providers),
-            );
+            chains.insert(dtos::ForeignChain::Bitcoin, config.providers_to_set());
         }
 
         if let Some(config) = &self.ethereum {
-            chains.insert(
-                dtos::ForeignChain::Ethereum,
-                providers_to_set(&config.providers),
-            );
+            chains.insert(dtos::ForeignChain::Ethereum, config.providers_to_set());
         }
 
         if let Some(config) = &self.abstract_chain {
-            chains.insert(
-                dtos::ForeignChain::Abstract,
-                providers_to_set(&config.providers),
-            );
+            chains.insert(dtos::ForeignChain::Abstract, config.providers_to_set());
         }
 
         if let Some(config) = &self.starknet {
-            chains.insert(
-                dtos::ForeignChain::Starknet,
-                providers_to_set(&config.providers),
-            );
+            chains.insert(dtos::ForeignChain::Starknet, config.providers_to_set());
         }
 
         if let Some(config) = &self.bnb {
-            chains.insert(dtos::ForeignChain::Bnb, providers_to_set(&config.providers));
+            chains.insert(dtos::ForeignChain::Bnb, config.providers_to_set());
         }
 
         if let Some(config) = &self.base {
-            chains.insert(
-                dtos::ForeignChain::Base,
-                providers_to_set(&config.providers),
-            );
+            chains.insert(dtos::ForeignChain::Base, config.providers_to_set());
         }
 
         Some(dtos::ForeignChainPolicy { chains })
     }
-}
-
-fn providers_to_set<P: ForeignChainProviderConfig>(
-    providers: &NonEmptyBTreeMap<String, P>,
-) -> NonEmptyBTreeSet<dtos::RpcProvider> {
-    providers.map_to_set(|_name, provider| dtos::RpcProvider {
-        rpc_url: provider.rpc_url().trim().to_string(),
-    })
-}
-
-pub(crate) trait ForeignChainProviderConfig {
-    fn rpc_url(&self) -> Cow<'_, str>;
-    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()>;
-}
-
-pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
-    chain_label: &str,
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: &NonEmptyBTreeMap<String, P>,
-) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        timeout_sec > 0,
-        "foreign_chains.{chain_label}.timeout_sec must be > 0"
-    );
-    anyhow::ensure!(
-        max_retries > 0,
-        "foreign_chains.{chain_label}.max_retries must be > 0"
-    );
-
-    let mut seen_rpc_urls = BTreeSet::new();
-    for (provider_name, provider) in providers.iter() {
-        let provider_rpc_url = provider.rpc_url();
-        anyhow::ensure!(
-            !provider_rpc_url.trim().is_empty(),
-            "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url must be non-empty"
-        );
-        url::Url::parse(&provider_rpc_url).with_context(|| {
-            format!(
-                "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url is not a valid URL"
-            )
-        })?;
-        anyhow::ensure!(
-            seen_rpc_urls.insert(provider_rpc_url.to_string()),
-            "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url duplicates another provider URL"
-        );
-        provider
-            .validate(chain_label, provider_name)
-            .with_context(|| format!("invalid provider {provider_name} for {chain_label}"))?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
