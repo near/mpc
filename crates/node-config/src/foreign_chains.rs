@@ -60,7 +60,7 @@ impl ForeignChainsConfig {
                 let rpc_url = &provider.rpc_url;
 
                 // is a valid URL
-                url::Url::parse(&rpc_url)
+                url::Url::parse(rpc_url)
                     .with_context(|| format!("provided RPC URL is invalid: `{rpc_url}`"))?;
 
                 // no duplication
@@ -84,8 +84,7 @@ impl ForeignChainsConfig {
         foreign_chains
             .into_iter()
             .flat_map(|foreign_chain_config| foreign_chain_config.providers.values())
-            .map(|rpc_provider_config| rpc_provider_config.validate_auth_config())
-            .collect()
+            .try_for_each(|rpc_provider_config| rpc_provider_config.validate_auth_config())
     }
 
     fn all_configured_chains(&self) -> Vec<&ForeignChainConfig> {
@@ -99,7 +98,7 @@ impl ForeignChainsConfig {
             self.base.as_ref(),
         ]
         .into_iter()
-        .filter_map(|item| item)
+        .flatten() // filters None entries
         .collect()
     }
 }
