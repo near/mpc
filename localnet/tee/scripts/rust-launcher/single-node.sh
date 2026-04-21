@@ -171,9 +171,11 @@ create_node_account() {
 }
 
 render_env_and_conf() {
-  # Correct bootnode format for localnet
+  # Correct bootnode format for localnet.
+  # Use QEMU slirp gateway (10.0.2.2) so the CVM reaches the host's neard over
+  # loopback — works regardless of whether neard binds to 0.0.0.0 or 127.0.0.1.
   local node_pubkey="${NODE_PUBKEY:-$(jq -r .public_key "$HOME/.near/mpc-localnet/node_key.json")}"
-  export NEAR_BOOT_NODES="${NEAR_BOOT_NODES:-${node_pubkey}@${MACHINE_IP}:${NEAR_P2P_PORT}}"
+  export NEAR_BOOT_NODES="${NEAR_BOOT_NODES:-${node_pubkey}@10.0.2.2:${NEAR_P2P_PORT}}"
 
   export APP_NAME="${APP_NAME:-mpc-localnet-one-node-$(date +%s)}"
   export VMM_RPC OS_IMAGE SEALING_KEY_TYPE DISK
