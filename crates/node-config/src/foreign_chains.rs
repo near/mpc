@@ -37,7 +37,6 @@ pub struct ForeignChainsConfig {
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     pub max_retries: NonZeroU64,
-    // TODO: what is the key here?
     pub providers: NonEmptyBTreeMap<String, ForeignChainProviderConfig>,
 }
 
@@ -47,6 +46,21 @@ pub struct ForeignChainProviderConfig {
     pub api_variant: RpcProvider,
     #[serde(default)]
     pub auth: auth::AuthConfig,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum RpcProvider {
+    Standard,
+    Alchemy,
+    Helius,
+    Quicknode,
+    Ankr,
+    Infura,
+    Blast,
+    #[serde(alias = "blockstream")]
+    #[serde(alias = "mempool-space")]
+    Esplora,
 }
 
 impl ForeignChainConfig {
@@ -66,21 +80,6 @@ impl ForeignChainProviderConfig {
     fn validate_auth_config(&self) -> anyhow::Result<()> {
         auth::validate_auth_config(&self.auth, &self.rpc_url)
     }
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum RpcProvider {
-    Standard,
-    Alchemy,
-    Helius,
-    Quicknode,
-    Ankr,
-    Infura,
-    Blast,
-    #[serde(alias = "blockstream")]
-    #[serde(alias = "mempool-space")]
-    Esplora,
 }
 
 impl ForeignChainsConfig {
