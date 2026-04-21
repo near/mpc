@@ -284,9 +284,17 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let keyset = Keyset::new(EpochId::new(1), vec![key]);
         let domains = vec![domain];
         let next_domain_id = domains.len() as u64 + 1;
-        init_contract_running(&contract, domains, next_domain_id, keyset, threshold_params).await;
+        init_contract_running(
+            &contract,
+            domains,
+            next_domain_id,
+            keyset,
+            threshold_params,
+            &[],
+        )
+        .await;
     } else {
-        init_contract(&contract, threshold_params, None).await;
+        init_contract(&contract, threshold_params, &[], None).await;
     }
 
     let caller = worker.root_account().unwrap();

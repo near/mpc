@@ -1707,6 +1707,7 @@ impl MpcContract {
     pub fn init(
         parameters: dtos::ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
+        account_public_keys: BTreeMap<dtos::Ed25519PublicKey, dtos::Ed25519PublicKey>,
     ) -> Result<Self, Error> {
         let parameters: ThresholdParameters = parameters.into_contract_type();
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
@@ -1723,7 +1724,10 @@ impl MpcContract {
         // TODO(#1087): Every participant must have a valid attestation, otherwise we risk
         // participants being immediately kicked out once contract transitions into running.
         let initial_participants = parameters.participants();
-        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
+        let tee_state = TeeState::with_mocked_participant_attestations(
+            initial_participants,
+            account_public_keys,
+        );
 
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -1760,6 +1764,7 @@ impl MpcContract {
         keyset: Keyset,
         parameters: dtos::ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
+        account_public_keys: BTreeMap<dtos::Ed25519PublicKey, dtos::Ed25519PublicKey>,
     ) -> Result<Self, Error> {
         let parameters: ThresholdParameters = parameters.into_contract_type();
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
@@ -1789,7 +1794,10 @@ impl MpcContract {
         }
 
         let initial_participants = parameters.participants();
-        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
+        let tee_state = TeeState::with_mocked_participant_attestations(
+            initial_participants,
+            account_public_keys,
+        );
 
         Ok(MpcContract {
             config: init_config.map(Into::into).unwrap_or_default(),
@@ -2543,15 +2551,36 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        // Seed mock attestations with bogus-but-known account keys so tests
+        // entering contexts via `with_active_participant_and_attested_context`
+        // can match `signer_account_pk` against the stored attestation.
+        let account_public_keys = participant_account_public_keys(parameters.participants());
         let contract = MpcContract::init_running(
             domains,
             1,
             keyset,
             (&parameters).try_into_dto_type().unwrap(),
             None,
+            account_public_keys,
         )
         .unwrap();
         (context, contract, sk)
+    }
+
+    fn participant_account_public_keys(
+        participants: &Participants,
+    ) -> std::collections::BTreeMap<dtos::Ed25519PublicKey, dtos::Ed25519PublicKey> {
+        participants
+            .participants()
+            .iter()
+            .filter_map(|(_, _, info)| {
+                let tls = dtos::Ed25519PublicKey::try_from(&info.sign_pk).ok()?;
+                Some((
+                    tls,
+                    crate::primitives::test_utils::bogus_ed25519_public_key(),
+                ))
+            })
+            .collect()
     }
 
     /// Register the given foreign chains as supported by all active participants.
@@ -2614,11 +2643,17 @@ mod tests {
             .node_id
             .clone();
 
-        // Build a new simulated environment with this node as caller
+        // Build a new simulated environment with this node as caller. The
+        // signer_account_pk must match the stored attestation's
+        // `account_public_key` so that `is_caller_an_attested_participant`
+        // succeeds.
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
             .signer_account_id(node_id.account_id.clone())
             .predecessor_account_id(node_id.account_id.clone())
+            .signer_account_pk(near_sdk::PublicKey::from(
+                node_id.account_public_key.clone(),
+            ))
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -3255,7 +3290,12 @@ mod tests {
 
         let threshold = Threshold::new(threshold_value);
         let parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
-        let contract = MpcContract::init((&parameters).try_into_dto_type().unwrap(), None).unwrap();
+        let contract = MpcContract::init(
+            (&parameters).try_into_dto_type().unwrap(),
+            None,
+            participant_account_public_keys(&participants),
+        )
+        .unwrap();
 
         (contract, participants, first_participant_id)
     }
@@ -4618,6 +4658,7 @@ mod tests {
             keyset.clone(),
             (&parameters).try_into_dto_type().unwrap(),
             None,
+            participant_account_public_keys(&participants),
         )
         .unwrap();
 

@@ -89,7 +89,10 @@ impl TeeState {
     /// Participants whose `sign_pk` is not Ed25519 are skipped: the attestation
     /// map is keyed by [`Ed25519PublicKey`] and could never hold an entry for
     /// them. Such participants effectively start with no attestation.
-    pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
+    pub(crate) fn with_mocked_participant_attestations(
+        participants: &Participants,
+        account_public_keys: BTreeMap<Ed25519PublicKey, Ed25519PublicKey>,
+    ) -> Self {
         let mut participants_attestations = BTreeMap::new();
 
         for (account_id, _, participant_info) in participants.participants() {
@@ -97,15 +100,13 @@ impl TeeState {
             else {
                 continue;
             };
-            // `Participants` does not carry the operator's account public key,
-            // so a mocked entry cannot record the real one. The all-zero key is
-            // a placeholder that never matches a live signer; it keeps the
-            // participant from being kicked out of an empty `TeeState` until a
-            // real `submit_participant_info` call replaces it (keyed by TLS).
+            let Some(account_public_key) = account_public_keys.get(&tls_public_key) else {
+                continue;
+            };
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
-                account_public_key: Ed25519PublicKey::from([0u8; 32]),
+                account_public_key: account_public_key.clone(),
             };
 
             participants_attestations.insert(

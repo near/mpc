@@ -402,6 +402,15 @@ expression: abi
                   }
                 ]
               }
+            },
+            {
+              "name": "account_public_keys",
+              "type_schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                }
+              }
             }
           ]
         }
@@ -456,6 +465,15 @@ expression: abi
                     "type": "null"
                   }
                 ]
+              }
+            },
+            {
+              "name": "account_public_keys",
+              "type_schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                }
               }
             }
           ]

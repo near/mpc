@@ -246,7 +246,17 @@ class MpcCluster:
         Initializes the contract by calling init. This needs to be done before
         the contract is usable.
         """
-        args = {"parameters": self.make_threshold_parameters(threshold)}
+        # Map each participant's TLS public key to their signer public key, so
+        # init can seed a mock attestation that matches the node's eventual
+        # `signer_account_pk`. Without this, participants would be kicked out
+        # on the first `verify_tee` call before they submit a real attestation.
+        account_public_keys = {
+            node.p2p_public_key: node._signer_key.pk for node in self.mpc_nodes
+        }
+        args = {
+            "parameters": self.make_threshold_parameters(threshold),
+            "account_public_keys": account_public_keys,
+        }
         print(f"arg: {args}\n")
         if additional_init_args is not None:
             args.update(additional_init_args)

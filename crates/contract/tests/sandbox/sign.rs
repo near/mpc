@@ -350,6 +350,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         .call(method_names::INIT)
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
+            "account_public_keys": {},
         }))
         .transact()
         .await?;
@@ -364,6 +365,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         .call(method_names::INIT)
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
+            "account_public_keys": {},
         }))
         .transact()
         .await?;
@@ -378,6 +380,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
             "config": "null",
+            "account_public_keys": {},
         }))
         .transact()
         .await?;

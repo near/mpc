@@ -473,6 +473,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
             "next_domain_id": 0,
             "keyset": Keyset::new(EpochId::new(2), vec![]),
             "parameters": threshold_parameters,
+            "account_public_keys": {},
     });
 
     let execution_error = accounts[0]

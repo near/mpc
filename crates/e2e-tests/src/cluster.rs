@@ -775,6 +775,18 @@ async fn init_contract(
         threshold: Threshold(threshold as u64),
         participants,
     };
+    let account_public_keys: std::collections::BTreeMap<
+        near_mpc_crypto_types::Ed25519PublicKey,
+        near_mpc_crypto_types::Ed25519PublicKey,
+    > = participant_indices
+        .iter()
+        .map(|&i| {
+            let tls = near_mpc_crypto_types::Ed25519PublicKey::from(&p2p_keys[i].verifying_key());
+            let account =
+                near_mpc_crypto_types::Ed25519PublicKey::from(&near_keys[i].verifying_key());
+            (tls, account)
+        })
+        .collect();
 
     tracing::info!(
         threshold,
@@ -782,7 +794,13 @@ async fn init_contract(
         "initializing contract"
     );
     let outcome = contract
-        .call(method_names::INIT, json!({ "parameters": params }))
+        .call(
+            method_names::INIT,
+            json!({
+                "parameters": params,
+                "account_public_keys": account_public_keys,
+            }),
+        )
         .await?;
     anyhow::ensure!(
         outcome.is_success(),

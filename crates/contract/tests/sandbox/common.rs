@@ -106,17 +106,38 @@ pub fn make_threshold_params(participants: &Participants) -> ThresholdParameters
     ThresholdParameters::new(participants.clone(), threshold).unwrap()
 }
 
+/// Builds the `account_public_keys` map (TLS public key → account public key)
+/// expected by the contract's `init` / `init_running` methods, matching each
+/// participant's `sign_pk` to the corresponding sandbox [`Account`]'s signer.
+pub fn account_public_keys_map(
+    participants: &Participants,
+    accounts: &[Account],
+) -> std::collections::BTreeMap<dtos::Ed25519PublicKey, dtos::Ed25519PublicKey> {
+    participants
+        .participants()
+        .iter()
+        .filter_map(|(account_id, _, info)| {
+            let tls = dtos::Ed25519PublicKey::try_from(&info.sign_pk).ok()?;
+            let account = accounts.iter().find(|a| a.id() == account_id)?;
+            Some((tls, account_ed25519_public_key(account)))
+        })
+        .collect()
+}
+
 /// Initialize the contract with the given parameters.
 pub async fn init_contract(
     contract: &Contract,
     params: ThresholdParameters,
+    accounts: &[Account],
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
+    let account_public_keys = account_public_keys_map(params.participants(), accounts);
     let result = contract
         .call(method_names::INIT)
         .args_json(json!({
             "parameters": params,
             "init_config": init_config,
+            "account_public_keys": account_public_keys,
         }))
         .gas(GAS_FOR_INIT)
         .transact()
@@ -133,7 +154,9 @@ pub async fn init_contract_running(
     next_domain_id: u64,
     keyset: Keyset,
     params: ThresholdParameters,
+    accounts: &[Account],
 ) -> ExecutionSuccess {
+    let account_public_keys = account_public_keys_map(params.participants(), accounts);
     let result = contract
         .call(method_names::INIT_RUNNING)
         .args_json(json!({
@@ -141,6 +164,7 @@ pub async fn init_contract_running(
             "next_domain_id": next_domain_id,
             "keyset": keyset,
             "parameters": params,
+            "account_public_keys": account_public_keys,
         }))
         .gas(GAS_FOR_INIT)
         .transact()
@@ -271,10 +295,11 @@ impl SandboxTestSetupBuilder {
                 next_domain_id,
                 keyset,
                 threshold_parameters,
+                &accounts,
             )
             .await;
         } else {
-            init_contract(&contract, threshold_parameters, self.init_config).await;
+            init_contract(&contract, threshold_parameters, &accounts, self.init_config).await;
         }
 
         submit_attestations(&contract, &accounts, &participants).await;

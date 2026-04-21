@@ -118,12 +118,30 @@ impl TestSetupBuilder {
         testing_env!(context);
 
         let init_config = self.init_config;
+        // Seed mock attestations for all participants so they start with
+        // `TeeQuoteStatus::Valid`. The `account_public_key` values are bogus
+        // and don't match any future `signer_account_pk`, but they let mocks
+        // exist; any test that actually gates on attested-caller checks
+        // submits a real attestation via `submit_attestation_for_node` to
+        // overwrite the mock.
+        let account_public_keys: std::collections::BTreeMap<
+            near_mpc_contract_interface::types::Ed25519PublicKey,
+            near_mpc_contract_interface::types::Ed25519PublicKey,
+        > = participants_list
+            .iter()
+            .filter_map(|(_, _, info)| {
+                near_mpc_contract_interface::types::Ed25519PublicKey::try_from(&info.sign_pk)
+                    .ok()
+                    .map(|tls| (tls, bogus_ed25519_public_key()))
+            })
+            .collect();
         let contract = MpcContract::init_running(
             domains,
             1,
             keyset,
             parameters.clone().try_into().unwrap(),
             init_config.clone(),
+            account_public_keys,
         )
         .unwrap();
 
