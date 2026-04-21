@@ -53,7 +53,7 @@ impl ForeignChainConfig {
     pub(crate) fn providers_to_set(&self) -> NonEmptyBTreeSet<dtos::RpcProvider> {
         self.providers
             .map_to_set(|_name, provider| dtos::RpcProvider {
-                rpc_url: provider.rpc_url().to_string(),
+                rpc_url: provider.rpc_url().trim().to_string(),
             })
     }
 }
