@@ -16,16 +16,19 @@ pub struct ThresholdParametersVotes {
 impl ThresholdParametersVotes {
     /// return the number of votes for `proposal` cast by members of `participants`
     pub fn n_votes(&self, proposal: &ThresholdParameters, participants: &Participants) -> u64 {
-        self.proposal_by_account
-            .iter()
-            .filter(|&(acc, prop)| {
-                participants
-                    .participants()
-                    .iter()
-                    .any(|(acc_id, _, _)| acc.get() == acc_id)
-                    && prop == proposal
-            })
-            .count() as u64
+        u64::try_from(
+            self.proposal_by_account
+                .iter()
+                .filter(|&(acc, prop)| {
+                    participants
+                        .participants()
+                        .iter()
+                        .any(|(acc_id, _, _)| acc.get() == acc_id)
+                        && prop == proposal
+                })
+                .count(),
+        )
+        .expect("usize should never fail to convert to u64 on wasm32")
     }
     /// Registers a vote by `participant` for `proposal`.
     /// Removes any existing votes by `participant`.
@@ -43,10 +46,13 @@ impl ThresholdParametersVotes {
         {
             log!("removed one vote for signer");
         }
-        self.proposal_by_account
-            .values()
-            .filter(|&prop| prop == proposal)
-            .count() as u64
+        u64::try_from(
+            self.proposal_by_account
+                .values()
+                .filter(|&prop| prop == proposal)
+                .count(),
+        )
+        .expect("usize should never fail to convert on u64 on wasm32")
     }
 }
 
