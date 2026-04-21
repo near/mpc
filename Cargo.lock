@@ -1202,7 +1202,7 @@ dependencies = [
  "mpc-node",
  "near-account-id 2.6.0",
  "near-mpc-contract-interface",
- "rand 0.8.6",
+ "rand 0.9.4",
  "rand_core 0.6.4",
  "rstest",
  "serde",
@@ -1760,7 +1760,7 @@ dependencies = [
  "near-sdk",
  "near-store",
  "nearcore",
- "rand 0.8.6",
+ "rand 0.9.4",
  "rstest",
  "serde",
  "serde_json",
@@ -3056,7 +3056,7 @@ dependencies = [
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
  "near-sandbox",
- "rand 0.8.6",
+ "rand 0.9.4",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
@@ -5648,7 +5648,7 @@ dependencies = [
  "near-mpc-signature-verifier",
  "near-sdk",
  "near-workspaces",
- "rand 0.8.6",
+ "rand 0.9.4",
  "rand_core 0.6.4",
  "rstest",
  "schemars 0.8.22",
@@ -5753,7 +5753,7 @@ dependencies = [
  "num_enum",
  "pprof",
  "prometheus",
- "rand 0.8.6",
+ "rand 0.9.4",
  "regex",
  "rocksdb",
  "rstest",
@@ -5813,7 +5813,7 @@ dependencies = [
  "hex",
  "insta",
  "near-account-id 2.6.0",
- "rand 0.8.6",
+ "rand 0.9.4",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -5826,7 +5826,7 @@ version = "3.9.0"
 dependencies = [
  "anyhow",
  "ed25519-dalek",
- "rand 0.8.6",
+ "rand 0.9.4",
  "rcgen",
  "rustls",
  "x509-parser 0.18.1",
@@ -6766,7 +6766,7 @@ dependencies = [
  "near-account-id 2.6.0",
  "near-mpc-bounded-collections",
  "near-sdk",
- "rand 0.8.6",
+ "rand 0.9.4",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -6796,7 +6796,7 @@ dependencies = [
  "k256",
  "near-mpc-contract-interface",
  "near-sdk",
- "rand 0.8.6",
+ "rand 0.9.4",
  "rand_chacha 0.3.1",
 ]
 
@@ -11325,7 +11325,7 @@ name = "test-port-allocator"
 version = "3.9.0"
 dependencies = [
  "named-lock",
- "rand 0.8.6",
+ "rand 0.9.4",
 ]
 
 [[package]]
@@ -11441,7 +11441,7 @@ dependencies = [
  "k256",
  "keccak 0.1.6",
  "pairing",
- "rand 0.8.6",
+ "rand 0.9.4",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "reddsa",
