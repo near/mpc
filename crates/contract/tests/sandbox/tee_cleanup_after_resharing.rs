@@ -1,5 +1,8 @@
 use crate::sandbox::{
-    common::{gen_accounts, submit_tee_attestations, SandboxTestSetup},
+    common::{
+        account_ed25519_public_key, build_sandbox_node_ids, gen_accounts, submit_tee_attestations,
+        SandboxTestSetup,
+    },
     utils::{
         interface::IntoContractType,
         mpc_contract::{
@@ -44,7 +47,9 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
-    let expected_node_ids = (&initial_participants).into_contract_type().get_node_ids();
+    let internal_initial_participants: Participants = (&initial_participants).into_contract_type();
+    let expected_node_ids =
+        build_sandbox_node_ids(&internal_initial_participants, &mpc_signer_accounts);
 
     // Verify TEE info for initial participants was added
     let nodes_with_tees = get_tee_accounts(&contract).await.unwrap();
@@ -53,7 +58,8 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Add two prospective Participants
     // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
     let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
-    let non_participant_uids = non_participants.get_node_ids();
+    let non_participant_uids =
+        build_sandbox_node_ids(&non_participants, &env_non_participant_accounts);
     submit_tee_attestations(
         &contract,
         &mut env_non_participant_accounts,
@@ -63,11 +69,14 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let mut expected_node_ids = expected_node_ids;
     expected_node_ids.extend(non_participant_uids);
 
-    // add a new TEE quote for an existing participant, but with a different signer key
+    // add a new TEE quote for an existing participant, but with a different
+    // signer key. The contract records `env::signer_account_pk()`, so the
+    // account public key stored in the new attestation is the signer's real
+    // key — match that here.
     let new_uid = NodeId {
         account_id: mpc_signer_accounts[0].id().clone(),
         tls_public_key: bogus_ed25519_public_key(),
-        account_public_key: Some(bogus_ed25519_public_key()),
+        account_public_key: account_ed25519_public_key(&mpc_signer_accounts[0]),
     };
     let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key
     let result = submit_participant_info(
@@ -104,7 +113,8 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
             .expect("Failed to insert participant");
     }
 
-    let expected_tee_post_resharing = new_participants.get_node_ids();
+    let expected_tee_post_resharing =
+        build_sandbox_node_ids(&new_participants, &mpc_signer_accounts);
     let new_threshold_parameters = ThresholdParameters::new(
         new_participants,
         mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
@@ -127,7 +137,10 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         .expect("Expected contract to be in Running state after resharing.");
 
     // Get current participants to compare
-    let final_participants_node_ids = (&final_participants).into_contract_type().get_node_ids();
+    let final_participants_node_ids = build_sandbox_node_ids(
+        &(&final_participants).into_contract_type(),
+        &mpc_signer_accounts,
+    );
     // Verify only the new participants remain
     assert_eq!(final_participants_node_ids, expected_tee_post_resharing);
     // Verify TEE participants are properly cleaned up

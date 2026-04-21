@@ -834,7 +834,7 @@ impl MpcContract {
                 NodeId {
                     account_id: account_id.clone(),
                     tls_public_key,
-                    account_public_key: Some(account_public_key),
+                    account_public_key,
                 },
                 proposed_participant_attestation,
                 tee_upgrade_deadline_duration,
@@ -2280,7 +2280,7 @@ impl MpcContract {
         })?;
         let node_id = NodeId {
             account_id: account_id.clone(),
-            account_public_key: Some(account_public_key),
+            account_public_key,
             tls_public_key,
         };
 
@@ -4049,10 +4049,8 @@ mod tests {
                 NodeId {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone(),
-                    account_public_key: Some(
-                        dtos::Ed25519PublicKey::try_from(&self.signer_account_pk)
-                            .expect("test signer_account_pk must be Ed25519"),
-                    ),
+                    account_public_key: dtos::Ed25519PublicKey::try_from(&self.signer_account_pk)
+                        .expect("test signer_account_pk must be Ed25519"),
                 },
                 valid_participant_attestation,
                 tee_upgrade_duration,
@@ -4634,7 +4632,7 @@ mod tests {
             account_id: target_account_id.clone(),
             tls_public_key: dtos::Ed25519PublicKey::try_from(&target_participant_info.sign_pk)
                 .expect("sign_pk must be Ed25519"),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         };
         let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,

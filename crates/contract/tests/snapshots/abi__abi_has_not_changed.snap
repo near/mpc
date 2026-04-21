@@ -2941,6 +2941,7 @@ expression: abi
           "type": "object",
           "required": [
             "account_id",
+            "account_public_key",
             "tls_public_key"
           ],
           "properties": {
@@ -2950,12 +2951,9 @@ expression: abi
             },
             "account_public_key": {
               "description": "Full-access Ed25519 public key of the operator account.",
-              "anyOf": [
+              "allOf": [
                 {
                   "$ref": "#/definitions/Ed25519PublicKey"
-                },
-                {
-                  "type": "null"
                 }
               ]
             },
