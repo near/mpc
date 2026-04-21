@@ -97,11 +97,17 @@ impl TeeState {
             else {
                 continue;
             };
-            // `Participants` does not carry the operator's account public key,
-            // so a mocked entry cannot record the real one. The all-zero key is
-            // a placeholder that never matches a live signer; it keeps the
-            // participant from being kicked out of an empty `TeeState` until a
-            // real `submit_participant_info` call replaces it (keyed by TLS).
+            // TODO(#1087): replace this sentinel with a real account public
+            // key passed in by the caller. `Participants` does not currently
+            // carry the operator's account public key, so a mocked entry
+            // cannot record the real one and we store an all-zero placeholder
+            // that never matches a live signer. The mock keeps the
+            // participant from being kicked out of an empty `TeeState` until
+            // a real `submit_participant_info` call replaces it (keyed by
+            // TLS), but any caller-facing check that compares
+            // `signer_account_pk` against the stored key will fail until
+            // then. #1087 tracks threading real attestations through
+            // initialization so this sentinel can go away.
             let node_id = NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.clone(),
