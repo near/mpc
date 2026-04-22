@@ -181,6 +181,12 @@ impl ParsedCert for Asn1DerParsedCert<'_> {
         // Extension  ::= SEQUENCE { extnID OID, critical BOOLEAN OPTIONAL, extnValue OCTET STRING }
         let ext_seq =
             Sequence::decode(extensions_inner).context("failed to decode extensions sequence")?;
+        // Same strict-consumption check we apply in `from_der`: reject
+        // trailing bytes inside the `[3] EXPLICIT` wrapper so a malformed
+        // cert can't smuggle extra data past the inner SEQUENCE.
+        if ext_seq.object().raw().len() != extensions_inner.len() {
+            bail!("trailing bytes after extensions SEQUENCE");
+        }
 
         let mut found: Option<Vec<u8>> = None;
         for i in 0..ext_seq.len() {

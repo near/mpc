@@ -166,6 +166,14 @@ fn parse_tlv_header(buf: &[u8]) -> (u8, usize, usize) {
 /// The base cert is assumed to be a v3 cert with `extensions[3]` as the
 /// last element of `tbsCertificate` (true for every Intel PCK cert).
 fn splice_extensions(cert_der: &[u8], new_extensions_seq_body: &[u8]) -> Vec<u8> {
+    splice_extensions_wrapper_body(cert_der, &tlv(der_tags::SEQUENCE, new_extensions_seq_body))
+}
+
+/// Lower-level splice: the bytes inside the `[3] EXPLICIT` wrapper are
+/// caller-controlled. Use this to construct malformed wrappers (e.g. a
+/// valid `SEQUENCE` followed by trailing garbage) that the higher-level
+/// [`splice_extensions`] helper can't produce.
+fn splice_extensions_wrapper_body(cert_der: &[u8], wrapper_body: &[u8]) -> Vec<u8> {
     // Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
     let (outer_tag, outer_hdr, outer_len) = parse_tlv_header(cert_der);
     assert_eq!(outer_tag, der_tags::SEQUENCE, "outer must be SEQUENCE");
@@ -192,11 +200,10 @@ fn splice_extensions(cert_der: &[u8], new_extensions_seq_body: &[u8]) -> Vec<u8>
         ext_wrapper_start.expect("PCK cert must carry an extensions[3] wrapper");
 
     // Rebuild tbs: keep everything up to (not including) the old [3]
-    // wrapper, then append a fresh [3] EXPLICIT wrapping the new
-    // extensions SEQUENCE (SEQUENCE OF Extension).
+    // wrapper, then append a fresh [3] EXPLICIT wrapping the caller-
+    // supplied body (usually `SEQUENCE OF Extension`).
     let mut new_tbs_body = tbs_body[..ext_wrapper_start].to_vec();
-    let new_ext_seq = tlv(der_tags::SEQUENCE, new_extensions_seq_body);
-    let new_ext_wrapper = tlv(der_tags::CTX_3, &new_ext_seq);
+    let new_ext_wrapper = tlv(der_tags::CTX_3, wrapper_body);
     new_tbs_body.extend_from_slice(&new_ext_wrapper);
     let new_tbs = tlv(der_tags::SEQUENCE, &new_tbs_body);
 
@@ -346,6 +353,47 @@ fn malformed_extension_non_boolean_critical_is_rejected() {
         assert!(
             msg.contains("BOOLEAN"),
             "expected BOOLEAN-tag error, got: {msg}"
+        );
+    }
+}
+
+/// M6 — trailing bytes inside the `[3] EXPLICIT` extensions wrapper,
+/// after the inner `Extensions ::= SEQUENCE OF Extension`.
+///
+/// The audited `x509-cert` backend enforces full-input consumption
+/// when decoding nested SEQUENCEs; `asn1_der::Sequence::decode` does
+/// not by default, so `extension()` adds an explicit length check to
+/// match. Without it, a malformed cert could embed a valid extensions
+/// SEQUENCE plus trailing garbage inside the `[3]` wrapper and still
+/// be accepted.
+#[test]
+fn trailing_bytes_after_extensions_sequence_are_rejected() {
+    for cert_der in pck_leaf_certs() {
+        // Build a valid single-extension SEQUENCE, then append garbage
+        // *inside* the `[3]` wrapper so the wrapper decodes fine but
+        // its inner SEQUENCE doesn't consume the full wrapper body.
+        let oid_tlv = tlv(der_tags::OID, TEST_OID);
+        let value_tlv = tlv(der_tags::OCTET_STRING, b"payload");
+        let ext = tlv(der_tags::SEQUENCE, &[oid_tlv, value_tlv].concat());
+        let extensions_seq = tlv(der_tags::SEQUENCE, &ext);
+        let wrapper_body = [extensions_seq.as_slice(), b"\x00\x00garbage"].concat();
+        let spliced = splice_extensions_wrapper_body(&cert_der, &wrapper_body);
+
+        let custom = Asn1DerCertBackend::from_der(&spliced).expect("from_der");
+        let err = custom
+            .extension(TEST_OID)
+            .expect_err("trailing bytes inside [3] wrapper must be rejected");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("trailing bytes after extensions SEQUENCE"),
+            "expected trailing-bytes error, got: {msg}"
+        );
+
+        // The audited default also rejects (its typed decode of the
+        // [3] wrapper requires the inner SEQUENCE to consume all of it).
+        assert!(
+            <DefaultConfig as Config>::X509::from_der(&spliced).is_err(),
+            "default must reject trailing bytes inside [3] wrapper",
         );
     }
 }
