@@ -34,6 +34,8 @@ const TAG_OID: u8 = 0x06;
 const TAG_OCTET_STRING: u8 = 0x04;
 /// DER tag for `BOOLEAN`, the required type of `Extension.critical` when present.
 const TAG_BOOLEAN: u8 = 0x01;
+/// DER tag for `SET`, the required type of each `RelativeDistinguishedName`.
+const TAG_SET: u8 = 0x31;
 
 /// Zero-sized factory implementing [`X509Codec`] on top of `asn1_der`.
 ///
@@ -124,6 +126,15 @@ impl ParsedCert for Asn1DerParsedCert<'_> {
         let mut parts = Vec::new();
         for i in 0..issuer.len() {
             let rdn = issuer.get(i).context("failed to get RDN")?;
+            // `RelativeDistinguishedName` is specified as SET (tag 0x31).
+            // The audited `x509-cert` backend enforces this via its typed
+            // `SetOfVec<AttributeTypeAndValue>` decode; we check explicitly
+            // so a non-SET RDN cannot leak bytes into the substring-match
+            // used by `dcap_qvl::intel::pck_ca_with`.
+            let rdn_tag = rdn.tag();
+            if rdn_tag != TAG_SET {
+                bail!("RDN is not a SET (tag 0x{rdn_tag:02X})");
+            }
             let rdn_bytes = rdn.value();
             let mut pos = 0;
             while pos < rdn_bytes.len() {
