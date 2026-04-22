@@ -1,22 +1,21 @@
+use std::num::NonZeroU64;
+
 use crate::common;
 
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
-use mpc_node_config::{
-    ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
-};
+use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
 fn solana_foreign_chains_config() -> ForeignChainsConfig {
     ForeignChainsConfig {
-        solana: Some(SolanaChainConfig {
-            timeout_sec: 30,
-            max_retries: 3,
+        solana: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
-                "public".to_string(),
-                SolanaProviderConfig {
+                "public".to_string().into(),
+                ForeignChainProviderConfig {
                     rpc_url: "https://rpc.public.example.com".to_string(),
-                    api_variant: SolanaApiVariant::Standard,
                     auth: Default::default(),
                 },
             ),
