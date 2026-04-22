@@ -36,6 +36,7 @@ use crate::{
         running::RunningContractState,
         ProtocolContractState,
     },
+    storage_keys::StorageKey,
     tee::{
         measurements::{AllowedMeasurements, MeasurementVotes},
         proposal::{
@@ -46,45 +47,6 @@ use crate::{
     update::ProposedUpdates,
     Config, ForeignChainPolicyVotes, NodeForeignChainConfigurations,
 };
-
-/// Previous `StaleData` layout — held a [`LookupMap`] of pre-upgrade signature requests.
-/// After the v3.9 migration is fully deployed those requests have been resolved or timed
-/// out, so the field is dropped here and the new `StaleData` is empty.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct OldStaleData {
-    pending_signature_requests_pre_upgrade: LookupMap<SignatureRequest, YieldIndex>,
-}
-
-/// Previous `NodeId` layout — `tls_public_key` and `account_public_key` used the
-/// `near_sdk::PublicKey` tagged borsh encoding. The new layout stores the TLS
-/// key as a raw 32-byte [`dtos::Ed25519PublicKey`] and the account key as a
-/// [`dtos::PublicKey`] (with an explicit curve tag), so we need a dedicated
-/// pre-migration type here.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct OldNodeId {
-    account_id: AccountId,
-    tls_public_key: near_sdk::PublicKey,
-    account_public_key: Option<near_sdk::PublicKey>,
-}
-
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct OldNodeAttestation {
-    node_id: OldNodeId,
-    verified_attestation: VerifiedAttestation,
-}
-
-/// Previous `TeeState` layout — the `stored_attestations` map was keyed by
-/// `near_sdk::PublicKey` (TLS key with curve tag) and held [`OldNodeAttestation`].
-#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
-struct OldTeeState {
-    allowed_docker_image_hashes: AllowedDockerImageHashes,
-    allowed_launcher_images: AllowedLauncherImages,
-    votes: CodeHashesVotes,
-    launcher_votes: LauncherHashVotes,
-    stored_attestations: BTreeMap<near_sdk::PublicKey, OldNodeAttestation>,
-    allowed_measurements: AllowedMeasurements,
-    measurement_votes: MeasurementVotes,
-}
 
 /// Previous `ParticipantInfo` layout — the TLS key was stored as a tagged
 /// `near_sdk::PublicKey` under the misleading `sign_pk` name. The new layout
@@ -172,56 +134,12 @@ pub struct MpcContract {
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
     node_foreign_chain_configurations: NodeForeignChainConfigurations,
-    config: Config,
+    config: OldConfig,
     tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: OldStaleData,
     metrics: dtos::Metrics,
-}
-
-impl From<OldTeeState> for TeeState {
-    fn from(old: OldTeeState) -> Self {
-        // Migrate entry-by-entry: skip any whose TLS key is not Ed25519, whose
-        // `account_public_key` is missing, or whose `account_public_key` is
-        // not Ed25519. A stored non-Ed25519 TLS key could never match the
-        // node's actual key (the contract always signed with Ed25519), so
-        // dropping it is safe — we prefer silent skip over panic to avoid
-        // bricking the migration transaction on pathological stored state.
-        let stored_attestations = old
-            .stored_attestations
-            .into_iter()
-            .filter_map(|(tls_pk, old_attestation)| {
-                let new_tls_key = dtos::Ed25519PublicKey::try_from(&tls_pk).ok()?;
-                let account_public_key = dtos::Ed25519PublicKey::try_from(
-                    old_attestation.node_id.account_public_key.as_ref()?,
-                )
-                .ok()?;
-                let node_id = dtos::NodeId {
-                    account_id: old_attestation.node_id.account_id,
-                    tls_public_key: new_tls_key.clone(),
-                    account_public_key,
-                };
-                Some((
-                    new_tls_key,
-                    NodeAttestation {
-                        node_id,
-                        verified_attestation: old_attestation.verified_attestation,
-                    },
-                ))
-            })
-            .collect();
-
-        TeeState {
-            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
-            allowed_launcher_images: old.allowed_launcher_images,
-            votes: old.votes,
-            launcher_votes: old.launcher_votes,
-            stored_attestations,
-            allowed_measurements: old.allowed_measurements,
-            measurement_votes: old.measurement_votes,
-        }
-    }
 }
 
 impl From<OldParticipantInfo> for ParticipantInfo {
@@ -351,7 +269,7 @@ impl From<MpcContract> for crate::MpcContract {
             foreign_chain_policy: value.foreign_chain_policy,
             foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             node_foreign_chain_configurations: value.node_foreign_chain_configurations,
-            config: value.config,
+            config: value.config.into(),
             tee_state: value.tee_state.into(),
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
@@ -359,6 +277,138 @@ impl From<MpcContract> for crate::MpcContract {
             metrics: value.metrics,
         }
     }
+}
+
+/// Previous `StaleData` layout — held a [`LookupMap`] of pre-upgrade signature requests.
+/// After the v3.9 migration is fully deployed those requests have been resolved or timed
+/// out, so the field is dropped here and the new `StaleData` is empty.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldStaleData {
+    pending_signature_requests_pre_upgrade: LookupMap<SignatureRequest, YieldIndex>,
+}
+
+/// Previous `Config` layout — v3.9.0 predated `clean_invalid_attestations_tera_gas`, so the
+/// current `Config` has one extra `u64` and cannot be used to borsh-decode deployed state.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldConfig {
+    key_event_timeout_blocks: u64,
+    tee_upgrade_deadline_duration_seconds: u64,
+    contract_upgrade_deposit_tera_gas: u64,
+    sign_call_gas_attachment_requirement_tera_gas: u64,
+    ckd_call_gas_attachment_requirement_tera_gas: u64,
+    return_signature_and_clean_state_on_success_call_tera_gas: u64,
+    return_ck_and_clean_state_on_success_call_tera_gas: u64,
+    fail_on_timeout_tera_gas: u64,
+    clean_tee_status_tera_gas: u64,
+    cleanup_orphaned_node_migrations_tera_gas: u64,
+    remove_non_participant_update_votes_tera_gas: u64,
+    clean_foreign_chain_data_tera_gas: u64,
+}
+
+impl From<OldConfig> for Config {
+    fn from(old: OldConfig) -> Self {
+        Self {
+            key_event_timeout_blocks: old.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: old.contract_upgrade_deposit_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: old
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: old
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: old
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: old
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
+            clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: Config::default()
+                .clean_invalid_attestations_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: old
+                .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: old
+                .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
+        }
+    }
+}
+
+/// Previous `TeeState` layout — the `stored_attestations` map was keyed by
+/// `near_sdk::PublicKey` (TLS key with curve tag) and held [`OldNodeAttestation`].
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+struct OldTeeState {
+    allowed_docker_image_hashes: AllowedDockerImageHashes,
+    allowed_launcher_images: AllowedLauncherImages,
+    votes: CodeHashesVotes,
+    launcher_votes: LauncherHashVotes,
+    stored_attestations: BTreeMap<near_sdk::PublicKey, OldNodeAttestation>,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: MeasurementVotes,
+}
+
+impl From<OldTeeState> for TeeState {
+    fn from(old: OldTeeState) -> Self {
+        // Migrate entry-by-entry: skip any whose TLS key is not Ed25519, whose
+        // `account_public_key` is missing, or whose `account_public_key` is
+        // not Ed25519. A stored non-Ed25519 TLS key could never match the
+        // node's actual key (the contract always signed with Ed25519), so
+        // dropping it is safe — we prefer silent skip over panic to avoid
+        // bricking the migration transaction on pathological stored state.
+        let mut new = TeeState {
+            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
+            allowed_launcher_images: old.allowed_launcher_images,
+            votes: old.votes,
+            launcher_votes: old.launcher_votes,
+            stored_attestations: near_sdk::store::IterableMap::new(StorageKey::StoredAttestations),
+            allowed_measurements: old.allowed_measurements,
+            measurement_votes: old.measurement_votes,
+        };
+
+        for (tls_pk, old_attestation) in old.stored_attestations {
+            let Some(new_tls_key) = dtos::Ed25519PublicKey::try_from(&tls_pk).ok() else {
+                continue;
+            };
+            let Some(account_public_key) = old_attestation
+                .node_id
+                .account_public_key
+                .as_ref()
+                .and_then(|pk| dtos::Ed25519PublicKey::try_from(pk).ok())
+            else {
+                continue;
+            };
+            let node_id = dtos::NodeId {
+                account_id: old_attestation.node_id.account_id,
+                tls_public_key: new_tls_key.clone(),
+                account_public_key,
+            };
+            new.stored_attestations.insert(
+                new_tls_key,
+                NodeAttestation {
+                    node_id,
+                    verified_attestation: old_attestation.verified_attestation,
+                },
+            );
+        }
+
+        new
+    }
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldNodeAttestation {
+    node_id: OldNodeId,
+    verified_attestation: VerifiedAttestation,
+}
+
+/// Previous `NodeId` layout — `tls_public_key` and `account_public_key` used the
+/// `near_sdk::PublicKey` tagged borsh encoding. The new layout stores the TLS
+/// key as a raw 32-byte [`dtos::Ed25519PublicKey`] and the account key as a
+/// [`dtos::PublicKey`] (with an explicit curve tag), so we need a dedicated
+/// pre-migration type here.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldNodeId {
+    account_id: AccountId,
+    tls_public_key: near_sdk::PublicKey,
+    account_public_key: Option<near_sdk::PublicKey>,
 }
 
 #[cfg(test)]
@@ -498,6 +548,23 @@ mod tests {
         assert!(migrated.stored_attestations.contains_key(&expected_key));
     }
 
+    fn sample_old_config() -> OldConfig {
+        OldConfig {
+            key_event_timeout_blocks: 1,
+            tee_upgrade_deadline_duration_seconds: 2,
+            contract_upgrade_deposit_tera_gas: 3,
+            sign_call_gas_attachment_requirement_tera_gas: 4,
+            ckd_call_gas_attachment_requirement_tera_gas: 5,
+            return_signature_and_clean_state_on_success_call_tera_gas: 6,
+            return_ck_and_clean_state_on_success_call_tera_gas: 7,
+            fail_on_timeout_tera_gas: 8,
+            clean_tee_status_tera_gas: 9,
+            cleanup_orphaned_node_migrations_tera_gas: 10,
+            remove_non_participant_update_votes_tera_gas: 11,
+            clean_foreign_chain_data_tera_gas: 12,
+        }
+    }
+
     fn old_participants(
         next_id: u32,
         entries: Vec<(&str, u32, near_sdk::PublicKey)>,
@@ -536,6 +603,37 @@ mod tests {
             add_domains_votes: AddDomainsVotes::default(),
             previously_cancelled_resharing_epoch_id: None,
         }
+    }
+
+    #[test]
+    fn config_migration__should_round_trip_through_borsh_and_fill_new_field_with_default() {
+        // Given an OldConfig serialized with borsh (mirrors the on-chain path)
+        let pre_migration = sample_old_config();
+        let bytes = borsh::to_vec(&pre_migration).unwrap();
+
+        // When
+        let decoded: OldConfig = borsh::from_slice(&bytes).unwrap();
+        let migrated: Config = decoded.into();
+
+        // Then: every pre-existing field is preserved, and the new field falls back to default.
+        assert_eq!(migrated.key_event_timeout_blocks, 1);
+        assert_eq!(migrated.tee_upgrade_deadline_duration_seconds, 2);
+        assert_eq!(migrated.clean_tee_status_tera_gas, 9);
+        assert_eq!(migrated.cleanup_orphaned_node_migrations_tera_gas, 10);
+        assert_eq!(migrated.clean_foreign_chain_data_tera_gas, 12);
+        assert_eq!(
+            migrated.clean_invalid_attestations_tera_gas,
+            Config::default().clean_invalid_attestations_tera_gas
+        );
+    }
+
+    #[test]
+    fn config_migration__old_config_borsh_size_must_match_current_config_minus_one_u64() {
+        // Guards against future Config drift: if someone adds/removes a u64 on the current
+        // Config without updating OldConfig, this test fails before the sandbox suite does.
+        let old_size = borsh::to_vec(&sample_old_config()).unwrap().len();
+        let new_size = borsh::to_vec(&Config::default()).unwrap().len();
+        assert_eq!(new_size, old_size + std::mem::size_of::<u64>());
     }
 
     #[test]
