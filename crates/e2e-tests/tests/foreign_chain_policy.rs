@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
 use crate::common;
@@ -5,7 +6,11 @@ use crate::common;
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
-use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
+use near_mpc_contract_interface::types::{ForeignChain, ForeignChainConfiguration, RpcProvider};
+
+const SOLANA_PROVIDER_NAME: &str = "public";
+const SOLANA_RPC_URL: &str = "https://rpc.public.example.com";
 
 fn solana_foreign_chains_config() -> ForeignChainsConfig {
     ForeignChainsConfig {
@@ -13,9 +18,9 @@ fn solana_foreign_chains_config() -> ForeignChainsConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
-                "public".to_string().into(),
+                SOLANA_PROVIDER_NAME.to_string().into(),
                 ForeignChainProviderConfig {
-                    rpc_url: "https://rpc.public.example.com".to_string(),
+                    rpc_url: SOLANA_RPC_URL.to_string(),
                     auth: Default::default(),
                 },
             ),
@@ -24,19 +29,30 @@ fn solana_foreign_chains_config() -> ForeignChainsConfig {
     }
 }
 
-/// Verify that foreign chain policy auto-voting requires unanimity.
+fn solana_foreign_chain_configuration_dto() -> ForeignChainConfiguration {
+    BTreeMap::from([(
+        ForeignChain::Solana,
+        NonEmptyBTreeSet::new(RpcProvider {
+            name: SOLANA_PROVIDER_NAME.to_string(),
+            rpc_url: SOLANA_RPC_URL.to_string(),
+        }),
+    )])
+    .into()
+}
+
+/// Verify that a chain is only reported as supported once every active
+/// participant has registered a configuration that includes it.
 ///
 /// 3-node cluster: nodes 0 and 1 are configured with Solana foreign chain,
 /// node 2 has no foreign chain config.
 ///
-/// 1. After nodes 0 and 1 auto-vote, proposals should show 2 votes but
-///    the policy should NOT be applied to the contract.
-/// 2. After node 2 manually votes (achieving unanimity), the policy is applied.
-/// 3. Once applied, all proposal votes are cleared.
+/// 1. After nodes 0 and 1 auto-register, at least 2 per-node configurations
+///    should be visible, but Solana should NOT yet be in the supported-chains
+///    set (node 2 hasn't registered it).
+/// 2. After node 2 manually registers Solana, the chain is reported as supported.
 #[tokio::test]
 #[expect(non_snake_case)]
-// TODO: ask claude to translate this test similar to the pytest
-async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
+async fn supported_foreign_chains__should_require_all_participants_to_register() {
     // given — 3-node cluster with foreign chains on nodes 0 and 1 only
     let (cluster, _running) = common::setup_cluster(common::FOREIGN_CHAIN_POLICY_PORT_SEED, |c| {
         c.node_foreign_chains_configs = vec![
@@ -47,25 +63,25 @@ async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
     })
     .await;
 
-    // when — wait for 2 partial votes to appear without policy application
+    // when — wait for the two configured nodes to register their configurations without Solana becoming supported
     (|| async {
-        let proposals = cluster
-            .view_foreign_chain_policy_proposals()
+        let registrations = cluster
+            .view_foreign_chain_configurations()
             .await
-            .expect("failed to view proposals");
-        let policy = cluster
-            .view_foreign_chain_policy()
+            .expect("failed to view configurations");
+        let supported = cluster
+            .view_supported_foreign_chains()
             .await
-            .expect("failed to view policy");
+            .expect("failed to view supported chains");
 
         anyhow::ensure!(
-            proposals.proposal_by_account.len() == 2,
-            "expected 2 votes, got {}",
-            proposals.proposal_by_account.len()
+            registrations.foreign_chain_configuration_by_node.len() >= 2,
+            "expected at least 2 registrations, got {}",
+            registrations.foreign_chain_configuration_by_node.len()
         );
         anyhow::ensure!(
-            policy.chains.is_empty(),
-            "policy should not be applied before unanimous voting"
+            !supported.contains(&ForeignChain::Solana),
+            "Solana should not be supported before all participants register it"
         );
         Ok(())
     })
@@ -77,49 +93,29 @@ async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
             ),
     )
     .await
-    .expect("timed out waiting for 2 partial votes");
+    .expect("timed out waiting for two partial registrations");
 
-    // when — node 2 votes with the same policy as the existing proposals.
-    // Fetch an existing proposal verbatim so the vote matches regardless of
-    // how the contract serializes the policy.
-    let proposals = cluster
-        .view_foreign_chain_policy_proposals()
-        .await
-        .expect("failed to view proposals");
-    let existing_policy = proposals
-        .proposal_by_account
-        .values()
-        .next()
-        .expect("expected at least one proposal");
+    // when — node 2 registers Solana directly on the contract.
     let outcome = cluster
-        .register_foreign_chain_config(2, existing_policy)
+        .register_foreign_chain_config(2, &solana_foreign_chain_configuration_dto())
         .await
-        .expect("failed to vote foreign chain policy from node 2");
+        .expect("failed to register foreign chain config from node 2");
     assert!(
         outcome.is_success(),
-        "vote_foreign_chain_policy failed: {:?}",
+        "register_foreign_chain_config failed: {:?}",
         outcome.failure_message()
     );
 
-    // then — wait for policy to be applied and votes to be cleared
+    // then — Solana becomes supported once every participant has registered it
     (|| async {
-        let proposals = cluster
-            .view_foreign_chain_policy_proposals()
+        let supported = cluster
+            .view_supported_foreign_chains()
             .await
-            .expect("failed to view proposals");
-        let policy = cluster
-            .view_foreign_chain_policy()
-            .await
-            .expect("failed to view policy");
+            .expect("failed to view supported chains");
 
         anyhow::ensure!(
-            !policy.chains.is_empty(),
-            "policy should be applied after unanimous voting"
-        );
-        anyhow::ensure!(
-            proposals.proposal_by_account.is_empty(),
-            "votes should be cleared after policy is applied, got {} votes",
-            proposals.proposal_by_account.len()
+            supported.contains(&ForeignChain::Solana),
+            "Solana should be supported after all participants register it"
         );
         Ok(())
     })
@@ -131,5 +127,5 @@ async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
             ),
     )
     .await
-    .expect("timed out waiting for policy application after unanimous voting");
+    .expect("timed out waiting for Solana to be reported as supported");
 }

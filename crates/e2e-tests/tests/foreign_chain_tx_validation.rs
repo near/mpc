@@ -10,7 +10,7 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig,
-    DomainId, DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId,
+    DomainId, DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, StarknetExtractor, StarknetFelt,
     StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionRequestArgs,
 };
@@ -133,14 +133,28 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
     })
     .await;
 
+    let expected_supported_chains: std::collections::BTreeSet<ForeignChain> = [
+        ForeignChain::Bitcoin,
+        ForeignChain::Abstract,
+        ForeignChain::Bnb,
+        ForeignChain::Starknet,
+        ForeignChain::Base,
+    ]
+    .into_iter()
+    .collect();
+
     (|| async {
-        let policy = cluster
-            .view_foreign_chain_policy()
+        let supported = cluster
+            .view_supported_foreign_chains()
             .await
-            .expect("failed to view policy");
+            .expect("failed to view supported chains");
+        let supported_set: std::collections::BTreeSet<ForeignChain> =
+            supported.iter().copied().collect();
         anyhow::ensure!(
-            !policy.chains.is_empty(),
-            "foreign chain policy not yet applied"
+            supported_set == expected_supported_chains,
+            "expected supported chains {:?}, got {:?}",
+            expected_supported_chains,
+            supported_set
         );
         Ok(())
     })
@@ -152,7 +166,7 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
             ),
     )
     .await
-    .expect("timed out waiting for foreign chain policy to be applied");
+    .expect("timed out waiting for every participant to register its foreign chains");
 
     let state = cluster
         .get_contract_state()

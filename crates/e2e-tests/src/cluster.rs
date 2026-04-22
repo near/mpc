@@ -666,30 +666,29 @@ impl MpcCluster {
             .await
     }
 
-    /// View the foreign chain policy from the contract.
-    pub async fn view_foreign_chain_policy(
+    /// View the chains supported by every active participant.
+    pub async fn view_supported_foreign_chains(
         &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainPolicy> {
+    ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
         self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_POLICY)
+            .view(method_names::GET_SUPPORTED_FOREIGN_CHAINS)
             .await
     }
 
-    /// View the foreign chain policy proposals from the contract.
-    pub async fn view_foreign_chain_policy_proposals(
+    /// View the per-node foreign chain configurations registered with the contract.
+    pub async fn view_foreign_chain_configurations(
         &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainPolicyVotes> {
+    ) -> anyhow::Result<near_mpc_contract_interface::types::NodeForeignChainConfigurations> {
         self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
+            .view(method_names::GET_FOREIGN_CHAIN_CONFIGURATIONS)
             .await
     }
 
-    /// Vote for a foreign chain policy from a specific node.
-    // TODO: part of migration of the tests
+    /// Register a foreign chain configuration from a specific node.
     pub async fn register_foreign_chain_config(
         &self,
         node_index: usize,
-        policy: &near_mpc_contract_interface::types::ForeignChainPolicy,
+        foreign_chain_configuration: &near_mpc_contract_interface::types::ForeignChainConfiguration,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let node = &self.nodes[node_index];
         let client = self
@@ -699,7 +698,9 @@ impl MpcCluster {
             .call_from(
                 &client,
                 method_names::REGISTER_FOREIGN_CHAIN_CONFIG,
-                json!({ "policy": serde_json::to_value(policy)? }),
+                json!({
+                    "foreign_chain_configuration": serde_json::to_value(foreign_chain_configuration)?,
+                }),
             )
             .await
     }
