@@ -30,9 +30,9 @@ use near_mpc_contract_interface::{
     types::{
         self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
         BitcoinTxId, BlockConfirmations, EvmExtractedValue, EvmExtractor, EvmFinality,
-        EvmRpcRequest, EvmTxId, ForeignChainPolicy, ForeignTxSignPayload, ForeignTxSignPayloadV1,
-        MockAttestation, RpcProvider, StarknetExtractedValue, StarknetExtractor, StarknetFelt,
-        StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
+        EvmRpcRequest, EvmTxId, ForeignTxSignPayload, ForeignTxSignPayloadV1, MockAttestation,
+        RpcProvider, StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality,
+        StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
     },
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChain, ForeignChainRpcRequest, Hash256};

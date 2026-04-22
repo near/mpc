@@ -11,6 +11,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use dtos::{DomainConfig, Ed25519PublicKey, ParticipantId, Threshold};
 use mpc_attestation::attestation::VerifiedAttestation;
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{
     env,
@@ -127,8 +128,13 @@ enum OldProtocolContractState {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct ForeignChainPolicy {
+    pub chains: BTreeMap<dtos::ForeignChain, NonEmptyBTreeSet<dtos::RpcProvider>>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct ForeignChainPolicyVotes {
-    proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
+    proposal_by_account: IterableMap<dtos::AccountId, ForeignChainPolicy>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -139,7 +145,7 @@ pub struct MpcContract {
     pending_verify_foreign_tx_requests:
         LookupMap<dtos::VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
-    foreign_chain_policy: dtos::ForeignChainPolicy,
+    foreign_chain_policy: ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
     node_foreign_chain_configurations: NodeForeignChainConfigurations,
     config: OldConfig,
