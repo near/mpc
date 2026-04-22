@@ -25,8 +25,8 @@ use std::{
 
 use crate::{
     dto_mapping::{
-        args_into_verify_foreign_tx_request, IntoInterfaceType, TryIntoContractType,
-        TryIntoInterfaceType,
+        args_into_verify_foreign_tx_request, IntoContractType, IntoInterfaceType,
+        TryIntoContractType, TryIntoInterfaceType,
     },
     errors::{Error, RequestError},
     primitives::{
@@ -817,14 +817,24 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
+        // The node always signs submissions with an Ed25519 key
+        // (`near_signer_key`), so the signer key here is Ed25519 in practice.
+        // Reject non-Ed25519 signer keys rather than silently storing a value
+        // we could never match against in `is_caller_an_attested_participant`.
+        let account_public_key = dtos::Ed25519PublicKey::try_from(&account_key).map_err(|_| {
+            InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: "signer account key must be Ed25519".to_string(),
+            }
+        })?;
+
         // Add the participant information to the contract state
         let attestation_insertion_result = self
             .tee_state
             .add_participant(
                 NodeId {
                     account_id: account_id.clone(),
-                    tls_public_key: tls_public_key.into(),
-                    account_public_key: Some(account_key),
+                    tls_public_key,
+                    account_public_key,
                 },
                 proposed_participant_attestation,
                 tee_upgrade_deadline_duration,
@@ -871,8 +881,6 @@ impl MpcContract {
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
     ) -> Result<Option<dtos::VerifiedAttestation>, Error> {
-        let tls_public_key: near_sdk::PublicKey = tls_public_key.into();
-
         Ok(self
             .tee_state
             .stored_attestations
@@ -896,8 +904,9 @@ impl MpcContract {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: ThresholdParameters,
+        proposal: dtos::ThresholdParameters,
     ) -> Result<(), Error> {
+        let proposal: ThresholdParameters = proposal.into_contract_type();
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
@@ -978,7 +987,7 @@ impl MpcContract {
         };
 
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let voter = dtos::AccountId(voter.get().to_string());
+        let voter = voter.get().clone();
 
         // Also register the chain keys as configured,
         // so callers of the deprecated API still populate the new data model.
@@ -1003,7 +1012,7 @@ impl MpcContract {
             .filter(|(account_id, _, _)| {
                 self.foreign_chain_policy_votes
                     .proposal_by_account
-                    .get(&dtos::AccountId(account_id.to_string()))
+                    .get(account_id)
                     .is_some_and(|prop| prop == &policy)
             })
             .count();
@@ -1027,7 +1036,7 @@ impl MpcContract {
 
         let authenticated_voter =
             AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let account_id = authenticated_voter.get().into_dto_type();
+        let account_id = authenticated_voter.get().clone();
 
         self.node_foreign_chain_configurations
             .foreign_chain_configuration_by_node
@@ -1657,14 +1666,14 @@ impl MpcContract {
         let participant_accounts: std::collections::HashSet<dtos::AccountId> = participants
             .participants()
             .iter()
-            .map(|(account_id, _, _)| dtos::AccountId(account_id.to_string()))
+            .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
         let non_participant_accounts: Vec<dtos::AccountId> = self
             .foreign_chain_policy_votes
             .proposal_by_account
             .keys()
-            .filter(|account| !participant_accounts.contains(account))
+            .filter(|account| !participant_accounts.contains(*account))
             .cloned()
             .collect();
         for account in &non_participant_accounts {
@@ -1677,7 +1686,7 @@ impl MpcContract {
             .node_foreign_chain_configurations
             .foreign_chain_configuration_by_node
             .keys()
-            .filter(|account| !participant_accounts.contains(account))
+            .filter(|account| !participant_accounts.contains(*account))
             .cloned()
             .collect();
         for account in &non_participant_configs {
@@ -1696,9 +1705,10 @@ impl MpcContract {
     #[handle_result]
     #[init]
     pub fn init(
-        parameters: ThresholdParameters,
+        parameters: dtos::ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
+        let parameters: ThresholdParameters = parameters.into_contract_type();
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
@@ -1748,9 +1758,10 @@ impl MpcContract {
         domains: Vec<DomainConfig>,
         next_domain_id: u64,
         keyset: Keyset,
-        parameters: ThresholdParameters,
+        parameters: dtos::ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
+        let parameters: ThresholdParameters = parameters.into_contract_type();
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
@@ -1910,7 +1921,7 @@ impl MpcContract {
             .active_participants()
             .participants()
             .iter()
-            .map(|(account_id, _, _)| account_id.clone().into_dto_type())
+            .map(|(account_id, _, _)| account_id.clone())
             .collect::<BTreeSet<_>>();
 
         let mut foreign_chain_to_node_mapping: BTreeMap<
@@ -2252,14 +2263,25 @@ impl MpcContract {
             }
             .into());
         }
-        // ensure that this node has a valid TEE quote
+        // ensure that this node has a valid TEE quote. Both keys must be
+        // Ed25519 — a non-Ed25519 TLS key could never have an attestation
+        // stored (the map is keyed by Ed25519), and a non-Ed25519 signer key
+        // could never sign this very transaction.
+        let account_public_key =
+            dtos::Ed25519PublicKey::try_from(&expected_destination_node.signer_account_pk)
+                .map_err(|_| InvalidParameters::InvalidTeeRemoteAttestation {
+                    reason: "destination node signer key must be Ed25519".to_string(),
+                })?;
+        let tls_public_key = dtos::Ed25519PublicKey::try_from(
+            &expected_destination_node.destination_node_info.sign_pk,
+        )
+        .map_err(|_| InvalidParameters::InvalidTeeRemoteAttestation {
+            reason: "destination node sign_pk must be Ed25519".to_string(),
+        })?;
         let node_id = NodeId {
             account_id: account_id.clone(),
-            account_public_key: Some(expected_destination_node.signer_account_pk.clone()),
-            tls_public_key: expected_destination_node
-                .destination_node_info
-                .sign_pk
-                .clone(),
+            account_public_key,
+            tls_public_key,
         };
 
         if !(matches!(
@@ -2521,7 +2543,14 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-        let contract = MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
+        let contract = MpcContract::init_running(
+            domains,
+            1,
+            keyset,
+            (&parameters).try_into_dto_type().unwrap(),
+            None,
+        )
+        .unwrap();
         (context, contract, sk)
     }
 
@@ -2564,12 +2593,15 @@ mod tests {
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     /// Returns the `AccountId` of the node used.
     pub fn with_active_participant_and_attested_context(contract: &MpcContract) -> AccountId {
-        let active_participant_pks: Vec<_> = contract
+        let active_participant_pks: Vec<dtos::Ed25519PublicKey> = contract
             .protocol_state
             .active_participants()
             .participants()
             .iter()
-            .map(|(_, _, participant_info)| participant_info.sign_pk.clone())
+            .map(|(_, _, participant_info)| {
+                dtos::Ed25519PublicKey::try_from(&participant_info.sign_pk)
+                    .expect("sign_pk must be Ed25519")
+            })
             .collect();
 
         let node_id = contract
@@ -3223,7 +3255,7 @@ mod tests {
 
         let threshold = Threshold::new(threshold_value);
         let parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
-        let contract = MpcContract::init(parameters, None).unwrap();
+        let contract = MpcContract::init((&parameters).try_into_dto_type().unwrap(), None).unwrap();
 
         (contract, participants, first_participant_id)
     }
@@ -3285,7 +3317,7 @@ mod tests {
         testing_env!(voting_context);
 
         let proposal = ThresholdParameters::new(participants, threshold).unwrap();
-        contract.vote_new_parameters(EpochId::new(1), proposal)
+        contract.vote_new_parameters(EpochId::new(1), (&proposal).try_into_dto_type().unwrap())
     }
 
     /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants have
@@ -3787,7 +3819,7 @@ mod tests {
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_check: None,
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     destination_node_info.destination_node_info.clone(),
                 )),
             };
@@ -3821,7 +3853,7 @@ mod tests {
                     )
                 }),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -3855,7 +3887,7 @@ mod tests {
                     )
                 }),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -3890,7 +3922,7 @@ mod tests {
                     )
                 }),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -3946,7 +3978,7 @@ mod tests {
                     )
                 }),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -4016,8 +4048,9 @@ mod tests {
             let insertion_result = contract.tee_state.add_participant(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
-                    tls_public_key: self.attestation_tls_key.clone().into(),
-                    account_public_key: Some(self.signer_account_pk.clone()),
+                    tls_public_key: self.attestation_tls_key.clone(),
+                    account_public_key: dtos::Ed25519PublicKey::try_from(&self.signer_account_pk)
+                        .expect("test signer_account_pk must be Ed25519"),
                 },
                 valid_participant_attestation,
                 tee_upgrade_duration,
@@ -4132,10 +4165,7 @@ mod tests {
             .vote(&update_id, account_id_1.clone())
             .unwrap();
 
-        let mut expected_votes = vec![
-            dtos::AccountId(account_id_0.to_string()),
-            dtos::AccountId(account_id_1.to_string()),
-        ];
+        let mut expected_votes = vec![account_id_0.clone(), account_id_1.clone()];
         expected_votes.sort();
         expected_votes
     }
@@ -4306,7 +4336,7 @@ mod tests {
 
             // Check that participant vote was added
             let mut expected_voters: Vec<_> = test_update.votes.to_vec();
-            expected_voters.push(account_id.clone().into_dto_type());
+            expected_voters.push(account_id.clone());
             let actual_voters: Vec<_> = proposed_updates
                 .votes
                 .iter()
@@ -4356,7 +4386,7 @@ mod tests {
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let account_id = test_update.votes.choose(&mut rng).unwrap();
-        let account_id: AccountId = account_id.0.parse().unwrap();
+        let account_id: AccountId = account_id.clone();
         testing_env!(VMContextBuilder::new()
             .signer_account_id(account_id.clone())
             .predecessor_account_id(account_id)
@@ -4464,11 +4494,7 @@ mod tests {
         let test_update = propose_and_vote_code(update_id_u64, &mut contract);
         let update_id: UpdateId = update_id_u64.into();
 
-        let non_participants: HashSet<AccountId> = test_update
-            .votes
-            .iter()
-            .map(|dto_id| dto_id.0.parse().unwrap())
-            .collect();
+        let non_participants: HashSet<AccountId> = test_update.votes.iter().cloned().collect();
 
         // Add votes from 2 current participants
         let participants = participants.participants();
@@ -4586,9 +4612,14 @@ mod tests {
         };
         let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
 
-        let mut contract =
-            MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
-                .unwrap();
+        let mut contract = MpcContract::init_running(
+            domains.clone(),
+            1,
+            keyset.clone(),
+            (&parameters).try_into_dto_type().unwrap(),
+            None,
+        )
+        .unwrap();
 
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
 
@@ -4599,8 +4630,9 @@ mod tests {
         // Replace the target's attestation with an expired one
         let node_id = NodeId {
             account_id: target_account_id.clone(),
-            tls_public_key: target_participant_info.sign_pk.clone(),
-            account_public_key: Some(bogus_ed25519_near_public_key()),
+            tls_public_key: dtos::Ed25519PublicKey::try_from(&target_participant_info.sign_pk)
+                .expect("sign_pk must be Ed25519"),
+            account_public_key: bogus_ed25519_public_key(),
         };
         let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
@@ -4648,7 +4680,7 @@ mod tests {
             ParticipantId(PARTICIPANT_COUNT as u32),
             participant_list[0..2]
                 .iter()
-                .map(|(acc, id, info)| (acc.clone(), id.clone(), info.clone()))
+                .map(|(acc, id, info)| (acc.clone(), *id, info.clone()))
                 .collect(),
         );
         let expected_params =
@@ -4927,12 +4959,7 @@ mod tests {
         // Then
         let votes = contract.get_foreign_chain_policy_proposals();
         assert_eq!(votes.proposal_by_account.len(), 1);
-        assert_eq!(
-            votes
-                .proposal_by_account
-                .get(&dtos::AccountId(first_account.to_string())),
-            Some(&policy)
-        );
+        assert_eq!(votes.proposal_by_account.get(&first_account), Some(&policy));
         assert_eq!(
             contract.get_foreign_chain_policy(),
             dtos::ForeignChainPolicy::default()
@@ -5001,7 +5028,7 @@ mod tests {
         contract
             .foreign_chain_policy_votes
             .proposal_by_account
-            .insert(dtos::AccountId(non_participant.to_string()), policy.clone());
+            .insert(non_participant.clone(), policy.clone());
         let _env = Environment::new(None, Some(first_account.clone()), None);
 
         // When
@@ -5017,10 +5044,10 @@ mod tests {
         let votes = contract.get_foreign_chain_policy_proposals();
         assert!(votes
             .proposal_by_account
-            .contains_key(&dtos::AccountId(non_participant.to_string())));
+            .contains_key(&non_participant.clone()));
         assert!(votes
             .proposal_by_account
-            .contains_key(&dtos::AccountId(first_account.to_string())));
+            .contains_key(&first_account.clone()));
     }
 
     #[test]
@@ -5060,7 +5087,7 @@ mod tests {
 
         // Then — their supported chains are registered
         let votes = contract.get_foreign_chain_configurations();
-        let first_voter = dtos::AccountId(first_account.to_string());
+        let first_voter = first_account.clone();
         let registered = votes
             .foreign_chain_configuration_by_node
             .get(&first_voter)
@@ -5112,7 +5139,7 @@ mod tests {
 
         // Then — their registered chains are now only Ethereum (overwritten, not merged)
         let votes = contract.get_foreign_chain_configurations();
-        let first_voter = dtos::AccountId(first_account.to_string());
+        let first_voter = first_account.clone();
         let registered = votes
             .foreign_chain_configuration_by_node
             .get(&first_voter)
@@ -5933,7 +5960,7 @@ mod tests {
         assert_eq!(
             votes
                 .foreign_chain_configuration_by_node
-                .get(&dtos::AccountId(first_account.to_string())),
+                .get(&first_account.clone()),
             Some(&foreign_chain_configuration)
         );
     }
@@ -6143,7 +6170,7 @@ mod tests {
 
         // Then — each participant's individual RPC URLs are preserved
         for (i, (account_id, _, _)) in participants.iter().enumerate() {
-            let account_dto = dtos::AccountId(account_id.to_string());
+            let account_dto = account_id.clone();
             let config = votes
                 .foreign_chain_configuration_by_node
                 .get(&account_dto)

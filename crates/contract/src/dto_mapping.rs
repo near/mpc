@@ -13,7 +13,6 @@ use mpc_attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
 
@@ -27,9 +26,9 @@ use crate::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
             KeyForDomain, Keyset,
         },
-        participants::Participants,
-        thresholds::{Threshold, ThresholdParameters},
-        votes::ThresholdParametersVotes,
+        participants::{ParticipantInfo, Participants},
+        threshold_votes::ThresholdParametersVotes,
+        thresholds::ThresholdParameters,
     },
     state::{
         initializing::InitializingContractState,
@@ -196,6 +195,34 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
             app_compose,
             event_log,
         })
+    }
+}
+
+impl IntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
+    fn into_contract_type(self) -> ParticipantInfo {
+        ParticipantInfo {
+            url: self.url,
+            sign_pk: self.sign_pk.into(),
+        }
+    }
+}
+
+impl IntoContractType<Participants> for dtos::Participants {
+    fn into_contract_type(self) -> Participants {
+        let participants = self
+            .participants
+            .into_iter()
+            .map(|(account_id, participant_id, info)| {
+                (account_id, participant_id, info.into_contract_type())
+            })
+            .collect();
+        Participants::init(self.next_id, participants)
+    }
+}
+
+impl IntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
+    fn into_contract_type(self) -> ThresholdParameters {
+        ThresholdParameters::new_unvalidated(self.participants.into_contract_type(), self.threshold)
     }
 }
 
@@ -376,12 +403,6 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::AccountId> for &AccountId {
-    fn into_dto_type(self) -> dtos::AccountId {
-        dtos::AccountId(self.clone().into())
-    }
-}
-
 impl IntoInterfaceType<dtos::UpdateHash> for &Update {
     fn into_dto_type(self) -> dtos::UpdateHash {
         match self {
@@ -400,7 +421,7 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
         let votes = all
             .votes
             .into_iter()
-            .map(|(account, update_id)| (account.into_dto_type(), update_id.0))
+            .map(|(account, update_id)| (account, update_id.0))
             .collect();
 
         let updates = all
@@ -647,17 +668,17 @@ mod to_dto {
         }
     }
 
-    impl TryFrom<ThresholdParameters> for dtos::ThresholdParameters {
-        type Error = ConversionError;
-        fn try_from(params: ThresholdParameters) -> Result<Self, Self::Error> {
-            params.try_into_dto_type()
-        }
-    }
-
     impl TryFrom<ProtocolContractState> for dtos::ProtocolContractState {
         type Error = ConversionError;
         fn try_from(state: ProtocolContractState) -> Result<Self, Self::Error> {
             (&state).try_into_dto_type()
+        }
+    }
+
+    impl TryFrom<ThresholdParameters> for dtos::ThresholdParameters {
+        type Error = ConversionError;
+        fn try_from(params: ThresholdParameters) -> Result<Self, Self::Error> {
+            (&params).try_into_dto_type()
         }
     }
 }
@@ -676,21 +697,15 @@ impl IntoInterfaceType<dtos::AttemptId> for AttemptId {
     }
 }
 
-impl IntoInterfaceType<dtos::Threshold> for Threshold {
-    fn into_dto_type(self) -> dtos::Threshold {
-        dtos::Threshold(self.value())
-    }
-}
-
 impl IntoInterfaceType<dtos::AuthenticatedParticipantId> for &AuthenticatedParticipantId {
     fn into_dto_type(self) -> dtos::AuthenticatedParticipantId {
-        dtos::AuthenticatedParticipantId(dtos::ParticipantId(self.get().get()))
+        dtos::AuthenticatedParticipantId(self.get())
     }
 }
 
 impl IntoInterfaceType<dtos::AuthenticatedAccountId> for &AuthenticatedAccountId {
     fn into_dto_type(self) -> dtos::AuthenticatedAccountId {
-        dtos::AuthenticatedAccountId(dtos::AccountId(self.get().to_string()))
+        dtos::AuthenticatedAccountId(self.get().clone())
     }
 }
 
@@ -773,7 +788,7 @@ impl TryIntoInterfaceType<dtos::Participants> for &Participants {
                     }
                 })?;
                 Ok((
-                    dtos::AccountId(account_id.to_string()),
+                    account_id.clone(),
                     dtos::ParticipantId(participant_id.get()),
                     dtos::ParticipantInfo {
                         url: info.url.clone(),
@@ -794,7 +809,7 @@ impl TryIntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
     fn try_into_dto_type(self) -> Result<dtos::ThresholdParameters, Self::Error> {
         Ok(dtos::ThresholdParameters {
             participants: self.participants().try_into_dto_type()?,
-            threshold: self.threshold().into_dto_type(),
+            threshold: self.threshold(),
         })
     }
 }
@@ -946,6 +961,7 @@ pub fn args_into_verify_foreign_tx_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::thresholds::Threshold;
 
     const TEST_THRESHOLD: u64 = 2;
 
@@ -1023,7 +1039,7 @@ mod tests {
             ThresholdParameters::new(test_participants(), Threshold::new(TEST_THRESHOLD)).unwrap();
         let internal_json = serde_json::to_value(&internal).unwrap();
 
-        let dto: dtos::ThresholdParameters = internal.try_into_dto_type().unwrap();
+        let dto: dtos::ThresholdParameters = (&internal).try_into_dto_type().unwrap();
         let dto_json = serde_json::to_value(&dto).unwrap();
 
         assert_eq!(internal_json, dto_json);

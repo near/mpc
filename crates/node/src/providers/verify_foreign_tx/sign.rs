@@ -1,5 +1,6 @@
 use anyhow::{bail, Context};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
+use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
@@ -201,6 +202,26 @@ where
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<BnbExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Base(request) => {
+                let inspector =
+                    select_inspector(&self.inspectors.base, &request_id, my_participant_index)
+                        .context("no inspector configured for Base")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<BaseExtractor> = request
                     .extractors
                     .iter()
                     .cloned()

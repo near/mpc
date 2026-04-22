@@ -11,6 +11,8 @@ port_mappings = [
 
 [mpc_node_config]
 home_dir = "/data"
+# Override the PCCS URL for TDX attestation collateral. Defaults to Phala's PCCS if omitted.
+# pccs_url = "https://pccs.phala.network"
 
 [mpc_node_config.log]
 format = "plain"

@@ -1515,10 +1515,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AccountId": {
-          "description": "A Near AccountId",
-          "type": "string"
-        },
         "AddDomainsVotes": {
           "description": "Votes for adding new domains.",
           "type": "object",
@@ -1578,17 +1574,13 @@ expression: abi
         },
         "AuthenticatedAccountId": {
           "description": "An account ID that has been authenticated (i.e., the caller is this account).",
-          "allOf": [
-            {
-              "$ref": "#/definitions/AccountId"
-            }
-          ]
+          "type": "string"
         },
         "AuthenticatedParticipantId": {
           "description": "A participant ID that has been authenticated (i.e., the caller is this participant).",
           "allOf": [
             {
-              "$ref": "#/definitions/ParticipantId2"
+              "$ref": "#/definitions/ParticipantId"
             }
           ]
         },
@@ -2569,7 +2561,7 @@ expression: abi
               "$ref": "#/definitions/AttemptId2"
             },
             "parameters": {
-              "$ref": "#/definitions/ThresholdParameters2"
+              "$ref": "#/definitions/ThresholdParameters"
             }
           }
         },
@@ -2949,22 +2941,29 @@ expression: abi
           "type": "object",
           "required": [
             "account_id",
+            "account_public_key",
             "tls_public_key"
           ],
           "properties": {
             "account_id": {
-              "description": "Operator account",
+              "description": "Operator account.",
               "type": "string"
             },
             "account_public_key": {
-              "type": [
-                "string",
-                "null"
+              "description": "Full-access Ed25519 public key of the operator account.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                }
               ]
             },
             "tls_public_key": {
-              "description": "TLS public key, MUST BE of type Ed25519",
-              "type": "string"
+              "description": "TLS public key used by the node for peer-to-peer communication.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                }
+              ]
             }
           }
         },
@@ -2977,32 +2976,12 @@ expression: abi
           "uniqueItems": true
         },
         "ParticipantId": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "ParticipantId2": {
+          "description": "Stable identifier for a participant within the MPC protocol's participant set.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
         },
         "ParticipantInfo": {
-          "type": "object",
-          "required": [
-            "sign_pk",
-            "url"
-          ],
-          "properties": {
-            "sign_pk": {
-              "description": "The public key used for verifying messages.",
-              "type": "string"
-            },
-            "url": {
-              "type": "string"
-            }
-          }
-        },
-        "ParticipantInfo2": {
           "type": "object",
           "required": [
             "sign_pk",
@@ -3018,6 +2997,7 @@ expression: abi
           }
         },
         "Participants": {
+          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
           "type": "object",
           "required": [
             "next_id",
@@ -3041,38 +3021,6 @@ expression: abi
                   },
                   {
                     "$ref": "#/definitions/ParticipantInfo"
-                  }
-                ],
-                "maxItems": 3,
-                "minItems": 3
-              }
-            }
-          }
-        },
-        "Participants2": {
-          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
-          "type": "object",
-          "required": [
-            "next_id",
-            "participants"
-          ],
-          "properties": {
-            "next_id": {
-              "$ref": "#/definitions/ParticipantId2"
-            },
-            "participants": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": [
-                  {
-                    "$ref": "#/definitions/AccountId"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantId2"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantInfo2"
                   }
                 ],
                 "maxItems": 3,
@@ -3542,7 +3490,7 @@ expression: abi
               "$ref": "#/definitions/Keyset2"
             },
             "parameters": {
-              "$ref": "#/definitions/ThresholdParameters2"
+              "$ref": "#/definitions/ThresholdParameters"
             },
             "parameters_votes": {
               "$ref": "#/definitions/ThresholdParametersVotes"
@@ -3891,19 +3839,13 @@ expression: abi
           }
         },
         "Threshold": {
-          "description": "Stores the cryptographic threshold for a distributed key. ``` use mpc_contract::primitives::thresholds::Threshold; let dt = Threshold::new(8); assert!(dt.value() == 8); ```",
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "Threshold2": {
-          "description": "Threshold value for distributed key operations.",
+          "description": "Cryptographic threshold (`k`) for a distributed key: the minimum number of participants that must collaborate to produce a signature.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
         },
         "ThresholdParameters": {
-          "description": "Stores information about the threshold key parameters: - owners of key shares - cryptographic threshold",
+          "description": "Threshold parameters for distributed key operations.",
           "type": "object",
           "required": [
             "participants",
@@ -3918,22 +3860,6 @@ expression: abi
             }
           }
         },
-        "ThresholdParameters2": {
-          "description": "Threshold parameters for distributed key operations.",
-          "type": "object",
-          "required": [
-            "participants",
-            "threshold"
-          ],
-          "properties": {
-            "participants": {
-              "$ref": "#/definitions/Participants2"
-            },
-            "threshold": {
-              "$ref": "#/definitions/Threshold2"
-            }
-          }
-        },
         "ThresholdParametersVotes": {
           "description": "Votes for threshold parameter changes.",
           "type": "object",
@@ -3944,7 +3870,7 @@ expression: abi
             "proposal_by_account": {
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/ThresholdParameters2"
+                "$ref": "#/definitions/ThresholdParameters"
               }
             }
           }

@@ -32,7 +32,7 @@ impl MpcContract {
     /// This benchmark helps detect if switching to a different data structure
     /// (e.g., `HashMap`) would improve performance for large participant sets.
     pub fn bench_is_participant(&self, account_id: dtos::AccountId) -> bool {
-        let account_id: AccountId = account_id.0.parse().unwrap();
+        let account_id: AccountId = account_id.clone();
         self.protocol_state
             .active_participants()
             .is_participant_given_account_id(&account_id)
@@ -47,7 +47,7 @@ impl MpcContract {
     /// This operation is used when the contract needs to access participant
     /// metadata (e.g., `sign_pk`, `url`) rather than just checking membership.
     pub fn bench_participant_info(&self, account_id: dtos::AccountId) -> bool {
-        let account_id: AccountId = account_id.0.parse().unwrap();
+        let account_id: AccountId = account_id.clone();
         self.protocol_state
             .active_participants()
             .info(&account_id)
@@ -108,7 +108,7 @@ impl MpcContract {
     ///
     /// Returns `true` if update succeeded.
     pub fn bench_participants_update_info(&mut self, account_id: dtos::AccountId) -> bool {
-        let account_id: AccountId = account_id.0.parse().unwrap();
+        let account_id: AccountId = account_id.clone();
         let new_info = ParticipantInfo {
             sign_pk: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
                 .parse::<PublicKey>()

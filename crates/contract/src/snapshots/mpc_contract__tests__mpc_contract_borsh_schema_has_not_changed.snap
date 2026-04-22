@@ -45,16 +45,16 @@ BorshSchemaContainer {
                 "Vec<DomainConfig>",
             ],
         },
+        "(Ed25519PublicKey, NodeAttestation)": Tuple {
+            elements: [
+                "Ed25519PublicKey",
+                "NodeAttestation",
+            ],
+        },
         "(ForeignChain, NonEmptyBTreeSet<RpcProvider>)": Tuple {
             elements: [
                 "ForeignChain",
                 "NonEmptyBTreeSet<RpcProvider>",
-            ],
-        },
-        "(PublicKey, NodeAttestation)": Tuple {
-            elements: [
-                "PublicKey",
-                "NodeAttestation",
             ],
         },
         "AccountId": Struct {
@@ -178,15 +178,15 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
         },
+        "BTreeMap<Ed25519PublicKey, NodeAttestation>": Sequence {
+            length_width: 4,
+            length_range: 0..=4294967295,
+            elements: "(Ed25519PublicKey, NodeAttestation)",
+        },
         "BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(ForeignChain, NonEmptyBTreeSet<RpcProvider>)",
-        },
-        "BTreeMap<PublicKey, NodeAttestation>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(PublicKey, NodeAttestation)",
         },
         "BTreeSet<AuthenticatedParticipantId>": Sequence {
             length_width: 4,
@@ -978,11 +978,11 @@ BorshSchemaContainer {
                     ),
                     (
                         "tls_public_key",
-                        "PublicKey",
+                        "Ed25519PublicKey",
                     ),
                     (
                         "account_public_key",
-                        "Option<PublicKey>",
+                        "Ed25519PublicKey",
                     ),
                 ],
             ),
@@ -1078,21 +1078,6 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "LauncherDockerComposeHash",
-                ),
-            ],
-        },
-        "Option<PublicKey>": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "None",
-                    "()",
-                ),
-                (
-                    1,
-                    "Some",
-                    "PublicKey",
                 ),
             ],
         },
@@ -1418,7 +1403,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "stored_attestations",
-                        "BTreeMap<PublicKey, NodeAttestation>",
+                        "BTreeMap<Ed25519PublicKey, NodeAttestation>",
                     ),
                     (
                         "allowed_measurements",

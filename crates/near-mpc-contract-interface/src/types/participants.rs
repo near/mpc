@@ -3,28 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Deref,
-    derive_more::From,
-    derive_more::Into,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
-)]
-pub struct ParticipantId(pub u32);
+pub use mpc_primitives::ParticipantId;
 
 #[derive(
     Clone,
@@ -80,7 +59,7 @@ mod tests {
         let participants_json = Participants {
             next_id: ParticipantId(1),
             participants: vec![(
-                AccountId("alice.near".to_string()),
+                "alice.near".parse().unwrap(),
                 ParticipantId(0),
                 ParticipantInfo {
                     url: "https://alice.com".to_string(),
@@ -107,7 +86,7 @@ mod tests {
             Participants {
                 next_id: ParticipantId(1),
                 participants: vec![(
-                    AccountId("alice.near".to_string()),
+                    "alice.near".parse().unwrap(),
                     ParticipantId(0),
                     ParticipantInfo {
                         url: "https://alice.com".to_string(),

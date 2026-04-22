@@ -3,8 +3,8 @@ use std::{sync::Arc, time::Duration};
 
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_contract::tee::proposal::{LauncherDockerComposeHash, NodeImageHash};
-use mpc_contract::tee::tee_state::NodeId;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
 
 use crate::indexer::IndexerState;

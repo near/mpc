@@ -5,8 +5,8 @@ use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
     domain::{AddDomainsVotes, DomainRegistry},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
+    threshold_votes::ThresholdParametersVotes,
     thresholds::ThresholdParameters,
-    votes::ThresholdParametersVotes,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainConfig;
@@ -214,7 +214,7 @@ pub mod running_tests {
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
     use crate::{
-        primitives::votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
+        primitives::threshold_votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
     };
     use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
 

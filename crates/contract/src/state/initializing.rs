@@ -157,7 +157,7 @@ pub mod tests {
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key_extended, gen_account_id, NUM_CURVES,
     };
-    use crate::primitives::votes::ThresholdParametersVotes;
+    use crate::primitives::threshold_votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::find_leader;
     use crate::state::running::RunningContractState;
     use crate::state::test_utils::gen_initializing_state;

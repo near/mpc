@@ -771,7 +771,7 @@ where
             .await
             .context("failed to fetch foreign chain policy proposals")?;
 
-        let my_account_id = dtos::AccountId(config_file.my_near_account_id.to_string());
+        let my_account_id = config_file.my_near_account_id.clone();
         if proposals
             .proposal_by_account
             .get(&my_account_id)

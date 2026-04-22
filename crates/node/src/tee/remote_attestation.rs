@@ -17,11 +17,9 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
-use mpc_contract::tee::{
-    proposal::{LauncherDockerComposeHash, NodeImageHash},
-    tee_state::NodeId,
-};
+use mpc_contract::tee::proposal::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
@@ -164,7 +162,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                     .inc();
                 att
             }
-            Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+            Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
                 crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                     .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                     .inc();
@@ -220,8 +218,8 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
 ) -> anyhow::Result<()> {
     let node_id = NodeId {
         account_id: node_account_id.clone(),
-        tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
-        account_public_key: Some(near_sdk::PublicKey::from(account_public_key.clone())),
+        tls_public_key: tls_public_key.clone(),
+        account_public_key: account_public_key.clone(),
     };
 
     let initially_available =
@@ -263,7 +261,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                         .inc();
                     att
                 }
-                Err(tee_authority::tee_authority::AttestationError::CollateralUpload(e)) => {
+                Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
                     crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                         .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                         .inc();
@@ -414,8 +412,8 @@ mod tests {
         let (dummy_sender, _) = watch::channel(vec![]);
         let dummy_node_id = NodeId {
             account_id: "dummy.near".parse().unwrap(),
-            tls_public_key: near_sdk::PublicKey::from(Ed25519PublicKey::from([0u8; 32])),
-            account_public_key: Some(near_sdk::PublicKey::from(Ed25519PublicKey::from([0u8; 32]))),
+            tls_public_key: Ed25519PublicKey::from([0u8; 32]),
+            account_public_key: Ed25519PublicKey::from([0u8; 32]),
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
@@ -450,8 +448,8 @@ mod tests {
 
         let node_id = NodeId {
             account_id: node_account_id.clone(),
-            tls_public_key: near_sdk::PublicKey::from(tls_public_key.clone()),
-            account_public_key: Some(near_sdk::PublicKey::from(account_public_key.clone())),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: account_public_key.clone(),
         };
 
         // Create initial TEE accounts list including our node
