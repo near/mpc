@@ -3423,13 +3423,9 @@ expression: abi
         "RpcProvider": {
           "type": "object",
           "required": [
-            "name",
             "rpc_url"
           ],
           "properties": {
-            "name": {
-              "type": "string"
-            },
             "rpc_url": {
               "type": "string"
             }
