@@ -86,7 +86,7 @@ impl ForeignChainsConfig {
                     config
                         .providers
                         .map_to_set(|_provider_name, provider_config| dtos::RpcProvider {
-                            rpc_url: provider_config.rpc_url().to_string(),
+                            rpc_url: provider_config.rpc_url().trim().to_string(),
                         });
 
                 (foreign_chain_identifier, rpc_providers)
