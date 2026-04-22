@@ -150,15 +150,14 @@ impl TeeAuthority {
 
     /// Fetches attestation collateral from a PCCS server for the given TDX quote.
     async fn fetch_collateral(pccs_url: &str, quote: &[u8]) -> anyhow::Result<Collateral> {
+        let client = dcap_qvl::collateral::CollateralClient::with_default_http(pccs_url)
+            .map_err(|e| anyhow::anyhow!(e))?;
         let fetch = async || {
-            tokio::time::timeout(
-                PCCS_REQUEST_TIMEOUT,
-                dcap_qvl::collateral::get_collateral(pccs_url, quote),
-            )
-            .await
-            .map_err(|_| anyhow::anyhow!("timed out fetching collateral from PCCS"))?
-            .map(Collateral::from)
-            .map_err(|e| anyhow::anyhow!(e))
+            tokio::time::timeout(PCCS_REQUEST_TIMEOUT, client.fetch(quote))
+                .await
+                .map_err(|_| anyhow::anyhow!("timed out fetching collateral from PCCS"))?
+                .map(Collateral::from)
+                .map_err(|e| anyhow::anyhow!(e))
         };
 
         get_with_backoff(fetch, "fetch collateral from PCCS", Some(1)).await
