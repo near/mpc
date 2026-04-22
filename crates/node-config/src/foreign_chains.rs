@@ -64,11 +64,12 @@ pub struct ForeignChainProviderConfig {
 pub struct RpcProviderName(String);
 
 impl ForeignChainProviderConfig {
-    fn validate_auth_config(&self) -> anyhow::Result<()> {
-        auth::validate_auth_config(&self.auth, &self.rpc_url)
-    }
     fn rpc_url(&self) -> Cow<'_, str> {
         self.auth.strip_placeholder(&self.rpc_url)
+    }
+
+    fn validate_auth_config(&self) -> anyhow::Result<()> {
+        auth::validate_auth_config(&self.auth, &self.rpc_url)
     }
 }
 
@@ -477,49 +478,49 @@ foreign_chains:
     fn to_policy__preserves_url_for_non_path_auth() {
         // Given
         let yaml = r#"
-    my_near_account_id: test.near
-    near_responder_account_id: test.near
-    number_of_responder_keys: 1
-    web_ui:
-      host: localhost
-      port: 8080
-    migration_web_ui:
-      host: localhost
-      port: 8081
-    pprof_bind_address: 127.0.0.1:34001
-    indexer:
-      validate_genesis: false
-      sync_mode: Latest
-      finality: optimistic
-      concurrency: 1
-      mpc_contract_id: mpc-contract.test.near
-    triple:
-      concurrency: 1
-      desired_triples_to_buffer: 1
-      timeout_sec: 60
-      parallel_triple_generation_stagger_time_sec: 1
-    presignature:
-      concurrency: 1
-      desired_presignatures_to_buffer: 1
-      timeout_sec: 60
-    signature:
-      timeout_sec: 60
-    ckd:
-      timeout_sec: 60
-    foreign_chains:
-      ethereum:
-        timeout_sec: 30
-        max_retries: 3
-        providers:
-          alchemy:
-            rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
-            auth:
-              kind: header
-              name: Authorization
-              scheme: Bearer
-              token:
-                val: "secret"
-    "#;
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  ethereum:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      alchemy:
+        rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            val: "secret"
+"#;
 
         // When
         let config: ConfigFile =
