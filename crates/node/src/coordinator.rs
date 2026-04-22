@@ -731,17 +731,6 @@ where
         }
         Ok(MpcJobResult::Done)
     }
-
-    fn is_supported_foreign_chain(chain: &dtos::ForeignChain) -> bool {
-        matches!(
-            chain,
-            dtos::ForeignChain::Abstract
-                | dtos::ForeignChain::Solana
-                | dtos::ForeignChain::Bitcoin
-                | dtos::ForeignChain::Ethereum
-                | dtos::ForeignChain::Starknet
-        )
-    }
 }
 
 /// Simple RAII to export current job name to metrics and /debug/tasks.
@@ -900,33 +889,4 @@ fn make_initializing_stop_fn(
             stop_initializing(new_state, key_event.id.epoch_id, &key_event_sender)
         }),
     )
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::Coordinator;
-    use crate::indexer::fake::FakeForeignChainPolicyReader;
-    use crate::tests::common::MockTransactionSender;
-    use near_mpc_contract_interface::types as dtos;
-
-    #[test]
-    fn is_supported_foreign_chain__supports_starknet() {
-        assert!(Coordinator::<
-            MockTransactionSender,
-            FakeForeignChainPolicyReader,
-        >::is_supported_foreign_chain(
-            &dtos::ForeignChain::Starknet
-        ));
-    }
-
-    #[test]
-    fn is_supported_foreign_chain__supports_abstract() {
-        assert!(Coordinator::<
-            MockTransactionSender,
-            FakeForeignChainPolicyReader,
-        >::is_supported_foreign_chain(
-            &dtos::ForeignChain::Abstract
-        ));
-    }
 }
