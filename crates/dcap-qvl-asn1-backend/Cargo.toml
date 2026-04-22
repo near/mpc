@@ -2,7 +2,7 @@
 name = "dcap-qvl-asn1-backend"
 version = { workspace = true }
 license = { workspace = true }
-edition = "2021"
+edition = { workspace = true }
 repository = { workspace = true }
 description = "asn1_der-based dcap-qvl Config backend to avoid pulling der + x509-cert into the MPC contract wasm"
 

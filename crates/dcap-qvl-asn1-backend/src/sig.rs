@@ -13,8 +13,8 @@
 use alloc::vec::Vec;
 use anyhow::{Context, Result};
 use asn1_der::{
-    typed::{DerTypeView, Integer, Sequence},
     DerObject, VecBacking,
+    typed::{DerTypeView, Integer, Sequence},
 };
 
 use dcap_qvl::config::EcdsaSigEncoder;

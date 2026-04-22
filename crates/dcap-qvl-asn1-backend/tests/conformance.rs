@@ -13,10 +13,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use dcap_qvl::{
+    QuoteCollateralV3,
     config::{Config, EcdsaSigEncoder, ParsedCert, X509Codec},
     configs::DefaultConfig,
     quote::Quote,
-    QuoteCollateralV3,
 };
 use dcap_qvl_asn1_backend::{Asn1DerCertBackend, Asn1DerConfig, Asn1DerSigEncoder};
 
@@ -323,28 +323,27 @@ fn malformed_extension_non_octet_string_value_is_rejected() {
 
 /// M4 — trailing bytes appended after the outer Certificate SEQUENCE.
 ///
-/// Documents a known divergence: the audited `der` crate rejects
-/// (enforces full-input consumption) while `asn1_der::DerObject::decode`
-/// does not, so the custom backend accepts. This is safe under the
-/// Intel-signed-chain constraint (webpki re-validates the signed TBS
-/// region), but it is worth a test so the asymmetry is explicit and any
-/// future tightening is caught by a test failure rather than silently
-/// changing behaviour.
+/// Both backends must reject. The audited `der` crate enforces
+/// full-input consumption; `asn1_der::DerObject::decode` on its own
+/// does not, so `Asn1DerCertBackend::from_der` adds an explicit
+/// length check to match.
 #[test]
-fn trailing_bytes_after_cert_diverge_documented() {
+fn trailing_bytes_after_cert_are_rejected() {
     for cert_der in pck_leaf_certs() {
         let mut with_trailing = cert_der;
         with_trailing.extend_from_slice(b"\x00\x00trailing-garbage");
 
-        // Custom accepts.
-        Asn1DerCertBackend::from_der(&with_trailing)
-            .expect("custom accepts trailing bytes (documented divergence)");
+        let custom_err = Asn1DerCertBackend::from_der(&with_trailing)
+            .err()
+            .expect("custom must reject trailing bytes");
+        assert!(
+            format!("{custom_err:#}").contains("trailing bytes"),
+            "expected trailing-bytes error, got: {custom_err:#}"
+        );
 
-        // Default rejects.
         assert!(
             <DefaultConfig as Config>::X509::from_der(&with_trailing).is_err(),
-            "default must reject trailing bytes; if this starts succeeding, \
-             the documented divergence has closed and this test should be updated"
+            "default must reject trailing bytes",
         );
     }
 }

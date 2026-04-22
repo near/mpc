@@ -17,10 +17,10 @@
 //! zero-copy backend like this one can be plugged in.
 
 use alloc::{string::String, vec::Vec};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use asn1_der::{
-    typed::{DerDecodable, Sequence},
     DerObject,
+    typed::{DerDecodable, DerTypeView, Sequence},
 };
 
 use dcap_qvl::config::{ParsedCert, X509Codec};
@@ -53,6 +53,12 @@ impl X509Codec for Asn1DerCertBackend {
     fn from_der(cert_der: &[u8]) -> Result<Self::Parsed<'_>> {
         // Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
         let cert = Sequence::decode(cert_der).context("failed to decode certificate")?;
+        // `asn1_der::DerObject::decode` accepts trailing bytes after the
+        // outer SEQUENCE; the audited `x509-cert` backend does not. Match
+        // that behaviour here so we stay a strict drop-in replacement.
+        if cert.object().raw().len() != cert_der.len() {
+            bail!("trailing bytes after outer Certificate SEQUENCE");
+        }
         let tbs = cert
             .get_as::<Sequence<'_>>(0)
             .context("failed to decode tbsCertificate")?;
