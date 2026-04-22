@@ -16,7 +16,6 @@
 //! [`dcap_qvl::config::X509Codec::Parsed`] exists precisely so a
 //! zero-copy backend like this one can be plugged in.
 
-use alloc::{string::String, vec::Vec};
 use anyhow::{Context, Result, bail};
 use asn1_der::{
     DerObject,

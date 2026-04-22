@@ -10,7 +10,6 @@
 //! call it twice (once per component) into a temporary buffer, then wrap
 //! the concatenation in a SEQUENCE header.
 
-use alloc::vec::Vec;
 use anyhow::{Context, Result};
 use asn1_der::{
     DerObject, VecBacking,

@@ -35,10 +35,6 @@
 //! Ported from the reference example in
 //! <https://github.com/Phala-Network/dcap-qvl/pull/145>.
 
-#![deny(clippy::unwrap_used, clippy::expect_used)]
-
-extern crate alloc;
-
 mod sig;
 mod x509;
 
