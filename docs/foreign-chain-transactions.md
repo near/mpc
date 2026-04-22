@@ -378,7 +378,7 @@ See "Contract State (Foreign Chain Policy)" above.
 * On startup, nodes compare local config to the on-chain policy.
 * If different, a node submits a vote for the policy derived from its local config.
 * Policy updates are applied only when all current participants vote for the same proposal.
-* Pending proposals and vote counts are visible via `get_foreign_chain_policy_proposals()`.
+* Foreign chain configuration on a per node basis can be queried with `get_foreign_chain_configurations()`.
 
 ### Configuration (Node)
 
