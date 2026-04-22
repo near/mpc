@@ -34,6 +34,13 @@ const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 
+// Seed offsets for `generate_deterministic_key` — each range holds up to 100 keys.
+const KEY_SEED_NEAR_SIGNER: u64 = 0;
+const KEY_SEED_P2P: u64 = 100;
+const KEY_SEED_OPERATOR: u64 = 200;
+const KEY_SEED_MIGRATION_P2P: u64 = 300;
+const KEY_SEED_MIGRATION_OPERATOR: u64 = 400;
+
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
     /// Number of MPC nodes to start.
@@ -60,10 +67,10 @@ pub struct MpcClusterConfig {
     /// An empty vec means all nodes are participants. Set to a subset to start
     /// extra non-participant nodes (useful for resharing and attestation tests).
     pub initial_participant_indices: Vec<usize>,
-    /// Migration targets: `(source_node_index, target_node_index)` pairs.
-    /// Each target node shares its source's NEAR account and signer key
-    /// but gets a distinct P2P key. Target indices must be in
-    /// `num_nodes..num_nodes+migration_targets.len()`.
+    /// Migration targets: `(source_idx, target_idx)` pairs. Each target shares
+    /// the source's NEAR account but gets a distinct P2P key. Started with the
+    /// cluster so their indexers sync before blocks accumulate (`start_near_node`
+    /// blocks until synced).
     pub migration_targets: Vec<(usize, usize)>,
 }
 
@@ -164,8 +171,12 @@ impl MpcCluster {
 
         // Pre-generate keys for migration target nodes.
         for &(_, target_idx) in &config.migration_targets {
-            node_keys.push(generate_deterministic_key(300 + target_idx as u64));
-            operator_keys.push(generate_deterministic_key(400 + target_idx as u64));
+            node_keys.push(generate_deterministic_key(
+                KEY_SEED_MIGRATION_P2P + target_idx as u64,
+            ));
+            operator_keys.push(generate_deterministic_key(
+                KEY_SEED_MIGRATION_OPERATOR + target_idx as u64,
+            ));
         }
 
         let contract = deploy_contract(
@@ -307,7 +318,7 @@ impl MpcCluster {
 
         let target_idx = self.nodes.len();
 
-        let p2p_key = generate_deterministic_key(300 + target_idx as u64);
+        let p2p_key = generate_deterministic_key(KEY_SEED_MIGRATION_P2P + target_idx as u64);
         let near_signer_key = source.near_signer_key().clone();
         let binary_path = source.binary_path().to_path_buf();
         let signer_account_id = source.account_id().clone();
@@ -337,8 +348,9 @@ impl MpcCluster {
         })?;
 
         self.node_keys.push(p2p_key.clone());
-        self.operator_keys
-            .push(generate_deterministic_key(400 + target_idx as u64));
+        self.operator_keys.push(generate_deterministic_key(
+            KEY_SEED_MIGRATION_OPERATOR + target_idx as u64,
+        ));
         self.nodes.push(MpcNodeState::Stopped(setup));
         Ok(target_idx)
     }
@@ -520,10 +532,7 @@ impl MpcCluster {
         }
 
         for i in participants_first.iter().chain(candidates_second.iter()) {
-            let node = &self.nodes[*i];
-            let client = self
-                .blockchain
-                .client_for(node.account_id().as_ref(), &self.operator_keys[*i])?;
+            let client = self.client_for(*i)?;
             let outcome = self
                 .contract
                 .call_from(&client, method_names::VOTE_NEW_PARAMETERS, args.clone())
@@ -548,10 +557,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let node = &self.nodes[node_index];
-        let client = self
-            .blockchain
-            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
+        let client = self.client_for(node_index)?;
         self.contract
             .call_from(&client, method_names::VOTE_CANCEL_RESHARING, json!({}))
             .await
@@ -728,16 +734,20 @@ impl MpcCluster {
         self.contract.view(method_names::MIGRATION_INFO).await
     }
 
+    /// Build a [`ClientHandle`] for the operator key of the given node.
+    pub fn client_for(&self, node_index: usize) -> anyhow::Result<ClientHandle> {
+        let node = &self.nodes[node_index];
+        self.blockchain
+            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
+    }
+
     /// Register backup service info for a node.
     pub async fn register_backup_service(
         &self,
         node_index: usize,
         backup_service_info: serde_json::Value,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let node = &self.nodes[node_index];
-        let client = self
-            .blockchain
-            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
+        let client = self.client_for(node_index)?;
         self.contract
             .call_from(
                 &client,
@@ -753,10 +763,7 @@ impl MpcCluster {
         node_index: usize,
         destination_node_info: serde_json::Value,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let node = &self.nodes[node_index];
-        let client = self
-            .blockchain
-            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
+        let client = self.client_for(node_index)?;
         self.contract
             .call_from(
                 &client,
@@ -845,9 +852,9 @@ fn generate_signing_keys(
     let mut p2p_keys = Vec::new();
     let mut operator_keys = Vec::new();
     for i in 0..num_nodes {
-        let near_key = generate_deterministic_key(i);
-        let p2p_key = generate_deterministic_key(100 + i);
-        let operator_key = generate_deterministic_key(200 + i);
+        let near_key = generate_deterministic_key(KEY_SEED_NEAR_SIGNER + i);
+        let p2p_key = generate_deterministic_key(KEY_SEED_P2P + i);
+        let operator_key = generate_deterministic_key(KEY_SEED_OPERATOR + i);
         node_keys.push(near_key.clone());
         near_keys.push(near_key);
         p2p_keys.push(p2p_key);
@@ -1030,7 +1037,7 @@ fn start_mpc_nodes(
             home_dir: test_dir.join(format!("node{target_idx}")),
             binary_path: binary_path.clone(),
             signer_account_id: source.account_id().clone(),
-            p2p_signing_key: generate_deterministic_key(300 + target_idx as u64),
+            p2p_signing_key: generate_deterministic_key(KEY_SEED_MIGRATION_P2P + target_idx as u64),
             near_signer_key: source.near_signer_key().clone(),
             ports: NodePorts::from_allocator(ports, target_idx),
             mpc_contract_id: contract_account.clone(),

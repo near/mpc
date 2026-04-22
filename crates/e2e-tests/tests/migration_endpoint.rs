@@ -4,22 +4,7 @@ use std::collections::BTreeMap;
 
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
-use near_mpc_contract_interface::types::ParticipantInfo;
-use near_mpc_crypto_types::Ed25519PublicKey;
-use serde::{Deserialize, Serialize};
-
-/// Local mirror of the contract's `BackupServiceInfo` for JSON deserialization.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct BackupServiceInfo {
-    pub public_key: Ed25519PublicKey,
-}
-
-/// Local mirror of the contract's `DestinationNodeInfo` for JSON deserialization.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct DestinationNodeInfo {
-    pub signer_account_pk: String,
-    pub destination_node_info: ParticipantInfo,
-}
+use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, ParticipantInfo};
 
 /// Per-account migration entry: (backup_service_info, destination_node_info).
 type AccountEntry = (Option<BackupServiceInfo>, Option<DestinationNodeInfo>);
@@ -103,7 +88,7 @@ async fn migration_endpoint__should_track_migration_state() {
         );
 
         let dest_info = DestinationNodeInfo {
-            signer_account_pk: p2p_pk.clone(),
+            signer_account_pk: node_state.p2p_public_key(),
             destination_node_info: ParticipantInfo {
                 url: "http://bogus:1234".to_string(),
                 sign_pk: node_state.p2p_public_key(),

@@ -179,8 +179,7 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
     // Build backup-cli once before the test to avoid rebuilding per-iteration.
     let backup_cli = backup_cli_path();
 
-    // given — start 2 participants and 2 migration targets together so their
-    // near-indexers sync from the same early point in the chain.
+    // given — targets start with the cluster so indexers sync before blocks pile up.
     let (mut cluster, running) = common::setup_cluster(common::MIGRATION_SERVICE_PORT_SEED, |c| {
         c.num_nodes = 2;
         c.threshold = 2;
