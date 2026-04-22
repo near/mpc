@@ -12,6 +12,7 @@ bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
+httpmock = { workspace = true }
 launcher-interface = { workspace = true }
 mpc-node-config = { workspace = true }
 near-account-id = { workspace = true }
@@ -33,6 +34,7 @@ tracing = { workspace = true }
 blstrs = { workspace = true }
 group = { workspace = true }
 mpc-primitives = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 test-utils = { workspace = true }
 threshold-signatures = { workspace = true }
 tracing-subscriber = { workspace = true }
