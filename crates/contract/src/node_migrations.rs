@@ -138,7 +138,7 @@ mod tests {
         let (account_id, participant_info) = gen_participant(0);
         let destination_node_info = DestinationNodeInfo {
             signer_account_pk: bogus_ed25519_public_key(),
-            destination_node_info: participant_info.try_into().unwrap(),
+            destination_node_info: participant_info.into(),
         };
         // sanity checks
         assert!(migrations.ongoing_migrations.get(&account_id).is_none());
@@ -199,7 +199,7 @@ mod tests {
 
         let destination_node_info = DestinationNodeInfo {
             signer_account_pk: bogus_ed25519_public_key(),
-            destination_node_info: participant_info.try_into().unwrap(),
+            destination_node_info: participant_info.into(),
         };
 
         // sanity checks

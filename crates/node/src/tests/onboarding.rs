@@ -172,7 +172,7 @@ async fn test_onboarding() {
             onboarding_node.participant_info.near_account_id.clone(),
             DestinationNodeInfo {
                 signer_account_pk: Ed25519PublicKey::from(&onboarding_node.near_signer_key),
-                destination_node_info: destination_node_info.clone().try_into().unwrap(),
+                destination_node_info: destination_node_info.clone().into(),
             },
         );
     }

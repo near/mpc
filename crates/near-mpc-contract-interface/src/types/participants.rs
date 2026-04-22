@@ -24,7 +24,9 @@ pub use mpc_primitives::ParticipantId;
 )]
 pub struct ParticipantInfo {
     pub url: String,
-    pub sign_pk: Ed25519PublicKey,
+    // Accepts "sign_pk" for compat with pre-3.10.0 contracts. Remove after 3.10.0 deployment.
+    #[serde(alias = "sign_pk")]
+    pub tls_public_key: Ed25519PublicKey,
 }
 
 /// DTO representation of the contract-internal `Participants` type.
@@ -63,14 +65,14 @@ mod tests {
                 ParticipantId(0),
                 ParticipantInfo {
                     url: "https://alice.com".to_string(),
-                    sign_pk: test_key(),
+                    tls_public_key: test_key(),
                 },
             )],
         };
 
         let json = serde_json::to_string(&participants_json).unwrap();
         let expected = format!(
-            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","sign_pk":"{TEST_KEY_STR}"}}]]}}"#,
+            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","tls_public_key":"{TEST_KEY_STR}"}}]]}}"#,
         );
         assert_eq!(json, expected);
     }
@@ -78,7 +80,7 @@ mod tests {
     #[test]
     fn test_deserialize_vec_format() {
         let json = format!(
-            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","sign_pk":"{TEST_KEY_STR}"}}]]}}"#,
+            r#"{{"next_id":1,"participants":[["alice.near",0,{{"url":"https://alice.com","tls_public_key":"{TEST_KEY_STR}"}}]]}}"#,
         );
         let deserialized: Participants = serde_json::from_str(&json).unwrap();
         assert_eq!(
@@ -90,9 +92,28 @@ mod tests {
                     ParticipantId(0),
                     ParticipantInfo {
                         url: "https://alice.com".to_string(),
-                        sign_pk: test_key(),
+                        tls_public_key: test_key(),
                     },
                 )],
+            }
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn participant_info_deserialize__should_accept_legacy_sign_pk_alias() {
+        // Given a JSON payload using the legacy "sign_pk" field name
+        let json = format!(r#"{{"url":"https://alice.com","sign_pk":"{TEST_KEY_STR}"}}"#,);
+
+        // When deserializing into the renamed DTO
+        let deserialized: ParticipantInfo = serde_json::from_str(&json).unwrap();
+
+        // Then the alias is honored and populates tls_public_key
+        assert_eq!(
+            deserialized,
+            ParticipantInfo {
+                url: "https://alice.com".to_string(),
+                tls_public_key: test_key(),
             }
         );
     }

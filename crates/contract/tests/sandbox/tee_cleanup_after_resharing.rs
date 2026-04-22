@@ -113,7 +113,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.clone().into(),
+                    tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
@@ -224,7 +224,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.clone().into(),
+                    tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )

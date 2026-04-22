@@ -155,7 +155,7 @@ pub enum InvalidCandidateSet {
         old_id: u32,
         new_id: u32,
     },
-    #[error("Existing participant {account_id} changed info (url or sign_pk).")]
+    #[error("Existing participant {account_id} changed info (url or tls_public_key).")]
     ParticipantInfoChanged { account_id: AccountId },
     #[error("New participant {account_id} reuses ID {new_id} already assigned to existing participant {existing_account_id}.")]
     NewParticipantReusesOldId {
