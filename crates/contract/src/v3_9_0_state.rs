@@ -12,7 +12,10 @@ use dtos::{DomainConfig, Ed25519PublicKey, ParticipantId, Threshold};
 use mpc_attestation::attestation::VerifiedAttestation;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_sdk::{env, store::LookupMap};
+use near_sdk::{
+    env,
+    store::{IterableMap, LookupMap},
+};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
@@ -45,7 +48,7 @@ use crate::{
         tee_state::{NodeAttestation, TeeState},
     },
     update::ProposedUpdates,
-    Config, ForeignChainPolicyVotes, NodeForeignChainConfigurations,
+    Config, NodeForeignChainConfigurations,
 };
 
 /// Previous `ParticipantInfo` layout — the TLS key was stored as a tagged
@@ -121,6 +124,11 @@ enum OldProtocolContractState {
     Initializing(OldInitializingContractState),
     Running(OldRunningContractState),
     Resharing(OldResharingContractState),
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct ForeignChainPolicyVotes {
+    proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -255,10 +263,12 @@ impl From<OldProtocolContractState> for ProtocolContractState {
 }
 
 impl From<MpcContract> for crate::MpcContract {
-    fn from(value: MpcContract) -> Self {
+    fn from(mut value: MpcContract) -> Self {
         if !matches!(value.protocol_state, OldProtocolContractState::Running(_)) {
             env::panic_str("Contract must be in running state when migrating.");
         }
+
+        value.foreign_chain_policy_votes.proposal_by_account.clear();
 
         Self {
             protocol_state: value.protocol_state.into(),
@@ -266,8 +276,6 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: value.pending_ckd_requests,
             pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
             proposed_updates: value.proposed_updates,
-            foreign_chain_policy: value.foreign_chain_policy,
-            foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             node_foreign_chain_configurations: value.node_foreign_chain_configurations,
             config: value.config.into(),
             tee_state: value.tee_state.into(),
