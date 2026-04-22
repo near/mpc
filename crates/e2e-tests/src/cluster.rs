@@ -174,10 +174,10 @@ impl MpcCluster {
             generate_signing_keys(u64::try_from(config.num_nodes).unwrap());
 
         // Pre-generate keys for migration target nodes.
-        for &(_, target_idx) in &config.migration_targets {
-            node_keys.push(generate_deterministic_key(
-                KEY_SEED_MIGRATION_P2P + target_idx as u64,
-            ));
+        // Migration targets share the source's NEAR account, so node_keys
+        // (which stores NEAR signer keys) gets the source's key.
+        for &(source_idx, target_idx) in &config.migration_targets {
+            node_keys.push(node_keys[source_idx].clone());
             operator_keys.push(generate_deterministic_key(
                 KEY_SEED_MIGRATION_OPERATOR + target_idx as u64,
             ));
@@ -309,54 +309,6 @@ impl MpcCluster {
             self.wait_for_node_healthy(idx).await?;
         }
         Ok(())
-    }
-
-    /// Create a migration target node for the given source node.
-    /// The target shares the same NEAR account as the source but has a different P2P key.
-    /// Returns the node index in the cluster's node list.
-    pub fn create_migration_target(&mut self, source_idx: usize) -> anyhow::Result<usize> {
-        let source = match &self.nodes[source_idx] {
-            MpcNodeState::Running(n) => n.setup(),
-            MpcNodeState::Stopped(s) => s,
-        };
-
-        let target_idx = self.nodes.len();
-
-        let p2p_key = generate_deterministic_key(KEY_SEED_MIGRATION_P2P + target_idx as u64);
-        let near_signer_key = source.near_signer_key().clone();
-        let binary_path = source.binary_path().to_path_buf();
-        let signer_account_id = source.account_id().clone();
-        let mpc_contract_id = source.mpc_contract_id().clone();
-
-        let chain_id = self.sandbox.chain_id()?;
-        let genesis_path = self.sandbox.genesis_path();
-        let boot_nodes = self.sandbox.boot_nodes()?;
-
-        let home_dir = self.test_dir.path().join(format!("node{target_idx}"));
-
-        let setup = MpcNodeSetup::new(MpcNodeSetupArgs {
-            node_index: target_idx,
-            home_dir,
-            binary_path,
-            signer_account_id,
-            p2p_signing_key: p2p_key.clone(),
-            near_signer_key,
-            ports: NodePorts::from_allocator(&self.ports, target_idx),
-            mpc_contract_id,
-            triples_to_buffer: 10,
-            presignatures_to_buffer: 10,
-            chain_id,
-            near_genesis_path: genesis_path,
-            near_boot_nodes: boot_nodes,
-            foreign_chains_config: Default::default(),
-        })?;
-
-        self.node_keys.push(p2p_key.clone());
-        self.operator_keys.push(generate_deterministic_key(
-            KEY_SEED_MIGRATION_OPERATOR + target_idx as u64,
-        ));
-        self.nodes.push(MpcNodeState::Stopped(setup));
-        Ok(target_idx)
     }
 
     pub fn kill_all(&mut self) -> anyhow::Result<()> {
@@ -1091,7 +1043,6 @@ fn start_mpc_nodes(
 
     // Start migration target nodes alongside the participants so their
     // near-indexers sync from the same early point in the chain.
-    let binary_path = config.binary_paths[0].clone();
     for &(source_idx, target_idx) in &config.migration_targets {
         let source = match &nodes[source_idx] {
             MpcNodeState::Running(n) => n.setup(),
@@ -1100,7 +1051,7 @@ fn start_mpc_nodes(
         let setup = MpcNodeSetup::new(MpcNodeSetupArgs {
             node_index: target_idx,
             home_dir: test_dir.join(format!("node{target_idx}")),
-            binary_path: binary_path.clone(),
+            binary_path: source.binary_path().to_path_buf(),
             signer_account_id: source.account_id().clone(),
             p2p_signing_key: generate_deterministic_key(KEY_SEED_MIGRATION_P2P + target_idx as u64),
             near_signer_key: source.near_signer_key().clone(),
