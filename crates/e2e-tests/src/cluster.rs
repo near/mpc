@@ -757,6 +757,10 @@ impl MpcCluster {
                 &client,
                 method_names::REGISTER_BACKUP_SERVICE,
                 json!({ "backup_service_info": backup_service_info }),
+            )
+            .await
+    }
+
     /// View the foreign chain policy from the contract.
     pub async fn view_foreign_chain_policy(
         &self,
@@ -806,6 +810,10 @@ impl MpcCluster {
                 &client,
                 method_names::START_NODE_MIGRATION,
                 json!({ "destination_node_info": destination_node_info }),
+            )
+            .await
+    }
+
     /// Send a verify_foreign_transaction request from the default user account.
     pub async fn send_verify_foreign_transaction(
         &self,
@@ -1076,7 +1084,7 @@ fn start_mpc_nodes(
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
-            foreign_chains_config: Default::default(),
+            foreign_chains_config,
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }
