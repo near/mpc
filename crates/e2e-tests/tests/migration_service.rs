@@ -9,17 +9,9 @@ use e2e_tests::MpcNodeState;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use rand::SeedableRng;
 
-/// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
-/// (see `build-backup-cli` task in Makefile.toml).
-fn backup_cli_path() -> PathBuf {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/backup-cli");
-    assert!(
-        path.exists(),
-        "backup-cli binary not found at {}. Run `cargo make e2e-tests` to build it.",
-        path.display()
-    );
-    path
-}
+const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_secs(120);
+const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
+const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct BackupService {
     home_dir: tempfile::TempDir,
@@ -60,8 +52,9 @@ impl BackupService {
             .try_into()
             .expect("expected 32 bytes for signing key");
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
-        let pk = near_mpc_crypto_types::Ed25519PublicKey::from(&signing_key.verifying_key());
-        String::from(&pk)
+        let public_key =
+            near_mpc_crypto_types::Ed25519PublicKey::from(&signing_key.verifying_key());
+        String::from(&public_key)
     }
 
     fn set_contract_state(&self, state: &ProtocolContractState) {
@@ -125,8 +118,20 @@ impl BackupService {
     }
 }
 
+/// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
+/// (see `build-backup-cli` task in Makefile.toml).
+fn backup_cli_path() -> PathBuf {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/backup-cli");
+    assert!(
+        path.exists(),
+        "backup-cli binary not found at {}. Run `cargo make e2e-tests` to build it.",
+        path.display()
+    );
+    path
+}
+
 async fn wait_for_migration_port(address: &str) {
-    let timeout = Duration::from_secs(120);
+    let timeout = MIGRATION_PORT_TIMEOUT;
     (|| async {
         let result = std::net::TcpStream::connect(address);
         anyhow::ensure!(
@@ -163,6 +168,237 @@ fn running_state_matches_participant_key(
     }
 }
 
+/// Register a backup service for the source node and wait for both the
+/// contract and the source node's debug endpoint to reflect the registration.
+async fn register_backup_service_and_wait(
+    cluster: &e2e_tests::MpcCluster,
+    source_idx: usize,
+    backup_service: &BackupService,
+) {
+    let backup_public_key = backup_service.public_key();
+    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+
+    let outcome = cluster
+        .register_backup_service(
+            source_idx,
+            serde_json::json!({ "public_key": backup_public_key }),
+        )
+        .await
+        .expect("failed to register backup service");
+    assert!(
+        outcome.is_success(),
+        "register_backup_service failed: {:?}",
+        outcome.failure_message()
+    );
+
+    (|| async {
+        let info: serde_json::Value = cluster
+            .view_migration_info()
+            .await
+            .expect("failed to view migration info");
+        let entry = info.get(&source_account_id);
+        anyhow::ensure!(
+            entry.is_some_and(|e| !e.get(0).unwrap_or(&serde_json::Value::Null).is_null()),
+            "node has not indexed backup registration yet"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .expect("timed out waiting for node to index backup registration");
+
+    let source_web_addr = match &cluster.nodes[source_idx] {
+        MpcNodeState::Running(n) => n.web_address(),
+        _ => panic!("source node not running"),
+    };
+    let http_client = reqwest::Client::new();
+    (|| async {
+        let resp = http_client
+            .get(format!("http://{source_web_addr}/debug/migrations"))
+            .send()
+            .await?;
+        let body = resp.text().await?;
+        anyhow::ensure!(
+            body.contains(&backup_public_key),
+            "node debug endpoint doesn't reflect backup registration yet"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .expect("timed out waiting for node debug endpoint to show backup registration");
+}
+
+/// GET keyshares from the source node via the backup CLI.
+async fn get_keyshares_from_source(
+    cluster: &e2e_tests::MpcCluster,
+    source_idx: usize,
+    backup_service: &BackupService,
+) {
+    let contract_state = cluster
+        .get_contract_state()
+        .await
+        .expect("failed to get contract state");
+    backup_service.set_contract_state(&contract_state);
+
+    let source_migration_addr = match &cluster.nodes[source_idx] {
+        MpcNodeState::Running(n) => n.migration_web_ui_address(),
+        _ => panic!("source node not running"),
+    };
+    let source_p2p_key = cluster.nodes[source_idx].p2p_public_key_str();
+    wait_for_migration_port(&source_migration_addr).await;
+    backup_service.get_keyshares(
+        &source_migration_addr,
+        &source_p2p_key,
+        cluster.nodes[source_idx].backup_encryption_key_hex(),
+    );
+}
+
+/// Start node migration on the contract and wait for confirmation.
+async fn start_migration_and_wait(
+    cluster: &e2e_tests::MpcCluster,
+    source_idx: usize,
+    target_idx: usize,
+) {
+    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
+    let target_p2p_url = cluster.nodes[target_idx].p2p_url();
+    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key_str();
+
+    let destination_node_info = serde_json::json!({
+        "signer_account_pk": target_signer_pk,
+        "destination_node_info": {
+            "url": target_p2p_url,
+            "sign_pk": target_p2p_key,
+        },
+    });
+    let outcome = cluster
+        .start_node_migration(source_idx, destination_node_info)
+        .await
+        .expect("failed to start node migration");
+    assert!(
+        outcome.is_success(),
+        "start_node_migration failed: {:?}",
+        outcome.failure_message()
+    );
+
+    (|| async {
+        let info: serde_json::Value = cluster
+            .view_migration_info()
+            .await
+            .expect("failed to view migration info");
+        let entry = info.get(&source_account_id);
+        anyhow::ensure!(
+            entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
+            "contract has not indexed node migration yet"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .expect("timed out waiting for contract to reflect node migration");
+}
+
+/// PUT keyshares to the target node via the backup CLI.
+async fn put_keyshares_to_target(
+    cluster: &e2e_tests::MpcCluster,
+    target_idx: usize,
+    backup_service: &BackupService,
+) {
+    let target_migration_addr = match &cluster.nodes[target_idx] {
+        MpcNodeState::Running(n) => n.migration_web_ui_address(),
+        _ => panic!("target node not running"),
+    };
+    wait_for_migration_port(&target_migration_addr).await;
+
+    let contract_state = cluster
+        .get_contract_state()
+        .await
+        .expect("failed to get contract state");
+    backup_service.set_contract_state(&contract_state);
+
+    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
+    backup_service.put_keyshares(
+        &target_migration_addr,
+        &target_p2p_key,
+        cluster.nodes[target_idx].backup_encryption_key_hex(),
+    );
+}
+
+/// Wait for the target to become an active participant and for migration
+/// state to clear from the contract.
+async fn wait_for_migration_completion(
+    cluster: &e2e_tests::MpcCluster,
+    source_idx: usize,
+    target_idx: usize,
+) {
+    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
+
+    (|| async {
+        let state = cluster
+            .get_contract_state()
+            .await
+            .expect("failed to get contract state");
+        anyhow::ensure!(
+            running_state_matches_participant_key(&state, &source_account_id, &target_p2p_key),
+            "target node not yet active participant"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (MIGRATION_COMPLETION_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis())
+                    as usize,
+            ),
+    )
+    .await
+    .expect("timed out waiting for migration to complete");
+
+    (|| async {
+        let migration_info: serde_json::Value = cluster
+            .view_migration_info()
+            .await
+            .expect("failed to view migration info");
+        let entry = migration_info
+            .get(&source_account_id)
+            .expect("account not found in migration info");
+        let destination = entry.get(1).unwrap_or(&serde_json::Value::Null);
+        anyhow::ensure!(
+            destination.is_null(),
+            "migration destination should be cleared after completion"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(20),
+    )
+    .await
+    .expect("migration state did not clear");
+}
+
 /// Full end-to-end node migration via the backup CLI.
 ///
 /// Starts a cluster with 2 participating nodes and 2 target nodes (started
@@ -176,14 +412,13 @@ fn running_state_matches_participant_key(
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn migration_service__should_migrate_nodes_via_backup_cli() {
-    // Build backup-cli once before the test to avoid rebuilding per-iteration.
     let backup_cli = backup_cli_path();
 
     // given — targets start with the cluster so indexers sync before blocks pile up.
     let (mut cluster, running) = common::setup_cluster(common::MIGRATION_SERVICE_PORT_SEED, |c| {
         c.num_nodes = 2;
         c.threshold = 2;
-        c.migration_targets = vec![(0, 2), (1, 3)];
+        c.migration_targets = vec![0, 1];
     })
     .await;
 
@@ -197,209 +432,22 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         let backup_service = BackupService::new(backup_cli.clone());
         backup_service.generate_keys();
 
-        let source_account_id = cluster.nodes[source_idx].account_id().to_string();
-        let source_p2p_key = cluster.nodes[source_idx].p2p_public_key_str();
-        let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
-        let target_p2p_url = cluster.nodes[target_idx].p2p_url();
-
         assert_eq!(
             cluster.nodes[target_idx].account_id().to_string(),
-            source_account_id,
+            cluster.nodes[source_idx].account_id().to_string(),
             "migration target must share the source account"
         );
         assert_ne!(
-            source_p2p_key, target_p2p_key,
+            cluster.nodes[source_idx].p2p_public_key_str(),
+            cluster.nodes[target_idx].p2p_public_key_str(),
             "migration target must have a different p2p key"
         );
 
-        // Register backup service
-        let backup_pk = backup_service.public_key();
-        let outcome = cluster
-            .register_backup_service(source_idx, serde_json::json!({ "public_key": backup_pk }))
-            .await
-            .expect("failed to register backup service");
-        assert!(
-            outcome.is_success(),
-            "register_backup_service failed: {:?}",
-            outcome.failure_message()
-        );
-
-        let wait_timeout = Duration::from_secs(30);
-        (|| async {
-            let info: serde_json::Value = cluster
-                .view_migration_info()
-                .await
-                .expect("failed to view migration info");
-            let entry = info.get(&source_account_id);
-            anyhow::ensure!(
-                entry.is_some_and(|e| !e.get(0).unwrap_or(&serde_json::Value::Null).is_null()),
-                "node has not indexed backup registration yet"
-            );
-            Ok(())
-        })
-        .retry(
-            ConstantBuilder::default()
-                .with_delay(common::POLL_INTERVAL)
-                .with_max_times(
-                    (wait_timeout.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-                ),
-        )
-        .await
-        .expect("timed out waiting for node to index backup registration");
-
-        let source_web_addr = match &cluster.nodes[source_idx] {
-            MpcNodeState::Running(n) => n.web_address(),
-            _ => panic!("source node not running"),
-        };
-        let http_client = reqwest::Client::new();
-        (|| async {
-            let resp = http_client
-                .get(format!("http://{source_web_addr}/debug/migrations"))
-                .send()
-                .await?;
-            let body = resp.text().await?;
-            anyhow::ensure!(
-                body.contains(&backup_pk),
-                "node debug endpoint doesn't reflect backup registration yet"
-            );
-            Ok(())
-        })
-        .retry(
-            ConstantBuilder::default()
-                .with_delay(common::POLL_INTERVAL)
-                .with_max_times(
-                    (wait_timeout.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-                ),
-        )
-        .await
-        .expect("timed out waiting for node debug endpoint to show backup registration");
-
-        // GET keyshares from source node
-        let contract_state = cluster
-            .get_contract_state()
-            .await
-            .expect("failed to get contract state");
-        backup_service.set_contract_state(&contract_state);
-
-        let source_migration_addr = match &cluster.nodes[source_idx] {
-            MpcNodeState::Running(n) => n.migration_web_ui_address(),
-            _ => panic!("source node not running"),
-        };
-        wait_for_migration_port(&source_migration_addr).await;
-        backup_service.get_keyshares(
-            &source_migration_addr,
-            &source_p2p_key,
-            cluster.nodes[source_idx].backup_encryption_key_hex(),
-        );
-
-        // Initiate node migration
-        let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key_str();
-        let destination_node_info = serde_json::json!({
-            "signer_account_pk": target_signer_pk,
-            "destination_node_info": {
-                "url": target_p2p_url,
-                "sign_pk": target_p2p_key,
-            },
-        });
-        let outcome = cluster
-            .start_node_migration(source_idx, destination_node_info)
-            .await
-            .expect("failed to start node migration");
-        assert!(
-            outcome.is_success(),
-            "start_node_migration failed: {:?}",
-            outcome.failure_message()
-        );
-
-        (|| async {
-            let info: serde_json::Value = cluster
-                .view_migration_info()
-                .await
-                .expect("failed to view migration info");
-            let entry = info.get(&source_account_id);
-            anyhow::ensure!(
-                entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
-                "contract has not indexed node migration yet"
-            );
-            Ok(())
-        })
-        .retry(
-            ConstantBuilder::default()
-                .with_delay(common::POLL_INTERVAL)
-                .with_max_times(
-                    (wait_timeout.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-                ),
-        )
-        .await
-        .expect("timed out waiting for contract to reflect node migration");
-
-        // Wait for the target node's migration port to become reachable.
-        // The migration web server binds once the node's indexer has synced and
-        // the root future starts the migration service.
-        let target_migration_addr = match &cluster.nodes[target_idx] {
-            MpcNodeState::Running(n) => n.migration_web_ui_address(),
-            _ => panic!("target node not running"),
-        };
-        wait_for_migration_port(&target_migration_addr).await;
-
-        // PUT keyshares to target node
-        let contract_state = cluster
-            .get_contract_state()
-            .await
-            .expect("failed to get contract state");
-        backup_service.set_contract_state(&contract_state);
-
-        backup_service.put_keyshares(
-            &target_migration_addr,
-            &target_p2p_key,
-            cluster.nodes[target_idx].backup_encryption_key_hex(),
-        );
-
-        // then — verify target node becomes active participant
-        let migration_timeout = Duration::from_secs(60);
-        (|| async {
-            let state = cluster
-                .get_contract_state()
-                .await
-                .expect("failed to get contract state");
-            anyhow::ensure!(
-                running_state_matches_participant_key(&state, &source_account_id, &target_p2p_key,),
-                "target node not yet active participant"
-            );
-            Ok(())
-        })
-        .retry(
-            ConstantBuilder::default()
-                .with_delay(common::POLL_INTERVAL)
-                .with_max_times(
-                    (migration_timeout.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-                ),
-        )
-        .await
-        .expect("timed out waiting for migration to complete");
-
-        (|| async {
-            let migration_info: serde_json::Value = cluster
-                .view_migration_info()
-                .await
-                .expect("failed to view migration info");
-            let entry = migration_info
-                .get(&source_account_id)
-                .expect("account not found in migration info");
-            let destination = entry.get(1).unwrap_or(&serde_json::Value::Null);
-            anyhow::ensure!(
-                destination.is_null(),
-                "migration destination should be cleared after completion"
-            );
-            Ok(())
-        })
-        .retry(
-            ConstantBuilder::default()
-                .with_delay(common::POLL_INTERVAL)
-                .with_max_times(20),
-        )
-        .await
-        .expect("migration state did not clear");
+        register_backup_service_and_wait(&cluster, source_idx, &backup_service).await;
+        get_keyshares_from_source(&cluster, source_idx, &backup_service).await;
+        start_migration_and_wait(&cluster, source_idx, target_idx).await;
+        put_keyshares_to_target(&cluster, target_idx, &backup_service).await;
+        wait_for_migration_completion(&cluster, source_idx, target_idx).await;
 
         cluster
             .kill_nodes(&[source_idx])

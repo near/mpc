@@ -70,11 +70,12 @@ pub struct MpcClusterConfig {
     /// Per-node foreign chains configuration. If empty, all nodes get the default
     /// (empty) config. If non-empty, must have exactly `num_nodes` entries.
     pub node_foreign_chains_configs: Vec<mpc_node_config::ForeignChainsConfig>,
-    /// Migration targets: `(source_idx, target_idx)` pairs. Each target shares
-    /// the source's NEAR account but gets a distinct P2P key. Started with the
+    /// Migration targets: each entry is a source node index. The i-th entry
+    /// produces a target node at index `num_nodes + i` that shares the
+    /// source's NEAR account but gets a distinct P2P key. Started with the
     /// cluster so their indexers sync before blocks accumulate (`start_near_node`
     /// blocks until synced).
-    pub migration_targets: Vec<(usize, usize)>,
+    pub migration_targets: Vec<usize>,
 }
 
 impl MpcClusterConfig {
@@ -126,6 +127,17 @@ impl MpcClusterConfig {
             self.initial_participant_indices.clone()
         }
     }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        for (i, &source_idx) in self.migration_targets.iter().enumerate() {
+            anyhow::ensure!(
+                source_idx < self.num_nodes,
+                "migration_targets[{i}]: source index {source_idx} must be < num_nodes ({})",
+                self.num_nodes,
+            );
+        }
+        Ok(())
+    }
 }
 
 fn default_mpc_binary_path() -> PathBuf {
@@ -158,6 +170,7 @@ impl MpcCluster {
     /// create accounts, submit attestations, add domains, spawn mpc-node
     /// binaries, and wait for Running state.
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
+        config.validate()?;
         let ports = E2ePortAllocator::new(config.port_seed);
         let test_dir = create_test_dir(&config.home_base)?;
 
@@ -176,7 +189,8 @@ impl MpcCluster {
         // Pre-generate keys for migration target nodes.
         // Migration targets share the source's NEAR account, so node_keys
         // (which stores NEAR signer keys) gets the source's key.
-        for &(source_idx, target_idx) in &config.migration_targets {
+        for (i, &source_idx) in config.migration_targets.iter().enumerate() {
+            let target_idx = config.num_nodes + i;
             node_keys.push(node_keys[source_idx].clone());
             operator_keys.push(generate_deterministic_key(
                 KEY_SEED_MIGRATION_OPERATOR + target_idx as u64,
@@ -1043,7 +1057,8 @@ fn start_mpc_nodes(
 
     // Start migration target nodes alongside the participants so their
     // near-indexers sync from the same early point in the chain.
-    for &(source_idx, target_idx) in &config.migration_targets {
+    for (i, &source_idx) in config.migration_targets.iter().enumerate() {
+        let target_idx = config.num_nodes + i;
         let source = match &nodes[source_idx] {
             MpcNodeState::Running(n) => n.setup(),
             MpcNodeState::Stopped(s) => s,

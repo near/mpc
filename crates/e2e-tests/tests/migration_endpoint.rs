@@ -43,9 +43,9 @@ async fn migration_endpoint__should_track_migration_state() {
         wait_for_endpoint_match(&client, &web_addr, &expected_migrations).await;
 
         // Step 2: Register a bogus backup service using the node's p2p public key
-        let p2p_pk = node_state.p2p_public_key_str();
+        let p2p_public_key = node_state.p2p_public_key_str();
         let backup_service_info = serde_json::json!({
-            "public_key": p2p_pk,
+            "public_key": p2p_public_key,
         });
 
         let outcome = cluster
@@ -70,10 +70,10 @@ async fn migration_endpoint__should_track_migration_state() {
 
         // Step 3: Start node migration with bogus destination info
         let destination_node_info = serde_json::json!({
-            "signer_account_pk": p2p_pk,
+            "signer_account_pk": p2p_public_key,
             "destination_node_info": {
                 "url": "http://bogus:1234",
-                "sign_pk": p2p_pk,
+                "sign_pk": p2p_public_key,
             },
         });
 
