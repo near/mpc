@@ -100,8 +100,8 @@ curve25519-dalek = { version = "4.1.3", features = [
 # what removes `der` / `x509-cert` from builds that don't need them.
 # Contract-side code (`crates/attestation` →
 # `dcap_qvl::verify::verify_with::<Asn1DerConfig>`) runs without it;
-# node-side code that needs `get_collateral` enables `default-x509` (via the
-# `report` feature) per-crate in its own manifest.
+# node-side code that needs `CollateralClient` enables `default-x509` (via
+# the `report` feature) per-crate in its own manifest.
 dcap-qvl = { version = "0.4.0", default-features = false, features = [
     "contract",
     "borsh",
@@ -120,7 +120,9 @@ derive_more = { version = "2.1.1", features = [
 ] }
 digest = "0.10.7"
 dstack-sdk = { version = "0.1.2" }
-dstack-sdk-types = { version = "0.1.2", features = ["borsh"] }
+dstack-sdk-types = { version = "0.1.2", default-features = false, features = [
+    "borsh",
+] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 ed25519-dalek = { version = "2.2.0", features = [
     "serde",
