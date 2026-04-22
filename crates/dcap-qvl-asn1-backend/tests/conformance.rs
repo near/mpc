@@ -10,8 +10,6 @@
 //! `Asn1DerParsedCert::extension`; they are not part of the upstream
 //! corpus.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
 use dcap_qvl::{
     QuoteCollateralV3,
     config::{Config, EcdsaSigEncoder, ParsedCert, X509Codec},

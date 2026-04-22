@@ -47,10 +47,6 @@ use dcap_qvl::config::Config;
 /// `ring` crypto provider. Drop-in replacement for
 /// [`dcap_qvl::configs::RingConfig`] that avoids pulling `der` and
 /// `x509-cert` into the build.
-///
-/// To use a different crypto provider, write a separate `Config` impl that
-/// names [`Asn1DerCertBackend`] and [`Asn1DerSigEncoder`] for the X.509 and
-/// signature components.
 pub struct Asn1DerConfig;
 
 impl Config for Asn1DerConfig {
