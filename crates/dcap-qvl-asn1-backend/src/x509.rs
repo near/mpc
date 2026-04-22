@@ -29,6 +29,8 @@ use dcap_qvl::config::{ParsedCert, X509Codec};
 const TAG_CTX_0: u8 = 0xA0;
 /// Context-tag byte for `[3] EXPLICIT` (X.509 `extensions` wrapper).
 const TAG_CTX_3: u8 = 0xA3;
+/// DER tag for `OBJECT IDENTIFIER`, the required type of `Extension.extnID`.
+const TAG_OID: u8 = 0x06;
 /// DER tag for `OCTET STRING`, the required type of `Extension.extnValue`.
 const TAG_OCTET_STRING: u8 = 0x04;
 
@@ -74,6 +76,32 @@ impl<'a> ParsedCert for Asn1DerParsedCert<'a> {
     /// This is intentionally less structured than RFC 4514 — it is just
     /// enough to satisfy the substring contract documented on
     /// [`ParsedCert::issuer_dn`].
+    ///
+    /// # Warning
+    ///
+    /// The output is **not** RFC 4514 and diverges from
+    /// [`dcap_qvl::x509::X509CertParsed::issuer_dn`] in several visible ways:
+    ///
+    /// - RDNs are concatenated in **forward DER order**. RFC 4514 (and the
+    ///   audited default) emits them **reversed**.
+    /// - Attribute-type labels (`CN=`, `O=`, `C=`, …) are stripped.
+    /// - Special characters (`,`, `+`, `;`, `<`, `>`, `"`, `\\`, leading `#`,
+    ///   control characters) are **not escaped** — raw bytes pass through.
+    /// - Multi-valued RDNs are flattened into the same comma-joined list;
+    ///   there is no `+` separator.
+    /// - Only `PrintableString` (0x13), `UTF8String` (0x0C) and `IA5String`
+    ///   (0x16) are extracted; other `DirectoryString` variants
+    ///   (`TeletexString`, `BMPString`, `UniversalString`, …) are silently
+    ///   dropped.
+    ///
+    /// These differences do not affect the two substring checks the rest of
+    /// `dcap-qvl` performs today (`"Intel SGX PCK Processor CA"` /
+    /// `"Intel SGX PCK Platform CA"`, both covered by
+    /// `parsed_cert_matches_default_on_sample_corpus` in the conformance
+    /// suite). Any caller that adds a **new** `.contains(needle)` check on
+    /// the issuer DN MUST also extend that conformance test with the new
+    /// needle, otherwise the custom and audited backends may silently
+    /// disagree on Intel-issued certs.
     fn issuer_dn(&self) -> Result<String> {
         // tbsCertificate ::= SEQUENCE {
         //     version         [0] EXPLICIT Version DEFAULT v1,
@@ -160,6 +188,18 @@ impl<'a> ParsedCert for Asn1DerParsedCert<'a> {
             let oid_obj = ext
                 .get(0)
                 .map_err(|e| anyhow!("Missing extension OID: {e}"))?;
+            // `Extension.extnID` is specified as OBJECT IDENTIFIER
+            // (tag 0x06). The audited `x509-cert` backend enforces this
+            // via its typed `extn_id: ObjectIdentifier` decode; we do it
+            // explicitly so an extension shaped e.g.
+            // `SEQUENCE { OCTET_STRING <sgx-oid-bytes>, ... }` can never
+            // byte-match the query OID and leak an unintended value.
+            if oid_obj.tag() != TAG_OID {
+                bail!(
+                    "Extension extnID is not an OBJECT IDENTIFIER (tag 0x{:02X})",
+                    oid_obj.tag()
+                );
+            }
             if oid_obj.value() != oid {
                 continue;
             }
@@ -176,9 +216,7 @@ impl<'a> ParsedCert for Asn1DerParsedCert<'a> {
             if !(2..=3).contains(&ext_len) {
                 bail!("Extension sequence has unexpected shape (len {ext_len})");
             }
-            let value_idx = ext_len
-                .checked_sub(1)
-                .context("Empty extension sequence")?;
+            let value_idx = ext_len.checked_sub(1).context("Empty extension sequence")?;
             let value_obj = ext
                 .get(value_idx)
                 .map_err(|e| anyhow!("Missing extension value: {e}"))?;
