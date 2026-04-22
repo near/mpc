@@ -91,16 +91,11 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    use near_mpc_contract_interface::types::{
-        BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey,
-    };
+    use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
 
     use crate::{
         node_migrations::NodeMigrations,
-        primitives::test_utils::{
-            bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id,
-            gen_participant,
-        },
+        primitives::test_utils::{bogus_ed25519_public_key, gen_account_id, gen_participant},
     };
 
     #[test]
@@ -142,8 +137,7 @@ mod tests {
         let mut migrations = NodeMigrations::default();
         let (account_id, participant_info) = gen_participant(0);
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: Ed25519PublicKey::try_from(&bogus_ed25519_near_public_key())
-                .unwrap(),
+            signer_account_pk: bogus_ed25519_public_key(),
             destination_node_info: participant_info.try_into().unwrap(),
         };
         // sanity checks
@@ -204,8 +198,7 @@ mod tests {
         };
 
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: Ed25519PublicKey::try_from(&bogus_ed25519_near_public_key())
-                .unwrap(),
+            signer_account_pk: bogus_ed25519_public_key(),
             destination_node_info: participant_info.try_into().unwrap(),
         };
 

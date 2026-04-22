@@ -1,6 +1,5 @@
-use crate::types::participants::ParticipantInfo;
+use crate::types::{Ed25519PublicKey, ParticipantInfo};
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

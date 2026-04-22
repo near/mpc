@@ -3663,11 +3663,10 @@ mod tests {
     }
 
     fn gen_random_destination_info() -> DestinationNodeInfo {
-        let node_signer_pk = bogus_ed25519_near_public_key();
         let url_id: usize = rand::random();
         let (_, participant_info) = gen_participant(url_id);
         DestinationNodeInfo {
-            signer_account_pk: Ed25519PublicKey::try_from(&node_signer_pk).unwrap(),
+            signer_account_pk: bogus_ed25519_public_key(),
             destination_node_info: participant_info.try_into().unwrap(),
         }
     }

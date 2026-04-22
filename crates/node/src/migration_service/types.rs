@@ -141,9 +141,7 @@ pub mod tests {
     use mpc_contract::{
         primitives::{
             key_state::Keyset,
-            test_utils::{
-                bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_participant,
-            },
+            test_utils::{bogus_ed25519_public_key, gen_participant},
         },
         state::{
             test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state},
@@ -158,7 +156,6 @@ pub mod tests {
     use crate::{
         config,
         indexer::{migrations::ContractMigrationInfo, participants::ContractState},
-        providers::PublicKeyConversion,
     };
 
     use super::{MigrationInfo, OnboardingJob};
@@ -185,9 +182,8 @@ pub mod tests {
     fn test_migration_status_constructor_empty() {
         let state = ContractMigrationInfo::new();
         let (account_id, _) = gen_participant(0);
-        let signer_account_pk = bogus_ed25519_near_public_key();
         let p2p_public_key =
-            ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&signer_account_pk).unwrap();
+            ed25519_dalek::VerifyingKey::try_from(&bogus_ed25519_public_key()).unwrap();
 
         let res = MigrationInfo::from_contract_state(&account_id, &p2p_public_key, &state);
         assert!(!res.active_migration);
@@ -199,10 +195,10 @@ pub mod tests {
         let mut state = ContractMigrationInfo::new();
         let (account_id_0, participant_info_0) = gen_participant(0);
         let (account_id_1, _) = gen_participant(1);
-        let signer_account_pk = bogus_ed25519_near_public_key();
+        let signer_account_pk = bogus_ed25519_public_key();
         let participant_sign_pk = Ed25519PublicKey::try_from(&participant_info_0.sign_pk).unwrap();
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk: Ed25519PublicKey::try_from(&signer_account_pk).unwrap(),
+            signer_account_pk: signer_account_pk.clone(),
             destination_node_info: participant_info_0.clone().try_into().unwrap(),
         };
 
@@ -219,7 +215,7 @@ pub mod tests {
         let participating_key =
             ed25519_dalek::VerifyingKey::try_from(&participant_sign_pk).unwrap();
         let non_participating_key =
-            ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&signer_account_pk).unwrap();
+            ed25519_dalek::VerifyingKey::try_from(&signer_account_pk).unwrap();
 
         let res = MigrationInfo::from_contract_state(&account_id_0, &participating_key, &state);
         assert!(!res.active_migration);
