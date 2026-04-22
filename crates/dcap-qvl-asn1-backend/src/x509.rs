@@ -29,6 +29,8 @@ use dcap_qvl::config::{ParsedCert, X509Codec};
 const TAG_CTX_0: u8 = 0xA0;
 /// Context-tag byte for `[3] EXPLICIT` (X.509 `extensions` wrapper).
 const TAG_CTX_3: u8 = 0xA3;
+/// DER tag for `OCTET STRING`, the required type of `Extension.extnValue`.
+const TAG_OCTET_STRING: u8 = 0x04;
 
 /// Tags asn1 DirectoryString variants we handle when stringifying issuer DN.
 /// `0x13` = PrintableString, `0x0C` = UTF8String, `0x16` = IA5String.
@@ -165,15 +167,27 @@ impl<'a> ParsedCert for Asn1DerParsedCert<'a> {
                 bail!("extension appears more than once");
             }
 
-            // The OCTET STRING value is the last element of the SEQUENCE
-            // (index 1 if `critical` absent, 2 if present).
-            let value_idx = ext
-                .len()
+            // Extension must carry { oid, extnValue } or { oid, critical,
+            // extnValue }; reject other shapes rather than guessing. A cert
+            // that is missing extnValue (e.g. only { oid, critical }) would
+            // otherwise hand back the BOOLEAN bytes as if they were the
+            // extension value.
+            let ext_len = ext.len();
+            if !(2..=3).contains(&ext_len) {
+                bail!("Extension sequence has unexpected shape (len {ext_len})");
+            }
+            let value_idx = ext_len
                 .checked_sub(1)
                 .context("Empty extension sequence")?;
             let value_obj = ext
                 .get(value_idx)
                 .map_err(|e| anyhow!("Missing extension value: {e}"))?;
+            if value_obj.tag() != TAG_OCTET_STRING {
+                bail!(
+                    "Extension value is not an OCTET STRING (tag 0x{:02X})",
+                    value_obj.tag()
+                );
+            }
             found = Some(value_obj.value().to_vec());
         }
         Ok(found)

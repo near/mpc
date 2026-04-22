@@ -111,7 +111,7 @@ curve25519-dalek = { version = "4.1.3", features = [
 #
 # TODO(#2983): once `dcap-qvl` cuts a release containing #144, swap
 # `git`/`rev` for `version = "X.Y.Z"`.
-dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl.git", rev = "8a533f5d7ef3e231fc4a0c864fde8129737dbc90", default-features = false, features = [
+dcap-qvl = { git = "https://github.com/Phala-Network/dcap-qvl", rev = "8a533f5d7ef3e231fc4a0c864fde8129737dbc90", default-features = false, features = [
     "contract",
     "borsh",
     "std",
