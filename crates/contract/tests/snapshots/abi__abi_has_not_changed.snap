@@ -84,8 +84,34 @@ expression: abi
         }
       },
       {
+        "name": "clean_invalid_attestations",
+        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists). Returns the number of entries removed. Callable by\n anyone while the protocol is in `Running`.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "max_scan",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      {
         "name": "clean_tee_status",
-        "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
+        "doc": " Private endpoint to drop votes cast by non-participants after resharing.\n Attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].",
         "kind": "call",
         "modifiers": [
           "private"
@@ -627,6 +653,10 @@ expression: abi
                         "u64"
                       ],
                       [
+                        "clean_invalid_attestations_tera_gas",
+                        "u64"
+                      ],
+                      [
                         "cleanup_orphaned_node_migrations_tera_gas",
                         "u64"
                       ],
@@ -1055,7 +1085,7 @@ expression: abi
       },
       {
         "name": "start_node_migration",
-        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided [`DestinationNodeInfo`] is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.  \n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
+        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.  \n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -1824,6 +1854,7 @@ expression: abi
           "required": [
             "ckd_call_gas_attachment_requirement_tera_gas",
             "clean_foreign_chain_data_tera_gas",
+            "clean_invalid_attestations_tera_gas",
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
             "contract_upgrade_deposit_tera_gas",
@@ -1844,6 +1875,12 @@ expression: abi
             },
             "clean_foreign_chain_data_tera_gas": {
               "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_invalid_attestations_tera_gas": {
+              "description": "Prepaid gas for the reshare-time `clean_invalid_attestations` promise.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -1969,8 +2006,12 @@ expression: abi
               "$ref": "#/definitions/ParticipantInfo"
             },
             "signer_account_pk": {
-              "description": "the public key used by the node to sign transactions to the contract this key is different from the TLS key called `sign_pk` and stored in `ParticipantInfo`.",
-              "type": "string"
+              "description": "The public key used by the node to sign transactions to the contract. This key is different from the TLS key stored in [`ParticipantInfo::tls_public_key`].",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                }
+              ]
             }
           }
         },
@@ -2372,6 +2413,15 @@ expression: abi
             },
             "clean_foreign_chain_data_tera_gas": {
               "description": "Prepaid gas for a `clean_foreign_chain_data` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_invalid_attestations_tera_gas": {
+              "description": "Prepaid gas for the reshare-time `clean_invalid_attestations` promise.",
               "type": [
                 "integer",
                 "null"
@@ -2941,6 +2991,7 @@ expression: abi
           "type": "object",
           "required": [
             "account_id",
+            "account_public_key",
             "tls_public_key"
           ],
           "properties": {
@@ -2950,12 +3001,9 @@ expression: abi
             },
             "account_public_key": {
               "description": "Full-access Ed25519 public key of the operator account.",
-              "anyOf": [
+              "allOf": [
                 {
                   "$ref": "#/definitions/Ed25519PublicKey"
-                },
-                {
-                  "type": "null"
                 }
               ]
             },
@@ -2986,11 +3034,11 @@ expression: abi
         "ParticipantInfo": {
           "type": "object",
           "required": [
-            "sign_pk",
+            "tls_public_key",
             "url"
           ],
           "properties": {
-            "sign_pk": {
+            "tls_public_key": {
               "$ref": "#/definitions/Ed25519PublicKey"
             },
             "url": {

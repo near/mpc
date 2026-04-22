@@ -818,7 +818,7 @@ There are two distinct Near Account Keys with different responsibilities:
 
 - **Operator**
   - Trusted to protect the operator key.
-  - Not trusted with the TLS (`sign_pk`) key or the `Node Account Key`, which never leaves the TEE.
+  - Not trusted with the TLS (`tls_public_key`) key or the `Node Account Key`, which never leaves the TEE.
   - Not trusted to securely run the MPC node.
 - **dstack**
   - Trusted as the software framework used to deploy MPC nodes.

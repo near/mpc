@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary,
+        init, propose_and_vote_contract_binary, submit_attestations, OldThresholdParameters,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -53,7 +53,7 @@ async fn init_old_contract(
     contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({
-            "parameters": threshold_parameters,
+            "parameters": OldThresholdParameters::from(&threshold_parameters),
         }))
         .transact()
         .await?
@@ -207,6 +207,8 @@ async fn upgrade_preserves_state_and_requests(
 
     let attested_account = &accounts[0];
 
+    submit_attestations(&contract, &accounts, &participants).await;
+
     let injected_contract_state = execute_key_generation_and_add_random_state(
         &accounts,
         participants,
@@ -230,6 +232,7 @@ async fn upgrade_preserves_state_and_requests(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
     );
+
     for pending in injected_contract_state.pending_sign_requests {
         submit_signature_response(&pending.response, &contract, attested_account)
             .await
@@ -245,13 +248,20 @@ async fn upgrade_preserves_state_and_requests(
     }
 }
 
+/// During the soft-launch transition every participant re-submits their TEE
+/// attestation on the old contract (populating the previously-optional
+/// `account_public_key` field). The #1710 migration drops any stored entry
+/// that still has a missing account key, so this test reproduces the
+/// production sequence: soft-launch re-submissions first, then the upgrade,
+/// and verifies that every initial participant still has a stored attestation
+/// after migration.
 #[tokio::test]
 async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -> anyhow::Result<()>
 {
     let worker = near_workspaces::sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
-    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
 
     let initial_participants = get_participants(&contract).await?;
     let participant_set_is_not_empty = !initial_participants.participants.is_empty();
@@ -259,6 +269,8 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
         participant_set_is_not_empty,
         "Test must contain a contract with at least one participant"
     );
+
+    submit_attestations(&contract, &accounts, &participants).await;
 
     let contract = upgrade_to_new(contract).await?;
 
@@ -316,6 +328,8 @@ async fn upgrade_allows_new_request_types(
         .await
         .unwrap();
     let attested_account = &accounts[0];
+
+    submit_attestations(&contract, &accounts, &participants).await;
 
     let injected_contract_state = execute_key_generation_and_add_random_state(
         &accounts,

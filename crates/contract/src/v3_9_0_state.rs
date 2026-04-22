@@ -8,19 +8,35 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use dtos::{DomainConfig, Ed25519PublicKey, ParticipantId, Threshold};
 use mpc_attestation::attestation::VerifiedAttestation;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, store::LookupMap};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
+        domain::{AddDomainsVotes, DomainRegistry},
+        key_state::{
+            AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
+            Keyset,
+        },
+        participants::{ParticipantInfo, Participants},
         signature::{SignatureRequest, YieldIndex},
+        threshold_votes::ThresholdParametersVotes,
+        thresholds::ThresholdParameters,
     },
-    state::ProtocolContractState,
+    state::{
+        initializing::InitializingContractState,
+        key_event::{KeyEvent, KeyEventInstance},
+        resharing::ResharingContractState,
+        running::RunningContractState,
+        ProtocolContractState,
+    },
+    storage_keys::StorageKey,
     tee::{
         measurements::{AllowedMeasurements, MeasurementVotes},
         proposal::{
@@ -32,6 +48,237 @@ use crate::{
     Config, ForeignChainPolicyVotes, NodeForeignChainConfigurations,
 };
 
+/// Previous `ParticipantInfo` layout — the TLS key was stored as a tagged
+/// `near_sdk::PublicKey` under the misleading `sign_pk` name. The new layout
+/// is a raw [`Ed25519PublicKey`] field named `tls_public_key`.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldParticipantInfo {
+    url: String,
+    sign_pk: near_sdk::PublicKey,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldParticipants {
+    next_id: ParticipantId,
+    participants: Vec<(AccountId, ParticipantId, OldParticipantInfo)>,
+}
+
+/// Preserve the current `ThresholdParameters` field order so the borsh layout
+/// matches the old on-chain state.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldThresholdParameters {
+    participants: OldParticipants,
+    threshold: Threshold,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldThresholdParametersVotes {
+    proposal_by_account: BTreeMap<AuthenticatedAccountId, OldThresholdParameters>,
+}
+
+/// Mirror of the current `KeyEvent` with `OldThresholdParameters` swapped in.
+/// `KeyEventInstance` does not transitively contain `ParticipantInfo`, so it
+/// is reused as-is.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldKeyEvent {
+    epoch_id: EpochId,
+    domain: DomainConfig,
+    parameters: OldThresholdParameters,
+    instance: Option<KeyEventInstance>,
+    next_attempt_id: AttemptId,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldRunningContractState {
+    domains: DomainRegistry,
+    keyset: Keyset,
+    parameters: OldThresholdParameters,
+    parameters_votes: OldThresholdParametersVotes,
+    add_domains_votes: AddDomainsVotes,
+    previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldInitializingContractState {
+    domains: DomainRegistry,
+    epoch_id: EpochId,
+    generated_keys: Vec<KeyForDomain>,
+    generating_key: OldKeyEvent,
+    cancel_votes: BTreeSet<AuthenticatedParticipantId>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldResharingContractState {
+    previous_running_state: OldRunningContractState,
+    reshared_keys: Vec<KeyForDomain>,
+    resharing_key: OldKeyEvent,
+    cancellation_requests: HashSet<AuthenticatedAccountId>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+enum OldProtocolContractState {
+    NotInitialized,
+    Initializing(OldInitializingContractState),
+    Running(OldRunningContractState),
+    Resharing(OldResharingContractState),
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct MpcContract {
+    protocol_state: OldProtocolContractState,
+    pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
+    pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    pending_verify_foreign_tx_requests:
+        LookupMap<dtos::VerifyForeignTransactionRequest, YieldIndex>,
+    proposed_updates: ProposedUpdates,
+    foreign_chain_policy: dtos::ForeignChainPolicy,
+    foreign_chain_policy_votes: ForeignChainPolicyVotes,
+    node_foreign_chain_configurations: NodeForeignChainConfigurations,
+    config: OldConfig,
+    tee_state: OldTeeState,
+    accept_requests: bool,
+    node_migrations: NodeMigrations,
+    stale_data: OldStaleData,
+    metrics: dtos::Metrics,
+}
+
+impl From<OldParticipantInfo> for ParticipantInfo {
+    fn from(old: OldParticipantInfo) -> Self {
+        // Participants' TLS keys are always Ed25519 by construction (enforced
+        // by the TLS stack). Panicking here is safer than silently dropping
+        // the entry: a participant with a non-Ed25519 key can never reach
+        // this migration in practice, and dropping would break
+        // `Participants::validate()` invariants (ID contiguity, threshold vs
+        // size) and brick the contract.
+        let tls_public_key = Ed25519PublicKey::try_from(&old.sign_pk)
+            .expect("participant tls public key must be Ed25519");
+        ParticipantInfo {
+            url: old.url,
+            tls_public_key,
+        }
+    }
+}
+
+impl From<OldParticipants> for Participants {
+    fn from(old: OldParticipants) -> Self {
+        let participants = old
+            .participants
+            .into_iter()
+            .map(|(account_id, id, info)| (account_id, id, info.into()))
+            .collect();
+        Participants::init(old.next_id, participants)
+    }
+}
+
+impl From<OldThresholdParameters> for ThresholdParameters {
+    fn from(old: OldThresholdParameters) -> Self {
+        ThresholdParameters::new_unvalidated(old.participants.into(), old.threshold)
+    }
+}
+
+impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
+    fn from(old: OldThresholdParametersVotes) -> Self {
+        let proposal_by_account = old
+            .proposal_by_account
+            .into_iter()
+            .map(|(account, params)| (account, params.into()))
+            .collect();
+        ThresholdParametersVotes {
+            proposal_by_account,
+        }
+    }
+}
+
+impl From<OldKeyEvent> for KeyEvent {
+    fn from(old: OldKeyEvent) -> Self {
+        KeyEvent::from_raw(
+            old.epoch_id,
+            old.domain,
+            old.parameters.into(),
+            old.instance,
+            old.next_attempt_id,
+        )
+    }
+}
+
+impl From<OldRunningContractState> for RunningContractState {
+    fn from(old: OldRunningContractState) -> Self {
+        RunningContractState {
+            domains: old.domains,
+            keyset: old.keyset,
+            parameters: old.parameters.into(),
+            parameters_votes: old.parameters_votes.into(),
+            add_domains_votes: old.add_domains_votes,
+            previously_cancelled_resharing_epoch_id: old.previously_cancelled_resharing_epoch_id,
+        }
+    }
+}
+
+impl From<OldInitializingContractState> for InitializingContractState {
+    fn from(old: OldInitializingContractState) -> Self {
+        InitializingContractState {
+            domains: old.domains,
+            epoch_id: old.epoch_id,
+            generated_keys: old.generated_keys,
+            generating_key: old.generating_key.into(),
+            cancel_votes: old.cancel_votes,
+        }
+    }
+}
+
+impl From<OldResharingContractState> for ResharingContractState {
+    fn from(old: OldResharingContractState) -> Self {
+        ResharingContractState {
+            previous_running_state: old.previous_running_state.into(),
+            reshared_keys: old.reshared_keys,
+            resharing_key: old.resharing_key.into(),
+            cancellation_requests: old.cancellation_requests,
+        }
+    }
+}
+
+impl From<OldProtocolContractState> for ProtocolContractState {
+    fn from(old: OldProtocolContractState) -> Self {
+        match old {
+            OldProtocolContractState::NotInitialized => ProtocolContractState::NotInitialized,
+            OldProtocolContractState::Initializing(state) => {
+                ProtocolContractState::Initializing(state.into())
+            }
+            OldProtocolContractState::Running(state) => {
+                ProtocolContractState::Running(state.into())
+            }
+            OldProtocolContractState::Resharing(state) => {
+                ProtocolContractState::Resharing(state.into())
+            }
+        }
+    }
+}
+
+impl From<MpcContract> for crate::MpcContract {
+    fn from(value: MpcContract) -> Self {
+        if !matches!(value.protocol_state, OldProtocolContractState::Running(_)) {
+            env::panic_str("Contract must be in running state when migrating.");
+        }
+
+        Self {
+            protocol_state: value.protocol_state.into(),
+            pending_signature_requests: value.pending_signature_requests,
+            pending_ckd_requests: value.pending_ckd_requests,
+            pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
+            proposed_updates: value.proposed_updates,
+            foreign_chain_policy: value.foreign_chain_policy,
+            foreign_chain_policy_votes: value.foreign_chain_policy_votes,
+            node_foreign_chain_configurations: value.node_foreign_chain_configurations,
+            config: value.config.into(),
+            tee_state: value.tee_state.into(),
+            accept_requests: value.accept_requests,
+            node_migrations: value.node_migrations,
+            stale_data: crate::StaleData {},
+            metrics: value.metrics,
+        }
+    }
+}
+
 /// Previous `StaleData` layout — held a [`LookupMap`] of pre-upgrade signature requests.
 /// After the v3.9 migration is fully deployed those requests have been resolved or timed
 /// out, so the field is dropped here and the new `StaleData` is empty.
@@ -40,22 +287,49 @@ struct OldStaleData {
     pending_signature_requests_pre_upgrade: LookupMap<SignatureRequest, YieldIndex>,
 }
 
-/// Previous `NodeId` layout — `tls_public_key` and `account_public_key` used the
-/// `near_sdk::PublicKey` tagged borsh encoding. The new layout stores the TLS
-/// key as a raw 32-byte [`dtos::Ed25519PublicKey`] and the account key as a
-/// [`dtos::PublicKey`] (with an explicit curve tag), so we need a dedicated
-/// pre-migration type here.
+/// Previous `Config` layout — v3.9.0 predated `clean_invalid_attestations_tera_gas`, so the
+/// current `Config` has one extra `u64` and cannot be used to borsh-decode deployed state.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct OldNodeId {
-    account_id: AccountId,
-    tls_public_key: near_sdk::PublicKey,
-    account_public_key: Option<near_sdk::PublicKey>,
+struct OldConfig {
+    key_event_timeout_blocks: u64,
+    tee_upgrade_deadline_duration_seconds: u64,
+    contract_upgrade_deposit_tera_gas: u64,
+    sign_call_gas_attachment_requirement_tera_gas: u64,
+    ckd_call_gas_attachment_requirement_tera_gas: u64,
+    return_signature_and_clean_state_on_success_call_tera_gas: u64,
+    return_ck_and_clean_state_on_success_call_tera_gas: u64,
+    fail_on_timeout_tera_gas: u64,
+    clean_tee_status_tera_gas: u64,
+    cleanup_orphaned_node_migrations_tera_gas: u64,
+    remove_non_participant_update_votes_tera_gas: u64,
+    clean_foreign_chain_data_tera_gas: u64,
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct OldNodeAttestation {
-    node_id: OldNodeId,
-    verified_attestation: VerifiedAttestation,
+impl From<OldConfig> for Config {
+    fn from(old: OldConfig) -> Self {
+        Self {
+            key_event_timeout_blocks: old.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: old.contract_upgrade_deposit_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: old
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: old
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: old
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: old
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
+            clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: Config::default()
+                .clean_invalid_attestations_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: old
+                .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: old
+                .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
+        }
+    }
 }
 
 /// Previous `TeeState` layout — the `stored_attestations` map was keyed by
@@ -71,93 +345,70 @@ struct OldTeeState {
     measurement_votes: MeasurementVotes,
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct MpcContract {
-    protocol_state: ProtocolContractState,
-    pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
-    pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
-    pending_verify_foreign_tx_requests:
-        LookupMap<dtos::VerifyForeignTransactionRequest, YieldIndex>,
-    proposed_updates: ProposedUpdates,
-    foreign_chain_policy: dtos::ForeignChainPolicy,
-    foreign_chain_policy_votes: ForeignChainPolicyVotes,
-    node_foreign_chain_configurations: NodeForeignChainConfigurations,
-    config: Config,
-    tee_state: OldTeeState,
-    accept_requests: bool,
-    node_migrations: NodeMigrations,
-    stale_data: OldStaleData,
-    metrics: dtos::Metrics,
-}
-
 impl From<OldTeeState> for TeeState {
     fn from(old: OldTeeState) -> Self {
-        // Migrate entry-by-entry: skip any whose TLS key is not Ed25519, and
-        // drop non-Ed25519 `account_public_key` values. A stored non-Ed25519
-        // TLS key could never match the node's actual key (the contract
-        // always signed with Ed25519), so dropping it is safe — we prefer
-        // silent skip over panic to avoid bricking the migration transaction
-        // on pathological stored state.
-        let stored_attestations = old
-            .stored_attestations
-            .into_iter()
-            .filter_map(|(tls_pk, old_attestation)| {
-                let new_tls_key = dtos::Ed25519PublicKey::try_from(&tls_pk).ok()?;
-                let account_public_key = old_attestation
-                    .node_id
-                    .account_public_key
-                    .as_ref()
-                    .and_then(|pk| dtos::Ed25519PublicKey::try_from(pk).ok());
-                let node_id = dtos::NodeId {
-                    account_id: old_attestation.node_id.account_id,
-                    tls_public_key: new_tls_key.clone(),
-                    account_public_key,
-                };
-                Some((
-                    new_tls_key,
-                    NodeAttestation {
-                        node_id,
-                        verified_attestation: old_attestation.verified_attestation,
-                    },
-                ))
-            })
-            .collect();
-
-        TeeState {
+        // Migrate entry-by-entry: skip any whose TLS key is not Ed25519, whose
+        // `account_public_key` is missing, or whose `account_public_key` is
+        // not Ed25519. A stored non-Ed25519 TLS key could never match the
+        // node's actual key (the contract always signed with Ed25519), so
+        // dropping it is safe — we prefer silent skip over panic to avoid
+        // bricking the migration transaction on pathological stored state.
+        let mut new = TeeState {
             allowed_docker_image_hashes: old.allowed_docker_image_hashes,
             allowed_launcher_images: old.allowed_launcher_images,
             votes: old.votes,
             launcher_votes: old.launcher_votes,
-            stored_attestations,
+            stored_attestations: near_sdk::store::IterableMap::new(StorageKey::StoredAttestations),
             allowed_measurements: old.allowed_measurements,
             measurement_votes: old.measurement_votes,
+        };
+
+        for (tls_pk, old_attestation) in old.stored_attestations {
+            let Some(new_tls_key) = dtos::Ed25519PublicKey::try_from(&tls_pk).ok() else {
+                continue;
+            };
+            let Some(account_public_key) = old_attestation
+                .node_id
+                .account_public_key
+                .as_ref()
+                .and_then(|pk| dtos::Ed25519PublicKey::try_from(pk).ok())
+            else {
+                continue;
+            };
+            let node_id = dtos::NodeId {
+                account_id: old_attestation.node_id.account_id,
+                tls_public_key: new_tls_key.clone(),
+                account_public_key,
+            };
+            new.stored_attestations.insert(
+                new_tls_key,
+                NodeAttestation {
+                    node_id,
+                    verified_attestation: old_attestation.verified_attestation,
+                },
+            );
         }
+
+        new
     }
 }
 
-impl From<MpcContract> for crate::MpcContract {
-    fn from(value: MpcContract) -> Self {
-        if !matches!(value.protocol_state, ProtocolContractState::Running(_)) {
-            env::panic_str("Contract must be in running state when migrating.");
-        }
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldNodeAttestation {
+    node_id: OldNodeId,
+    verified_attestation: VerifiedAttestation,
+}
 
-        Self {
-            protocol_state: value.protocol_state,
-            pending_signature_requests: value.pending_signature_requests,
-            pending_ckd_requests: value.pending_ckd_requests,
-            pending_verify_foreign_tx_requests: value.pending_verify_foreign_tx_requests,
-            proposed_updates: value.proposed_updates,
-            foreign_chain_policy: value.foreign_chain_policy,
-            foreign_chain_policy_votes: value.foreign_chain_policy_votes,
-            node_foreign_chain_configurations: value.node_foreign_chain_configurations,
-            config: value.config,
-            tee_state: value.tee_state.into(),
-            accept_requests: value.accept_requests,
-            node_migrations: value.node_migrations,
-            stale_data: crate::StaleData {},
-            metrics: value.metrics,
-        }
-    }
+/// Previous `NodeId` layout — `tls_public_key` and `account_public_key` used the
+/// `near_sdk::PublicKey` tagged borsh encoding. The new layout stores the TLS
+/// key as a raw 32-byte [`dtos::Ed25519PublicKey`] and the account key as a
+/// [`dtos::PublicKey`] (with an explicit curve tag), so we need a dedicated
+/// pre-migration type here.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldNodeId {
+    account_id: AccountId,
+    tls_public_key: near_sdk::PublicKey,
+    account_public_key: Option<near_sdk::PublicKey>,
 }
 
 #[cfg(test)]
@@ -213,12 +464,12 @@ mod tests {
         assert_eq!(stored.node_id.tls_public_key, expected_key);
         assert_eq!(
             stored.node_id.account_public_key,
-            Some(dtos::Ed25519PublicKey::from([8u8; 32]))
+            dtos::Ed25519PublicKey::from([8u8; 32])
         );
     }
 
     #[test]
-    fn tee_state_migration__should_preserve_missing_account_key() {
+    fn tee_state_migration__should_skip_missing_account_key() {
         // Given a legacy/mock node that never recorded an account key
         let tls_pk = old_ed25519_near_pk(1);
         let mut old = OldTeeState::default();
@@ -228,10 +479,8 @@ mod tests {
         // When
         let new: TeeState = old.into();
 
-        // Then
-        let expected_key = dtos::Ed25519PublicKey::from([1u8; 32]);
-        let stored = new.stored_attestations.get(&expected_key).unwrap();
-        assert_eq!(stored.node_id.account_public_key, None);
+        // Then the entry is dropped — NodeId can no longer represent a missing key
+        assert!(new.stored_attestations.is_empty());
     }
 
     #[test]
@@ -239,13 +488,16 @@ mod tests {
         // Given one Ed25519 entry and one secp256k1 entry in the old state
         let good_tls = old_ed25519_near_pk(4);
         let bad_tls = old_secp256k1_near_pk(5);
+        let account_pk = old_ed25519_near_pk(6);
         let mut old = OldTeeState::default();
         old.stored_attestations.insert(
             good_tls.clone(),
-            old_attestation("good.near", good_tls, None),
+            old_attestation("good.near", good_tls, Some(account_pk.clone())),
         );
-        old.stored_attestations
-            .insert(bad_tls.clone(), old_attestation("bad.near", bad_tls, None));
+        old.stored_attestations.insert(
+            bad_tls.clone(),
+            old_attestation("bad.near", bad_tls, Some(account_pk)),
+        );
 
         // When
         let new: TeeState = old.into();
@@ -271,22 +523,20 @@ mod tests {
         // When
         let new: TeeState = old.into();
 
-        // Then the entry is kept but its account key is cleared
-        let stored = new
-            .stored_attestations
-            .get(&dtos::Ed25519PublicKey::from([2u8; 32]))
-            .unwrap();
-        assert_eq!(stored.node_id.account_public_key, None);
+        // Then the entry is dropped entirely
+        assert!(new.stored_attestations.is_empty());
     }
 
     #[test]
     fn tee_state_migration__should_round_trip_through_borsh() {
         // Given an OldTeeState serialized with borsh (mirrors the on-chain path)
         let tls_pk = old_ed25519_near_pk(9);
+        let account_pk = old_ed25519_near_pk(10);
         let mut pre_migration = OldTeeState::default();
-        pre_migration
-            .stored_attestations
-            .insert(tls_pk.clone(), old_attestation("dave.near", tls_pk, None));
+        pre_migration.stored_attestations.insert(
+            tls_pk.clone(),
+            old_attestation("dave.near", tls_pk, Some(account_pk)),
+        );
         let bytes = borsh::to_vec(&pre_migration).unwrap();
 
         // When
@@ -296,5 +546,146 @@ mod tests {
         // Then
         let expected_key = dtos::Ed25519PublicKey::from([9u8; 32]);
         assert!(migrated.stored_attestations.contains_key(&expected_key));
+    }
+
+    fn sample_old_config() -> OldConfig {
+        OldConfig {
+            key_event_timeout_blocks: 1,
+            tee_upgrade_deadline_duration_seconds: 2,
+            contract_upgrade_deposit_tera_gas: 3,
+            sign_call_gas_attachment_requirement_tera_gas: 4,
+            ckd_call_gas_attachment_requirement_tera_gas: 5,
+            return_signature_and_clean_state_on_success_call_tera_gas: 6,
+            return_ck_and_clean_state_on_success_call_tera_gas: 7,
+            fail_on_timeout_tera_gas: 8,
+            clean_tee_status_tera_gas: 9,
+            cleanup_orphaned_node_migrations_tera_gas: 10,
+            remove_non_participant_update_votes_tera_gas: 11,
+            clean_foreign_chain_data_tera_gas: 12,
+        }
+    }
+
+    fn old_participants(
+        next_id: u32,
+        entries: Vec<(&str, u32, near_sdk::PublicKey)>,
+    ) -> OldParticipants {
+        let participants = entries
+            .into_iter()
+            .map(|(account_id, pid, sign_pk)| {
+                (
+                    account_id.parse::<AccountId>().unwrap(),
+                    ParticipantId(pid),
+                    OldParticipantInfo {
+                        url: "https://example.near".to_string(),
+                        sign_pk,
+                    },
+                )
+            })
+            .collect();
+        OldParticipants {
+            next_id: ParticipantId(next_id),
+            participants,
+        }
+    }
+
+    fn old_running_state(participants: OldParticipants, threshold: u64) -> OldRunningContractState {
+        let parameters = OldThresholdParameters {
+            participants,
+            threshold: Threshold(threshold),
+        };
+        OldRunningContractState {
+            domains: DomainRegistry::default(),
+            keyset: Keyset::new(EpochId::new(0), vec![]),
+            parameters,
+            parameters_votes: OldThresholdParametersVotes {
+                proposal_by_account: BTreeMap::new(),
+            },
+            add_domains_votes: AddDomainsVotes::default(),
+            previously_cancelled_resharing_epoch_id: None,
+        }
+    }
+
+    #[test]
+    fn config_migration__should_round_trip_through_borsh_and_fill_new_field_with_default() {
+        // Given an OldConfig serialized with borsh (mirrors the on-chain path)
+        let pre_migration = sample_old_config();
+        let bytes = borsh::to_vec(&pre_migration).unwrap();
+
+        // When
+        let decoded: OldConfig = borsh::from_slice(&bytes).unwrap();
+        let migrated: Config = decoded.into();
+
+        // Then: every pre-existing field is preserved, and the new field falls back to default.
+        assert_eq!(migrated.key_event_timeout_blocks, 1);
+        assert_eq!(migrated.tee_upgrade_deadline_duration_seconds, 2);
+        assert_eq!(migrated.clean_tee_status_tera_gas, 9);
+        assert_eq!(migrated.cleanup_orphaned_node_migrations_tera_gas, 10);
+        assert_eq!(migrated.clean_foreign_chain_data_tera_gas, 12);
+        assert_eq!(
+            migrated.clean_invalid_attestations_tera_gas,
+            Config::default().clean_invalid_attestations_tera_gas
+        );
+    }
+
+    #[test]
+    fn config_migration__old_config_borsh_size_must_match_current_config_minus_one_u64() {
+        // Guards against future Config drift: if someone adds/removes a u64 on the current
+        // Config without updating OldConfig, this test fails before the sandbox suite does.
+        let old_size = borsh::to_vec(&sample_old_config()).unwrap().len();
+        let new_size = borsh::to_vec(&Config::default()).unwrap().len();
+        assert_eq!(new_size, old_size + std::mem::size_of::<u64>());
+    }
+
+    #[test]
+    fn participant_info_migration__should_rekey_ed25519_sign_pk_to_tls_public_key() {
+        // Given
+        let old = OldParticipantInfo {
+            url: "https://alice.near".to_string(),
+            sign_pk: old_ed25519_near_pk(5),
+        };
+
+        // When
+        let new: ParticipantInfo = old.into();
+
+        // Then
+        assert_eq!(new.url, "https://alice.near");
+        assert_eq!(new.tls_public_key, Ed25519PublicKey::from([5u8; 32]));
+    }
+
+    #[test]
+    #[should_panic(expected = "participant tls public key must be Ed25519")]
+    fn participant_info_migration__should_panic_on_non_ed25519_sign_pk() {
+        // Given a participant with an unexpected secp256k1 sign_pk
+        let old = OldParticipantInfo {
+            url: "https://bad.near".to_string(),
+            sign_pk: old_secp256k1_near_pk(6),
+        };
+
+        // When migrating (should panic)
+        let _: ParticipantInfo = old.into();
+    }
+
+    #[test]
+    fn protocol_state_migration__should_round_trip_running_state_through_borsh() {
+        // Given a minimal Running state with one participant in the old layout
+        let participants = old_participants(1, vec![("alice.near", 0, old_ed25519_near_pk(2))]);
+        let running = old_running_state(participants, 2);
+        let old_state = OldProtocolContractState::Running(running);
+        let bytes = borsh::to_vec(&old_state).unwrap();
+
+        // When borsh-decoding and migrating to the new layout
+        let decoded: OldProtocolContractState = borsh::from_slice(&bytes).unwrap();
+        let migrated: ProtocolContractState = decoded.into();
+
+        // Then the migrated participant exposes tls_public_key with the Ed25519 bytes
+        let ProtocolContractState::Running(state) = migrated else {
+            panic!("expected Running state");
+        };
+        let participants = state.parameters.participants().participants();
+        assert_eq!(participants.len(), 1);
+        assert_eq!(
+            participants[0].2.tls_public_key,
+            Ed25519PublicKey::from([2u8; 32])
+        );
     }
 }

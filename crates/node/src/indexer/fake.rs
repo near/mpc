@@ -10,7 +10,6 @@ use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
 use crate::migration_service::types::MigrationInfo;
-use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
@@ -384,13 +383,13 @@ impl FakeMpcContractState {
             panic!("keyset mismatch");
         }
         self.migration_service.remove_migration(&account_id);
-        self.update_participant_info(account_id, node_info.destination_node_info);
+        self.update_participant_info(account_id, node_info.destination_node_info.into());
     }
 }
 
 pub fn participant_info_from_config(info: &config::ParticipantInfo) -> ParticipantInfo {
     ParticipantInfo {
-        sign_pk: info.p2p_public_key.to_near_sdk_public_key().unwrap(),
+        tls_public_key: (&info.p2p_public_key).into(),
         url: format!("http://{}:{}", info.address, info.port),
     }
 }
@@ -473,7 +472,7 @@ impl FakeIndexerCore {
                     {
                         let state = contract.lock().await;
                         let dto_state: near_mpc_contract_interface::types::ProtocolContractState =
-                            state.state.clone().try_into().unwrap();
+                            state.state.clone().into();
                         let config = ContractState::from_contract_state(
                             &dto_state,
                             state.env.block_height,

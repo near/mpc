@@ -13,8 +13,8 @@ use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::{ParticipantInfo, Participants},
-        test_utils::{bogus_ed25519_near_public_key, infer_purpose_from_curve},
+        participants::{ParticipantId, ParticipantInfo, Participants},
+        test_utils::{bogus_ed25519_public_key, infer_purpose_from_curve},
         thresholds::{Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
@@ -37,6 +37,7 @@ use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash25
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
+use serde::Serialize;
 use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::BTreeSet;
@@ -54,7 +55,7 @@ pub async fn create_account_given_id(
 pub fn gen_participant_info() -> ParticipantInfo {
     ParticipantInfo {
         url: "127.0.0.1".into(),
-        sign_pk: bogus_ed25519_near_public_key(),
+        tls_public_key: bogus_ed25519_public_key(),
     }
 }
 
@@ -371,6 +372,47 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
+/// Returns the [`dtos::Ed25519PublicKey`] corresponding to the `Account`'s
+/// signer. Mirrors what the contract reads via `env::signer_account_pk()` when
+/// the account submits a transaction.
+pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
+    let bytes: [u8; 32] = account
+        .secret_key()
+        .public_key()
+        .key_data()
+        .try_into()
+        .expect("sandbox Account key must be Ed25519");
+    dtos::Ed25519PublicKey::from(bytes)
+}
+
+/// Builds the set of [`NodeId`]s that a sandbox contract will store after
+/// each participant has submitted its attestation. Both the TLS key (from the
+/// participant's `tls_public_key`) and the account public key (read from the
+/// matching `Account`'s signer) must line up with what `submit_participant_info`
+/// will persist on-chain — it stores `env::signer_account_pk()` alongside the
+/// TLS key. Keep this in sync with `MpcContract::submit_participant_info` so
+/// that test-side `NodeId` comparisons against `get_tee_accounts()` stay valid.
+pub fn build_sandbox_node_ids(
+    participants: &Participants,
+    accounts: &[Account],
+) -> BTreeSet<NodeId> {
+    participants
+        .participants()
+        .iter()
+        .map(|(account_id, _, info)| {
+            let account = accounts
+                .iter()
+                .find(|a| a.id() == account_id)
+                .expect("matching Account must exist for each participant");
+            NodeId {
+                account_id: account_id.clone(),
+                tls_public_key: info.tls_public_key.clone(),
+                account_public_key: account_ed25519_public_key(account),
+            }
+        })
+        .collect()
+}
+
 pub async fn submit_tee_attestations(
     contract: &Contract,
     env_accounts: &mut [Account],
@@ -401,9 +443,7 @@ pub async fn submit_attestations(
         .enumerate()
         .map(|(i, ((_, _, participant), account))| async move {
             let attestation = Attestation::Mock(MockAttestation::Valid);
-            let tls_key: dtos::Ed25519PublicKey =
-                dtos::Ed25519PublicKey::try_from(&participant.sign_pk)
-                    .expect("expected ED25519 key");
+            let tls_key = participant.tls_public_key.clone();
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
                 .await
                 .expect("submit_participant_info should not error")
@@ -513,7 +553,7 @@ pub async fn execute_key_generation_and_add_random_state(
         ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
-        "proposal": dummy_threshold_parameters,
+        "proposal": OldThresholdParameters::from(&dummy_threshold_parameters),
     });
     accounts[0]
         .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
@@ -670,7 +710,7 @@ pub async fn generate_participant_and_submit_attestation(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-        &dtos::Ed25519PublicKey::try_from(&new_participant.sign_pk).expect("expected ED25519 key"),
+        &new_participant.tls_public_key,
     )
     .await
     .expect("Attestation submission for new account must succeed.");
@@ -742,4 +782,56 @@ pub fn base_evm_request() -> ForeignChainRpcRequest {
         extractors: vec![EvmExtractor::BlockHash],
         finality: EvmFinality::Finalized,
     })
+}
+
+/// Mirrors the pre-3.10 JSON wire shape of `ThresholdParameters` so that tests
+/// which deploy a production contract binary (whose DTO still expects
+/// `sign_pk`) can feed it threshold-parameter arguments. The current DTO
+/// accepts both field names via `#[serde(alias = "sign_pk")]`, so this helper
+/// is safe against the current contract too. Remove this type (and every
+/// `OldThresholdParameters::from(...)` call site) once 3.10.0 is the
+/// production contract on Mainnet and Testnet.
+#[derive(Serialize)]
+pub struct OldThresholdParameters {
+    participants: OldParticipants,
+    threshold: Threshold,
+}
+
+#[derive(Serialize)]
+struct OldParticipants {
+    next_id: ParticipantId,
+    participants: Vec<(AccountId, ParticipantId, OldParticipantInfo)>,
+}
+
+#[derive(Serialize)]
+struct OldParticipantInfo {
+    url: String,
+    sign_pk: dtos::Ed25519PublicKey,
+}
+
+impl From<&ThresholdParameters> for OldThresholdParameters {
+    fn from(params: &ThresholdParameters) -> Self {
+        let participants = params
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, id, info)| {
+                (
+                    account_id.clone(),
+                    *id,
+                    OldParticipantInfo {
+                        url: info.url.clone(),
+                        sign_pk: info.tls_public_key.clone(),
+                    },
+                )
+            })
+            .collect();
+        OldThresholdParameters {
+            participants: OldParticipants {
+                next_id: params.participants().next_id(),
+                participants,
+            },
+            threshold: params.threshold(),
+        }
+    }
 }

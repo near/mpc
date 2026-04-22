@@ -1051,12 +1051,12 @@ To generate a voting command, follow these steps:
              [
                "aurora-multichain.testnet",
                0,
-               { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+               { "tls_public_key": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
              ],
              [
                "bst-near.testnet",
                1,
-               { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+               { "tls_public_key": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
              ]
              ...
              ...
@@ -1089,12 +1089,12 @@ To generate a voting command, follow these steps:
        [
          "aurora-multichain.testnet",
          0,
-         { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+         { "tls_public_key": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
        ],
        [
          "bst-near.testnet",
          1,
-         { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+         { "tls_public_key": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
        ]
        ...
        ...
@@ -1112,17 +1112,17 @@ To generate a voting command, follow these steps:
        [
          "aurora-multichain.testnet",
          0,
-         { "sign_pk": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
+         { "tls_public_key": "ed25519:BSgizrs...", "url": "http://34.49.211.4" }
        ],
        [
          "bst-near.testnet",
          1,
-         { "sign_pk": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
+         { "tls_public_key": "ed25519:AadQTC...", "url": "http://34.98.94.79" }
        ],
        [
          "new-node.testnet",
          12,
-         { "sign_pk": "ed25519:NEWKEY...", "url": "http://example.org" }
+         { "tls_public_key": "ed25519:NEWKEY...", "url": "http://example.org" }
        ]
        ...
        ...

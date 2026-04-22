@@ -1,11 +1,9 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
 use near_account_id::AccountId;
-use near_sdk::{near, PublicKey};
+use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_sdk::near;
 use std::collections::BTreeSet;
-
-#[cfg(any(test, feature = "test-utils"))]
-use crate::tee::tee_state::NodeId;
 
 pub use near_mpc_contract_interface::types::ParticipantId;
 
@@ -17,8 +15,8 @@ pub mod hpke {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
     pub url: String,
-    /// The public key used for verifying messages.
-    pub sign_pk: PublicKey,
+    /// The Ed25519 public key used for P2P TLS.
+    pub tls_public_key: Ed25519PublicKey,
 }
 
 #[near(serializers=[borsh, json])]
@@ -202,23 +200,6 @@ impl Participants {
         {
             self.participants.remove(pos);
         }
-    }
-
-    /// Returns the set of [`NodeId`]s corresponding to the participants.
-    /// Note that the `account_public_key` field in [`NodeId`] is `None`.
-    /// This is because [`NodeId`] is used in contexts where `account_public_key` is not needed (only TLS key is needed).
-    pub fn get_node_ids(&self) -> BTreeSet<NodeId> {
-        self.participants()
-            .iter()
-            .map(|(account_id, _, p_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
-                    &p_info.sign_pk,
-                )
-                .expect("sign_pk must be Ed25519"),
-                account_public_key: None,
-            })
-            .collect()
     }
 }
 
