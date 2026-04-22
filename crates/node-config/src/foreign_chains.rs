@@ -567,4 +567,54 @@ foreign_chains:
         let provider = eth_providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
     }
+
+    #[test]
+    fn config_parsing__should_succeed_with_legacy_field__api_variant() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      blast:
+        api_variant: "THIS IS A LEGACY FIELD BEING TESTED"
+        rpc_url: "https://starknet-mainnet.blastapi.io/"
+        auth:
+          kind: none
+"#;
+
+        // When/then
+        let _config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml serialization passes with `api_variant_field`");
+    }
 }
