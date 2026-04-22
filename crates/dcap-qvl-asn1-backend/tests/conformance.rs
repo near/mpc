@@ -88,9 +88,7 @@ fn parsed_cert_matches_default_on_sample_corpus() {
 fn encode_test_vectors() -> Vec<(Vec<u8>, Vec<u8>)> {
     fn trailing(b: u8) -> Vec<u8> {
         let mut v = vec![0u8; 32];
-        if let Some(last) = v.last_mut() {
-            *last = b;
-        }
+        v[31] = b;
         v
     }
     vec![
@@ -154,10 +152,9 @@ fn parse_tlv_header(buf: &[u8]) -> (u8, usize, usize) {
         (tag, 2, first_len as usize)
     } else {
         let nbytes = (first_len & 0x7F) as usize;
-        let mut len = 0usize;
-        for &b in &buf[2..2 + nbytes] {
-            len = (len << 8) | b as usize;
-        }
+        let len = buf[2..2 + nbytes]
+            .iter()
+            .fold(0usize, |acc, &b| (acc << 8) | b as usize);
         (tag, 2 + nbytes, len)
     }
 }
@@ -214,14 +211,6 @@ fn splice_extensions(cert_der: &[u8], new_extensions_seq_body: &[u8]) -> Vec<u8>
 /// craft and the lookup we perform.
 const TEST_OID: &[u8] = &[0x2A, 0x03, 0x04];
 
-/// Build an `Extension SEQUENCE` from arbitrary raw bytes to cover the
-/// malformation cases below. `oid_tlv`, `critical_tlv` (optional) and
-/// `value_tlv` are concatenated inside the SEQUENCE without any further
-/// validation.
-fn make_extension_seq_raw(parts: &[&[u8]]) -> Vec<u8> {
-    parts.iter().flat_map(|p| p.iter().copied()).collect()
-}
-
 /// Helper: build a legitimate `Extension SEQUENCE OF Extension` containing
 /// one extension with our `TEST_OID` and `{oid, critical, value}` shape.
 /// Serves as a sanity check that the splicing helper produces parseable
@@ -234,7 +223,7 @@ fn splice_extensions_sanity_check() {
         let value_tlv = tlv(der_tags::OCTET_STRING, b"hello");
         let ext = tlv(
             der_tags::SEQUENCE,
-            &make_extension_seq_raw(&[&oid_tlv, &critical_tlv, &value_tlv]),
+            &[oid_tlv, critical_tlv, value_tlv].concat(),
         );
         let spliced = splice_extensions(&cert_der, &ext);
 
@@ -267,10 +256,7 @@ fn malformed_extension_missing_value_is_rejected() {
     for cert_der in pck_leaf_certs() {
         let oid_tlv = tlv(der_tags::OID, TEST_OID);
         let critical_tlv = tlv(der_tags::BOOLEAN, &[0xFF]);
-        let ext = tlv(
-            der_tags::SEQUENCE,
-            &make_extension_seq_raw(&[&oid_tlv, &critical_tlv]),
-        );
+        let ext = tlv(der_tags::SEQUENCE, &[oid_tlv, critical_tlv].concat());
         let spliced = splice_extensions(&cert_der, &ext);
 
         let custom = Asn1DerCertBackend::from_der(&spliced).expect("from_der");
@@ -294,10 +280,7 @@ fn malformed_extension_non_oid_extnid_is_rejected() {
     for cert_der in pck_leaf_certs() {
         let bogus_extnid_tlv = tlv(der_tags::OCTET_STRING, TEST_OID);
         let value_tlv = tlv(der_tags::OCTET_STRING, b"attacker-payload");
-        let ext = tlv(
-            der_tags::SEQUENCE,
-            &make_extension_seq_raw(&[&bogus_extnid_tlv, &value_tlv]),
-        );
+        let ext = tlv(der_tags::SEQUENCE, &[bogus_extnid_tlv, value_tlv].concat());
         let spliced = splice_extensions(&cert_der, &ext);
 
         let custom = Asn1DerCertBackend::from_der(&spliced).expect("from_der");
@@ -321,10 +304,7 @@ fn malformed_extension_non_octet_string_value_is_rejected() {
         let oid_tlv = tlv(der_tags::OID, TEST_OID);
         // 0x03 == BIT STRING; leading 0x00 is the unused-bits count per X.690.
         let bogus_value_tlv = tlv(0x03, &[0x00, 0xDE, 0xAD, 0xBE, 0xEF]);
-        let ext = tlv(
-            der_tags::SEQUENCE,
-            &make_extension_seq_raw(&[&oid_tlv, &bogus_value_tlv]),
-        );
+        let ext = tlv(der_tags::SEQUENCE, &[oid_tlv, bogus_value_tlv].concat());
         let spliced = splice_extensions(&cert_der, &ext);
 
         let custom = Asn1DerCertBackend::from_der(&spliced).expect("from_der");
@@ -372,17 +352,14 @@ fn verify_with_asn1_der_config_matches_default() {
     let collateral: QuoteCollateralV3 = serde_json::from_slice(TDX_COLLATERAL).expect("collateral");
     // The vendored TDX collateral has long since expired. Pin `now` to
     // just before its `nextUpdate` so the test is deterministic.
-    let now: u64 = chrono::DateTime::parse_from_rfc3339(
-        serde_json::from_str::<serde_json::Value>(&collateral.tcb_info)
-            .expect("tcb json")
-            .get("nextUpdate")
-            .expect("nextUpdate field")
-            .as_str()
-            .expect("nextUpdate str"),
-    )
-    .expect("nextUpdate parse")
-    .timestamp() as u64
-        - 1;
+    let tcb_json: serde_json::Value = serde_json::from_str(&collateral.tcb_info).expect("tcb json");
+    let next_update_str = tcb_json
+        .get("nextUpdate")
+        .and_then(|v| v.as_str())
+        .expect("nextUpdate str");
+    let next_update =
+        chrono::DateTime::parse_from_rfc3339(next_update_str).expect("nextUpdate parse");
+    let now = next_update.timestamp() as u64 - 1;
 
     let default_result = dcap_qvl::verify::verify(TDX_QUOTE, &collateral, now);
     let custom_result = dcap_qvl::verify::verify_with::<Asn1DerConfig>(TDX_QUOTE, &collateral, now);

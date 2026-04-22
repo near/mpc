@@ -11,7 +11,7 @@
 //! the concatenation in a SEQUENCE header.
 
 use alloc::vec::Vec;
-use anyhow::{anyhow, Result};
+use anyhow::{Context, Result};
 use asn1_der::{
     typed::{DerTypeView, Integer, Sequence},
     DerObject, VecBacking,
@@ -33,16 +33,16 @@ impl EcdsaSigEncoder for Asn1DerSigEncoder {
             .len()
             .checked_add(s.len())
             .and_then(|n| n.checked_add(6))
-            .ok_or_else(|| anyhow!("ecdsa-sig payload size overflow"))?;
+            .context("ecdsa-sig payload size overflow")?;
         let total_cap = payload_cap
             .checked_add(4)
-            .ok_or_else(|| anyhow!("ecdsa-sig total size overflow"))?;
+            .context("ecdsa-sig total size overflow")?;
 
         let mut payload = Vec::with_capacity(payload_cap);
         Integer::write(r, false, &mut VecBacking(&mut payload))
-            .map_err(|e| anyhow!("Failed to encode r INTEGER: {e}"))?;
+            .context("Failed to encode r INTEGER")?;
         Integer::write(s, false, &mut VecBacking(&mut payload))
-            .map_err(|e| anyhow!("Failed to encode s INTEGER: {e}"))?;
+            .context("Failed to encode s INTEGER")?;
 
         let mut out = Vec::with_capacity(total_cap);
         DerObject::write(
@@ -51,7 +51,7 @@ impl EcdsaSigEncoder for Asn1DerSigEncoder {
             &mut payload.iter(),
             &mut VecBacking(&mut out),
         )
-        .map_err(|e| anyhow!("Failed to encode ECDSA sig SEQUENCE: {e}"))?;
+        .context("Failed to encode ECDSA sig SEQUENCE")?;
         Ok(out)
     }
 }

@@ -17,7 +17,7 @@
 //! zero-copy backend like this one can be plugged in.
 
 use alloc::{string::String, vec::Vec};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use asn1_der::{
     typed::{DerDecodable, Sequence},
     DerObject,
@@ -34,10 +34,6 @@ const TAG_OID: u8 = 0x06;
 /// DER tag for `OCTET STRING`, the required type of `Extension.extnValue`.
 const TAG_OCTET_STRING: u8 = 0x04;
 
-/// Tags asn1 DirectoryString variants we handle when stringifying issuer DN.
-/// `0x13` = PrintableString, `0x0C` = UTF8String, `0x16` = IA5String.
-const STRING_TAGS: &[u8] = &[0x13, 0x0C, 0x16];
-
 /// Zero-sized factory implementing [`X509Codec`] on top of `asn1_der`.
 ///
 /// Selected by [`crate::Asn1DerConfig`].
@@ -52,23 +48,19 @@ pub struct Asn1DerParsedCert<'a> {
 }
 
 impl X509Codec for Asn1DerCertBackend {
-    type Parsed<'a>
-        = Asn1DerParsedCert<'a>
-    where
-        Self: 'a;
+    type Parsed<'a> = Asn1DerParsedCert<'a>;
 
-    fn from_der<'a>(cert_der: &'a [u8]) -> Result<Self::Parsed<'a>> {
+    fn from_der(cert_der: &[u8]) -> Result<Self::Parsed<'_>> {
         // Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
-        let cert: Sequence<'a> =
-            Sequence::decode(cert_der).map_err(|e| anyhow!("Failed to decode certificate: {e}"))?;
-        let tbs: Sequence<'a> = cert
-            .get_as(0)
-            .map_err(|e| anyhow!("Failed to decode tbsCertificate: {e}"))?;
+        let cert = Sequence::decode(cert_der).context("Failed to decode certificate")?;
+        let tbs = cert
+            .get_as::<Sequence<'_>>(0)
+            .context("Failed to decode tbsCertificate")?;
         Ok(Asn1DerParsedCert { tbs })
     }
 }
 
-impl<'a> ParsedCert for Asn1DerParsedCert<'a> {
+impl ParsedCert for Asn1DerParsedCert<'_> {
     /// Concatenate every printable RDN value in the issuer with `,` so the
     /// substring matches in `dcap_qvl::intel::pck_ca_with` (looking for
     /// e.g. `"Intel SGX PCK Processor CA"`) keep working unchanged.
@@ -111,37 +103,31 @@ impl<'a> ParsedCert for Asn1DerParsedCert<'a> {
         //     ...
         // }
         // If `version` is omitted (v1), `issuer` is at index 2; otherwise 3.
-        let first = self
-            .tbs
-            .get(0)
-            .map_err(|e| anyhow!("Empty tbsCertificate: {e}"))?;
-        let issuer_idx: usize = if first.tag() == TAG_CTX_0 { 3 } else { 2 };
+        let first = self.tbs.get(0).context("Empty tbsCertificate")?;
+        let issuer_idx = if first.tag() == TAG_CTX_0 { 3 } else { 2 };
 
-        let issuer: Sequence<'a> = self
+        let issuer = self
             .tbs
-            .get_as(issuer_idx)
-            .map_err(|e| anyhow!("Failed to decode issuer: {e}"))?;
+            .get_as::<Sequence<'_>>(issuer_idx)
+            .context("Failed to decode issuer")?;
 
         // Name ::= SEQUENCE OF RelativeDistinguishedName
         // RelativeDistinguishedName ::= SET OF AttributeTypeAndValue
         // AttributeTypeAndValue ::= SEQUENCE { type OID, value ANY }
-        let mut parts: Vec<&'a str> = Vec::new();
+        let mut parts = Vec::new();
         for i in 0..issuer.len() {
-            let rdn = issuer
-                .get(i)
-                .map_err(|e| anyhow!("Failed to get RDN: {e}"))?;
+            let rdn = issuer.get(i).context("Failed to get RDN")?;
             let rdn_bytes = rdn.value();
             let mut pos: usize = 0;
             while pos < rdn_bytes.len() {
-                let atv = DerObject::decode_at(rdn_bytes, pos)
-                    .map_err(|e| anyhow!("Failed to decode ATV: {e}"))?;
+                let atv = DerObject::decode_at(rdn_bytes, pos).context("Failed to decode ATV")?;
                 pos = pos
                     .checked_add(atv.raw().len())
                     .context("ATV offset overflow")?;
-                let atv_seq = Sequence::load(atv)
-                    .map_err(|e| anyhow!("Failed to load ATV as sequence: {e}"))?;
+                let atv_seq = Sequence::load(atv).context("Failed to load ATV as sequence")?;
                 let value = match atv_seq.get(1) {
-                    Ok(v) if STRING_TAGS.contains(&v.tag()) => v,
+                    // `0x13` = PrintableString, `0x0C` = UTF8String, `0x16` = IA5String.
+                    Ok(v) if matches!(v.tag(), 0x13 | 0x0C | 0x16) => v,
                     // Skip OID-only or non-string values; downstream substring
                     // match doesn't depend on them.
                     _ => continue,
@@ -158,47 +144,42 @@ impl<'a> ParsedCert for Asn1DerParsedCert<'a> {
         // Walk tbsCertificate looking for the `[3] EXPLICIT` extensions
         // wrapper. Earlier optional fields (issuerUniqueID `[1]`,
         // subjectUniqueID `[2]`) come before it, so iterate.
-        let mut extensions_inner: Option<&'a [u8]> = None;
+        let mut extensions_inner = None;
         for i in 0..self.tbs.len() {
             let elem = self
                 .tbs
                 .get(i)
-                .map_err(|e| anyhow!("Failed to get tbsCertificate element: {e}"))?;
+                .context("Failed to get tbsCertificate element")?;
             if elem.tag() == TAG_CTX_3 {
                 extensions_inner = Some(elem.value());
                 break;
             }
         }
-        let extensions_inner = match extensions_inner {
-            Some(b) => b,
-            None => return Ok(None),
+        let Some(extensions_inner) = extensions_inner else {
+            return Ok(None);
         };
 
         // Extensions ::= SEQUENCE OF Extension
         // Extension  ::= SEQUENCE { extnID OID, critical BOOLEAN OPTIONAL, extnValue OCTET STRING }
-        let ext_seq = Sequence::decode(extensions_inner)
-            .map_err(|e| anyhow!("Failed to decode extensions sequence: {e}"))?;
+        let ext_seq =
+            Sequence::decode(extensions_inner).context("Failed to decode extensions sequence")?;
 
         let mut found: Option<Vec<u8>> = None;
         for i in 0..ext_seq.len() {
-            let ext: Sequence<'a> = ext_seq
-                .get_as(i)
-                .map_err(|e| anyhow!("Failed to decode extension: {e}"))?;
+            let ext = ext_seq
+                .get_as::<Sequence<'_>>(i)
+                .context("Failed to decode extension")?;
 
-            let oid_obj = ext
-                .get(0)
-                .map_err(|e| anyhow!("Missing extension OID: {e}"))?;
+            let oid_obj = ext.get(0).context("Missing extension OID")?;
             // `Extension.extnID` is specified as OBJECT IDENTIFIER
             // (tag 0x06). The audited `x509-cert` backend enforces this
             // via its typed `extn_id: ObjectIdentifier` decode; we do it
             // explicitly so an extension shaped e.g.
             // `SEQUENCE { OCTET_STRING <sgx-oid-bytes>, ... }` can never
             // byte-match the query OID and leak an unintended value.
-            if oid_obj.tag() != TAG_OID {
-                bail!(
-                    "Extension extnID is not an OBJECT IDENTIFIER (tag 0x{:02X})",
-                    oid_obj.tag()
-                );
+            let extn_id_tag = oid_obj.tag();
+            if extn_id_tag != TAG_OID {
+                bail!("Extension extnID is not an OBJECT IDENTIFIER (tag 0x{extn_id_tag:02X})");
             }
             if oid_obj.value() != oid {
                 continue;
@@ -216,15 +197,10 @@ impl<'a> ParsedCert for Asn1DerParsedCert<'a> {
             if !(2..=3).contains(&ext_len) {
                 bail!("Extension sequence has unexpected shape (len {ext_len})");
             }
-            let value_idx = ext_len.checked_sub(1).context("Empty extension sequence")?;
-            let value_obj = ext
-                .get(value_idx)
-                .map_err(|e| anyhow!("Missing extension value: {e}"))?;
-            if value_obj.tag() != TAG_OCTET_STRING {
-                bail!(
-                    "Extension value is not an OCTET STRING (tag 0x{:02X})",
-                    value_obj.tag()
-                );
+            let value_obj = ext.get(ext_len - 1).context("Missing extension value")?;
+            let value_tag = value_obj.tag();
+            if value_tag != TAG_OCTET_STRING {
+                bail!("Extension value is not an OCTET STRING (tag 0x{value_tag:02X})");
             }
             found = Some(value_obj.value().to_vec());
         }
