@@ -1,6 +1,6 @@
 use crate::common;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -9,21 +9,16 @@ use e2e_tests::MpcNodeState;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use rand::SeedableRng;
 
+/// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
+/// (see `build-backup-cli` task in Makefile.toml).
 fn backup_cli_path() -> PathBuf {
-    let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    for profile in ["debug", "release"] {
-        let path = target_dir.join(profile).join("backup-cli");
-        if path.exists() {
-            return path;
-        }
-    }
-    tracing::info!("backup-cli binary not found — building");
-    let status = Command::new("cargo")
-        .args(["build", "-p", "backup-cli"])
-        .status()
-        .expect("failed to run cargo build for backup-cli");
-    assert!(status.success(), "backup-cli build failed");
-    target_dir.join("debug/backup-cli")
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/backup-cli");
+    assert!(
+        path.exists(),
+        "backup-cli binary not found at {}. Run `cargo make e2e-tests` to build it.",
+        path.display()
+    );
+    path
 }
 
 struct BackupService {
@@ -32,10 +27,10 @@ struct BackupService {
 }
 
 impl BackupService {
-    fn new() -> Self {
+    fn new(binary_path: PathBuf) -> Self {
         Self {
             home_dir: tempfile::tempdir().expect("failed to create backup service home dir"),
-            binary_path: backup_cli_path(),
+            binary_path,
         }
     }
 
@@ -149,41 +144,29 @@ async fn wait_for_migration_port(address: &str) {
     .unwrap_or_else(|e| panic!("migration port {address} never became reachable: {e}"));
 }
 
-fn read_node_stderr(cluster: &e2e_tests::MpcCluster, idx: usize) -> String {
-    let setup = match &cluster.nodes[idx] {
-        MpcNodeState::Running(n) => n.setup(),
-        MpcNodeState::Stopped(s) => s,
-    };
-    let stderr_path = setup.home_dir().join("stderr.log");
-    match std::fs::read_to_string(&stderr_path) {
-        Ok(content) => {
-            let lines: Vec<&str> = content.lines().collect();
-            let start = lines.len().saturating_sub(50);
-            lines[start..].join("\n")
-        }
-        Err(e) => format!("(could not read stderr.log: {e})"),
-    }
-}
-
 fn running_state_matches_participant_key(
     state: &ProtocolContractState,
     account_id: &str,
     expected_pk: &str,
 ) -> bool {
     match state {
-        ProtocolContractState::Running(r) => r
-            .parameters
-            .participants
-            .participants
-            .iter()
-            .any(|(a, _, info)| a.0 == account_id && String::from(&info.sign_pk) == expected_pk),
+        ProtocolContractState::Running(r) => {
+            r.parameters
+                .participants
+                .participants
+                .iter()
+                .any(|(a, _, info)| {
+                    a.as_str() == account_id && String::from(&info.sign_pk) == expected_pk
+                })
+        }
         _ => false,
     }
 }
 
 /// Full end-to-end node migration via the backup CLI.
 ///
-/// For each participating node in a 2-node cluster:
+/// Starts a cluster with 2 participating nodes and 2 target nodes (started
+/// upfront so their indexers have time to sync). For each participating node:
 ///   1. Register backup service
 ///   2. GET keyshares from source node
 ///   3. Initiate node migration
@@ -193,10 +176,15 @@ fn running_state_matches_participant_key(
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn migration_service__should_migrate_nodes_via_backup_cli() {
-    // given
+    // Build backup-cli once before the test to avoid rebuilding per-iteration.
+    let backup_cli = backup_cli_path();
+
+    // given — start 2 participants and 2 migration targets together so their
+    // near-indexers sync from the same early point in the chain.
     let (mut cluster, running) = common::setup_cluster(common::MIGRATION_SERVICE_PORT_SEED, |c| {
         c.num_nodes = 2;
         c.threshold = 2;
+        c.migration_targets = vec![(0, 2), (1, 3)];
     })
     .await;
 
@@ -205,24 +193,13 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
 
     // when — migrate each node
-    for source_idx in 0..2 {
-        let backup_service = BackupService::new();
+    let target_indices = [2usize, 3];
+    for (source_idx, &target_idx) in target_indices.iter().enumerate() {
+        let backup_service = BackupService::new(backup_cli.clone());
         backup_service.generate_keys();
 
         let source_account_id = cluster.nodes[source_idx].account_id().to_string();
         let source_p2p_key = cluster.nodes[source_idx].p2p_public_key_str();
-
-        let target_idx = cluster
-            .create_migration_target(source_idx)
-            .expect("failed to create migration target");
-        cluster
-            .start_nodes(&[target_idx])
-            .expect("failed to start target node");
-        cluster
-            .wait_for_node_healthy(target_idx)
-            .await
-            .expect("target node did not become healthy");
-
         let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
         let target_p2p_url = cluster.nodes[target_idx].p2p_url();
 
@@ -357,6 +334,15 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         .await
         .expect("timed out waiting for contract to reflect node migration");
 
+        // Wait for the target node's migration port to become reachable.
+        // The migration web server binds once the node's indexer has synced and
+        // the root future starts the migration service.
+        let target_migration_addr = match &cluster.nodes[target_idx] {
+            MpcNodeState::Running(n) => n.migration_web_ui_address(),
+            _ => panic!("target node not running"),
+        };
+        wait_for_migration_port(&target_migration_addr).await;
+
         // PUT keyshares to target node
         let contract_state = cluster
             .get_contract_state()
@@ -364,34 +350,6 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
             .expect("failed to get contract state");
         backup_service.set_contract_state(&contract_state);
 
-        let target_migration_addr = match &cluster.nodes[target_idx] {
-            MpcNodeState::Running(n) => n.migration_web_ui_address(),
-            _ => panic!("target node not running"),
-        };
-        let target_port_timeout = Duration::from_secs(120);
-        let target_port_result: Result<(), _> = (|| async {
-            let result = std::net::TcpStream::connect(&target_migration_addr);
-            anyhow::ensure!(
-                result.is_ok(),
-                "migration port not yet listening at {target_migration_addr}"
-            );
-            Ok(())
-        })
-        .retry(
-            ConstantBuilder::default()
-                .with_delay(common::POLL_INTERVAL)
-                .with_max_times(
-                    (target_port_timeout.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-                ),
-        )
-        .await;
-        if target_port_result.is_err() {
-            let stderr = read_node_stderr(&cluster, target_idx);
-            panic!(
-                "target node migration port {target_migration_addr} never became reachable.\n\
-                 Node {target_idx} stderr (last 50 lines):\n{stderr}"
-            );
-        }
         backup_service.put_keyshares(
             &target_migration_addr,
             &target_p2p_key,

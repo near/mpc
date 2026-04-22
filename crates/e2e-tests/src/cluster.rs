@@ -60,6 +60,11 @@ pub struct MpcClusterConfig {
     /// An empty vec means all nodes are participants. Set to a subset to start
     /// extra non-participant nodes (useful for resharing and attestation tests).
     pub initial_participant_indices: Vec<usize>,
+    /// Migration targets: `(source_node_index, target_node_index)` pairs.
+    /// Each target node shares its source's NEAR account and signer key
+    /// but gets a distinct P2P key. Target indices must be in
+    /// `num_nodes..num_nodes+migration_targets.len()`.
+    pub migration_targets: Vec<(usize, usize)>,
 }
 
 impl MpcClusterConfig {
@@ -97,6 +102,7 @@ impl MpcClusterConfig {
             sandbox_version: DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
+            migration_targets: vec![],
         }
     }
 
@@ -153,8 +159,14 @@ impl MpcCluster {
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;
-        let (node_keys, node_near_keys, node_p2p_keys, operator_keys) =
+        let (mut node_keys, node_near_keys, node_p2p_keys, mut operator_keys) =
             generate_signing_keys(u64::try_from(config.num_nodes).unwrap());
+
+        // Pre-generate keys for migration target nodes.
+        for &(_, target_idx) in &config.migration_targets {
+            node_keys.push(generate_deterministic_key(300 + target_idx as u64));
+            operator_keys.push(generate_deterministic_key(400 + target_idx as u64));
+        }
 
         let contract = deploy_contract(
             &blockchain,
@@ -710,7 +722,9 @@ impl MpcCluster {
     }
 
     /// View migration info from the contract.
-    pub async fn view_migration_info(&self) -> anyhow::Result<serde_json::Value> {
+    pub async fn view_migration_info<T: serde::de::DeserializeOwned + Send + 'static>(
+        &self,
+    ) -> anyhow::Result<T> {
         self.contract.view(method_names::MIGRATION_INFO).await
     }
 
@@ -970,7 +984,12 @@ fn start_mpc_nodes(
     let genesis_path = sandbox.genesis_path();
     let boot_nodes = sandbox.boot_nodes()?;
 
-    tracing::info!(count = config.num_nodes, "starting MPC nodes");
+    let total_nodes = config.num_nodes + config.migration_targets.len();
+    tracing::info!(
+        count = total_nodes,
+        participants = config.num_nodes,
+        "starting MPC nodes"
+    );
     let mut nodes = Vec::new();
     for i in 0..config.num_nodes {
         let binary_path = if config.binary_paths.len() == 1 {
@@ -997,6 +1016,34 @@ fn start_mpc_nodes(
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }
+
+    // Start migration target nodes alongside the participants so their
+    // near-indexers sync from the same early point in the chain.
+    let binary_path = config.binary_paths[0].clone();
+    for &(source_idx, target_idx) in &config.migration_targets {
+        let source = match &nodes[source_idx] {
+            MpcNodeState::Running(n) => n.setup(),
+            MpcNodeState::Stopped(s) => s,
+        };
+        let setup = MpcNodeSetup::new(MpcNodeSetupArgs {
+            node_index: target_idx,
+            home_dir: test_dir.join(format!("node{target_idx}")),
+            binary_path: binary_path.clone(),
+            signer_account_id: source.account_id().clone(),
+            p2p_signing_key: generate_deterministic_key(300 + target_idx as u64),
+            near_signer_key: source.near_signer_key().clone(),
+            ports: NodePorts::from_allocator(ports, target_idx),
+            mpc_contract_id: contract_account.clone(),
+            triples_to_buffer: 10,
+            presignatures_to_buffer: 10,
+            chain_id: chain_id.clone(),
+            near_genesis_path: genesis_path.clone(),
+            near_boot_nodes: boot_nodes.clone(),
+            foreign_chains_config: Default::default(),
+        })?;
+        nodes.push(MpcNodeState::Running(setup.start()?));
+    }
+
     Ok(nodes)
 }
 

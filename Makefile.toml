@@ -177,6 +177,12 @@ script = [
   "wasm-opt -Oz target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm -o target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm",
 ]
 
+[tasks.build-backup-cli]
+description = "Build the backup-cli binary used by the E2E migration tests"
+condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+command = "cargo"
+args = ["build", "-p", "backup-cli", "--release", "--locked"]
+
 # Kill orphan mpc-node processes left over from interrupted test runs.
 # Ports are deterministic per test, so orphans from a previous run block the next one.
 [tasks.kill-orphan-mpc-nodes]
@@ -194,6 +200,7 @@ dependencies = [
   "build-mpc-node-network-hardship-simulation",
   "build-mpc-contract-optimized",
   "build-test-parallel-contract-optimized",
+  "build-backup-cli",
 ]
 command = "cargo"
 args = [
