@@ -45,12 +45,6 @@ BorshSchemaContainer {
                 "Vec<DomainConfig>",
             ],
         },
-        "(ForeignChain, NonEmptyBTreeSet<RpcProvider>)": Tuple {
-            elements: [
-                "ForeignChain",
-                "NonEmptyBTreeSet<RpcProvider>",
-            ],
-        },
         "AccountId": Struct {
             fields: UnnamedFields(
                 [
@@ -172,20 +166,10 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
         },
-        "BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(ForeignChain, NonEmptyBTreeSet<RpcProvider>)",
-        },
         "BTreeSet<AuthenticatedParticipantId>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "AuthenticatedParticipantId",
-        },
-        "BTreeSet<RpcProvider>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "RpcProvider",
         },
         "Bls12381G2PublicKey": Struct {
             fields: UnnamedFields(
@@ -413,95 +397,6 @@ BorshSchemaContainer {
                     "u64",
                 ],
             ),
-        },
-        "ForeignChain": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Solana",
-                    "ForeignChain__Solana",
-                ),
-                (
-                    1,
-                    "Bitcoin",
-                    "ForeignChain__Bitcoin",
-                ),
-                (
-                    2,
-                    "Ethereum",
-                    "ForeignChain__Ethereum",
-                ),
-                (
-                    3,
-                    "Base",
-                    "ForeignChain__Base",
-                ),
-                (
-                    4,
-                    "Bnb",
-                    "ForeignChain__Bnb",
-                ),
-                (
-                    5,
-                    "Arbitrum",
-                    "ForeignChain__Arbitrum",
-                ),
-                (
-                    6,
-                    "Abstract",
-                    "ForeignChain__Abstract",
-                ),
-                (
-                    7,
-                    "Starknet",
-                    "ForeignChain__Starknet",
-                ),
-            ],
-        },
-        "ForeignChainPolicy": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "chains",
-                        "BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>",
-                    ),
-                ],
-            ),
-        },
-        "ForeignChainPolicyVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "proposal_by_account",
-                        "IterableMap",
-                    ),
-                ],
-            ),
-        },
-        "ForeignChain__Abstract": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Arbitrum": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Base": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Bitcoin": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Bnb": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Ethereum": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Solana": Struct {
-            fields: Empty,
-        },
-        "ForeignChain__Starknet": Struct {
-            fields: Empty,
         },
         "HashSet<AuthenticatedAccountId>": Sequence {
             length_width: 4,
@@ -789,14 +684,6 @@ BorshSchemaContainer {
                         "ProposedUpdates",
                     ),
                     (
-                        "foreign_chain_policy",
-                        "ForeignChainPolicy",
-                    ),
-                    (
-                        "foreign_chain_policy_votes",
-                        "ForeignChainPolicyVotes",
-                    ),
-                    (
                         "node_foreign_chain_configurations",
                         "NodeForeignChainConfigurations",
                     ),
@@ -877,11 +764,6 @@ BorshSchemaContainer {
                     ),
                 ],
             ),
-        },
-        "NonEmptyBTreeSet<RpcProvider>": Sequence {
-            length_width: 4,
-            length_range: 1..=4294967295,
-            elements: "RpcProvider",
         },
         "Option<EpochId>": Enum {
             tag_width: 1,
@@ -1112,16 +994,6 @@ BorshSchemaContainer {
                     (
                         "cancellation_requests",
                         "HashSet<AuthenticatedAccountId>",
-                    ),
-                ],
-            ),
-        },
-        "RpcProvider": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "rpc_url",
-                        "String",
                     ),
                 ],
             ),
