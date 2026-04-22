@@ -39,6 +39,8 @@ pub struct InitConfig {
     pub fail_on_timeout_tera_gas: Option<u64>,
     /// Prepaid gas for a `clean_tee_status` call.
     pub clean_tee_status_tera_gas: Option<u64>,
+    /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
+    pub clean_invalid_attestations_tera_gas: Option<u64>,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: Option<u64>,
     /// Prepaid gas for a `remove_non_participant_update_votes` call.
@@ -85,6 +87,8 @@ pub struct Config {
     pub fail_on_timeout_tera_gas: u64,
     /// Prepaid gas for a `clean_tee_status` call.
     pub clean_tee_status_tera_gas: u64,
+    /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
+    pub clean_invalid_attestations_tera_gas: u64,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: u64,
     /// Prepaid gas for a `remove_non_participant_update_votes` call.
@@ -110,6 +114,7 @@ mod tests {
             return_ck_and_clean_state_on_success_call_tera_gas: Some(7),
             fail_on_timeout_tera_gas: Some(2),
             clean_tee_status_tera_gas: Some(10),
+            clean_invalid_attestations_tera_gas: Some(10),
             cleanup_orphaned_node_migrations_tera_gas: Some(3),
             remove_non_participant_update_votes_tera_gas: Some(5),
             clean_foreign_chain_data_tera_gas: Some(5),
@@ -158,6 +163,7 @@ mod tests {
             return_ck_and_clean_state_on_success_call_tera_gas: None,
             fail_on_timeout_tera_gas: None,
             clean_tee_status_tera_gas: None,
+            clean_invalid_attestations_tera_gas: None,
             cleanup_orphaned_node_migrations_tera_gas: None,
             remove_non_participant_update_votes_tera_gas: None,
             clean_foreign_chain_data_tera_gas: None,
