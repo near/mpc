@@ -2596,9 +2596,9 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "dcap-qvl"
-version = "0.3.12"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67e7842b81018f3b991dc65ec0a95ff347332de58478c4ac43459095af00cc89"
+checksum = "5cd80641b0f720cfa2dccadba84c80f11873b98f4d32fbb6f78c230b4a35f3a4"
 dependencies = [
  "anyhow",
  "asn1_der",
@@ -3047,12 +3047,14 @@ dependencies = [
  "futures",
  "group",
  "hex",
+ "httpmock",
  "launcher-interface",
  "mpc-node-config",
  "mpc-primitives",
  "near-account-id 2.6.0",
  "near-indexer-primitives",
  "near-kit",
+ "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
  "near-sandbox",
@@ -10080,9 +10082,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.12"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "aws-lc-rs",
  "ring",
