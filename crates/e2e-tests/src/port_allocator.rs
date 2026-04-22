@@ -4,7 +4,7 @@
 /// collisions when tests run in parallel via `cargo nextest`.
 ///
 /// Layout per test:
-///   - 6 cluster-level ports (NEAR sandbox RPC/network + 4 mock foreign-chain RPCs)
+///   - 2 cluster-level ports (NEAR sandbox RPC/network)
 ///   - 8 ports per node * MAX_NODES
 #[derive(Debug, Clone)]
 pub struct E2ePortAllocator {
@@ -16,7 +16,7 @@ impl E2ePortAllocator {
     const PORTS_PER_NODE: u16 = 8;
     const MAX_NODES: u16 = 10;
     /// Cluster-level ports that are not per-node.
-    const CLUSTER_PORTS: u16 = 7;
+    const CLUSTER_PORTS: u16 = 2;
     /// Total ports reserved per test.
     const PORTS_PER_TEST: u16 = Self::CLUSTER_PORTS + Self::MAX_NODES * Self::PORTS_PER_NODE;
 
@@ -36,26 +36,6 @@ impl E2ePortAllocator {
 
     pub fn near_node_network_port(&self) -> u16 {
         self.base() + 1
-    }
-
-    pub fn mock_bitcoin_rpc_port(&self) -> u16 {
-        self.base() + 2
-    }
-
-    pub fn mock_abstract_rpc_port(&self) -> u16 {
-        self.base() + 3
-    }
-
-    pub fn mock_bnb_rpc_port(&self) -> u16 {
-        self.base() + 4
-    }
-
-    pub fn mock_starknet_rpc_port(&self) -> u16 {
-        self.base() + 5
-    }
-
-    pub fn mock_base_rpc_port(&self) -> u16 {
-        self.base() + 6
     }
 
     // -- Per-node ports --

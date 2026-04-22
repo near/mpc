@@ -7,12 +7,12 @@ autotests = false
 
 [dependencies]
 anyhow = { workspace = true }
-axum = { workspace = true }
 backon = { workspace = true }
 bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
+httpmock = { workspace = true }
 launcher-interface = { workspace = true }
 mpc-node-config = { workspace = true }
 near-account-id = { workspace = true }

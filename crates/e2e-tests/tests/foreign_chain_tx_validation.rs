@@ -2,10 +2,8 @@ use crate::common;
 
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
-use e2e_tests::E2ePortAllocator;
-use e2e_tests::foreign_chain_mock::{
-    MockServerGuard, bitcoin_rpc_handler, evm_rpc_handler, starknet_rpc_handler, start_mock_server,
-};
+use e2e_tests::foreign_chain_mock::{setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock};
+use httpmock::prelude::*;
 use mpc_node_config::ForeignChainsConfig;
 use mpc_node_config::foreign_chains::{
     AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BaseApiVariant,
@@ -24,10 +22,18 @@ use near_mpc_contract_interface::types::{
 struct ForeignTxTestEnv {
     cluster: e2e_tests::MpcCluster,
     secp_domain_id: DomainId,
-    _guards: Vec<MockServerGuard>,
+    _mock_servers: Vec<MockServer>,
 }
 
-fn build_foreign_chains_config(ports: &E2ePortAllocator) -> ForeignChainsConfig {
+struct MockServerUrls {
+    bitcoin: String,
+    abstract_chain: String,
+    bnb: String,
+    starknet: String,
+    base: String,
+}
+
+fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
     ForeignChainsConfig {
         bitcoin: Some(BitcoinChainConfig {
             timeout_sec: 30,
@@ -35,7 +41,7 @@ fn build_foreign_chains_config(ports: &E2ePortAllocator) -> ForeignChainsConfig 
             providers: NonEmptyBTreeMap::new(
                 "mock".to_string(),
                 BitcoinProviderConfig {
-                    rpc_url: format!("http://127.0.0.1:{}", ports.mock_bitcoin_rpc_port()),
+                    rpc_url: urls.bitcoin.clone(),
                     api_variant: BitcoinApiVariant::Standard,
                     auth: Default::default(),
                 },
@@ -47,7 +53,7 @@ fn build_foreign_chains_config(ports: &E2ePortAllocator) -> ForeignChainsConfig 
             providers: NonEmptyBTreeMap::new(
                 "mock".to_string(),
                 AbstractProviderConfig {
-                    rpc_url: format!("http://127.0.0.1:{}", ports.mock_abstract_rpc_port()),
+                    rpc_url: urls.abstract_chain.clone(),
                     api_variant: AbstractApiVariant::Standard,
                     auth: Default::default(),
                 },
@@ -59,7 +65,7 @@ fn build_foreign_chains_config(ports: &E2ePortAllocator) -> ForeignChainsConfig 
             providers: NonEmptyBTreeMap::new(
                 "mock".to_string(),
                 BnbProviderConfig {
-                    rpc_url: format!("http://127.0.0.1:{}", ports.mock_bnb_rpc_port()),
+                    rpc_url: urls.bnb.clone(),
                     api_variant: BnbApiVariant::Standard,
                     auth: Default::default(),
                 },
@@ -71,7 +77,7 @@ fn build_foreign_chains_config(ports: &E2ePortAllocator) -> ForeignChainsConfig 
             providers: NonEmptyBTreeMap::new(
                 "mock".to_string(),
                 StarknetProviderConfig {
-                    rpc_url: format!("http://127.0.0.1:{}", ports.mock_starknet_rpc_port()),
+                    rpc_url: urls.starknet.clone(),
                     api_variant: StarknetApiVariant::Standard,
                     auth: Default::default(),
                 },
@@ -83,7 +89,7 @@ fn build_foreign_chains_config(ports: &E2ePortAllocator) -> ForeignChainsConfig 
             providers: NonEmptyBTreeMap::new(
                 "mock".to_string(),
                 BaseProviderConfig {
-                    rpc_url: format!("http://127.0.0.1:{}", ports.mock_base_rpc_port()),
+                    rpc_url: urls.base.clone(),
                     api_variant: BaseApiVariant::Standard,
                     auth: Default::default(),
                 },
@@ -94,17 +100,35 @@ fn build_foreign_chains_config(ports: &E2ePortAllocator) -> ForeignChainsConfig 
 }
 
 async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
-    let ports = E2ePortAllocator::new(common::FOREIGN_TX_VALIDATION_PORT_SEED);
+    let bitcoin_server = MockServer::start();
+    let abstract_server = MockServer::start();
+    let bnb_server = MockServer::start();
+    let starknet_server = MockServer::start();
+    let base_server = MockServer::start();
 
-    let guards = vec![
-        start_mock_server(ports.mock_bitcoin_rpc_port(), bitcoin_rpc_handler).await,
-        start_mock_server(ports.mock_abstract_rpc_port(), evm_rpc_handler).await,
-        start_mock_server(ports.mock_bnb_rpc_port(), evm_rpc_handler).await,
-        start_mock_server(ports.mock_starknet_rpc_port(), starknet_rpc_handler).await,
-        start_mock_server(ports.mock_base_rpc_port(), evm_rpc_handler).await,
+    setup_bitcoin_mock(&bitcoin_server);
+    setup_evm_mock(&abstract_server);
+    setup_evm_mock(&bnb_server);
+    setup_starknet_mock(&starknet_server);
+    setup_evm_mock(&base_server);
+
+    let urls = MockServerUrls {
+        bitcoin: bitcoin_server.url("/"),
+        abstract_chain: abstract_server.url("/"),
+        bnb: bnb_server.url("/"),
+        starknet: starknet_server.url("/"),
+        base: base_server.url("/"),
+    };
+
+    let mock_servers = vec![
+        bitcoin_server,
+        abstract_server,
+        bnb_server,
+        starknet_server,
+        base_server,
     ];
 
-    let fc_config = build_foreign_chains_config(&ports);
+    let fc_config = build_foreign_chains_config(&urls);
 
     let (cluster, _running) = common::setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
         c.num_nodes = 2;
@@ -158,7 +182,7 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
     ForeignTxTestEnv {
         cluster,
         secp_domain_id,
-        _guards: guards,
+        _mock_servers: mock_servers,
     }
 }
 
