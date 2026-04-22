@@ -49,8 +49,8 @@ pub struct FakeMpcContractState {
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
-    pub supported_foreign_chains: dtos::SupportedForeignChains,
-    pub supported_foreign_chains_by_node: dtos::NodeForeignChainConfigurations,
+    supported_foreign_chains: dtos::SupportedForeignChains,
+    supported_foreign_chains_by_node: dtos::NodeForeignChainConfigurations,
     pub migration_service: NodeMigrations,
 }
 

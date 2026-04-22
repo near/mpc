@@ -5,14 +5,18 @@ use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
+use near_mpc_bounded_collections::NonEmptyBTreeSet;
+use near_mpc_contract_interface::types::{ForeignChain, ForeignChainConfiguration, RpcProvider};
 use near_time::Clock;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 use std::time::Duration;
 
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
-async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() {
+async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__should_use_local_config(
+) {
     // Given
     const THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
@@ -53,7 +57,8 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         config.config.foreign_chains = foreign_chains.clone();
     }
 
-    let expected_policy = foreign_chains.configured_chains();
+    let expected_foreign_chains: BTreeSet<ForeignChain> =
+        foreign_chains.configured_chains().keys().copied().collect();
 
     {
         let mut contract = setup.indexer.contract_mut().await;
@@ -71,7 +76,7 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         loop {
             {
                 let contract = setup.indexer.contract_mut().await;
-                if contract.foreign_chain_policy() == &expected_policy {
+                if **contract.supported_foreign_chains() == expected_foreign_chains {
                     break;
                 }
             }
@@ -82,11 +87,25 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
 
     // Then
     assert!(wait_result.is_ok(), "timed out waiting for policy update");
-
     let contract = setup.indexer.contract_mut().await;
-    assert_eq!(contract.foreign_chain_policy(), &expected_policy);
-    assert!(contract
-        .foreign_chain_policy_votes()
-        .proposal_by_account
-        .is_empty());
+
+    assert_eq!(
+        **contract.supported_foreign_chains(),
+        expected_foreign_chains
+    );
+
+    let expected_configuration = ForeignChainConfiguration::from(BTreeMap::from([(
+        ForeignChain::Solana,
+        NonEmptyBTreeSet::new(RpcProvider {
+            name: "public".to_string(),
+            rpc_url: "https://rpc.public.example.com".to_string(),
+        }),
+    )]));
+
+    let nodes_submitted_configurations = contract.supported_foreign_chains_by_node();
+    let all_nodes_submitted_configuration = nodes_submitted_configurations
+        .values()
+        .all(|config| config == &expected_configuration);
+
+    assert!(all_nodes_submitted_configuration);
 }

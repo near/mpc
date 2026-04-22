@@ -18,7 +18,6 @@ use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
     providers::verify_foreign_tx::VerifyForeignTxProvider, types::SignatureId,
 };
-use mpc_node_config::ForeignChainsConfig;
 use near_indexer_primitives::CryptoHash;
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
@@ -138,12 +137,7 @@ where
         my_participant_index: usize,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        chain_is_supported(
-            &self.config.foreign_chains,
-            &self.foreign_chain_policy_reader,
-            request,
-        )
-        .await?;
+        chain_is_supported(&self.foreign_chain_policy_reader, request).await?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(_request) => {
@@ -279,15 +273,9 @@ enum ForeignChainSupportError {
         "requested chain {requested:?} is not present in the list of supported foreign chains on the MPC contract"
     )]
     ChainNotSupported { requested: dtos::ForeignChain },
-    // TODO: this variant is not needed, since the caller will fail to get a handle to an inspector if this was the case.
-    #[error(
-        "requested chain {requested:?} is not present in the list of configured foreign chains in the node's local configuration"
-    )]
-    ChainNotConfiguredLocally { requested: dtos::ForeignChain },
 }
 
 async fn chain_is_supported(
-    local_foreign_chains_config: &ForeignChainsConfig,
     policy_reader: &impl ReadSupportedForeignChain,
     request: &dtos::ForeignChainRpcRequest,
 ) -> Result<(), ForeignChainSupportError> {
@@ -298,23 +286,7 @@ async fn chain_is_supported(
 
     let requested_chain = request.chain();
 
-    let foreign_chain_is_supported_locally = local_foreign_chains_config
-        .configured_chains()
-        .contains_key(&requested_chain);
-
-    if !foreign_chain_is_supported_locally {
-        return Err(ForeignChainSupportError::ChainNotConfiguredLocally {
-            requested: requested_chain,
-        });
-    }
-
-    let foreign_chain_is_supported_on_chain =
-        on_chain_foreign_chains_support.contains(&requested_chain);
-
-    let foreign_chain_is_supported =
-        foreign_chain_is_supported_locally && foreign_chain_is_supported_on_chain;
-
-    if foreign_chain_is_supported {
+    if on_chain_foreign_chains_support.contains(&requested_chain) {
         Ok(())
     } else {
         Err(ForeignChainSupportError::ChainNotSupported {
@@ -359,15 +331,7 @@ mod tests {
     use super::*;
     use crate::indexer::MockReadSupportedForeignChain;
     use assert_matches::assert_matches;
-    use mpc_node_config::{
-        foreign_chains::RpcProviderName, ForeignChainConfig, ForeignChainProviderConfig,
-        ForeignChainsConfig,
-    };
-    use near_mpc_bounded_collections::NonEmptyBTreeSet;
-    use std::{
-        collections::{BTreeMap, BTreeSet},
-        num::NonZeroU64,
-    };
+    use std::collections::BTreeSet;
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -375,24 +339,6 @@ mod tests {
             confirmations: dtos::BlockConfirmations(6),
             extractors: vec![dtos::BitcoinExtractor::BlockHash],
         })
-    }
-
-    fn bitcoin_foreign_chains_config() -> ForeignChainsConfig {
-        let providers = near_mpc_bounded_collections::NonEmptyBTreeMap::new(
-            RpcProviderName::from("public".to_string()),
-            ForeignChainProviderConfig {
-                rpc_url: "https://blockstream.info/api".to_string(),
-                auth: Default::default(),
-            },
-        );
-        ForeignChainsConfig {
-            bitcoin: Some(ForeignChainConfig {
-                timeout_sec: NonZeroU64::new(30).unwrap(),
-                max_retries: NonZeroU64::new(3).unwrap(),
-                providers,
-            }),
-            ..Default::default()
-        }
     }
 
     fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
@@ -472,18 +418,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_foreign_chain_policy__should_succeed_when_policies_match_and_chain_present() {
-        let config = bitcoin_foreign_chains_config();
+    async fn chain_is_supported__should_succeed_when_chain_is_present_in_policy() {
         let reader = mock_policy_reader(bitcoin_chain_policy());
 
-        validate_foreign_chain_policy(&config, &reader, &bitcoin_request())
-            .await
-            .unwrap();
+        assert_matches!(chain_is_supported(&reader, &bitcoin_request()).await, Ok(_));
     }
 
     #[tokio::test]
-    async fn validate_foreign_chain_policy__should_fail_when_chain_not_in_policy() {
-        let config = bitcoin_foreign_chains_config();
+    async fn chain_is_supported__should_fail_when_chain_is_not_present_in_policy() {
         // On-chain policy has Bitcoin, but request is for Ethereum
         let reader = mock_policy_reader(bitcoin_chain_policy());
         let ethereum_request = dtos::ForeignChainRpcRequest::Ethereum(dtos::EvmRpcRequest {
@@ -492,45 +434,12 @@ mod tests {
             finality: dtos::EvmFinality::Finalized,
         });
 
-        // Policies match (both bitcoin-only), but request is for Ethereum.
-        // The policy match check passes, but the chain-in-policy check fails.
-        let result = validate_foreign_chain_policy(&config, &reader, &ethereum_request).await;
+        let result = chain_is_supported(&reader, &ethereum_request).await;
         assert_matches!(
             result,
-            Err(ValidateForeignChainPolicyError::ChainNotInPolicy { .. })
-        );
-    }
-
-    #[tokio::test]
-    async fn validate_foreign_chain_policy__should_fail_when_policies_mismatch() {
-        let config = bitcoin_foreign_chains_config();
-        // On-chain policy differs (different RPC URL)
-        let reader = mock_policy_reader(dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    name: "provider".to_string(),
-                    rpc_url: "https://different-provider.example.com/api".to_string(),
-                }),
-            )]),
-        });
-
-        let result = validate_foreign_chain_policy(&config, &reader, &bitcoin_request()).await;
-        assert_matches!(
-            result,
-            Err(ValidateForeignChainPolicyError::PolicyMismatch { .. })
-        );
-    }
-
-    #[tokio::test]
-    async fn validate_foreign_chain_policy__should_fail_when_local_config_empty() {
-        let config = ForeignChainsConfig::default();
-        let reader = mock_policy_reader(bitcoin_chain_policy());
-
-        let result = validate_foreign_chain_policy(&config, &reader, &bitcoin_request()).await;
-        assert_matches!(
-            result,
-            Err(ValidateForeignChainPolicyError::LocalConfigEmpty)
+            Err(ForeignChainSupportError::ChainNotSupported {
+                requested: dtos::ForeignChain::Ethereum
+            })
         );
     }
 }
