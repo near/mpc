@@ -221,7 +221,7 @@ mod tests {
     use near_mpc_contract_interface::types::Ed25519PublicKey;
 
     use ed25519_dalek::SigningKey;
-    use mpc_contract::node_migrations::BackupServiceInfo;
+    use near_mpc_contract_interface::types::BackupServiceInfo;
     use tokio::sync::watch;
 
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {

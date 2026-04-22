@@ -17,7 +17,7 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
-use mpc_contract::tee::proposal::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
@@ -219,7 +219,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     let node_id = NodeId {
         account_id: node_account_id.clone(),
         tls_public_key: tls_public_key.clone(),
-        account_public_key: Some(account_public_key.clone()),
+        account_public_key: account_public_key.clone(),
     };
 
     let initially_available =
@@ -413,7 +413,7 @@ mod tests {
         let dummy_node_id = NodeId {
             account_id: "dummy.near".parse().unwrap(),
             tls_public_key: Ed25519PublicKey::from([0u8; 32]),
-            account_public_key: Some(Ed25519PublicKey::from([0u8; 32])),
+            account_public_key: Ed25519PublicKey::from([0u8; 32]),
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
@@ -449,7 +449,7 @@ mod tests {
         let node_id = NodeId {
             account_id: node_account_id.clone(),
             tls_public_key: tls_public_key.clone(),
-            account_public_key: Some(account_public_key.clone()),
+            account_public_key: account_public_key.clone(),
         };
 
         // Create initial TEE accounts list including our node

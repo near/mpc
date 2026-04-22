@@ -378,7 +378,7 @@ impl FakeMpcContractState {
             panic!("keyset mismatch");
         }
         self.migration_service.remove_migration(&account_id);
-        self.update_participant_info(account_id, node_info.destination_node_info);
+        self.update_participant_info(account_id, node_info.destination_node_info.into());
     }
 }
 

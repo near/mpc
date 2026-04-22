@@ -92,22 +92,21 @@ pub struct MpcContract {
 
 impl From<OldTeeState> for TeeState {
     fn from(old: OldTeeState) -> Self {
-        // Migrate entry-by-entry: skip any whose TLS key is not Ed25519, and
-        // drop non-Ed25519 `account_public_key` values. A stored non-Ed25519
-        // TLS key could never match the node's actual key (the contract
-        // always signed with Ed25519), so dropping it is safe — we prefer
-        // silent skip over panic to avoid bricking the migration transaction
-        // on pathological stored state.
+        // Migrate entry-by-entry: skip any whose TLS key is not Ed25519, whose
+        // `account_public_key` is missing, or whose `account_public_key` is
+        // not Ed25519. A stored non-Ed25519 TLS key could never match the
+        // node's actual key (the contract always signed with Ed25519), so
+        // dropping it is safe — we prefer silent skip over panic to avoid
+        // bricking the migration transaction on pathological stored state.
         let stored_attestations = old
             .stored_attestations
             .into_iter()
             .filter_map(|(tls_pk, old_attestation)| {
                 let new_tls_key = dtos::Ed25519PublicKey::try_from(&tls_pk).ok()?;
-                let account_public_key = old_attestation
-                    .node_id
-                    .account_public_key
-                    .as_ref()
-                    .and_then(|pk| dtos::Ed25519PublicKey::try_from(pk).ok());
+                let account_public_key = dtos::Ed25519PublicKey::try_from(
+                    old_attestation.node_id.account_public_key.as_ref()?,
+                )
+                .ok()?;
                 let node_id = dtos::NodeId {
                     account_id: old_attestation.node_id.account_id,
                     tls_public_key: new_tls_key.clone(),
@@ -213,12 +212,12 @@ mod tests {
         assert_eq!(stored.node_id.tls_public_key, expected_key);
         assert_eq!(
             stored.node_id.account_public_key,
-            Some(dtos::Ed25519PublicKey::from([8u8; 32]))
+            dtos::Ed25519PublicKey::from([8u8; 32])
         );
     }
 
     #[test]
-    fn tee_state_migration__should_preserve_missing_account_key() {
+    fn tee_state_migration__should_skip_missing_account_key() {
         // Given a legacy/mock node that never recorded an account key
         let tls_pk = old_ed25519_near_pk(1);
         let mut old = OldTeeState::default();
@@ -228,10 +227,8 @@ mod tests {
         // When
         let new: TeeState = old.into();
 
-        // Then
-        let expected_key = dtos::Ed25519PublicKey::from([1u8; 32]);
-        let stored = new.stored_attestations.get(&expected_key).unwrap();
-        assert_eq!(stored.node_id.account_public_key, None);
+        // Then the entry is dropped — NodeId can no longer represent a missing key
+        assert!(new.stored_attestations.is_empty());
     }
 
     #[test]
@@ -239,13 +236,16 @@ mod tests {
         // Given one Ed25519 entry and one secp256k1 entry in the old state
         let good_tls = old_ed25519_near_pk(4);
         let bad_tls = old_secp256k1_near_pk(5);
+        let account_pk = old_ed25519_near_pk(6);
         let mut old = OldTeeState::default();
         old.stored_attestations.insert(
             good_tls.clone(),
-            old_attestation("good.near", good_tls, None),
+            old_attestation("good.near", good_tls, Some(account_pk.clone())),
         );
-        old.stored_attestations
-            .insert(bad_tls.clone(), old_attestation("bad.near", bad_tls, None));
+        old.stored_attestations.insert(
+            bad_tls.clone(),
+            old_attestation("bad.near", bad_tls, Some(account_pk)),
+        );
 
         // When
         let new: TeeState = old.into();
@@ -271,22 +271,20 @@ mod tests {
         // When
         let new: TeeState = old.into();
 
-        // Then the entry is kept but its account key is cleared
-        let stored = new
-            .stored_attestations
-            .get(&dtos::Ed25519PublicKey::from([2u8; 32]))
-            .unwrap();
-        assert_eq!(stored.node_id.account_public_key, None);
+        // Then the entry is dropped entirely
+        assert!(new.stored_attestations.is_empty());
     }
 
     #[test]
     fn tee_state_migration__should_round_trip_through_borsh() {
         // Given an OldTeeState serialized with borsh (mirrors the on-chain path)
         let tls_pk = old_ed25519_near_pk(9);
+        let account_pk = old_ed25519_near_pk(10);
         let mut pre_migration = OldTeeState::default();
-        pre_migration
-            .stored_attestations
-            .insert(tls_pk.clone(), old_attestation("dave.near", tls_pk, None));
+        pre_migration.stored_attestations.insert(
+            tls_pk.clone(),
+            old_attestation("dave.near", tls_pk, Some(account_pk)),
+        );
         let bytes = borsh::to_vec(&pre_migration).unwrap();
 
         // When

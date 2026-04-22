@@ -13,7 +13,7 @@ use crate::{
 use self::stats::IndexerStats;
 use anyhow::Context;
 use handler::ChainBlockUpdate;
-use mpc_contract::tee::proposal::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
@@ -30,7 +30,7 @@ use near_mpc_contract_interface::method_names::{
     GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
     STATE,
 };
-use near_mpc_contract_interface::types::{self as dtos, NodeId, YieldIndex};
+use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};
@@ -314,7 +314,7 @@ impl IndexerViewClient {
     pub(crate) async fn get_mpc_tee_accounts(
         &self,
         mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<NodeId>)> {
+    ) -> anyhow::Result<(u64, Vec<dtos::NodeId>)> {
         self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
     }
 
@@ -480,7 +480,7 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     /// Watcher that tracks node IDs that have TEE attestations in the contract.
-    pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
+    pub attested_nodes_receiver: watch::Receiver<Vec<dtos::NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
