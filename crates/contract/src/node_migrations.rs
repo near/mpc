@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
 use near_sdk::{near, store::IterableMap};
 
-use crate::{primitives::participants::ParticipantInfo, storage_keys::StorageKey};
+use crate::storage_keys::StorageKey;
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
@@ -86,33 +86,16 @@ impl NodeMigrations {
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
-#[near(serializers=[borsh, json])]
-pub struct BackupServiceInfo {
-    pub public_key: Ed25519PublicKey,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-#[near(serializers=[borsh, json])]
-pub struct DestinationNodeInfo {
-    /// the public key used by the node to sign transactions to the contract
-    /// this key is different from the TLS key called `sign_pk` and stored in `ParticipantInfo`.
-    pub signer_account_pk: near_sdk::PublicKey,
-    // the participant info for the node
-    pub destination_node_info: ParticipantInfo,
-}
-
 #[cfg(test)]
 mod tests {
 
     use std::collections::BTreeMap;
 
+    use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
+
     use crate::{
-        node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations},
-        primitives::test_utils::{
-            bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id,
-            gen_participant,
-        },
+        node_migrations::NodeMigrations,
+        primitives::test_utils::{bogus_ed25519_public_key, gen_account_id, gen_participant},
     };
 
     #[test]
@@ -153,10 +136,9 @@ mod tests {
     fn test_ongoing_migrations() {
         let mut migrations = NodeMigrations::default();
         let (account_id, participant_info) = gen_participant(0);
-        let signer_account_pk = bogus_ed25519_near_public_key();
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk,
-            destination_node_info: participant_info,
+            signer_account_pk: bogus_ed25519_public_key(),
+            destination_node_info: participant_info.try_into().unwrap(),
         };
         // sanity checks
         assert!(migrations.ongoing_migrations.get(&account_id).is_none());
@@ -209,7 +191,6 @@ mod tests {
     fn test_remove_account_data() {
         let mut migrations = NodeMigrations::default();
         let (account_id, participant_info) = gen_participant(0);
-        let signer_account_pk = bogus_ed25519_near_public_key();
         let backup_service_pk = bogus_ed25519_public_key();
 
         let info = BackupServiceInfo {
@@ -217,8 +198,8 @@ mod tests {
         };
 
         let destination_node_info = DestinationNodeInfo {
-            signer_account_pk,
-            destination_node_info: participant_info,
+            signer_account_pk: bogus_ed25519_public_key(),
+            destination_node_info: participant_info.try_into().unwrap(),
         };
 
         // sanity checks

@@ -16,6 +16,7 @@ pub mod types {
 
     pub use metrics::Metrics;
     pub use near_mpc_crypto_types::kdf;
+    pub use node_migrations::{BackupServiceInfo, DestinationNodeInfo};
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
@@ -43,6 +44,7 @@ pub mod types {
     mod config;
     mod foreign_chain;
     mod metrics;
+    mod node_migrations;
     mod participants;
     mod primitives;
     mod sign;

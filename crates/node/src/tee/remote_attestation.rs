@@ -17,7 +17,7 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
-use mpc_contract::tee::proposal::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
