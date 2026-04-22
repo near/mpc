@@ -82,9 +82,7 @@ def test_supported_foreign_chains_requires_all_participants(
         supported = cluster.view_contract_function("get_supported_foreign_chains")
         empty_count = sum(1 for config in registrations.values() if not config)
         return (
-            len(registrations) == 3
-            and empty_count == 1
-            and "Solana" not in supported
+            len(registrations) == 3 and empty_count == 1 and "Solana" not in supported
         )
 
     utils.wait_until(
