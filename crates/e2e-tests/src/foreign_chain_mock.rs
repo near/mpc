@@ -50,17 +50,6 @@ pub async fn start_mock_server(
     MockServerGuard { _shutdown: tx }
 }
 
-fn jsonrpc_error(request_id: serde_json::Value, method: &str) -> serde_json::Value {
-    serde_json::json!({
-        "jsonrpc": "2.0",
-        "error": {
-            "code": -32601,
-            "message": format!("Method not found: {method}"),
-        },
-        "id": request_id,
-    })
-}
-
 pub fn bitcoin_rpc_handler(request: serde_json::Value) -> serde_json::Value {
     let request_id = request
         .get("id")
@@ -78,7 +67,7 @@ pub fn bitcoin_rpc_handler(request: serde_json::Value) -> serde_json::Value {
             "id": request_id,
         })
     } else {
-        jsonrpc_error(request_id, method)
+        panic!("unexpected Bitcoin RPC method: {method}");
     }
 }
 
@@ -124,7 +113,7 @@ pub fn evm_rpc_handler(request: serde_json::Value) -> serde_json::Value {
             "id": request_id,
         })
     } else {
-        jsonrpc_error(request_id, method)
+        panic!("unexpected EVM RPC method: {method}");
     }
 }
 
@@ -208,6 +197,6 @@ pub fn starknet_rpc_handler(request: serde_json::Value) -> serde_json::Value {
             "id": request_id,
         })
     } else {
-        jsonrpc_error(request_id, method)
+        panic!("unexpected Starknet RPC method: {method}");
     }
 }

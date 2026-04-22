@@ -4,17 +4,22 @@ use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use e2e_tests::E2ePortAllocator;
 use e2e_tests::foreign_chain_mock::{
-    MOCK_TX_ID, MockServerGuard, bitcoin_rpc_handler, evm_rpc_handler, starknet_rpc_handler,
-    start_mock_server,
+    MockServerGuard, bitcoin_rpc_handler, evm_rpc_handler, starknet_rpc_handler, start_mock_server,
 };
 use mpc_node_config::ForeignChainsConfig;
 use mpc_node_config::foreign_chains::{
-    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
-    BitcoinChainConfig, BitcoinProviderConfig, BnbApiVariant, BnbChainConfig, BnbProviderConfig,
-    StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
+    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BaseApiVariant,
+    BaseChainConfig, BaseProviderConfig, BitcoinApiVariant, BitcoinChainConfig,
+    BitcoinProviderConfig, BnbApiVariant, BnbChainConfig, BnbProviderConfig, StarknetApiVariant,
+    StarknetChainConfig, StarknetProviderConfig,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{
+    BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig,
+    DomainId, DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, StarknetExtractor, StarknetFelt,
+    StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionRequestArgs,
+};
 
 struct ForeignTxTestEnv {
     cluster: e2e_tests::MpcCluster,
@@ -72,6 +77,18 @@ fn build_foreign_chains_config(ports: &E2ePortAllocator) -> ForeignChainsConfig 
                 },
             ),
         }),
+        base: Some(BaseChainConfig {
+            timeout_sec: 30,
+            max_retries: 3,
+            providers: NonEmptyBTreeMap::new(
+                "mock".to_string(),
+                BaseProviderConfig {
+                    rpc_url: format!("http://127.0.0.1:{}", ports.mock_base_rpc_port()),
+                    api_variant: BaseApiVariant::Standard,
+                    auth: Default::default(),
+                },
+            ),
+        }),
         ..Default::default()
     }
 }
@@ -84,6 +101,7 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
         start_mock_server(ports.mock_abstract_rpc_port(), evm_rpc_handler).await,
         start_mock_server(ports.mock_bnb_rpc_port(), evm_rpc_handler).await,
         start_mock_server(ports.mock_starknet_rpc_port(), starknet_rpc_handler).await,
+        start_mock_server(ports.mock_base_rpc_port(), evm_rpc_handler).await,
     ];
 
     let fc_config = build_foreign_chains_config(&ports);
@@ -185,76 +203,90 @@ fn verify_foreign_tx_response(outcome: &near_kit::FinalExecutionOutcome) {
 }
 
 async fn verify_bitcoin(env: &ForeignTxTestEnv) {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+            tx_id: BitcoinTxId([0xbb; 32]),
+            confirmations: BlockConfirmations(1),
+            extractors: vec![BitcoinExtractor::BlockHash],
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
     let outcome = env
         .cluster
-        .send_verify_foreign_transaction(serde_json::json!({
-            "request": {
-                "Bitcoin": {
-                    "tx_id": MOCK_TX_ID,
-                    "confirmations": 1,
-                    "extractors": ["BlockHash"],
-                }
-            },
-            "domain_id": env.secp_domain_id,
-            "payload_version": 1,
-        }))
+        .send_verify_foreign_transaction(&request)
         .await
         .expect("verify_foreign_transaction (Bitcoin) failed");
     verify_foreign_tx_response(&outcome);
 }
 
 async fn verify_abstract(env: &ForeignTxTestEnv) {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
     let outcome = env
         .cluster
-        .send_verify_foreign_transaction(serde_json::json!({
-            "request": {
-                "Abstract": {
-                    "tx_id": MOCK_TX_ID,
-                    "finality": "Finalized",
-                    "extractors": ["BlockHash", { "Log": { "log_index": 0 } }],
-                }
-            },
-            "domain_id": env.secp_domain_id,
-            "payload_version": 1,
-        }))
+        .send_verify_foreign_transaction(&request)
         .await
         .expect("verify_foreign_transaction (Abstract) failed");
     verify_foreign_tx_response(&outcome);
 }
 
 async fn verify_bnb(env: &ForeignTxTestEnv) {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Bnb(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
     let outcome = env
         .cluster
-        .send_verify_foreign_transaction(serde_json::json!({
-            "request": {
-                "Bnb": {
-                    "tx_id": MOCK_TX_ID,
-                    "finality": "Finalized",
-                    "extractors": ["BlockHash", { "Log": { "log_index": 0 } }],
-                }
-            },
-            "domain_id": env.secp_domain_id,
-            "payload_version": 1,
-        }))
+        .send_verify_foreign_transaction(&request)
         .await
         .expect("verify_foreign_transaction (Bnb) failed");
     verify_foreign_tx_response(&outcome);
 }
 
-async fn verify_starknet(env: &ForeignTxTestEnv) {
+async fn verify_base(env: &ForeignTxTestEnv) {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Base(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
     let outcome = env
         .cluster
-        .send_verify_foreign_transaction(serde_json::json!({
-            "request": {
-                "Starknet": {
-                    "tx_id": MOCK_TX_ID,
-                    "finality": "AcceptedOnL1",
-                    "extractors": ["BlockHash"],
-                }
-            },
-            "domain_id": env.secp_domain_id,
-            "payload_version": 1,
-        }))
+        .send_verify_foreign_transaction(&request)
+        .await
+        .expect("verify_foreign_transaction (Base) failed");
+    verify_foreign_tx_response(&outcome);
+}
+
+async fn verify_starknet(env: &ForeignTxTestEnv) {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+            tx_id: StarknetTxId(StarknetFelt([0xbb; 32])),
+            finality: StarknetFinality::AcceptedOnL1,
+            extractors: vec![StarknetExtractor::BlockHash],
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
         .await
         .expect("verify_foreign_transaction (Starknet) failed");
     verify_foreign_tx_response(&outcome);
@@ -262,14 +294,72 @@ async fn verify_starknet(env: &ForeignTxTestEnv) {
 
 /// Sets up a single 2-node cluster with mock RPC servers for all chains,
 /// then submits verify_foreign_transaction requests for Bitcoin, Abstract,
-/// BNB, and Starknet and verifies the MPC nodes return valid signed responses.
+/// BNB, Base, and Starknet and verifies the MPC nodes return valid signed responses.
+/// Also verifies rejection for unsupported chains and non-existent domains.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn verify_foreign_transaction__should_sign_all_supported_chains() {
+    // Given — 2-node cluster with Bitcoin, Abstract, BNB, Base, and Starknet configured
     let env = setup_foreign_tx_cluster().await;
 
+    // When/Then — all configured chains produce valid signed responses
     verify_bitcoin(&env).await;
     verify_abstract(&env).await;
     verify_bnb(&env).await;
+    verify_base(&env).await;
     verify_starknet(&env).await;
+
+    // When — requesting Ethereum, which is not in the foreign chain config
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.secp_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .expect("call should succeed at the RPC level");
+
+    // Then — the contract rejects the unsupported chain
+    assert!(
+        !outcome.is_success(),
+        "expected verify_foreign_transaction to fail for unsupported chain"
+    );
+    let failure = outcome.failure_message().unwrap_or_default();
+    assert!(
+        failure.contains("not supported"),
+        "expected 'not supported' error, got: {failure}"
+    );
+
+    // When — requesting a non-existent domain
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+            tx_id: BitcoinTxId([0xbb; 32]),
+            confirmations: BlockConfirmations(1),
+            extractors: vec![BitcoinExtractor::BlockHash],
+        }),
+        domain_id: DomainId(999),
+        payload_version: ForeignTxPayloadVersion::V1,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .expect("call should succeed at the RPC level");
+
+    // Then — the contract rejects the unknown domain
+    assert!(
+        !outcome.is_success(),
+        "expected verify_foreign_transaction to fail for non-existent domain"
+    );
+    let failure = outcome.failure_message().unwrap_or_default();
+    assert!(
+        failure.contains("not found"),
+        "expected 'not found' error, got: {failure}"
+    );
 }

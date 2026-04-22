@@ -16,7 +16,7 @@ impl E2ePortAllocator {
     const PORTS_PER_NODE: u16 = 8;
     const MAX_NODES: u16 = 10;
     /// Cluster-level ports that are not per-node.
-    const CLUSTER_PORTS: u16 = 6;
+    const CLUSTER_PORTS: u16 = 7;
     /// Total ports reserved per test.
     const PORTS_PER_TEST: u16 = Self::CLUSTER_PORTS + Self::MAX_NODES * Self::PORTS_PER_NODE;
 
@@ -52,6 +52,10 @@ impl E2ePortAllocator {
 
     pub fn mock_starknet_rpc_port(&self) -> u16 {
         self.base() + 5
+    }
+
+    pub fn mock_base_rpc_port(&self) -> u16 {
+        self.base() + 6
     }
 
     // -- Per-node ports --

@@ -688,7 +688,7 @@ impl MpcCluster {
     pub async fn vote_foreign_chain_policy(
         &self,
         node_index: usize,
-        policy: serde_json::Value,
+        policy: &near_mpc_contract_interface::types::ForeignChainPolicy,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let node = &self.nodes[node_index];
         let client = self
@@ -698,7 +698,7 @@ impl MpcCluster {
             .call_from(
                 &client,
                 method_names::VOTE_FOREIGN_CHAIN_POLICY,
-                json!({ "policy": policy }),
+                json!({ "policy": serde_json::to_value(policy)? }),
             )
             .await
     }
@@ -706,7 +706,7 @@ impl MpcCluster {
     /// Send a verify_foreign_transaction request from the default user account.
     pub async fn send_verify_foreign_transaction(
         &self,
-        request: serde_json::Value,
+        request: &near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let user = self.default_user_account().clone();
         let client = self.user_client(&user)?;
@@ -714,7 +714,7 @@ impl MpcCluster {
             .call_from_with_deposit(
                 &client,
                 method_names::VERIFY_FOREIGN_TRANSACTION,
-                json!({ "request": request }),
+                json!({ "request": serde_json::to_value(request)? }),
                 SIGN_GAS,
                 SIGN_DEPOSIT,
             )
