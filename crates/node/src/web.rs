@@ -9,14 +9,12 @@ use axum::{serve, Json};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
-use mpc_node_config::foreign_chains::{BaseApiVariant, BaseChainConfig, BaseProviderConfig};
+use mpc_node_config::foreign_chains::{
+    ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
+};
 use mpc_node_config::{
-    foreign_chains::{BnbApiVariant, BnbChainConfig, BnbProviderConfig},
-    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BitcoinApiVariant,
-    BitcoinChainConfig, BitcoinProviderConfig, CKDConfig, ConfigFile, EthereumApiVariant,
-    EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig, IndexerConfig, KeygenConfig,
-    PresignatureConfig, SignatureConfig, SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig,
-    StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig, TripleConfig,
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
+    SignatureConfig, TripleConfig,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -26,6 +24,7 @@ use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::num::NonZeroU64;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -127,19 +126,19 @@ impl From<ConfigFile> for NodeConfigResponse {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 struct ForeignChains {
     #[serde(skip_serializing_if = "Option::is_none")]
-    solana: Option<SolanaChain>,
+    solana: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    bitcoin: Option<BitcoinChain>,
+    bitcoin: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ethereum: Option<EthereumChain>,
+    ethereum: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    abstract_chain: Option<AbstractChain>,
+    abstract_chain: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    starknet: Option<StarknetChain>,
+    starknet: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    bnb: Option<BnbChain>,
+    bnb: Option<ForeignChain>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    base: Option<BaseChain>,
+    base: Option<ForeignChain>,
 }
 
 impl From<ForeignChainsConfig> for ForeignChains {
@@ -157,15 +156,16 @@ impl From<ForeignChainsConfig> for ForeignChains {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct SolanaChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, SolanaProvider>,
+struct ForeignChain {
+    timeout_sec: NonZeroU64,
+    max_retries: NonZeroU64,
+    providers: BTreeMap<RpcProviderName, ForeignChainProvider>,
 }
 
-impl From<SolanaChainConfig> for SolanaChain {
-    fn from(config: SolanaChainConfig) -> Self {
-        let providers: BTreeMap<String, SolanaProviderConfig> = config.providers.into();
+impl From<ForeignChainConfig> for ForeignChain {
+    fn from(config: ForeignChainConfig) -> Self {
+        let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> =
+            config.providers.into();
         Self {
             timeout_sec: config.timeout_sec,
             max_retries: config.max_retries,
@@ -175,214 +175,14 @@ impl From<SolanaChainConfig> for SolanaChain {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct SolanaProvider {
+struct ForeignChainProvider {
     rpc_url: String,
-    api_variant: SolanaApiVariant,
 }
 
-impl From<SolanaProviderConfig> for SolanaProvider {
-    fn from(config: SolanaProviderConfig) -> Self {
+impl From<ForeignChainProviderConfig> for ForeignChainProvider {
+    fn from(provider: ForeignChainProviderConfig) -> Self {
         Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BitcoinChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, BitcoinProvider>,
-}
-
-impl From<BitcoinChainConfig> for BitcoinChain {
-    fn from(config: BitcoinChainConfig) -> Self {
-        let providers: BTreeMap<String, BitcoinProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BitcoinProvider {
-    rpc_url: String,
-    api_variant: BitcoinApiVariant,
-}
-
-impl From<BitcoinProviderConfig> for BitcoinProvider {
-    fn from(config: BitcoinProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct EthereumChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, EthereumProvider>,
-}
-
-impl From<EthereumChainConfig> for EthereumChain {
-    fn from(config: EthereumChainConfig) -> Self {
-        let providers: BTreeMap<String, EthereumProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct EthereumProvider {
-    rpc_url: String,
-    api_variant: EthereumApiVariant,
-}
-
-impl From<EthereumProviderConfig> for EthereumProvider {
-    fn from(config: EthereumProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct AbstractChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, AbstractProvider>,
-}
-
-impl From<AbstractChainConfig> for AbstractChain {
-    fn from(config: AbstractChainConfig) -> Self {
-        let providers: BTreeMap<String, AbstractProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct AbstractProvider {
-    rpc_url: String,
-    api_variant: AbstractApiVariant,
-}
-
-impl From<AbstractProviderConfig> for AbstractProvider {
-    fn from(config: AbstractProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct StarknetChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, StarknetProvider>,
-}
-
-impl From<StarknetChainConfig> for StarknetChain {
-    fn from(config: StarknetChainConfig) -> Self {
-        let providers: BTreeMap<String, StarknetProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct StarknetProvider {
-    rpc_url: String,
-    api_variant: StarknetApiVariant,
-}
-
-impl From<StarknetProviderConfig> for StarknetProvider {
-    fn from(config: StarknetProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BnbChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, BnbProvider>,
-}
-
-impl From<BnbChainConfig> for BnbChain {
-    fn from(config: BnbChainConfig) -> Self {
-        let providers: BTreeMap<String, BnbProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BnbProvider {
-    rpc_url: String,
-    api_variant: BnbApiVariant,
-}
-
-impl From<BnbProviderConfig> for BnbProvider {
-    fn from(config: BnbProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BaseChain {
-    timeout_sec: u64,
-    max_retries: u64,
-    providers: BTreeMap<String, BaseProvider>,
-}
-
-impl From<BaseChainConfig> for BaseChain {
-    fn from(config: BaseChainConfig) -> Self {
-        let providers: BTreeMap<String, BaseProviderConfig> = config.providers.into();
-        Self {
-            timeout_sec: config.timeout_sec,
-            max_retries: config.max_retries,
-            providers: providers.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-struct BaseProvider {
-    rpc_url: String,
-    api_variant: BaseApiVariant,
-}
-
-impl From<BaseProviderConfig> for BaseProvider {
-    fn from(config: BaseProviderConfig) -> Self {
-        Self {
-            rpc_url: config.rpc_url,
-            api_variant: config.api_variant,
+            rpc_url: provider.rpc_url,
         }
     }
 }
@@ -573,12 +373,25 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::foreign_chains::{BaseApiVariant, BaseChainConfig, BaseProviderConfig};
     use mpc_node_config::{AuthConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
+
+    fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
+        ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                RpcProviderName::from(provider_name.to_string()),
+                ForeignChainProviderConfig {
+                    rpc_url: rpc_url.to_string(),
+                    auth,
+                },
+            ),
+        }
+    }
 
     /// Builds a [`ConfigFile`] with one provider per chain, each exercising a
     /// different [`AuthConfig`] variant so every conversion path is covered.
@@ -613,116 +426,62 @@ mod tests {
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
             foreign_chains: ForeignChainsConfig {
-                // Header auth with Val token
-                solana: Some(SolanaChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "alchemy".to_string(),
-                        SolanaProviderConfig {
-                            rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
-                            api_variant: SolanaApiVariant::Alchemy,
-                            auth: AuthConfig::Header {
-                                name: http::HeaderName::from_static("authorization"),
-                                scheme: Some("Bearer".to_string()),
-                                token: TokenConfig::Val {
-                                    val: "sk-SUPER-SECRET-KEY".to_string(),
-                                },
-                            },
+                solana: Some(test_chain(
+                    "alchemy",
+                    "https://solana-mainnet.g.alchemy.com/v2/",
+                    AuthConfig::Header {
+                        name: http::HeaderName::from_static("authorization"),
+                        scheme: Some("Bearer".to_string()),
+                        token: TokenConfig::Val {
+                            val: "sk-SUPER-SECRET-KEY".to_string(),
                         },
-                    ),
-                }),
-                // Path auth with Val token (URL contains placeholder)
-                bitcoin: Some(BitcoinChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "ankr".to_string(),
-                        BitcoinProviderConfig {
-                            rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
-                            api_variant: BitcoinApiVariant::Standard,
-                            auth: AuthConfig::Path {
-                                placeholder: "{api_key}".to_string(),
-                                token: TokenConfig::Val {
-                                    val: "ankr-secret-token".to_string(),
-                                },
-                            },
+                    },
+                )),
+                bitcoin: Some(test_chain(
+                    "ankr",
+                    "https://rpc.ankr.com/btc/{api_key}",
+                    AuthConfig::Path {
+                        placeholder: "{api_key}".to_string(),
+                        token: TokenConfig::Val {
+                            val: "ankr-secret-token".to_string(),
                         },
-                    ),
-                }),
-                // Query auth with Env token
-                ethereum: Some(EthereumChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "alchemy".to_string(),
-                        EthereumProviderConfig {
-                            rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
-                            api_variant: EthereumApiVariant::Alchemy,
-                            auth: AuthConfig::Query {
-                                name: "api_key".to_string(),
-                                token: TokenConfig::Env {
-                                    env: "ALCHEMY_API_KEY".to_string(),
-                                },
-                            },
+                    },
+                )),
+                ethereum: Some(test_chain(
+                    "alchemy",
+                    "https://eth-mainnet.g.alchemy.com/v2/",
+                    AuthConfig::Query {
+                        name: "api_key".to_string(),
+                        token: TokenConfig::Env {
+                            env: "ALCHEMY_API_KEY".to_string(),
                         },
-                    ),
-                }),
-                // No auth
-                abstract_chain: Some(AbstractChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        AbstractProviderConfig {
-                            rpc_url: "https://api.testnet.abs.xyz".to_string(),
-                            api_variant: AbstractApiVariant::Standard,
-                            auth: AuthConfig::None,
+                    },
+                )),
+                abstract_chain: Some(test_chain(
+                    "public",
+                    "https://api.testnet.abs.xyz",
+                    AuthConfig::None,
+                )),
+                bnb: Some(test_chain(
+                    "public",
+                    "https://bsc-rpc.publicnode.com",
+                    AuthConfig::None,
+                )),
+                base: Some(test_chain(
+                    "public",
+                    "https://base.publicnode.com",
+                    AuthConfig::None,
+                )),
+                starknet: Some(test_chain(
+                    "blast",
+                    "https://starknet-mainnet.blastapi.io/",
+                    AuthConfig::Query {
+                        name: "api_key".to_string(),
+                        token: TokenConfig::Val {
+                            val: "blast-secret".to_string(),
                         },
-                    ),
-                }),
-                bnb: Some(BnbChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        BnbProviderConfig {
-                            rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
-                            api_variant: BnbApiVariant::Standard,
-                            auth: AuthConfig::None,
-                        },
-                    ),
-                }),
-                base: Some(BaseChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "public".to_string(),
-                        BaseProviderConfig {
-                            rpc_url: "https://base.publicnode.com".to_string(),
-                            api_variant: BaseApiVariant::Standard,
-                            auth: AuthConfig::None,
-                        },
-                    ),
-                }),
-                // Query auth with Val token
-                starknet: Some(StarknetChainConfig {
-                    timeout_sec: 30,
-                    max_retries: 3,
-                    providers: NonEmptyBTreeMap::new(
-                        "blast".to_string(),
-                        StarknetProviderConfig {
-                            rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
-                            api_variant: StarknetApiVariant::Blast,
-                            auth: AuthConfig::Query {
-                                name: "api_key".to_string(),
-                                token: TokenConfig::Val {
-                                    val: "blast-secret".to_string(),
-                                },
-                            },
-                        },
-                    ),
-                }),
+                    },
+                )),
             },
             cores: Some(4),
         }
@@ -737,12 +496,13 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.solana.unwrap().providers["alchemy"];
+        let provider = &response.foreign_chains.solana.unwrap().providers
+            [&RpcProviderName::from("alchemy".to_string())];
+
         assert_eq!(
             *provider,
-            SolanaProvider {
+            ForeignChainProvider {
                 rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
-                api_variant: SolanaApiVariant::Alchemy,
             }
         );
     }
@@ -756,12 +516,13 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.bitcoin.unwrap().providers["ankr"];
+        let provider = &response.foreign_chains.bitcoin.unwrap().providers
+            [&RpcProviderName::from("ankr".to_string())];
+
         assert_eq!(
             *provider,
-            BitcoinProvider {
+            ForeignChainProvider {
                 rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
-                api_variant: BitcoinApiVariant::Standard,
             }
         );
     }
@@ -775,12 +536,12 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.ethereum.unwrap().providers["alchemy"];
+        let provider = &response.foreign_chains.ethereum.unwrap().providers
+            [&RpcProviderName::from("alchemy".to_string())];
         assert_eq!(
             *provider,
-            EthereumProvider {
+            ForeignChainProvider {
                 rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
-                api_variant: EthereumApiVariant::Alchemy,
             }
         );
     }
@@ -794,12 +555,12 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.abstract_chain.unwrap().providers["public"];
+        let provider = &response.foreign_chains.abstract_chain.unwrap().providers
+            [&RpcProviderName::from("public".to_string())];
         assert_eq!(
             *provider,
-            AbstractProvider {
+            ForeignChainProvider {
                 rpc_url: "https://api.testnet.abs.xyz".to_string(),
-                api_variant: AbstractApiVariant::Standard,
             }
         );
     }
@@ -813,12 +574,13 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.starknet.unwrap().providers["blast"];
+        let provider = &response.foreign_chains.starknet.unwrap().providers
+            [&RpcProviderName::from("blast".to_string())];
+
         assert_eq!(
             *provider,
-            StarknetProvider {
+            ForeignChainProvider {
                 rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
-                api_variant: StarknetApiVariant::Blast,
             }
         );
     }
@@ -832,12 +594,12 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.bnb.unwrap().providers["public"];
+        let provider = &response.foreign_chains.bnb.unwrap().providers
+            [&RpcProviderName::from("public".to_string())];
         assert_eq!(
             *provider,
-            BnbProvider {
+            ForeignChainProvider {
                 rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
-                api_variant: BnbApiVariant::Standard,
             }
         );
     }
@@ -851,12 +613,12 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.base.unwrap().providers["public"];
+        let provider = &response.foreign_chains.base.unwrap().providers
+            [&RpcProviderName::from("public".to_string())];
         assert_eq!(
             *provider,
-            BaseProvider {
+            ForeignChainProvider {
                 rpc_url: "https://base.publicnode.com".to_string(),
-                api_variant: BaseApiVariant::Standard,
             }
         );
     }
@@ -871,8 +633,8 @@ mod tests {
 
         // Then
         let solana = response.foreign_chains.solana.unwrap();
-        assert_eq!(solana.timeout_sec, 30);
-        assert_eq!(solana.max_retries, 3);
+        assert_eq!(solana.timeout_sec.get(), 30);
+        assert_eq!(solana.max_retries.get(), 3);
     }
 
     #[test]

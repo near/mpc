@@ -25,7 +25,6 @@ FOREIGN_CHAINS_CONFIG = {
         "max_retries": 3,
         "providers": {
             "public": {
-                "api_variant": "standard",
                 "rpc_url": "https://rpc.public.example.com",
                 "auth": {
                     "kind": "none",
