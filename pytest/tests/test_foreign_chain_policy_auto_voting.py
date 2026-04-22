@@ -38,6 +38,7 @@ FOREIGN_CHAINS_CONFIG = {
 FOREIGN_CHAINS_CONFIG_DTO = {
     "Solana": [
         {
+            "name": "public",
             "rpc_url": "https://rpc.public.example.com",
         }
     ],
@@ -74,12 +75,12 @@ def test_supported_foreign_chains_requires_all_participants(
 
     # Wait for at least two nodes to register their supported chains.
     def partial_registrations_visible() -> bool:
-        votes = cluster.view_contract_function("get_supported_foreign_chains_votes")[
-            "supported_chains_by_account"
-        ]
+        registrations = cluster.view_contract_function(
+            "get_foreign_chain_configurations"
+        )["foreign_chain_configuration_by_node"]
         supported = cluster.view_contract_function("get_supported_foreign_chains")
         # Two nodes registered Solana, but it's not yet supported (node 3 hasn't registered it).
-        return len(votes) >= 2 and "Solana" not in supported
+        return len(registrations) >= 2 and "Solana" not in supported
 
     utils.wait_until(
         partial_registrations_visible,
