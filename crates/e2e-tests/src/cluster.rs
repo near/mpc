@@ -666,8 +666,8 @@ impl MpcCluster {
             .await
     }
 
-    /// View the chains supported by every active participant.
-    pub async fn view_supported_foreign_chains(
+    /// View the foreign chains the contract accepts requests for.
+    pub async fn view_foreign_chains_supported_by_contract(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
         self.contract

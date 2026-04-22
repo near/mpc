@@ -69,7 +69,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
             .await
             .expect("failed to view configurations");
         let supported = cluster
-            .view_supported_foreign_chains()
+            .view_foreign_chains_supported_by_contract()
             .await
             .expect("failed to view supported chains");
 
@@ -108,7 +108,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
     // then — Solana becomes supported once every participant has registered it
     (|| async {
         let supported = cluster
-            .view_supported_foreign_chains()
+            .view_foreign_chains_supported_by_contract()
             .await
             .expect("failed to view supported chains");
 

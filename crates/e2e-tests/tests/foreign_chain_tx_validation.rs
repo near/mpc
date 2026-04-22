@@ -145,7 +145,7 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
 
     (|| async {
         let supported = cluster
-            .view_supported_foreign_chains()
+            .view_foreign_chains_supported_by_contract()
             .await
             .expect("failed to view supported chains");
         let supported_set: std::collections::BTreeSet<ForeignChain> =
