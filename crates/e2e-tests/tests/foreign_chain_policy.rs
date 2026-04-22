@@ -35,6 +35,7 @@ fn solana_foreign_chains_config() -> ForeignChainsConfig {
 /// 3. Once applied, all proposal votes are cleared.
 #[tokio::test]
 #[expect(non_snake_case)]
+// TODO: ask claude to translate this test similar to the pytest
 async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
     // given — 3-node cluster with foreign chains on nodes 0 and 1 only
     let (cluster, _running) = common::setup_cluster(common::FOREIGN_CHAIN_POLICY_PORT_SEED, |c| {
