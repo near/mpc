@@ -79,9 +79,9 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     /// from this map. This is the "queue".
     pub(super) requests: HashMap<RequestId, QueuedRequest<RequestType, ChainRespondArgsType>>,
 
-    /// Maps block hashes to their content; this is to provide the stream of finalized blocks.
-    /// Technically, instead of a hashmap we could put this in the node, but that would clutter
-    /// the code by requiring the T type parameter everywhere.
+    /// Maps block hashes to their content;
+    /// We store the block and we remove it if it is dropped or finalized (at which point, we also
+    /// remove the corresponding request)
     node_to_content: HashMap<CryptoHash, BufferedBlockData>,
 
     /// Provides information about connectivity and indexer heights.
@@ -132,6 +132,7 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
     pub request: RequestType,
 
     /// The block hash the request was received in.
+    /// todo: reference to finality?
     block_hash: CryptoHash,
     pub block_height: u64,
 
@@ -157,6 +158,12 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
 
     /// The time that the request was indexed.
     pub time_indexed: near_time::Instant,
+
+    /// the block in which the response was submitted
+    /// todo: reference to finality?
+    /// should probably be a vector?
+    /// or a set
+    pub response: Vec<Option<CryptoHash>>,
 }
 
 /// Struct given to the response generation code.
@@ -445,6 +452,18 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 tracing::debug!(target: "request", "Skipping request {:?} from block {} because it's not time yet", request.request.get_id(), request.block_height);
                 continue;
             }
+            if let Some(submitted_response) = request.response {
+                // a response was already submitted. Lets see its status
+                //
+                // use maximum height, because we don't really care how far back the response is
+                match recent_blocks.classify_block(submitted_response.block_hash, maximum_height) {
+                    CheckBlockResult::RecentAndFinal => {
+                        requests_to_remove.push(request.request.get_id());
+                        continue;
+                    }
+                    _ => {// wait for response to finalize or for the request to be removed below}
+                }
+            }
             request.next_check_due = now + CHECK_EACH_REQUEST_INTERVAL;
             if request.active_attempt.strong_count() > 0 {
                 // There's a current attempt to generate the response, so don't do anything.
@@ -472,6 +491,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                                             .with_label_values(&["max_tries_exceeded"])
                                             .inc();
                                     }
+                                        // note: this is not ideal. We might be removing requests
+                                        // from the queue because we, as a leader, failed to
+                                        // generate it. We might still be asked to generate it as a
+                                        // participant, at which point, we will reject the
+                                        // request
                                     requests_to_remove.push(*id);
                                     continue;
                                 }

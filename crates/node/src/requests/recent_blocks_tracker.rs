@@ -408,6 +408,15 @@ impl RecentBlocksTracker {
 
     /// Classifies a block into one of the categories in `CheckBlockResult`.
     pub fn classify_block(&self, block_hash: CryptoHash, block_height: u64) -> CheckBlockResult {
+        // note:
+        // we mostly care about RecentAndFinal, OptimisticAndCanonical and
+        // OptimisticButNotCanonical.
+        // The other values, we just reject.
+        // OlderThanRecentWindow is easier to check outside of this function.
+        // Also, an't the block height be noted in the node? or isthis teh final height??
+        //
+        // WHAT IS THE DIFFERENCE BETWEEN THIS argument block_height and block height stored in
+        // node?
         if self
             .maximum_height_available
             .saturating_sub(self.window_size)
