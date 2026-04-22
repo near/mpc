@@ -349,7 +349,7 @@ impl IndexerViewClient {
 }
 
 #[cfg_attr(test, mockall::automock)]
-pub(crate) trait ReadForeignChainPolicy: Send + Sync {
+pub(crate) trait ReadSupportedForeignChain: Send + Sync {
     fn get_supported_chains(
         &self,
     ) -> impl Future<Output = anyhow::Result<dtos::SupportedForeignChains>> + Send;
@@ -366,7 +366,7 @@ impl RealForeignChainPolicyReader {
     }
 }
 
-impl ReadForeignChainPolicy for RealForeignChainPolicyReader {
+impl ReadSupportedForeignChain for RealForeignChainPolicyReader {
     async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
         self.indexer_state
             .view_client

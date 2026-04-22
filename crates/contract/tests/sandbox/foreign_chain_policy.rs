@@ -217,12 +217,14 @@ async fn register_foreign_chain_config__stores_and_returns_supported_chains() {
         (
             dtos::ForeignChain::Bitcoin,
             NonEmptyBTreeSet::new(dtos::RpcProvider {
+                name: "provider".to_string(),
                 rpc_url: "https://btc.example.com".to_string(),
             }),
         ),
         (
             dtos::ForeignChain::Starknet,
             NonEmptyBTreeSet::new(dtos::RpcProvider {
+                name: "provider".to_string(),
                 rpc_url: "https://starknet.example.com".to_string(),
             }),
         ),
@@ -275,12 +277,14 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
         (
             dtos::ForeignChain::Bitcoin,
             NonEmptyBTreeSet::new(dtos::RpcProvider {
+                name: "provider".to_string(),
                 rpc_url: "https://btc.example.com".to_string(),
             }),
         ),
         (
             dtos::ForeignChain::Starknet,
             NonEmptyBTreeSet::new(dtos::RpcProvider {
+                name: "provider".to_string(),
                 rpc_url: "https://starknet.example.com".to_string(),
             }),
         ),
@@ -302,6 +306,7 @@ async fn register_foreign_chain_config__excludes_chains_not_supported_by_all() {
     let bitcoin_only: dtos::ForeignChainConfiguration = BTreeMap::from([(
         dtos::ForeignChain::Bitcoin,
         NonEmptyBTreeSet::new(dtos::RpcProvider {
+            name: "provider".to_string(),
             rpc_url: "https://btc.example.com".to_string(),
         }),
     )])
@@ -350,6 +355,7 @@ async fn register_foreign_chain_config__returns_empty_when_not_all_registered() 
     let bitcoin_only: dtos::ForeignChainConfiguration = BTreeMap::from([(
         dtos::ForeignChain::Bitcoin,
         NonEmptyBTreeSet::new(dtos::RpcProvider {
+            name: "provider".to_string(),
             rpc_url: "https://btc.example.com".to_string(),
         }),
     )])

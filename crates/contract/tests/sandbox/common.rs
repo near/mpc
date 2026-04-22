@@ -609,6 +609,7 @@ pub fn make_foreign_chain_policy(
     chains.insert(
         chain,
         NonEmptyBTreeSet::new(RpcProvider {
+            name: "provider".to_string(),
             rpc_url: format!("https://{chain:?}-rpc.example.com").to_lowercase(),
         }),
     );

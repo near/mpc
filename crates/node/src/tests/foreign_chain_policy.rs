@@ -53,9 +53,7 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         config.config.foreign_chains = foreign_chains.clone();
     }
 
-    let expected_policy = foreign_chains
-        .configured_chains()
-        .expect("policy should not be None");
+    let expected_policy = foreign_chains.configured_chains();
 
     {
         let mut contract = setup.indexer.contract_mut().await;

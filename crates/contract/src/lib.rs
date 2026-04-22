@@ -2597,6 +2597,7 @@ mod tests {
                 (
                     foreign_chain,
                     NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        name: "provider".to_string(),
                         rpc_url: "dummy_url.com".to_string(),
                     }),
                 )
@@ -4986,6 +4987,7 @@ mod tests {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://example.com".to_string(),
                 }),
             )]),
@@ -5023,6 +5025,7 @@ mod tests {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://example.com".to_string(),
                 }),
             )]),
@@ -5061,6 +5064,7 @@ mod tests {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://example.com".to_string(),
                 }),
             )]),
@@ -5108,12 +5112,14 @@ mod tests {
                 (
                     dtos::ForeignChain::Bitcoin,
                     NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        name: "provider".to_string(),
                         rpc_url: "https://btc.example.com".to_string(),
                     }),
                 ),
                 (
                     dtos::ForeignChain::Ethereum,
                     NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        name: "provider".to_string(),
                         rpc_url: "https://eth.example.com".to_string(),
                     }),
                 ),
@@ -5168,6 +5174,7 @@ mod tests {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Ethereum,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://eth.example.com".to_string(),
                 }),
             )]),
@@ -5976,12 +5983,14 @@ mod tests {
             (
                 dtos::ForeignChain::Bitcoin,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://btc.example.com".to_string(),
                 }),
             ),
             (
                 dtos::ForeignChain::Ethereum,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://eth.example.com".to_string(),
                 }),
             ),
@@ -6015,6 +6024,7 @@ mod tests {
         let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
             dtos::ForeignChain::Bitcoin,
             NonEmptyBTreeSet::new(dtos::RpcProvider {
+                name: "provider".to_string(),
                 rpc_url: "https://btc.example.com".to_string(),
             }),
         )])
@@ -6047,12 +6057,14 @@ mod tests {
             (
                 dtos::ForeignChain::Bitcoin,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://btc.example.com".to_string(),
                 }),
             ),
             (
                 dtos::ForeignChain::Ethereum,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://eth.example.com".to_string(),
                 }),
             ),
@@ -6094,12 +6106,14 @@ mod tests {
                 (
                     dtos::ForeignChain::Bitcoin,
                     NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        name: "provider".to_string(),
                         rpc_url: "https://btc.example.com".to_string(),
                     }),
                 ),
                 (
                     dtos::ForeignChain::Ethereum,
                     NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        name: "provider".to_string(),
                         rpc_url: "https://eth.example.com".to_string(),
                     }),
                 ),
@@ -6117,6 +6131,7 @@ mod tests {
             let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
                 dtos::ForeignChain::Bitcoin,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://btc.example.com".to_string(),
                 }),
             )])
@@ -6154,12 +6169,14 @@ mod tests {
                 (
                     dtos::ForeignChain::Bitcoin,
                     NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        name: "provider".to_string(),
                         rpc_url: format!("https://btc-node-{i}.example.com"),
                     }),
                 ),
                 (
                     dtos::ForeignChain::Ethereum,
                     NonEmptyBTreeSet::new(dtos::RpcProvider {
+                        name: "provider".to_string(),
                         rpc_url: format!("https://eth-node-{i}.example.com"),
                     }),
                 ),
@@ -6197,6 +6214,7 @@ mod tests {
             let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
                 dtos::ForeignChain::Bitcoin,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: format!("https://btc-node-{i}.example.com"),
                 }),
             )])

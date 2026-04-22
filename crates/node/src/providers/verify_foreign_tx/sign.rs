@@ -10,7 +10,7 @@ use rand::SeedableRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
-use crate::indexer::ReadForeignChainPolicy;
+use crate::indexer::ReadSupportedForeignChain;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
@@ -49,7 +49,7 @@ fn build_signature_request(
 
 impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: ReadForeignChainPolicy,
+    ForeignChainPolicyReader: ReadSupportedForeignChain,
 {
     pub(super) async fn make_verify_foreign_tx_leader(
         &self,
@@ -288,7 +288,7 @@ enum ForeignChainSupportError {
 
 async fn chain_is_supported(
     local_foreign_chains_config: &ForeignChainsConfig,
-    policy_reader: &impl ReadForeignChainPolicy,
+    policy_reader: &impl ReadSupportedForeignChain,
     request: &dtos::ForeignChainRpcRequest,
 ) -> Result<(), ForeignChainSupportError> {
     let on_chain_foreign_chains_support = policy_reader
@@ -300,7 +300,7 @@ async fn chain_is_supported(
 
     let foreign_chain_is_supported_locally = local_foreign_chains_config
         .configured_chains()
-        .contains(&requested_chain);
+        .contains_key(&requested_chain);
 
     if !foreign_chain_is_supported_locally {
         return Err(ForeignChainSupportError::ChainNotConfiguredLocally {
@@ -357,14 +357,17 @@ fn select_provider(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::indexer::MockReadForeignChainPolicy;
+    use crate::indexer::MockReadSupportedForeignChain;
     use assert_matches::assert_matches;
     use mpc_node_config::{
         foreign_chains::RpcProviderName, ForeignChainConfig, ForeignChainProviderConfig,
         ForeignChainsConfig,
     };
     use near_mpc_bounded_collections::NonEmptyBTreeSet;
-    use std::{collections::BTreeMap, num::NonZeroU64};
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        num::NonZeroU64,
+    };
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -392,21 +395,14 @@ mod tests {
         }
     }
 
-    fn bitcoin_chain_policy() -> dtos::ForeignChainPolicy {
-        dtos::ForeignChainPolicy {
-            chains: BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://blockstream.info/api".to_string(),
-                }),
-            )]),
-        }
+    fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
+        BTreeSet::from([dtos::ForeignChain::Bitcoin]).into()
     }
 
-    fn mock_policy_reader(policy: dtos::ForeignChainPolicy) -> MockReadForeignChainPolicy {
-        let mut reader = MockReadForeignChainPolicy::new();
+    fn mock_policy_reader(policy: dtos::SupportedForeignChains) -> MockReadSupportedForeignChain {
+        let mut reader = MockReadSupportedForeignChain::new();
         reader
-            .expect_get_foreign_chain_policy()
+            .expect_get_supported_chains()
             .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
         reader
     }
@@ -513,6 +509,7 @@ mod tests {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Bitcoin,
                 NonEmptyBTreeSet::new(dtos::RpcProvider {
+                    name: "provider".to_string(),
                     rpc_url: "https://different-provider.example.com/api".to_string(),
                 }),
             )]),

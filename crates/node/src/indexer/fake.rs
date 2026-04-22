@@ -5,7 +5,7 @@ use super::types::{
     ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
 };
 use super::IndexerAPI;
-use super::ReadForeignChainPolicy;
+use super::ReadSupportedForeignChain;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
@@ -59,7 +59,7 @@ pub struct FakeForeignChainPolicyReader {
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 }
 
-impl ReadForeignChainPolicy for FakeForeignChainPolicyReader {
+impl ReadSupportedForeignChain for FakeForeignChainPolicyReader {
     async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
         Ok(self
             .contract

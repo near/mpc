@@ -684,6 +684,11 @@ pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct RpcProvider {
+    pub name: String,
+    // TODO: deprecate this field, we are no longer interested in the urls to be submitted on chain.
+    // instead we trust the nodes running inside TDX to do the validation on startup.
+    //
+    // Keeping it for now, can be useful for public visibility to see what's on the node.
     pub rpc_url: String,
 }
 

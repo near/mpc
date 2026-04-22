@@ -6,7 +6,7 @@ use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::{ChainRegisterForeignChainConfigArgs, ChainSendTransactionRequest};
-use crate::indexer::{tx_sender, IndexerAPI, ReadForeignChainPolicy};
+use crate::indexer::{tx_sender, IndexerAPI, ReadSupportedForeignChain};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
 };
@@ -104,7 +104,7 @@ impl<TransactionSender, ForeignChainPolicyReader>
     Coordinator<TransactionSender, ForeignChainPolicyReader>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadForeignChainPolicy + Clone + Send + Sync + 'static,
+    ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
@@ -380,11 +380,11 @@ where
         };
 
         // Register locally supported foreign chains with the contract.
-        let locally_supported_chains = config_file.foreign_chains.configured_chains();
+        let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
         if let Err(err) = chain_txn_sender
-            .send(ChainSendTransactionRequest::RegisterSupportedForeignChains(
-                ChainRegisterSupportedForeignChains {
-                    supported_chains_by_node: locally_supported_chains,
+            .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
+                ChainRegisterForeignChainConfigArgs {
+                    foreign_chain_configuration,
                 },
             ))
             .await
