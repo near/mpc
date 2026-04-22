@@ -72,18 +72,24 @@ def test_supported_foreign_chains_requires_all_participants(
 ):
     cluster, mpc_nodes = foreign_chain_registration_cluster
 
-    # Wait for at least two nodes to register their supported chains.
-    def partial_registrations_visible() -> bool:
+    # Wait for all three nodes to auto-register on startup: nodes 0 and 1 with
+    # Solana, node 2 with an empty configuration. Solana should not yet appear
+    # as supported because node 2's configuration does not include it.
+    def all_nodes_registered_with_one_empty() -> bool:
         registrations = cluster.view_contract_function(
             "get_foreign_chain_configurations"
         )["foreign_chain_configuration_by_node"]
         supported = cluster.view_contract_function("get_supported_foreign_chains")
-        # Two nodes registered Solana, but it's not yet supported (node 3 hasn't registered it).
-        return len(registrations) >= 2 and "Solana" not in supported
+        empty_count = sum(1 for config in registrations.values() if not config)
+        return (
+            len(registrations) == 3
+            and empty_count == 1
+            and "Solana" not in supported
+        )
 
     utils.wait_until(
-        partial_registrations_visible,
-        description="two registrations without full chain support",
+        all_nodes_registered_with_one_empty,
+        description="all three registrations with one empty and Solana unsupported",
     )
 
     supported = cluster.view_contract_function("get_supported_foreign_chains")

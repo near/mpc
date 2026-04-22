@@ -45,9 +45,9 @@ fn solana_foreign_chain_configuration_dto() -> ForeignChainConfiguration {
 /// 3-node cluster: nodes 0 and 1 are configured with Solana foreign chain,
 /// node 2 has no foreign chain config.
 ///
-/// 1. After nodes 0 and 1 auto-register, at least 2 per-node configurations
-///    should be visible, but Solana should NOT yet be in the supported-chains
-///    set (node 2 hasn't registered it).
+/// 1. All three nodes auto-register on startup — nodes 0 and 1 with Solana,
+///    node 2 with an empty configuration. Solana should NOT yet be in the
+///    supported-chains set (node 2 does not include it).
 /// 2. After node 2 manually registers Solana, the chain is reported as supported.
 #[tokio::test]
 #[expect(non_snake_case)]
@@ -62,7 +62,8 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
     })
     .await;
 
-    // when — wait for the two configured nodes to register their configurations without Solana becoming supported
+    // when — wait for all three nodes to register (one with an empty configuration)
+    // without Solana becoming supported
     (|| async {
         let registrations = cluster
             .view_foreign_chain_configurations()
@@ -73,10 +74,16 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
             .await
             .expect("failed to view supported chains");
 
+        let configurations = &registrations.foreign_chain_configuration_by_node;
         anyhow::ensure!(
-            registrations.foreign_chain_configuration_by_node.len() >= 2,
-            "expected at least 2 registrations, got {}",
-            registrations.foreign_chain_configuration_by_node.len()
+            configurations.len() == 3,
+            "expected exactly 3 registrations, got {}",
+            configurations.len()
+        );
+        let empty_registrations = configurations.values().filter(|c| c.is_empty()).count();
+        anyhow::ensure!(
+            empty_registrations == 1,
+            "expected exactly 1 empty registration (node 2), got {empty_registrations}"
         );
         anyhow::ensure!(
             !supported.contains(&ForeignChain::Solana),
@@ -92,7 +99,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
             ),
     )
     .await
-    .expect("timed out waiting for two partial registrations");
+    .expect("timed out waiting for all three registrations with one empty");
 
     // when — node 2 registers Solana directly on the contract.
     let outcome = cluster
