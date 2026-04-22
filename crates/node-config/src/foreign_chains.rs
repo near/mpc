@@ -85,8 +85,7 @@ impl ForeignChainsConfig {
                 let rpc_providers =
                     config
                         .providers
-                        .map_to_set(|provider_name, provider_config| dtos::RpcProvider {
-                            name: provider_name.clone().into(),
+                        .map_to_set(|_provider_name, provider_config| dtos::RpcProvider {
                             rpc_url: provider_config.rpc_url().to_string(),
                         });
 
@@ -421,7 +420,6 @@ foreign_chains:
             .iter()
             .next()
             .expect("expected at least one Solana provider");
-        assert_eq!(provider.name, "ankr");
         assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
     }
 
@@ -542,7 +540,6 @@ foreign_chains:
             .iter()
             .next()
             .expect("expected at least one Ethereum provider");
-        assert_eq!(provider.name, "alchemy");
         assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
 
         assert!(

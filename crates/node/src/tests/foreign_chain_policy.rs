@@ -97,7 +97,6 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
     let expected_configuration = ForeignChainConfiguration::from(BTreeMap::from([(
         ForeignChain::Solana,
         NonEmptyBTreeSet::new(RpcProvider {
-            name: "public".to_string(),
             rpc_url: "https://rpc.public.example.com".to_string(),
         }),
     )]));

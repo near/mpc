@@ -33,7 +33,6 @@ fn solana_foreign_chain_configuration_dto() -> ForeignChainConfiguration {
     BTreeMap::from([(
         ForeignChain::Solana,
         NonEmptyBTreeSet::new(RpcProvider {
-            name: SOLANA_PROVIDER_NAME.to_string(),
             rpc_url: SOLANA_RPC_URL.to_string(),
         }),
     )])

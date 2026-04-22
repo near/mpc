@@ -38,7 +38,6 @@ FOREIGN_CHAINS_CONFIG = {
 FOREIGN_CHAINS_CONFIG_DTO = {
     "Solana": [
         {
-            "name": "public",
             "rpc_url": "https://rpc.public.example.com",
         }
     ],

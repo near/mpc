@@ -609,7 +609,6 @@ pub fn make_configured_foreign_chain(chain: ForeignChain) -> ForeignChainConfigu
     chains.insert(
         chain,
         NonEmptyBTreeSet::new(RpcProvider {
-            name: "provider".to_string(),
             rpc_url: format!("https://{chain:?}-rpc.example.com").to_lowercase(),
         }),
     );
