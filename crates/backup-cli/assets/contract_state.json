@@ -81,7 +81,7 @@
             0,
             {
               "url": "https://multichain-mainnet-0.near.blksnd.xyz",
-              "sign_pk": "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2"
+              "tls_public_key": "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2"
             }
           ],
           [
@@ -89,7 +89,7 @@
             3,
             {
               "url": "https://near-mpc.liftedinit.org",
-              "sign_pk": "ed25519:JBjY7yjbfQ51na3bStPPYMyfModUTFHco5xUNEem3uu6"
+              "tls_public_key": "ed25519:JBjY7yjbfQ51na3bStPPYMyfModUTFHco5xUNEem3uu6"
             }
           ],
           [
@@ -97,7 +97,7 @@
             4,
             {
               "url": "https://near.mpc.lgns.net",
-              "sign_pk": "ed25519:EFW6528i4iU1XK3Q53r6kyHEjjA7puJLhHLH3mG1YRZd"
+              "tls_public_key": "ed25519:EFW6528i4iU1XK3Q53r6kyHEjjA7puJLhHLH3mG1YRZd"
             }
           ],
           [
@@ -105,7 +105,7 @@
             5,
             {
               "url": "https://multichain-mainnet.aurora.dev",
-              "sign_pk": "ed25519:9QAvLjfjDX7GYwJaT7Wzz9bjS4NzniaXukx8vYKaZZLG"
+              "tls_public_key": "ed25519:9QAvLjfjDX7GYwJaT7Wzz9bjS4NzniaXukx8vYKaZZLG"
             }
           ],
           [
@@ -113,7 +113,7 @@
             8,
             {
               "url": "https://multichain-mainnet-0.nearone.org",
-              "sign_pk": "ed25519:8kjdkEUAD7kXc5aCYJdcSwNQESanvpbqSm325o7uSUQH"
+              "tls_public_key": "ed25519:8kjdkEUAD7kXc5aCYJdcSwNQESanvpbqSm325o7uSUQH"
             }
           ],
           [
@@ -121,7 +121,7 @@
             6,
             {
               "url": "https://multichain-mainnet-0.staking4all.org",
-              "sign_pk": "ed25519:2CbEnbBQ9RA2oocc9a89Eck5d9ighfL7FGiEkMyQ7YB9"
+              "tls_public_key": "ed25519:2CbEnbBQ9RA2oocc9a89Eck5d9ighfL7FGiEkMyQ7YB9"
             }
           ],
           [
@@ -129,7 +129,7 @@
             7,
             {
               "url": "https://near.node.monster",
-              "sign_pk": "ed25519:9mix9iNfMMtSAhzgHCisnjMJtiofn8cFkprgUTkRtPN"
+              "tls_public_key": "ed25519:9mix9iNfMMtSAhzgHCisnjMJtiofn8cFkprgUTkRtPN"
             }
           ],
           [
@@ -137,7 +137,7 @@
             9,
             {
               "url": "http://chain-signature-mainnet.hotdao.ai",
-              "sign_pk": "ed25519:6DRZqoWxdYiKEhmF391pdC8L4VUXY1S5AMHYBsVHSyYm"
+              "tls_public_key": "ed25519:6DRZqoWxdYiKEhmF391pdC8L4VUXY1S5AMHYBsVHSyYm"
             }
           ],
           [
@@ -145,7 +145,7 @@
             10,
             {
               "url": "http://nearmpc-mainnet.everstake.one",
-              "sign_pk": "ed25519:3TJzrbiwgZeTEDHk3yZqCFvAzYs9xfYEkUcpx2dMD7Qq"
+              "tls_public_key": "ed25519:3TJzrbiwgZeTEDHk3yZqCFvAzYs9xfYEkUcpx2dMD7Qq"
             }
           ],
           [
@@ -153,7 +153,7 @@
             11,
             {
               "url": "http://near-mpc-mainnet-1.stakin-nodes.com",
-              "sign_pk": "ed25519:9WiRNJ8Ci1RxfjdyGVdZHxUt5JJBgbfK87bZzgMd7ec4"
+              "tls_public_key": "ed25519:9WiRNJ8Ci1RxfjdyGVdZHxUt5JJBgbfK87bZzgMd7ec4"
             }
           ]
         ]

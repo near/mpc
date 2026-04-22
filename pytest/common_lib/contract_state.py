@@ -92,7 +92,7 @@ class Participant:
     account_id: str
     id: int
     url: str
-    sign_pk: str
+    tls_public_key: str
 
 
 @dataclass
@@ -123,7 +123,7 @@ class Participants:
                     account_id=account_id,
                     id=pid,
                     url=meta.get("url", ""),
-                    sign_pk=meta.get("sign_pk", ""),
+                    tls_public_key=meta.get("tls_public_key", ""),
                 )
             )
         return Participants(

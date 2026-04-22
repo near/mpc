@@ -89,7 +89,9 @@ def test_migration_endpoint(shared_cluster: shared.MpcCluster):
         assert_contract_match(shared_cluster, expected_migrations)
         node.wait_for_migration_state(expected_migrations)
 
-        participant_info = ParticipantInfo(url="bogus_url", sign_pk=node.p2p_public_key)
+        participant_info = ParticipantInfo(
+            url="bogus_url", tls_public_key=node.p2p_public_key
+        )
         bogus_destination_node_info = DestinationNodeInfo(
             signer_account_pk=node._signer_key.pk,
             destination_node_info=participant_info,

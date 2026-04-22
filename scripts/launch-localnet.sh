@@ -206,7 +206,7 @@ EOF
       --arg node_id "$((i - 1))" \
       --arg node_p2p_key "$node_p2p_key" \
       --arg node_url "$node_url" \
-      '.parameters.participants.participants += [[$node_name, ($node_id | tonumber), {sign_pk: $node_p2p_key, url: $node_url}]]')
+      '.parameters.participants.participants += [[$node_name, ($node_id | tonumber), {tls_public_key: $node_p2p_key, url: $node_url}]]')
   done
 
   init_args=$(mktemp /tmp/init_args.XXXXXX)

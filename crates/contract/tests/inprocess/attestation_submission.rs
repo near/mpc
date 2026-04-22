@@ -124,7 +124,7 @@ impl TestSetupBuilder {
             domains,
             1,
             keyset,
-            parameters.clone().try_into().unwrap(),
+            parameters.clone().into(),
             init_config.clone(),
         )
         .unwrap();
@@ -139,10 +139,7 @@ impl TestSetupBuilder {
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
-                tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
-                    &participant_info.sign_pk,
-                )
-                .expect("sign_pk must be Ed25519"),
+                tls_public_key: participant_info.tls_public_key.clone(),
                 account_public_key: bogus_ed25519_public_key(),
             })
             .collect();
@@ -187,10 +184,7 @@ impl TestSetupBuilder {
 
                     setup
                         .contract
-                        .vote_new_parameters(
-                            EpochId::new(6),
-                            parameters.clone().try_into().unwrap(),
-                        )
+                        .vote_new_parameters(EpochId::new(6), parameters.clone().into())
                         .unwrap();
                 }
 
@@ -249,10 +243,7 @@ impl TestSetup {
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
-                tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
-                    &participant_info.sign_pk,
-                )
-                .expect("sign_pk must be Ed25519"),
+                tls_public_key: participant_info.tls_public_key.clone(),
                 account_public_key: bogus_ed25519_public_key(),
             })
             .collect()
@@ -310,10 +301,7 @@ fn clean_tee_status__should_not_touch_attestations() {
         .cloned()
         .map(|(account_id, _, participant_info)| NodeId {
             account_id: account_id.clone(),
-            tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
-                &participant_info.sign_pk,
-            )
-            .expect("sign_pk must be Ed25519"),
+            tls_public_key: participant_info.tls_public_key.clone(),
             account_public_key: bogus_ed25519_public_key(),
         })
         .collect();
@@ -402,10 +390,7 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
         let (account_id, _, info) = &setup.participants_list[0];
         NodeId {
             account_id: account_id.clone(),
-            tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
-                &info.sign_pk,
-            )
-            .expect("sign_pk must be Ed25519"),
+            tls_public_key: info.tls_public_key.clone(),
             account_public_key: bogus_ed25519_public_key(),
         }
     };

@@ -992,7 +992,7 @@ for k in keys:
         k["account"],
         k["i"],
         {
-            "sign_pk": k["tls_pk"],
+            "tls_public_key": k["tls_pk"],
             "url": f"https://{k['ip']}:{url_port}",
         },
     ])
@@ -1314,9 +1314,9 @@ next_id=cur_next_id
 for k in new_keys:
     acct=k["account"]
     ip=k["ip"]
-    tls_pk=k["tls_pk"]  # P2P key == sign_pk
+    tls_pk=k["tls_pk"]  # P2P key == tls_public_key
     url_port = 13001 + int(k["i"])
-    new_parts.append([acct, next_id, {"sign_pk": tls_pk, "url": f"https://127.0.0.1:{url_port}"}])
+    new_parts.append([acct, next_id, {"tls_public_key": tls_pk, "url": f"https://127.0.0.1:{url_port}"}])
     next_id += 1
 
 out={

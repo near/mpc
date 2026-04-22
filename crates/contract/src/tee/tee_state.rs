@@ -97,18 +97,11 @@ impl Default for TeeState {
 
 impl TeeState {
     /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
-    ///
-    /// Participants whose `sign_pk` is not Ed25519 are skipped: the attestation
-    /// map is keyed by [`Ed25519PublicKey`] and could never hold an entry for
-    /// them. Such participants effectively start with no attestation.
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
         let mut tee_state = Self::default();
 
         for (account_id, _, participant_info) in participants.participants() {
-            let Some(tls_public_key) = Ed25519PublicKey::try_from(&participant_info.sign_pk).ok()
-            else {
-                continue;
-            };
+            let tls_public_key = participant_info.tls_public_key.clone();
             // TODO(#1087): replace this sentinel with a real account public
             // key passed in by the caller. `Participants` does not currently
             // carry the operator's account public key, so a mocked entry
@@ -228,20 +221,12 @@ impl TeeState {
             .participants()
             .iter()
             .filter(|(_, _, participant_info)| {
-                // A non-Ed25519 sign_pk can never have a matching attestation
-                // (the attestation map is keyed by Ed25519), so treat the
-                // participant as invalid.
-                let Some(tls_public_key) =
-                    Ed25519PublicKey::try_from(&participant_info.sign_pk).ok()
-                else {
-                    return false;
-                };
-
                 // Use the stored NodeId (keyed by TLS public key) so the real
                 // `account_public_key` participates in re-verification. If
                 // there is no stored attestation for this TLS key, the
                 // participant is invalid.
-                let Some(node_id) = self.find_node_id_by_tls_key(&tls_public_key) else {
+                let Some(node_id) = self.find_node_id_by_tls_key(&participant_info.tls_public_key)
+                else {
                     return false;
                 };
 
@@ -453,14 +438,9 @@ impl TeeState {
             .info(&signer_id)
             .ok_or(AttestationCheckError::CallerNotParticipant)?;
 
-        // If the participant's sign_pk isn't Ed25519, no attestation can
-        // exist for them (the attestation map is keyed by Ed25519).
-        let tls_key = Ed25519PublicKey::try_from(&info.sign_pk)
-            .ok()
-            .ok_or(AttestationCheckError::AttestationNotFound)?;
         let attestation = self
             .stored_attestations
-            .get(&tls_key)
+            .get(&info.tls_public_key)
             .ok_or(AttestationCheckError::AttestationNotFound)?;
 
         if attestation.node_id.account_id != signer_id {
@@ -530,7 +510,7 @@ mod tests {
             .iter()
             .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
-                tls_public_key: Ed25519PublicKey::try_from(&p_info.sign_pk).unwrap(),
+                tls_public_key: p_info.tls_public_key.clone(),
                 account_public_key: bogus_ed25519_public_key(),
             })
             .collect();
@@ -1020,7 +1000,7 @@ mod tests {
         // The TLS key comes from participant_info, the Account Key must match the signer_pk
         let node_id = NodeId {
             account_id: account_id.clone(),
-            tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
+            tls_public_key: participant_info.tls_public_key.clone(),
             account_public_key: Ed25519PublicKey::try_from(&signer_pk).unwrap(),
         };
         tee_state
@@ -1085,7 +1065,7 @@ mod tests {
 
         let node_id = NodeId {
             account_id: other_account.clone(), // Mismatch here
-            tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
+            tls_public_key: participant_info.tls_public_key.clone(),
             account_public_key: Ed25519PublicKey::try_from(&signer_pk).unwrap(),
         };
         tee_state
@@ -1121,7 +1101,7 @@ mod tests {
 
         let node_id = NodeId {
             account_id: account_id.clone(),
-            tls_public_key: Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
+            tls_public_key: participant_info.tls_public_key.clone(),
             account_public_key: old_signer_pk, // Mismatch here
         };
         tee_state
@@ -1145,10 +1125,10 @@ mod tests {
     const TEST_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
     /// Helper to create a NodeId from participant data
-    fn create_node_id(account_id: &AccountId, sign_pk: &near_sdk::PublicKey) -> NodeId {
+    fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> NodeId {
         NodeId {
             account_id: account_id.clone(),
-            tls_public_key: Ed25519PublicKey::try_from(sign_pk).unwrap(),
+            tls_public_key: tls_public_key.clone(),
             account_public_key: bogus_ed25519_public_key(),
         }
     }
@@ -1170,7 +1150,7 @@ mod tests {
 
         // Add valid attestations for all participants
         for (account_id, _, participant_info) in participants.participants().iter() {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
             tee_state
                 .add_participant(
                     node_id,
@@ -1195,7 +1175,7 @@ mod tests {
 
         // Add valid attestations for only first 2 participants
         for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
             tee_state
                 .add_participant(
                     node_id,
@@ -1229,7 +1209,7 @@ mod tests {
 
         // Add valid attestations for first 2 participants
         for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
             tee_state
                 .add_participant(
                     node_id,
@@ -1241,7 +1221,7 @@ mod tests {
 
         // Add expiring attestation for third participant
         let (account_id, _, participant_info) = &participant_list[2];
-        let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        let node_id = create_node_id(account_id, &participant_info.tls_public_key);
         let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
@@ -1280,7 +1260,7 @@ mod tests {
         let participant_list: Vec<_> = participants.participants().to_vec();
 
         for (i, (account_id, _, participant_info)) in participant_list.iter().enumerate() {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
             let attestation = if i == 2 {
                 Attestation::Mock(MockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
@@ -1318,7 +1298,7 @@ mod tests {
 
         // Add valid attestations for first 2 participants
         for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
             tee_state
                 .add_participant(
                     node_id,
@@ -1330,7 +1310,7 @@ mod tests {
 
         // Add invalid attestation for third participant
         let (account_id, _, participant_info) = &participant_list[2];
-        let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        let node_id = create_node_id(account_id, &participant_info.tls_public_key);
         let add_participant_result = tee_state.add_participant(
             node_id,
             Attestation::Mock(MockAttestation::Invalid),

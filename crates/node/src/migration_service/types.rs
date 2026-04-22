@@ -128,7 +128,7 @@ fn infer_migration_status(
     destination_node_info
         .as_ref()
         .map(|info| {
-            ed25519_dalek::VerifyingKey::try_from(&info.destination_node_info.sign_pk)
+            ed25519_dalek::VerifyingKey::try_from(&info.destination_node_info.tls_public_key)
                 .inspect_err(|_| tracing::warn!(target: "Migration Service", "Error parsing public key from chain."))
                 .is_ok_and(|key| key == *my_p2p_public_key)
         })
@@ -149,16 +149,13 @@ pub mod tests {
         },
     };
     use near_account_id::AccountId;
-    use near_mpc_contract_interface::types::{
-        BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey,
-    };
 
     use crate::{
         config,
         indexer::{migrations::ContractMigrationInfo, participants::ContractState},
     };
 
-    use super::{MigrationInfo, OnboardingJob};
+    use super::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo, OnboardingJob};
 
     #[test]
     fn test_migration_get_pk_backup_service() {
@@ -196,10 +193,10 @@ pub mod tests {
         let (account_id_0, participant_info_0) = gen_participant(0);
         let (account_id_1, _) = gen_participant(1);
         let signer_account_pk = bogus_ed25519_public_key();
-        let participant_sign_pk = Ed25519PublicKey::try_from(&participant_info_0.sign_pk).unwrap();
+        let participant_tls_public_key = participant_info_0.tls_public_key.clone();
         let destination_node_info = DestinationNodeInfo {
             signer_account_pk: signer_account_pk.clone(),
-            destination_node_info: participant_info_0.clone().try_into().unwrap(),
+            destination_node_info: participant_info_0.clone().into(),
         };
 
         let backup_service_info = BackupServiceInfo {
@@ -213,7 +210,7 @@ pub mod tests {
             ),
         );
         let participating_key =
-            ed25519_dalek::VerifyingKey::try_from(&participant_sign_pk).unwrap();
+            ed25519_dalek::VerifyingKey::try_from(&participant_tls_public_key).unwrap();
         let non_participating_key =
             ed25519_dalek::VerifyingKey::try_from(&signer_account_pk).unwrap();
 
@@ -480,8 +477,7 @@ pub mod tests {
         height: u64,
         port_override: Option<u16>,
     ) -> anyhow::Result<ContractState> {
-        let dto: near_mpc_contract_interface::types::ProtocolContractState =
-            state.clone().try_into().unwrap();
+        let dto: near_mpc_contract_interface::types::ProtocolContractState = state.clone().into();
         ContractState::from_contract_state(&dto, height, port_override)
     }
 

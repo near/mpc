@@ -232,7 +232,7 @@ class MpcCluster:
                         node.account_id(),
                         node.participant_id,
                         {
-                            "sign_pk": node.p2p_public_key,
+                            "tls_public_key": node.p2p_public_key,
                             "url": node.p2p_url,
                         },
                     ]
