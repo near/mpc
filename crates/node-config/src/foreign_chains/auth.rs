@@ -62,19 +62,14 @@ impl TokenConfig {
     }
 }
 
-pub(crate) fn validate_auth_config(
-    auth: &AuthConfig,
-    rpc_url: &str,
-    chain_label: &str,
-    provider_name: &str,
-) -> anyhow::Result<()> {
+pub(crate) fn validate_auth_config(auth: &AuthConfig, rpc_url: &str) -> anyhow::Result<()> {
     match auth {
         AuthConfig::None => Ok(()),
         AuthConfig::Header { scheme, .. } => {
             if let Some(scheme) = scheme {
                 anyhow::ensure!(
                     !scheme.trim().is_empty(),
-                    "foreign_chains.{chain_label}.providers.{provider_name}.auth.scheme must be non-empty if provided"
+                    "the authentication header can not be empty. given: {scheme}"
                 );
             }
             Ok(())
@@ -82,18 +77,18 @@ pub(crate) fn validate_auth_config(
         AuthConfig::Path { placeholder, .. } => {
             anyhow::ensure!(
                 !placeholder.trim().is_empty(),
-                "foreign_chains.{chain_label}.providers.{provider_name}.auth.placeholder must be non-empty"
+                "the placeholder for path authentication can not be empty. given: {placeholder}"
             );
             anyhow::ensure!(
                 rpc_url.contains(placeholder),
-                "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url must include the path placeholder"
+                "the placeholder, `{placeholder}`, for path authentication is not found in the rpc url {rpc_url}"
             );
             Ok(())
         }
         AuthConfig::Query { name, .. } => {
             anyhow::ensure!(
                 !name.trim().is_empty(),
-                "foreign_chains.{chain_label}.providers.{provider_name}.auth.name must be non-empty"
+                "the name of the query parameter for authentication can not be empty. Given `{name}`"
             );
             Ok(())
         }

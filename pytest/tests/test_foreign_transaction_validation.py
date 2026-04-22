@@ -295,7 +295,6 @@ def foreign_tx_validation_cluster():
             "max_retries": 3,
             "providers": {
                 "mock": {
-                    "api_variant": "standard",
                     "rpc_url": bitcoin_mock_rpc_url,
                     "auth": {
                         "kind": "none",
@@ -308,7 +307,6 @@ def foreign_tx_validation_cluster():
             "max_retries": 3,
             "providers": {
                 "mock": {
-                    "api_variant": "standard",
                     "rpc_url": abstract_mock_rpc_url,
                     "auth": {
                         "kind": "none",
@@ -321,7 +319,6 @@ def foreign_tx_validation_cluster():
             "max_retries": 3,
             "providers": {
                 "mock": {
-                    "api_variant": "standard",
                     "rpc_url": base_mock_rpc_url,
                     "auth": {
                         "kind": "none",
@@ -334,7 +331,6 @@ def foreign_tx_validation_cluster():
             "max_retries": 3,
             "providers": {
                 "mock": {
-                    "api_variant": "standard",
                     "rpc_url": bnb_mock_rpc_url,
                     "auth": {
                         "kind": "none",
@@ -347,7 +343,6 @@ def foreign_tx_validation_cluster():
             "max_retries": 3,
             "providers": {
                 "mock": {
-                    "api_variant": "standard",
                     "rpc_url": starknet_mock_rpc_url,
                     "auth": {
                         "kind": "none",
