@@ -5777,6 +5777,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "clap",
+ "derive_more 2.1.1",
  "either",
  "http 1.4.0",
  "launcher-interface",

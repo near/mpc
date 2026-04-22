@@ -9,10 +9,12 @@ use axum::{serve, Json};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_attestation::attestation::Attestation;
-use mpc_node_config::foreign_chains::{ForeignChainConfig, ForeignChainProviderConfig};
+use mpc_node_config::foreign_chains::{
+    ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
+};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    RpcProvider, SignatureConfig, TripleConfig,
+    SignatureConfig, TripleConfig,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -157,12 +159,13 @@ impl From<ForeignChainsConfig> for ForeignChains {
 struct ForeignChain {
     timeout_sec: NonZeroU64,
     max_retries: NonZeroU64,
-    providers: BTreeMap<String, ForeignChainProvider>,
+    providers: BTreeMap<RpcProviderName, ForeignChainProvider>,
 }
 
 impl From<ForeignChainConfig> for ForeignChain {
     fn from(config: ForeignChainConfig) -> Self {
-        let providers: BTreeMap<String, ForeignChainProviderConfig> = config.providers.into();
+        let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> =
+            config.providers.into();
         Self {
             timeout_sec: config.timeout_sec,
             max_retries: config.max_retries,
@@ -174,14 +177,12 @@ impl From<ForeignChainConfig> for ForeignChain {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 struct ForeignChainProvider {
     rpc_url: String,
-    api_variant: RpcProvider,
 }
 
 impl From<ForeignChainProviderConfig> for ForeignChainProvider {
     fn from(provider: ForeignChainProviderConfig) -> Self {
         Self {
             rpc_url: provider.rpc_url,
-            api_variant: provider.api_variant,
         }
     }
 }
@@ -378,20 +379,14 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::str::FromStr;
 
-    fn test_chain(
-        provider_name: &str,
-        rpc_url: &str,
-        api_variant: RpcProvider,
-        auth: AuthConfig,
-    ) -> ForeignChainConfig {
+    fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
         ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
-                provider_name.to_string(),
+                RpcProviderName::from(provider_name.to_string()),
                 ForeignChainProviderConfig {
                     rpc_url: rpc_url.to_string(),
-                    api_variant,
                     auth,
                 },
             ),
@@ -434,7 +429,6 @@ mod tests {
                 solana: Some(test_chain(
                     "alchemy",
                     "https://solana-mainnet.g.alchemy.com/v2/",
-                    RpcProvider::Alchemy,
                     AuthConfig::Header {
                         name: http::HeaderName::from_static("authorization"),
                         scheme: Some("Bearer".to_string()),
@@ -446,7 +440,6 @@ mod tests {
                 bitcoin: Some(test_chain(
                     "ankr",
                     "https://rpc.ankr.com/btc/{api_key}",
-                    RpcProvider::Standard,
                     AuthConfig::Path {
                         placeholder: "{api_key}".to_string(),
                         token: TokenConfig::Val {
@@ -457,7 +450,6 @@ mod tests {
                 ethereum: Some(test_chain(
                     "alchemy",
                     "https://eth-mainnet.g.alchemy.com/v2/",
-                    RpcProvider::Alchemy,
                     AuthConfig::Query {
                         name: "api_key".to_string(),
                         token: TokenConfig::Env {
@@ -468,25 +460,21 @@ mod tests {
                 abstract_chain: Some(test_chain(
                     "public",
                     "https://api.testnet.abs.xyz",
-                    RpcProvider::Standard,
                     AuthConfig::None,
                 )),
                 bnb: Some(test_chain(
                     "public",
                     "https://bsc-rpc.publicnode.com",
-                    RpcProvider::Standard,
                     AuthConfig::None,
                 )),
                 base: Some(test_chain(
                     "public",
                     "https://base.publicnode.com",
-                    RpcProvider::Standard,
                     AuthConfig::None,
                 )),
                 starknet: Some(test_chain(
                     "blast",
                     "https://starknet-mainnet.blastapi.io/",
-                    RpcProvider::Blast,
                     AuthConfig::Query {
                         name: "api_key".to_string(),
                         token: TokenConfig::Val {
@@ -508,12 +496,13 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.solana.unwrap().providers["alchemy"];
+        let provider = &response.foreign_chains.solana.unwrap().providers
+            [&RpcProviderName::from("alchemy".to_string())];
+
         assert_eq!(
             *provider,
             ForeignChainProvider {
                 rpc_url: "https://solana-mainnet.g.alchemy.com/v2/".to_string(),
-                api_variant: RpcProvider::Alchemy,
             }
         );
     }
@@ -527,12 +516,13 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.bitcoin.unwrap().providers["ankr"];
+        let provider = &response.foreign_chains.bitcoin.unwrap().providers
+            [&RpcProviderName::from("ankr".to_string())];
+
         assert_eq!(
             *provider,
             ForeignChainProvider {
                 rpc_url: "https://rpc.ankr.com/btc/{api_key}".to_string(),
-                api_variant: RpcProvider::Standard,
             }
         );
     }
@@ -546,12 +536,12 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.ethereum.unwrap().providers["alchemy"];
+        let provider = &response.foreign_chains.ethereum.unwrap().providers
+            [&RpcProviderName::from("alchemy".to_string())];
         assert_eq!(
             *provider,
             ForeignChainProvider {
                 rpc_url: "https://eth-mainnet.g.alchemy.com/v2/".to_string(),
-                api_variant: RpcProvider::Alchemy,
             }
         );
     }
@@ -565,12 +555,12 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.abstract_chain.unwrap().providers["public"];
+        let provider = &response.foreign_chains.abstract_chain.unwrap().providers
+            [&RpcProviderName::from("public".to_string())];
         assert_eq!(
             *provider,
             ForeignChainProvider {
                 rpc_url: "https://api.testnet.abs.xyz".to_string(),
-                api_variant: RpcProvider::Standard,
             }
         );
     }
@@ -584,12 +574,13 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.starknet.unwrap().providers["blast"];
+        let provider = &response.foreign_chains.starknet.unwrap().providers
+            [&RpcProviderName::from("blast".to_string())];
+
         assert_eq!(
             *provider,
             ForeignChainProvider {
                 rpc_url: "https://starknet-mainnet.blastapi.io/".to_string(),
-                api_variant: RpcProvider::Blast,
             }
         );
     }
@@ -603,12 +594,12 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.bnb.unwrap().providers["public"];
+        let provider = &response.foreign_chains.bnb.unwrap().providers
+            [&RpcProviderName::from("public".to_string())];
         assert_eq!(
             *provider,
             ForeignChainProvider {
                 rpc_url: "https://bsc-rpc.publicnode.com".to_string(),
-                api_variant: RpcProvider::Standard,
             }
         );
     }
@@ -622,12 +613,12 @@ mod tests {
         let response = NodeConfigResponse::from(config);
 
         // Then
-        let provider = &response.foreign_chains.base.unwrap().providers["public"];
+        let provider = &response.foreign_chains.base.unwrap().providers
+            [&RpcProviderName::from("public".to_string())];
         assert_eq!(
             *provider,
             ForeignChainProvider {
                 rpc_url: "https://base.publicnode.com".to_string(),
-                api_variant: RpcProvider::Standard,
             }
         );
     }

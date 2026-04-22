@@ -37,31 +37,30 @@ pub struct ForeignChainsConfig {
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     pub max_retries: NonZeroU64,
-    pub providers: NonEmptyBTreeMap<String, ForeignChainProviderConfig>,
+    pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainProviderConfig {
     pub rpc_url: String,
-    pub api_variant: RpcProvider,
     #[serde(default)]
     pub auth: auth::AuthConfig,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum RpcProvider {
-    Standard,
-    Alchemy,
-    Helius,
-    Quicknode,
-    Ankr,
-    Infura,
-    Blast,
-    #[serde(alias = "blockstream")]
-    #[serde(alias = "mempool-space")]
-    Esplora,
-}
+#[derive(
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+    derive_more::From,
+    derive_more::Deref,
+)]
+pub struct RpcProviderName(String);
 
 impl ForeignChainConfig {
     pub(crate) fn providers_to_set(&self) -> NonEmptyBTreeSet<dtos::RpcProvider> {
@@ -259,7 +258,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -268,7 +266,6 @@ foreign_chains:
           token:
             env: ALCHEMY_API_KEY
       quicknode:
-        api_variant: quicknode
         rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
         auth:
           kind: header
@@ -276,7 +273,6 @@ foreign_chains:
           token:
             val: "local"
       ankr:
-        api_variant: ankr
         rpc_url: "https://rpc.ankr.com/near/{api_key}"
         auth:
           kind: path
@@ -284,12 +280,10 @@ foreign_chains:
           token:
             env: ANKR_API_KEY
       public:
-        api_variant: standard
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
       query:
-        api_variant: standard
         rpc_url: "https://rpc.example.com"
         auth:
           kind: query
@@ -301,7 +295,6 @@ foreign_chains:
     max_retries: 3
     providers:
       public:
-        api_variant: esplora
         rpc_url: "https://blockstream.info/api"
         auth:
           kind: none
@@ -310,7 +303,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -427,7 +419,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: not-a-real-provider
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -483,7 +474,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -496,7 +486,6 @@ foreign_chains:
     max_retries: 3
     providers:
       public:
-        api_variant: standard
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
@@ -548,7 +537,6 @@ foreign_chains:
     max_retries: 3
     providers:
       ankr:
-        api_variant: ankr
         rpc_url: "https://rpc.ankr.com/solana/{api_key}"
         auth:
           kind: path
@@ -611,7 +599,6 @@ foreign_chains:
     max_retries: 3
     providers:
       blast:
-        api_variant: blast
         rpc_url: "https://starknet-mainnet.blastapi.io/"
         auth:
           kind: none
@@ -667,7 +654,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header

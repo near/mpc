@@ -2,8 +2,7 @@ pub mod foreign_chains;
 pub mod start;
 
 pub use foreign_chains::{
-    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, RpcProvider,
-    TokenConfig,
+    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
 };
 pub use start::{
     ChainId, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
