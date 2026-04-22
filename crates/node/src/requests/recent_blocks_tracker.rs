@@ -215,11 +215,6 @@ pub struct BlockViewLite {
     pub timestamp_nanosec: u64,
 }
 
-pub(crate) struct AddBlockResult {
-    pub(crate) new_final_blocks: Vec<(u64, CryptoHash)>,
-    pub(crate) removed_blocks: Vec<CryptoHash>,
-}
-
 impl RecentBlocksTracker {
     pub fn new(window_size: u64) -> Self {
         Self {
@@ -233,14 +228,12 @@ impl RecentBlocksTracker {
     }
 
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
-    /// indexer (whether or not it is interesting).
-    pub(crate) fn add_block(&mut self, block: &BlockViewLite) -> AddBlockResult {
+    /// indexer (whether or not it is interesting). Returns the newly-finalized blocks (in
+    /// ascending height order) caused by this block's `last_final_block`.
+    pub(crate) fn add_block(&mut self, block: &BlockViewLite) -> Vec<(u64, CryptoHash)> {
         if self.hash_to_node.contains_key(&block.hash) {
             tracing::warn!(target: "request", "Ignoring block {:?} at height {}", block.hash, block.height);
-            return AddBlockResult {
-                new_final_blocks: vec![],
-                removed_blocks: vec![],
-            };
+            return vec![];
         }
         let parent = self.hash_to_node.get(&block.prev_hash).cloned();
         let node = Arc::new(BlockNode {
@@ -272,11 +265,8 @@ impl RecentBlocksTracker {
         if block.height > self.maximum_height_available {
             self.maximum_height_available = block.height;
         }
-        let removed_blocks = self.prune_old_blocks();
-        AddBlockResult {
-            new_final_blocks,
-            removed_blocks,
-        }
+        self.prune_old_blocks();
+        new_final_blocks
     }
 
     /// Notifies the tracker that we have heard of the given height being available.
@@ -369,9 +359,9 @@ impl RecentBlocksTracker {
 
     /// Remove old blocks that are neither needed for the `classify_block` query or for providing
     /// the stream of finalized blocks.
-    fn prune_old_blocks(&mut self) -> Vec<CryptoHash> {
+    fn prune_old_blocks(&mut self) {
         let Some(minimum_height_to_keep) = self.minimum_height_to_keep() else {
-            return vec![];
+            return;
         };
         // Note: unwrap_or cannot fail because if we have a minimum height then we have at least one
         // block. Still, we'll program defensively.
@@ -383,7 +373,7 @@ impl RecentBlocksTracker {
             .unwrap_or(0)
             >= minimum_height_to_keep
         {
-            return vec![];
+            return;
         }
 
         let mut new_root_children = Vec::new();
@@ -399,24 +389,19 @@ impl RecentBlocksTracker {
             *child.parent.lock().unwrap() = None;
         }
         self.root_children = new_root_children;
-        let old_nodes_hashes = old_nodes.iter().map(|node| node.hash).collect();
-        for old_node_hash in &old_nodes_hashes {
-            self.hash_to_node.remove(old_node_hash);
+        for old_node in &old_nodes {
+            self.hash_to_node.remove(&old_node.hash);
         }
-        old_nodes_hashes
     }
 
     /// Classifies a block into one of the categories in `CheckBlockResult`.
+    // TODO: the `block_height` argument exists solely so we can return
+    // `OlderThanRecentWindow` for blocks that have already been pruned from
+    // `hash_to_node`. Callers always know the block's height, so lifting the
+    // age check into the caller would let this function take just `block_hash`
+    // and use `node.height` internally. That simplification also removes the
+    // need for the `OlderThanRecentWindow` variant.
     pub fn classify_block(&self, block_hash: CryptoHash, block_height: u64) -> CheckBlockResult {
-        // note:
-        // we mostly care about RecentAndFinal, OptimisticAndCanonical and
-        // OptimisticButNotCanonical.
-        // The other values, we just reject.
-        // OlderThanRecentWindow is easier to check outside of this function.
-        // Also, an't the block height be noted in the node? or isthis teh final height??
-        //
-        // WHAT IS THE DIFFERENCE BETWEEN THIS argument block_height and block height stored in
-        // node?
         if self
             .maximum_height_available
             .saturating_sub(self.window_size)
@@ -652,14 +637,13 @@ pub mod tests {
                 !self.parents_of_added_blocks.contains(&block.hash),
                 "Cannot retroactively add the parent of an already added block"
             );
-            let result = self.tracker.add_block(&block.to_block_view());
+            let new_final_blocks = self.tracker.add_block(&block.to_block_view());
             if let Some(parent) = block.parent.clone() {
                 self.parents_of_added_blocks.insert(parent.hash);
             }
-            result
-                .new_final_blocks
-                .iter()
-                .map(|(_, hash)| *hash)
+            new_final_blocks
+                .into_iter()
+                .map(|(_, hash)| hash)
                 .collect::<Vec<_>>()
         }
 

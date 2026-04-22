@@ -35,6 +35,10 @@ pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED_TOTAL: LazyLock<
     )
     .unwrap()
 });
+// TODO: no longer incremented after the response-tracking refactor moved
+// finalization detection out of `notify_new_block`. Remove once downstream
+// dashboards/alerts stop referencing it.
+#[expect(dead_code, reason = "kept for downstream dashboard compatibility")]
 pub static MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED_TOTAL: LazyLock<
     prometheus::IntCounter,
 > = LazyLock::new(|| {
@@ -103,6 +107,10 @@ pub static MPC_PENDING_CKDS_QUEUE_BLOCKS_INDEXED: LazyLock<prometheus::IntCounte
         )
         .unwrap()
     });
+// TODO: no longer incremented after the response-tracking refactor moved
+// finalization detection out of `notify_new_block`. Remove once downstream
+// dashboards/alerts stop referencing it.
+#[expect(dead_code, reason = "kept for downstream dashboard compatibility")]
 pub static MPC_PENDING_CKDS_QUEUE_FINALIZED_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -186,6 +194,10 @@ pub static MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED: LazyLock<prometheus::Int
         )
         .unwrap()
     });
+// TODO: no longer incremented after the response-tracking refactor moved
+// finalization detection out of `notify_new_block`. Remove once downstream
+// dashboards/alerts stop referencing it.
+#[expect(dead_code, reason = "kept for downstream dashboard compatibility")]
 pub static MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(

@@ -243,7 +243,7 @@ where
                     let timestamp_nanosec = block_update.block.timestamp_nanosec;
                     self.client.update_indexer_height(block_update.block.height);
 
-                    let add_block_result = recent_blocks_tracker.add_block(&block_update.block);
+                    recent_blocks_tracker.add_block(&block_update.block);
 
                     let signature_requests = block_update
                         .signature_requests
@@ -275,7 +275,6 @@ where
                         signature_requests,
                         block_update.completed_signatures,
                         &block_update.block,
-                        &add_block_result,
                     );
 
                     let ckd_requests = block_update
@@ -307,7 +306,6 @@ where
                         ckd_requests,
                         block_update.completed_ckds,
                         &block_update.block,
-                        &add_block_result,
                     );
 
                     let verify_foreign_tx_requests = block_update
@@ -339,7 +337,6 @@ where
                         verify_foreign_tx_requests,
                         block_update.completed_verify_foreign_txs,
                         &block_update.block,
-                        &add_block_result,
                     );
 
 
