@@ -12,10 +12,12 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use dcap_qvl::config::{Config, EcdsaSigEncoder, ParsedCert, X509Codec};
-use dcap_qvl::configs::DefaultConfig;
-use dcap_qvl::quote::Quote;
-use dcap_qvl::QuoteCollateralV3;
+use dcap_qvl::{
+    config::{Config, EcdsaSigEncoder, ParsedCert, X509Codec},
+    configs::DefaultConfig,
+    quote::Quote,
+    QuoteCollateralV3,
+};
 use dcap_qvl_asn1_backend::{Asn1DerCertBackend, Asn1DerConfig, Asn1DerSigEncoder};
 
 const SGX_QUOTE: &[u8] = include_bytes!("fixtures/sgx_quote");
@@ -229,7 +231,7 @@ fn splice_extensions_sanity_check() {
 
         let custom = Asn1DerCertBackend::from_der(&spliced).expect("custom parses spliced cert");
         let custom_value = custom.extension(TEST_OID).expect("custom reads extension");
-        assert_eq!(custom_value.as_deref(), Some(&b"hello"[..]));
+        assert_eq!(custom_value.as_deref(), Some(b"hello".as_slice()));
 
         // DefaultConfig must also parse this — if the splice were producing
         // malformed DER, we would catch it here.
@@ -331,11 +333,11 @@ fn malformed_extension_non_octet_string_value_is_rejected() {
 #[test]
 fn trailing_bytes_after_cert_diverge_documented() {
     for cert_der in pck_leaf_certs() {
-        let mut with_trailing = cert_der.clone();
+        let mut with_trailing = cert_der;
         with_trailing.extend_from_slice(b"\x00\x00trailing-garbage");
 
         // Custom accepts.
-        let _custom = Asn1DerCertBackend::from_der(&with_trailing)
+        Asn1DerCertBackend::from_der(&with_trailing)
             .expect("custom accepts trailing bytes (documented divergence)");
 
         // Default rejects.

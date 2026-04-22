@@ -40,9 +40,9 @@ impl EcdsaSigEncoder for Asn1DerSigEncoder {
 
         let mut payload = Vec::with_capacity(payload_cap);
         Integer::write(r, false, &mut VecBacking(&mut payload))
-            .context("Failed to encode r INTEGER")?;
+            .context("failed to encode r INTEGER")?;
         Integer::write(s, false, &mut VecBacking(&mut payload))
-            .context("Failed to encode s INTEGER")?;
+            .context("failed to encode s INTEGER")?;
 
         let mut out = Vec::with_capacity(total_cap);
         DerObject::write(
@@ -51,7 +51,7 @@ impl EcdsaSigEncoder for Asn1DerSigEncoder {
             &mut payload.iter(),
             &mut VecBacking(&mut out),
         )
-        .context("Failed to encode ECDSA sig SEQUENCE")?;
+        .context("failed to encode ECDSA sig SEQUENCE")?;
         Ok(out)
     }
 }
