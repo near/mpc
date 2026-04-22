@@ -48,6 +48,4 @@ unknown-git = "deny"
 allow-git = [
   "https://github.com/near/nearcore",
   "https://github.com/near/reddsa",
-  # TODO(#2983): Remove once `dcap-qvl` cuts a release on crates.io containing PR #144.
-  "https://github.com/Phala-Network/dcap-qvl",
 ]
