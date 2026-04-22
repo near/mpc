@@ -11,6 +11,19 @@ pub const MOCK_BLOCK_HASH: &str =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
+fn jsonrpc_error(id: serde_json::Value, method: &str) -> HttpMockResponse {
+    let response_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "error": { "code": -32601, "message": format!("method not found: {method}") },
+        "id": id,
+    });
+    HttpMockResponse::builder()
+        .status(200)
+        .header("content-type", "application/json")
+        .body(serde_json::to_string(&response_body).unwrap())
+        .build()
+}
+
 pub fn setup_bitcoin_mock(server: &MockServer) {
     server.mock(|when, then| {
         when.method(POST).path("/");
@@ -20,7 +33,9 @@ pub fn setup_bitcoin_mock(server: &MockServer) {
             let id = body["id"].clone();
             let method = body["method"].as_str().expect("method field");
 
-            assert_eq!(method, "getrawtransaction", "unexpected Bitcoin RPC method");
+            if method != "getrawtransaction" {
+                return jsonrpc_error(id, method);
+            }
 
             let response_body = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -78,7 +93,7 @@ pub fn setup_evm_mock(server: &MockServer) {
                         }],
                     })
                 }
-                other => panic!("unexpected EVM RPC method: {other}"),
+                other => return jsonrpc_error(id, other),
             };
 
             let response_body = serde_json::json!({
@@ -105,10 +120,9 @@ pub fn setup_starknet_mock(server: &MockServer) {
             let id = body["id"].clone();
             let method = body["method"].as_str().expect("method field");
 
-            assert_eq!(
-                method, "starknet_getTransactionReceipt",
-                "unexpected Starknet RPC method"
-            );
+            if method != "starknet_getTransactionReceipt" {
+                return jsonrpc_error(id, method);
+            }
 
             let response_body = serde_json::json!({
                 "result": {
