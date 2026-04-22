@@ -22,7 +22,9 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainId, DomainPurpose};
+use near_mpc_contract_interface::types::{
+    Curve, DomainConfig, DomainId, DomainPurpose, ForeignChainConfiguration,
+};
 use near_mpc_contract_interface::{
     method_names,
     types::{
@@ -33,7 +35,7 @@ use near_mpc_contract_interface::{
         StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionResponse,
     },
 };
-use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
+use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChain, ForeignChainRpcRequest, Hash256};
 use near_workspaces::{network::Sandbox, result::ExecutionSuccess, Contract};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
@@ -601,10 +603,8 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Build a [`ForeignChainPolicy`] that enables the given chain with a dummy RPC URL.
-pub fn make_foreign_chain_policy(
-    chain: near_mpc_contract_interface::types::ForeignChain,
-) -> near_mpc_contract_interface::types::ForeignChainPolicy {
+/// Build a [`ForeignChainConfiguration`] that enables the given chain with a dummy RPC URL.
+pub fn make_configured_foreign_chain(chain: ForeignChain) -> ForeignChainConfiguration {
     let mut chains = std::collections::BTreeMap::new();
     chains.insert(
         chain,
@@ -613,20 +613,20 @@ pub fn make_foreign_chain_policy(
             rpc_url: format!("https://{chain:?}-rpc.example.com").to_lowercase(),
         }),
     );
-    ForeignChainPolicy { chains }
+    chains.into()
 }
 
 /// Vote the given chain policy from all participants.
-pub async fn vote_chain_policy(
+pub async fn register_foreign_chain_configuration(
     chain: near_mpc_contract_interface::types::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {
-    let policy = make_foreign_chain_policy(chain);
+    let foreign_chain_configuration = make_configured_foreign_chain(chain);
     for account in accounts {
         let result = account
-            .call(contract.id(), method_names::VOTE_FOREIGN_CHAIN_POLICY)
-            .args_json(json!({ "policy": policy }))
+            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_CONFIG)
+            .args_json(json!({ "foreign_chain_configuration": foreign_chain_configuration }))
             .transact()
             .await
             .unwrap()

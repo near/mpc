@@ -92,7 +92,7 @@ async fn foreign_chain_policy__should_require_unanimity_for_auto_voting() {
         .next()
         .expect("expected at least one proposal");
     let outcome = cluster
-        .vote_foreign_chain_policy(2, existing_policy)
+        .register_foreign_chain_config(2, existing_policy)
         .await
         .expect("failed to vote foreign chain policy from node 2");
     assert!(

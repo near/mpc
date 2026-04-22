@@ -18,7 +18,6 @@ pub const VOTE_PK: &str = "vote_pk";
 pub const VOTE_RESHARED: &str = "vote_reshared";
 pub const VOTE_NEW_PARAMETERS: &str = "vote_new_parameters";
 pub const VOTE_ADD_DOMAINS: &str = "vote_add_domains";
-pub const VOTE_FOREIGN_CHAIN_POLICY: &str = "vote_foreign_chain_policy";
 pub const REGISTER_FOREIGN_CHAIN_CONFIG: &str = "register_foreign_chain_config";
 pub const VOTE_CODE_HASH: &str = "vote_code_hash";
 pub const VOTE_ADD_LAUNCHER_HASH: &str = "vote_add_launcher_hash";

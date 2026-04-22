@@ -686,7 +686,7 @@ impl MpcCluster {
 
     /// Vote for a foreign chain policy from a specific node.
     // TODO: part of migration of the tests
-    pub async fn vote_foreign_chain_policy(
+    pub async fn register_foreign_chain_config(
         &self,
         node_index: usize,
         policy: &near_mpc_contract_interface::types::ForeignChainPolicy,
@@ -698,7 +698,7 @@ impl MpcCluster {
         self.contract
             .call_from(
                 &client,
-                method_names::VOTE_FOREIGN_CHAIN_POLICY,
+                method_names::REGISTER_FOREIGN_CHAIN_CONFIG,
                 json!({ "policy": serde_json::to_value(policy)? }),
             )
             .await
