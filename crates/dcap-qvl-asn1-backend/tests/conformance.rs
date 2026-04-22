@@ -319,7 +319,38 @@ fn malformed_extension_non_octet_string_value_is_rejected() {
     }
 }
 
-/// M4 — trailing bytes appended after the outer Certificate SEQUENCE.
+/// M4 — `Extension` of shape `{ extnID, <non-BOOLEAN>, extnValue }`.
+/// RFC 5280 requires the middle element, when present, to be the
+/// `critical` BOOLEAN. The audited `x509-cert` backend enforces this
+/// via its typed `critical: bool` decode. The custom backend must
+/// reject via its tag check on `ext.get(1)` so an attacker cannot slip
+/// a non-BOOLEAN past the shape guard.
+#[test]
+fn malformed_extension_non_boolean_critical_is_rejected() {
+    for cert_der in pck_leaf_certs() {
+        let oid_tlv = tlv(der_tags::OID, TEST_OID);
+        // OCTET STRING where BOOLEAN is required for `critical`.
+        let bogus_critical_tlv = tlv(der_tags::OCTET_STRING, b"not-a-bool");
+        let value_tlv = tlv(der_tags::OCTET_STRING, b"payload");
+        let ext = tlv(
+            der_tags::SEQUENCE,
+            &[oid_tlv, bogus_critical_tlv, value_tlv].concat(),
+        );
+        let spliced = splice_extensions(&cert_der, &ext);
+
+        let custom = Asn1DerCertBackend::from_der(&spliced).expect("from_der");
+        let err = custom
+            .extension(TEST_OID)
+            .expect_err("non-BOOLEAN critical must be rejected");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("BOOLEAN"),
+            "expected BOOLEAN-tag error, got: {msg}"
+        );
+    }
+}
+
+/// M5 — trailing bytes appended after the outer Certificate SEQUENCE.
 ///
 /// Both backends must reject. The audited `der` crate enforces
 /// full-input consumption; `asn1_der::DerObject::decode` on its own

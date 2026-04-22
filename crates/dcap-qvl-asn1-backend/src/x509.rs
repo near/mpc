@@ -32,6 +32,8 @@ const TAG_CTX_3: u8 = 0xA3;
 const TAG_OID: u8 = 0x06;
 /// DER tag for `OCTET STRING`, the required type of `Extension.extnValue`.
 const TAG_OCTET_STRING: u8 = 0x04;
+/// DER tag for `BOOLEAN`, the required type of `Extension.critical` when present.
+const TAG_BOOLEAN: u8 = 0x01;
 
 /// Zero-sized factory implementing [`X509Codec`] on top of `asn1_der`.
 ///
@@ -201,6 +203,19 @@ impl ParsedCert for Asn1DerParsedCert<'_> {
             let ext_len = ext.len();
             if !(2..=3).contains(&ext_len) {
                 bail!("extension sequence has unexpected shape (len {ext_len})");
+            }
+            if ext_len == 3 {
+                // `Extension.critical` is specified as BOOLEAN (tag 0x01).
+                // The audited `x509-cert` backend enforces this via its
+                // typed `critical: bool` decode; we check explicitly so a
+                // cert shaped e.g. `SEQUENCE { OID, <junk>, OCTET_STRING }`
+                // cannot byte-match and leak the OCTET_STRING as the
+                // extension value.
+                let critical_obj = ext.get(1).context("missing extension critical flag")?;
+                let critical_tag = critical_obj.tag();
+                if critical_tag != TAG_BOOLEAN {
+                    bail!("extension critical is not a BOOLEAN (tag 0x{critical_tag:02X})");
+                }
             }
             let value_obj = ext.get(ext_len - 1).context("missing extension value")?;
             let value_tag = value_obj.tag();
