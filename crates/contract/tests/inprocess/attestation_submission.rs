@@ -141,7 +141,7 @@ impl TestSetupBuilder {
                     &participant_info.sign_pk,
                 )
                 .expect("sign_pk must be Ed25519"),
-                account_public_key: Some(bogus_ed25519_public_key()),
+                account_public_key: bogus_ed25519_public_key(),
             })
             .collect();
 
@@ -238,9 +238,10 @@ impl TestSetup {
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
-    /// Returns the list of NodeIds for all participants
-    /// Note that the account_public_key field in NodeId is None.
-    /// This is because NodeId is used in contexts where account_public_key is not needed. (only TLS key is needed)
+    /// Returns the list of NodeIds for all participants. The
+    /// `account_public_key` is a placeholder — only the `account_id` (to set
+    /// the signer context) and `tls_public_key` (passed to
+    /// `submit_participant_info`) are consumed by these tests.
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
@@ -250,7 +251,7 @@ impl TestSetup {
                     &participant_info.sign_pk,
                 )
                 .expect("sign_pk must be Ed25519"),
-                account_public_key: None,
+                account_public_key: bogus_ed25519_public_key(),
             })
             .collect()
     }
@@ -310,7 +311,7 @@ fn test_clean_tee_status_removes_non_participants() {
                 &participant_info.sign_pk,
             )
             .expect("sign_pk must be Ed25519"),
-            account_public_key: Some(bogus_ed25519_public_key()),
+            account_public_key: bogus_ed25519_public_key(),
         })
         .collect();
     for node_id in &participant_nodes {
@@ -321,7 +322,7 @@ fn test_clean_tee_status_removes_non_participants() {
     let removed_participant_node = NodeId {
         account_id: "removed.participant.near".parse().unwrap(),
         tls_public_key: bogus_ed25519_public_key(),
-        account_public_key: Some(bogus_ed25519_public_key()),
+        account_public_key: bogus_ed25519_public_key(),
     };
 
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);

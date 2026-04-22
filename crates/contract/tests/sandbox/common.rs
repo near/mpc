@@ -371,6 +371,49 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
+/// Returns the [`dtos::Ed25519PublicKey`] corresponding to the `Account`'s
+/// signer. Mirrors what the contract reads via `env::signer_account_pk()` when
+/// the account submits a transaction.
+pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
+    let bytes: [u8; 32] = account
+        .secret_key()
+        .public_key()
+        .key_data()
+        .try_into()
+        .expect("sandbox Account key must be Ed25519");
+    dtos::Ed25519PublicKey::from(bytes)
+}
+
+/// Builds the set of [`NodeId`]s that a sandbox contract will store after
+/// each participant has submitted its attestation. Both the TLS key (from the
+/// participant's `sign_pk`) and the account public key (read from the matching
+/// `Account`'s signer) must line up with what `submit_participant_info` will
+/// persist on-chain — it stores `env::signer_account_pk()` alongside the TLS
+/// key. Keep this in sync with `MpcContract::submit_participant_info` so that
+/// test-side `NodeId` comparisons against `get_tee_accounts()` stay valid.
+pub fn build_sandbox_node_ids(
+    participants: &Participants,
+    accounts: &[Account],
+) -> BTreeSet<NodeId> {
+    participants
+        .participants()
+        .iter()
+        .map(|(account_id, _, info)| {
+            let tls_public_key =
+                dtos::Ed25519PublicKey::try_from(&info.sign_pk).expect("sign_pk must be Ed25519");
+            let account = accounts
+                .iter()
+                .find(|a| a.id() == account_id)
+                .expect("matching Account must exist for each participant");
+            NodeId {
+                account_id: account_id.clone(),
+                tls_public_key,
+                account_public_key: account_ed25519_public_key(account),
+            }
+        })
+        .collect()
+}
+
 pub async fn submit_tee_attestations(
     contract: &Contract,
     env_accounts: &mut [Account],
