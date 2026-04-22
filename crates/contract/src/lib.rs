@@ -26,7 +26,7 @@ use std::{
 use crate::{
     dto_mapping::{
         args_into_verify_foreign_tx_request, IntoContractType, IntoInterfaceType,
-        TryIntoContractType, TryIntoInterfaceType,
+        TryIntoContractType,
     },
     errors::{Error, RequestError},
     primitives::{
@@ -1844,9 +1844,7 @@ impl MpcContract {
     }
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
-        (&self.protocol_state)
-            .try_into_dto_type()
-            .expect("state conversion should not fail")
+        (&self.protocol_state).into_dto_type()
     }
 
     pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {
@@ -2277,7 +2275,7 @@ impl MpcContract {
             account_public_key: expected_destination_node.signer_account_pk,
             tls_public_key: expected_destination_node
                 .destination_node_info
-                .sign_pk
+                .tls_public_key
                 .clone(),
         };
 
@@ -2544,14 +2542,9 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-        let contract = MpcContract::init_running(
-            domains,
-            1,
-            keyset,
-            (&parameters).try_into_dto_type().unwrap(),
-            None,
-        )
-        .unwrap();
+        let contract =
+            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
+                .unwrap();
         (context, contract, sk)
     }
 
@@ -2599,10 +2592,7 @@ mod tests {
             .active_participants()
             .participants()
             .iter()
-            .map(|(_, _, participant_info)| {
-                dtos::Ed25519PublicKey::try_from(&participant_info.sign_pk)
-                    .expect("sign_pk must be Ed25519")
-            })
+            .map(|(_, _, participant_info)| participant_info.tls_public_key.clone())
             .collect();
 
         let node_id = contract
@@ -3256,7 +3246,7 @@ mod tests {
 
         let threshold = Threshold::new(threshold_value);
         let parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
-        let contract = MpcContract::init((&parameters).try_into_dto_type().unwrap(), None).unwrap();
+        let contract = MpcContract::init((&parameters).into_dto_type(), None).unwrap();
 
         (contract, participants, first_participant_id)
     }
@@ -3275,7 +3265,7 @@ mod tests {
             MockAttestation::Invalid
         };
 
-        let dto_public_key = dtos::Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap();
+        let dto_public_key = participant_info.tls_public_key.clone();
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -3318,7 +3308,7 @@ mod tests {
         testing_env!(voting_context);
 
         let proposal = ThresholdParameters::new(participants, threshold).unwrap();
-        contract.vote_new_parameters(EpochId::new(1), (&proposal).try_into_dto_type().unwrap())
+        contract.vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
     }
 
     /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants have
@@ -3439,10 +3429,7 @@ mod tests {
         testing_env!(ctx);
 
         contract
-            .submit_participant_info(
-                valid_attestation,
-                dtos::Ed25519PublicKey::try_from(&participant_info.sign_pk).unwrap(),
-            )
+            .submit_participant_info(valid_attestation, participant_info.tls_public_key.clone())
             .expect("Expected panic if predecessor != signer");
     }
 
@@ -3667,7 +3654,7 @@ mod tests {
         let (_, participant_info) = gen_participant(url_id);
         DestinationNodeInfo {
             signer_account_pk: bogus_ed25519_public_key(),
-            destination_node_info: participant_info.try_into().unwrap(),
+            destination_node_info: participant_info.into(),
         }
     }
 
@@ -3812,7 +3799,10 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+                attestation_tls_key: destination_node_info
+                    .destination_node_info
+                    .tls_public_key
+                    .clone(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: near_sdk::PublicKey::from(
                     destination_node_info.signer_account_pk.clone(),
@@ -3879,7 +3869,10 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: None,
-                attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+                attestation_tls_key: destination_node_info
+                    .destination_node_info
+                    .tls_public_key
+                    .clone(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: near_sdk::PublicKey::from(
                     destination_node_info.signer_account_pk.clone(),
@@ -3913,7 +3906,10 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+                attestation_tls_key: destination_node_info
+                    .destination_node_info
+                    .tls_public_key
+                    .clone(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: near_sdk::PublicKey::from(
                     destination_node_info.signer_account_pk.clone(),
@@ -3943,7 +3939,10 @@ mod tests {
         let destination_node_info = gen_random_destination_info();
         let setup = ConcludeNodeMigrationTestSetup {
             destination_node_info: Some(destination_node_info.clone()),
-            attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+            attestation_tls_key: destination_node_info
+                .destination_node_info
+                .tls_public_key
+                .clone(),
             signer_account_id: non_participant_account_id.clone(),
             signer_account_pk: near_sdk::PublicKey::from(
                 destination_node_info.signer_account_pk.clone(),
@@ -3967,7 +3966,10 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+                attestation_tls_key: destination_node_info
+                    .destination_node_info
+                    .tls_public_key
+                    .clone(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: near_sdk::PublicKey::from(
                     destination_node_info.signer_account_pk.clone(),
@@ -4618,7 +4620,7 @@ mod tests {
             domains.clone(),
             1,
             keyset.clone(),
-            (&parameters).try_into_dto_type().unwrap(),
+            (&parameters).into_dto_type(),
             None,
         )
         .unwrap();
@@ -4632,8 +4634,7 @@ mod tests {
         // Replace the target's attestation with an expired one
         let node_id = NodeId {
             account_id: target_account_id.clone(),
-            tls_public_key: dtos::Ed25519PublicKey::try_from(&target_participant_info.sign_pk)
-                .expect("sign_pk must be Ed25519"),
+            tls_public_key: target_participant_info.tls_public_key.clone(),
             account_public_key: bogus_ed25519_public_key(),
         };
         let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {

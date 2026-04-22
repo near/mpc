@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary, submit_attestations,
+        init, propose_and_vote_contract_binary, submit_attestations, OldThresholdParameters,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -53,7 +53,7 @@ async fn init_old_contract(
     contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({
-            "parameters": threshold_parameters,
+            "parameters": OldThresholdParameters::from(&threshold_parameters),
         }))
         .transact()
         .await?

@@ -54,7 +54,7 @@ def running_state_matches_participant_key(
         node_info = contract_state.protocol_state.parameters.participants.by_account(
             account_id
         )
-        return node_info.sign_pk == expected_pk
+        return node_info.tls_public_key == expected_pk
     return False
 
 
@@ -116,7 +116,7 @@ def test_migration_service(compile_backup_cli):
         # 3. node operator initiates node migration
         signer_account_pk = target_node._signer_key.pk
         destination_node_participant_info = ParticipantInfo(
-            url=target_node.p2p_url, sign_pk=target_node.p2p_public_key
+            url=target_node.p2p_url, tls_public_key=target_node.p2p_public_key
         )
         destination_node = DestinationNodeInfo(
             signer_account_pk=signer_account_pk,

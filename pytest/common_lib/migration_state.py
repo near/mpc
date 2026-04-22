@@ -5,7 +5,7 @@ from typing import Any, Optional, Dict
 @dataclass
 class ParticipantInfo:
     url: str
-    sign_pk: str
+    tls_public_key: str
 
 
 @dataclass

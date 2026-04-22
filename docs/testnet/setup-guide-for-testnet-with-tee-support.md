@@ -285,7 +285,7 @@ Example:
           "barak_tee_test1_frodo.testnet",
           0,
           {
-            "sign_pk": "ed25519:6CeuXPt6qXtXRHVb5C4USZAyQcg65LXJvebPyCJewaN1",
+            "tls_public_key": "ed25519:6CeuXPt6qXtXRHVb5C4USZAyQcg65LXJvebPyCJewaN1",
             "url": "https://91.134.92.20:13001"
           }
         ],
@@ -293,7 +293,7 @@ Example:
           "barak_tee_test1_sam.testnet",
           1,
           {
-            "sign_pk": "ed25519:B2pHHn9Kr2GZhDn85VP3vGUccJK7Haekcmy5JRBScUn3",
+            "tls_public_key": "ed25519:B2pHHn9Kr2GZhDn85VP3vGUccJK7Haekcmy5JRBScUn3",
             "url": "https://57.129.140.254:13002"
           }
         ]

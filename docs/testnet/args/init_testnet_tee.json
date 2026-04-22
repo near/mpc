@@ -8,7 +8,7 @@
           "$FRODO_ACCOUNT",
           0,
           {
-            "sign_pk": "$FRODO_P2P_KEY",
+            "tls_public_key": "$FRODO_P2P_KEY",
             "url": "https://$SERVER_IP_1:13001"
           }
         ],
@@ -16,7 +16,7 @@
           "$SAM_ACCOUNT", 
           1,
           {
-            "sign_pk": "$SAM_P2P_KEY",
+            "tls_public_key": "$SAM_P2P_KEY",
             "url": "https://$SERVER_IP_2:13002"
           }
         ]

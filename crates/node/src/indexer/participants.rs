@@ -352,8 +352,10 @@ pub fn convert_participant_infos(
             anyhow::bail!("no port found in participant url {}", info.url);
         };
 
-        let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.sign_pk)
-            .with_context(|| format!("Invalid sign_pk for peer: {:?}", info.sign_pk))?;
+        let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.tls_public_key)
+            .with_context(|| {
+                format!("Invalid tls_public_key for peer: {:?}", info.tls_public_key)
+            })?;
 
         let near_account_id: AccountId = account_id.clone();
 
@@ -456,7 +458,7 @@ mod tests {
                 ParticipantId(i as u32),
                 ParticipantInfo {
                     url,
-                    sign_pk: pk.parse().unwrap(),
+                    tls_public_key: pk.parse().unwrap(),
                 },
             ));
         }
@@ -484,7 +486,7 @@ mod tests {
             HashMap::<AccountId, near_mpc_contract_interface::types::Ed25519PublicKey>::default();
         for (account_id, _, info) in &chain_infos.participants {
             account_ids.push(account_id.clone());
-            account_id_to_pk.insert(account_id.clone(), info.sign_pk.clone());
+            account_id_to_pk.insert(account_id.clone(), info.tls_public_key.clone());
         }
         assert!(account_ids.is_sorted());
         let params = ThresholdParameters {

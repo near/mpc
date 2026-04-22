@@ -1126,8 +1126,8 @@ BorshSchemaContainer {
                         "String",
                     ),
                     (
-                        "sign_pk",
-                        "PublicKey",
+                        "tls_public_key",
+                        "Ed25519PublicKey",
                     ),
                 ],
             ),

@@ -1969,7 +1969,7 @@ expression: abi
               "$ref": "#/definitions/ParticipantInfo"
             },
             "signer_account_pk": {
-              "description": "The public key used by the node to sign transactions to the contract. This key is different from the TLS key stored in [`ParticipantInfo::sign_pk`].",
+              "description": "The public key used by the node to sign transactions to the contract. This key is different from the TLS key stored in [`ParticipantInfo::tls_public_key`].",
               "allOf": [
                 {
                   "$ref": "#/definitions/Ed25519PublicKey"
@@ -2988,11 +2988,11 @@ expression: abi
         "ParticipantInfo": {
           "type": "object",
           "required": [
-            "sign_pk",
+            "tls_public_key",
             "url"
           ],
           "properties": {
-            "sign_pk": {
+            "tls_public_key": {
               "$ref": "#/definitions/Ed25519PublicKey"
             },
             "url": {

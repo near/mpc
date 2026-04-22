@@ -106,7 +106,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.clone().into(),
+                    tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
