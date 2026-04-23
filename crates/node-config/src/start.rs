@@ -1,6 +1,7 @@
 use super::ConfigFile;
 use anyhow::Context;
 use clap::ValueEnum;
+use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -24,16 +25,19 @@ pub struct StartConfig {
     /// Node configuration (indexer, protocol parameters, etc.).
     pub node: ConfigFile,
     pub log: LogConfig,
-    /// Base URL of the PCCS server used to fetch TDX attestation collateral.
-    /// Defaults to Phala's PCCS if not set in config.
-    #[serde(default = "default_pccs_url")]
-    pub pccs_url: url::Url,
+    /// Base URLs of PCCS servers used to fetch TDX attestation collateral.
+    /// Tried in order on every fetch; the first one to succeed wins, and the
+    /// rest are used only as fallbacks when earlier entries fail. At least
+    /// one URL is required. Defaults to Phala's PCCS if the field is omitted.
+    #[serde(default = "default_pccs_urls")]
+    pub pccs_urls: NonEmptyVec<url::Url>,
 }
 
-pub fn default_pccs_url() -> url::Url {
-    launcher_interface::DEFAULT_PCCS_URL
+pub fn default_pccs_urls() -> NonEmptyVec<url::Url> {
+    let url: url::Url = launcher_interface::DEFAULT_PCCS_URL
         .parse()
-        .expect("default PCCS URL is valid")
+        .expect("default PCCS URL is valid");
+    NonEmptyVec::try_from(vec![url]).expect("single-element vec is non-empty")
 }
 
 impl StartConfig {
@@ -198,5 +202,86 @@ mod tests {
             parsed.contains_key("gcp"),
             "GCP field name changed — update tee-launcher's TEE-restricted key list"
         );
+    }
+
+    /// A single-element TOML array parses as a NonEmptyVec with one entry.
+    /// This is the minimum valid form of the `pccs_urls` field.
+    #[test]
+    fn pccs_urls_accepts_single_element_array() {
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        let parsed: Wrapper =
+            toml::from_str(r#"pccs_urls = ["https://pccs.example.org"]"#).unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].as_str(), "https://pccs.example.org/");
+    }
+
+    /// Multiple entries parse in order. Order matters: the fetch path tries
+    /// each URL in the order the user wrote them.
+    #[test]
+    fn pccs_urls_accepts_multiple_entries_preserving_order() {
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        let parsed: Wrapper = toml::from_str(
+            r#"
+            pccs_urls = [
+                "http://localhost:8081",
+                "https://pccs.phala.network",
+                "https://api.trustedservices.intel.com",
+            ]
+            "#,
+        )
+        .unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+        assert_eq!(urls.len(), 3);
+        assert_eq!(urls[0].as_str(), "http://localhost:8081/");
+        assert_eq!(urls[1].as_str(), "https://pccs.phala.network/");
+        assert_eq!(urls[2].as_str(), "https://api.trustedservices.intel.com/");
+    }
+
+    /// An empty array is explicitly rejected. `NonEmptyVec`'s Deserialize impl
+    /// surfaces the bound violation through serde's `custom` error, so the
+    /// TOML parser's message mentions the lower-bound problem.
+    #[test]
+    fn pccs_urls_rejects_empty_array() {
+        // `pccs_urls` is never *read* in this test because parsing fails
+        // before the struct is constructed; the dead-code lint (rightly)
+        // notices. The field exists to give `Wrapper` the same shape as
+        // the real `StartConfig::pccs_urls`.
+        #[derive(Debug, Deserialize)]
+        #[expect(dead_code)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        let err = toml::from_str::<Wrapper>(r#"pccs_urls = []"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("LowerBound") || msg.contains("lower") || msg.contains("1"),
+            "expected a non-empty-vec bound error, got: {msg}"
+        );
+    }
+
+    /// When the field is omitted altogether, the `#[serde(default)]` hook
+    /// returns the Phala default as a single-element vec.
+    #[test]
+    fn pccs_urls_defaults_to_phala_when_omitted() {
+        #[derive(Debug, Deserialize)]
+        struct Wrapper {
+            #[serde(default = "default_pccs_urls")]
+            pccs_urls: NonEmptyVec<url::Url>,
+        }
+        let parsed: Wrapper = toml::from_str("").unwrap();
+        let urls: Vec<url::Url> = parsed.pccs_urls.into_iter().collect();
+        assert_eq!(urls.len(), 1);
+        let expected: url::Url = launcher_interface::DEFAULT_PCCS_URL.parse().unwrap();
+        assert_eq!(urls[0], expected);
     }
 }

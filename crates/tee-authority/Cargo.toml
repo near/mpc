@@ -16,6 +16,7 @@ dstack-sdk = { workspace = true }
 hex = { workspace = true }
 launcher-interface = { workspace = true }
 mpc-attestation = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

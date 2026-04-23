@@ -11175,6 +11175,7 @@ dependencies = [
  "hex",
  "launcher-interface",
  "mpc-attestation",
+ "near-mpc-bounded-collections",
  "rstest",
  "test-utils",
  "thiserror 2.0.18",
