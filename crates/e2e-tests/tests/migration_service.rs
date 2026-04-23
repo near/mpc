@@ -414,7 +414,8 @@ async fn wait_for_migration_completion(
 async fn migration_service__should_migrate_nodes_via_backup_cli() {
     let backup_cli = backup_cli_path();
 
-    // given — targets start with the cluster so indexers sync before blocks pile up.
+    // Given: cluster with 2 participants + 2 migration targets. Targets start
+    // alongside the participants so their indexers sync before blocks pile up.
     let (mut cluster, running) = common::setup_cluster(common::MIGRATION_SERVICE_PORT_SEED, |c| {
         c.num_nodes = 2;
         c.threshold = 2;
@@ -422,16 +423,16 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
     })
     .await;
 
+    // Then: the cluster is healthy — sign + ckd requests succeed against the
+    // source participants.
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
     common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
 
-    // when — migrate each node
     let target_indices = [2usize, 3];
     for (source_idx, &target_idx) in target_indices.iter().enumerate() {
-        let backup_service = BackupService::new(backup_cli.clone());
-        backup_service.generate_keys();
-
+        // Given: target shares the source's NEAR account but has a distinct
+        // P2P key, and the cluster is still healthy from the prior iteration.
         assert_eq!(
             cluster.nodes[target_idx].account_id().to_string(),
             cluster.nodes[source_idx].account_id().to_string(),
@@ -443,16 +444,22 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
             "migration target must have a different p2p key"
         );
 
+        // When: run the migration flow end-to-end — register backup service,
+        // GET keyshares from source, start migration, PUT keyshares to target,
+        // wait for completion, then kill the source node.
+        let backup_service = BackupService::new(backup_cli.clone());
+        backup_service.generate_keys();
         register_backup_service_and_wait(&cluster, source_idx, &backup_service).await;
         get_keyshares_from_source(&cluster, source_idx, &backup_service).await;
         start_migration_and_wait(&cluster, source_idx, target_idx).await;
         put_keyshares_to_target(&cluster, target_idx, &backup_service).await;
         wait_for_migration_completion(&cluster, source_idx, target_idx).await;
-
         cluster
             .kill_nodes(&[source_idx])
             .expect("failed to kill source node");
 
+        // Then: with the source gone, the target has taken over — sign + ckd
+        // requests still succeed.
         common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
             .await;
         common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())

@@ -39,7 +39,6 @@ const KEY_SEED_NEAR_SIGNER: u64 = 0;
 const KEY_SEED_P2P: u64 = 100;
 const KEY_SEED_OPERATOR: u64 = 200;
 const KEY_SEED_MIGRATION_P2P: u64 = 300;
-const KEY_SEED_MIGRATION_OPERATOR: u64 = 400;
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -187,14 +186,12 @@ impl MpcCluster {
             generate_signing_keys(u64::try_from(config.num_nodes).unwrap());
 
         // Pre-generate keys for migration target nodes.
-        // Migration targets share the source's NEAR account, so node_keys
-        // (which stores NEAR signer keys) gets the source's key.
-        for (i, &source_idx) in config.migration_targets.iter().enumerate() {
-            let target_idx = config.num_nodes + i;
+        // Migration targets share the source's NEAR account and operator,
+        // mirroring the production scenario of one operator managing both
+        // the old and new node.
+        for &source_idx in &config.migration_targets {
             node_keys.push(node_keys[source_idx].clone());
-            operator_keys.push(generate_deterministic_key(
-                KEY_SEED_MIGRATION_OPERATOR + target_idx as u64,
-            ));
+            operator_keys.push(operator_keys[source_idx].clone());
         }
 
         let contract = deploy_contract(
