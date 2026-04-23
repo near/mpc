@@ -48,4 +48,8 @@ unknown-git = "deny"
 allow-git = [
   "https://github.com/near/nearcore",
   "https://github.com/near/reddsa",
+  # Temporary: pinned at a fork of dcap-qvl while
+  # <https://github.com/Phala-Network/dcap-qvl/pull/153> is in review.
+  # Drop this entry when swapping back to crates.io.
+  "https://github.com/pbeza/dcap-qvl",
 ]
