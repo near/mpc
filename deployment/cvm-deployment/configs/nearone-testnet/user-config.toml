@@ -23,6 +23,8 @@ web_ui                   = "0.0.0.0:8080"
 # Explicit migration endpoint (matches operator guide port table and
 # deployment/start.sh; avoids the 8078 default in the CI user-config).
 migration_web_ui         = "0.0.0.0:8079"
+pprof_bind_address       = "0.0.0.0:34001"            # matches deployment/testnet/sam.toml
+cores                    = 12                          # matches deployment/testnet/sam.toml
 
 [mpc_node_config.node.indexer]
 validate_genesis = false
@@ -30,6 +32,7 @@ sync_mode        = "Latest"
 finality         = "optimistic"
 concurrency      = 1
 mpc_contract_id  = "v1.signer-prod.testnet"
+port_override    = 80                                 # participant URLs on chain don't include a port
 
 [mpc_node_config.node.triple]
 concurrency                                 = 2
