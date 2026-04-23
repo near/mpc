@@ -76,6 +76,7 @@ pub struct CKDRequestStorage {
     add_sender: broadcast::Sender<CKDId>,
 }
 
+// todo: make a geneic Storage struct write "add_batch" method
 impl CKDRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
         let (tx, _) = tokio::sync::broadcast::channel(500);

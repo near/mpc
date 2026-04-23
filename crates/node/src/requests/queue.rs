@@ -1,11 +1,12 @@
 use super::debug::{CompletedRequest, CompletedRequests};
+use super::recent_blocks_tracker::BlockViewLite;
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::requests::metrics;
 use crate::requests::recent_blocks_tracker::{
     BlockReference, CheckBlockResult, RecentBlocksTracker,
 };
-use crate::types::{self, Request, RequestId};
+use crate::types::{self, FromChain, Request, RequestId};
 use k256::sha2::Sha256;
 use near_indexer_primitives::types::NumBlocks;
 use near_indexer_primitives::CryptoHash;
@@ -242,6 +243,28 @@ pub(crate) struct Requests<T> {
     pub(crate) block: BlockReference,
     pub(crate) requests: Vec<T>,
     pub(crate) completed_requests: Vec<RequestId>,
+}
+
+impl<T> Requests<T> {
+    pub(crate) fn from_chain<U>(
+        block: &BlockViewLite,
+        new_requests: Vec<U>,
+        completed_requests: Vec<CryptoHash>,
+    ) -> Requests<T>
+    where
+        T: FromChain<U>,
+    {
+        let requests = new_requests
+            .into_iter()
+            .map(|request_from_chain| T::from_chain(request_from_chain, block))
+            .collect::<Vec<_>>();
+
+        Requests {
+            block: block.clone().into(),
+            requests,
+            completed_requests,
+        }
+    }
 }
 
 impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
