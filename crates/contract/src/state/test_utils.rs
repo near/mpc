@@ -17,7 +17,7 @@ use rand::Rng;
 
 pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParameters {
     let mut rng = rand::thread_rng();
-    let current_k = params.threshold().value() as usize;
+    let current_k = *params.threshold() as usize;
     let current_n = params.participants().len();
     let n_old_participants: usize = rng.gen_range(current_k..current_n + 1);
     let current_participants = params.participants();
@@ -48,7 +48,7 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
     }
 
     let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
-    ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
+    ThresholdParameters::new(new_participants, Threshold::from(threshold)).unwrap()
 }
 
 /// Generates a resharing state with the given number of domains.
@@ -73,7 +73,7 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
 }
 /// Generates a Running state that contains this many domains.
 pub fn gen_running_state(num_domains: usize) -> RunningContractState {
-    let epoch_id = EpochId::new(rand::thread_rng().gen());
+    let epoch_id = EpochId::from(rand::thread_rng().gen::<u64>());
     let domains = gen_domain_registry(num_domains);
 
     let mut keys = Vec::new();

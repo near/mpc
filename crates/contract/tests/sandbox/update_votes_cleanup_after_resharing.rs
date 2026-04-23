@@ -80,7 +80,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .participants
         .iter()
         .skip(1) // Skip participant 0, so participant 1-6 are included
-        .take(threshold.0 as usize)
+        .take(*threshold as usize)
     {
         new_participants
             .insert_with_id(
@@ -89,21 +89,21 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
                     url: participant_info.url.clone(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
+                *participant_id,
             )
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
     }
 
     let new_threshold_parameters = ThresholdParameters::new(
         new_participants,
-        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+        mpc_contract::primitives::thresholds::Threshold::from(*threshold),
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = dtos::EpochId(6);
 
     // when: resharing completes with new participants that exclude participant 0
     do_resharing(
-        &mpc_signer_accounts[1..threshold.0 as usize + 1],
+        &mpc_signer_accounts[1..*threshold as usize + 1],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
@@ -191,7 +191,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         .participants
         .iter()
         .skip(1)
-        .take(threshold.0 as usize)
+        .take(*threshold as usize)
     {
         new_participants
             .insert_with_id(
@@ -200,20 +200,20 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
                     url: participant_info.url.clone(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
+                *participant_id,
             )
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
     }
 
     let new_threshold_parameters = ThresholdParameters::new(
         new_participants,
-        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+        mpc_contract::primitives::thresholds::Threshold::from(*threshold),
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
-        &mpc_signer_accounts[1..threshold.0 as usize + 1],
+        &mpc_signer_accounts[1..*threshold as usize + 1],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,

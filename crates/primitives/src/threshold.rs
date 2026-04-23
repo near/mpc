@@ -19,19 +19,10 @@ use serde::{Deserialize, Serialize};
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
+    derive_more::Deref,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct Threshold(pub u64);
-
-impl Threshold {
-    pub fn new(value: u64) -> Self {
-        Self(value)
-    }
-
-    pub fn value(self) -> u64 {
-        self.0
-    }
-}
+pub struct Threshold(u64);

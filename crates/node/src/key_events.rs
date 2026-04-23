@@ -870,8 +870,8 @@ mod tests {
     }
 
     fn make_key_event_id(epoch: u64, domain: u64, attempt: u64) -> KeyEventId {
-        KeyEventId::new(EpochId::new(epoch), DomainId(domain), {
-            let mut id = AttemptId::new();
+        KeyEventId::new(EpochId::from(epoch), DomainId(domain), {
+            let mut id = AttemptId::default();
             for _ in 0..attempt {
                 id = id.next();
             }
@@ -898,7 +898,7 @@ mod tests {
 
     fn make_test_resharing_args() -> Arc<ResharingArgs> {
         Arc::new(ResharingArgs {
-            previous_keyset: Keyset::new(EpochId::new(5), vec![]),
+            previous_keyset: Keyset::new(EpochId::from(5), vec![]),
             existing_keyshares: None,
             new_threshold: ReconstructionLowerBound::from(3),
             old_participants: ParticipantsConfig {

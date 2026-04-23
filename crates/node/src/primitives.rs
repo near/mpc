@@ -169,13 +169,13 @@ impl ParticipantId {
 
 impl From<near_mpc_contract_interface::types::AuthenticatedParticipantId> for ParticipantId {
     fn from(p: near_mpc_contract_interface::types::AuthenticatedParticipantId) -> Self {
-        ParticipantId(p.0 .0)
+        ParticipantId::from_raw(*p.0)
     }
 }
 
 impl From<near_mpc_contract_interface::types::ParticipantId> for ParticipantId {
     fn from(p: near_mpc_contract_interface::types::ParticipantId) -> Self {
-        ParticipantId(p.0)
+        ParticipantId::from_raw(*p)
     }
 }
 

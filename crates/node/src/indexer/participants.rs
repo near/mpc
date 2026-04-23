@@ -72,15 +72,11 @@ impl ContractKeyEventInstance {
         &self,
         expected: &ContractKeyEventId,
     ) -> KeyEventIdComparisonResult {
-        let contract_state = (
-            self.id.epoch_id.get(),
-            *self.id.domain_id,
-            self.id.attempt_id.get(),
-        );
+        let contract_state = (*self.id.epoch_id, *self.id.domain_id, *self.id.attempt_id);
         let expected_state = (
-            expected.epoch_id.get(),
+            *expected.epoch_id,
             *expected.domain_id,
-            expected.attempt_id.get(),
+            *expected.attempt_id,
         );
         if contract_state < expected_state {
             KeyEventIdComparisonResult::RemoteBehind
@@ -369,7 +365,7 @@ pub fn convert_participant_infos(
     }
     Ok(ParticipantsConfig {
         participants: converted,
-        threshold: threshold_parameters.threshold.0,
+        threshold: *threshold_parameters.threshold,
     })
 }
 
@@ -455,14 +451,14 @@ mod tests {
         for (i, (account_id, url, pk)) in sorted_raw.into_iter().enumerate() {
             entries.push((
                 account_id.parse().unwrap(),
-                ParticipantId(i as u32),
+                ParticipantId::from(i as u32),
                 ParticipantInfo {
                     url,
                     tls_public_key: pk.parse().unwrap(),
                 },
             ));
         }
-        let next_id = ParticipantId(entries.len() as u32);
+        let next_id = ParticipantId::from(entries.len() as u32);
         Participants {
             next_id,
             participants: entries,
@@ -491,7 +487,7 @@ mod tests {
         assert!(account_ids.is_sorted());
         let params = ThresholdParameters {
             participants: chain_infos.clone(),
-            threshold: Threshold(3),
+            threshold: Threshold::from(3),
         };
 
         let converted = convert_participant_infos(params, None).unwrap();
@@ -506,7 +502,7 @@ mod tests {
                 .find(|(a_id, _, _)| *a_id == account_ids[i])
                 .map(|(_, p_id, _)| *p_id)
                 .unwrap();
-            assert!(p.id.raw() == expected.0);
+            assert!(p.id.raw() == *expected);
         }
     }
 
@@ -517,7 +513,7 @@ mod tests {
 
         let params = ThresholdParameters {
             participants: chain_infos,
-            threshold: Threshold(3),
+            threshold: Threshold::from(3),
         };
         let converted = convert_participant_infos(params.clone(), None)
             .unwrap()
@@ -544,17 +540,17 @@ mod tests {
             } else {
                 new_entries.push((
                     account_id.clone(),
-                    ParticipantId(new_entries.len() as u32),
+                    ParticipantId::from(new_entries.len() as u32),
                     bad_data.clone(),
                 ));
             }
             let new_infos = Participants {
-                next_id: ParticipantId(new_entries.len() as u32),
+                next_id: ParticipantId::from(new_entries.len() as u32),
                 participants: new_entries,
             };
             let params = ThresholdParameters {
                 participants: new_infos,
-                threshold: Threshold(3),
+                threshold: Threshold::from(3),
             };
             print!("\n\nmy params: \n{:?}\n", params);
             let converted = convert_participant_infos(params, None);

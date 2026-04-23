@@ -97,7 +97,7 @@ fn get_epoch_data(db: &Arc<SecretDB>) -> anyhow::Result<Option<EpochDataWrapper>
             .try_into()
             .inspect_err(|bytes| tracing::error!("PREVIOUS EPOCH_ID ENTRY NOT u64: {:?}", bytes))?;
         let epoch_id_number = u64::from_be_bytes(bytes_array);
-        let epoch_id = EpochId::new(epoch_id_number);
+        let epoch_id = EpochId::from(epoch_id_number);
         return Ok(Some(EpochDataWrapper::Legacy(epoch_id)));
     };
     anyhow::bail!("Can't deserialize EPOCH_ID entry: {:?}", db_res);

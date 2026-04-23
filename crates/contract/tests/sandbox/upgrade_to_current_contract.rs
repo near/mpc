@@ -47,7 +47,7 @@ async fn init_old_contract(
     let (accounts, participants) = gen_accounts(worker, number_of_participants).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
-    let threshold = Threshold::new(threshold);
+    let threshold = Threshold::from(threshold);
     let threshold_parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
 
     contract
@@ -464,14 +464,14 @@ async fn init_running_rejects_external_callers_pre_initialization() {
 
     let threshold_parameters = ThresholdParameters::new(
         participants.clone(),
-        Threshold::new(number_of_participants as u64),
+        Threshold::from(number_of_participants as u64),
     )
     .unwrap();
 
     let init_running_args = serde_json::json!({
             "domains": [],
             "next_domain_id": 0,
-            "keyset": Keyset::new(EpochId::new(2), vec![]),
+            "keyset": Keyset::new(EpochId::from(2), vec![]),
             "parameters": threshold_parameters,
     });
 

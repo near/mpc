@@ -9,7 +9,7 @@ const TWEAK_DERIVATION_PREFIX: &str = "near-mpc-recovery v0.1.0 epsilon derivati
 
 pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
     let hash: [u8; 32] = derive_from_path(TWEAK_DERIVATION_PREFIX, predecessor_id, path);
-    Tweak::new(hash)
+    Tweak::from(hash)
 }
 
 // Constant prefix that ensures app_id derivation values are used specifically for

@@ -34,6 +34,7 @@ use super::primitives::DomainId;
     derive_more::Into,
     derive_more::AsRef,
     derive_more::Display,
+    derive_more::Deref,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -59,6 +60,7 @@ pub struct EpochId(pub u64);
     derive_more::Into,
     derive_more::AsRef,
     derive_more::Display,
+    derive_more::Deref,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

@@ -20,22 +20,13 @@ use crate::Bls12381G1PublicKey;
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
+    derive_more::Deref,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct Tweak(pub [u8; 32]);
-
-impl Tweak {
-    pub fn as_bytes(&self) -> [u8; 32] {
-        self.0
-    }
-
-    pub fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-}
+pub struct Tweak([u8; 32]);
 
 /// AppId for CKD
 #[derive(

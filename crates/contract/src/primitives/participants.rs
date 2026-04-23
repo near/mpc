@@ -35,7 +35,7 @@ impl Default for Participants {
 impl Participants {
     pub fn new() -> Self {
         Participants {
-            next_id: ParticipantId(0),
+            next_id: ParticipantId::from(0),
             participants: Vec::new(),
         }
     }
@@ -62,7 +62,7 @@ impl Participants {
             return Err(InvalidParameters::ParticipantAlreadyUsed.into());
         }
         self.participants.push((account_id.clone(), id, info));
-        self.next_id.0 = id.0 + 1;
+        self.next_id = id.next();
         Ok(())
     }
 
@@ -88,10 +88,10 @@ impl Participants {
         for (acc_id, pid, _) in &self.participants {
             accounts.insert(acc_id.clone());
             ids.insert(*pid);
-            if self.next_id.get() <= pid.get() {
+            if self.next_id <= *pid {
                 return Err(InvalidCandidateSet::ParticipantIdNotLessThanNextId {
-                    id: pid.get(),
-                    next_id: self.next_id.get(),
+                    id: **pid,
+                    next_id: *self.next_id,
                 }
                 .into());
             }
@@ -225,18 +225,22 @@ pub mod tests {
                 .unwrap();
             assert_eq!(*participants.info(account_id).unwrap(), info.clone());
             assert_eq!(
-                participants.account_id(&ParticipantId(idx as u32)).unwrap(),
+                participants
+                    .account_id(&ParticipantId::from(idx as u32))
+                    .unwrap(),
                 *account_id
             );
             assert_eq!(
                 participants.id(account_id).unwrap(),
-                ParticipantId(idx as u32)
+                ParticipantId::from(idx as u32)
             );
             assert!(participants.is_participant_given_account_id(account_id));
         }
         assert_eq!(participants.len(), n);
         for i in 0..n {
-            let _ = participants.account_id(&ParticipantId(i as u32)).unwrap();
+            let _ = participants
+                .account_id(&ParticipantId::from(i as u32))
+                .unwrap();
         }
         participants
             .validate()
@@ -248,10 +252,10 @@ pub mod tests {
         let (account1, info1) = gen_participant(0);
         let (account2, info2) = gen_participant(1);
         let participants = Participants::init(
-            ParticipantId(2),
+            ParticipantId::from(2),
             vec![
-                (account1, ParticipantId(0), info1),
-                (account2, ParticipantId(0), info2), // same ID
+                (account1, ParticipantId::from(0), info1),
+                (account2, ParticipantId::from(0), info2), // same ID
             ],
         );
         assert_eq!(
@@ -265,10 +269,10 @@ pub mod tests {
         let (account, info1) = gen_participant(0);
         let (_, info2) = gen_participant(1);
         let participants = Participants::init(
-            ParticipantId(2),
+            ParticipantId::from(2),
             vec![
-                (account.clone(), ParticipantId(0), info1),
-                (account, ParticipantId(1), info2), // same account
+                (account.clone(), ParticipantId::from(0), info1),
+                (account, ParticipantId::from(1), info2), // same account
             ],
         );
         assert_eq!(
@@ -281,8 +285,8 @@ pub mod tests {
     fn test_validate_participant_id_not_less_than_next_id() {
         let (account, info) = gen_participant(0);
         let participants = Participants::init(
-            ParticipantId(0), // next_id = 0, but participant has id = 0
-            vec![(account, ParticipantId(0), info)],
+            ParticipantId::from(0), // next_id = 0, but participant has id = 0
+            vec![(account, ParticipantId::from(0), info)],
         );
         assert_eq!(
             participants.validate().unwrap_err(),
@@ -291,8 +295,10 @@ pub mod tests {
 
         // Also test with id > next_id
         let (account2, info2) = gen_participant(1);
-        let participants =
-            Participants::init(ParticipantId(3), vec![(account2, ParticipantId(5), info2)]);
+        let participants = Participants::init(
+            ParticipantId::from(3),
+            vec![(account2, ParticipantId::from(5), info2)],
+        );
         assert_eq!(
             participants.validate().unwrap_err(),
             Error::from(InvalidCandidateSet::ParticipantIdNotLessThanNextId { id: 5, next_id: 3 })

@@ -145,7 +145,7 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let n: usize = rand::thread_rng().gen_range(2..max_n + 1);
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
-    ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+    ThresholdParameters::new(gen_participants(n), Threshold::from(k as u64)).unwrap()
 }
 
 /// Infer a default purpose from the curve.

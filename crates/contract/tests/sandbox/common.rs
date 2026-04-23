@@ -103,7 +103,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 
 /// Creates threshold parameters with 60% threshold (rounded up).
 pub fn make_threshold_params(participants: &Participants) -> ThresholdParameters {
-    let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
+    let threshold = Threshold::from(((participants.len() as f64) * 0.6).ceil() as u64);
     ThresholdParameters::new(participants.clone(), threshold).unwrap()
 }
 
@@ -233,7 +233,7 @@ impl SandboxTestSetupBuilder {
             });
             domain_configs.push(config);
             key_for_domains.push(KeyForDomain {
-                attempt: AttemptId::new(),
+                attempt: AttemptId::default(),
                 domain_id,
                 key,
             });
@@ -257,7 +257,7 @@ impl SandboxTestSetupBuilder {
             });
             domain_configs.push(config);
             key_for_domains.push(KeyForDomain {
-                attempt: AttemptId::new(),
+                attempt: AttemptId::default(),
                 domain_id,
                 key,
             });
@@ -265,7 +265,7 @@ impl SandboxTestSetupBuilder {
 
         if !domain_configs.is_empty() {
             let next_domain_id = domain_configs.len() as u64;
-            let keyset = Keyset::new(EpochId::new(5), key_for_domains);
+            let keyset = Keyset::new(EpochId::from(5), key_for_domains);
             init_contract_running(
                 &contract,
                 domain_configs,
@@ -517,7 +517,7 @@ pub async fn call_contract_key_generation<const N: usize>(
     let state: ProtocolContractState = get_state(contract).await;
     match state {
         ProtocolContractState::Running(state) => {
-            assert_eq!(state.keyset.epoch_id.0, expected_epoch_id);
+            assert_eq!(*state.keyset.epoch_id, expected_epoch_id);
             assert_eq!(
                 state.domains.domains.len(),
                 domains_to_add.len() + existing_domains
@@ -550,7 +550,7 @@ pub async fn execute_key_generation_and_add_random_state(
 
     // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     let dummy_threshold_parameters =
-        ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
+        ThresholdParameters::new(participants, Threshold::from(*threshold + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
         "proposal": OldThresholdParameters::from(&dummy_threshold_parameters),

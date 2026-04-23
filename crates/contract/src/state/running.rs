@@ -146,7 +146,7 @@ impl RunningContractState {
             let n_votes = self
                 .parameters_votes
                 .n_votes(proposal, self.parameters.participants());
-            if n_votes < self.parameters.threshold().value() {
+            if n_votes < *self.parameters.threshold() {
                 return Err(VoteError::VoterPending.into());
             }
         }
@@ -223,7 +223,7 @@ pub mod running_tests {
         println!(
             "Participants: {}, threshold: {}",
             state.parameters.participants().len(),
-            state.parameters.threshold().value()
+            *state.parameters.threshold()
         );
         let mut env = Environment::new(None, None, None);
         let participants = state.parameters.participants().clone();

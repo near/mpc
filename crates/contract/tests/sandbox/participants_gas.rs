@@ -277,11 +277,11 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         let (dto_pk, _) = new_secp256k1();
         let public_key: PublicKeyExtended = dto_pk.try_into().unwrap();
         let key = KeyForDomain {
-            attempt: AttemptId::new(),
+            attempt: AttemptId::default(),
             domain_id,
             key: public_key,
         };
-        let keyset = Keyset::new(EpochId::new(1), vec![key]);
+        let keyset = Keyset::new(EpochId::from(1), vec![key]);
         let domains = vec![domain];
         let next_domain_id = domains.len() as u64 + 1;
         init_contract_running(&contract, domains, next_domain_id, keyset, threshold_params).await;

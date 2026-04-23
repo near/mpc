@@ -12,7 +12,7 @@ const THRESHOLD: usize = 2;
 
 pub fn make_key_id(epoch_id: u64, domain_id: u64, attempt_id: u64) -> KeyEventId {
     KeyEventId::new(
-        EpochId::new(epoch_id),
+        EpochId::from(epoch_id),
         DomainId(domain_id),
         serde_json::from_str(&format!("{}", attempt_id)).unwrap(),
     )
@@ -87,7 +87,7 @@ fn permanent_keyshare_from_keyshares(
     epoch_id: u64,
     keyshares: &[Keyshare],
 ) -> PermanentKeyshareData {
-    PermanentKeyshareData::new(EpochId::new(epoch_id), keyshares.to_vec())
+    PermanentKeyshareData::new(EpochId::from(epoch_id), keyshares.to_vec())
         .expect("test keyshares should be consistent")
 }
 
@@ -103,7 +103,7 @@ fn keyset_from_keyshares(epoch_id: u64, keyshares: &[Keyshare]) -> Keyset {
             }
         })
         .collect();
-    Keyset::new(EpochId::new(epoch_id), keys)
+    Keyset::new(EpochId::from(epoch_id), keys)
 }
 
 #[derive(Clone)]

@@ -352,7 +352,7 @@ impl MpcInitContractCmd {
                 .unwrap();
         }
         let parameters =
-            ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
+            ThresholdParameters::new(participants, Threshold::from(self.threshold)).unwrap();
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
             init_config: near_mpc_contract_interface::types::InitConfig::default(),
@@ -725,7 +725,7 @@ impl MpcVoteNewParametersCmd {
                 .unwrap();
         }
         let threshold = if let Some(threshold) = self.set_threshold {
-            Threshold::new(threshold)
+            Threshold::from(threshold)
         } else {
             parameters.threshold()
         };
@@ -799,7 +799,7 @@ impl MpcVoteApprovedHashCmd {
             }
         };
 
-        let threshold: u64 = running_state.parameters.threshold().value();
+        let threshold: u64 = *running_state.parameters.threshold();
         let accounts = get_voter_account_ids(mpc_setup, &self.voters);
         let mut voting_futures = vec![];
 

@@ -30,7 +30,7 @@ pub async fn conclude_resharing(
         let key_event_id = KeyEventId {
             epoch_id: prospective_epoch_id,
             domain_id: domain_config.id,
-            attempt_id: AttemptId(0),
+            attempt_id: AttemptId::from(0),
         };
         let state = get_state(contract).await;
         if !matches!(state, ProtocolContractState::Resharing(_)) {

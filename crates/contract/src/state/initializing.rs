@@ -124,11 +124,7 @@ impl InitializingContractState {
         let participant = AuthenticatedParticipantId::new(
             self.generating_key.proposed_parameters().participants(),
         )?;
-        let required_threshold = self
-            .generating_key
-            .proposed_parameters()
-            .threshold()
-            .value() as usize;
+        let required_threshold = *self.generating_key.proposed_parameters().threshold() as usize;
         if self.cancel_votes.insert(participant) && self.cancel_votes.len() >= required_threshold {
             let mut domains = self.domains.clone();
             domains.retain_domains(self.generated_keys.len());
@@ -182,7 +178,7 @@ pub mod tests {
             println!("Testing domain {}", i);
             assert!(!state.generating_key.is_active());
             let first_key_event_id = KeyEventId {
-                attempt_id: AttemptId::new(),
+                attempt_id: AttemptId::default(),
                 domain_id: state.domains.get_domain_by_index(i).unwrap().id,
                 epoch_id: state.epoch_id,
             };
@@ -339,7 +335,7 @@ pub mod tests {
         let leader = find_leader(&state.generating_key);
         env.set_signer(&leader.0);
         let first_key_event_id = KeyEventId {
-            attempt_id: AttemptId::new(),
+            attempt_id: AttemptId::default(),
             domain_id: state.domains.get_domain_by_index(2).unwrap().id,
             epoch_id: state.epoch_id,
         };
@@ -352,11 +348,7 @@ pub mod tests {
             .participants()
             .participants()
             .clone();
-        let threshold = state
-            .generating_key
-            .proposed_parameters()
-            .threshold()
-            .value() as usize;
+        let threshold = *state.generating_key.proposed_parameters().threshold() as usize;
         for (account, _, _) in &participants {
             env.set_signer(account);
             state.vote_pk(first_key_event_id, pk.clone()).unwrap();

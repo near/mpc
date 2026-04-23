@@ -12,10 +12,7 @@ fn params_to_string(output: &mut String, parameters: &ThresholdParameters) {
     for (account_id, id, info) in parameters.participants().participants() {
         output.push_str(&format!("      ID {}: {} ({})\n", id, account_id, info.url));
     }
-    output.push_str(&format!(
-        "    Threshold: {}\n",
-        parameters.threshold().value()
-    ));
+    output.push_str(&format!("    Threshold: {}\n", *parameters.threshold()));
 }
 
 pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> String {

@@ -87,7 +87,7 @@ impl TestSetupBuilder {
         let participants = gen_participants(participant_count);
         let participants_list = participants.participants().clone();
 
-        let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
+        let parameters = ThresholdParameters::new(participants, Threshold::from(threshold))
             .expect("Failed to create threshold parameters");
 
         // Construct dummy keys for setup
@@ -95,11 +95,11 @@ impl TestSetupBuilder {
             near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1u8; 64]).unwrap();
 
         let keyset = Keyset::new(
-            EpochId::new(5),
+            EpochId::from(5),
             vec![KeyForDomain {
                 domain_id: DomainId::default(),
                 key: PublicKeyExtended::Secp256k1 { near_public_key },
-                attempt: AttemptId::new(),
+                attempt: AttemptId::default(),
             }],
         );
 
@@ -184,7 +184,7 @@ impl TestSetupBuilder {
 
                     setup
                         .contract
-                        .vote_new_parameters(EpochId::new(6), parameters.clone().into())
+                        .vote_new_parameters(EpochId::from(6), parameters.clone().into())
                         .unwrap();
                 }
 

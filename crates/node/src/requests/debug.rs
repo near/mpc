@@ -288,7 +288,7 @@ mod tests {
                     id: CryptoHash(rand::random()),
                     receipt_id: CryptoHash(rand::random()),
                     payload: Payload::from_legacy_ecdsa([0; 32]),
-                    tweak: Tweak::new([0; 32]),
+                    tweak: Tweak::from([0; 32]),
                     entropy: Default::default(),
                     timestamp_nanosec: Default::default(),
                     domain: DomainId::legacy_ecdsa_id(),

@@ -38,7 +38,7 @@ impl KeyEvent {
             domain,
             parameters: proposed_parameters,
             instance: None,
-            next_attempt_id: AttemptId::new(),
+            next_attempt_id: AttemptId::default(),
         }
     }
 

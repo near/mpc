@@ -106,7 +106,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     for (account_id, participant_id, participant_info) in initial_participants
         .participants
         .iter()
-        .take(threshold.0 as usize)
+        .take(*threshold as usize)
     {
         new_participants
             .insert_with_id(
@@ -115,7 +115,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
                     url: participant_info.url.clone(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
+                *participant_id,
             )
             .expect("Failed to insert participant");
     }
@@ -123,14 +123,14 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     let post_reshare_participants = build_sandbox_node_ids(&new_participants, &mpc_signer_accounts);
     let new_threshold_parameters = ThresholdParameters::new(
         new_participants,
-        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+        mpc_contract::primitives::thresholds::Threshold::from(*threshold),
     )
     .unwrap();
 
     let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
-        &mpc_signer_accounts[..threshold.0 as usize],
+        &mpc_signer_accounts[..*threshold as usize],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
@@ -217,7 +217,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
     for (account_id, participant_id, participant_info) in initial_participants
         .participants
         .iter()
-        .take(threshold.0 as usize)
+        .take(*threshold as usize)
     {
         new_participants
             .insert_with_id(
@@ -226,17 +226,17 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
                     url: participant_info.url.clone(),
                     tls_public_key: participant_info.tls_public_key.clone(),
                 },
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
+                *participant_id,
             )
             .expect("Failed to insert participant");
     }
     let new_threshold_parameters = ThresholdParameters::new(
         new_participants,
-        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+        mpc_contract::primitives::thresholds::Threshold::from(*threshold),
     )
     .unwrap();
     do_resharing(
-        &mpc_signer_accounts[..threshold.0 as usize],
+        &mpc_signer_accounts[..*threshold as usize],
         &contract,
         new_threshold_parameters,
         dtos::EpochId(6),

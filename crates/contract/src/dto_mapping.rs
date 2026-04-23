@@ -580,13 +580,13 @@ mod from_dto {
 
     impl From<dtos::EpochId> for EpochId {
         fn from(id: dtos::EpochId) -> Self {
-            EpochId::new(id.0)
+            EpochId::from(id.0)
         }
     }
 
     impl From<dtos::AttemptId> for AttemptId {
         fn from(id: dtos::AttemptId) -> Self {
-            AttemptId::from_u64(id.0)
+            AttemptId::from(id.0)
         }
     }
 
@@ -635,13 +635,13 @@ mod to_dto {
 
     impl From<EpochId> for dtos::EpochId {
         fn from(id: EpochId) -> Self {
-            dtos::EpochId(id.get())
+            dtos::EpochId(*id)
         }
     }
 
     impl From<AttemptId> for dtos::AttemptId {
         fn from(id: AttemptId) -> Self {
-            dtos::AttemptId(id.get())
+            dtos::AttemptId(*id)
         }
     }
 
@@ -700,25 +700,25 @@ mod to_dto {
 
 impl IntoInterfaceType<dtos::EpochId> for EpochId {
     fn into_dto_type(self) -> dtos::EpochId {
-        dtos::EpochId(self.get())
+        dtos::EpochId(*self)
     }
 }
 
 impl IntoInterfaceType<dtos::AttemptId> for AttemptId {
     fn into_dto_type(self) -> dtos::AttemptId {
-        dtos::AttemptId(self.get())
+        dtos::AttemptId(*self)
     }
 }
 
 impl IntoInterfaceType<dtos::AuthenticatedParticipantId> for &AuthenticatedParticipantId {
     fn into_dto_type(self) -> dtos::AuthenticatedParticipantId {
-        dtos::AuthenticatedParticipantId(self.get())
+        dtos::AuthenticatedParticipantId(**self)
     }
 }
 
 impl IntoInterfaceType<dtos::AuthenticatedAccountId> for &AuthenticatedAccountId {
     fn into_dto_type(self) -> dtos::AuthenticatedAccountId {
-        dtos::AuthenticatedAccountId(self.get().clone())
+        dtos::AuthenticatedAccountId((**self).clone())
     }
 }
 
@@ -796,7 +796,7 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
             .map(|(account_id, participant_id, info)| {
                 (
                     account_id.clone(),
-                    dtos::ParticipantId(participant_id.get()),
+                    *participant_id,
                     dtos::ParticipantInfo {
                         url: info.url.clone(),
                         tls_public_key: info.tls_public_key.clone(),
@@ -805,7 +805,7 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
             })
             .collect();
         dtos::Participants {
-            next_id: dtos::ParticipantId(self.next_id().get()),
+            next_id: self.next_id(),
             participants,
         }
     }
@@ -1019,7 +1019,7 @@ mod tests {
     #[test]
     fn threshold_parameters_serde_is_compatible_with_dto() {
         let internal =
-            ThresholdParameters::new(test_participants(), Threshold::new(TEST_THRESHOLD)).unwrap();
+            ThresholdParameters::new(test_participants(), Threshold::from(TEST_THRESHOLD)).unwrap();
         let json = serde_json::to_value(&internal).unwrap();
 
         let dto: dtos::ThresholdParameters = serde_json::from_value(json.clone()).unwrap();
@@ -1036,7 +1036,7 @@ mod tests {
     #[test]
     fn into_dto_type_preserves_serialization() {
         let internal =
-            ThresholdParameters::new(test_participants(), Threshold::new(TEST_THRESHOLD)).unwrap();
+            ThresholdParameters::new(test_participants(), Threshold::from(TEST_THRESHOLD)).unwrap();
         let internal_json = serde_json::to_value(&internal).unwrap();
 
         let dto: dtos::ThresholdParameters = (&internal).into_dto_type();

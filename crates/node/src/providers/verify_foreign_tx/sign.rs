@@ -40,7 +40,7 @@ fn build_signature_request(
         id: request.id,
         receipt_id: request.receipt_id,
         payload: Payload::Ecdsa(payload_bytes),
-        tweak: Tweak::new([0u8; 32]),
+        tweak: Tweak::from([0u8; 32]),
         entropy: request.entropy,
         timestamp_nanosec: request.timestamp_nanosec,
         domain: request.domain_id,

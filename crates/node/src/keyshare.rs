@@ -136,11 +136,11 @@ impl KeyshareStorage {
                     already_generated_keys,
                 )?;
                 Some(permanent)
-            } else if permanent.epoch_id().get() > epoch_id.get() {
+            } else if *permanent.epoch_id() > *epoch_id {
                 anyhow::bail!(
                     "Permanent key storage has epoch ID {} which is newer than {}",
-                    permanent.epoch_id().get(),
-                    epoch_id.get()
+                    *permanent.epoch_id(),
+                    *epoch_id
                 );
             } else {
                 None
@@ -178,11 +178,11 @@ impl KeyshareStorage {
         let permanent = self.permanent.load().await?;
         let epoch_id = key_id_to_generate.epoch_id;
         if let Some(permanent) = permanent {
-            if permanent.epoch_id().get() >= epoch_id.get() {
+            if *permanent.epoch_id() >= *epoch_id {
                 anyhow::bail!(
                     "Permanent key storage has epoch ID {} which is not older than {}",
-                    permanent.epoch_id().get(),
-                    epoch_id.get()
+                    *permanent.epoch_id(),
+                    *epoch_id
                 );
             }
         }
@@ -620,13 +620,17 @@ pub mod tests {
 
         // Store some more keyshares as part of resharing, for epoch 1.
         let key_1_epoch_1 = Keyshare {
-            key_id: KeyEventId::new(EpochId::new(1), DomainId(1), AttemptId::new().next()),
+            key_id: KeyEventId::new(EpochId::from(1), DomainId(1), AttemptId::default().next()),
             data: key_1_epoch_0_alternate.data.clone(),
         };
         let key_1_epoch_1_invalid = generate_dummy_keyshare(1, 1, 2, &mut rng);
         let key_2_epoch_1_invalid = generate_dummy_keyshare(1, 2, 1, &mut rng);
         let key_2_epoch_1 = Keyshare {
-            key_id: KeyEventId::new(EpochId::new(1), DomainId(2), AttemptId::new().next().next()),
+            key_id: KeyEventId::new(
+                EpochId::from(1),
+                DomainId(2),
+                AttemptId::default().next().next(),
+            ),
             data: key_2_epoch_0_alternate.data.clone(),
         };
 
@@ -920,9 +924,9 @@ pub mod tests {
 
         let previous_key_1 = Keyshare {
             key_id: KeyEventId::new(
-                EpochId::new(previous_epoch),
+                EpochId::from(previous_epoch),
                 DomainId(1),
-                AttemptId::new().next(),
+                AttemptId::default().next(),
             ),
             data: previous_key_1.data,
         };

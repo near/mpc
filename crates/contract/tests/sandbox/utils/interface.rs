@@ -19,7 +19,7 @@ impl IntoContractType<Participants> for &dtos::Participants {
                         url: info.url.clone(),
                         tls_public_key: info.tls_public_key.clone(),
                     },
-                    mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
+                    *participant_id,
                 )
                 .unwrap();
         }
@@ -34,7 +34,7 @@ impl IntoContractType<mpc_contract::primitives::thresholds::ThresholdParameters>
         let participants: Participants = (&self.participants).into_contract_type();
         mpc_contract::primitives::thresholds::ThresholdParameters::new(
             participants,
-            mpc_contract::primitives::thresholds::Threshold::new(self.threshold.0),
+            mpc_contract::primitives::thresholds::Threshold::from(*self.threshold),
         )
         .unwrap()
     }

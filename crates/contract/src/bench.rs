@@ -89,7 +89,7 @@ impl MpcContract {
     pub fn bench_participants_insert(&mut self) -> usize {
         let participants = self.protocol_state.active_participants_mut();
         let next_id = participants.next_id();
-        let account_id: AccountId = format!("bench-participant-{}.near", next_id.0)
+        let account_id: AccountId = format!("bench-participant-{}.near", *next_id)
             .parse()
             .unwrap();
         let info = ParticipantInfo {

@@ -79,7 +79,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     let key_event_id = KeyEventId {
         epoch_id,
         domain_id: dtos::DomainId(domain_id),
-        attempt_id: AttemptId(0),
+        attempt_id: AttemptId::from(0),
     };
     start_keygen_instance(&contract, &mpc_signer_accounts, key_event_id)
         .await
@@ -145,10 +145,10 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
     let ProtocolContractState::Running(ref init_running) = init_state else {
         panic!("expected running state");
     };
-    let epoch_id: u64 = init_running.keyset.epoch_id.0;
+    let epoch_id: u64 = *init_running.keyset.epoch_id;
     let mut next_domain_id: u64 = init_running.domains.next_domain_id;
     for curve in ALL_CURVES {
-        let threshold = init_running.parameters.threshold.0 as usize;
+        let threshold = *init_running.parameters.threshold as usize;
 
         // vote to start key generation
         vote_add_domains(
@@ -222,7 +222,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         );
 
         // assert that the epoch id did not change
-        assert_eq!(running.keyset.epoch_id.0, epoch_id);
+        assert_eq!(*running.keyset.epoch_id, epoch_id);
         assert_eq!(running.domains.next_domain_id, next_domain_id + 1);
         next_domain_id += 1;
     }
@@ -351,7 +351,7 @@ async fn setup_resharing_state(
         .insert(new_account_id.clone(), new_participant_info)
         .unwrap();
     let proposal =
-        ThresholdParameters::new(new_participants, Threshold::new(threshold.0 + 1)).unwrap();
+        ThresholdParameters::new(new_participants, Threshold::from(*threshold + 1)).unwrap();
 
     let prospective_epoch_id = dtos::EpochId(
         initial_running_state
@@ -405,7 +405,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
+    let initial_threshold = *initial_running_state.parameters.threshold as usize;
     assert_ne!(
         initial_threshold,
         1,
@@ -470,7 +470,7 @@ async fn test_cancel_resharing_requires_threshold_votes(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
+    let initial_threshold = *initial_running_state.parameters.threshold as usize;
 
     // Vote with less than threshold (threshold - 1)
     vote_cancel_reshaing(
@@ -544,7 +544,7 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
+    let initial_threshold = *initial_running_state.parameters.threshold as usize;
 
     // Vote for cancellation with threshold of previous running participants
     vote_cancel_reshaing(&contract, &persistent_participants[0..initial_threshold])
@@ -603,7 +603,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
     // Cancel the resharing
     vote_cancel_reshaing(
         &contract,
-        &persistent_participants[0..initial_threshold.0 as usize],
+        &persistent_participants[0..*initial_threshold as usize],
     )
     .await
     .unwrap();
@@ -686,7 +686,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     // Step 1: Cancel the resharing
     vote_cancel_reshaing(
         &contract,
-        &persistent_participants[0..initial_threshold.0 as usize],
+        &persistent_participants[0..*initial_threshold as usize],
     )
     .await
     .unwrap();
@@ -785,7 +785,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         .unwrap();
 
     let threshold_parameters =
-        ThresholdParameters::new(proposed_participants, Threshold::new(threshold.0 + 1)).unwrap();
+        ThresholdParameters::new(proposed_participants, Threshold::from(*threshold + 1)).unwrap();
 
     mpc_signer_accounts.push(new_account.clone());
 
@@ -795,7 +795,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
             .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
             .max_gas()
             .args_json(json!({
-                "prospective_epoch_id": dtos::EpochId(epoch_id.0 + 1),
+                "prospective_epoch_id": dtos::EpochId(*epoch_id + 1),
                 "proposal": threshold_parameters,
             }))
             .transact()

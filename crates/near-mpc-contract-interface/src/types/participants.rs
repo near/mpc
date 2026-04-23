@@ -59,10 +59,10 @@ mod tests {
     #[test]
     fn test_serialize_outputs_vec_format() {
         let participants_json = Participants {
-            next_id: ParticipantId(1),
+            next_id: ParticipantId::from(1),
             participants: vec![(
                 "alice.near".parse().unwrap(),
-                ParticipantId(0),
+                ParticipantId::from(0),
                 ParticipantInfo {
                     url: "https://alice.com".to_string(),
                     tls_public_key: test_key(),
@@ -86,10 +86,10 @@ mod tests {
         assert_eq!(
             deserialized,
             Participants {
-                next_id: ParticipantId(1),
+                next_id: ParticipantId::from(1),
                 participants: vec![(
                     "alice.near".parse().unwrap(),
-                    ParticipantId(0),
+                    ParticipantId::from(0),
                     ParticipantInfo {
                         url: "https://alice.com".to_string(),
                         tls_public_key: test_key(),

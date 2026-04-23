@@ -378,7 +378,7 @@ impl MpcCluster {
         let participants =
             build_participants_from_nodes(new_participants, &self.nodes, current_participants);
         let proposal = ThresholdParameters {
-            threshold: Threshold(new_threshold as u64),
+            threshold: Threshold::from(new_threshold as u64),
             participants,
         };
 
@@ -831,7 +831,7 @@ async fn init_contract(
 ) -> anyhow::Result<()> {
     let participants = build_participants(participant_indices, p2p_keys, ports);
     let params = ThresholdParameters {
-        threshold: Threshold(threshold as u64),
+        threshold: Threshold::from(threshold as u64),
         participants,
     };
 
@@ -986,7 +986,7 @@ fn build_participants(
         let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&p2p_keys[i].verifying_key());
         list.push((
             account_id,
-            ParticipantId(participant_id as u32),
+            ParticipantId::from(participant_id as u32),
             ParticipantInfo {
                 url: format!("http://127.0.0.1:{}", ports.p2p_port(i)),
                 tls_public_key: pubkey,
@@ -994,7 +994,7 @@ fn build_participants(
         ));
     }
     Participants {
-        next_id: ParticipantId(indices.len() as u32),
+        next_id: ParticipantId::from(indices.len() as u32),
         participants: list,
     }
 }
@@ -1017,7 +1017,7 @@ fn build_participants_from_nodes(
             .map(|(_, id, _)| *id)
             .unwrap_or_else(|| {
                 let id = next_id;
-                next_id = ParticipantId(next_id.0 + 1);
+                next_id = next_id.next();
                 id
             });
         list.push((

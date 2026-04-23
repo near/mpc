@@ -991,7 +991,7 @@ impl MpcContract {
         };
 
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let voter = voter.get().clone();
+        let voter = (*voter).clone();
 
         // Also register the chain keys as configured,
         // so callers of the deprecated API still populate the new data model.
@@ -1040,7 +1040,7 @@ impl MpcContract {
 
         let authenticated_voter =
             AuthenticatedAccountId::new(running_state.parameters.participants())?;
-        let account_id = authenticated_voter.get().clone();
+        let account_id = (*authenticated_voter).clone();
 
         self.node_foreign_chain_configurations
             .foreign_chain_configuration_by_node
@@ -1336,7 +1336,7 @@ impl MpcContract {
             .count();
 
         // Not enough votes from current participants, wait for more.
-        if (valid_votes_count as u64) < threshold.value() {
+        if (valid_votes_count as u64) < *threshold {
             return Ok(false);
         }
 
@@ -1387,7 +1387,7 @@ impl MpcContract {
 
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
-        if votes >= self.threshold()?.value() {
+        if votes >= *self.threshold()? {
             self.tee_state
                 .whitelist_tee_proposal(code_hash, tee_upgrade_deadline_duration);
         }
@@ -1424,7 +1424,7 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        if votes >= self.threshold()?.value() {
+        if votes >= *self.threshold()? {
             let added = self
                 .tee_state
                 .add_launcher_image(launcher_hash, tee_upgrade_deadline_duration);
@@ -1493,7 +1493,7 @@ impl MpcContract {
         let action = MeasurementVoteAction::Add(measurement.clone());
         let votes = self.tee_state.vote_measurement(action, &participant);
 
-        if votes >= self.threshold()?.value() {
+        if votes >= *self.threshold()? {
             let added = self.tee_state.add_measurement(measurement);
             log!("OS measurement add result: {}", added);
         }
@@ -1586,7 +1586,7 @@ impl MpcContract {
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
             } => {
-                let threshold = current_params.threshold().value() as usize;
+                let threshold = *current_params.threshold() as usize;
                 let remaining = participants_with_valid_attestation.len();
                 if threshold > remaining {
                     log!(
@@ -1608,7 +1608,7 @@ impl MpcContract {
 
                 let threshold_parameters = ThresholdParameters::new(
                     participants_with_valid_attestation,
-                    Threshold::new(new_threshold as u64),
+                    Threshold::from(new_threshold as u64),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
@@ -1766,7 +1766,7 @@ impl MpcContract {
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
-                Keyset::new(EpochId::new(0), Vec::new()),
+                Keyset::new(EpochId::from(0), Vec::new()),
                 parameters,
                 AddDomainsVotes::default(),
             )),
@@ -1808,7 +1808,7 @@ impl MpcContract {
             domains,
             keyset,
             parameters.participants().len(),
-            parameters.threshold().value(),
+            *parameters.threshold(),
             params_hash,
             init_config,
         );
@@ -2462,7 +2462,7 @@ mod tests {
     }
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
-        let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
+        let tweak = k256::Scalar::from_repr((*tweak.as_ref()).into()).unwrap();
         k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
     }
 
@@ -2571,15 +2571,15 @@ mod tests {
             curve,
             purpose,
         }];
-        let epoch_id = EpochId::new(0);
+        let epoch_id = EpochId::from(0);
         let (pk, sk) = make_public_key_for_domain(curve, rng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
-            attempt: AttemptId::new(),
+            attempt: AttemptId::default(),
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
-        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::from(3)).unwrap();
         let contract =
             MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
                 .unwrap();
@@ -3282,7 +3282,7 @@ mod tests {
             .build();
         testing_env!(context);
 
-        let threshold = Threshold::new(threshold_value);
+        let threshold = Threshold::from(threshold_value);
         let parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
         let contract = MpcContract::init((&parameters).into_dto_type(), None).unwrap();
 
@@ -3346,7 +3346,7 @@ mod tests {
         testing_env!(voting_context);
 
         let proposal = ThresholdParameters::new(participants, threshold).unwrap();
-        contract.vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
+        contract.vote_new_parameters(EpochId::from(1), (&proposal).into_dto_type())
     }
 
     /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants have
@@ -3356,7 +3356,7 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_with_default_tee_status() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = Threshold::new(2);
+        let threshold = Threshold::from(2);
 
         // No attestations submitted - all participants have default TEE status None
         let result = setup_voting_context_and_vote(
@@ -3378,7 +3378,7 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_when_all_participants_have_valid_tee() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = Threshold::new(2);
+        let threshold = Threshold::from(2);
 
         // Submit valid attestations for all participants
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
@@ -3405,7 +3405,7 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
-        let threshold = Threshold::new(3);
+        let threshold = Threshold::from(3);
 
         // Submit valid attestations for first 3 participants
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
@@ -4480,7 +4480,7 @@ mod tests {
         // given: a running state with 3 participants and threshold of 2
         let mut running_state = gen_running_state(1);
         running_state.parameters =
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap();
+            ThresholdParameters::new(gen_participants(3), Threshold::from(2)).unwrap();
 
         let participants = running_state.parameters.participants().participants();
         let participant_1 = participants[0].0.clone();
@@ -4637,7 +4637,8 @@ mod tests {
         const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
 
         let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(2)).unwrap();
+        let parameters =
+            ThresholdParameters::new(participants.clone(), Threshold::from(2)).unwrap();
 
         // Set up contract in Running state
         let domain_id = DomainId::default();
@@ -4650,9 +4651,9 @@ mod tests {
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
-            attempt: AttemptId::new(),
+            attempt: AttemptId::default(),
         };
-        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
+        let keyset = Keyset::new(EpochId::from(0), vec![key_for_domain.clone()]);
 
         let mut contract = MpcContract::init_running(
             domains.clone(),
@@ -4718,7 +4719,7 @@ mod tests {
 
         // Build expected participants: exclude the target (participant 2) who has expired attestation
         let expected_participants = Participants::init(
-            ParticipantId(PARTICIPANT_COUNT as u32),
+            ParticipantId::from(PARTICIPANT_COUNT as u32),
             participant_list[0..2]
                 .iter()
                 .map(|(acc, id, info)| (acc.clone(), *id, info.clone()))

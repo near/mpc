@@ -12,18 +12,14 @@ use std::fmt::Display;
 /// Locally on each node, each keyshare is uniquely identified by the tuple
 /// (EpochId, DomainId, AttemptId).
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord, derive_more::From, derive_more::Deref,
+)]
 pub struct EpochId(u64);
 
 impl EpochId {
     pub const fn next(&self) -> Self {
         EpochId(self.0 + 1)
-    }
-    pub const fn new(epoch_id: u64) -> Self {
-        EpochId(epoch_id)
-    }
-    pub fn get(&self) -> u64 {
-        self.0
     }
 }
 
@@ -34,32 +30,27 @@ impl Display for EpochId {
 }
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Hash,
+    PartialOrd,
+    Ord,
+    Default,
+    derive_more::From,
+    derive_more::Deref,
+)]
 pub struct AttemptId(u64);
 
 impl AttemptId {
-    pub fn new() -> Self {
-        AttemptId(0)
-    }
     pub fn next(&self) -> Self {
-        AttemptId(&self.0 + 1)
-    }
-    pub fn get(&self) -> u64 {
-        self.0
+        AttemptId(self.0 + 1)
     }
     pub fn legacy_attempt_id() -> Self {
         AttemptId(0)
-    }
-
-    // TODO(#381): Remove once the node no longer depends on the contract crate.
-    pub(crate) fn from_u64(val: u64) -> Self {
-        AttemptId(val)
-    }
-}
-
-impl Default for AttemptId {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -152,13 +143,9 @@ impl Keyset {
 /// a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the
 /// signer.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, derive_more::Deref)]
 pub struct AuthenticatedParticipantId(ParticipantId);
 impl AuthenticatedParticipantId {
-    pub fn get(&self) -> ParticipantId {
-        self.0
-    }
-
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
         participants
@@ -174,13 +161,9 @@ impl AuthenticatedParticipantId {
 /// set of participants that include the signer, thus acting as a typesystem-based enforcement
 /// mechanism (albeit a best-effort one) for authenticating the signer.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Deref)]
 pub struct AuthenticatedAccountId(AccountId);
 impl AuthenticatedAccountId {
-    pub fn get(&self) -> &AccountId {
-        &self.0
-    }
-
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id();
         if participants
@@ -213,16 +196,16 @@ pub mod tests {
     #[test]
     fn test_epoch_id() {
         let id = rand::thread_rng().gen();
-        let epoch_id = EpochId::new(id);
-        assert_eq!(epoch_id.get(), id);
-        assert_eq!(epoch_id.next().get(), id + 1);
+        let epoch_id = EpochId(id);
+        assert_eq!(*epoch_id, id);
+        assert_eq!(epoch_id.next().0, id + 1);
     }
 
     #[test]
     fn test_attempt_id() {
-        let attempt_id = AttemptId::new();
-        assert_eq!(attempt_id.get(), 0);
-        assert_eq!(attempt_id.next().get(), 1);
+        let attempt_id = AttemptId::default();
+        assert_eq!(*attempt_id, 0);
+        assert_eq!(attempt_id.next().0, 1);
     }
 
     #[test]
@@ -232,17 +215,17 @@ pub mod tests {
         let key0 = bogus_ed25519_public_key_extended();
         let key1 = bogus_ed25519_public_key_extended();
         let keyset = Keyset::new(
-            EpochId::new(5),
+            EpochId(5),
             vec![
                 KeyForDomain {
                     domain_id: domain_id0,
                     key: key0.clone(),
-                    attempt: AttemptId::new(),
+                    attempt: AttemptId::default(),
                 },
                 KeyForDomain {
                     domain_id: domain_id1,
                     key: key1.clone(),
-                    attempt: AttemptId::new(),
+                    attempt: AttemptId::default(),
                 },
             ],
         );

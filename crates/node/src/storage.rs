@@ -236,7 +236,7 @@ mod tests {
             entropy: [0; 32],
             payload: Payload::from_legacy_ecdsa([0; 32]),
             timestamp_nanosec: 0,
-            tweak: Tweak::new([0; 32]),
+            tweak: Tweak::from([0; 32]),
             domain: DomainId::legacy_ecdsa_id(),
         };
         assert!(storage.add(&req1));
@@ -252,7 +252,7 @@ mod tests {
             entropy: [0; 32],
             payload: Payload::from_legacy_ecdsa([0; 32]),
             timestamp_nanosec: 0,
-            tweak: Tweak::new([0; 32]),
+            tweak: Tweak::from([0; 32]),
             domain: DomainId::legacy_ecdsa_id(),
         };
         storage.add(&req2);

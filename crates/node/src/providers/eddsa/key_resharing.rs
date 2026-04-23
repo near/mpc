@@ -134,9 +134,9 @@ mod tests {
                 let pubkey = keygens.iter().next().unwrap().1.clone().public_key;
                 let old_participants = old_participants.clone();
                 let key_id = KeyEventId {
-                    epoch_id: EpochId(42),
+                    epoch_id: EpochId::from(42),
                     domain_id: DomainId(0),
-                    attempt_id: AttemptId(0),
+                    attempt_id: AttemptId::from(0),
                 };
                 async move {
                     // We'll have the first participant be the leader.

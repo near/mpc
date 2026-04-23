@@ -574,7 +574,7 @@ mod tests {
             .map(|(account_id, pid, sign_pk)| {
                 (
                     account_id.parse::<AccountId>().unwrap(),
-                    ParticipantId(pid),
+                    ParticipantId::from(pid),
                     OldParticipantInfo {
                         url: "https://example.near".to_string(),
                         sign_pk,
@@ -583,7 +583,7 @@ mod tests {
             })
             .collect();
         OldParticipants {
-            next_id: ParticipantId(next_id),
+            next_id: ParticipantId::from(next_id),
             participants,
         }
     }
@@ -591,11 +591,11 @@ mod tests {
     fn old_running_state(participants: OldParticipants, threshold: u64) -> OldRunningContractState {
         let parameters = OldThresholdParameters {
             participants,
-            threshold: Threshold(threshold),
+            threshold: Threshold::from(threshold),
         };
         OldRunningContractState {
             domains: DomainRegistry::default(),
-            keyset: Keyset::new(EpochId::new(0), vec![]),
+            keyset: Keyset::new(EpochId::from(0), vec![]),
             parameters,
             parameters_votes: OldThresholdParametersVotes {
                 proposal_by_account: BTreeMap::new(),

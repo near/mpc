@@ -109,7 +109,7 @@ impl FakeMpcContractState {
 
         self.state = ProtocolContractState::Running(RunningContractState::new(
             DomainRegistry::default(),
-            Keyset::new(EpochId::new(0), Vec::new()),
+            Keyset::new(EpochId::from(0), Vec::new()),
             participants_config_to_threshold_parameters(&participants),
             AddDomainsVotes::default(),
         ));
@@ -400,11 +400,11 @@ fn participants_config_to_threshold_parameters(
             .insert_with_id(
                 info.near_account_id.clone(),
                 participant_info_from_config(&info),
-                ParticipantId(info.id.raw()),
+                ParticipantId::from(info.id.raw()),
             )
             .expect("Failed to insert participant");
     }
-    ThresholdParameters::new(participants, Threshold::new(participants_config.threshold)).unwrap()
+    ThresholdParameters::new(participants, Threshold::from(participants_config.threshold)).unwrap()
 }
 
 /// Runs the fake indexer's shared state and logic. There's one instance of this per test.

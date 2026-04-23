@@ -165,7 +165,7 @@ impl ResharingContractState {
         let previous_running_threshold = self.previous_running_state.parameters.threshold();
 
         let threshold_cancellation_votes_reached: bool =
-            cancellation_votes_count >= previous_running_threshold.value();
+            cancellation_votes_count >= *previous_running_threshold;
 
         let running_state = if threshold_cancellation_votes_reached {
             let mut previous_running_state = self.previous_running_state.clone();
@@ -227,7 +227,7 @@ pub mod tests {
             println!("Testing domain {}", i);
             assert!(!state.resharing_key.is_active());
             let first_key_event_id = KeyEventId {
-                attempt_id: AttemptId::new(),
+                attempt_id: AttemptId::default(),
                 domain_id: state
                     .previous_running_state
                     .domains
@@ -361,7 +361,7 @@ pub mod tests {
         let leader = find_leader(&state.resharing_key);
         env.set_signer(&leader.0);
         let first_key_event_id = KeyEventId {
-            attempt_id: AttemptId::new(),
+            attempt_id: AttemptId::default(),
             domain_id: state
                 .previous_running_state
                 .domains
@@ -399,7 +399,7 @@ pub mod tests {
         // Reproposing with new_params_1 should succeed, but then reproposing with new_params_2
         // should be rejected, since all re-proposals must be valid against the original.
         let mut new_participants_1 = old_participants.clone();
-        let new_threshold = Threshold::new(old_participants.len() as u64);
+        let new_threshold = Threshold::from(old_participants.len() as u64);
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());

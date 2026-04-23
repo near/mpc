@@ -344,7 +344,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
     // Empty candidates should fail.
     let participants = Participants::new();
-    let threshold = Threshold::new(0);
+    let threshold = Threshold::from(0);
     let proposed_parameters = ThresholdParameters::new_unvalidated(participants, threshold);
     let result = contract
         .call(method_names::INIT)
@@ -359,7 +359,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     );
 
     let proposed_parameters =
-        ThresholdParameters::new(candidates(None), Threshold::new(3)).unwrap();
+        ThresholdParameters::new(candidates(None), Threshold::from(3)).unwrap();
     let result = contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({

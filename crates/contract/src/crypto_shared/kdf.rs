@@ -19,7 +19,7 @@ pub fn derive_key_secp256k1(
     public_key: &k256_types::PublicKey,
     tweak: &Tweak,
 ) -> Result<dtos::Secp256k1PublicKey, TweakNotOnCurve> {
-    let tweak = k256::Scalar::from_repr(tweak.as_bytes().into())
+    let tweak = k256::Scalar::from_repr((*tweak.as_ref()).into())
         .into_option()
         .ok_or(TweakNotOnCurve)?;
 
@@ -33,7 +33,7 @@ pub fn derive_public_key_edwards_point_ed25519(
     public_key_edwards_point: &curve25519_dalek::EdwardsPoint,
     tweak: &Tweak,
 ) -> curve25519_dalek::EdwardsPoint {
-    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak.as_bytes());
+    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(*tweak.as_ref());
     public_key_edwards_point + ED25519_BASEPOINT_POINT * tweak
 }
 
@@ -89,7 +89,7 @@ mod tests {
         };
 
         let tweak = derive_tweak(&"hello".parse().unwrap(), "my-path");
-        let derived_keygen_output = derive_keygen_output(&keygen_output, tweak.as_bytes());
+        let derived_keygen_output = derive_keygen_output(&keygen_output, *tweak.as_ref());
 
         let derived_public_key =
             derive_public_key_edwards_point_ed25519(&public_key_element, &tweak);

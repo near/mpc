@@ -76,7 +76,7 @@ impl MeasurementVotes {
             .vote_by_account
             .iter()
             .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
+                participants.is_participant_given_participant_id(participant_id)
             })
             .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
             .collect();

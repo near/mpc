@@ -106,9 +106,9 @@ mod tests {
             client.new_channel_for_task(
                 CKDTaskId::KeyGeneration {
                     key_event: KeyEventId {
-                        epoch_id: EpochId(42),
+                        epoch_id: EpochId::from(42),
                         domain_id: DomainId::default(),
-                        attempt_id: AttemptId(0),
+                        attempt_id: AttemptId::from(0),
                     },
                 },
                 client.all_participant_ids(),

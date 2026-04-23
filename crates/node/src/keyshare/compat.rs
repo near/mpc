@@ -28,7 +28,7 @@ pub fn legacy_ecdsa_key_from_keyshares(
         );
     };
     Ok(LegacyRootKeyshareData {
-        epoch: keyshare.key_id.epoch_id.get(),
+        epoch: *keyshare.key_id.epoch_id,
         private_share: secp256k1_data.private_share.to_scalar(),
         public_key: secp256k1_data.public_key.to_element().to_affine(),
     })
@@ -39,7 +39,7 @@ impl Keyshare {
     pub fn from_legacy(legacy: &LegacyRootKeyshareData) -> Self {
         Self {
             key_id: KeyEventId::new(
-                EpochId::new(legacy.epoch),
+                EpochId::from(legacy.epoch),
                 DomainId::legacy_ecdsa_id(),
                 AttemptId::legacy_attempt_id(),
             ),

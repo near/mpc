@@ -38,21 +38,21 @@ impl ThresholdParameters {
     /// - threshold can not exceed the number of shares `n_shares`.
     /// - threshold must be at least 60% of the number of shares (rounded upwards).
     pub fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
-        if k.value() > n_shares {
+        if *k > n_shares {
             return Err(InvalidThreshold::MaxRequirementFailed {
                 max: n_shares,
-                found: k.value(),
+                found: *k,
             }
             .into());
         }
-        if k.value() < MIN_THRESHOLD_ABSOLUTE {
+        if *k < MIN_THRESHOLD_ABSOLUTE {
             return Err(InvalidThreshold::MinAbsRequirementFailed.into());
         }
         let percentage_bound = (3 * n_shares).div_ceil(5); // minimum 60%
-        if k.value() < percentage_bound {
+        if *k < percentage_bound {
             return Err(InvalidThreshold::MinRelRequirementFailed {
                 required: percentage_bound,
-                found: k.value(),
+                found: *k,
             }
             .into());
         }
@@ -87,8 +87,8 @@ impl ThresholdParameters {
                     if new_id != old_id {
                         return Err(InvalidCandidateSet::ParticipantIdChanged {
                             account_id: new_account.clone(),
-                            old_id: old_id.get(),
-                            new_id: new_id.get(),
+                            old_id: **old_id,
+                            new_id: **new_id,
                         }
                         .into());
                     }
@@ -104,18 +104,18 @@ impl ThresholdParameters {
                     if let Some(existing_account) = old_by_id.get(new_id) {
                         return Err(InvalidCandidateSet::NewParticipantReusesOldId {
                             account_id: new_account.clone(),
-                            new_id: new_id.get(),
+                            new_id: **new_id,
                             existing_account_id: existing_account.clone(),
                         }
                         .into());
                     }
-                    new_min_id = std::cmp::min(new_min_id, new_id.get());
-                    new_max_id = std::cmp::max(new_max_id, new_id.get());
+                    new_min_id = std::cmp::min(new_min_id, **new_id);
+                    new_max_id = std::cmp::max(new_max_id, **new_id);
                 }
             }
         }
         // assert there are enough old participants
-        if n_old < self.threshold().value() {
+        if n_old < *self.threshold() {
             return Err(InvalidCandidateSet::InsufficientOldParticipants.into());
         }
         // ensure the new ids are contiguous and unique
@@ -124,10 +124,10 @@ impl ThresholdParameters {
             if n_new - 1 != (new_max_id - new_min_id) as u64 {
                 return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
             }
-            if new_min_id != self.participants().next_id().get() {
+            if new_min_id != *self.participants().next_id() {
                 return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
             }
-            if new_max_id + 1 != proposal.participants().next_id().get() {
+            if new_max_id + 1 != *proposal.participants().next_id() {
                 return Err(InvalidCandidateSet::NewParticipantIdsTooHigh.into());
             }
         }
@@ -183,8 +183,8 @@ mod tests {
     fn test_threshold() {
         for _ in 0..20 {
             let v = rand::thread_rng().gen::<u64>();
-            let x = Threshold::new(v);
-            assert_eq!(v, x.value());
+            let x = Threshold::from(v);
+            assert_eq!(v, *x);
         }
     }
 
@@ -193,12 +193,12 @@ mod tests {
         let n = rand::thread_rng().gen_range(2..600) as u64;
         let min_threshold = ((n as f64) * 0.6).ceil() as u64;
         for k in 0..min_threshold {
-            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
+            let _ = ThresholdParameters::validate_threshold(n, Threshold::from(k)).unwrap_err();
         }
         for k in min_threshold..(n + 1) {
-            ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap();
+            ThresholdParameters::validate_threshold(n, Threshold::from(k)).unwrap();
         }
-        let _ = ThresholdParameters::validate_threshold(n, Threshold::new(n + 1)).unwrap_err();
+        let _ = ThresholdParameters::validate_threshold(n, Threshold::from(n + 1)).unwrap_err();
     }
 
     #[test]
@@ -208,13 +208,13 @@ mod tests {
 
         let participants = gen_participants(n);
         for k in 1..min_threshold {
-            let invalid_threshold = Threshold::new(k as u64);
+            let invalid_threshold = Threshold::from(k as u64);
             let _ = ThresholdParameters::new(participants.clone(), invalid_threshold).unwrap_err();
         }
-        let _ = ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64))
+        let _ = ThresholdParameters::new(participants.clone(), Threshold::from((n + 1) as u64))
             .unwrap_err();
         for k in min_threshold..(n + 1) {
-            let threshold = Threshold::new(k as u64);
+            let threshold = Threshold::from(k as u64);
             let tp = ThresholdParameters::new(participants.clone(), threshold);
             let tp = tp.expect("Threshold parameters should be valid for the given threshold");
             tp.validate().expect("Threshold parameters should validate");
@@ -248,9 +248,7 @@ mod tests {
         let _ = params.validate_incoming_proposal(&proposal).unwrap_err();
 
         // Proposal with threshold number of shared participants should be allowed.
-        let mut new_participants = params
-            .participants
-            .subset(0..params.threshold.value() as usize);
+        let mut new_participants = params.participants.subset(0..*params.threshold as usize);
         new_participants.add_random_participants_till_n(params.participants.len());
         let proposal = ThresholdParameters::new_unvalidated(new_participants, params.threshold);
 
@@ -265,7 +263,7 @@ mod tests {
         // Proposal with less than threshold number of shared participants should not be allowed.
         // Use a fixed-size set to ensure the threshold arithmetic is predictable.
         let large_params =
-            ThresholdParameters::new(gen_participants(10), Threshold::new(6)).unwrap();
+            ThresholdParameters::new(gen_participants(10), Threshold::from(6)).unwrap();
         let mut new_participants = large_params.participants.subset(0..5); // 5 < threshold of 6
         new_participants.add_random_participants_till_n(10);
         let proposal =
@@ -278,9 +276,7 @@ mod tests {
         );
 
         // Proposal with the new threshold being invalid should not be allowed.
-        let mut new_participants = params
-            .participants
-            .subset(0..params.threshold.value() as usize);
+        let mut new_participants = params.participants.subset(0..*params.threshold as usize);
         new_participants.add_random_participants_till_n(50);
         let proposal = ThresholdParameters::new_unvalidated(new_participants, params.threshold);
         let _ = params.validate_incoming_proposal(&proposal).unwrap_err();
@@ -288,11 +284,11 @@ mod tests {
 
     #[test]
     fn test_proposal_participant_id_changed() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::from(3)).unwrap();
 
         // Take an existing participant and change their ID
         let (account, old_id, info) = params.participants.participants()[0].clone();
-        let wrong_id = ParticipantId(old_id.get() + 100);
+        let wrong_id = ParticipantId::from(*old_id + 100);
 
         let mut new_participants_vec: Vec<_> = params
             .participants
@@ -304,22 +300,22 @@ mod tests {
         new_participants_vec.push((account.clone(), wrong_id, info));
 
         let proposal = ThresholdParameters::new_unvalidated(
-            Participants::init(ParticipantId(wrong_id.get() + 1), new_participants_vec),
+            Participants::init(ParticipantId::from(*wrong_id + 1), new_participants_vec),
             params.threshold,
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),
             Error::from(InvalidCandidateSet::ParticipantIdChanged {
                 account_id: account,
-                old_id: old_id.get(),
-                new_id: wrong_id.get(),
+                old_id: *old_id,
+                new_id: *wrong_id,
             })
         );
     }
 
     #[test]
     fn test_proposal_participant_info_changed() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::from(3)).unwrap();
 
         // Take an existing participant and change their info
         let (account, id, _) = params.participants.participants()[0].clone();
@@ -348,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_proposal_new_participant_reuses_old_id() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::from(3)).unwrap();
 
         // Remove one old participant and add a new one that reuses their ID.
         // This way the proposal passes basic validate() (no duplicates), but
@@ -374,7 +370,7 @@ mod tests {
             params.validate_incoming_proposal(&proposal).unwrap_err(),
             Error::from(InvalidCandidateSet::NewParticipantReusesOldId {
                 account_id: new_account,
-                new_id: reused_id.get(),
+                new_id: *reused_id,
                 existing_account_id: existing_account,
             })
         );
@@ -384,15 +380,15 @@ mod tests {
     fn test_proposal_non_contiguous_new_ids_fail() {
         // Test that the lowest new id equals to the `next_id` of the previous set.
         // Use a high threshold so adding one participant doesn't violate the 60% rule.
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::from(5)).unwrap();
 
-        let wrong_id = params.participants.next_id().0 + 1;
+        let wrong_id = *params.participants.next_id() + 1;
 
         let (account_id, participant_info) = gen_participant(wrong_id as usize);
 
         let mut tampered_participants = params.participants.clone();
         tampered_participants
-            .insert_with_id(account_id, participant_info, ParticipantId(wrong_id))
+            .insert_with_id(account_id, participant_info, ParticipantId::from(wrong_id))
             .unwrap();
 
         let tampered_params = ThresholdParameters {
@@ -410,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_proposal_non_unique_ids() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::from(5)).unwrap();
 
         // Create proposal with duplicate participants (doubled list)
         let tampered_participants = Participants::init(
@@ -427,7 +423,7 @@ mod tests {
         // and the duplicate check in participants.validate() is reached.
         let tampered_params = ThresholdParameters::new_unvalidated(
             tampered_participants,
-            Threshold::new(6), // 60% of 10 = 6
+            Threshold::from(6), // 60% of 10 = 6
         );
         assert_eq!(
             params
@@ -439,11 +435,9 @@ mod tests {
 
     #[test]
     fn test_remove_only() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::from(3)).unwrap();
 
-        let new_participants = params
-            .participants
-            .subset(0..params.threshold.value() as usize);
+        let new_participants = params.participants.subset(0..*params.threshold as usize);
 
         let new_params = ThresholdParameters::new(new_participants, params.threshold).unwrap();
 
@@ -454,7 +448,7 @@ mod tests {
     #[test]
     fn test_simultaneous_remove_and_insert() {
         let n = 5;
-        let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(n), Threshold::from(3)).unwrap();
 
         let mut new_participants = params.participants.clone();
         new_participants.add_random_participants_till_n(n + 2);
@@ -470,7 +464,7 @@ mod tests {
     fn test_new_participant_id_too_high() {
         // When proposal's next_id is higher than max_id + 1, it should fail with
         // NewParticipantIdsTooHigh.
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        let params = ThresholdParameters::new(gen_participants(5), Threshold::from(5)).unwrap();
         let next_id = params.participants.next_id();
 
         // Add one new participant with the correct next_id, but set the proposal's
@@ -482,10 +476,10 @@ mod tests {
         // 6 participants with threshold 5: validate_threshold passes (60% of 6 = 4 <= 5 <= 6)
         let proposal = ThresholdParameters::new_unvalidated(
             Participants::init(
-                ParticipantId(next_id.get() + 2), // too high: should be next_id + 1
+                ParticipantId::from(*next_id + 2), // too high: should be next_id + 1
                 new_participants_vec,
             ),
-            Threshold::new(5),
+            Threshold::from(5),
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),

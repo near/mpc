@@ -90,7 +90,7 @@ mod tests {
 
         // Then
         assert_eq!(contract_state.name(), "Running");
-        assert_eq!(contract_state.threshold().unwrap(), Threshold::new(7));
+        assert_eq!(contract_state.threshold().unwrap(), Threshold::from(7));
         assert_eq!(contract_state.domain_registry().unwrap().domains().len(), 2);
     }
 }
