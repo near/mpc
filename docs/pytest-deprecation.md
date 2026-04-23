@@ -1,695 +1,355 @@
-# Design: Rust E2E Test Infrastructure
+# Rust E2E Test Infrastructure
 
 ## Purpose
 
-This is a mostly claude-generated design document for replacing the Python E2E test
-infrastructure with Rust. It describes the components we need to build, their APIs,
-and how tests will use them.
+This is a mostly Claude-generated document describing the Rust end-to-end test
+framework that is replacing the Python pytest system tests. It reflects the
+implementation that lives in `crates/e2e-tests/` and is intended as a reference
+for engineers writing new tests.
 
-It's intended as a design reference for issues
-[#2440](https://github.com/near/mpc/issues/2440) and
-[#2441](https://github.com/near/mpc/issues/2441), and should be updated as
-implementation progresses.
+This is a living document — the earlier draft ([#2446]) set the direction; the
+sections below have been revised to match what was actually built.
+
+[#2446]: https://github.com/near/mpc/pull/2446
 
 ---
 
 ## Architecture Overview
 
-The Python E2E tests use `MpcCluster` → `MpcNode` → `LocalNode` (from nearcore) to
-orchestrate real processes. We replace this with a Rust equivalent:
+An E2E test runs real `mpc-node` OS processes against a real `neard` sandbox
+with a freshly deployed MPC contract. The crate exposes four components that
+cooperate:
 
 ```mermaid
 graph TD
-    Cluster[MpcCluster] -->|owns N instances| Node[MpcNode]
-    Cluster -->|uses| Blockchain[NearBlockchain]
+    Cluster[MpcCluster] -->|owns| Sandbox[NearSandbox]
+    Cluster -->|owns| Blockchain[NearBlockchain]
+    Cluster -->|owns N| Node[MpcNode / MpcNodeSetup]
+    Cluster -->|owns| Ports[E2ePortAllocator]
 
-    Node --- N1(Start/stop/kill/restart)
-    Node --- N2(Config file generation - TOML)
-    Node --- N3(Metrics scraping - HTTP /metrics)
-    Node --- N4(RocksDB management)
-
-    Blockchain --- B1(Account creation + key management)
-    Blockchain --- B2(Contract deployment)
-    Blockchain --- B3(Transaction submission + polling)
-    Blockchain --- B4(View method calls)
+    Sandbox --- S1(neard process + genesis + boot node info)
+    Blockchain --- B1(near-kit RPC client)
+    Blockchain --- B2(Account creation, contract deploy, view/call)
+    Node --- N1(Spawn mpc-node binary)
+    Node --- N2(Generate secrets.json + start_config.toml)
+    Node --- N3(Scrape /metrics, toggle block ingestion)
+    Ports --- P1(Deterministic per-test port ranges)
 ```
 
 ### Key design decisions
 
-1. **RPC-based blockchain access, environment-agnostic.** The Python tests use
-   nearcore's `LocalNode` + `start_cluster()` to manage neard processes directly. We
-   don't need any of that — no test ever kills/restarts a neard validator. All
-   blockchain interaction is RPC calls: deploy contract, send transactions, query
-   state. The `NearBlockchain` component is just an RPC client that takes a URL.
-   Whether that URL points to a local sandbox (`localhost:3030`) or NEAR testnet
-   (`rpc.testnet.near.org`), the code path is identical. For local development and
-   CI, we use [`near-sandbox`](https://github.com/near/near-sandbox-rs) which
-   downloads and runs a real neard binary (single-node, fast block times, but real
-   WASM execution and gas metering). To run the same tests against production
-   testnet, just pass the testnet RPC URL instead — no code changes needed.
+1. **Real `neard` sandbox, real `mpc-node` binaries.** Each test starts a
+   `near-sandbox` process (via the `near-sandbox` crate, which downloads a real
+   neard binary) and spawns `N` real `mpc-node` processes built from this repo.
+   The mpc-node binary uses its built-in NEAR indexer, which in turn runs its
+   own small `neard` peered with the sandbox over P2P — i.e. we exercise the
+   production code path end-to-end, including config parsing, P2P networking,
+   the indexer, and Prometheus metrics.
 
-2. **Real `mpc-node` binary as OS process.** Unlike the existing Rust integration tests
-   (which run node logic as in-process tokio tasks with `FakeIndexerManager`), E2E
-   tests spawn real `mpc-node` binaries via `std::process::Command`. This tests the
-   real binary, real config parsing, real P2P networking, and real Prometheus metrics.
+2. **RPC-only contract interaction.** Tests never touch the sandbox process
+   directly; everything happens through a `near-kit` RPC client. The
+   `NearBlockchain` and `DeployedContract` wrappers accept any RPC URL, so
+   the same test code could in principle run against a deployed testnet
+   (though this isn't exercised in CI yet).
 
-3. **Support for mixed node versions.** `MpcNode` takes a `binary_path` parameter,
-   allowing tests to run clusters with different `mpc-node` versions for compatibility
-   testing. An auto-generated `mpc_binary_versions` file tracks the history of
-   releases, and a resolver function fetches the requested binary version on demand
-   (abstracting away the storage backend — git LFS, S3, etc.). Tests simply request
-   a version from the history file and get a local binary path back.
+3. **Deterministic ports per test.** `cargo nextest` runs each test in its own
+   process, so tests execute concurrently by default. Each test declares a
+   unique `port_seed`; `E2ePortAllocator` maps that seed to a non-overlapping
+   range of ports for the sandbox, the mpc-node web/P2P/pprof endpoints, and
+   the per-node neard instances. Seeds are centralised as constants in
+   `tests/common.rs` to avoid collisions.
 
-4. **Crate location.** The E2E infrastructure lives in `crates/e2e-tests/` as a
-   separate crate with `#[cfg(test)]` tests. It depends on `mpc-contract` (for
-   contract types), `contract-interface` (for DTOs), `near-api` (for blockchain
-   RPC access), and `near-sandbox` (for running a local neard in dev/CI).
+4. **Support for mixed node versions.** `MpcClusterConfig::binary_paths` takes a
+   vec of paths; if it has a single entry, all nodes use it, otherwise each
+   node uses the corresponding entry. This enables compatibility tests across
+   `mpc-node` versions (not yet in routine use, but wired up).
 
----
+5. **Separate "operator" keys.** Each node account has two full-access keys on
+   chain: one used by the mpc-node process itself for its NEAR transactions
+   (`node_keys`) and a second key held by the test harness (`operator_keys`)
+   for casting votes. Disjoint key sets keep the node's nonce sequence clean
+   and let the harness issue contract calls without racing the node.
 
-> **Note:** The component APIs below are not finalized. They are intended to show the
-> direction of the implementation, not prescribe exact signatures. Expect these to
-> evolve as we build.
-
-## Component 1: `MpcNode` — Node Process Manager
-
-Wraps a single `mpc-node` OS process. Equivalent of Python's `MpcNode` class.
-
-### Struct
-
-```rust
-use std::path::{Path, PathBuf};
-use std::process::Child;
-use std::net::SocketAddr;
-
-/// All configuration and state needed to start an mpc-node process.
-/// Represents a node that is NOT running. Can wipe DB, modify config, etc.
-pub struct MpcNodeSetup {
-    /// Path to the mpc-node binary.
-    binary_path: PathBuf,
-    /// Working directory containing config, RocksDB data, and keys.
-    home_dir: PathBuf,
-    /// The node's NEAR account ID.
-    account_id: AccountId,
-    /// Address where the node serves HTTP (health, debug, metrics).
-    web_address: SocketAddr,
-    /// Address for P2P communication.
-    p2p_address: SocketAddr,
-    /// Address for the migration service.
-    migration_address: SocketAddr,
-    /// Node configuration that will be written to disk as TOML.
-    config: MpcNodeConfig,
-}
-
-/// Handle to a running mpc-node OS process. Always represents a live process.
-/// Obtained by calling `MpcNodeSetup::start()`.
-pub struct MpcNode {
-    /// The setup that was used to start this node (returned on kill).
-    setup: MpcNodeSetup,
-    /// The running child process.
-    process: Child,
-}
-```
-
-### API
-
-```rust
-impl MpcNodeSetup {
-    /// Creates a new node setup.
-    pub fn new(
-        binary_path: PathBuf,
-        home_dir: PathBuf,
-        account_id: AccountId,
-        config: MpcNodeConfig,
-    ) -> Self;
-
-    /// Deletes RocksDB files (.sst, MANIFEST, etc.) from the data directory.
-    /// Safe to call because the node is not running.
-    pub fn wipe_db(&self) -> anyhow::Result<()>;
-
-    /// Writes the TOML config file and spawns the mpc-node binary.
-    /// Consumes self, returning an MpcNode handle to the running process.
-    pub fn start(self) -> anyhow::Result<MpcNode>;
-}
-
-impl MpcNode {
-    /// Sends SIGTERM (gentle=true) or SIGKILL (gentle=false) to the process.
-    /// Consumes self, returning the MpcNodeSetup for potential restart.
-    pub fn kill(self, gentle: bool) -> anyhow::Result<MpcNodeSetup>;
-
-    /// Kill then start. New process, same config and data directory.
-    pub fn restart(self, gentle: bool) -> anyhow::Result<MpcNode>;
-
-    /// Scrapes the node's /metrics HTTP endpoint and returns the value of
-    /// the named metric, parsed as i64.
-    pub async fn get_metric(&self, name: &str) -> anyhow::Result<Option<i64>>;
-
-    /// Scrapes /metrics and returns all label→value pairs for a multi-label metric.
-    pub async fn get_metric_labels(
-        &self,
-        name: &str,
-    ) -> anyhow::Result<Vec<(HashMap<String, String>, f64)>>;
-
-    /// Polls the named metric until it equals the expected value or timeout.
-    pub async fn wait_for_metric(
-        &self,
-        name: &str,
-        expected: i64,
-        timeout: Duration,
-    ) -> anyhow::Result<()>;
-
-    /// Writes a flag file that controls block ingestion. Requires the
-    /// network-hardship-simulation feature on the mpc-node binary.
-    pub fn set_block_ingestion(&self, active: bool) -> anyhow::Result<()>;
-
-    /// Creates a marker file in temporary_keys/ to reserve a key event attempt.
-    pub fn reserve_key_event_attempt(
-        &self,
-        epoch_id: u64,
-        domain_id: u64,
-        attempt_id: u64,
-    ) -> anyhow::Result<()>;
-
-    /// HTTP GET to /debug/migrations, parsed into contract migration types.
-    pub async fn migration_state(&self) -> anyhow::Result<NodeMigrations>;
-
-    /// Returns the web_address for HTTP requests.
-    pub fn web_address(&self) -> SocketAddr;
-
-    /// Returns the migration service address.
-    pub fn migration_address(&self) -> SocketAddr;
-}
-
-impl Drop for MpcNode {
-    /// Kills the process on drop to avoid orphaned processes.
-    fn drop(&mut self) { /* SIGKILL if running */ }
-}
-```
-
-### Config generation
-
-```rust
-/// Node configuration written to disk as TOML before starting the binary.
-/// Mirrors the StartConfig structure that `mpc-node start-with-config-file` reads.
-pub struct MpcNodeConfig {
-    pub home_dir: PathBuf,
-    pub secrets: SecretsConfig,
-    pub tee: TeeConfig,
-    pub node: ConfigFile,
-}
-
-impl MpcNodeConfig {
-    /// Writes the config as TOML to `{home_dir}/start_config.toml`.
-    pub fn write_to_disk(&self) -> anyhow::Result<PathBuf>;
-}
-```
+6. **Crate location.** The framework lives at `crates/e2e-tests/`. Its `src/`
+   exposes the components as library APIs; actual tests live in `tests/` and
+   are declared via the `[[test]] name = "e2e"` entry in `Cargo.toml`, which
+   compiles them as submodules of `tests/e2e.rs` (one binary, one neard
+   download, parallel test execution via nextest).
 
 ---
 
-## Component 2: `NearBlockchain` — Blockchain RPC Client
+## Components
 
-RPC client for interacting with any NEAR network. Takes an RPC URL — whether that
-points to a local sandbox neard or NEAR testnet, the code path is identical.
+> **Note:** The snippets below capture the shape of each component, not
+> exhaustive signatures. Read the source for the authoritative API.
 
-Replaces the Python nearcore layer (`cluster.py`, `transaction.py`, `key.py`,
-`NearAccount`).
+### 1. `NearSandbox` — neard process wrapper
 
-### Struct
+Starts a `near-sandbox` binary at a configurable version, on ports assigned by
+`E2ePortAllocator`. Exposes everything an `mpc-node` indexer needs to peer with
+it: genesis path, boot-node string (`<pubkey>@127.0.0.1:<port>`), and chain ID.
 
 ```rust
-use near_api::*;
+pub struct NearSandbox { /* wraps near_sandbox::Sandbox */ }
 
-/// RPC client for any NEAR network (sandbox or testnet).
-/// Pure blockchain interaction — no contract-specific state.
-pub struct NearBlockchain {
-    /// The RPC URL (e.g. "http://localhost:3030" or "https://rpc.testnet.near.org").
-    rpc_url: String,
-    /// RPC client for sending transactions and queries.
-    client: near_api::JsonRpcClient,
-}
-
-/// Handle to a deployed MPC signer contract. Wraps a NearBlockchain reference
-/// and adds the contract account ID and signer for contract management.
-pub struct DeployedContract<'a> {
-    /// The underlying blockchain client.
-    blockchain: &'a NearBlockchain,
-    /// The deployed MPC signer contract account ID.
-    contract_id: AccountId,
-    /// Signer for the account that deploys and manages the contract.
-    signer: near_api::Signer,
+impl NearSandbox {
+    pub async fn start(ports: &E2ePortAllocator, version: &str) -> anyhow::Result<Self>;
+    pub fn rpc_url(&self) -> String;
+    pub fn genesis_path(&self) -> PathBuf;
+    pub fn boot_nodes(&self) -> anyhow::Result<String>;
+    pub fn chain_id(&self) -> anyhow::Result<String>;
 }
 ```
 
-### API
+The inner `Sandbox` kills the process and deletes its temp directory on drop.
+
+### 2. `NearBlockchain` — RPC client
+
+Wraps a `near_kit::Near` client signed as the sandbox root account. All
+contract interaction, account creation, and WASM deployment goes through it.
 
 ```rust
+pub struct NearBlockchain { /* root_client + rpc_url */ }
+
 impl NearBlockchain {
-    /// Connects to a NEAR RPC endpoint.
-    pub async fn connect(rpc_url: &str) -> anyhow::Result<Self>;
-
-    /// Deploys the MPC contract WASM and returns a DeployedContract handle.
-    pub async fn deploy_contract(
-        &self,
-        signer: Signer,
-        account_id: &AccountId,
-        wasm: &[u8],
-    ) -> anyhow::Result<DeployedContract<'_>>;
-
-    /// Calls a contract method as a transaction (state-changing).
-    pub async fn call(
-        &self,
-        signer: &Signer,
-        contract_id: &AccountId,
-        method: &str,
-        args: serde_json::Value,
-        gas: Gas,
-        deposit: NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcomeView>;
-
-    /// Calls a view method (read-only).
-    pub async fn view(
-        &self,
-        contract_id: &AccountId,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<serde_json::Value>;
-
-    /// Creates a new NEAR account (sub-account of the given signer).
-    pub async fn create_account(
-        &self,
-        signer: &Signer,
-        name: &str,
-        balance: NearToken,
-    ) -> anyhow::Result<(AccountId, Signer)>;
-
-    /// Returns the RPC URL. Used to configure mpc-node's indexer.
-    pub fn rpc_url(&self) -> &str;
-}
-
-impl<'a> DeployedContract<'a> {
-    /// Returns the contract account ID.
-    pub fn contract_id(&self) -> &AccountId;
-
-    /// Returns the underlying blockchain client.
-    pub fn blockchain(&self) -> &NearBlockchain;
-
-    /// Calls a method on this contract as a transaction.
-    pub async fn call(
-        &self,
-        method: &str,
-        args: serde_json::Value,
-        gas: Gas,
-        deposit: NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcomeView>;
-
-    /// Calls a view method on this contract.
-    pub async fn view(
-        &self,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<serde_json::Value>;
-
-    /// Queries the contract's state() view method and parses it.
-    pub async fn state(&self) -> anyhow::Result<ProtocolContractState>;
+    pub fn new(rpc_url: &str, root_account: &str, root_secret: near_kit::SecretKey)
+        -> anyhow::Result<Self>;
+    pub async fn create_account_with_keys(&self, name: &str, balance_near: u128,
+        keys: &[SigningKey]) -> anyhow::Result<()>;
+    pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
+        key: &SigningKey, wasm: &[u8]) -> anyhow::Result<DeployedContract>;
+    pub fn client_for(&self, account_id: &str, key: &SigningKey)
+        -> anyhow::Result<ClientHandle>;
 }
 ```
 
-### Environment setup (outside the framework)
+`DeployedContract` wraps the contract's account ID plus its own `near-kit`
+client. It exposes `call` (from the contract account), `call_from`/
+`call_from_with_deposit` (from an arbitrary `ClientHandle`), `view`, and
+`state()` (parsed `ProtocolContractState`).
 
-The `NearBlockchain` client is environment-agnostic. How the blockchain is provided
-is a separate concern:
+`ClientHandle` exists so tests can re-use a signer for a non-contract account
+(nodes voting, users submitting sign requests) without leaking `near_kit`
+types into the public API.
 
-- **Local sandbox (dev/CI):** Use [`near-sandbox`](https://github.com/near/near-sandbox-rs)
-  to download and run a real neard binary locally. It runs a single-node NEAR blockchain
-  with fast block times but real WASM execution, state, and gas metering. Pass
-  `http://localhost:3030` as RPC URL. Accounts can be created freely with the genesis
-  root key.
-- **NEAR testnet:** No blockchain to start — it's already running. Pass
-  `https://rpc.testnet.near.org` as RPC URL. Use pre-funded accounts or the testnet
-  faucet for account creation. Contract can be pre-deployed or deployed fresh each run.
+### 3. `MpcNode` / `MpcNodeSetup` — node process manager
 
-Since the test framework only talks RPC, switching between sandbox and testnet is
-purely a configuration change — same test code, same assertions, same contract
-interactions.
+`MpcNodeSetup` owns everything needed to start a node (binary path, home dir,
+signing keys, ports, contract account, sandbox chain info, foreign-chain
+config). It writes `secrets.json` and `start_config.toml` on creation and
+exposes `start()` to spawn the process, returning an `MpcNode`.
 
----
+`MpcNode` owns a running child process via a `ProcessGuard` that SIGKILLs on
+drop. It exposes:
 
-## Component 3: `MpcCluster` — Cluster Orchestration
+- `kill() -> MpcNodeSetup` and `restart() -> MpcNode` — lifecycle.
+- `has_exited()` — sanity check to surface early crashes.
+- `get_metric(name)` — scrape `/metrics` and parse an `i64`.
+- `set_block_ingestion(active)` — writes a flag file that pauses block ingest
+  (requires the `network-hardship-simulation` feature, which CI builds with).
+- `web_address()`, `pprof_address()`, `setup()` for accessors.
 
-Orchestrates the full test environment: blockchain + contract + N mpc-nodes.
-Equivalent of Python's `MpcCluster` class.
+`MpcNodeSetup` also offers `wipe_db()` (targeted SST/MANIFEST cleanup) and
+`reset_mpc_state()` (nuke the entire home dir — used after SIGKILL where the
+indexer state may be corrupt).
 
-### Struct
+### 4. `MpcCluster` — orchestration
+
+The entry point for tests. `MpcCluster::start(config)` does everything:
+
+1. Create `E2ePortAllocator` from `config.port_seed`.
+2. Create a per-test temp directory.
+3. Start the `NearSandbox`.
+4. Build a `NearBlockchain` signed as the sandbox root.
+5. Generate deterministic signing keys for each node (near signer, p2p, operator,
+   plus a separate contract deployer key).
+6. Deploy the compiled MPC contract WASM to `mpc.sandbox`.
+7. Create `nodeN.sandbox` accounts, each with a `near_signer_key` and a
+   disjoint `operator_key` as full-access keys.
+8. Call `init()` on the contract with the initial participants.
+9. Call `submit_participant_info` for each initial participant (with a
+   `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
+10. Spawn the `mpc-node` binaries (start *before* adding domains so key
+    generation has running nodes to talk to).
+11. Sleep briefly and assert no node exited early.
+12. If `config.domains` is non-empty, vote `add_domains` from each participant
+    and wait for `Running` state.
+13. Create user accounts for signing/CKD/verify requests.
+
+The returned cluster exposes:
+
+- **Node lifecycle:** `kill_nodes`, `start_nodes`, `reset_and_start_nodes`
+  (wipe + start + wait for health), `kill_all`.
+- **Contract state:** `get_contract_state`, `wait_for_state`,
+  `wait_for_node_healthy`, `get_tee_accounts`.
+- **Resharing:** `start_resharing`, `start_resharing_and_wait`,
+  `vote_cancel_resharing_from`, `add_domains`.
+- **Metrics:** `get_metric_all_nodes`, `wait_for_metric_all_nodes`.
+- **Data management:** `wipe_db`, `set_block_ingestion`.
+- **Request submission:** `send_sign_request`, `send_ckd_request`,
+  `send_verify_foreign_transaction`.
+- **Foreign chain policy:** `view_foreign_chain_policy`,
+  `view_foreign_chain_policy_proposals`, `vote_foreign_chain_policy`.
+- **User accounts:** `user_client`, `default_user_account`.
+
+`Drop` kills all running nodes; the temp directory is held via `test_dir` and
+removed when the cluster is dropped.
 
 ```rust
-/// A node that is either running or stopped (killed).
-pub enum MpcNodeState {
-    Running(MpcNode),
-    Stopped(MpcNodeSetup),
-}
-
-/// A running MPC test cluster with a deployed contract and N mpc-node processes.
-pub struct MpcCluster {
-    /// The underlying blockchain RPC client.
-    pub blockchain: NearBlockchain,
-    /// Handle to the deployed MPC signer contract.
-    pub contract: DeployedContract,
-    /// The MPC nodes, each either running or stopped.
-    pub nodes: Vec<MpcNodeState>,
-    /// Accounts used for submitting signature/CKD requests.
-    pub user_accounts: HashMap<AccountId, Signer>,
-}
-```
-
-### Builder
-
-```rust
-/// Configuration for creating a new MpcCluster.
 pub struct MpcClusterConfig {
-    /// NEAR RPC URL (e.g. "http://localhost:3030" or "https://rpc.testnet.near.org").
-    pub rpc_url: String,
-    /// Signer for the root/funder account.
-    pub root_signer: Signer,
-    /// Number of MPC nodes.
     pub num_nodes: usize,
-    /// Threshold for signing.
     pub threshold: usize,
-    /// Signature domains to initialize.
     pub domains: Vec<DomainConfig>,
-    /// Path(s) to the mpc-node binary. If a single path is given, all nodes
-    /// use it. If multiple paths are given, each node uses the corresponding
-    /// entry (length must equal num_nodes). Defaults to target/release/mpc-node.
-    pub binary_paths: Vec<PathBuf>,
-    /// Path to the compiled contract WASM.
-    pub contract_wasm_path: PathBuf,
-    /// Triple generation config overrides for faster tests.
-    pub triple_config: Option<TripleConfig>,
-    /// Presignature config overrides.
-    pub presignature_config: Option<PresignatureConfig>,
-    /// Port seed to avoid collisions between parallel test runs.
+    pub binary_paths: Vec<PathBuf>,             // one or num_nodes
+    pub contract_wasm: Vec<u8>,                 // pre-compiled by the test
     pub port_seed: u16,
-    /// Optional: pre-deployed contract account ID. If None, deploys fresh from WASM.
-    pub existing_contract: Option<AccountId>,
+    pub triples_to_buffer: usize,
+    pub presignatures_to_buffer: usize,
+    pub sandbox_version: String,
+    pub home_base: Option<PathBuf>,
+    pub initial_participant_indices: Vec<usize>,
+    pub node_foreign_chains_configs: Vec<ForeignChainsConfig>,
 }
 
 impl MpcClusterConfig {
-    pub fn default_for_test(num_nodes: usize, threshold: usize) -> Self;
+    pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self;
+    pub fn participant_indices(&self) -> Vec<usize>;
 }
 ```
 
-### API
+### 5. `E2ePortAllocator` — deterministic port layout
 
-```rust
-impl MpcCluster {
-    /// Creates the full cluster: starts blockchain, deploys contract, calls init(),
-    /// spawns mpc-node binaries, waits for Running state.
-    /// This is the main entry point for E2E tests.
-    pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self>;
+Each test declares a `port_seed: u16`. Ports are computed as:
 
-    // --- Node lifecycle ---
-
-    /// Kills nodes at the given indices.
-    pub fn kill_nodes(&mut self, indices: &[usize], gentle: bool) -> anyhow::Result<()>;
-
-    /// Starts previously killed nodes.
-    pub fn start_nodes(&mut self, indices: &[usize]) -> anyhow::Result<()>;
-
-    /// Kills all nodes.
-    pub fn kill_all(&mut self) -> anyhow::Result<()>;
-
-    // --- Contract operations ---
-
-    /// Queries the contract's state() view method and parses it.
-    pub async fn get_contract_state(&self) -> anyhow::Result<ProtocolContractState>;
-
-    /// Polls contract state until it matches the predicate or timeout.
-    pub async fn wait_for_state(
-        &self,
-        predicate: impl Fn(&ProtocolContractState) -> bool,
-        timeout: Duration,
-    ) -> anyhow::Result<()>;
-
-    /// Submits vote_add_domains from each node and waits for Initializing→Running.
-    pub async fn add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()>;
-
-    /// Submits vote_new_parameters from each node to trigger resharing.
-    pub async fn start_resharing(
-        &self,
-        new_participants: Vec<usize>,
-        new_threshold: usize,
-    ) -> anyhow::Result<()>;
-
-    // --- Request submission ---
-
-    /// Submits a sign() transaction to the contract and waits for the response.
-    pub async fn sign_and_await(
-        &self,
-        domain: &DomainConfig,
-        payload: &[u8; 32],
-        path: &str,
-        timeout: Duration,
-    ) -> anyhow::Result<SignatureResponse>;
-
-    /// Submits N signature requests in parallel, awaits all responses.
-    pub async fn batch_sign(
-        &self,
-        requests: Vec<SignRequest>,
-        timeout: Duration,
-    ) -> anyhow::Result<Vec<SignatureResponse>>;
-
-    /// Submits a CKD request and awaits the response.
-    pub async fn ckd_and_await(
-        &self,
-        domain: &DomainConfig,
-        app_public_key: &[u8],
-        path: &str,
-        timeout: Duration,
-    ) -> anyhow::Result<CKDResponse>;
-
-    /// Submits a verify_foreign_transaction request and awaits the response.
-    pub async fn verify_foreign_tx_and_await(
-        &self,
-        domain: &DomainConfig,
-        request: &ForeignChainRpcRequest,
-        timeout: Duration,
-    ) -> anyhow::Result<VerifyForeignTxResponse>;
-
-    // --- Metrics ---
-
-    /// Scrapes a metric from all nodes, returns values indexed by node.
-    pub async fn get_metric_all_nodes(
-        &self,
-        name: &str,
-    ) -> anyhow::Result<Vec<Option<i64>>>;
-
-    /// Polls until all nodes report the expected metric value.
-    pub async fn wait_for_metric_all_nodes(
-        &self,
-        name: &str,
-        expected: i64,
-        timeout: Duration,
-    ) -> anyhow::Result<()>;
-
-    // --- Data management ---
-
-    /// Wipes RocksDB data for nodes at given indices. Nodes must be stopped.
-    pub fn wipe_db(&self, indices: &[usize]) -> anyhow::Result<()>;
-
-    /// Controls block ingestion for nodes at given indices.
-    pub fn set_block_ingestion(
-        &mut self,
-        indices: &[usize],
-        active: bool,
-    ) -> anyhow::Result<()>;
-
-    // --- Migration ---
-
-    /// Registers backup service info on the contract for the given node.
-    pub async fn register_backup_service(
-        &self,
-        node_index: usize,
-        info: BackupServiceInfo,
-    ) -> anyhow::Result<()>;
-
-    /// Starts a node migration on the contract.
-    pub async fn start_node_migration(
-        &self,
-        node_index: usize,
-        dest: DestinationNodeInfo,
-    ) -> anyhow::Result<()>;
-}
-
-impl Drop for MpcCluster {
-    /// Kills all nodes on drop to avoid orphaned processes.
-    fn drop(&mut self) { /* kill_all */ }
-}
 ```
+BASE_PORT (20000) + test_id * PORTS_PER_TEST + offset
+```
+
+with `PORTS_PER_TEST = 2 + 10 * 8` (2 cluster ports + 8 per-node ports × 10
+maximum nodes). Cluster-level ports cover the sandbox RPC and network; per-node
+ports cover p2p, web UI, migration web UI, pprof, and the node's internal
+neard RPC/network.
+
+Centralising seeds in `tests/common.rs` (e.g. `CKD_VERIFICATION_PORT_SEED = 9`)
+keeps parallel tests from colliding. If a test crashes and leaves an orphan
+`mpc-node` holding its ports, the next run will fail to bind — clean up with
+`cargo make kill-orphan-mpc-nodes`.
+
+### 6. Foreign chain mocks
+
+`foreign_chain_mock.rs` exposes `setup_bitcoin_mock`, `setup_evm_mock`, and
+`setup_starknet_mock`. Each takes an `httpmock::MockServer` and attaches a
+POST `/` handler that returns hardcoded JSON-RPC responses for the methods
+the MPC nodes call during `verify_foreign_transaction`. Tests own the
+`MockServer`s directly (rather than a wrapping struct) so they can wire the
+URLs into the per-node `ForeignChainsConfig` via `MpcClusterConfig`.
 
 ---
 
-## Component 4: Foreign Chain Mock Servers
+## Writing a test
 
-For `test_foreign_transaction_validation`, we need mock RPC servers that pretend to be
-Bitcoin/EVM/Starknet nodes. The `httpmock` crate is already used in
-`foreign-chain-inspector/tests/`.
-
-```rust
-/// Starts mock foreign chain RPC servers and returns their URLs.
-pub struct ForeignChainMocks {
-    pub bitcoin_url: String,
-    pub abstract_url: String,
-    pub starknet_url: String,
-    servers: Vec<httpmock::MockServer>,
-}
-
-impl ForeignChainMocks {
-    /// Starts mock servers for Bitcoin, Abstract (EVM), and Starknet.
-    pub async fn start() -> Self;
-
-    /// Returns a ForeignChainsConfig pointing at the mock servers,
-    /// suitable for injecting into MpcNodeConfig.
-    pub fn as_config(&self) -> ForeignChainsConfig;
-}
-```
-
----
-
-## Example: How a test looks
-
-### Basic signature test
+Tests live under `crates/e2e-tests/tests/<feature>.rs` and must be declared as
+a module from `tests/e2e.rs`. `tests/common.rs` provides helpers used by most
+tests (`setup_cluster`, `wait_for_presignatures`, `load_contract_wasm`,
+`send_sign_request`, etc.).
 
 ```rust
+// tests/request_lifecycle.rs
+use crate::common;
+
 #[tokio::test]
-async fn test_signature_lifecycle() -> anyhow::Result<()> {
-    let config = MpcClusterConfig::default_for_test(2, 2);
-    let cluster = MpcCluster::start(config).await?;
+async fn request_lifecycle__signature_request_succeeds() {
+    let (cluster, running) =
+        common::setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
-    // Wait for presignatures to be generated
-    cluster.wait_for_metric_all_nodes(
-        "MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE",
-        10,
-        Duration::from_secs(120),
-    ).await?;
-
-    // Submit signature requests
-    let domain = &cluster.get_contract_state().await?.domains[0];
-    let payload = rand::random::<[u8; 32]>();
-    let response = cluster.sign_and_await(domain, &payload, "test", Duration::from_secs(30)).await?;
-
-    assert!(response.big_r.is_some());
-    assert!(response.s.is_some());
-    Ok(())
+    let mut rng = rand::thread_rng();
+    let user = cluster.default_user_account().clone();
+    common::send_sign_request(&cluster, &running, &mut rng, &user).await;
 }
 ```
 
-### Node failure test
+`setup_cluster` builds the default 3-node / 2-of-3 / 3-domain cluster, waits
+for `Running`, and blocks until presignatures are buffered. Pass a closure to
+override fields on `MpcClusterConfig`.
 
-```rust
-#[tokio::test]
-async fn test_node_failure_and_recovery() -> anyhow::Result<()> {
-    let config = MpcClusterConfig::default_for_test(3, 2);
-    let mut cluster = MpcCluster::start(config).await?;
+---
 
-    // Kill a node and wipe its DB
-    cluster.kill_nodes(&[2], false)?;
-    cluster.wipe_db(&[2])?;
+## Running the tests
 
-    // Verify remaining nodes detect the dead peer
-    for i in 0..2 {
-        cluster.nodes[i].wait_for_metric(
-            "MPC_NETWORK_LIVE_CONNECTIONS",
-            1, // only 1 peer now
-            Duration::from_secs(30),
-        ).await?;
-    }
-
-    // Signatures should still work with 2-of-3
-    let domain = &cluster.get_contract_state().await?.domains[0];
-    let payload = rand::random::<[u8; 32]>();
-    cluster.sign_and_await(domain, &payload, "test", Duration::from_secs(30)).await?;
-
-    // Restart the wiped node
-    cluster.start_nodes(&[2])?;
-
-    // Verify it reconnects
-    for i in 0..3 {
-        cluster.nodes[i].wait_for_metric(
-            "MPC_NETWORK_LIVE_CONNECTIONS",
-            2,
-            Duration::from_secs(60),
-        ).await?;
-    }
-
-    Ok(())
-}
+```bash
+cargo make e2e-tests                       # Build required binaries and run all tests
+cargo make e2e-tests-skip-build            # Reuse binaries from a previous run
+cargo make e2e-tests-skip-build -- <name>  # Run a single test (filter passed to nextest)
+cargo make kill-orphan-mpc-nodes           # Recover from ports held by crashed runs
 ```
 
-### Mixed version compatibility test
+The task runner builds three things before tests run: the mpc-node binary
+with the `network-hardship-simulation` feature, the MPC contract WASM, and
+the test parallel contract WASM. Paths are passed to tests via the
+`MPC_CONTRACT_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment variables
+read by `load_contract_wasm` / `load_parallel_contract_wasm` in
+`tests/common.rs`; if the env var is unset and no pre-built WASM is found,
+`test-utils::contract_build::ContractBuilder` builds it on the fly (useful for
+local iteration).
 
-```rust
-#[tokio::test]
-async fn test_mixed_version_compatibility() -> anyhow::Result<()> {
-    let mut config = MpcClusterConfig::default_for_test(3, 2);
-    // Two nodes run the old version, one runs the new version
-    config.binary_paths = vec![
-        PathBuf::from("target/release/mpc-node-v1"),
-        PathBuf::from("target/release/mpc-node-v1"),
-        PathBuf::from("target/release/mpc-node"),
-    ];
-
-    let cluster = MpcCluster::start(config).await?;
-
-    // Verify mixed-version cluster can still produce signatures
-    let domain = &cluster.get_contract_state().await?.domains[0];
-    let payload = rand::random::<[u8; 32]>();
-    cluster.sign_and_await(domain, &payload, "test", Duration::from_secs(30)).await?;
-
-    Ok(())
-}
-```
+CI runs the same task via the `mpc-e2e-tests` job.
 
 ---
 
-### Criteria for choosing
+## Ported tests
 
-This will be decided on case-by-case basis but rule of thumb is to have it as
-integration test if it can be meaningfully covered, but we must have few critical
-user journes covered end-to-end as close to production as possible.
+The following tests have been ported from pytest to the Rust framework and
+live in `crates/e2e-tests/tests/`:
+
+- `cancellation_of_resharing`
+- `ckd_verification`
+- `cleanup_lagging_node`
+- `foreign_chain_policy`
+- `foreign_chain_tx_validation`
+- `key_resharing`
+- `lost_assets`
+- `parallel_sign_calls`
+- `request_during_resharing`
+- `request_lifecycle`
+- `submit_participant_info`
+- `web_endpoints`
+
+Still on the pytest side (`pytest/tests/`) at the time of writing:
+
+- `test_migration_service.py` — migration service / migration endpoint; seeds
+  14 and 15 are reserved in `tests/common.rs` for the Rust port.
+- `robust_ecdsa/` — robust ECDSA scenarios.
+- `test_key_event.py` — overlaps with `key_resharing` but has additional
+  coverage that has not yet been migrated.
+
+When a pytest is ported, delete the Python version in the same PR so the two
+suites don't drift.
+
 ---
 
-## Implementation order
+## Test layout conventions
 
-1. **`MpcNode`** — Node process manager. Start/stop/kill a single mpc-node binary,
-   write config TOML, scrape metrics. This is the foundation everything else builds on.
-   *([#2440](https://github.com/near/mpc/issues/2440))*
-
-2. **`NearBlockchain`** — RPC client wrapper using `near-api-rs`. Deploy contract,
-   submit transactions, query state. Environment-agnostic — same code talks to
-   sandbox or testnet.
-
-3. **`MpcCluster`** — Combines `NearBlockchain` + N `MpcNode` instances. Handles the
-   full setup sequence: start sandbox → deploy contract → create accounts → generate
-   configs → spawn nodes → wait for Running state.
-   *([#2441](https://github.com/near/mpc/issues/2441))*
-
-4. **`ForeignChainMocks`** — Mock HTTP servers for Bitcoin/EVM/Starknet RPCs. Uses
-   `httpmock` crate (already in use in `foreign-chain-inspector/tests/`).
-
-5. **Migrate tests** — Starting with the simplest (e.g., `test_request_lifecycle`)
-   and working up to complex ones (`test_lost_assets`, `test_key_event`).
+- Follow the `<subject>__should_<assertion>` or `<subject>__<scenario>` naming
+  from `docs/engineering-standards.md`.
+- Reserve a unique `port_seed` constant in `tests/common.rs` before adding a
+  new test. Don't reuse someone else's seed, even if the test is short.
+- Prefer `common::setup_cluster` over calling `MpcCluster::start` directly;
+  it initialises `tracing_subscriber` and waits for presignatures.
+- Tests must be deterministic across parallel execution. Use the port
+  allocator, the per-cluster temp directory, and the deterministic key
+  generation rather than creating state outside the cluster.
+- Arithmetic in tests uses raw `+`/`-`/`*`/`/`; overflow panics are the
+  desired failure mode (see `CLAUDE.md`).
 
 ---
 
-## Parallel test execution
+## Related documents
 
-Python tests currently run serially (~28 min). Concurrent execution shows ~9 min
-speedup. To support parallel Rust E2E tests:
-
-- **Unique ports per test**: `MpcClusterConfig.port_seed` offsets all ports (P2P, web,
-  migration, pprof) to avoid collisions. Each test uses a different seed.
-- **Unique data directories**: Each `MpcNode` gets its own tempdir for RocksDB and
-  config files.
-- **Independent sandbox instances**: Each test starts its own `near-sandbox` neard
-  process with its own data directory (when running locally).
-- **`cargo nextest`**: Already used for Rust tests; runs each test in its own process
-  by default, providing natural isolation.
+- [`docs/engineering-standards.md`](./engineering-standards.md) — test naming,
+  panic policy, I/O separation.
+- `crates/e2e-tests/README.md` — quick-start for running the suite.
+- [Issue #2440](https://github.com/near/mpc/issues/2440) — `MpcNode` design.
+- [Issue #2441](https://github.com/near/mpc/issues/2441) — `MpcCluster`
+  design.
+- [PR #2446](https://github.com/near/mpc/pull/2446) — original design
+  proposal.
