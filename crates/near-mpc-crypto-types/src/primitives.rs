@@ -28,6 +28,12 @@ use crate::Bls12381G1PublicKey;
 )]
 pub struct Tweak([u8; 32]);
 
+impl Tweak {
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+}
+
 /// AppId for CKD
 #[derive(
     Debug,

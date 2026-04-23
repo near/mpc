@@ -2462,7 +2462,7 @@ mod tests {
     }
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
-        let tweak = k256::Scalar::from_repr((*tweak.as_ref()).into()).unwrap();
+        let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
         k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
     }
 

@@ -101,7 +101,7 @@ impl RerandomizedPresignOutput {
         // alpha * delta^{-1}
         let rerandomized_alpha = presignature.alpha * inv_delta;
 
-        // (beta + c*tweak.as_ref()) * delta^{-1}
+        // (beta + ctweak.as_bytes()) * delta^{-1}
         let rerandomized_beta =
             (presignature.beta + presignature.c * args.tweak.value()) * inv_delta;
 

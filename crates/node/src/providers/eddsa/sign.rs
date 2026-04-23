@@ -147,7 +147,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
         self,
         channel: &mut NetworkTaskChannel,
     ) -> anyhow::Result<Option<(Signature, VerifyingKey)>> {
-        let tweak = Scalar::<Ed25519Sha512>::from_bytes_mod_order(*self.tweak.as_ref());
+        let tweak = Scalar::<Ed25519Sha512>::from_bytes_mod_order(self.tweak.as_bytes());
         let tweak = threshold_signatures::Tweak::new(tweak);
         let derived_keygen_output = KeygenOutput {
             private_share: tweak.derive_signing_share(&self.keygen_output.private_share),

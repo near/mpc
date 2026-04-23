@@ -23,7 +23,7 @@ impl ThresholdParametersVotes {
                     participants
                         .participants()
                         .iter()
-                        .any(|(acc_id, _, _)| acc_id == &**acc)
+                        .any(|(acc_id, _, _)| **acc == *acc_id)
                         && prop == proposal
                 })
                 .count(),

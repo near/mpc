@@ -117,7 +117,7 @@ pub fn derive_secret_key_secp256k1(
     secret_key: &ts_ecdsa::KeygenOutput,
     tweak: &Tweak,
 ) -> ts_ecdsa::KeygenOutput {
-    let tweak = k256::Scalar::from_repr((*tweak.as_ref()).into()).unwrap();
+    let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
     let private_share =
         frost_secp256k1::keys::SigningShare::new(secret_key.private_share.to_scalar() + tweak);
     let public_key = frost_secp256k1::VerifyingKey::new(
@@ -133,7 +133,7 @@ pub fn derive_secret_key_ed25519(
     secret_key: &eddsa::KeygenOutput,
     tweak: &Tweak,
 ) -> eddsa::KeygenOutput {
-    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(*tweak.as_ref());
+    let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak.as_bytes());
     let private_share = SigningShare::new(secret_key.private_share.to_scalar() + tweak);
     let public_key =
         VerifyingKey::new(secret_key.public_key.to_element() + Ed25519Group::generator() * tweak);

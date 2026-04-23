@@ -151,7 +151,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let tweak = Scalar::from_repr((*self.tweak.as_ref()).into())
+        let tweak = Scalar::from_repr(self.tweak.as_bytes().into())
             .into_option()
             .context("Couldn't construct k256 point")?;
         let tweak = threshold_signatures::Tweak::new(tweak);
