@@ -588,10 +588,10 @@ The configuration has two sections: `[launcher_config]` for the launcher and `[m
 [launcher_config]
 image_reference = "nearone/mpc-node"
 port_mappings = [
-  { host = 80, container = 80 },
-  { host = 8080, container = 8080 },
-  { host = 8079, container = 8079 },
-  { host = 3030, container = 3030 },
+  { host = 80,    container = 80 },
+  { host = 8080,  container = 8080 },
+  { host = 8079,  container = 8079 },
+  { host = 3030,  container = 3030 },
   { host = 24567, container = 24567 },
 ]
 
@@ -599,10 +599,41 @@ port_mappings = [
 home_dir = "/data"
 
 [mpc_node_config.node]
-my_near_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"
-mpc_contract_id = "$CONTRACT_ID"  # v1.signer-prod.testnet for Testnet or v1.signer for Mainnet
-near_rpc = "https://rpc.testnet.near.org"
-near_boot_nodes = "$BOOT_NODES"
+my_near_account_id        = "$MY_MPC_NEAR_ACCOUNT_ID"
+near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"   # usually the same account
+number_of_responder_keys  = 50
+mpc_contract_id           = "$CONTRACT_ID"              # v1.signer-prod.testnet for Testnet, v1.signer for Mainnet
+near_rpc                  = "https://rpc.testnet.near.org"
+near_boot_nodes           = "$BOOT_NODES"
+web_ui                    = "0.0.0.0:8080"
+migration_web_ui          = "0.0.0.0:8079"
+pprof_bind_address        = "0.0.0.0:34001"
+cores                     = 12
+
+[mpc_node_config.node.indexer]
+validate_genesis = false
+sync_mode        = "Latest"
+finality         = "optimistic"
+concurrency      = 1
+mpc_contract_id  = "$CONTRACT_ID"
+port_override    = 80                                    # participant URLs on chain omit the port
+
+[mpc_node_config.node.triple]
+concurrency                                 = 2
+desired_triples_to_buffer                   = 1000000
+timeout_sec                                 = 60
+parallel_triple_generation_stagger_time_sec = 1
+
+[mpc_node_config.node.presignature]
+concurrency                     = 16
+desired_presignatures_to_buffer = 8192
+timeout_sec                     = 60
+
+[mpc_node_config.node.signature]
+timeout_sec = 60
+
+[mpc_node_config.node.ckd]
+timeout_sec = 60
 
 [mpc_node_config.secrets]
 secret_store_key_hex = "$SECRET_STORE_KEY"
@@ -616,7 +647,11 @@ Adjust the variables as per your environment.
 
 \* \`image_reference\` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
-* `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet
+* `near_responder_account_id` — the account that submits signature responses. Typically the same as `my_near_account_id`; set to a different account only if you've split signing/responding roles.
+* `number_of_responder_keys` — number of access keys the node will generate on the responder account for submitting responses. The node generates these on first start; you then need to register them on the account.
+* `mpc_contract_id` — **v1.signer-prod.testnet** for testnet, **v1.signer** for mainnet. Set it in both `[mpc_node_config.node]` and `[mpc_node_config.node.indexer]`.
+* `migration_web_ui` — endpoint where `backup-cli` connects during node migration. Must match the host port exposed in `port_mappings` (operator convention is **8079**).
+* `indexer.port_override` — set to **80** for testnet/mainnet: participant URLs stored on-chain do not include a port, so the indexer needs an explicit override for P2P.
 * `port_mappings` — port forwarding rules for the MPC container. These should be a subset of the port forwarding for the CVM defined in [Port Mapping](#using-the-web-interface)
 * A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into `near_boot_nodes`.
   **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
