@@ -78,16 +78,19 @@ filter = "mpc=debug,info"
 timeout_sec = 30
 max_retries = 3
 [mpc_node_config.node.foreign_chains.bitcoin.providers.public]
-rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
+rpc_url     = "https://bitcoin-testnet-rpc.publicnode.com"
+api_variant = "standard"
 
 [mpc_node_config.node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
 [mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
-rpc_url = "https://api.testnet.abs.xyz"
+rpc_url     = "https://api.testnet.abs.xyz"
+api_variant = "standard"
 
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
-rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
+rpc_url     = "https://starknet-sepolia-rpc.publicnode.com"
+api_variant = "standard"
