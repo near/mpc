@@ -39,6 +39,7 @@ const KEY_SEED_NEAR_SIGNER: u64 = 0;
 const KEY_SEED_P2P: u64 = 100;
 const KEY_SEED_OPERATOR: u64 = 200;
 const KEY_SEED_MIGRATION_P2P: u64 = 300;
+const KEY_SEED_MIGRATION_NEAR_SIGNER: u64 = 400;
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -186,11 +187,15 @@ impl MpcCluster {
             generate_signing_keys(u64::try_from(config.num_nodes).unwrap());
 
         // Pre-generate keys for migration target nodes.
-        // Migration targets share the source's NEAR account and operator,
-        // mirroring the production scenario of one operator managing both
-        // the old and new node.
-        for &source_idx in &config.migration_targets {
-            node_keys.push(node_keys[source_idx].clone());
+        // Migration targets share the source's NEAR account and operator
+        // (mirroring the production scenario of one operator managing both
+        // the old and new node), but get a fresh NEAR signer key so the new
+        // node's transactions are distinguishable from the source's.
+        for (i, &source_idx) in config.migration_targets.iter().enumerate() {
+            let target_idx = config.num_nodes + i;
+            node_keys.push(generate_deterministic_key(
+                KEY_SEED_MIGRATION_NEAR_SIGNER + target_idx as u64,
+            ));
             operator_keys.push(operator_keys[source_idx].clone());
         }
 
@@ -499,7 +504,7 @@ impl MpcCluster {
         }
 
         for i in participants_first.iter().chain(candidates_second.iter()) {
-            let client = self.client_for(*i)?;
+            let client = self.operator_client_for(*i)?;
             let outcome = self
                 .contract
                 .call_from(&client, method_names::VOTE_NEW_PARAMETERS, args.clone())
@@ -524,7 +529,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.client_for(node_index)?;
+        let client = self.operator_client_for(node_index)?;
         self.contract
             .call_from(&client, method_names::VOTE_CANCEL_RESHARING, json!({}))
             .await
@@ -702,7 +707,7 @@ impl MpcCluster {
     }
 
     /// Build a [`ClientHandle`] for the operator key of the given node.
-    pub fn client_for(&self, node_index: usize) -> anyhow::Result<ClientHandle> {
+    pub fn operator_client_for(&self, node_index: usize) -> anyhow::Result<ClientHandle> {
         let node = &self.nodes[node_index];
         self.blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
@@ -714,7 +719,7 @@ impl MpcCluster {
         node_index: usize,
         backup_service_info: serde_json::Value,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.client_for(node_index)?;
+        let client = self.operator_client_for(node_index)?;
         self.contract
             .call_from(
                 &client,
@@ -767,7 +772,7 @@ impl MpcCluster {
         node_index: usize,
         destination_node_info: serde_json::Value,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.client_for(node_index)?;
+        let client = self.operator_client_for(node_index)?;
         self.contract
             .call_from(
                 &client,
