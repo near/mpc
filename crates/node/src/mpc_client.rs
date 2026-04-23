@@ -17,7 +17,7 @@ use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
-    PendingRequests, CHECK_EACH_REQUEST_INTERVAL, REQUEST_EXPIRATION_BLOCKS,
+    PendingRequests, Requests, CHECK_EACH_REQUEST_INTERVAL, REQUEST_EXPIRATION_BLOCKS,
 };
 use crate::requests::recent_blocks_tracker::RecentBlocksTracker;
 use crate::storage::{
@@ -228,6 +228,7 @@ where
         );
 
         let start_time = Clock::real().now();
+
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {
@@ -271,10 +272,13 @@ where
                         })
                         .collect::<Vec<_>>();
 
+                    let signature_requests = Requests{
+                        block: block_update.block.clone().into(),
+                    requests: signature_requests,
+                    completed_requests: block_update.completed_signatures
+                    };
                     pending_signatures.notify_new_block(
-                        signature_requests,
-                        block_update.completed_signatures,
-                        &block_update.block,
+                    signature_requests,
                     );
 
                     let ckd_requests = block_update
@@ -302,10 +306,13 @@ where
                         })
                         .collect::<Vec<_>>();
 
+                    let ckd_requests = Requests{
+                        block: block_update.block.clone().into(),
+                    requests: ckd_requests,
+                    completed_requests: block_update.completed_ckds,
+                    };
                     pending_ckds.notify_new_block(
                         ckd_requests,
-                        block_update.completed_ckds,
-                        &block_update.block,
                     );
 
                     let verify_foreign_tx_requests = block_update
@@ -333,10 +340,13 @@ where
                         })
                         .collect::<Vec<_>>();
 
+                    let verify_foreign_tx_requests = Requests{
+                        block: block_update.block.into(),
+                    requests: verify_foreign_tx_requests,
+                    completed_requests: block_update.completed_verify_foreign_txs,
+                    };
                     pending_verify_foreign_txs.notify_new_block(
-                        verify_foreign_tx_requests,
-                        block_update.completed_verify_foreign_txs,
-                        &block_update.block,
+                    verify_foreign_tx_requests
                     );
 
 

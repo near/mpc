@@ -86,6 +86,13 @@ pub enum CheckBlockResult {
     Unknown,
 }
 
+/// The list of newly finalized blocks, in ascending height order. Each entry is a tuple of
+/// the block height and the block hash.
+/// It is guaranteed that the new final blocks returned from multiple calls to add_block are
+/// contiguous, thus forming the stream of finalized blocks.
+#[derive(derive_more::Deref, derive_more::From)]
+pub(crate) struct NewFinalBlocks(pub Vec<(u64, CryptoHash)>);
+
 /// Represents a block in the recent blockchain.
 ///
 /// Note: We're not using the thread-safe functionality of Mutex here because we only access
@@ -204,6 +211,29 @@ impl From<CryptoHash> for BlockEntropy {
     }
 }
 
+pub struct BlockReference {
+    pub hash: CryptoHash,
+    pub height: u64,
+}
+
+impl From<&BlockViewLite> for BlockReference {
+    fn from(value: &BlockViewLite) -> Self {
+        BlockReference {
+            hash: value.hash,
+            height: value.height,
+        }
+    }
+}
+
+impl From<BlockViewLite> for BlockReference {
+    fn from(value: BlockViewLite) -> Self {
+        BlockReference {
+            hash: value.hash,
+            height: value.height,
+        }
+    }
+}
+
 /// A view of a block that is sufficient for the RecentBlocksTracker.
 #[derive(Clone)]
 pub struct BlockViewLite {
@@ -230,10 +260,10 @@ impl RecentBlocksTracker {
     /// Adds a block to the tracker. This is expected to be called for EVERY block given by the
     /// indexer (whether or not it is interesting). Returns the newly-finalized blocks (in
     /// ascending height order) caused by this block's `last_final_block`.
-    pub(crate) fn add_block(&mut self, block: &BlockViewLite) -> Vec<(u64, CryptoHash)> {
+    pub(crate) fn add_block(&mut self, block: &BlockViewLite) -> NewFinalBlocks {
         if self.hash_to_node.contains_key(&block.hash) {
             tracing::warn!(target: "request", "Ignoring block {:?} at height {}", block.hash, block.height);
-            return vec![];
+            return Vec::new().into();
         }
         let parent = self.hash_to_node.get(&block.prev_hash).cloned();
         let node = Arc::new(BlockNode {
@@ -281,10 +311,7 @@ impl RecentBlocksTracker {
 
     /// Update the final head if the new final head received from a block is newer.
     /// Returns the list of newly finalized blocks in increasing height order.
-    fn maybe_update_final_head(
-        &mut self,
-        potential_final_head: CryptoHash,
-    ) -> Vec<(u64, CryptoHash)> {
+    fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> NewFinalBlocks {
         let final_head_node = self.hash_to_node.get(&potential_final_head);
         let mut new_final_blocks = Vec::new();
         if let Some(final_head_node) = final_head_node {
@@ -309,7 +336,7 @@ impl RecentBlocksTracker {
             }
         }
         new_final_blocks.reverse();
-        new_final_blocks
+        new_final_blocks.into()
     }
 
     /// Updates the canonical chain to the chain of the given block.
@@ -467,7 +494,7 @@ impl Debug for RecentBlocksTracker {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{BlockEntropy, BlockViewLite, RecentBlocksTracker};
+    use super::{BlockEntropy, BlockReference, BlockViewLite, RecentBlocksTracker};
     use crate::requests::recent_blocks_tracker::CheckBlockResult;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
@@ -502,6 +529,10 @@ pub mod tests {
                 return Some(grandparent.clone());
             }
             parent.last_final_block()
+        }
+
+        pub fn to_block_ref(&self) -> BlockReference {
+            BlockReference::from(&self.to_block_view())
         }
 
         pub fn to_block_view(&self) -> BlockViewLite {
@@ -641,9 +672,9 @@ pub mod tests {
             if let Some(parent) = block.parent.clone() {
                 self.parents_of_added_blocks.insert(parent.hash);
             }
-            new_final_blocks
-                .into_iter()
-                .map(|(_, hash)| hash)
+            (*new_final_blocks)
+                .iter()
+                .map(|(_, hash)| *hash)
                 .collect::<Vec<_>>()
         }
 
