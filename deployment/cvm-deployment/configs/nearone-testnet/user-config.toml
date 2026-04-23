@@ -25,7 +25,7 @@ boot_nodes       = "ed25519:2956bsTqWmXcVmXDSovLYS4HRpdyh51euNCiuQjy1h8Y@65.108.
 [mpc_node_config.node]
 my_near_account_id       = "n1-multichain.testnet"
 near_responder_account_id = "n1-multichain.testnet"   # same as signer (matches legacy GCP behavior)
-number_of_responder_keys = 50                         # matches legacy deployment/start.sh
+number_of_responder_keys = 1                          # matches the live testnet node
 mpc_contract_id          = "v1.signer-prod.testnet"
 web_ui                   = "0.0.0.0:8080"
 # Explicit migration endpoint (matches operator guide port table and
@@ -44,7 +44,7 @@ port_override    = 80                                 # participant URLs on chai
 
 [mpc_node_config.node.triple]
 concurrency                                 = 2
-desired_triples_to_buffer                   = 1000000
+desired_triples_to_buffer                   = 16384
 timeout_sec                                 = 60
 parallel_triple_generation_stagger_time_sec = 1
 
@@ -71,3 +71,23 @@ backup_encryption_key_hex = "<<OLD_NODE_BACKUP_KEY>>"
 [mpc_node_config.log]
 format = "plain"
 filter = "mpc=debug,info"
+
+# Foreign chain RPC providers — must mirror the live testnet node's config
+# (Slack feedback 2026-04-23 from Mårten Blankfors). Auth defaults to `none`.
+[mpc_node_config.node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
+rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.abstract]
+timeout_sec = 30
+max_retries = 3
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+rpc_url = "https://api.testnet.abs.xyz"
+
+[mpc_node_config.node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
+rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
