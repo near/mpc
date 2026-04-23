@@ -60,8 +60,13 @@ timeout_sec = 60
 timeout_sec = 60
 
 [mpc_node_config.secrets]
-# 32 hex chars. Generate on Bob: openssl rand -hex 16
+# 32 hex chars (16 bytes). Generate on Bob: openssl rand -hex 16
 secret_store_key_hex = "<<GENERATE_ON_BOB>>"
+# 64 hex chars (32 bytes). Must equal the OLD node's
+# $MPC_HOME/backup_encryption_key.hex so backup-cli put-keyshares (Phase D)
+# decrypts correctly. Extract on the OLD GCP node and inject here on Bob
+# — never through Alice.
+backup_encryption_key_hex = "<<OLD_NODE_BACKUP_KEY>>"
 
 [mpc_node_config.log]
 format = "plain"
