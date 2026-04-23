@@ -72,7 +72,7 @@ async fn migration_endpoint__should_track_migration_state() {
             "signer_account_pk": p2p_public_key,
             "destination_node_info": {
                 "url": "http://bogus:1234",
-                "sign_pk": p2p_public_key,
+                "tls_public_key": p2p_public_key,
             },
         });
         let outcome = cluster
@@ -88,7 +88,7 @@ async fn migration_endpoint__should_track_migration_state() {
             signer_account_pk: node_state.p2p_public_key(),
             destination_node_info: ParticipantInfo {
                 url: "http://bogus:1234".to_string(),
-                sign_pk: node_state.p2p_public_key(),
+                tls_public_key: node_state.p2p_public_key(),
             },
         };
         expected_migrations.insert(account_id, (Some(backup_info), Some(dest_info)));

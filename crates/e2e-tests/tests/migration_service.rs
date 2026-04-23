@@ -161,7 +161,7 @@ fn running_state_matches_participant_key(
                 .participants
                 .iter()
                 .any(|(a, _, info)| {
-                    a.as_str() == account_id && String::from(&info.sign_pk) == expected_pk
+                    a.as_str() == account_id && String::from(&info.tls_public_key) == expected_pk
                 })
         }
         _ => false,
@@ -281,7 +281,7 @@ async fn start_migration_and_wait(
         "signer_account_pk": target_signer_pk,
         "destination_node_info": {
             "url": target_p2p_url,
-            "sign_pk": target_p2p_key,
+            "tls_public_key": target_p2p_key,
         },
     });
     let outcome = cluster
