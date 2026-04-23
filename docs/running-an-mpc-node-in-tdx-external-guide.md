@@ -598,13 +598,20 @@ port_mappings = [
 [mpc_node_config]
 home_dir = "/data"
 
+# Bootstraps the NEAR node's config.json and genesis on first run.
+# Required — without this section, the indexer panics trying to read
+# /data/config.json.
+[mpc_node_config.near_init]
+chain_id         = "testnet"                            # "mainnet" for mainnet
+download_genesis = true
+download_config  = "rpc"
+boot_nodes       = "$BOOT_NODES"
+
 [mpc_node_config.node]
 my_near_account_id        = "$MY_MPC_NEAR_ACCOUNT_ID"
 near_responder_account_id = "$MY_MPC_NEAR_ACCOUNT_ID"   # usually the same account
 number_of_responder_keys  = 50
 mpc_contract_id           = "$CONTRACT_ID"              # v1.signer-prod.testnet for Testnet, v1.signer for Mainnet
-near_rpc                  = "https://rpc.testnet.near.org"
-near_boot_nodes           = "$BOOT_NODES"
 web_ui                    = "0.0.0.0:8080"
 migration_web_ui          = "0.0.0.0:8079"
 pprof_bind_address        = "0.0.0.0:34001"
@@ -646,6 +653,7 @@ filter = "mpc=debug,info"
 Adjust the variables as per your environment.
 
 \* \`image_reference\` — the Docker image reference. The actual image version is determined by the manifest digest from the contract (stored in the approved hashes file), not by a tag. A tag may be appended for readability (e.g., `"nearone/mpc-node:3.8.1"`) but is ignored during pull.
+* `[mpc_node_config.near_init]` — bootstraps the NEAR node's `config.json` and `genesis.json` on first run. Required for `start-with-config-file` (the launcher's invocation); without it, the indexer panics at `/data/config.json`. Set `chain_id` to the target network and provide a boot-nodes list.
 * `my_near_account_id` — use the NEAR account ID created in the previous step
 * `near_responder_account_id` — the account that submits signature responses. Typically the same as `my_near_account_id`; set to a different account only if you've split signing/responding roles.
 * `number_of_responder_keys` — number of access keys the node will generate on the responder account for submitting responses. The node generates these on first start; you then need to register them on the account.
