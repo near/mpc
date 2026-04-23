@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -122,7 +124,7 @@ impl TestSetupBuilder {
             domains,
             1,
             keyset,
-            parameters.clone().try_into().unwrap(),
+            parameters.clone().into(),
             init_config.clone(),
         )
         .unwrap();
@@ -137,10 +139,7 @@ impl TestSetupBuilder {
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
-                tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
-                    &participant_info.sign_pk,
-                )
-                .expect("sign_pk must be Ed25519"),
+                tls_public_key: participant_info.tls_public_key.clone(),
                 account_public_key: bogus_ed25519_public_key(),
             })
             .collect();
@@ -185,10 +184,7 @@ impl TestSetupBuilder {
 
                     setup
                         .contract
-                        .vote_new_parameters(
-                            EpochId::new(6),
-                            parameters.clone().try_into().unwrap(),
-                        )
+                        .vote_new_parameters(EpochId::new(6), parameters.clone().into())
                         .unwrap();
                 }
 
@@ -247,10 +243,7 @@ impl TestSetup {
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
-                tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
-                    &participant_info.sign_pk,
-                )
-                .expect("sign_pk must be Ed25519"),
+                tls_public_key: participant_info.tls_public_key.clone(),
                 account_public_key: bogus_ed25519_public_key(),
             })
             .collect()
@@ -280,11 +273,12 @@ fn set_system_time(nano_seconds_since_unix_epoch: u64) {
         .build());
 }
 
-/// ** Test for TEE cleanup of non-participants** - Tests that `clean_tee_status()` removes
-/// TEE accounts for accounts that are no longer in the participant list.
-/// This simulates cleanup after participant removal (e.g., post-resharing).
+/// **Test that `clean_tee_status()` is vote-only** — attestations for non-participants
+/// remain in `stored_attestations` after the call. Attestation pruning is handled by the
+/// separate `clean_invalid_attestations` endpoint.
 #[test]
-fn test_clean_tee_status_removes_non_participants() {
+fn clean_tee_status__should_not_touch_attestations() {
+    // Given
     const PARTICIPANT_COUNT: usize = 2; // After resharing removed one participant
     const THRESHOLD: u64 = 2;
 
@@ -303,14 +297,11 @@ fn test_clean_tee_status_removes_non_participants() {
     let participant_nodes: Vec<NodeId> = setup
         .participants_list
         .iter()
-        .take(2)
+        .take(PARTICIPANT_COUNT)
         .cloned()
         .map(|(account_id, _, participant_info)| NodeId {
             account_id: account_id.clone(),
-            tls_public_key: near_mpc_contract_interface::types::Ed25519PublicKey::try_from(
-                &participant_info.sign_pk,
-            )
-            .expect("sign_pk must be Ed25519"),
+            tls_public_key: participant_info.tls_public_key.clone(),
             account_public_key: bogus_ed25519_public_key(),
         })
         .collect();
@@ -324,13 +315,14 @@ fn test_clean_tee_status_removes_non_participants() {
         tls_public_key: bogus_ed25519_public_key(),
         account_public_key: bogus_ed25519_public_key(),
     };
-
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
     const INITIAL_TEE_ACCOUNTS: usize = PARTICIPANT_COUNT + 1; // 2 current + 1 stale
-    let tee_accounts_before = setup.contract.get_tee_accounts().len();
-    assert_eq!(tee_accounts_before, INITIAL_TEE_ACCOUNTS);
+    assert_eq!(
+        setup.contract.get_tee_accounts().len(),
+        INITIAL_TEE_ACCOUNTS
+    );
 
     let running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
@@ -339,24 +331,115 @@ fn test_clean_tee_status_removes_non_participants() {
     let participant_count = running_state.parameters.participants.participants.len();
     assert_eq!(participant_count, PARTICIPANT_COUNT);
 
-    // Test cleanup: should remove TEE account for non-participant
+    // When: clean_tee_status runs.
     setup.contract.clean_tee_status().unwrap();
 
-    // Verify cleanup worked: TEE accounts reduced to match participant count
-    let tee_accounts_after = setup.contract.get_tee_accounts().len();
-    assert_eq!(tee_accounts_after, PARTICIPANT_COUNT);
+    // Then: stored attestations are unchanged — only vote maps are touched by this endpoint.
+    assert_eq!(
+        setup.contract.get_tee_accounts().len(),
+        INITIAL_TEE_ACCOUNTS
+    );
 
     // State should remain Running with same participant count
     let final_running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should still be Running after cleanup"),
     };
-    let final_participant_count = final_running_state
-        .parameters
-        .participants
-        .participants
-        .len();
-    assert_eq!(final_participant_count, PARTICIPANT_COUNT);
+    assert_eq!(
+        final_running_state
+            .parameters
+            .participants
+            .participants
+            .len(),
+        PARTICIPANT_COUNT
+    );
+}
+
+/// **Test that `clean_invalid_attestations()` prunes expired attestations end-to-end via
+/// the public endpoint**, including attestations that belong to current participants.
+/// Restores the cleanup-path coverage that lived in the old `clean_tee_status` test.
+#[test]
+fn clean_invalid_attestations__should_remove_expired_entries() {
+    // Given
+    const PARTICIPANT_COUNT: usize = 2;
+    const THRESHOLD: u64 = 2;
+    const EXPIRY_SECONDS: u64 = 1_000;
+    const NOW_NS: u64 = 5_000 * NANOS_IN_SECOND;
+
+    testing_env!(VMContextBuilder::new()
+        .attached_deposit(NearToken::from_near(1))
+        .block_timestamp(0)
+        .build());
+
+    let mut setup = TestSetupBuilder::new()
+        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_threshold(THRESHOLD)
+        .build();
+
+    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
+        expected_measurements: None,
+    });
+
+    // init_running seeds one mock `Valid` attestation per participant. Overwrite the
+    // first participant's entry with an expiring one, and add a brand-new entry for an
+    // outsider account.
+    let participant_node = {
+        let (account_id, _, info) = &setup.participants_list[0];
+        NodeId {
+            account_id: account_id.clone(),
+            tls_public_key: info.tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        }
+    };
+    setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
+
+    let stale_node = NodeId {
+        account_id: "stale.near".parse().unwrap(),
+        tls_public_key: bogus_ed25519_public_key(),
+        account_public_key: bogus_ed25519_public_key(),
+    };
+    setup.submit_attestation_for_node(&stale_node, expiring_attestation);
+
+    const EXPECTED_STORED: usize = PARTICIPANT_COUNT + 1; // original mocks + outsider entry
+    assert_eq!(setup.contract.get_tee_accounts().len(), EXPECTED_STORED);
+
+    // When: time advances past the expiry and cleanup runs with a generous max_scan.
+    set_system_time(NOW_NS);
+    let removed = setup.contract.clean_invalid_attestations(100).unwrap();
+
+    // Then: both entries with `expiry_timestamp_seconds` in the past are evicted; the
+    // second participant's un-overwritten `Valid` mock remains.
+    const EXPECTED_REMOVED: u32 = 2;
+    assert_eq!(removed, EXPECTED_REMOVED);
+    assert_eq!(
+        setup.contract.get_tee_accounts().len(),
+        EXPECTED_STORED - EXPECTED_REMOVED as usize
+    );
+}
+
+/// **Test that `clean_invalid_attestations()` rejects calls outside `Running` state** so
+/// that keygen / resharing flows (which may reference not-yet-activated attestations)
+/// aren't disrupted.
+#[test]
+fn clean_invalid_attestations__should_reject_when_not_running() {
+    // Given: contract sitting in Initializing state.
+    testing_env!(VMContextBuilder::new()
+        .attached_deposit(NearToken::from_near(1))
+        .block_timestamp(0)
+        .build());
+
+    let mut setup = TestSetupBuilder::new()
+        .with_contract_protocol_state(ContractProtocolState::Initializing)
+        .build();
+
+    // When: the cleanup endpoint is invoked.
+    let result = setup.contract.clean_invalid_attestations(100);
+
+    // Then: the call errors without mutating state.
+    assert_matches!(result, Err(_));
 }
 
 macro_rules! assert_allowed_docker_image_hashes {

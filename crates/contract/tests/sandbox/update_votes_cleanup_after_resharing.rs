@@ -87,7 +87,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.clone().into(),
+                    tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
@@ -198,7 +198,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
                 account_id.clone(),
                 mpc_contract::primitives::participants::ParticipantInfo {
                     url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.clone().into(),
+                    tls_public_key: participant_info.tls_public_key.clone(),
                 },
                 mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )

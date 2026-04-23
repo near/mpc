@@ -1114,7 +1114,7 @@ fn build_participants(
             ParticipantId(participant_id as u32),
             ParticipantInfo {
                 url: format!("http://127.0.0.1:{}", ports.p2p_port(i)),
-                sign_pk: pubkey,
+                tls_public_key: pubkey,
             },
         ));
     }
@@ -1150,7 +1150,7 @@ fn build_participants_from_nodes(
             id,
             ParticipantInfo {
                 url: nodes[node_idx].p2p_url(),
-                sign_pk: nodes[node_idx].p2p_public_key(),
+                tls_public_key: nodes[node_idx].p2p_public_key(),
             },
         ));
     }

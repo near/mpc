@@ -1,7 +1,8 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
 use near_account_id::AccountId;
-use near_sdk::{near, PublicKey};
+use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_sdk::near;
 use std::collections::BTreeSet;
 
 pub use near_mpc_contract_interface::types::ParticipantId;
@@ -14,8 +15,8 @@ pub mod hpke {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
     pub url: String,
-    /// The public key used for verifying messages.
-    pub sign_pk: PublicKey,
+    /// The Ed25519 public key used for P2P TLS.
+    pub tls_public_key: Ed25519PublicKey,
 }
 
 #[near(serializers=[borsh, json])]

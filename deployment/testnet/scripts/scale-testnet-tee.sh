@@ -856,7 +856,7 @@ keys=json.load(open("${KEYS_JSON}"))
 threshold=int("${threshold}")
 parts=[]
 for k in keys:
-  parts.append([k["account"], k["i"], {"sign_pk": k["tls_pk"], "url": f'https://{k["ip"]}:13001'}])
+  parts.append([k["account"], k["i"], {"tls_public_key": k["tls_pk"], "url": f'https://{k["ip"]}:13001'}])
 init={"parameters":{"threshold":threshold,"participants":{"next_id":len(keys),"participants":parts}}}
 open("${INIT_ARGS_JSON}","w").write(json.dumps(init,indent=2))
 print("Wrote", "${INIT_ARGS_JSON}")
@@ -1164,8 +1164,8 @@ next_id=cur_next_id
 for k in new_keys:
     acct=k["account"]
     ip=k["ip"]
-    tls_pk=k["tls_pk"]  # P2P key == sign_pk
-    new_parts.append([acct, next_id, {"sign_pk": tls_pk, "url": f"https://{ip}:13001"}])
+    tls_pk=k["tls_pk"]  # P2P key == tls_public_key
+    new_parts.append([acct, next_id, {"tls_public_key": tls_pk, "url": f"https://{ip}:13001"}])
     next_id += 1
 
 out={

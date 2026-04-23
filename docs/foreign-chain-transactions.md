@@ -391,7 +391,6 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        api_variant: alchemy
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -400,7 +399,6 @@ foreign_chains:
           token:
             env: ALCHEMY_API_KEY
       quicknode:
-        api_variant: quicknode
         rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
         auth:
           kind: header
@@ -408,7 +406,6 @@ foreign_chains:
           token:
             val: "<your-api-key-here>"
       ankr:
-        api_variant: ankr
         rpc_url: "https://rpc.ankr.com/near/{api_key}"
         auth:
           kind: path
@@ -416,7 +413,6 @@ foreign_chains:
           token:
             env: ANKR_API_KEY
       public:
-        api_variant: standard
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
@@ -428,9 +424,6 @@ provider entries in config (including API keys) to satisfy the policy.
 Auth variants are explicitly modeled because providers differ in how they expect API keys
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
-
-`api_variant` is a node-only setting used to select chain-specific response parsing behavior for
-providers that diverge from the standard API shape. It must be set explicitly.
 
 ## Risks
 

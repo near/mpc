@@ -48,11 +48,6 @@ pub(crate) trait IntoInterfaceType<InterfaceType> {
     fn into_dto_type(self) -> InterfaceType;
 }
 
-pub(crate) trait TryIntoInterfaceType<InterfaceType> {
-    type Error;
-    fn try_into_dto_type(self) -> Result<InterfaceType, Self::Error>;
-}
-
 pub(crate) trait TryIntoContractType<ContractType> {
     type Error;
     fn try_into_contract_type(self) -> Result<ContractType, Self::Error>;
@@ -202,7 +197,7 @@ impl IntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
     fn into_contract_type(self) -> ParticipantInfo {
         ParticipantInfo {
             url: self.url,
-            sign_pk: self.sign_pk.into(),
+            tls_public_key: self.tls_public_key,
         }
     }
 }
@@ -465,6 +460,9 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.clean_tee_status_tera_gas {
             config.clean_tee_status_tera_gas = v;
         }
+        if let Some(v) = config_ext.clean_invalid_attestations_tera_gas {
+            config.clean_invalid_attestations_tera_gas = v;
+        }
         if let Some(v) = config_ext.cleanup_orphaned_node_migrations_tera_gas {
             config.cleanup_orphaned_node_migrations_tera_gas = v;
         }
@@ -495,6 +493,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
                 .return_ck_and_clean_state_on_success_call_tera_gas,
             fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: value.clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
@@ -520,6 +519,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
                 .return_ck_and_clean_state_on_success_call_tera_gas,
             fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: value.clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
@@ -674,31 +674,24 @@ mod to_dto {
         }
     }
 
-    impl TryFrom<ProtocolContractState> for dtos::ProtocolContractState {
-        type Error = ConversionError;
-        fn try_from(state: ProtocolContractState) -> Result<Self, Self::Error> {
-            (&state).try_into_dto_type()
+    impl From<ProtocolContractState> for dtos::ProtocolContractState {
+        fn from(state: ProtocolContractState) -> Self {
+            (&state).into_dto_type()
         }
     }
 
-    impl TryFrom<ThresholdParameters> for dtos::ThresholdParameters {
-        type Error = ConversionError;
-        fn try_from(params: ThresholdParameters) -> Result<Self, Self::Error> {
-            (&params).try_into_dto_type()
+    impl From<ThresholdParameters> for dtos::ThresholdParameters {
+        fn from(params: ThresholdParameters) -> Self {
+            (&params).into_dto_type()
         }
     }
 
-    impl TryFrom<ParticipantInfo> for dtos::ParticipantInfo {
-        type Error = ConversionError;
-        fn try_from(info: ParticipantInfo) -> Result<Self, Self::Error> {
-            Ok(dtos::ParticipantInfo {
+    impl From<ParticipantInfo> for dtos::ParticipantInfo {
+        fn from(info: ParticipantInfo) -> Self {
+            dtos::ParticipantInfo {
                 url: info.url,
-                sign_pk: dtos::Ed25519PublicKey::try_from(&info.sign_pk).map_err(|e| {
-                    ConversionError::DataConversion {
-                        reason: format!("participant sign_pk is not ed25519: {e}"),
-                    }
-                })?,
-            })
+                tls_public_key: info.tls_public_key,
+            }
         }
     }
 }
@@ -795,58 +788,50 @@ impl IntoInterfaceType<dtos::KeyEventId> for &KeyEventId {
 
 // --- Participants types ---
 
-impl TryIntoInterfaceType<dtos::Participants> for &Participants {
-    type Error = ConversionError;
-    fn try_into_dto_type(self) -> Result<dtos::Participants, Self::Error> {
+impl IntoInterfaceType<dtos::Participants> for &Participants {
+    fn into_dto_type(self) -> dtos::Participants {
         let participants = self
             .participants()
             .iter()
             .map(|(account_id, participant_id, info)| {
-                let sign_pk = dtos::Ed25519PublicKey::try_from(&info.sign_pk).map_err(|e| {
-                    ConversionError::DataConversion {
-                        reason: format!("participant sign_pk is not ed25519: {e}"),
-                    }
-                })?;
-                Ok((
+                (
                     account_id.clone(),
                     dtos::ParticipantId(participant_id.get()),
                     dtos::ParticipantInfo {
                         url: info.url.clone(),
-                        sign_pk,
+                        tls_public_key: info.tls_public_key.clone(),
                     },
-                ))
+                )
             })
-            .collect::<Result<_, _>>()?;
-        Ok(dtos::Participants {
+            .collect();
+        dtos::Participants {
             next_id: dtos::ParticipantId(self.next_id().get()),
             participants,
-        })
+        }
     }
 }
 
-impl TryIntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
-    type Error = ConversionError;
-    fn try_into_dto_type(self) -> Result<dtos::ThresholdParameters, Self::Error> {
-        Ok(dtos::ThresholdParameters {
-            participants: self.participants().try_into_dto_type()?,
+impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
+    fn into_dto_type(self) -> dtos::ThresholdParameters {
+        dtos::ThresholdParameters {
+            participants: self.participants().into_dto_type(),
             threshold: self.threshold(),
-        })
+        }
     }
 }
 
 // --- Voting types ---
 
-impl TryIntoInterfaceType<dtos::ThresholdParametersVotes> for &ThresholdParametersVotes {
-    type Error = ConversionError;
-    fn try_into_dto_type(self) -> Result<dtos::ThresholdParametersVotes, Self::Error> {
+impl IntoInterfaceType<dtos::ThresholdParametersVotes> for &ThresholdParametersVotes {
+    fn into_dto_type(self) -> dtos::ThresholdParametersVotes {
         let proposal_by_account = self
             .proposal_by_account
             .iter()
-            .map(|(account, params)| Ok((account.into_dto_type(), params.try_into_dto_type()?)))
-            .collect::<Result<_, ConversionError>>()?;
-        Ok(dtos::ThresholdParametersVotes {
+            .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
+            .collect();
+        dtos::ThresholdParametersVotes {
             proposal_by_account,
-        })
+        }
     }
 }
 
@@ -876,25 +861,23 @@ impl IntoInterfaceType<dtos::KeyEventInstance> for &KeyEventInstance {
     }
 }
 
-impl TryIntoInterfaceType<dtos::KeyEvent> for &KeyEvent {
-    type Error = ConversionError;
-    fn try_into_dto_type(self) -> Result<dtos::KeyEvent, Self::Error> {
-        Ok(dtos::KeyEvent {
+impl IntoInterfaceType<dtos::KeyEvent> for &KeyEvent {
+    fn into_dto_type(self) -> dtos::KeyEvent {
+        dtos::KeyEvent {
             epoch_id: self.epoch_id().into_dto_type(),
             domain: self.domain().clone(),
-            parameters: self.proposed_parameters().try_into_dto_type()?,
+            parameters: self.proposed_parameters().into_dto_type(),
             instance: self.instance().as_ref().map(|i| i.into_dto_type()),
             next_attempt_id: self.next_attempt_id().into_dto_type(),
-        })
+        }
     }
 }
 
 // --- Contract state types ---
 
-impl TryIntoInterfaceType<dtos::InitializingContractState> for &InitializingContractState {
-    type Error = ConversionError;
-    fn try_into_dto_type(self) -> Result<dtos::InitializingContractState, Self::Error> {
-        Ok(dtos::InitializingContractState {
+impl IntoInterfaceType<dtos::InitializingContractState> for &InitializingContractState {
+    fn into_dto_type(self) -> dtos::InitializingContractState {
+        dtos::InitializingContractState {
             domains: (&self.domains).into_dto_type(),
             epoch_id: self.epoch_id.into_dto_type(),
             generated_keys: self
@@ -902,67 +885,64 @@ impl TryIntoInterfaceType<dtos::InitializingContractState> for &InitializingCont
                 .iter()
                 .map(|k| k.into_dto_type())
                 .collect(),
-            generating_key: (&self.generating_key).try_into_dto_type()?,
+            generating_key: (&self.generating_key).into_dto_type(),
             cancel_votes: self
                 .cancel_votes
                 .iter()
                 .map(|p| p.into_dto_type())
                 .collect(),
-        })
+        }
     }
 }
 
-impl TryIntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
-    type Error = ConversionError;
-    fn try_into_dto_type(self) -> Result<dtos::RunningContractState, Self::Error> {
-        Ok(dtos::RunningContractState {
+impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
+    fn into_dto_type(self) -> dtos::RunningContractState {
+        dtos::RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
-            parameters: (&self.parameters).try_into_dto_type()?,
-            parameters_votes: (&self.parameters_votes).try_into_dto_type()?,
+            parameters: (&self.parameters).into_dto_type(),
+            parameters_votes: (&self.parameters_votes).into_dto_type(),
             add_domains_votes: (&self.add_domains_votes).into_dto_type(),
             previously_cancelled_resharing_epoch_id: self
                 .previously_cancelled_resharing_epoch_id
                 .map(|e| e.into_dto_type()),
-        })
+        }
     }
 }
 
-impl TryIntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState {
-    type Error = ConversionError;
-    fn try_into_dto_type(self) -> Result<dtos::ResharingContractState, Self::Error> {
-        Ok(dtos::ResharingContractState {
-            previous_running_state: (&self.previous_running_state).try_into_dto_type()?,
+impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState {
+    fn into_dto_type(self) -> dtos::ResharingContractState {
+        dtos::ResharingContractState {
+            previous_running_state: (&self.previous_running_state).into_dto_type(),
             reshared_keys: self
                 .reshared_keys
                 .iter()
                 .map(|k| k.into_dto_type())
                 .collect(),
-            resharing_key: (&self.resharing_key).try_into_dto_type()?,
+            resharing_key: (&self.resharing_key).into_dto_type(),
             cancellation_requests: self
                 .cancellation_requests
                 .iter()
                 .map(|a| a.into_dto_type())
                 .collect(),
-        })
+        }
     }
 }
 
-impl TryIntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
-    type Error = ConversionError;
-    fn try_into_dto_type(self) -> Result<dtos::ProtocolContractState, Self::Error> {
-        Ok(match self {
+impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
+    fn into_dto_type(self) -> dtos::ProtocolContractState {
+        match self {
             ProtocolContractState::NotInitialized => dtos::ProtocolContractState::NotInitialized,
             ProtocolContractState::Initializing(state) => {
-                dtos::ProtocolContractState::Initializing(state.try_into_dto_type()?)
+                dtos::ProtocolContractState::Initializing(state.into_dto_type())
             }
             ProtocolContractState::Running(state) => {
-                dtos::ProtocolContractState::Running(state.try_into_dto_type()?)
+                dtos::ProtocolContractState::Running(state.into_dto_type())
             }
             ProtocolContractState::Resharing(state) => {
-                dtos::ProtocolContractState::Resharing(state.try_into_dto_type()?)
+                dtos::ProtocolContractState::Resharing(state.into_dto_type())
             }
-        })
+        }
     }
 }
 
@@ -992,7 +972,7 @@ mod tests {
                 "alice.near".parse().unwrap(),
                 crate::primitives::participants::ParticipantInfo {
                     url: "https://alice.near.org".to_string(),
-                    sign_pk: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+                    tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
                         .parse()
                         .unwrap(),
                 },
@@ -1003,7 +983,7 @@ mod tests {
                 "bob.near".parse().unwrap(),
                 crate::primitives::participants::ParticipantInfo {
                     url: "https://bob.near.org".to_string(),
-                    sign_pk: "ed25519:HghFShDXwniWaV3CbMmPJsUjeLZBJ2jjCq6rM3AQYbx7"
+                    tls_public_key: "ed25519:HghFShDXwniWaV3CbMmPJsUjeLZBJ2jjCq6rM3AQYbx7"
                         .parse()
                         .unwrap(),
                 },
@@ -1059,7 +1039,7 @@ mod tests {
             ThresholdParameters::new(test_participants(), Threshold::new(TEST_THRESHOLD)).unwrap();
         let internal_json = serde_json::to_value(&internal).unwrap();
 
-        let dto: dtos::ThresholdParameters = (&internal).try_into_dto_type().unwrap();
+        let dto: dtos::ThresholdParameters = (&internal).into_dto_type();
         let dto_json = serde_json::to_value(&dto).unwrap();
 
         assert_eq!(internal_json, dto_json);

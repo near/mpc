@@ -285,7 +285,7 @@ near contract call-function as-transaction \
       \"signer_account_pk\": \"$near_signer_public_key\",
       \"destination_node_info\": {
         \"url\": \"new-node.example.com:80\",
-        \"sign_pk\": \"$P2P_KEY\"
+        \"tls_public_key\": \"$P2P_KEY\"
       }
     }
   }" \

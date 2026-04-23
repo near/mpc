@@ -56,7 +56,6 @@ abi = [
 __abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
-anyhow = { workspace = true }
 assert_matches = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
@@ -98,6 +97,7 @@ threshold-signatures = { workspace = true, optional = true }
 getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
+anyhow = { workspace = true }
 cargo-near-build = { workspace = true }
 contract-history = { workspace = true }
 digest = { workspace = true }

@@ -178,7 +178,7 @@ In order for a change to be accepted by the contract, all prospective participan
           "mpc-participant0.near",
           0,
           {
-            "sign_pk":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
+            "tls_public_key":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
             "url":"http://mpc-service0.com"
           }
         ],
@@ -186,7 +186,7 @@ In order for a change to be accepted by the contract, all prospective participan
           "mpc-participant1.near",
           1,
           {
-            "sign_pk":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
+            "tls_public_key":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
             "url":"http://mpc-service1.com"
           }
         ]

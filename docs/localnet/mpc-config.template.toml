@@ -60,7 +60,6 @@ timeout_sec = 30
 max_retries = 3
 
 [node.foreign_chains.bitcoin.providers.public]
-api_variant = "esplora"
 rpc_url = "https://bitcoin-rpc.publicnode.com"
 
 [node.foreign_chains.bitcoin.providers.public.auth]
@@ -71,7 +70,6 @@ timeout_sec = 30
 max_retries = 3
 
 [node.foreign_chains.abstract.providers.public]
-api_variant = "standard"
 rpc_url = "https://api.testnet.abs.xyz"
 
 [node.foreign_chains.abstract.providers.public.auth]
@@ -82,7 +80,6 @@ timeout_sec = 30
 max_retries = 3
 
 [node.foreign_chains.starknet.providers.public]
-api_variant = "standard"
 rpc_url = "https://starknet-rpc.publicnode.com"
 
 [node.foreign_chains.starknet.providers.public.auth]

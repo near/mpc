@@ -1,16 +1,12 @@
+use std::num::NonZeroU64;
+
 use crate::common;
 
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use e2e_tests::foreign_chain_mock::{setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock};
 use httpmock::prelude::*;
-use mpc_node_config::ForeignChainsConfig;
-use mpc_node_config::foreign_chains::{
-    AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, BaseApiVariant,
-    BaseChainConfig, BaseProviderConfig, BitcoinApiVariant, BitcoinChainConfig,
-    BitcoinProviderConfig, BnbApiVariant, BnbChainConfig, BnbProviderConfig, StarknetApiVariant,
-    StarknetChainConfig, StarknetProviderConfig,
-};
+use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, Curve, DomainConfig,
@@ -35,62 +31,57 @@ struct MockServerUrls {
 
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
     ForeignChainsConfig {
-        bitcoin: Some(BitcoinChainConfig {
-            timeout_sec: 30,
-            max_retries: 3,
+        bitcoin: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
-                "mock".to_string(),
-                BitcoinProviderConfig {
+                "mock".to_string().into(),
+                ForeignChainProviderConfig {
                     rpc_url: urls.bitcoin.clone(),
-                    api_variant: BitcoinApiVariant::Standard,
                     auth: Default::default(),
                 },
             ),
         }),
-        abstract_chain: Some(AbstractChainConfig {
-            timeout_sec: 30,
-            max_retries: 3,
+        abstract_chain: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
-                "mock".to_string(),
-                AbstractProviderConfig {
+                "mock".to_string().into(),
+                ForeignChainProviderConfig {
                     rpc_url: urls.abstract_chain.clone(),
-                    api_variant: AbstractApiVariant::Standard,
                     auth: Default::default(),
                 },
             ),
         }),
-        bnb: Some(BnbChainConfig {
-            timeout_sec: 30,
-            max_retries: 3,
+        bnb: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
-                "mock".to_string(),
-                BnbProviderConfig {
+                "mock".to_string().into(),
+                ForeignChainProviderConfig {
                     rpc_url: urls.bnb.clone(),
-                    api_variant: BnbApiVariant::Standard,
                     auth: Default::default(),
                 },
             ),
         }),
-        starknet: Some(StarknetChainConfig {
-            timeout_sec: 30,
-            max_retries: 3,
+        starknet: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
-                "mock".to_string(),
-                StarknetProviderConfig {
+                "mock".to_string().into(),
+                ForeignChainProviderConfig {
                     rpc_url: urls.starknet.clone(),
-                    api_variant: StarknetApiVariant::Standard,
                     auth: Default::default(),
                 },
             ),
         }),
-        base: Some(BaseChainConfig {
-            timeout_sec: 30,
-            max_retries: 3,
+        base: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
-                "mock".to_string(),
-                BaseProviderConfig {
+                "mock".to_string().into(),
+                ForeignChainProviderConfig {
                     rpc_url: urls.base.clone(),
-                    api_variant: BaseApiVariant::Standard,
                     auth: Default::default(),
                 },
             ),
