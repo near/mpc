@@ -1,5 +1,7 @@
 [launcher_config]
-image_reference = "nearone/mpc-node"
+# Tag is for readability only; actual image is pulled by digest from the
+# launcher compose DEFAULT_IMAGE_DIGEST (sha256:51ed33bb…).
+image_reference = "nearone/mpc-node:3.9.1"
 port_mappings = [
   { host = 80,    container = 80 },
   { host = 8080,  container = 8080 },
