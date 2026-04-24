@@ -8,12 +8,12 @@ use rand::SeedableRng;
 /// running state's threshold while resharing is in progress.
 ///
 /// Setup: 6 nodes, 5 initial participants (threshold 5). Domains cover
-/// classic ECDSA (Secp256k1), robust ECDSA (V2Secp256k1), EdDSA (Edwards25519)
-/// and CKD (Bls12381). Threshold is 5 because robust ECDSA requires ≥ 5
-/// signers (see `robust_ecdsa::translate_threshold`). Begin resharing to
-/// all 6 with threshold 6, then kill node 5 so resharing can't complete.
-/// Requests should still succeed using the old threshold of 5 across all
-/// signing schemes.
+/// classic ECDSA (Secp256k1), robust ECDSA (V2Secp256k1), EdDSA
+/// (Edwards25519) and CKD (Bls12381). Threshold is 5 because robust ECDSA
+/// requires ≥ 5 signers (see `robust_ecdsa::translate_threshold`). Begin
+/// resharing to all 6 with threshold 6, then kill node 5 so resharing can't
+/// complete. Requests should still succeed using the old threshold of 5
+/// across all signing schemes.
 #[tokio::test]
 async fn test_request_during_resharing() {
     // given
@@ -55,6 +55,12 @@ async fn test_request_during_resharing() {
         .iter()
         .find(|d| d.curve == Curve::V2Secp256k1 && d.purpose == DomainPurpose::Sign)
         .expect("no V2Secp256k1 Sign domain");
+    let eddsa_domain = contract_state
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.curve == Curve::Edwards25519 && d.purpose == DomainPurpose::Sign)
+        .expect("no Edwards25519 Sign domain");
     let ckd_domain = contract_state
         .domains
         .domains
@@ -64,17 +70,19 @@ async fn test_request_during_resharing() {
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for i in 0..3 {
-        for (label, domain) in [
-            ("ECDSA", ecdsa_domain),
-            ("robust ECDSA", robust_ecdsa_domain),
+        for (label, domain_id, is_eddsa) in [
+            ("ECDSA", ecdsa_domain.id, false),
+            ("robust ECDSA", robust_ecdsa_domain.id, false),
+            ("EdDSA", eddsa_domain.id, true),
         ] {
+            let payload = if is_eddsa {
+                common::generate_eddsa_payload(&mut rng)
+            } else {
+                common::generate_ecdsa_payload(&mut rng)
+            };
             tracing::info!(i, label, "sending sign request during resharing");
             let outcome = cluster
-                .send_sign_request(
-                    domain.id,
-                    common::generate_ecdsa_payload(&mut rng),
-                    cluster.default_user_account(),
-                )
+                .send_sign_request(domain_id, payload, cluster.default_user_account())
                 .await
                 .expect("sign request failed");
             assert!(
@@ -108,6 +116,6 @@ async fn test_request_during_resharing() {
                 .expect("failed to get state"),
             ProtocolContractState::Resharing(_)
         ),
-        "expected Resharing after CKD requests"
+        "expected Resharing after requests"
     );
 }

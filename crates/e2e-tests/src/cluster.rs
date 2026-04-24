@@ -374,6 +374,9 @@ impl MpcCluster {
         self.contract.view(method_names::GET_TEE_ACCOUNTS).await
     }
 
+    /// Vote to add domains and wait until the contract returns to the `Running`
+    /// state (i.e. key generation has completed for all new domains).
+    /// Use `start_add_domains` to stop waiting once `Initializing` is entered.
     pub async fn add_domains_and_wait(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
         self.start_add_domains(domains).await?;
 
