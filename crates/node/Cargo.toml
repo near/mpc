@@ -73,7 +73,6 @@ tee-authority = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true }
-tikv-jemallocator = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-metrics = { workspace = true }
