@@ -482,6 +482,17 @@ mod tests {
                         },
                     },
                 )),
+                ton: Some(test_chain(
+                    "toncenter",
+                    "https://toncenter.com/api/v3/",
+                    AuthConfig::Header {
+                        name: http::HeaderName::from_static("x-api-key"),
+                        scheme: None,
+                        token: TokenConfig::Val {
+                            val: "toncenter-secret".to_string(),
+                        },
+                    },
+                )),
             },
             cores: Some(4),
         }

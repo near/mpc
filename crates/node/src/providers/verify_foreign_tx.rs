@@ -13,6 +13,8 @@ use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
 use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::ton::inspector::TonInspector;
+use foreign_chain_inspector::ton::rpc_client::{build_ton_http_client, ReqwestTonClient};
 use mpc_node_config::{ConfigFile, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
@@ -31,6 +33,9 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub bnb: Vec<BnbInspector<Client>>,
     pub starknet: Vec<StarknetInspector<Client>>,
     pub base: Vec<BaseInspector<Client>>,
+    /// TON inspectors use a REST (not JSON-RPC) transport and therefore are
+    /// keyed on their own client type, not the generic `Client` parameter.
+    pub ton: Vec<TonInspector<ReqwestTonClient>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
@@ -54,12 +59,27 @@ impl ForeignChainInspectors<HttpClient> {
             };
         }
 
+        let ton: Vec<TonInspector<ReqwestTonClient>> = match &config.ton {
+            Some(c) => c
+                .providers
+                .values()
+                .map(|p| {
+                    let mut url = p.rpc_url.clone();
+                    let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
+                    let client = build_ton_http_client(url, rpc_auth)?;
+                    Ok(TonInspector::new(client))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?,
+            None => vec![],
+        };
+
         Ok(Self {
             bitcoin: build_inspectors!(&config.bitcoin, BitcoinInspector),
             abstract_chain: build_inspectors!(&config.abstract_chain, AbstractInspector),
             base: build_inspectors!(&config.base, BaseInspector),
             bnb: build_inspectors!(&config.bnb, BnbInspector),
             starknet: build_inspectors!(&config.starknet, StarknetInspector),
+            ton,
         })
     }
 }

@@ -53,3 +53,12 @@ foreign_chains:
         rpc_url: "https://starknet-rpc.publicnode.com"
         auth:
           kind: none
+  ton:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        # toncenter v3 REST endpoint; trailing slash required.
+        rpc_url: "https://testnet.toncenter.com/api/v3/"
+        auth:
+          kind: none

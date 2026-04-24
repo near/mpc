@@ -12,6 +12,7 @@ pub mod bnb;
 pub mod contract_interface_conversions;
 pub mod evm;
 pub mod starknet;
+pub mod ton;
 
 pub trait ForeignChainInspector {
     type TransactionId;
@@ -70,6 +71,22 @@ pub enum ForeignChainInspectionError {
     LogIndexOutOfBounds,
     #[error("failed to borsh serialize log event")]
     EventLogFailedBorshSerialization(std::io::Error),
+
+    // TON errors
+    #[error("toncenter RPC error: {0}")]
+    TonClientError(#[from] crate::ton::rpc_client::TonRpcError),
+    #[error("no transaction found on TON for hash {tx_hash_hex}")]
+    TonTransactionNotFound { tx_hash_hex: String },
+    #[error("TON transaction account mismatch: request asked for {expected}, RPC returned {got}")]
+    AccountMismatch { expected: String, got: String },
+    #[error("TON message at index {index} is not an ext-out message")]
+    NotAnExtOutMessage { index: u64 },
+    #[error(
+        "TON workchain {got} is not supported in v1 (only workchain 0 / basechain is supported)"
+    )]
+    UnsupportedWorkchain { got: i8 },
+    #[error("TON cell BoC normalization failed: {0}")]
+    TonBocError(#[from] crate::ton::TonBocError),
 }
 
 /// Builds an HTTP client with the specified authentication method.

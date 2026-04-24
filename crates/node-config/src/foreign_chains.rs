@@ -32,6 +32,8 @@ pub struct ForeignChainsConfig {
     pub bnb: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ton: Option<ForeignChainConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,6 +135,7 @@ impl ForeignChainsConfig {
             (self.starknet.as_ref(), dtos::ForeignChain::Starknet),
             (self.bnb.as_ref(), dtos::ForeignChain::Bnb),
             (self.base.as_ref(), dtos::ForeignChain::Base),
+            (self.ton.as_ref(), dtos::ForeignChain::Ton),
         ]
         .into_iter()
         .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))
@@ -549,6 +552,64 @@ foreign_chains:
         assert!(
             !configured.contains_key(&near_mpc_contract_interface::types::ForeignChain::Bitcoin)
         );
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_with_ton_section() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  ton:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      toncenter:
+        rpc_url: "https://toncenter.com/api/v3/"
+        auth:
+          kind: header
+          name: X-API-Key
+          token:
+            val: "local-test-key"
+"#;
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config
+            .validate()
+            .expect("config with ton section should be valid");
+        assert!(config.foreign_chains.ton.is_some());
     }
 
     #[test]
