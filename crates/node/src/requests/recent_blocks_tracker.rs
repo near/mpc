@@ -430,8 +430,10 @@ impl RecentBlocksTracker {
             .add(1)
             > node.height
         {
-            // can this happen in case we didn't prune??
-            // otherwise, lets remove it
+            // This struct prunes blocks older than [`self.window_size`] if possible.
+            // If we still ave this block, then that means the following hold true:
+            // - This block is final
+            // - There is no block more recent that is also final
             return CheckBlockResult::OlderThanRecentWindow;
         }
         if node.is_final.load(Ordering::Relaxed) {
@@ -701,21 +703,6 @@ pub mod tests {
         assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
-
-        //// We received announcement that block 17 is already available.
-        //tester.avail(17);
-        ////    Recent blocks: (Window = 14 to 17, GC limit 13)
-        //// FH └─[13] C F DTYziqMhQ9i2wbruEfoNiWZNp34dzVYto6FLy3FUZKwt "13"
-        ////      [14] C   4q6agzf1AcZWcVbNnULR8969K8MhmPCEJ7pKapjmEGmA "14"
-        //// CH   [15] C   7inNzFR4mz4TRu9CSajNQnWxwhKDcYzTYubtM6zFri7Y "15"
-        //tester.print();
-        //assert_eq!(tester.check(&b10), CheckBlockResult::Unknown);
-        //assert_eq!(tester.check(&b11), CheckBlockResult::Unknown);
-        //assert_eq!(tester.check(&b12), CheckBlockResult::Unknown);
-        //assert_eq!(tester.check(&b13), CheckBlockResult::Unknown);
-        //assert_eq!(tester.check(&b14), CheckBlockResult::OptimisticAndCanonical);
-        //assert_eq!(tester.check(&b15), CheckBlockResult::OptimisticAndCanonical);
-        //assert_eq!(tester.check(&b16), CheckBlockResult::Unknown);
     }
 
     #[test]
@@ -794,15 +781,6 @@ pub mod tests {
         assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
         assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b20), CheckBlockResult::OptimisticAndCanonical);
-
-        //// We receive announcement that block 21 is already available.
-        //t.avail(21);
-        //t.print();
-        //assert_eq!(t.check(&b16), CheckBlockResult::Unknown);
-        //assert_eq!(t.check(&b17), CheckBlockResult::Unknown);
-        //assert_eq!(t.check(&b18), CheckBlockResult::RecentAndFinal);
-        //assert_eq!(t.check(&b19), CheckBlockResult::OptimisticAndCanonical);
-        //assert_eq!(t.check(&b20), CheckBlockResult::OptimisticAndCanonical);
     }
 
     #[test]
@@ -936,21 +914,5 @@ pub mod tests {
         assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
         assert_eq!(t.check(&b110), CheckBlockResult::NotIncluded);
         assert_eq!(t.check(&b111), CheckBlockResult::NotIncluded);
-
-        //// We receive announcement that block 15 is already available.
-        //t.avail(15);
-        ////    Recent blocks: (Window = 11 to 15, GC limit 11)
-        //// FH └─[11] C F NW4CWxr6ptWa9tsV2gMhGPdE7ecNWfCrnJDfJwx9yv9 "b10200"
-        ////      [12] C   4Vwtcagaq6fi5j82suG4j8HiaU3SMbqotrZzT3bjqwcP "b102000"
-        //// CH   [13] C   GktyudcCf3dBkWCdjq9dFssY7KZRRZQJ1TZH3ZMw8LWk "b1020000"
-        //t.print();
-        //assert_eq!(t.check(&b001), CheckBlockResult::Unknown);
-        //assert_eq!(t.check(&b010), CheckBlockResult::Unknown);
-        //assert_eq!(t.check(&b011), CheckBlockResult::Unknown);
-        //assert_eq!(t.check(&b10200), CheckBlockResult::RecentAndFinal);
-        //assert_eq!(t.check(&b102000), CheckBlockResult::OptimisticAndCanonical);
-        //assert_eq!(t.check(&b1020000), CheckBlockResult::OptimisticAndCanonical);
-        //assert_eq!(t.check(&b110), CheckBlockResult::Unknown);
-        //assert_eq!(t.check(&b111), CheckBlockResult::Unknown);
     }
 }

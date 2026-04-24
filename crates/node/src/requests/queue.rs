@@ -482,6 +482,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             match recent_blocks.classify_block(request.block_hash) {
                 CheckBlockResult::RecentAndFinal
                 | CheckBlockResult::OptimisticAndCanonical
+                // todo: we participate in "unknown", which is prolly not ideal.
                 | CheckBlockResult::Unknown => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
                         tracing::debug!(target: "request", "Leader for {} request {:?} from block {} is {}", RequestType::get_type(), request.request.get_id(), request.block_height, leader);
