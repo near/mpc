@@ -54,7 +54,7 @@ pub mod common;
 mod basic_cluster;
 mod changing_participant_details;
 mod faulty;
-mod foreign_chain_policy;
+mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
 mod resharing;
