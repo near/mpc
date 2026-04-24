@@ -267,8 +267,8 @@ where
 
 #[derive(Debug, thiserror::Error)]
 enum ForeignChainSupportError {
-    #[error("failed to fetch on-chain foreign chain policy")]
-    FetchOnChainPolicy(#[source] anyhow::Error),
+    #[error("failed to fetch supported chains on the contract")]
+    FailedToReadContract(#[source] anyhow::Error),
     #[error(
         "requested chain {requested:?} is not present in the list of supported foreign chains on the MPC contract"
     )]
@@ -282,7 +282,7 @@ async fn chain_is_supported(
     let on_chain_foreign_chains_support = policy_reader
         .get_supported_chains()
         .await
-        .map_err(ForeignChainSupportError::FetchOnChainPolicy)?;
+        .map_err(ForeignChainSupportError::FailedToReadContract)?;
 
     let requested_chain = request.chain();
 
