@@ -55,11 +55,11 @@ pub struct FakeMpcContractState {
 }
 
 #[derive(Clone)]
-pub struct FakeForeignChainPolicyReader {
+pub struct FakeReadSupportedForeignChain {
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 }
 
-impl ReadSupportedForeignChain for FakeForeignChainPolicyReader {
+impl ReadSupportedForeignChain for FakeReadSupportedForeignChain {
     async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
         Ok(self
             .contract
@@ -1016,7 +1016,7 @@ impl FakeIndexerManager {
         account_id: AccountId,
         p2p_public_key: VerifyingKey,
     ) -> (
-        IndexerAPI<MockTransactionSender, FakeForeignChainPolicyReader>,
+        IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
@@ -1038,7 +1038,7 @@ impl FakeIndexerManager {
         let mock_transaction_sender = MockTransactionSender {
             transaction_sender: api_txn_sender,
         };
-        let foreign_chain_policy_reader = FakeForeignChainPolicyReader {
+        let foreign_chain_policy_reader = FakeReadSupportedForeignChain {
             contract: self.contract.clone(),
         };
         let indexer = IndexerAPI {

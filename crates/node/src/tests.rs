@@ -16,7 +16,7 @@ use tokio::sync::{watch, RwLock};
 use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
-use crate::indexer::fake::{FakeForeignChainPolicyReader, FakeIndexerManager};
+use crate::indexer::fake::{FakeIndexerManager, FakeReadSupportedForeignChain};
 use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
@@ -69,7 +69,7 @@ pub struct OneNodeTestConfig {
     home_dir: PathBuf,
     pub config: ConfigFile,
     secrets: SecretsConfig,
-    indexer: IndexerAPI<MockTransactionSender, FakeForeignChainPolicyReader>,
+    indexer: IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
