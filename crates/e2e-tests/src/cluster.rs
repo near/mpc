@@ -374,7 +374,24 @@ impl MpcCluster {
         self.contract.view(method_names::GET_TEE_ACCOUNTS).await
     }
 
-    pub async fn add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
+    /// Vote to add domains and wait until the contract returns to the `Running`
+    /// state (i.e. key generation has completed for all new domains).
+    /// Use `start_add_domains` to stop waiting once `Initializing` is entered.
+    pub async fn add_domains_and_wait(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
+        self.start_add_domains(domains).await?;
+
+        self.wait_for_state(
+            |s| matches!(s, ProtocolContractState::Running(_)),
+            CLUSTER_WAIT_TIMEOUT,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Vote to add domains and wait only until the contract enters the
+    /// `Initializing` state. Does NOT wait for key generation to complete —
+    /// use `add_domains_and_wait` for the full flow.
+    pub async fn start_add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
         let args = json!({ "domains": domains });
         self.call_from_all_nodes_concurrently(method_names::VOTE_ADD_DOMAINS, args)
             .await?;
@@ -383,14 +400,26 @@ impl MpcCluster {
             |s| matches!(s, ProtocolContractState::Initializing(_)),
             Duration::from_secs(30),
         )
-        .await?;
-
-        self.wait_for_state(
-            |s| matches!(s, ProtocolContractState::Running(_)),
-            CLUSTER_WAIT_TIMEOUT,
-        )
         .await
         .map(|_| ())
+    }
+
+    /// Vote to cancel an in-progress keygen from a specific node.
+    /// Returns the execution outcome so callers can check success/failure.
+    pub async fn vote_cancel_keygen_from(
+        &self,
+        node_index: usize,
+        next_domain_id: u64,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let client = self.operator_client_for(node_index)?;
+        self.contract
+            .call_from(
+                &client,
+                method_names::VOTE_CANCEL_KEYGEN,
+                json!({ "next_domain_id": next_domain_id }),
+            )
+            .await
+            .with_context(|| format!("node {node_index} failed to send cancel keygen vote"))
     }
 
     /// Vote for resharing and wait until the contract enters Resharing state.
