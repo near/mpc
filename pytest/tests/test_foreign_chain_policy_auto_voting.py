@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests automatic voting of foreign chain policy from node-local config.
+Tests automatic registration of supported foreign chains from node-local config.
 """
 
 import pathlib
@@ -25,6 +25,7 @@ FOREIGN_CHAINS_CONFIG = {
         "max_retries": 3,
         "providers": {
             "public": {
+                "api_variant": "standard",
                 "rpc_url": "https://rpc.public.example.com",
                 "auth": {
                     "kind": "none",
@@ -34,19 +35,17 @@ FOREIGN_CHAINS_CONFIG = {
     }
 }
 
-EXPECTED_POLICY = {
-    "chains": {
-        "Solana": [
-            {
-                "rpc_url": "https://rpc.public.example.com",
-            }
-        ],
-    }
+FOREIGN_CHAINS_CONFIG_DTO = {
+    "Solana": [
+        {
+            "rpc_url": "https://rpc.public.example.com",
+        }
+    ],
 }
 
 
 @pytest.fixture(scope="module")
-def foreign_chain_policy_cluster():
+def foreign_chain_registration_cluster():
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         3, 1, load_mpc_contract(), start_mpc_nodes=False
     )
@@ -68,54 +67,49 @@ def foreign_chain_policy_cluster():
 
 
 @pytest.mark.no_atexit_cleanup
-def test_foreign_chain_policy_auto_voting_requires_unanimity(
-    foreign_chain_policy_cluster: tuple[MpcCluster, list],
+def test_supported_foreign_chains_requires_all_participants(
+    foreign_chain_registration_cluster: tuple[MpcCluster, list],
 ):
-    cluster, mpc_nodes = foreign_chain_policy_cluster
+    cluster, mpc_nodes = foreign_chain_registration_cluster
 
-    def partial_votes_visible() -> bool:
-        votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")[
-            "proposal_by_account"
-        ]
-        policy = cluster.view_contract_function("get_foreign_chain_policy")
-        return len(votes) == 2 and foreign_chains.normalize_policy(policy) == []
+    # Wait for all three nodes to auto-register on startup: nodes 0 and 1 with
+    # Solana, node 2 with an empty configuration. Solana should not yet appear
+    # as supported because node 2's configuration does not include it.
+    def all_nodes_registered_with_one_empty() -> bool:
+        registrations = cluster.view_contract_function(
+            "get_foreign_chain_configurations"
+        )["foreign_chain_configuration_by_node"]
+        supported = cluster.view_contract_function("get_supported_foreign_chains")
+        empty_count = sum(1 for config in registrations.values() if not config)
+        return (
+            len(registrations) == 3 and empty_count == 1 and "Solana" not in supported
+        )
 
     utils.wait_until(
-        partial_votes_visible,
-        description="two policy votes without policy application",
+        all_nodes_registered_with_one_empty,
+        description="all three registrations with one empty and Solana unsupported",
     )
 
-    votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")[
-        "proposal_by_account"
-    ]
-    assert len(votes) == 2, "expected exactly two votes before unanimity"
-    assert (
-        foreign_chains.normalize_policy(
-            cluster.view_contract_function("get_foreign_chain_policy")
-        )
-        == []
-    ), "policy should not be applied before unanimous voting"
+    supported = cluster.view_contract_function("get_supported_foreign_chains")
+    assert "Solana" not in supported, (
+        "Solana should not be supported when not all participants registered it"
+    )
 
+    # Have node 3 register Solana support directly on the contract.
     cluster.call_contract_function_with_account_assert_success(
         mpc_nodes[2],
-        "vote_foreign_chain_policy",
-        {"policy": EXPECTED_POLICY},
+        "register_foreign_chain_config",
+        {
+            "foreign_chain_configuration": FOREIGN_CHAINS_CONFIG_DTO,
+        },
     )
 
-    expected_normalized_policy = foreign_chains.normalize_policy(EXPECTED_POLICY)
-
-    def policy_applied() -> bool:
-        votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")[
-            "proposal_by_account"
-        ]
-        policy = cluster.view_contract_function("get_foreign_chain_policy")
-        return (
-            len(votes) == 0
-            and foreign_chains.normalize_policy(policy) == expected_normalized_policy
-        )
+    def solana_supported() -> bool:
+        supported = cluster.view_contract_function("get_supported_foreign_chains")
+        return "Solana" in supported
 
     utils.wait_until(
-        policy_applied,
-        description="policy application after unanimous voting",
+        solana_supported,
+        description="Solana supported after all participants registered it",
         timeout_sec=30,
     )

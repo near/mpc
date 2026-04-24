@@ -15,6 +15,7 @@ mod auth;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+// TODO(#3002): only keep variants that are actually supported by the node binary
 pub struct ForeignChainsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<ForeignChainConfig>,
@@ -57,19 +58,11 @@ pub struct ForeignChainProviderConfig {
     Hash,
     Ord,
     PartialOrd,
+    derive_more::Into,
     derive_more::From,
     derive_more::Deref,
 )]
 pub struct RpcProviderName(String);
-
-impl ForeignChainConfig {
-    pub(crate) fn providers_to_set(&self) -> NonEmptyBTreeSet<dtos::RpcProvider> {
-        self.providers
-            .map_to_set(|_name, provider| dtos::RpcProvider {
-                rpc_url: provider.rpc_url().trim().to_string(),
-            })
-    }
-}
 
 impl ForeignChainProviderConfig {
     fn rpc_url(&self) -> Cow<'_, str> {
@@ -86,42 +79,21 @@ impl ForeignChainsConfig {
         self.all_configured_chains().is_empty()
     }
 
-    pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
-        if self.is_empty() {
-            return None;
-        }
+    pub fn configured_chains(&self) -> dtos::ForeignChainConfiguration {
+        self.all_configured_chains()
+            .into_iter()
+            .map(|(config, foreign_chain_identifier)| {
+                let rpc_providers =
+                    config
+                        .providers
+                        .map_to_set(|_provider_name, provider_config| dtos::RpcProvider {
+                            rpc_url: provider_config.rpc_url().trim().to_string(),
+                        });
 
-        let mut chains = BTreeMap::new();
-
-        if let Some(config) = &self.solana {
-            chains.insert(dtos::ForeignChain::Solana, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.bitcoin {
-            chains.insert(dtos::ForeignChain::Bitcoin, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.ethereum {
-            chains.insert(dtos::ForeignChain::Ethereum, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.abstract_chain {
-            chains.insert(dtos::ForeignChain::Abstract, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.starknet {
-            chains.insert(dtos::ForeignChain::Starknet, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.bnb {
-            chains.insert(dtos::ForeignChain::Bnb, config.providers_to_set());
-        }
-
-        if let Some(config) = &self.base {
-            chains.insert(dtos::ForeignChain::Base, config.providers_to_set());
-        }
-
-        Some(dtos::ForeignChainPolicy { chains })
+                (foreign_chain_identifier, rpc_providers)
+            })
+            .collect::<BTreeMap<dtos::ForeignChain, NonEmptyBTreeSet<dtos::RpcProvider>>>()
+            .into()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -129,8 +101,8 @@ impl ForeignChainsConfig {
 
         let mut seen_rpc_urls = BTreeSet::new();
 
-        for foreign_chain in configured_chains {
-            for provider in foreign_chain.providers.values() {
+        for (foreign_chain_config, _identifier) in configured_chains {
+            for provider in foreign_chain_config.providers.values() {
                 let rpc_url = &provider.rpc_url;
 
                 // is a valid URL
@@ -152,18 +124,18 @@ impl ForeignChainsConfig {
         Ok(())
     }
 
-    fn all_configured_chains(&self) -> Vec<&ForeignChainConfig> {
+    fn all_configured_chains(&self) -> Vec<(&ForeignChainConfig, dtos::ForeignChain)> {
         [
-            self.solana.as_ref(),
-            self.bitcoin.as_ref(),
-            self.ethereum.as_ref(),
-            self.abstract_chain.as_ref(),
-            self.starknet.as_ref(),
-            self.bnb.as_ref(),
-            self.base.as_ref(),
+            (self.solana.as_ref(), dtos::ForeignChain::Solana),
+            (self.bitcoin.as_ref(), dtos::ForeignChain::Bitcoin),
+            (self.ethereum.as_ref(), dtos::ForeignChain::Ethereum),
+            (self.abstract_chain.as_ref(), dtos::ForeignChain::Abstract),
+            (self.starknet.as_ref(), dtos::ForeignChain::Starknet),
+            (self.bnb.as_ref(), dtos::ForeignChain::Bnb),
+            (self.base.as_ref(), dtos::ForeignChain::Base),
         ]
         .into_iter()
-        .flatten() // filters None entries
+        .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))
         .collect()
     }
 }
@@ -389,7 +361,7 @@ foreign_chains:
     }
 
     #[test]
-    fn to_policy__strips_path_auth_placeholder_from_rpc_url() {
+    fn configured_chains__should_strip_path_auth_placeholder_from_rpc_url() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -439,14 +411,16 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let configured = config.foreign_chains.configured_chains();
 
         // Then
-        let solana_providers = policy
-            .chains
+        let solana_providers = configured
             .get(&near_mpc_contract_interface::types::ForeignChain::Solana)
-            .unwrap();
-        let provider = solana_providers.iter().next().unwrap();
+            .expect("Solana should be in the configured chains");
+        let provider = solana_providers
+            .iter()
+            .next()
+            .expect("expected at least one Solana provider");
         assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
     }
 
@@ -506,7 +480,7 @@ foreign_chains:
     }
 
     #[test]
-    fn to_policy__preserves_url_for_non_path_auth() {
+    fn configured_chains__should_preserve_url_for_non_path_auth() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -557,15 +531,24 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let configured = config.foreign_chains.configured_chains();
 
         // Then
-        let eth_providers = policy
-            .chains
+        let eth_providers = configured
             .get(&near_mpc_contract_interface::types::ForeignChain::Ethereum)
-            .unwrap();
-        let provider = eth_providers.iter().next().unwrap();
+            .expect("Ethereum should be in the configured chains");
+        let provider = eth_providers
+            .iter()
+            .next()
+            .expect("expected at least one Ethereum provider");
         assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
+
+        assert!(
+            !configured.contains_key(&near_mpc_contract_interface::types::ForeignChain::Solana)
+        );
+        assert!(
+            !configured.contains_key(&near_mpc_contract_interface::types::ForeignChain::Bitcoin)
+        );
     }
 
     #[test]
