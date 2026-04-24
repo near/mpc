@@ -630,7 +630,11 @@ pub async fn register_foreign_chain_configuration(
             .await
             .unwrap()
             .into_result();
-        assert!(result.is_ok(), "vote_foreign_chain_policy should succeed");
+        assert!(
+            result.is_ok(),
+            "{} should succeed",
+            method_names::REGISTER_FOREIGN_CHAIN_CONFIG
+        );
     }
 }
 
