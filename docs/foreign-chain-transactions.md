@@ -33,7 +33,7 @@ This design intentionally keeps responses small and on-chain-friendly by enforci
 
 Not all extractors can be satisfied by a single RPC method call.
 
-* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain policy.
+* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain configurations.
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`.
@@ -54,7 +54,7 @@ flowchart TD
       _Submits verify_foreign_transaction requests._"]
 
     SC["**MPC Signer Contract**
-      _On-chain policy + pending requests._"]
+      _On-chain foreign-chain configurations + pending requests._"]
 
     MPC["**MPC Nodes**
       _Query RPC, extract values, sign._"]
@@ -284,19 +284,20 @@ pub fn derive_foreign_tx_tweak(predecessor_id: &AccountId, path: &str) -> Tweak 
 This ensures key material used for validated foreign transactions is **always** distinct from
 general-purpose `sign()` keys, even if the same account and derivation path are reused.
 
-## Contract State (Foreign Chain Policy)
+## Contract State (Foreign Chain Configurations)
 
-The contract maintains a *foreign chain policy* that defines which chains and RPC providers are allowed.
+The contract stores a foreign-chain configuration **per participant** — there is no global, voted-on policy. The set of chains the network collectively supports is derived as the **intersection** of chains registered by every active participant.
 
 ```rust
-pub struct ForeignChainPolicy {
-    pub chains: BTreeSet<ForeignChainConfig>,
+pub struct NodeForeignChainConfigurations {
+    pub foreign_chain_configuration_by_node: BTreeMap<AccountId, ForeignChainConfiguration>,
 }
 
-pub struct ForeignChainConfig {
-    pub chain: ForeignChain,
-    pub providers: BTreeSet<RpcProvider>,
-}
+pub struct ForeignChainConfiguration(
+    pub BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
+);
+
+pub struct SupportedForeignChains(pub BTreeSet<ForeignChain>);
 
 pub enum ForeignChain {
     Solana,
@@ -305,22 +306,25 @@ pub enum ForeignChain {
     Base,
     Bnb,
     Arbitrum,
+    Abstract,
+    Starknet,
     // Future chains...
 }
 
 pub struct RpcProvider {
-    rpc_url: String,
-}
-
-pub struct ForeignChainPolicyVotes {
-    // Each authenticated participant has one active vote for a proposal.
-    pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
+    pub rpc_url: String,
 }
 ```
 
+Relevant contract methods:
+
+* `register_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method. The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
+* `get_supported_foreign_chains() -> SupportedForeignChains` — view method. Returns the set of chains that appear in **every** active participant's registered configuration.
+* `get_foreign_chain_configurations() -> NodeForeignChainConfigurations` — view method. Returns each participant's registered configuration.
+
 ## Deterministic Provider Selection
 
-Each node selects a provider using a deterministic hash of the policy identity (provider RPC URL):
+Each node selects a provider using a deterministic hash of the provider identity (RPC URL):
 
 ```
 hash = sha256(participant_id || request_id || provider_rpc_url)
@@ -337,48 +341,42 @@ This ensures different nodes query different providers for the same request whil
 * Nodes **abstain** if RPC queries fail or extraction fails.
 * A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
 
-For operators, policy updates control which chains/providers are allowed:
+For operators, enabling a chain requires each node to register its local foreign-chain configuration with the contract:
 
-### Operator Flow: Policy Updates (New Chains / Providers)
+### Operator Flow: Registering Foreign Chain Configurations
 
 ```mermaid
 ---
-title: Foreign Chain Policy Updates - High Level
+title: Foreign Chain Configuration Registration - High Level
 ---
 flowchart TD
     NODE["**MPC Node**
       _Local config + API keys._"]
 
     SC["**MPC Signer Contract**
-      _Foreign chain policy._"]
+      _Per-node foreign-chain configurations._"]
 
-    COMP["**Compare**
-      _Local config vs policy._"]
+    SUPPORTED["**Supported Chains**
+      _Intersection of all active participants' registered chains._"]
 
-    UPDATED["**Policy Updated**
-      _Unanimous vote reached._"]
-
-    NODE -->|"1. read policy"| SC
-    NODE -->|"2. compare"| COMP
-    COMP -->|"3. vote if different"| SC
-    SC -->|"4. update policy on unanimity"| UPDATED
+    NODE -->|"1. register_foreign_chain_config(local_config)"| SC
+    SC -->|"2. recompute on view"| SUPPORTED
 
     NODE@{ shape: proc}
     SC@{ shape: db}
-    COMP@{ shape: proc}
-    UPDATED@{ shape: proc}
+    SUPPORTED@{ shape: proc}
 ```
 
-### Contract Policy State (Types)
-See "Contract State (Foreign Chain Policy)" above.
+### Contract State (Types)
+See "Contract State (Foreign Chain Configurations)" above.
 
-## Node Configuration and Policy Updates
+## Node Configuration and Contract Registration
 
 * Node config contains chain RPC providers and timeouts (API keys stay local).
-* On startup, nodes compare local config to the on-chain policy.
-* If different, a node submits a vote for the policy derived from its local config.
-* Policy updates are applied only when all current participants vote for the same proposal.
-* Foreign chain configuration on a per node basis can be queried with `get_foreign_chain_configurations()`.
+* On startup, each node submits a single `register_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
+* Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
+* A chain appears in `get_supported_foreign_chains()` only once **every** active participant has registered it.
+* Per-participant registrations can be inspected with `get_foreign_chain_configurations()`.
 
 ### Configuration (Node)
 
@@ -418,8 +416,8 @@ foreign_chains:
           kind: none
 ```
 
-The contract policy references providers by **rpc_url**, and nodes must have matching
-provider entries in config (including API keys) to satisfy the policy.
+Each registered configuration references providers by **rpc_url**, and nodes must have matching
+provider entries in config (including API keys) to actually serve traffic for that chain.
 
 Auth variants are explicitly modeled because providers differ in how they expect API keys
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
@@ -434,6 +432,6 @@ providers require no auth at all.
 * **Provider availability**: Outages or rate limits can cause verification failures and reduced
   signing availability.
 * **Finality semantics**: Finality definitions differ across chains; mapping them correctly is critical.
-* **Operational friction**: Unanimous voting for policy updates may slow rollouts and hot fixes.
+* **Rollout coordination**: A chain is only considered supported once **every** active participant has registered it; a single lagging operator can delay enabling a new chain.
 * **Config drift**: Nodes missing required provider keys will fail startup validation.
 * **Extractor correctness**: Bugs or ambiguous specifications in extractors could produce incorrect values.
