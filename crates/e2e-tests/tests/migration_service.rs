@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -19,48 +20,57 @@ struct BackupService {
 }
 
 impl BackupService {
-    fn new(binary_path: PathBuf) -> Self {
-        Self {
-            home_dir: tempfile::tempdir().expect("failed to create backup service home dir"),
+    fn new(binary_path: PathBuf) -> anyhow::Result<Self> {
+        Ok(Self {
+            home_dir: tempfile::tempdir().context("failed to create backup service home dir")?,
             binary_path,
-        }
+        })
     }
 
-    fn generate_keys(&self) {
+    fn home_dir_str(&self) -> anyhow::Result<&str> {
+        self.home_dir
+            .path()
+            .to_str()
+            .context("backup service home dir path is not valid UTF-8")
+    }
+
+    fn generate_keys(&self) -> anyhow::Result<()> {
         let output = Command::new(&self.binary_path)
-            .args([
-                "--home-dir",
-                self.home_dir.path().to_str().unwrap(),
-                "generate-keys",
-            ])
+            .args(["--home-dir", self.home_dir_str()?, "generate-keys"])
             .output()
-            .expect("failed to run backup-cli generate-keys");
-        assert!(
+            .context("failed to run backup-cli generate-keys")?;
+        anyhow::ensure!(
             output.status.success(),
             "backup-cli generate-keys failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        Ok(())
     }
 
-    fn public_key(&self) -> String {
+    fn public_key(&self) -> anyhow::Result<String> {
         let secrets_path = self.home_dir.path().join("secrets.json");
+        let contents = std::fs::read_to_string(&secrets_path)
+            .with_context(|| format!("failed to read {}", secrets_path.display()))?;
         let secrets: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&secrets_path).unwrap()).unwrap();
-        let p2p_key_bytes: Vec<u8> =
-            serde_json::from_value(secrets["p2p_private_key"].clone()).unwrap();
+            serde_json::from_str(&contents).context("failed to parse secrets.json")?;
+        let p2p_key_bytes: Vec<u8> = serde_json::from_value(secrets["p2p_private_key"].clone())
+            .context("failed to parse p2p_private_key")?;
         let secret_bytes: [u8; 32] = p2p_key_bytes
             .try_into()
-            .expect("expected 32 bytes for signing key");
+            .map_err(|_| anyhow::anyhow!("expected 32 bytes for signing key"))?;
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
         let public_key =
             near_mpc_crypto_types::Ed25519PublicKey::from(&signing_key.verifying_key());
-        String::from(&public_key)
+        Ok(String::from(&public_key))
     }
 
-    fn set_contract_state(&self, state: &ProtocolContractState) {
+    fn set_contract_state(&self, state: &ProtocolContractState) -> anyhow::Result<()> {
         let state_path = self.home_dir.path().join("contract_state.json");
-        let json = serde_json::to_string_pretty(state).unwrap();
-        std::fs::write(&state_path, json).unwrap();
+        let json =
+            serde_json::to_string_pretty(state).context("failed to serialize contract state")?;
+        std::fs::write(&state_path, json)
+            .with_context(|| format!("failed to write {}", state_path.display()))?;
+        Ok(())
     }
 
     fn get_keyshares(
@@ -68,11 +78,11 @@ impl BackupService {
         node_migration_address: &str,
         node_p2p_key: &str,
         backup_encryption_key_hex: &str,
-    ) {
+    ) -> anyhow::Result<()> {
         let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
-                self.home_dir.path().to_str().unwrap(),
+                self.home_dir_str()?,
                 "get-keyshares",
                 "--mpc-node-address",
                 node_migration_address,
@@ -82,12 +92,13 @@ impl BackupService {
                 backup_encryption_key_hex,
             ])
             .output()
-            .expect("failed to run backup-cli get-keyshares");
-        assert!(
+            .context("failed to run backup-cli get-keyshares")?;
+        anyhow::ensure!(
             output.status.success(),
             "backup-cli get-keyshares failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        Ok(())
     }
 
     fn put_keyshares(
@@ -95,11 +106,11 @@ impl BackupService {
         node_migration_address: &str,
         node_p2p_key: &str,
         backup_encryption_key_hex: &str,
-    ) {
+    ) -> anyhow::Result<()> {
         let output = Command::new(&self.binary_path)
             .args([
                 "--home-dir",
-                self.home_dir.path().to_str().unwrap(),
+                self.home_dir_str()?,
                 "put-keyshares",
                 "--mpc-node-address",
                 node_migration_address,
@@ -109,28 +120,29 @@ impl BackupService {
                 backup_encryption_key_hex,
             ])
             .output()
-            .expect("failed to run backup-cli put-keyshares");
-        assert!(
+            .context("failed to run backup-cli put-keyshares")?;
+        anyhow::ensure!(
             output.status.success(),
             "backup-cli put-keyshares failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        Ok(())
     }
 }
 
 /// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
 /// (see `build-backup-cli` task in Makefile.toml).
-fn backup_cli_path() -> PathBuf {
+fn backup_cli_path() -> anyhow::Result<PathBuf> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/backup-cli");
-    assert!(
+    anyhow::ensure!(
         path.exists(),
         "backup-cli binary not found at {}. Run `cargo make e2e-tests` to build it.",
         path.display()
     );
-    path
+    Ok(path)
 }
 
-async fn wait_for_migration_port(address: &str) {
+async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
     let timeout = MIGRATION_PORT_TIMEOUT;
     (|| async {
         let result = std::net::TcpStream::connect(address);
@@ -146,7 +158,7 @@ async fn wait_for_migration_port(address: &str) {
             .with_max_times((timeout.as_millis() / common::POLL_INTERVAL.as_millis()) as usize),
     )
     .await
-    .unwrap_or_else(|e| panic!("migration port {address} never became reachable: {e}"));
+    .with_context(|| format!("migration port {address} never became reachable"))
 }
 
 fn running_state_matches_participant_key(
@@ -174,8 +186,8 @@ async fn register_backup_service_and_wait(
     cluster: &e2e_tests::MpcCluster,
     source_idx: usize,
     backup_service: &BackupService,
-) {
-    let backup_public_key = backup_service.public_key();
+) -> anyhow::Result<()> {
+    let backup_public_key = backup_service.public_key()?;
     let source_account_id = cluster.nodes[source_idx].account_id().to_string();
 
     let outcome = cluster
@@ -184,8 +196,8 @@ async fn register_backup_service_and_wait(
             serde_json::json!({ "public_key": backup_public_key }),
         )
         .await
-        .expect("failed to register backup service");
-    assert!(
+        .context("failed to register backup service")?;
+    anyhow::ensure!(
         outcome.is_success(),
         "register_backup_service failed: {:?}",
         outcome.failure_message()
@@ -195,7 +207,7 @@ async fn register_backup_service_and_wait(
         let info: serde_json::Value = cluster
             .view_migration_info()
             .await
-            .expect("failed to view migration info");
+            .context("failed to view migration info")?;
         let entry = info.get(&source_account_id);
         anyhow::ensure!(
             entry.is_some_and(|e| !e.get(0).unwrap_or(&serde_json::Value::Null).is_null()),
@@ -211,11 +223,11 @@ async fn register_backup_service_and_wait(
             ),
     )
     .await
-    .expect("timed out waiting for node to index backup registration");
+    .context("timed out waiting for node to index backup registration")?;
 
     let source_web_addr = match &cluster.nodes[source_idx] {
         MpcNodeState::Running(n) => n.web_address(),
-        _ => panic!("source node not running"),
+        _ => bail!("source node not running"),
     };
     let http_client = reqwest::Client::new();
     (|| async {
@@ -238,7 +250,9 @@ async fn register_backup_service_and_wait(
             ),
     )
     .await
-    .expect("timed out waiting for node debug endpoint to show backup registration");
+    .context("timed out waiting for node debug endpoint to show backup registration")?;
+
+    Ok(())
 }
 
 /// GET keyshares from the source node via the backup CLI.
@@ -246,24 +260,24 @@ async fn get_keyshares_from_source(
     cluster: &e2e_tests::MpcCluster,
     source_idx: usize,
     backup_service: &BackupService,
-) {
+) -> anyhow::Result<()> {
     let contract_state = cluster
         .get_contract_state()
         .await
-        .expect("failed to get contract state");
-    backup_service.set_contract_state(&contract_state);
+        .context("failed to get contract state")?;
+    backup_service.set_contract_state(&contract_state)?;
 
     let source_migration_addr = match &cluster.nodes[source_idx] {
         MpcNodeState::Running(n) => n.migration_web_ui_address(),
-        _ => panic!("source node not running"),
+        _ => bail!("source node not running"),
     };
     let source_p2p_key = cluster.nodes[source_idx].p2p_public_key_str();
-    wait_for_migration_port(&source_migration_addr).await;
+    wait_for_migration_port(&source_migration_addr).await?;
     backup_service.get_keyshares(
         &source_migration_addr,
         &source_p2p_key,
         cluster.nodes[source_idx].backup_encryption_key_hex(),
-    );
+    )
 }
 
 /// Start node migration on the contract and wait for confirmation.
@@ -271,7 +285,7 @@ async fn start_migration_and_wait(
     cluster: &e2e_tests::MpcCluster,
     source_idx: usize,
     target_idx: usize,
-) {
+) -> anyhow::Result<()> {
     let source_account_id = cluster.nodes[source_idx].account_id().to_string();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
@@ -287,8 +301,8 @@ async fn start_migration_and_wait(
     let outcome = cluster
         .start_node_migration(source_idx, destination_node_info)
         .await
-        .expect("failed to start node migration");
-    assert!(
+        .context("failed to start node migration")?;
+    anyhow::ensure!(
         outcome.is_success(),
         "start_node_migration failed: {:?}",
         outcome.failure_message()
@@ -298,7 +312,7 @@ async fn start_migration_and_wait(
         let info: serde_json::Value = cluster
             .view_migration_info()
             .await
-            .expect("failed to view migration info");
+            .context("failed to view migration info")?;
         let entry = info.get(&source_account_id);
         anyhow::ensure!(
             entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
@@ -314,7 +328,7 @@ async fn start_migration_and_wait(
             ),
     )
     .await
-    .expect("timed out waiting for contract to reflect node migration");
+    .context("timed out waiting for contract to reflect node migration")
 }
 
 /// PUT keyshares to the target node via the backup CLI.
@@ -322,25 +336,25 @@ async fn put_keyshares_to_target(
     cluster: &e2e_tests::MpcCluster,
     target_idx: usize,
     backup_service: &BackupService,
-) {
+) -> anyhow::Result<()> {
     let target_migration_addr = match &cluster.nodes[target_idx] {
         MpcNodeState::Running(n) => n.migration_web_ui_address(),
-        _ => panic!("target node not running"),
+        _ => bail!("target node not running"),
     };
-    wait_for_migration_port(&target_migration_addr).await;
+    wait_for_migration_port(&target_migration_addr).await?;
 
     let contract_state = cluster
         .get_contract_state()
         .await
-        .expect("failed to get contract state");
-    backup_service.set_contract_state(&contract_state);
+        .context("failed to get contract state")?;
+    backup_service.set_contract_state(&contract_state)?;
 
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
     backup_service.put_keyshares(
         &target_migration_addr,
         &target_p2p_key,
         cluster.nodes[target_idx].backup_encryption_key_hex(),
-    );
+    )
 }
 
 /// Wait for the target to become an active participant and for migration
@@ -349,7 +363,7 @@ async fn wait_for_migration_completion(
     cluster: &e2e_tests::MpcCluster,
     source_idx: usize,
     target_idx: usize,
-) {
+) -> anyhow::Result<()> {
     let source_account_id = cluster.nodes[source_idx].account_id().to_string();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
 
@@ -357,7 +371,7 @@ async fn wait_for_migration_completion(
         let state = cluster
             .get_contract_state()
             .await
-            .expect("failed to get contract state");
+            .context("failed to get contract state")?;
         anyhow::ensure!(
             running_state_matches_participant_key(&state, &source_account_id, &target_p2p_key),
             "target node not yet active participant"
@@ -373,16 +387,16 @@ async fn wait_for_migration_completion(
             ),
     )
     .await
-    .expect("timed out waiting for migration to complete");
+    .context("timed out waiting for migration to complete")?;
 
     (|| async {
         let migration_info: serde_json::Value = cluster
             .view_migration_info()
             .await
-            .expect("failed to view migration info");
+            .context("failed to view migration info")?;
         let entry = migration_info
             .get(&source_account_id)
-            .expect("account not found in migration info");
+            .context("account not found in migration info")?;
         let destination = entry.get(1).unwrap_or(&serde_json::Value::Null);
         anyhow::ensure!(
             destination.is_null(),
@@ -396,7 +410,7 @@ async fn wait_for_migration_completion(
             .with_max_times(20),
     )
     .await
-    .expect("migration state did not clear");
+    .context("migration state did not clear")
 }
 
 /// Full end-to-end node migration via the backup CLI.
@@ -412,7 +426,7 @@ async fn wait_for_migration_completion(
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn migration_service__should_migrate_nodes_via_backup_cli() {
-    let backup_cli = backup_cli_path();
+    let backup_cli = backup_cli_path().expect("failed to resolve backup-cli path");
 
     // Given: cluster with 2 participants + 2 migration targets. Targets start
     // alongside the participants so their indexers sync before blocks pile up.
@@ -421,13 +435,18 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         c.threshold = 2;
         c.migration_targets = vec![0, 1];
     })
-    .await;
+    .await
+    .expect("setup_cluster failed");
 
     // Then: the cluster is healthy — sign + ckd requests succeed against the
     // source participants.
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
-    common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account()).await;
+    common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("sign request failed");
+    common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
+        .await
+        .expect("ckd request failed");
 
     let target_indices = [2usize, 3];
     for (source_idx, &target_idx) in target_indices.iter().enumerate() {
@@ -447,13 +466,26 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         // When: run the migration flow end-to-end — register backup service,
         // GET keyshares from source, start migration, PUT keyshares to target,
         // wait for completion, then kill the source node.
-        let backup_service = BackupService::new(backup_cli.clone());
-        backup_service.generate_keys();
-        register_backup_service_and_wait(&cluster, source_idx, &backup_service).await;
-        get_keyshares_from_source(&cluster, source_idx, &backup_service).await;
-        start_migration_and_wait(&cluster, source_idx, target_idx).await;
-        put_keyshares_to_target(&cluster, target_idx, &backup_service).await;
-        wait_for_migration_completion(&cluster, source_idx, target_idx).await;
+        let backup_service =
+            BackupService::new(backup_cli.clone()).expect("failed to create backup service");
+        backup_service
+            .generate_keys()
+            .expect("backup-cli generate-keys failed");
+        register_backup_service_and_wait(&cluster, source_idx, &backup_service)
+            .await
+            .expect("register_backup_service_and_wait failed");
+        get_keyshares_from_source(&cluster, source_idx, &backup_service)
+            .await
+            .expect("get_keyshares_from_source failed");
+        start_migration_and_wait(&cluster, source_idx, target_idx)
+            .await
+            .expect("start_migration_and_wait failed");
+        put_keyshares_to_target(&cluster, target_idx, &backup_service)
+            .await
+            .expect("put_keyshares_to_target failed");
+        wait_for_migration_completion(&cluster, source_idx, target_idx)
+            .await
+            .expect("wait_for_migration_completion failed");
         cluster
             .kill_nodes(&[source_idx])
             .expect("failed to kill source node");
@@ -461,9 +493,11 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         // Then: with the source gone, the target has taken over — sign + ckd
         // requests still succeed.
         common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
-            .await;
+            .await
+            .expect("sign request failed");
         common::send_ckd_request(&cluster, &running, &mut rng, cluster.default_user_account())
-            .await;
+            .await
+            .expect("ckd request failed");
 
         tracing::info!(source_idx, target_idx, "migration completed successfully");
     }

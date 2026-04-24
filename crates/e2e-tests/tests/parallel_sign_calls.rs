@@ -45,9 +45,11 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
         ];
         c.presignatures_to_buffer = 6;
     })
-    .await;
+    .await
+    .expect("setup_cluster failed");
 
-    let wasm = common::load_parallel_contract_wasm();
+    let wasm =
+        common::load_parallel_contract_wasm().expect("failed to load parallel contract WASM");
     let key = ed25519_dalek::SigningKey::from_bytes(&[0xABu8; 32]);
     let parallel_contract = cluster
         .blockchain
@@ -68,9 +70,12 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
         .await
         .expect("CKD queue not idle before test");
 
-    let initial_sig_attempts =
-        common::sum_metric(&cluster, metrics::SIGNATURES_QUEUE_ATTEMPTS).await;
-    let initial_ckd_attempts = common::sum_metric(&cluster, metrics::CKDS_QUEUE_ATTEMPTS).await;
+    let initial_sig_attempts = common::sum_metric(&cluster, metrics::SIGNATURES_QUEUE_ATTEMPTS)
+        .await
+        .expect("failed to sum signature queue attempts");
+    let initial_ckd_attempts = common::sum_metric(&cluster, metrics::CKDS_QUEUE_ATTEMPTS)
+        .await
+        .expect("failed to sum CKD queue attempts");
 
     // when — fire all 9 calls in a single transaction with 1000 TGas.
     // Domains: 0=V2Secp256k1(Sign), 1=Secp256k1(Sign), 2=Edwards25519(Sign), 3=Bls12381(CKD).
@@ -111,10 +116,14 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
         .await
         .expect("CKD queue did not drain");
 
-    let sig_attempts_delta = common::sum_metric(&cluster, metrics::SIGNATURES_QUEUE_ATTEMPTS).await
+    let sig_attempts_delta = common::sum_metric(&cluster, metrics::SIGNATURES_QUEUE_ATTEMPTS)
+        .await
+        .expect("failed to sum signature queue attempts")
         - initial_sig_attempts;
-    let ckd_attempts_delta =
-        common::sum_metric(&cluster, metrics::CKDS_QUEUE_ATTEMPTS).await - initial_ckd_attempts;
+    let ckd_attempts_delta = common::sum_metric(&cluster, metrics::CKDS_QUEUE_ATTEMPTS)
+        .await
+        .expect("failed to sum CKD queue attempts")
+        - initial_ckd_attempts;
     let total_delta = sig_attempts_delta + ckd_attempts_delta;
 
     assert!(

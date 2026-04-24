@@ -18,7 +18,8 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
     let (mut cluster, running) = common::setup_cluster(common::LOST_ASSETS_PORT_SEED, |c| {
         c.presignatures_to_buffer = PRESIGNATURES_TO_BUFFER;
     })
-    .await;
+    .await
+    .expect("setup_cluster failed");
 
     assert_eq!(cluster.nodes.len(), 3, "expected 3 nodes");
     assert!(
@@ -37,7 +38,8 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         |v| v >= PRESIGNATURES_TO_BUFFER as i64,
         CLUSTER_WAIT_TIMEOUT,
     )
-    .await;
+    .await
+    .expect("presignatures did not buffer");
 
     // when
     // Kill the node and wipe its data — its share of every presignature is gone.
@@ -54,7 +56,8 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         |v| v < PRESIGNATURES_TO_BUFFER as i64,
         CLUSTER_WAIT_TIMEOUT,
     )
-    .await;
+    .await
+    .expect("presignatures did not decrease after killing node");
 
     // Wait for buffered presignatures to reach again PRESIGNATURES_TO_BUFFER
     // among nodes that are still alive.
@@ -65,7 +68,8 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         |v| v >= PRESIGNATURES_TO_BUFFER as i64,
         CLUSTER_WAIT_TIMEOUT,
     )
-    .await;
+    .await
+    .expect("presignatures did not rebuild on surviving nodes");
 
     // then — surviving nodes can still process sign requests.
     if let Some(domain) = running
@@ -101,7 +105,9 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
     // Wait for the alive nodes to rebuild their presignature buffer.
     // Node 0 restarted with a wiped DB — it has no keyshare and cannot generate presignatures
     // until a resharing redistributes keys to it, so we only wait on the surviving nodes.
-    common::wait_for_presignatures(&cluster, &alive, PRESIGNATURES_TO_BUFFER).await;
+    common::wait_for_presignatures(&cluster, &alive, PRESIGNATURES_TO_BUFFER)
+        .await
+        .expect("presignatures did not rebuild after restart");
 
     // Sanity-check: one final sign request after the node has rejoined.
     if let Some(domain) = running

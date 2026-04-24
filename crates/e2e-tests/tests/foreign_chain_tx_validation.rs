@@ -2,6 +2,7 @@ use std::num::NonZeroU64;
 
 use crate::common;
 
+use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use e2e_tests::foreign_chain_mock::{setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock};
@@ -90,7 +91,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
     }
 }
 
-async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
+async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     let bitcoin_server = MockServer::start();
     let abstract_server = MockServer::start();
     let bnb_server = MockServer::start();
@@ -131,7 +132,8 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
         }];
         c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
     })
-    .await;
+    .await
+    .context("setup_cluster failed")?;
 
     let expected_supported_chains: std::collections::BTreeSet<ForeignChain> = [
         ForeignChain::Bitcoin,
@@ -147,7 +149,7 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
         let supported = cluster
             .view_foreign_chains_supported_by_contract()
             .await
-            .expect("failed to view supported chains");
+            .context("failed to view supported chains")?;
         let supported_set: std::collections::BTreeSet<ForeignChain> =
             supported.iter().copied().collect();
         anyhow::ensure!(
@@ -166,33 +168,33 @@ async fn setup_foreign_tx_cluster() -> ForeignTxTestEnv {
             ),
     )
     .await
-    .expect("timed out waiting for every participant to register its foreign chains");
+    .context("timed out waiting for every participant to register its foreign chains")?;
 
     let state = cluster
         .get_contract_state()
         .await
-        .expect("failed to get contract state");
+        .context("failed to get contract state")?;
     let running = match &state {
         near_mpc_contract_interface::types::ProtocolContractState::Running(r) => r,
-        _ => panic!("expected Running state"),
+        _ => bail!("expected Running state"),
     };
     let secp_domain_id = running
         .domains
         .domains
         .iter()
         .find(|d| d.curve == Curve::Secp256k1)
-        .expect("no Secp256k1 domain")
+        .context("no Secp256k1 domain")?
         .id;
 
-    ForeignTxTestEnv {
+    Ok(ForeignTxTestEnv {
         cluster,
         secp_domain_id,
         _mock_servers: mock_servers,
-    }
+    })
 }
 
-fn verify_foreign_tx_response(outcome: &near_kit::FinalExecutionOutcome) {
-    assert!(
+fn verify_foreign_tx_response(outcome: &near_kit::FinalExecutionOutcome) -> anyhow::Result<()> {
+    anyhow::ensure!(
         outcome.is_success(),
         "verify_foreign_transaction failed: {:?}",
         outcome.failure_message()
@@ -200,38 +202,40 @@ fn verify_foreign_tx_response(outcome: &near_kit::FinalExecutionOutcome) {
 
     let response: serde_json::Value = outcome
         .json()
-        .expect("failed to parse verify_foreign_transaction response");
+        .context("failed to parse verify_foreign_transaction response")?;
 
     tracing::info!(?response, "verify_foreign_transaction response");
 
     let payload_hash = response["payload_hash"]
         .as_str()
-        .expect("expected payload_hash string");
-    assert_eq!(
-        payload_hash.len(),
-        64,
+        .context("expected payload_hash string")?;
+    anyhow::ensure!(
+        payload_hash.len() == 64,
         "expected 64 hex chars in payload_hash, got {}",
         payload_hash.len()
     );
 
     let signature = &response["signature"];
-    assert_eq!(
-        signature["scheme"].as_str().unwrap(),
-        "Secp256k1",
-        "expected Secp256k1 signature scheme"
+    let scheme = signature["scheme"]
+        .as_str()
+        .context("signature.scheme missing")?;
+    anyhow::ensure!(
+        scheme == "Secp256k1",
+        "expected Secp256k1 signature scheme, got {scheme}"
     );
-    assert!(
+    anyhow::ensure!(
         signature.get("big_r").is_some(),
         "expected big_r in signature"
     );
-    assert!(signature.get("s").is_some(), "expected s in signature");
-    assert!(
+    anyhow::ensure!(signature.get("s").is_some(), "expected s in signature");
+    anyhow::ensure!(
         signature.get("recovery_id").is_some(),
         "expected recovery_id in signature"
     );
+    Ok(())
 }
 
-async fn verify_bitcoin(env: &ForeignTxTestEnv) {
+async fn verify_bitcoin(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
             tx_id: BitcoinTxId([0xbb; 32]),
@@ -245,11 +249,11 @@ async fn verify_bitcoin(env: &ForeignTxTestEnv) {
         .cluster
         .send_verify_foreign_transaction(&request)
         .await
-        .expect("verify_foreign_transaction (Bitcoin) failed");
-    verify_foreign_tx_response(&outcome);
+        .context("verify_foreign_transaction (Bitcoin) failed")?;
+    verify_foreign_tx_response(&outcome)
 }
 
-async fn verify_abstract(env: &ForeignTxTestEnv) {
+async fn verify_abstract(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
@@ -263,11 +267,11 @@ async fn verify_abstract(env: &ForeignTxTestEnv) {
         .cluster
         .send_verify_foreign_transaction(&request)
         .await
-        .expect("verify_foreign_transaction (Abstract) failed");
-    verify_foreign_tx_response(&outcome);
+        .context("verify_foreign_transaction (Abstract) failed")?;
+    verify_foreign_tx_response(&outcome)
 }
 
-async fn verify_bnb(env: &ForeignTxTestEnv) {
+async fn verify_bnb(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Bnb(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
@@ -281,11 +285,11 @@ async fn verify_bnb(env: &ForeignTxTestEnv) {
         .cluster
         .send_verify_foreign_transaction(&request)
         .await
-        .expect("verify_foreign_transaction (Bnb) failed");
-    verify_foreign_tx_response(&outcome);
+        .context("verify_foreign_transaction (Bnb) failed")?;
+    verify_foreign_tx_response(&outcome)
 }
 
-async fn verify_base(env: &ForeignTxTestEnv) {
+async fn verify_base(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Base(EvmRpcRequest {
             tx_id: EvmTxId([0xbb; 32]),
@@ -299,11 +303,11 @@ async fn verify_base(env: &ForeignTxTestEnv) {
         .cluster
         .send_verify_foreign_transaction(&request)
         .await
-        .expect("verify_foreign_transaction (Base) failed");
-    verify_foreign_tx_response(&outcome);
+        .context("verify_foreign_transaction (Base) failed")?;
+    verify_foreign_tx_response(&outcome)
 }
 
-async fn verify_starknet(env: &ForeignTxTestEnv) {
+async fn verify_starknet(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     let request = VerifyForeignTransactionRequestArgs {
         request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
             tx_id: StarknetTxId(StarknetFelt([0xbb; 32])),
@@ -317,8 +321,8 @@ async fn verify_starknet(env: &ForeignTxTestEnv) {
         .cluster
         .send_verify_foreign_transaction(&request)
         .await
-        .expect("verify_foreign_transaction (Starknet) failed");
-    verify_foreign_tx_response(&outcome);
+        .context("verify_foreign_transaction (Starknet) failed")?;
+    verify_foreign_tx_response(&outcome)
 }
 
 /// Sets up a single 2-node cluster with mock RPC servers for all chains,
@@ -329,14 +333,22 @@ async fn verify_starknet(env: &ForeignTxTestEnv) {
 #[expect(non_snake_case)]
 async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     // Given — 2-node cluster with Bitcoin, Abstract, BNB, Base, and Starknet configured
-    let env = setup_foreign_tx_cluster().await;
+    let env = setup_foreign_tx_cluster()
+        .await
+        .expect("setup_foreign_tx_cluster failed");
 
     // When/Then — all configured chains produce valid signed responses
-    verify_bitcoin(&env).await;
-    verify_abstract(&env).await;
-    verify_bnb(&env).await;
-    verify_base(&env).await;
-    verify_starknet(&env).await;
+    verify_bitcoin(&env)
+        .await
+        .expect("bitcoin verification failed");
+    verify_abstract(&env)
+        .await
+        .expect("abstract verification failed");
+    verify_bnb(&env).await.expect("bnb verification failed");
+    verify_base(&env).await.expect("base verification failed");
+    verify_starknet(&env)
+        .await
+        .expect("starknet verification failed");
 
     // When — requesting Ethereum, which is not in the foreign chain config
     let request = VerifyForeignTransactionRequestArgs {

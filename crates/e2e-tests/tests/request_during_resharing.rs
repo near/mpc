@@ -30,7 +30,8 @@ async fn test_request_during_resharing() {
                 purpose: DomainPurpose::Sign,
             });
         })
-        .await;
+        .await
+        .expect("setup_cluster failed");
 
     // when
     tracing::info!("beginning resharing to 6 nodes, threshold 6");

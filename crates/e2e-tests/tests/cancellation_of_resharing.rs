@@ -19,7 +19,8 @@ async fn test_cancellation_of_resharing() {
             c.triples_to_buffer = 2;
             c.presignatures_to_buffer = 2;
         })
-        .await;
+        .await
+        .expect("setup_cluster failed");
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
     // Begin resharing to 5 nodes [0..5], threshold 3.
@@ -100,8 +101,11 @@ async fn test_cancellation_of_resharing() {
     // Verify liveness after cancellation.
     for _ in 0..3 {
         common::send_sign_request(&cluster, running, &mut rng, cluster.default_user_account())
-            .await;
-        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account()).await;
+            .await
+            .expect("sign request failed");
+        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account())
+            .await
+            .expect("ckd request failed");
     }
 
     // Retry resharing using node 5 (running since startup, fully synced)
@@ -129,7 +133,10 @@ async fn test_cancellation_of_resharing() {
     // Final liveness check.
     for _ in 0..3 {
         common::send_sign_request(&cluster, running, &mut rng, cluster.default_user_account())
-            .await;
-        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account()).await;
+            .await
+            .expect("sign request failed");
+        common::send_ckd_request(&cluster, running, &mut rng, cluster.default_user_account())
+            .await
+            .expect("ckd request failed");
     }
 }

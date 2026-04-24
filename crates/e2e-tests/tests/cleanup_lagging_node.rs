@@ -14,11 +14,14 @@ use rand::SeedableRng;
 async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signing() {
     // given
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-    let (cluster, running) =
-        common::setup_cluster(common::CLEANUP_LAGGING_NODE_PORT_SEED, |_| {}).await;
+    let (cluster, running) = common::setup_cluster(common::CLEANUP_LAGGING_NODE_PORT_SEED, |_| {})
+        .await
+        .expect("setup_cluster failed");
 
     // Wait for all nodes to have presignatures buffered.
-    common::wait_for_presignatures(&cluster, &[0, 1, 2], DEFAULT_PRESIGNATURES_TO_BUFFER).await;
+    common::wait_for_presignatures(&cluster, &[0, 1, 2], DEFAULT_PRESIGNATURES_TO_BUFFER)
+        .await
+        .expect("presignatures did not buffer");
 
     // when — disable block ingestion on one node to simulate lagging
     let faulty_node_idx = 0;
@@ -37,7 +40,8 @@ async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signi
         MAX_INDEXER_HEIGHT_DIFF as i64,
         CLUSTER_WAIT_TIMEOUT,
     )
-    .await;
+    .await
+    .expect("alive nodes did not advance past faulty node");
 
     // Wait for offline presignatures to be cleaned up on alive nodes.
     common::wait_metric_on_nodes(
@@ -47,7 +51,8 @@ async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signi
         |v| v == 0,
         CLUSTER_WAIT_TIMEOUT,
     )
-    .await;
+    .await
+    .expect("offline presignatures not cleaned up");
 
     // then — online presignatures should remain at buffer amount on alive nodes
     common::wait_metric_on_nodes(
@@ -57,7 +62,8 @@ async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signi
         |v| v >= DEFAULT_PRESIGNATURES_TO_BUFFER as i64,
         CLUSTER_WAIT_TIMEOUT,
     )
-    .await;
+    .await
+    .expect("online presignatures below buffer amount");
 
     // Verify nodes can still handle signature requests by depleting their asset stores.
     let domain = running

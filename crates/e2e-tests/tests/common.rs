@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
@@ -49,7 +50,7 @@ pub const MULTI_DOMAIN_PORT_SEED: u16 = 17;
 pub async fn setup_cluster(
     port_seed: u16,
     configure: impl FnOnce(&mut MpcClusterConfig),
-) -> (MpcCluster, RunningContractState) {
+) -> anyhow::Result<(MpcCluster, RunningContractState)> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -58,7 +59,7 @@ pub async fn setup_cluster(
         .try_init()
         .ok();
 
-    let contract_wasm = load_contract_wasm();
+    let contract_wasm = load_contract_wasm()?;
     let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
     configure(&mut config);
 
@@ -66,7 +67,7 @@ pub async fn setup_cluster(
     let presignatures_to_buffer = config.presignatures_to_buffer;
     let cluster = MpcCluster::start(config)
         .await
-        .expect("failed to start cluster");
+        .context("failed to start cluster")?;
 
     let protocol_state = cluster
         .wait_for_state(
@@ -74,9 +75,9 @@ pub async fn setup_cluster(
             CLUSTER_WAIT_TIMEOUT,
         )
         .await
-        .expect("cluster did not reach Running state");
+        .context("cluster did not reach Running state")?;
     let ProtocolContractState::Running(running) = protocol_state else {
-        panic!("expected Running state");
+        bail!("expected Running state");
     };
 
     wait_for_presignatures(
@@ -84,9 +85,9 @@ pub async fn setup_cluster(
         &initial_participant_indices,
         presignatures_to_buffer,
     )
-    .await;
+    .await?;
 
-    (cluster, running)
+    Ok((cluster, running))
 }
 
 /// Wait until the first `participant_count` nodes each have at least
@@ -96,22 +97,23 @@ pub async fn wait_for_presignatures(
     cluster: &MpcCluster,
     participant_indices: &[usize],
     presignatures_to_buffer: usize,
-) {
-    let expected = i64::try_from(presignatures_to_buffer).expect("presignatures exceeds i64::MAX");
+) -> anyhow::Result<()> {
+    let expected =
+        i64::try_from(presignatures_to_buffer).context("presignatures exceeds i64::MAX")?;
     let deadline = tokio::time::Instant::now() + CLUSTER_WAIT_TIMEOUT;
     loop {
         let values = cluster
             .get_metric_all_nodes(metrics::OWNED_PRESIGNATURES_AVAILABLE)
             .await
-            .expect("failed to get metrics");
+            .context("failed to get metrics")?;
         let participant_values: Vec<_> = participant_indices.iter().map(|&i| values[i]).collect();
         if participant_values
             .iter()
             .all(|v| v.is_some_and(|v| v >= expected))
         {
-            break;
+            return Ok(());
         }
-        assert!(
+        anyhow::ensure!(
             tokio::time::Instant::now() < deadline,
             "participant nodes did not generate presignatures in time (values: {participant_values:?})"
         );
@@ -126,13 +128,13 @@ pub async fn wait_metric_on_nodes(
     name: &str,
     predicate: impl Fn(i64) -> bool + Copy,
     timeout: std::time::Duration,
-) {
+) -> anyhow::Result<()> {
     let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
     (|| async {
         let values = cluster
             .get_metric_all_nodes(name)
             .await
-            .expect("failed to scrape metrics");
+            .context("failed to scrape metrics")?;
         for &idx in indices {
             anyhow::ensure!(
                 values[idx].is_some_and(predicate),
@@ -148,7 +150,6 @@ pub async fn wait_metric_on_nodes(
             .with_max_times(max_times),
     )
     .await
-    .unwrap_or_else(|e| panic!("{e}"));
 }
 
 /// Wait until every node in `alive_nodes` is at least `min_height_diff` blocks
@@ -159,13 +160,13 @@ pub async fn wait_for_indexer_lag(
     alive_nodes: &[usize],
     min_height_diff: i64,
     timeout: Duration,
-) {
+) -> anyhow::Result<()> {
     let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
     (|| async {
         let heights = cluster
             .get_metric_all_nodes(metrics::INDEXER_LATEST_BLOCK_HEIGHT)
             .await
-            .expect("failed to get metrics");
+            .context("failed to get metrics")?;
         let faulty = heights[faulty_node].unwrap_or(0);
         for &idx in alive_nodes {
             anyhow::ensure!(
@@ -182,53 +183,45 @@ pub async fn wait_for_indexer_lag(
             .with_max_times(max_times),
     )
     .await
-    .unwrap_or_else(|e| panic!("{e}"));
 }
 
 /// Sum a metric across all running nodes (stopped nodes contribute 0).
-pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> i64 {
-    cluster
+pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> anyhow::Result<i64> {
+    Ok(cluster
         .get_metric_all_nodes(name)
         .await
-        .expect("failed to scrape metrics")
+        .context("failed to scrape metrics")?
         .into_iter()
         .flatten()
-        .sum()
+        .sum())
 }
 
-pub fn load_contract_wasm() -> Vec<u8> {
+pub fn load_contract_wasm() -> anyhow::Result<Vec<u8>> {
     if let Ok(path) = std::env::var("MPC_CONTRACT_WASM") {
         let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
-            panic!(
-                "Failed to read contract WASM at {}: {e}",
-                wasm_path.display()
-            )
-        });
+        return std::fs::read(&wasm_path)
+            .with_context(|| format!("failed to read contract WASM at {}", wasm_path.display()));
     }
 
     let default_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/near/contract/mpc_contract.wasm");
 
     if default_path.exists() {
-        return std::fs::read(&default_path).unwrap_or_else(|e| {
-            panic!(
-                "Failed to read contract WASM at {}: {e}",
-                default_path.display()
-            )
+        return std::fs::read(&default_path).with_context(|| {
+            format!("failed to read contract WASM at {}", default_path.display())
         });
     }
 
     tracing::info!("MPC_CONTRACT_WASM not set and pre-built WASM not found — building contract");
-    test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build()
+    Ok(test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build())
 }
 
-pub fn load_parallel_contract_wasm() -> Vec<u8> {
+pub fn load_parallel_contract_wasm() -> anyhow::Result<Vec<u8>> {
     if let Ok(path) = std::env::var("MPC_PARALLEL_CONTRACT_WASM") {
         let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
-            panic!(
-                "Failed to read parallel contract WASM at {}: {e}",
+        return std::fs::read(&wasm_path).with_context(|| {
+            format!(
+                "failed to read parallel contract WASM at {}",
                 wasm_path.display()
             )
         });
@@ -237,16 +230,20 @@ pub fn load_parallel_contract_wasm() -> Vec<u8> {
     let default_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/near/test-parallel-contract/test_parallel_contract.wasm");
     if default_path.exists() {
-        return std::fs::read(&default_path).unwrap_or_else(|e| {
-            panic!(
-                "Failed to read parallel contract WASM at {}: {e}",
+        return std::fs::read(&default_path).with_context(|| {
+            format!(
+                "failed to read parallel contract WASM at {}",
                 default_path.display()
             )
         });
     }
     tracing::info!("pre-built parallel contract WASM not found — building");
-    test_utils::contract_build::ContractBuilder::new("crates/test-parallel-contract/Cargo.toml")
-        .build()
+    Ok(
+        test_utils::contract_build::ContractBuilder::new(
+            "crates/test-parallel-contract/Cargo.toml",
+        )
+        .build(),
+    )
 }
 
 pub fn generate_ecdsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
@@ -267,18 +264,21 @@ pub fn generate_ckd_app_public_key(rng: &mut impl rand::Rng) -> CKDAppPublicKey 
 }
 
 /// Extract the BLS12381 G2 public key for a given domain from running contract state.
-pub fn bls_public_key(running: &RunningContractState, domain_id: DomainId) -> Bls12381G2PublicKey {
+pub fn bls_public_key(
+    running: &RunningContractState,
+    domain_id: DomainId,
+) -> anyhow::Result<Bls12381G2PublicKey> {
     let key_for_domain = running
         .keyset
         .domains
         .iter()
         .find(|k| k.domain_id == domain_id)
-        .expect("no key found for BLS12381 domain");
+        .context("no key found for BLS12381 domain")?;
     match &key_for_domain.key {
         PublicKeyExtended::Bls12381 {
             public_key: PublicKey::Bls12381(g2),
-        } => g2.clone(),
-        other => panic!("expected Bls12381 key, got {other:?}"),
+        } => Ok(g2.clone()),
+        other => bail!("expected Bls12381 key, got {other:?}"),
     }
 }
 
@@ -287,22 +287,23 @@ pub async fn send_sign_request(
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
     account_id: &near_kit::AccountId,
-) {
+) -> anyhow::Result<()> {
     let domain = running
         .domains
         .domains
         .iter()
         .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
-        .expect("no Secp256k1 Sign domain");
+        .context("no Secp256k1 Sign domain")?;
     let outcome = cluster
         .send_sign_request(domain.id, generate_ecdsa_payload(rng), account_id)
         .await
-        .expect("sign request failed");
-    assert!(
+        .context("sign request failed")?;
+    anyhow::ensure!(
         outcome.is_success(),
         "sign request failed: {:?}",
         outcome.failure_message()
     );
+    Ok(())
 }
 
 pub async fn send_ckd_request(
@@ -310,20 +311,21 @@ pub async fn send_ckd_request(
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
     account_id: &near_account_id::AccountId,
-) {
+) -> anyhow::Result<()> {
     let domain = running
         .domains
         .domains
         .iter()
         .find(|d| d.purpose == DomainPurpose::CKD)
-        .expect("no CKD domain");
+        .context("no CKD domain")?;
     let outcome = cluster
         .send_ckd_request(domain.id, generate_ckd_app_public_key(rng), account_id)
         .await
-        .expect("ckd request failed");
-    assert!(
+        .context("ckd request failed")?;
+    anyhow::ensure!(
         outcome.is_success(),
         "ckd request failed: {:?}",
         outcome.failure_message()
     );
+    Ok(())
 }

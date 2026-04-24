@@ -60,7 +60,8 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
             ForeignChainsConfig::default(), // node 2 — no foreign chains
         ];
     })
-    .await;
+    .await
+    .expect("setup_cluster failed");
 
     // when — wait for all three nodes to register (one with an empty configuration)
     // without Solana becoming supported
