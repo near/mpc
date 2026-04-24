@@ -124,3 +124,7 @@ Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_ad
 - **Integration test**: Rust test in `/tests` folder
 - **System test**: pytest in `/pytest` folder
 
+## Documentation alignment
+
+When authoring or reviewing a change that renames, removes, or reshapes code (types, methods, contract entry points, config fields, protocol state, architecture), verify that the surrounding documentation still describes the new behavior. This covers Markdown under `docs/` and any referenced templates, as well as Rust doc comments (`///`, `//!`) on and near the changed items — names, parameters, invariants, and examples in doc comments drift just as easily as prose docs. Design documents (`docs/design/`, `docs/*-design.md`) that describe a superseded design must be either updated, removed, or prominently marked as outdated (e.g. a "Status: superseded by #NNNN" banner at the top) — never left silently stale. If you find stale passages, flag them with `file:line` and, when authoring, fix them in the same PR. Doc drift is a review-blocking issue, not a follow-up.
+
