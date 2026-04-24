@@ -387,7 +387,7 @@ where
             ))
             .await
         {
-            tracing::warn!(error = ?err, "failed to send register supported foreign chains");
+            tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
         }
 
         tracing::info!("Creating tls mesh");
