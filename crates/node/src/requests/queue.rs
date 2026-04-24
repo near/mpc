@@ -14,6 +14,7 @@ use near_time::Duration;
 use sha3::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::ops::Add;
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
@@ -385,13 +386,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     ///    the chain has been written to the `ComputationProgress`.
     pub fn get_requests_to_attempt(
         &mut self,
-        recent_blocks: &mut RecentBlocksTracker,
+        recent_blocks: &RecentBlocksTracker,
     ) -> Vec<Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>> {
         let now = self.clock.now();
 
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
-        recent_blocks.notify_maximum_height_available(maximum_height);
+        //recent_blocks.notify_maximum_height_available(maximum_height);
 
         let (request_response_latency_blocks, request_response_latency_seconds) =
             match RequestType::get_type() {
@@ -417,7 +418,14 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             // Drop entries whose block died on a fork or aged out of the window.
             let mut finalized_completion: Option<SubmittedResponse> = None;
             request.response_blocks.retain(|sr| {
-                match recent_blocks.classify_block(sr.block_hash, sr.block_height) {
+                if maximum_height
+                    .saturating_sub(REQUEST_EXPIRATION_BLOCKS)
+                    .add(1)
+                    > sr.block_height
+                {
+                    return false;
+                }
+                match recent_blocks.classify_block(sr.block_hash) {
                     CheckBlockResult::RecentAndFinal => {
                         if finalized_completion.is_none() {
                             finalized_completion = Some(sr.clone());
@@ -454,7 +462,24 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 tracing::debug!(target: "request", "Skipping request {:?} from block {} because there's already an active attempt", request.request.get_id(), request.block_height);
                 continue;
             }
-            match recent_blocks.classify_block(request.block_hash, request.block_height) {
+            if maximum_height
+                .saturating_sub(REQUEST_EXPIRATION_BLOCKS)
+                .add(1)
+                > request.block_height
+            {
+                tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
+                // Increment metric for timeout (only for signature requests)
+                if matches!(RequestType::get_type(), types::RequestType::Signature) {
+                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                        .with_label_values(&["timeout"])
+                        .inc();
+                }
+
+                // This request is definitely not useful anymore, so discard it.
+                requests_to_remove.push((*id, None));
+                continue;
+            }
+            match recent_blocks.classify_block(request.block_hash) {
                 CheckBlockResult::RecentAndFinal
                 | CheckBlockResult::OptimisticAndCanonical
                 | CheckBlockResult::Unknown => {
@@ -860,6 +885,7 @@ mod tests {
         let b = setup.block_builder();
         let (b, _req1) = b.with_request(&[setup.other_id]);
         let (b, req2) = b.with_request(&[setup.my_id]);
+        // do not passs setup as argument to build. That's akward. Just take a mutable reference
         pending_requests.notify_new_block(b.build(&mut setup));
 
         // When / Then — req1 is not attempted because we're not the leader. req2 is attempted.
@@ -1364,6 +1390,7 @@ mod tests {
         let p3 = setup.participants[3];
 
         let b = setup.block_builder();
+        // here, it's more magical now
         let (b, req1) = b.with_request(&[p0, setup.my_id]);
         let (b, req2) = b.with_request(&[p2, p0, setup.my_id]);
         let (b, _req3) = b.with_request(&[p3, setup.my_id]);

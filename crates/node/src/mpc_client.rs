@@ -304,7 +304,7 @@ where
                 continue;
             }
             let signature_attempts =
-                pending_signatures.get_requests_to_attempt(&mut recent_blocks_tracker);
+                pending_signatures.get_requests_to_attempt(&recent_blocks_tracker);
 
             for signature_attempt in signature_attempts {
                 let this = self.clone();
@@ -423,7 +423,7 @@ where
                     },
                 );
             }
-            let ckd_attempts = pending_ckds.get_requests_to_attempt(&mut recent_blocks_tracker);
+            let ckd_attempts = pending_ckds.get_requests_to_attempt(&recent_blocks_tracker);
 
             for ckd_attempt in ckd_attempts {
                 let this = self.clone();
@@ -512,7 +512,7 @@ where
             }
 
             let verify_foreign_tx_attempts =
-                pending_verify_foreign_txs.get_requests_to_attempt(&mut recent_blocks_tracker);
+                pending_verify_foreign_txs.get_requests_to_attempt(&recent_blocks_tracker);
 
             for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
                 let this = self.clone();
