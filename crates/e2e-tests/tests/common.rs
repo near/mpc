@@ -29,6 +29,7 @@ pub const FOREIGN_CHAIN_POLICY_PORT_SEED: u16 = 13;
 pub const MIGRATION_ENDPOINT_PORT_SEED: u16 = 14;
 pub const MIGRATION_SERVICE_PORT_SEED: u16 = 15;
 pub const FOREIGN_TX_VALIDATION_PORT_SEED: u16 = 16;
+pub const MULTI_DOMAIN_PORT_SEED: u16 = 17;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
