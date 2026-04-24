@@ -6,6 +6,8 @@ mod foreign_chain_policy;
 mod foreign_chain_tx_validation;
 mod key_resharing;
 mod lost_assets;
+mod migration_endpoint;
+mod migration_service;
 mod parallel_sign_calls;
 mod request_during_resharing;
 mod request_lifecycle;
