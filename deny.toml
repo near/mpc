@@ -48,4 +48,7 @@ unknown-git = "deny"
 allow-git = [
   "https://github.com/near/nearcore",
   "https://github.com/near/reddsa",
+  # TODO(#3008): drop this entry when swapping back to a crates.io `dcap-qvl`
+  # release containing <https://github.com/Phala-Network/dcap-qvl/pull/153>.
+  "https://github.com/Phala-Network/dcap-qvl",
 ]
