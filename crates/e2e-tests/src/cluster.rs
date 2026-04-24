@@ -857,13 +857,21 @@ impl MpcNodeState {
 }
 
 fn create_test_dir(home_base: &Option<PathBuf>) -> anyhow::Result<tempfile::TempDir> {
-    match home_base {
+    let mut dir = match home_base {
         Some(base) => {
             std::fs::create_dir_all(base)?;
-            Ok(tempfile::tempdir_in(base)?)
+            tempfile::tempdir_in(base)?
         }
-        None => Ok(tempfile::tempdir()?),
+        None => tempfile::tempdir()?,
+    };
+    // Diagnostic hook for #2898: when `E2E_KEEP_HOME_DIR` is set, print the
+    // test's working directory and skip its auto-cleanup so CI workflows can
+    // scrape per-node stdout/stderr after a failure.
+    if std::env::var_os("E2E_KEEP_HOME_DIR").is_some() {
+        eprintln!("E2E_HOME_DIR={}", dir.path().display());
+        dir.disable_cleanup(true);
     }
+    Ok(dir)
 }
 
 fn generate_signing_keys(
