@@ -1,9 +1,10 @@
 name: E2E flake repro (#2898)
 
-# Manually-dispatched stress workflow to reproduce the `parallel_sign_calls`
-# flake on the same runner class CI uses. Runs the ci-e2e profile in a loop
-# with `--no-fail-fast` so a single bad run doesn't abort the whole attempt,
-# then uploads each node's stdout/stderr on failure for post-mortem.
+# Manually-dispatched stress workflow that mirrors ci.yml's `mpc-e2e-tests`
+# job as closely as possible: same runner class, same build steps, same
+# `cargo make e2e-tests-skip-build` invocation — just run in a loop. On
+# failure we upload each node's preserved stdout/stderr/config for
+# post-mortem (enabled via the E2E_KEEP_HOME_DIR opt-in).
 
 on:
   workflow_dispatch:
@@ -12,16 +13,12 @@ on:
         description: "How many times to run the ci-e2e group"
         required: false
         default: "10"
-      test_filter:
-        description: "Nextest filter (leave empty for full ci-e2e group)"
-        required: false
-        default: "parallel_sign_calls::mpc_cluster_should_successfully_process_parallel_requests"
 
 jobs:
   stress:
     name: "E2E flake stress"
     runs-on: warp-ubuntu-2404-x64-32x
-    timeout-minutes: 180
+    timeout-minutes: 240
     permissions:
       contents: read
 
@@ -30,6 +27,9 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
+
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
 
       - name: Install build dependencies
         run: |
@@ -42,7 +42,19 @@ jobs:
         with:
           save-if: false
           cache-provider: "warpbuild"
-          prefix-key: v0-rust-e2e-week-${{ env.WEEK }}
+          prefix-key: v0-rust-week-${{ env.WEEK }}
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
+        with:
+          tool: cargo-binstall
+
+      - name: Install wasm-opt
+        run: |
+          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
+          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
@@ -54,22 +66,24 @@ jobs:
         with:
           tool: cargo-make@0.37.24
 
-      - name: Build binaries (once)
-        run: |
-          cargo make build-mpc-node-network-hardship-simulation
-          cargo make build-mpc-contract-optimized
-          cargo make build-test-parallel-contract-optimized
-          cargo make build-backup-cli
+      - name: Build mpc-node
+        run: cargo make build-mpc-node-network-hardship-simulation
 
-      - name: Run the flaky test in a loop
+      - name: Build mpc-contract
+        run: cargo make build-mpc-contract-optimized
+
+      - name: Build test-parallel-contract
+        run: cargo make build-test-parallel-contract-optimized
+
+      - name: Build backup-cli
+        run: cargo build -p backup-cli --release --locked
+
+      - name: Run E2E tests in a loop
         env:
           RUST_LOG: info,e2e_tests=debug
           MPC_NODE_LOG: "DEBUG"
-          MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
-          MPC_PARALLEL_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
           E2E_KEEP_HOME_DIR: "1"
           ITERATIONS: ${{ inputs.iterations }}
-          TEST_FILTER: ${{ inputs.test_filter }}
         run: |
           set +e
           pass=0
@@ -79,30 +93,19 @@ jobs:
             echo "::group::iteration $i"
             out="flake-artifacts/iter-$i"
             mkdir -p "$out"
-            if [ -z "$TEST_FILTER" ]; then
-              cargo nextest run --no-capture --cargo-profile=test-release \
-                --profile ci-e2e -p e2e-tests --all-features --locked \
-                --no-fail-fast 2>&1 | tee "$out/nextest.log"
-              rc=${PIPESTATUS[0]}
-            else
-              cargo nextest run --no-capture --cargo-profile=test-release \
-                --profile ci-e2e -p e2e-tests --all-features --locked \
-                --no-fail-fast "$TEST_FILTER" 2>&1 | tee "$out/nextest.log"
-              rc=${PIPESTATUS[0]}
-            fi
+            cargo make e2e-tests-skip-build 2>&1 | tee "$out/nextest.log"
+            rc=${PIPESTATUS[0]}
             echo "::endgroup::"
-            # Always grab the home dirs the test printed via E2E_KEEP_HOME_DIR
-            # so we can inspect both passing and failing runs.
+            # Move every E2E_HOME_DIR the test printed so we don't leak disk
+            # between iterations. Keep them in the artifact dir only on failure.
             grep -E '^E2E_HOME_DIR=' "$out/nextest.log" | sed 's/^E2E_HOME_DIR=//' | while read -r home; do
               if [ -d "$home" ]; then
-                cp -a "$home" "$out/home_$(basename "$home")"
-                rm -rf "$home"
+                mv "$home" "$out/home_$(basename "$home")" 2>/dev/null || true
               fi
             done
             if [ "$rc" -eq 0 ]; then
               pass=$((pass+1))
               echo "iter $i: PASS"
-              # Keep logs only on failure to keep artifacts small.
               rm -rf "$out"
             else
               fail=$((fail+1))
