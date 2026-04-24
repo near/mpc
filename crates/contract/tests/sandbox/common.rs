@@ -615,7 +615,7 @@ pub fn make_configured_foreign_chain(chain: ForeignChain) -> ForeignChainConfigu
     chains.into()
 }
 
-/// Vote the given chain policy from all participants.
+/// registers a foreign chain configuration so the foreign chains are supported
 pub async fn register_foreign_chain_configuration(
     chain: near_mpc_contract_interface::types::ForeignChain,
     contract: &Contract,
