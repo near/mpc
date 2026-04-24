@@ -1,6 +1,11 @@
 use clap::Parser;
 use mpc_node::cli;
 
+use tikv_jemallocator::Jemalloc;
+
+#[global_allocator]
+static GLOBAL_ALLOCATOR: Jemalloc = Jemalloc;
+
 fn main() -> anyhow::Result<()> {
     // Install the default rustls crypto provider before any TLS usage.
     // Required because rustls is configured with default-features=false,
