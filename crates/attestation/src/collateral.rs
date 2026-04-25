@@ -2,7 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{Deref, From, Into};
 use serde::{Deserialize, Serialize};
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "test-utils")]
 use {
     alloc::{string::String, vec::Vec},
     core::str::FromStr,
@@ -19,10 +19,10 @@ pub use dcap_qvl::QuoteCollateralV3;
 #[derive(
     Clone, From, Deref, Into, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
-#[cfg_attr(not(target_arch = "wasm32"), serde(try_from = "Value"))]
+#[cfg_attr(feature = "test-utils", serde(try_from = "Value"))]
 pub struct Collateral(QuoteCollateralV3);
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "test-utils")]
 impl Collateral {
     /// Attempts to create a [`Collateral`] from a JSON value containing quote collateral data.
     ///
@@ -63,7 +63,7 @@ impl Collateral {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "test-utils")]
 impl FromStr for Collateral {
     type Err = CollateralError;
 
@@ -85,7 +85,7 @@ impl FromStr for Collateral {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "test-utils")]
 impl TryFrom<Value> for Collateral {
     type Error = CollateralError;
 
@@ -94,7 +94,7 @@ impl TryFrom<Value> for Collateral {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "test-utils")]
 #[derive(Debug, Error)]
 pub enum CollateralError {
     #[error("Missing or invalid field: {0}")]

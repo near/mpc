@@ -7,6 +7,7 @@ edition = { workspace = true }
 [features]
 borsh-schema = ["borsh/unstable__schema"]
 dstack-conversions = ["dep:dstack-sdk-types"]
+test-utils = []
 
 [dependencies]
 borsh = { workspace = true }
@@ -29,6 +30,10 @@ test-utils = { workspace = true }
 [[test]]
 name = "app_compose"
 required-features = ["dstack-conversions"]
+
+[[test]]
+name = "collateral"
+required-features = ["test-utils"]
 
 [lints]
 workspace = true
