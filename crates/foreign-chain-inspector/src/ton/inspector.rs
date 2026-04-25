@@ -67,7 +67,7 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
             return Err(ForeignChainInspectionError::UnsupportedWorkchain { got: workchain });
         }
 
-        let tx_hash_hex = hex_encode(&tx_hash);
+        let tx_hash_hex = hex::encode(tx_hash);
 
         let response = self
             .client
@@ -84,17 +84,50 @@ impl<Client: TonRpcClient> ForeignChainInspector for TonInspector<Client> {
         ensure_finalized(&tx, &finality)?;
         ensure_transaction_succeeded(&tx)?;
 
-        let ext_out_msgs: Vec<&TonMessage> = tx
-            .out_msgs
-            .iter()
-            .filter(|m| m.destination.is_none())
-            .collect();
+        let ext_out_msgs = ordered_ext_out_msgs(&tx.out_msgs)?;
 
         extractors
             .iter()
             .map(|extractor| extract_value(extractor, &account, &ext_out_msgs))
             .collect()
     }
+}
+
+/// Filter out internal (non-ext-out) messages and return the remainder sorted
+/// by parsed `created_lt` (ascending).
+///
+/// Sorting by `created_lt` makes ext-out indexing deterministic across MPC
+/// nodes regardless of how the upstream toncenter v3 provider chose to order
+/// the `out_msgs` array in its JSON. Within a single TON transaction, every
+/// emitted message has a distinct, monotonically increasing `created_lt` —
+/// this is a TON protocol invariant (the TVM bumps `lt` on each
+/// `SENDRAWMSG`), so sorting by it preserves the natural emission order.
+///
+/// If any ext-out message is missing or has an unparseable `created_lt`, the
+/// caller's whole request is rejected: an inability to establish a
+/// deterministic order would make consensus on `message_index` impossible.
+fn ordered_ext_out_msgs(
+    out_msgs: &[TonMessage],
+) -> Result<Vec<&TonMessage>, ForeignChainInspectionError> {
+    let mut ext_outs_with_lt: Vec<(u64, &TonMessage)> = out_msgs
+        .iter()
+        .filter(|m| m.destination.is_none())
+        .map(|m| message_created_lt(m).map(|lt| (lt, m)))
+        .collect::<Result<_, _>>()?;
+    ext_outs_with_lt.sort_by_key(|(lt, _)| *lt);
+    Ok(ext_outs_with_lt.into_iter().map(|(_, m)| m).collect())
+}
+
+fn message_created_lt(msg: &TonMessage) -> Result<u64, ForeignChainInspectionError> {
+    let raw = msg
+        .created_lt
+        .as_deref()
+        .ok_or(ForeignChainInspectionError::TonMessageMissingCreatedLt)?;
+    raw.parse::<u64>().map_err(
+        |_| ForeignChainInspectionError::TonMessageMalformedCreatedLt {
+            value: raw.to_string(),
+        },
+    )
 }
 
 fn ensure_account_matches(
@@ -183,14 +216,6 @@ fn extract_value(
     }
 }
 
-fn hex_encode(bytes: &[u8; 32]) -> String {
-    let mut out = String::with_capacity(64);
-    for byte in bytes {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -261,6 +286,7 @@ mod tests {
             out_msgs: vec![TonMessage {
                 source: Some(account_string(0, &account_hash())),
                 destination: None, // ext-out
+                created_lt: Some("100".to_string()),
                 message_content: Some(TonCellBoc {
                     body: encode_cell(vec![0x99, 0x00, 0x00, 0x01], 32, vec![]),
                 }),
@@ -481,6 +507,9 @@ mod tests {
             TonMessage {
                 source: Some(account_string(0, &account_hash())),
                 destination: Some(account_string(0, &[0x33; 32])),
+                // Internal messages aren't required to carry created_lt for
+                // ordering — the inspector filters them out before the sort.
+                created_lt: None,
                 message_content: None,
             },
             ext_out,
@@ -496,6 +525,100 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(values.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn extract__should_sort_ext_out_messages_by_created_lt() {
+        // Two ext-out messages with bodies tagged distinctively. The "later"
+        // message (higher created_lt) is placed first in the JSON to mimic
+        // a hypothetical provider that does not preserve TVM emission order.
+        // The inspector must still index them in created_lt order.
+        let mut tx = happy_tx();
+        let later_body = encode_cell(vec![0xbb; 4], 32, vec![]);
+        let earlier_body = encode_cell(vec![0xaa; 4], 32, vec![]);
+        tx.out_msgs = vec![
+            TonMessage {
+                source: Some(account_string(0, &account_hash())),
+                destination: None,
+                created_lt: Some("200".to_string()),
+                message_content: Some(TonCellBoc { body: later_body }),
+            },
+            TonMessage {
+                source: Some(account_string(0, &account_hash())),
+                destination: None,
+                created_lt: Some("100".to_string()),
+                message_content: Some(TonCellBoc { body: earlier_body }),
+            },
+        ];
+        let inspector = inspector_from_tx(tx);
+
+        let values = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![
+                    TonExtractor::Log { message_index: 0 },
+                    TonExtractor::Log { message_index: 1 },
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(values.len(), 2);
+        let TonExtractedValue::Log(first) = &values[0];
+        let TonExtractedValue::Log(second) = &values[1];
+        assert_eq!(
+            first.body_bits,
+            vec![0xaa; 4],
+            "earlier lt should come first"
+        );
+        assert_eq!(
+            second.body_bits,
+            vec![0xbb; 4],
+            "later lt should come second"
+        );
+    }
+
+    #[tokio::test]
+    async fn extract__should_reject_when_ext_out_is_missing_created_lt() {
+        let mut tx = happy_tx();
+        tx.out_msgs[0].created_lt = None;
+        let inspector = inspector_from_tx(tx);
+
+        let err = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![TonExtractor::Log { message_index: 0 }],
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ForeignChainInspectionError::TonMessageMissingCreatedLt),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn extract__should_reject_when_ext_out_has_unparseable_created_lt() {
+        let mut tx = happy_tx();
+        tx.out_msgs[0].created_lt = Some("not-a-number".to_string());
+        let inspector = inspector_from_tx(tx);
+
+        let err = inspector
+            .extract(
+                tx_id(),
+                TonFinality::MasterchainIncluded,
+                vec![TonExtractor::Log { message_index: 0 }],
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ForeignChainInspectionError::TonMessageMalformedCreatedLt { .. }
+            ),
+            "got {err:?}"
+        );
     }
 
     #[tokio::test]

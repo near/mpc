@@ -8,6 +8,7 @@ use foreign_chain_inspector::{
         rpc_client::{ReqwestTonClient, build_ton_http_client},
     },
 };
+use http::{HeaderName, HeaderValue};
 use httpmock::prelude::*;
 use near_mpc_contract_interface::types::{Hash256, TonLog};
 use serde_json::Value;
@@ -36,26 +37,24 @@ fn mount_toncenter_mock(server: &MockServer, body: &str) {
 }
 
 fn inspector_for(server: &MockServer) -> TonInspector<ReqwestTonClient> {
+    inspector_with_auth(server, RpcAuthentication::KeyInUrl)
+}
+
+fn inspector_with_auth(
+    server: &MockServer,
+    auth: RpcAuthentication,
+) -> TonInspector<ReqwestTonClient> {
     // toncenter client wants a trailing slash on the base URL.
-    let client = build_ton_http_client(server.url("/"), RpcAuthentication::KeyInUrl)
-        .expect("client build should succeed");
+    let client = build_ton_http_client(server.url("/"), auth).expect("client build should succeed");
     TonInspector::new(client)
 }
 
 fn hex_to_32(s: &str) -> [u8; 32] {
-    let bytes = hex_decode(s);
+    let bytes = hex::decode(s).expect("invalid hex");
     assert_eq!(bytes.len(), 32, "expected 32-byte hex, got {}", bytes.len());
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);
     out
-}
-
-fn hex_decode(s: &str) -> Vec<u8> {
-    assert_eq!(s.len() % 2, 0, "odd hex length: {s}");
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-        .collect()
 }
 
 fn take_log(extracted: Vec<TonExtractedValue>) -> TonLog {
@@ -114,7 +113,7 @@ async fn extract__should_return_log_for_simple_no_refs_fixture() {
     // then
     let log = take_log(extracted);
     assert_eq!(log.from_address, Hash256(hex_to_32(FX_A_ACCOUNT_HEX)));
-    assert_eq!(log.body_bits, hex_decode(FX_A_BODY_BITS_HEX));
+    assert_eq!(log.body_bits, hex::decode(FX_A_BODY_BITS_HEX).unwrap());
     assert!(log.body_refs.is_empty());
 }
 
@@ -151,7 +150,7 @@ async fn extract__should_return_log_with_ref_for_event_fixture() {
     // then
     let log = take_log(extracted);
     assert_eq!(log.from_address, Hash256(hex_to_32(FX_B_ACCOUNT_HEX)));
-    assert_eq!(log.body_bits, hex_decode(FX_B_BODY_BITS_HEX));
+    assert_eq!(log.body_bits, hex::decode(FX_B_BODY_BITS_HEX).unwrap());
     assert_eq!(log.body_refs.len(), 1, "expected exactly one ref");
     let (bit_len, _data, refs) = structural_ref(&log.body_refs[0]);
     assert_eq!(bit_len, FX_B_REF0_BIT_LEN, "ref bit_len should round-trip");
@@ -192,7 +191,7 @@ async fn extract__should_return_log_with_multiple_refs_for_init_transfer_fixture
     // then
     let log = take_log(extracted);
     assert_eq!(log.from_address, Hash256(hex_to_32(FX_C_ACCOUNT_HEX)));
-    assert_eq!(log.body_bits, hex_decode(FX_C_BODY_BITS_HEX));
+    assert_eq!(log.body_bits, hex::decode(FX_C_BODY_BITS_HEX).unwrap());
     assert_eq!(log.body_refs.len(), 2);
 
     let (bit_len_0, data_0, refs_0) = structural_ref(&log.body_refs[0]);
@@ -301,4 +300,50 @@ async fn extract__should_reject_when_account_in_response_does_not_match_request(
         ),
         "expected AccountMismatch, got {result:?}"
     );
+}
+
+#[tokio::test]
+async fn extract__should_send_configured_auth_header_on_each_request() {
+    // given — httpmock is configured to *require* the X-API-Key header on
+    // any matching request. If the header is absent or mismatched, no mock
+    // matches and httpmock returns 404, which the inspector reports as a
+    // toncenter `BadStatus`. We then assert the mock observed exactly one
+    // request, which means it matched the auth-header expectation.
+    let server = MockServer::start();
+    let fixture = load_fixture("simple_no_refs.json");
+
+    let auth_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/transactions")
+            .header("x-api-key", "toncenter-secret");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(fixture);
+    });
+
+    let auth = RpcAuthentication::CustomHeader {
+        header_name: HeaderName::from_static("x-api-key"),
+        header_value: HeaderValue::from_static("toncenter-secret"),
+    };
+    let inspector = inspector_with_auth(&server, auth);
+
+    let tx_id = TonTransactionId {
+        workchain: 0,
+        account: hex_to_32(FX_A_ACCOUNT_HEX),
+        tx_hash: hex_to_32(FX_A_TX_HASH_HEX),
+    };
+
+    // when
+    let extracted = inspector
+        .extract(
+            tx_id,
+            TonFinality::MasterchainIncluded,
+            vec![TonExtractor::Log { message_index: 0 }],
+        )
+        .await
+        .expect("extract should succeed when auth header is present");
+
+    // then — both the extraction and the header-matching assertion must hold
+    assert_eq!(extracted.len(), 1);
+    auth_mock.assert();
 }

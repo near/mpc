@@ -119,13 +119,7 @@ impl TonRpcClient for ReqwestTonClient {
 /// the canonical on-chain representation toncenter v3 accepts in its query
 /// parameters.
 pub(crate) fn format_ton_account(workchain: i8, account_hash: &[u8; 32]) -> String {
-    let mut out = String::with_capacity(4 + 2 * 32);
-    out.push_str(&workchain.to_string());
-    out.push(':');
-    for byte in account_hash {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
+    format!("{workchain}:{}", hex::encode(account_hash))
 }
 
 /// Build a [`ReqwestTonClient`] — the TON analog of

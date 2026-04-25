@@ -87,6 +87,12 @@ pub enum ForeignChainInspectionError {
     UnsupportedWorkchain { got: i8 },
     #[error("TON cell BoC normalization failed: {0}")]
     TonBocError(#[from] crate::ton::TonBocError),
+    #[error(
+        "TON ext-out message is missing `created_lt`; cannot establish deterministic message order"
+    )]
+    TonMessageMissingCreatedLt,
+    #[error("TON ext-out message has unparseable `created_lt`: {value}")]
+    TonMessageMalformedCreatedLt { value: String },
 }
 
 /// Builds an HTTP client with the specified authentication method.

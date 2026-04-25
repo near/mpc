@@ -3611,6 +3611,7 @@ dependencies = [
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
+ "hex",
  "http 1.4.0",
  "httpmock",
  "jsonrpsee",

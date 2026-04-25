@@ -84,6 +84,21 @@ pub struct TonMessage {
     #[serde(default)]
     pub destination: Option<String>,
 
+    /// Logical time at which the TVM created this message. Within a single
+    /// transaction, every emitted message has a distinct, monotonically
+    /// increasing `created_lt` — this is a TON protocol invariant
+    /// (`SENDRAWMSG` snapshots and bumps the lt counter), not a
+    /// toncenter-specific guarantee. The MPC inspector parses this and uses
+    /// it to sort ext-out messages so that ext-out indexing is independent of
+    /// the order toncenter happens to serialize them in.
+    ///
+    /// toncenter v3 returns the value as a JSON string (the underlying TON
+    /// type is a 64-bit unsigned integer that doesn't always fit safely into
+    /// a JSON number). The inspector rejects the request if any ext-out
+    /// message is missing or has an unparseable `created_lt`.
+    #[serde(default)]
+    pub created_lt: Option<String>,
+
     /// Serialized body cell. Absent on messages with empty bodies.
     #[serde(default)]
     pub message_content: Option<TonCellBoc>,

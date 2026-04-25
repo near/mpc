@@ -45,6 +45,7 @@
                     "source": "0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "destination": null,
                     "value": "0",
+                    "created_lt": "12345678000002",
                     "message_content": {
                         "body": "te6ccgEBAwEARAACOJkAAAEAAAAAyv66vgAAAAAAAAAADeC2s6dkAAABAgAeTkVBUjphbGljZS5uZWFyACJicmlkZ2UtdHJhbnNmZXItMQ=="
                     }

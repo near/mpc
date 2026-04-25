@@ -445,6 +445,28 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 ///
 /// This lives in mpc-node (rather than the config crate) to avoid adding
 /// `foreign-chain-inspector` as a dependency of the lightweight config crate.
+///
+/// # Behaviour change since v3.9.0
+///
+/// `AuthConfig::Header { scheme: None, .. }` (or `scheme: Some("")`) now emits
+/// the **bare token value** as the header value. Previously it defaulted to
+/// `"Bearer <token>"`. The new behaviour is required for non-OAuth API key
+/// headers like toncenter's `X-API-Key`, where any prefix would be rejected
+/// by the upstream provider.
+///
+/// Operator config that previously relied on the implicit `Bearer` default
+/// must now spell it out explicitly:
+///
+/// ```yaml
+/// auth:
+///   kind: header
+///   name: Authorization
+///   scheme: Bearer        # <-- previously optional, now required for Bearer
+///   token: { env: MY_KEY }
+/// ```
+///
+/// Configs that already set `scheme: Bearer` (the example in the existing
+/// `docs/foreign-chain-transactions.md`) are unaffected.
 pub fn auth_config_to_rpc_auth(
     auth: AuthConfig,
     rpc_url: &mut String,
@@ -457,10 +479,10 @@ pub fn auth_config_to_rpc_auth(
             token,
         } => {
             let token_value = token.resolve()?;
-            // An absent or empty `scheme` emits a bare token value — required
-            // for non-OAuth API key headers like `X-API-Key` (toncenter). When
-            // the operator supplies a `scheme` (e.g. "Bearer"), it's inserted
-            // with a single space before the token.
+            // Behaviour change: see this function's docstring. An absent or
+            // empty `scheme` emits a bare token value (required for
+            // `X-API-Key`-style headers); any other `scheme` is prefixed with
+            // a single space before the token.
             let header_value = match scheme.as_deref() {
                 None | Some("") => HeaderValue::from_str(&token_value)?,
                 Some(scheme) => HeaderValue::from_str(&format!("{scheme} {token_value}"))?,

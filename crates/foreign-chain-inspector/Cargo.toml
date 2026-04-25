@@ -10,6 +10,7 @@ async-trait = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
+hex = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
