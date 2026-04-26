@@ -8,6 +8,7 @@ use mpc_attestation::{
     collateral::Collateral,
     report_data::ReportData,
 };
+use std::net::IpAddr;
 use std::path::PathBuf;
 use thiserror::Error;
 use tracing::error;
@@ -101,7 +102,6 @@ const LOOPBACK_PCCS_DOMAINS: &[&str] = &["localhost"];
 /// - IPv6 loopback `::1`
 /// - the QEMU slirp gateway `10.0.2.2`
 fn pccs_host_is_loopback(pccs_url: &Url) -> bool {
-    use std::net::IpAddr;
     match pccs_url.host() {
         Some(url::Host::Domain(d)) => LOOPBACK_PCCS_DOMAINS.contains(&d),
         Some(url::Host::Ipv4(ip)) => ip.is_loopback() || ip.octets() == [10, 0, 2, 2],
@@ -139,8 +139,11 @@ pub fn validate_pccs_tls_config(
 
     if let Some(pem) = pccs_ca_cert_pem {
         // Fail fast on a malformed PEM rather than at the first fetch.
-        let _ = reqwest::Certificate::from_pem(pem.as_bytes())
-            .context("failed to parse pccs_ca_cert_pem as a PEM-encoded certificate")?;
+        // Building a throwaway client here mirrors the work
+        // build_pccs_http_client does at fetch time, so anything that would
+        // make the production fetch fail surfaces at startup instead.
+        let _ = build_pccs_http_client(Some(pem), false)
+            .context("failed to build TLS client with pccs_ca_cert_pem at startup")?;
     }
 
     if pccs_tls_insecure {
@@ -437,14 +440,13 @@ mod tests {
     #[case::intel_host("https://api.trustedservices.intel.com/")]
     #[case::loopback_localhost("https://localhost:8081/")]
     fn validate_pccs_tls_config__should_accept_pem_only_for_any_host(#[case] url: &str) {
-        // Given a placeholder PEM (validate_pccs_tls_config doesn't parse it, just
-        // checks that the two knobs aren't both set; PEM parsing is exercised by
-        // build_pccs_http_client__should_reject_invalid_pem).
+        // Given a real PEM (validate now parses the cert as a fail-fast
+        // check, so we need a structurally valid PEM).
         let url: Url = url.parse().expect("valid URL");
-        let pem = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----";
+        let pem = test_cert_pem();
 
         // When
-        let result = validate_pccs_tls_config(&url, Some(pem), false);
+        let result = validate_pccs_tls_config(&url, Some(&pem), false);
 
         // Then
         assert!(result.is_ok(), "expected ok for {url}, got {result:?}");
@@ -454,15 +456,31 @@ mod tests {
     fn validate_pccs_tls_config__should_reject_pem_and_insecure_combined() {
         // Given
         let url: Url = "https://localhost:8081/".parse().expect("valid URL");
-        let pem = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----";
+        let pem = test_cert_pem();
 
         // When (both knobs set)
-        let result = validate_pccs_tls_config(&url, Some(pem), true);
+        let result = validate_pccs_tls_config(&url, Some(&pem), true);
 
         // Then
         assert!(
             result.is_err(),
             "expected err when pccs_ca_cert_pem and pccs_tls_insecure both set, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_pccs_tls_config__should_reject_invalid_pem() {
+        // Given a malformed PEM (spaces in the body break base64 decode).
+        let url: Url = "https://pccs.phala.network/".parse().expect("valid URL");
+        let bogus_pem = "-----BEGIN CERTIFICATE-----\nnot really base64\n-----END CERTIFICATE-----";
+
+        // When
+        let result = validate_pccs_tls_config(&url, Some(bogus_pem), false);
+
+        // Then
+        assert!(
+            result.is_err(),
+            "expected err for invalid PEM at startup, got {result:?}"
         );
     }
 
