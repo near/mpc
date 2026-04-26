@@ -19,6 +19,9 @@ mpc-attestation = { workspace = true }
 # Pinned to match the version used by `dcap-qvl` so we can pass a
 # `reqwest::Client` directly into `CollateralClient::new`. The workspace
 # pin is on a newer major (0.13) used by other crates.
+# TODO(#3027): drop this explicit pin once `dcap-qvl` re-exports
+# `reqwest` upstream — then we can use `dcap_qvl::reqwest` and the
+# workspace converges on a single reqwest version.
 reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"] }
 thiserror = { workspace = true }
 tokio = { workspace = true }
