@@ -1,3 +1,4 @@
+use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::{Constructor, From};
@@ -242,7 +243,6 @@ fn build_pccs_http_client(
     pccs_ca_cert_pem: Option<&str>,
     pccs_tls_insecure: bool,
 ) -> anyhow::Result<reqwest::Client> {
-    use anyhow::Context;
     let builder = reqwest::Client::builder().timeout(PCCS_REQUEST_TIMEOUT);
 
     let builder = match (pccs_tls_insecure, pccs_ca_cert_pem) {
