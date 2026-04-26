@@ -31,22 +31,31 @@ pub struct StartConfig {
 
     /// Optional PEM-encoded TLS root certificate for the PCCS server.
     /// Set this when pointing at a local PCCS that uses a self-signed cert.
-    /// The cert is added as an additional trust anchor; system CAs still
-    /// work for other endpoints.
+    /// The cert is added as an additional trust anchor; the default trust
+    /// roots still work for other endpoints.
+    ///
+    /// Mutually exclusive with [`pccs_tls_insecure`](Self::pccs_tls_insecure)
+    /// — startup rejects setting both.
     #[serde(default)]
     pub pccs_ca_cert_pem: Option<String>,
 
     /// Disable TLS certificate verification for the PCCS server. **Loopback
     /// only**: startup rejects this flag for `pccs_url` hosts other than
-    /// `localhost` / `127.0.0.1` / `10.0.2.2`, so it cannot silently disable
-    /// TLS validation against a real network endpoint. Acceptable for
-    /// production deployments where the PCCS runs on the same host as the
-    /// CVM (the host is the effective trust boundary; an attacker capable of
-    /// swapping the cert already has host-level access). Use
-    /// [`pccs_ca_cert_pem`](Self::pccs_ca_cert_pem) instead when a
-    /// properly-formed cert is available — same security posture on loopback,
-    /// plus a positive operational check that the cert matches what the
-    /// operator expects.
+    /// `localhost`, anything in `127.0.0.0/8`, IPv6 loopback `::1` (written
+    /// as `https://[::1]:<port>/` in the URL), or the QEMU slirp gateway
+    /// `10.0.2.2`. The guardrail prevents silent disablement of TLS
+    /// validation against a real network endpoint.
+    ///
+    /// Acceptable for production deployments where the PCCS runs on the same
+    /// host as the CVM (the host is the effective trust boundary; an
+    /// attacker capable of swapping the cert already has host-level access).
+    /// Use [`pccs_ca_cert_pem`](Self::pccs_ca_cert_pem) instead when a
+    /// properly-formed cert is available — same security posture on
+    /// loopback, plus a positive operational check that the cert matches
+    /// what the operator expects.
+    ///
+    /// Mutually exclusive with `pccs_ca_cert_pem` — startup rejects setting
+    /// both.
     #[serde(default)]
     pub pccs_tls_insecure: bool,
 }
@@ -221,12 +230,22 @@ mod tests {
         );
     }
 
-    /// Pin the TOML field names for the PCCS-TLS knobs. If a field is
-    /// renamed on `StartConfig` (or someone adds a `#[serde(rename = ...)]`),
-    /// operators silently lose their setting — the user-facing knob names
-    /// are exactly these strings. The function below relies on these specific
-    /// field names existing on `StartConfig` (compile-time check) and the
-    /// runtime assertions verify the serde behaviour.
+    /// Two complementary checks on the PCCS-TLS knobs:
+    ///
+    /// 1. `mem::offset_of!` calls on `StartConfig` — these fail to compile
+    ///    if the fields are renamed (or removed) on `StartConfig`. Cheap
+    ///    field-existence guarantee for free.
+    /// 2. A local `Probe` struct with the same field names exercises serde
+    ///    deserialization, default values, and serialization-output
+    ///    contains-the-expected-keys. This guards the *probe* against
+    ///    accidental drift in the test itself.
+    ///
+    /// What this doesn't catch: a future `#[serde(rename = "...")]` on
+    /// `StartConfig`'s fields would slip past this. To catch that we'd need
+    /// to round-trip a real `StartConfig` instance, which currently requires
+    /// constructing all the non-default fields on `StartConfig` (dstack
+    /// endpoint, log config, indexer config, etc.) — significantly more
+    /// fixture for marginal value over the `offset_of!` rename guard.
     #[test]
     #[expect(non_snake_case)]
     fn pccs_tls_fields__should_use_expected_toml_names() {
@@ -271,8 +290,7 @@ pccs_tls_insecure = true
             }
         );
 
-        // Lock in that StartConfig still uses these exact names — a rename
-        // would silently break operator configs.
+        // Probe round-trip stays consistent.
         let serialized = toml::to_string(&Probe {
             pccs_ca_cert_pem: Some("x".into()),
             pccs_tls_insecure: true,

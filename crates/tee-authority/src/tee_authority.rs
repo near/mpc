@@ -87,22 +87,45 @@ impl Default for DstackTeeAuthorityConfig {
     }
 }
 
-/// Hosts for which `pccs_tls_insecure = true` is honored. Other hosts are
-/// rejected at startup, so a copy-pasted dev config cannot silently disable
-/// TLS verification against a real network endpoint.
-///
-/// `[::1]` is the IPv6 loopback. We compare against `Url::host_str()` which
-/// keeps the URL-syntax brackets for IPv6 hosts, so the entry includes them.
-const LOOPBACK_PCCS_HOSTS: &[&str] = &["localhost", "127.0.0.1", "[::1]", "10.0.2.2"];
+/// Domain names whitelisted for `pccs_tls_insecure = true`. IP-based hosts
+/// are matched separately via [`std::net::IpAddr::is_loopback`] (plus the
+/// `10.0.2.2` slirp gateway). Loopback-only enforcement keeps a copy-pasted
+/// dev config from silently disabling TLS validation against a real
+/// network endpoint.
+const LOOPBACK_PCCS_DOMAINS: &[&str] = &["localhost"];
 
-/// Validate the PCCS TLS-trust knobs at startup:
+/// Returns true if the URL's host is loopback-ish enough to honor the
+/// `pccs_tls_insecure` flag. Accepts:
+/// - `localhost`
+/// - any IPv4 in `127.0.0.0/8` (per `Ipv4Addr::is_loopback`)
+/// - IPv6 loopback `::1`
+/// - the QEMU slirp gateway `10.0.2.2`
+fn pccs_host_is_loopback(pccs_url: &Url) -> bool {
+    use std::net::IpAddr;
+    match pccs_url.host() {
+        Some(url::Host::Domain(d)) => LOOPBACK_PCCS_DOMAINS.contains(&d),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback() || ip.octets() == [10, 0, 2, 2],
+        Some(url::Host::Ipv6(ip)) => IpAddr::V6(ip).is_loopback(),
+        None => false,
+    }
+}
+
+/// Validate the PCCS TLS-trust knobs at startup. Runs once during config
+/// conversion and is intended to fail fast on operator config mistakes:
 ///
-/// - `pccs_ca_cert_pem` and `pccs_tls_insecure` are mutually exclusive: the
+/// - `pccs_ca_cert_pem` and `pccs_tls_insecure` are mutually exclusive — the
 ///   first explicitly trusts a known cert, the second turns trust off
 ///   entirely. Asking for both is a config mistake.
+/// - `pccs_ca_cert_pem`, when set, must be a parseable PEM certificate.
+///   Catching this here means a typo'd cert fails at startup with a clear
+///   message rather than at the first attestation attempt.
 /// - `pccs_tls_insecure` is only honored for loopback-ish PCCS URLs so a
 ///   copy-pasted dev config cannot silently disable TLS validation against a
 ///   real network endpoint.
+///
+/// Also emits the one-time WARN log when `pccs_tls_insecure = true` is
+/// active, so operators see the security signal at startup rather than
+/// scattered through every collateral fetch.
 pub fn validate_pccs_tls_config(
     pccs_url: &Url,
     pccs_ca_cert_pem: Option<&str>,
@@ -113,15 +136,27 @@ pub fn validate_pccs_tls_config(
         "pccs_tls_insecure=true and pccs_ca_cert_pem are mutually exclusive: \
          pin a specific cert or disable verification entirely, not both",
     );
-    if !pccs_tls_insecure {
-        return Ok(());
+
+    if let Some(pem) = pccs_ca_cert_pem {
+        // Fail fast on a malformed PEM rather than at the first fetch.
+        let _ = reqwest::Certificate::from_pem(pem.as_bytes())
+            .context("failed to parse pccs_ca_cert_pem as a PEM-encoded certificate")?;
     }
-    let host = pccs_url.host_str().unwrap_or("");
-    anyhow::ensure!(
-        LOOPBACK_PCCS_HOSTS.contains(&host),
-        "pccs_tls_insecure=true is only allowed for loopback PCCS URLs (one of {:?}); got host {host:?}",
-        LOOPBACK_PCCS_HOSTS,
-    );
+
+    if pccs_tls_insecure {
+        anyhow::ensure!(
+            pccs_host_is_loopback(pccs_url),
+            "pccs_tls_insecure=true is only allowed for loopback PCCS URLs \
+             (localhost, 127.0.0.0/8, ::1, or 10.0.2.2); got {:?}",
+            pccs_url.host_str().unwrap_or(""),
+        );
+        tracing::warn!(
+            "pccs_tls_insecure=true: PCCS TLS certificate verification is DISABLED. \
+             Only honored for loopback PCCS hosts; the host is the effective \
+             trust boundary."
+        );
+    }
+
     Ok(())
 }
 
@@ -231,8 +266,9 @@ impl TeeAuthority {
 
 /// Build the `reqwest::Client` used to talk to the PCCS server, applying the
 /// operator's TLS-trust knobs. With both knobs unset the result is the
-/// standard `reqwest` client with system CAs only — same trust posture as
-/// `with_default_http`.
+/// standard `reqwest` client with the trust anchors built into the selected
+/// `reqwest` TLS feature (currently `rustls-tls`, which uses the bundled
+/// Mozilla `webpki-roots`) — same trust posture as `with_default_http`.
 ///
 /// The caller is expected to have run [`validate_pccs_tls_config`] first
 /// (which rejects the both-knobs-set combo). This function nonetheless
@@ -251,12 +287,14 @@ fn build_pccs_http_client(
              this combination should have been rejected by validate_pccs_tls_config"
         ),
         (true, None) => {
-            tracing::warn!(
-                "pccs_tls_insecure=true: PCCS TLS certificate verification is DISABLED. \
-                 Only honored for loopback PCCS hosts; the host is the effective \
-                 trust boundary."
-            );
-            builder.danger_accept_invalid_certs(true)
+            // Disable both cert-chain and hostname verification so the
+            // observable behavior matches "TLS authentication off entirely",
+            // matching the doc-comment on `pccs_tls_insecure`. (rustls's
+            // `NoVerifier` covers both today, but the explicit second flag
+            // documents intent and is stable across reqwest backends.)
+            builder
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true)
         }
         (false, Some(pem)) => {
             let cert = reqwest::Certificate::from_pem(pem.as_bytes())

@@ -43,10 +43,15 @@ home_dir = "/data"
 #
 #   pccs_tls_insecure: disable TLS certificate verification entirely.
 #   Loopback only; the node startup rejects this for non-loopback PCCS
-#   hosts (allowed: localhost, 127.0.0.1, ::1, 10.0.2.2). Acceptable for
-#   production loopback-PCCS deployments — the host is the trust
-#   boundary, so TLS authentication is redundant — but `pccs_ca_cert_pem`
-#   is preferred when a properly-formed cert is available.
+#   hosts. Allowed hosts:
+#     - localhost
+#     - any IPv4 in 127.0.0.0/8
+#     - IPv6 loopback — write `https://[::1]:<port>/` (brackets required)
+#     - QEMU slirp gateway — `10.0.2.2`
+#   Acceptable for production loopback-PCCS deployments — the host is
+#   the trust boundary, so TLS authentication is redundant — but
+#   `pccs_ca_cert_pem` is preferred when a properly-formed cert is
+#   available.
 # pccs_tls_insecure = true
 
 [mpc_node_config.log]
