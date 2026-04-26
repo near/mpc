@@ -364,6 +364,24 @@ mod tests {
         assert!(result.is_ok(), "expected ok, got {result:?}");
     }
 
+    #[rstest]
+    #[case::public_host("https://pccs.phala.network/")]
+    #[case::intel_host("https://api.trustedservices.intel.com/")]
+    #[case::loopback_localhost("https://localhost:8081/")]
+    fn validate_pccs_tls_config__should_accept_pem_only_for_any_host(#[case] url: &str) {
+        // Given a placeholder PEM (validate_pccs_tls_config doesn't parse it, just
+        // checks that the two knobs aren't both set; PEM parsing is exercised by
+        // build_pccs_http_client__should_reject_invalid_pem).
+        let url: Url = url.parse().expect("valid URL");
+        let pem = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----";
+
+        // When
+        let result = validate_pccs_tls_config(&url, Some(pem), false);
+
+        // Then
+        assert!(result.is_ok(), "expected ok for {url}, got {result:?}");
+    }
+
     #[test]
     fn validate_pccs_tls_config__should_reject_pem_and_insecure_combined() {
         // Given

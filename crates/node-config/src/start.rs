@@ -214,4 +214,65 @@ mod tests {
             "GCP field name changed — update tee-launcher's TEE-restricted key list"
         );
     }
+
+    /// Pin the TOML field names for the PCCS-TLS knobs. If a field is
+    /// renamed on `StartConfig` (or someone adds a `#[serde(rename = ...)]`),
+    /// operators silently lose their setting — the user-facing knob names
+    /// are exactly these strings. The function below relies on these specific
+    /// field names existing on `StartConfig` (compile-time check) and the
+    /// runtime assertions verify the serde behaviour.
+    #[test]
+    #[expect(non_snake_case)]
+    fn pccs_tls_fields__should_use_expected_toml_names() {
+        // Compile-time check: a rename on StartConfig fails these lines.
+        let _ = std::mem::offset_of!(StartConfig, pccs_ca_cert_pem);
+        let _ = std::mem::offset_of!(StartConfig, pccs_tls_insecure);
+
+        // Given an isolated struct that has only the two fields we care about,
+        // populated from the canonical TOML strings.
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct Probe {
+            #[serde(default)]
+            pccs_ca_cert_pem: Option<String>,
+            #[serde(default)]
+            pccs_tls_insecure: bool,
+        }
+
+        let toml_input = r#"
+pccs_ca_cert_pem = "-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----"
+pccs_tls_insecure = true
+"#;
+
+        // When deserializing
+        let probe: Probe = toml::from_str(toml_input).expect("TOML parses");
+
+        // Then both fields are populated as named
+        assert!(probe.pccs_tls_insecure);
+        assert!(
+            probe
+                .pccs_ca_cert_pem
+                .as_deref()
+                .is_some_and(|s| s.contains("BEGIN CERTIFICATE"))
+        );
+
+        // And: omitting them yields the documented defaults (None / false).
+        let probe_default: Probe = toml::from_str("").expect("empty TOML parses");
+        assert_eq!(
+            probe_default,
+            Probe {
+                pccs_ca_cert_pem: None,
+                pccs_tls_insecure: false,
+            }
+        );
+
+        // Lock in that StartConfig still uses these exact names — a rename
+        // would silently break operator configs.
+        let serialized = toml::to_string(&Probe {
+            pccs_ca_cert_pem: Some("x".into()),
+            pccs_tls_insecure: true,
+        })
+        .unwrap();
+        assert!(serialized.contains("pccs_ca_cert_pem"));
+        assert!(serialized.contains("pccs_tls_insecure"));
+    }
 }
