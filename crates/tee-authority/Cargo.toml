@@ -16,6 +16,10 @@ dstack-sdk = { workspace = true }
 hex = { workspace = true }
 launcher-interface = { workspace = true }
 mpc-attestation = { workspace = true }
+# Pinned to match the version used by `dcap-qvl` so we can pass a
+# `reqwest::Client` directly into `CollateralClient::new`. The workspace
+# pin is on a newer major (0.13) used by other crates.
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"] }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

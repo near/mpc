@@ -144,6 +144,8 @@ impl StartCmd {
                 filter: std::env::var("RUST_LOG").ok(),
             },
             pccs_url: mpc_node_config::default_pccs_url(),
+            pccs_ca_cert_pem: None,
+            pccs_tls_insecure: false,
         }
     }
 }

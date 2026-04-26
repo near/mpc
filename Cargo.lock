@@ -11185,6 +11185,7 @@ dependencies = [
  "hex",
  "launcher-interface",
  "mpc-attestation",
+ "reqwest 0.12.28",
  "rstest",
  "test-utils",
  "thiserror 2.0.18",

@@ -3,20 +3,35 @@ use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfig};
 use std::path::Path;
 use tee_authority::tee_authority::{
-    DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority,
+    validate_pccs_tls_config, DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority,
 };
 
 pub trait TeeAuthorityImpl {
-    fn into_tee_authority(self, pccs_url: url::Url) -> anyhow::Result<TeeAuthority>;
+    fn into_tee_authority(
+        self,
+        pccs_url: url::Url,
+        pccs_ca_cert_pem: Option<String>,
+        pccs_tls_insecure: bool,
+    ) -> anyhow::Result<TeeAuthority>;
 }
 
 impl TeeAuthorityImpl for TeeConfig {
-    fn into_tee_authority(self, pccs_url: url::Url) -> anyhow::Result<TeeAuthority> {
+    fn into_tee_authority(
+        self,
+        pccs_url: url::Url,
+        pccs_ca_cert_pem: Option<String>,
+        pccs_tls_insecure: bool,
+    ) -> anyhow::Result<TeeAuthority> {
+        validate_pccs_tls_config(&pccs_url, pccs_tls_insecure)?;
         Ok(match self.authority {
             TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
-            TeeAuthorityConfig::Dstack { dstack_endpoint } => {
-                DstackTeeAuthorityConfig::new(dstack_endpoint, pccs_url).into()
-            }
+            TeeAuthorityConfig::Dstack { dstack_endpoint } => DstackTeeAuthorityConfig::new(
+                dstack_endpoint,
+                pccs_url,
+                pccs_ca_cert_pem,
+                pccs_tls_insecure,
+            )
+            .into(),
         })
     }
 }

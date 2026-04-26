@@ -62,6 +62,13 @@ pub struct DstackTeeAuthorityConfig {
     dstack_endpoint: PathBuf,
     /// Base URL of the PCCS server used to fetch TDX attestation collateral.
     pccs_url: Url,
+    /// Optional PEM-encoded root certificate added to the TLS trust anchors
+    /// when fetching collateral. Used to trust a self-signed local PCCS
+    /// without changing the rest of the node's TLS posture.
+    pccs_ca_cert_pem: Option<String>,
+    /// Disable TLS certificate verification for the PCCS request. Dev-only;
+    /// startup validation rejects this with non-loopback `pccs_url` hosts.
+    pccs_tls_insecure: bool,
 }
 
 impl Default for DstackTeeAuthorityConfig {
@@ -71,8 +78,29 @@ impl Default for DstackTeeAuthorityConfig {
             pccs_url: launcher_interface::DEFAULT_PCCS_URL
                 .parse()
                 .expect("default PCCS URL is valid"),
+            pccs_ca_cert_pem: None,
+            pccs_tls_insecure: false,
         }
     }
+}
+
+/// Hosts for which `pccs_tls_insecure = true` is honored. Other hosts are
+/// rejected at startup, so a copy-pasted dev config cannot silently disable
+/// TLS verification against a real network endpoint.
+const LOOPBACK_PCCS_HOSTS: &[&str] = &["localhost", "127.0.0.1", "10.0.2.2"];
+
+/// Validate that `pccs_tls_insecure` is only used with a loopback-ish PCCS URL.
+pub fn validate_pccs_tls_config(pccs_url: &Url, pccs_tls_insecure: bool) -> anyhow::Result<()> {
+    if !pccs_tls_insecure {
+        return Ok(());
+    }
+    let host = pccs_url.host_str().unwrap_or("");
+    anyhow::ensure!(
+        LOOPBACK_PCCS_HOSTS.contains(&host),
+        "pccs_tls_insecure=true is only allowed for loopback PCCS URLs (one of {:?}); got host {host:?}",
+        LOOPBACK_PCCS_HOSTS,
+    );
+    Ok(())
 }
 
 /// TeeAuthority is an abstraction over different TEE attestation generator implementations. It
@@ -137,9 +165,14 @@ impl TeeAuthority {
         let quote_bytes: Vec<u8> =
             hex::decode(&quote).map_err(|e| AttestationError::QuoteDecode(e.into()))?;
 
-        let collateral = Self::fetch_collateral(config.pccs_url.as_str(), &quote_bytes)
-            .await
-            .map_err(AttestationError::CollateralFetch)?;
+        let collateral = Self::fetch_collateral(
+            config.pccs_url.as_str(),
+            config.pccs_ca_cert_pem.as_deref(),
+            config.pccs_tls_insecure,
+            &quote_bytes,
+        )
+        .await
+        .map_err(AttestationError::CollateralFetch)?;
 
         Ok(Attestation::Dstack(DstackAttestation::new(
             quote_bytes.into(),
@@ -149,9 +182,19 @@ impl TeeAuthority {
     }
 
     /// Fetches attestation collateral from a PCCS server for the given TDX quote.
-    async fn fetch_collateral(pccs_url: &str, quote: &[u8]) -> anyhow::Result<Collateral> {
-        let client = dcap_qvl::collateral::CollateralClient::with_default_http(pccs_url)
-            .map_err(|e| anyhow::anyhow!(e))?;
+    async fn fetch_collateral(
+        pccs_url: &str,
+        pccs_ca_cert_pem: Option<&str>,
+        pccs_tls_insecure: bool,
+        quote: &[u8],
+    ) -> anyhow::Result<Collateral> {
+        let http = build_pccs_http_client(pccs_ca_cert_pem, pccs_tls_insecure)?;
+        // Use `DefaultConfig` to match the trust posture of `with_default_http`
+        // (selected as `RingConfig` when the `ring` feature is on, which we do).
+        let client =
+            dcap_qvl::collateral::CollateralClient::<dcap_qvl::configs::DefaultConfig>::new(
+                http, pccs_url,
+            );
         let fetch = async || {
             tokio::time::timeout(PCCS_REQUEST_TIMEOUT, client.fetch(quote))
                 .await
@@ -162,6 +205,31 @@ impl TeeAuthority {
 
         get_with_backoff(fetch, "fetch collateral from PCCS", Some(1)).await
     }
+}
+
+/// Build the `reqwest::Client` used to talk to the PCCS server, applying the
+/// operator's TLS-trust knobs. By default returns the standard `reqwest`
+/// client with system CAs only — same trust posture as `with_default_http`.
+fn build_pccs_http_client(
+    pccs_ca_cert_pem: Option<&str>,
+    pccs_tls_insecure: bool,
+) -> anyhow::Result<reqwest::Client> {
+    use anyhow::Context;
+    let mut builder = reqwest::Client::builder().timeout(PCCS_REQUEST_TIMEOUT);
+
+    if pccs_tls_insecure {
+        tracing::warn!(
+            "pccs_tls_insecure=true: PCCS TLS certificate verification is DISABLED. \
+             Only safe for a loopback PCCS in development."
+        );
+        builder = builder.danger_accept_invalid_certs(true);
+    } else if let Some(pem) = pccs_ca_cert_pem {
+        let cert = reqwest::Certificate::from_pem(pem.as_bytes())
+            .context("failed to parse pccs_ca_cert_pem as a PEM-encoded certificate")?;
+        builder = builder.add_root_certificate(cert);
+    }
+
+    builder.build().context("failed to build PCCS HTTP client")
 }
 
 async fn get_with_backoff<Operation, OperationFuture, Value, Error>(
@@ -215,6 +283,7 @@ where
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use mpc_attestation::report_data::ReportDataV1;
@@ -234,6 +303,65 @@ mod tests {
     use test_utils::attestation::{account_key, p2p_tls_key};
 
     extern crate std;
+
+    #[rstest]
+    #[case::loopback_localhost("https://localhost:8081/")]
+    #[case::loopback_127("https://127.0.0.1:8081/")]
+    #[case::loopback_slirp("https://10.0.2.2:8081/")]
+    fn validate_pccs_tls_config__should_accept_insecure_for_loopback_hosts(#[case] url: &str) {
+        // Given
+        let url: Url = url.parse().expect("valid URL");
+
+        // When
+        let result = validate_pccs_tls_config(&url, true);
+
+        // Then
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[rstest]
+    #[case::public_host("https://pccs.phala.network/")]
+    #[case::intel_host("https://api.trustedservices.intel.com/")]
+    #[case::other_loopback_alias("https://0.0.0.0:8081/")]
+    fn validate_pccs_tls_config__should_reject_insecure_for_non_loopback_hosts(#[case] url: &str) {
+        // Given
+        let url: Url = url.parse().expect("valid URL");
+
+        // When
+        let result = validate_pccs_tls_config(&url, true);
+
+        // Then
+        assert!(result.is_err(), "expected err for {url}, got {result:?}");
+    }
+
+    #[rstest]
+    #[case::public_host("https://pccs.phala.network/")]
+    #[case::loopback_localhost("https://localhost:8081/")]
+    fn validate_pccs_tls_config__should_accept_any_host_when_insecure_disabled(#[case] url: &str) {
+        // Given
+        let url: Url = url.parse().expect("valid URL");
+
+        // When
+        let result = validate_pccs_tls_config(&url, false);
+
+        // Then
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[test]
+    fn build_pccs_http_client__should_reject_invalid_pem() {
+        // Given
+        let bogus_pem = "-----BEGIN CERTIFICATE-----\nnot really base64\n-----END CERTIFICATE-----";
+
+        // When
+        let result = build_pccs_http_client(Some(bogus_pem), false);
+
+        // Then
+        assert!(
+            result.is_err(),
+            "expected err for invalid PEM, got {result:?}"
+        );
+    }
 
     #[rstest]
     #[tokio::test]
@@ -410,7 +538,12 @@ mod tests {
 
         let result = tokio::time::timeout(
             Duration::from_secs(30),
-            TeeAuthority::fetch_collateral(config.pccs_url.as_str(), &quote_bytes),
+            TeeAuthority::fetch_collateral(
+                config.pccs_url.as_str(),
+                config.pccs_ca_cert_pem.as_deref(),
+                config.pccs_tls_insecure,
+                &quote_bytes,
+            ),
         )
         .await;
 

@@ -28,6 +28,21 @@ pub struct StartConfig {
     /// Defaults to Phala's PCCS if not set in config.
     #[serde(default = "default_pccs_url")]
     pub pccs_url: url::Url,
+
+    /// Optional PEM-encoded TLS root certificate for the PCCS server.
+    /// Set this when pointing at a local PCCS that uses a self-signed cert.
+    /// The cert is added as an additional trust anchor; system CAs still
+    /// work for other endpoints.
+    #[serde(default)]
+    pub pccs_ca_cert_pem: Option<String>,
+
+    /// Disable TLS certificate verification for the PCCS server. **Dev-only**:
+    /// only honored when `pccs_url` host is `localhost` / `127.0.0.1` /
+    /// `10.0.2.2`. The node startup rejects this flag combined with any other
+    /// host so a stray copy-paste cannot silently disable TLS validation
+    /// against a real network endpoint.
+    #[serde(default)]
+    pub pccs_tls_insecure: bool,
 }
 
 pub fn default_pccs_url() -> url::Url {
