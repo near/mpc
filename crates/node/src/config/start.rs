@@ -22,7 +22,7 @@ impl TeeAuthorityImpl for TeeConfig {
         pccs_ca_cert_pem: Option<String>,
         pccs_tls_insecure: bool,
     ) -> anyhow::Result<TeeAuthority> {
-        validate_pccs_tls_config(&pccs_url, pccs_tls_insecure)?;
+        validate_pccs_tls_config(&pccs_url, pccs_ca_cert_pem.as_deref(), pccs_tls_insecure)?;
         Ok(match self.authority {
             TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
             TeeAuthorityConfig::Dstack { dstack_endpoint } => DstackTeeAuthorityConfig::new(

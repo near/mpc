@@ -89,8 +89,24 @@ impl Default for DstackTeeAuthorityConfig {
 /// TLS verification against a real network endpoint.
 const LOOPBACK_PCCS_HOSTS: &[&str] = &["localhost", "127.0.0.1", "10.0.2.2"];
 
-/// Validate that `pccs_tls_insecure` is only used with a loopback-ish PCCS URL.
-pub fn validate_pccs_tls_config(pccs_url: &Url, pccs_tls_insecure: bool) -> anyhow::Result<()> {
+/// Validate the PCCS TLS-trust knobs at startup:
+///
+/// - `pccs_ca_cert_pem` and `pccs_tls_insecure` are mutually exclusive: the
+///   first explicitly trusts a known cert, the second turns trust off
+///   entirely. Asking for both is a config mistake.
+/// - `pccs_tls_insecure` is only honored for loopback-ish PCCS URLs so a
+///   copy-pasted dev config cannot silently disable TLS validation against a
+///   real network endpoint.
+pub fn validate_pccs_tls_config(
+    pccs_url: &Url,
+    pccs_ca_cert_pem: Option<&str>,
+    pccs_tls_insecure: bool,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !(pccs_tls_insecure && pccs_ca_cert_pem.is_some()),
+        "pccs_tls_insecure=true and pccs_ca_cert_pem are mutually exclusive: \
+         pin a specific cert or disable verification entirely, not both",
+    );
     if !pccs_tls_insecure {
         return Ok(());
     }
@@ -313,7 +329,7 @@ mod tests {
         let url: Url = url.parse().expect("valid URL");
 
         // When
-        let result = validate_pccs_tls_config(&url, true);
+        let result = validate_pccs_tls_config(&url, None, true);
 
         // Then
         assert!(result.is_ok(), "expected ok, got {result:?}");
@@ -328,7 +344,7 @@ mod tests {
         let url: Url = url.parse().expect("valid URL");
 
         // When
-        let result = validate_pccs_tls_config(&url, true);
+        let result = validate_pccs_tls_config(&url, None, true);
 
         // Then
         assert!(result.is_err(), "expected err for {url}, got {result:?}");
@@ -341,11 +357,27 @@ mod tests {
         // Given
         let url: Url = url.parse().expect("valid URL");
 
-        // When
-        let result = validate_pccs_tls_config(&url, false);
+        // When (no PEM, no insecure)
+        let result = validate_pccs_tls_config(&url, None, false);
 
         // Then
         assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[test]
+    fn validate_pccs_tls_config__should_reject_pem_and_insecure_combined() {
+        // Given
+        let url: Url = "https://localhost:8081/".parse().expect("valid URL");
+        let pem = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----";
+
+        // When (both knobs set)
+        let result = validate_pccs_tls_config(&url, Some(pem), true);
+
+        // Then
+        assert!(
+            result.is_err(),
+            "expected err when pccs_ca_cert_pem and pccs_tls_insecure both set, got {result:?}"
+        );
     }
 
     #[test]
