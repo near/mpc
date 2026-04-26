@@ -89,7 +89,10 @@ impl Default for DstackTeeAuthorityConfig {
 /// Hosts for which `pccs_tls_insecure = true` is honored. Other hosts are
 /// rejected at startup, so a copy-pasted dev config cannot silently disable
 /// TLS verification against a real network endpoint.
-const LOOPBACK_PCCS_HOSTS: &[&str] = &["localhost", "127.0.0.1", "10.0.2.2"];
+///
+/// `[::1]` is the IPv6 loopback. We compare against `Url::host_str()` which
+/// keeps the URL-syntax brackets for IPv6 hosts, so the entry includes them.
+const LOOPBACK_PCCS_HOSTS: &[&str] = &["localhost", "127.0.0.1", "[::1]", "10.0.2.2"];
 
 /// Validate the PCCS TLS-trust knobs at startup:
 ///
@@ -226,27 +229,42 @@ impl TeeAuthority {
 }
 
 /// Build the `reqwest::Client` used to talk to the PCCS server, applying the
-/// operator's TLS-trust knobs. By default returns the standard `reqwest`
-/// client with system CAs only — same trust posture as `with_default_http`.
+/// operator's TLS-trust knobs. With both knobs unset the result is the
+/// standard `reqwest` client with system CAs only — same trust posture as
+/// `with_default_http`.
+///
+/// The caller is expected to have run [`validate_pccs_tls_config`] first
+/// (which rejects the both-knobs-set combo). This function nonetheless
+/// matches all four input quadrants explicitly so the precedence rule is
+/// local: a future caller that skips validation cannot accidentally land
+/// in a silent precedence rule that disables TLS validation.
 fn build_pccs_http_client(
     pccs_ca_cert_pem: Option<&str>,
     pccs_tls_insecure: bool,
 ) -> anyhow::Result<reqwest::Client> {
     use anyhow::Context;
-    let mut builder = reqwest::Client::builder().timeout(PCCS_REQUEST_TIMEOUT);
+    let builder = reqwest::Client::builder().timeout(PCCS_REQUEST_TIMEOUT);
 
-    if pccs_tls_insecure {
-        tracing::warn!(
-            "pccs_tls_insecure=true: PCCS TLS certificate verification is DISABLED. \
-             Only honored for loopback PCCS hosts; the host is the effective \
-             trust boundary."
-        );
-        builder = builder.danger_accept_invalid_certs(true);
-    } else if let Some(pem) = pccs_ca_cert_pem {
-        let cert = reqwest::Certificate::from_pem(pem.as_bytes())
-            .context("failed to parse pccs_ca_cert_pem as a PEM-encoded certificate")?;
-        builder = builder.add_root_certificate(cert);
-    }
+    let builder = match (pccs_tls_insecure, pccs_ca_cert_pem) {
+        (true, Some(_)) => anyhow::bail!(
+            "pccs_tls_insecure and pccs_ca_cert_pem are mutually exclusive; \
+             this combination should have been rejected by validate_pccs_tls_config"
+        ),
+        (true, None) => {
+            tracing::warn!(
+                "pccs_tls_insecure=true: PCCS TLS certificate verification is DISABLED. \
+                 Only honored for loopback PCCS hosts; the host is the effective \
+                 trust boundary."
+            );
+            builder.danger_accept_invalid_certs(true)
+        }
+        (false, Some(pem)) => {
+            let cert = reqwest::Certificate::from_pem(pem.as_bytes())
+                .context("failed to parse pccs_ca_cert_pem as a PEM-encoded certificate")?;
+            builder.add_root_certificate(cert)
+        }
+        (false, None) => builder,
+    };
 
     builder.build().context("failed to build PCCS HTTP client")
 }
@@ -323,9 +341,18 @@ mod tests {
 
     extern crate std;
 
+    /// Generate a small valid X.509 v3 self-signed cert as PEM, for tests
+    /// that need a real cert `reqwest::Certificate::from_pem` will accept.
+    fn test_cert_pem() -> String {
+        let cert =
+            rcgen::generate_simple_self_signed(vec!["test.local".into()]).expect("rcgen generate");
+        cert.cert.pem()
+    }
+
     #[rstest]
     #[case::loopback_localhost("https://localhost:8081/")]
     #[case::loopback_127("https://127.0.0.1:8081/")]
+    #[case::loopback_ipv6("https://[::1]:8081/")]
     #[case::loopback_slirp("https://10.0.2.2:8081/")]
     fn validate_pccs_tls_config__should_accept_insecure_for_loopback_hosts(#[case] url: &str) {
         // Given
@@ -413,6 +440,55 @@ mod tests {
         assert!(
             result.is_err(),
             "expected err for invalid PEM, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn build_pccs_http_client__should_succeed_with_no_knobs_set() {
+        // Given default inputs (the no-config path that every existing
+        // operator hits on the public Phala / Intel endpoints).
+
+        // When
+        let result = build_pccs_http_client(None, false);
+
+        // Then
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[test]
+    fn build_pccs_http_client__should_succeed_with_insecure_only() {
+        // When
+        let result = build_pccs_http_client(None, true);
+
+        // Then
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[test]
+    fn build_pccs_http_client__should_succeed_with_valid_pem() {
+        // Given a real, freshly-generated PEM cert.
+        let pem = test_cert_pem();
+
+        // When
+        let result = build_pccs_http_client(Some(&pem), false);
+
+        // Then
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[test]
+    fn build_pccs_http_client__should_fail_when_both_knobs_set() {
+        // Given a real PEM (so the failure isn't from PEM parsing).
+        let pem = test_cert_pem();
+
+        // When (both knobs — should have been caught by validation, but
+        // build_pccs_http_client also fails locally as defense in depth).
+        let result = build_pccs_http_client(Some(&pem), true);
+
+        // Then
+        assert!(
+            result.is_err(),
+            "expected err when both knobs set, got {result:?}"
         );
     }
 

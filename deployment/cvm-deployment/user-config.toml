@@ -19,6 +19,20 @@ home_dir = "/data"
 # `sgx-dcap-pccs` install). Mutually exclusive — the node startup rejects
 # both being set.
 #
+# !! Stock-cert gotcha: the cert that ships in the Ubuntu `sgx-dcap-pccs`
+# package (`/opt/intel/sgx-dcap-pccs/ssl_key/file.crt`) is X.509 v1,
+# expired, has no SAN. Pinning that cert via `pccs_ca_cert_pem` will
+# still fail TLS validation. Regenerate it as a v3 cert with valid
+# dates and a SAN matching your `pccs_url` host before pinning, e.g.:
+#
+#   sudo openssl req -x509 -nodes -newkey rsa:2048 \
+#     -keyout /opt/intel/sgx-dcap-pccs/ssl_key/private.pem \
+#     -out    /opt/intel/sgx-dcap-pccs/ssl_key/file.crt \
+#     -days 730 -subj "/CN=pccs.local" \
+#     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:10.0.2.2"
+#   sudo chown pccs:pccs /opt/intel/sgx-dcap-pccs/ssl_key/{file.crt,private.pem}
+#   sudo systemctl restart pccs
+#
 #   pccs_ca_cert_pem: pin the PCCS server's certificate as a trust anchor.
 #   Recommended for production-style local-PCCS deployments.
 # pccs_ca_cert_pem = """
@@ -29,7 +43,7 @@ home_dir = "/data"
 #
 #   pccs_tls_insecure: disable TLS certificate verification entirely.
 #   Loopback only; the node startup rejects this for non-loopback PCCS
-#   hosts (allowed: localhost, 127.0.0.1, 10.0.2.2). Acceptable for
+#   hosts (allowed: localhost, 127.0.0.1, ::1, 10.0.2.2). Acceptable for
 #   production loopback-PCCS deployments — the host is the trust
 #   boundary, so TLS authentication is redundant — but `pccs_ca_cert_pem`
 #   is preferred when a properly-formed cert is available.
