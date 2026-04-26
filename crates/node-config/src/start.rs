@@ -36,11 +36,17 @@ pub struct StartConfig {
     #[serde(default)]
     pub pccs_ca_cert_pem: Option<String>,
 
-    /// Disable TLS certificate verification for the PCCS server. **Dev-only**:
-    /// only honored when `pccs_url` host is `localhost` / `127.0.0.1` /
-    /// `10.0.2.2`. The node startup rejects this flag combined with any other
-    /// host so a stray copy-paste cannot silently disable TLS validation
-    /// against a real network endpoint.
+    /// Disable TLS certificate verification for the PCCS server. **Loopback
+    /// only**: startup rejects this flag for `pccs_url` hosts other than
+    /// `localhost` / `127.0.0.1` / `10.0.2.2`, so it cannot silently disable
+    /// TLS validation against a real network endpoint. Acceptable for
+    /// production deployments where the PCCS runs on the same host as the
+    /// CVM (the host is the effective trust boundary; an attacker capable of
+    /// swapping the cert already has host-level access). Use
+    /// [`pccs_ca_cert_pem`](Self::pccs_ca_cert_pem) instead when a
+    /// properly-formed cert is available — same security posture on loopback,
+    /// plus a positive operational check that the cert matches what the
+    /// operator expects.
     #[serde(default)]
     pub pccs_tls_insecure: bool,
 }

@@ -66,8 +66,10 @@ pub struct DstackTeeAuthorityConfig {
     /// when fetching collateral. Used to trust a self-signed local PCCS
     /// without changing the rest of the node's TLS posture.
     pccs_ca_cert_pem: Option<String>,
-    /// Disable TLS certificate verification for the PCCS request. Dev-only;
-    /// startup validation rejects this with non-loopback `pccs_url` hosts.
+    /// Disable TLS certificate verification for the PCCS request. Loopback
+    /// only — startup validation rejects this with non-loopback `pccs_url`
+    /// hosts. See `mpc_node_config::StartConfig::pccs_tls_insecure` for the
+    /// security rationale.
     pccs_tls_insecure: bool,
 }
 
@@ -236,7 +238,8 @@ fn build_pccs_http_client(
     if pccs_tls_insecure {
         tracing::warn!(
             "pccs_tls_insecure=true: PCCS TLS certificate verification is DISABLED. \
-             Only safe for a loopback PCCS in development."
+             Only honored for loopback PCCS hosts; the host is the effective \
+             trust boundary."
         );
         builder = builder.danger_accept_invalid_certs(true);
     } else if let Some(pem) = pccs_ca_cert_pem {
