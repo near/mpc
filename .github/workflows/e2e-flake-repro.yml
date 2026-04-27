@@ -1,18 +1,39 @@
 name: E2E flake repro (#2898)
 
-# Manually-dispatched stress workflow that mirrors ci.yml's `mpc-e2e-tests`
-# job as closely as possible: same runner class, same build steps, same
-# `cargo make e2e-tests-skip-build` invocation — just run in a loop. On
-# failure we upload each node's preserved stdout/stderr/config for
-# post-mortem (enabled via the E2E_KEEP_HOME_DIR opt-in).
+# Manually-dispatched stress workflow for reproducing parallel-robust-ECDSA
+# flakiness (issue #2898). Mirrors ci.yml's `mpc-e2e-tests` job for the build
+# steps, but runs a *scoped* nextest invocation in a loop so each iteration
+# exercises only the suspect test(s) — full e2e is too slow for repro.
+#
+# Trigger from your laptop with:
+#
+#   gh workflow run e2e-flake-repro.yml \
+#     --ref anodar/fix \
+#     -F iterations=10 \
+#     -F test_filter=parallel_sign_calls
+#
+# Artifacts (always uploaded):
+#   - per-iteration nextest stdout/stderr (`iter-N/nextest.log`)
+#   - on failure: each node's preserved home dir, including `stdout.log`,
+#     `stderr.log`, and the generated config files (E2E_KEEP_HOME_DIR opt-in).
+#   - run summary (`summary.txt`) with pass/fail counts.
 
 on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: "How many times to run the ci-e2e group"
+        description: "How many times to run the test loop"
         required: false
         default: "10"
+      test_filter:
+        description: "Nextest substring filter. Empty = run all e2e tests."
+        required: false
+        default: "parallel_sign_calls"
+      keep_all_homes:
+        description: "Preserve E2E_HOME_DIR on success too (large artifacts)"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   stress:
@@ -84,40 +105,69 @@ jobs:
           MPC_NODE_LOG: "DEBUG"
           E2E_KEEP_HOME_DIR: "1"
           ITERATIONS: ${{ inputs.iterations }}
+          TEST_FILTER: ${{ inputs.test_filter }}
+          KEEP_ALL_HOMES: ${{ inputs.keep_all_homes }}
+          # _run-e2e-logic in Makefile.toml exports these; we replicate them
+          # here because we're calling nextest directly to support a filter.
+          MPC_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+          MPC_PARALLEL_CONTRACT_WASM: ${{ github.workspace }}/target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm
         run: |
           set +e
           pass=0
           fail=0
           mkdir -p flake-artifacts
+          summary=flake-artifacts/summary.txt
+          : > "$summary"
+          echo "filter='${TEST_FILTER}' iterations=${ITERATIONS}" | tee -a "$summary"
+
           for i in $(seq 1 "$ITERATIONS"); do
             echo "::group::iteration $i"
             out="flake-artifacts/iter-$i"
             mkdir -p "$out"
-            cargo make e2e-tests-skip-build 2>&1 | tee "$out/nextest.log"
+
+            start=$(date +%s)
+            cargo nextest run \
+              --cargo-profile=test-release \
+              -p e2e-tests \
+              --all-features \
+              --locked \
+              --profile ci-e2e \
+              --no-fail-fast \
+              ${TEST_FILTER:+"$TEST_FILTER"} \
+              2>&1 | tee "$out/nextest.log"
             rc=${PIPESTATUS[0]}
+            elapsed=$(( $(date +%s) - start ))
             echo "::endgroup::"
+
             # Move every E2E_HOME_DIR the test printed so we don't leak disk
-            # between iterations. Keep them in the artifact dir only on failure.
-            grep -E '^E2E_HOME_DIR=' "$out/nextest.log" | sed 's/^E2E_HOME_DIR=//' | while read -r home; do
-              if [ -d "$home" ]; then
-                mv "$home" "$out/home_$(basename "$home")" 2>/dev/null || true
-              fi
-            done
+            # between iterations. By default we keep them only on failure;
+            # set keep_all_homes=true to keep them all (much larger artifact).
+            grep -E '^E2E_HOME_DIR=' "$out/nextest.log" \
+              | sed 's/^E2E_HOME_DIR=//' \
+              | while read -r home; do
+                  if [ -d "$home" ]; then
+                    mv "$home" "$out/home_$(basename "$home")" 2>/dev/null || true
+                  fi
+                done
+
             if [ "$rc" -eq 0 ]; then
               pass=$((pass+1))
-              echo "iter $i: PASS"
-              rm -rf "$out"
+              echo "iter $i: PASS (${elapsed}s)" | tee -a "$summary"
+              if [ "$KEEP_ALL_HOMES" != "true" ]; then
+                rm -rf "$out"/home_*
+              fi
             else
               fail=$((fail+1))
-              echo "iter $i: FAIL (rc=$rc) — logs preserved in $out"
+              echo "iter $i: FAIL rc=$rc (${elapsed}s) — logs preserved in $out" | tee -a "$summary"
             fi
           done
-          echo "TOTAL: pass=$pass fail=$fail"
+
+          echo "TOTAL: pass=$pass fail=$fail" | tee -a "$summary"
           if [ "$fail" -gt 0 ]; then exit 1; fi
 
-      - name: Upload failure artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-flake-logs
           path: flake-artifacts/
