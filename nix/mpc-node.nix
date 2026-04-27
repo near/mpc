@@ -111,8 +111,9 @@ let
   cargoVendorDir = pkgs.runCommand "vendor-cargo-deps-crane" { } ''
     mkdir -p $out/vendor $out/chain
 
-    set -- ${importedVendorDir}/near-jsonrpc-*
-    if [ "$1" = '${importedVendorDir}/near-jsonrpc-*' ]; then
+    # Match only `near-jsonrpc-<version>`
+    set -- ${importedVendorDir}/near-jsonrpc-[0-9]*
+    if [ "$1" = '${importedVendorDir}/near-jsonrpc-[0-9]*' ]; then
       echo "error: could not find vendored near-jsonrpc crate in ${importedVendorDir}" >&2
       exit 1
     fi
