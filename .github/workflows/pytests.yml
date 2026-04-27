@@ -3,6 +3,8 @@ name: MPC pytests (daily)
 # Pytests are being migrated to Rust e2e tests (see near/mpc#2838). During the
 # grace period where we observe both suites, pytests run on a daily cron rather
 # than on every PR so they don't gate merges. Manual triggers remain available.
+#
+# TODO(#3030): delete this workflow once Rust e2e parity is confirmed.
 
 on:
   workflow_dispatch:
