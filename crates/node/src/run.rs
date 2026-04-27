@@ -6,7 +6,8 @@ use crate::{
     coordinator::Coordinator,
     db::SecretDB,
     indexer::{
-        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI, ReadForeignChainPolicy,
+        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI,
+        ReadSupportedForeignChain,
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
@@ -244,7 +245,7 @@ async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadForeignChainPolicy + Clone + Send + Sync + 'static,
+    ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
     let root_task_handle = tracking::current_task();
 

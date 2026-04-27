@@ -3,8 +3,8 @@
 use crate::sandbox::common::{
     abstract_evm_request, await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
     bitcoin_extracted_values, bitcoin_request, bnb_evm_request, ethereum_evm_request,
-    evm_block_hash_extracted_values, sign_foreign_tx_response, starknet_extracted_values,
-    starknet_request, vote_chain_policy, SandboxTestSetup,
+    evm_block_hash_extracted_values, register_foreign_chain_configuration,
+    sign_foreign_tx_response, starknet_extracted_values, starknet_request, SandboxTestSetup,
 };
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -35,7 +35,7 @@ async fn verify_foreign_transaction__should_succeed(
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    vote_chain_policy(chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    register_foreign_chain_configuration(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
     let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
@@ -154,7 +154,7 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    vote_chain_policy(chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    register_foreign_chain_configuration(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
 

@@ -61,6 +61,10 @@ impl MpcNode {
         format!("127.0.0.1:{}", self.setup.ports.pprof)
     }
 
+    pub fn migration_web_ui_address(&self) -> String {
+        format!("127.0.0.1:{}", self.setup.ports.migration_web_ui)
+    }
+
     /// Scrapes the node's `/metrics` HTTP endpoint and returns the value of
     /// the named metric, parsed as `i64`. Returns `None` if the metric is not
     /// found or the node is unreachable.
@@ -212,6 +216,38 @@ impl MpcNodeSetup {
     /// The node's home directory (logs, config, data).
     pub fn home_dir(&self) -> &std::path::Path {
         &self.home_dir
+    }
+
+    /// The node's backup encryption key as a hex string.
+    pub fn backup_encryption_key_hex(&self) -> &str {
+        &self.backup_encryption_key_hex
+    }
+
+    /// The node's P2P signing key.
+    pub fn p2p_signing_key(&self) -> &SigningKey {
+        &self.p2p_signing_key
+    }
+
+    /// The node's NEAR signer key.
+    pub fn near_signer_key(&self) -> &SigningKey {
+        &self.near_signer_key
+    }
+
+    /// The NEAR signer public key formatted as `"ed25519:<base58>"`.
+    pub fn near_signer_public_key_str(&self) -> String {
+        String::from(&Ed25519PublicKey::from(
+            &self.near_signer_key.verifying_key(),
+        ))
+    }
+
+    /// Path to the mpc-node binary.
+    pub fn binary_path(&self) -> &std::path::Path {
+        &self.binary_path
+    }
+
+    /// The MPC contract account ID.
+    pub fn mpc_contract_id(&self) -> &AccountId {
+        &self.mpc_contract_id
     }
 
     /// Fully reset the node by wiping its home directory.
