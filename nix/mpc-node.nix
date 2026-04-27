@@ -209,13 +209,29 @@ let
       MACOSX_DEPLOYMENT_TARGET = "14.0";
     };
 
-    # Remap the runtime build directory. The `${src}` remap above only
-    # rewrites `/nix/store/<hash>-source` paths, but rustc never sees those
-    # at compile time — it sees `$NIX_BUILD_TOP/source/...`, which is
-    # `/build/source` under the Linux sandbox but
-    # `/nix/var/nix/builds/nix-<pid>-<rand>/source/...` under macOS or a
-    # non-default sandbox. Without this hook the Linux output happens to
-    # match by coincidence and other platforms drift.
+    # Remap the runtime build directory.
+    #
+    # The `${src}` remap in RUSTFLAGS above only rewrites
+    # `/nix/store/<hash>-source` paths, but rustc never sees those at
+    # compile time — it sees the path where Nix actually unpacks the
+    # sources, i.e. `$NIX_BUILD_TOP/source/...`. That path varies by Nix
+    # installation type:
+    #
+    #   * multi-user (daemon) Nix on Linux: `$NIX_BUILD_TOP` is `/build`,
+    #     because the daemon bind-mounts the sandbox there.
+    #   * single-user (per-user) Nix on Linux: no daemon, so no `/build`
+    #     mount — `$NIX_BUILD_TOP` is `/nix/var/nix/builds/nix-<pid>-<rand>`.
+    #   * Nix on macOS: same per-build temp dir as single-user Linux,
+    #     `/nix/var/nix/builds/nix-<pid>-<rand>`.
+    #
+    # Without this remap, only multi-user Linux builds happen to be
+    # reproducible (and only because `/build` coincides with the remap
+    # target above); per-user Linux and any macOS build embeds its own
+    # ephemeral sandbox path in panic messages, debug info, and
+    # `track_caller` location strings, which makes the binary differ from
+    # builds on other machines. This hook normalises `$NIX_BUILD_TOP` to
+    # `/build` for everyone so the output is bit-identical regardless of
+    # how Nix is installed on the builder.
     preBuild = ''
       export RUSTFLAGS="$RUSTFLAGS --remap-path-prefix=$NIX_BUILD_TOP/source=/build/source --remap-path-prefix=$NIX_BUILD_TOP=/build"
     '';
