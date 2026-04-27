@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 cargo-near-build = { workspace = true }
 hex = { workspace = true }
-mpc-attestation = { workspace = true }
+mpc-attestation = { workspace = true, features = ["test-utils"] }
 mpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-sdk = { workspace = true }
