@@ -202,15 +202,30 @@ where
     Fut: Future<Output = anyhow::Result<Collateral>>,
 {
     let mut last_err: Option<anyhow::Error> = None;
-    for url in pccs_urls.iter() {
+    let total_endpoints = pccs_urls.len();
+    for (index, url) in pccs_urls.iter().enumerate() {
+        let attempt = index + 1;
+        let is_last_endpoint = attempt == total_endpoints;
         match fetcher(url.as_str().to_owned()).await {
             Ok(collateral) => return Ok(collateral),
             Err(err) => {
-                warn!(
-                    ?err,
-                    %url,
-                    "failed to fetch collateral from PCCS, trying next endpoint"
-                );
+                if is_last_endpoint {
+                    warn!(
+                        ?err,
+                        %url,
+                        attempt,
+                        total_endpoints,
+                        "failed to fetch collateral from PCCS; no more endpoints remain"
+                    );
+                } else {
+                    warn!(
+                        ?err,
+                        %url,
+                        attempt,
+                        total_endpoints,
+                        "failed to fetch collateral from PCCS, trying next endpoint"
+                    );
+                }
                 last_err = Some(err);
             }
         }
