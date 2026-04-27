@@ -161,7 +161,7 @@ impl TeeAuthority {
         pccs_urls: &NonEmptyVec<Url>,
         quote: &[u8],
     ) -> anyhow::Result<Collateral> {
-        try_each_pccs_endpoint(pccs_urls, async |url: String| {
+        try_each_pccs_endpoint(pccs_urls, async |url: Url| {
             Self::fetch_collateral_from(&url, quote).await
         })
         .await
@@ -169,8 +169,8 @@ impl TeeAuthority {
 
     /// Fetches attestation collateral from a single PCCS endpoint, with the
     /// usual per-request timeout and a single retry via exponential backoff.
-    async fn fetch_collateral_from(pccs_url: &str, quote: &[u8]) -> anyhow::Result<Collateral> {
-        let client = dcap_qvl::collateral::CollateralClient::with_default_http(pccs_url)
+    async fn fetch_collateral_from(pccs_url: &Url, quote: &[u8]) -> anyhow::Result<Collateral> {
+        let client = dcap_qvl::collateral::CollateralClient::with_default_http(pccs_url.as_str())
             .map_err(|e| anyhow::anyhow!(e))?;
         let fetch = async || {
             tokio::time::timeout(PCCS_REQUEST_TIMEOUT, client.fetch(quote))
@@ -188,17 +188,12 @@ impl TeeAuthority {
 /// endpoint fails, the last error is returned. `fetcher(url) -> Future` is
 /// called once per URL in the order the caller listed them; intermediate
 /// failures are logged at `warn` level and do not short-circuit.
-///
-/// Factored out of [`TeeAuthority::fetch_collateral`] so tests can drive the
-/// same iteration / error-merge logic with an injected fake fetcher — the
-/// production path is not mockable directly because
-/// `dcap_qvl::collateral::CollateralClient` is a concrete type, not a trait.
 async fn try_each_pccs_endpoint<Fetcher, Fut>(
     pccs_urls: &NonEmptyVec<Url>,
-    mut fetcher: Fetcher,
+    fetcher: Fetcher,
 ) -> anyhow::Result<Collateral>
 where
-    Fetcher: FnMut(String) -> Fut,
+    Fetcher: Fn(Url) -> Fut,
     Fut: Future<Output = anyhow::Result<Collateral>>,
 {
     let mut last_err: Option<anyhow::Error> = None;
@@ -206,26 +201,17 @@ where
     for (index, url) in pccs_urls.iter().enumerate() {
         let attempt = index + 1;
         let is_last_endpoint = attempt == total_endpoints;
-        match fetcher(url.as_str().to_owned()).await {
+        match fetcher(url.clone()).await {
             Ok(collateral) => return Ok(collateral),
             Err(err) => {
-                if is_last_endpoint {
-                    warn!(
-                        ?err,
-                        %url,
-                        attempt,
-                        total_endpoints,
-                        "failed to fetch collateral from PCCS; no more endpoints remain"
-                    );
-                } else {
-                    warn!(
-                        ?err,
-                        %url,
-                        attempt,
-                        total_endpoints,
-                        "failed to fetch collateral from PCCS, trying next endpoint"
-                    );
-                }
+                warn!(
+                    ?err,
+                    %url,
+                    attempt,
+                    total_endpoints,
+                    "failed to fetch collateral from PCCS; {}",
+                    if is_last_endpoint { "no more endpoints remain" } else { "trying next endpoint" }
+                );
                 last_err = Some(err);
             }
         }
@@ -286,7 +272,7 @@ where
 }
 
 #[cfg(test)]
-#[expect(non_snake_case, reason = "test-name convention: <sut>__<case>")]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use mpc_attestation::report_data::ReportDataV1;
@@ -504,12 +490,12 @@ mod tests {
         let call_count = Arc::new(AtomicI32::new(0));
         let expected = dummy_collateral("single");
 
-        let result = try_each_pccs_endpoint(&urls(&["https://a.example/"]), |url| {
+        let result = try_each_pccs_endpoint(&urls(&["https://a.example/"]), |url: Url| {
             let call_count = call_count.clone();
             let expected = expected.clone();
             async move {
                 call_count.fetch_add(1, Ordering::SeqCst);
-                assert_eq!(url, "https://a.example/");
+                assert_eq!(url.as_str(), "https://a.example/");
                 Ok(expected)
             }
         })
@@ -525,15 +511,16 @@ mod tests {
     /// second URL's collateral is returned.
     #[tokio::test]
     async fn try_each_pccs_endpoint__fallback_to_second() {
-        let seen_urls = Rc::new(RefCell::new(Vec::<String>::new()));
+        let seen_urls = Rc::new(RefCell::new(Vec::<Url>::new()));
 
         let result = try_each_pccs_endpoint(
             &urls(&["https://primary.example/", "https://fallback.example/"]),
-            |url| {
+            |url: Url| {
                 let seen_urls = seen_urls.clone();
                 async move {
-                    seen_urls.borrow_mut().push(url.clone());
-                    if url.contains("primary") {
+                    let is_primary = url.as_str().contains("primary");
+                    seen_urls.borrow_mut().push(url);
+                    if is_primary {
                         Err(anyhow::anyhow!("simulated primary outage"))
                     } else {
                         Ok(dummy_collateral("fallback"))
@@ -547,8 +534,8 @@ mod tests {
         assert_eq!(
             seen_urls.borrow().as_slice(),
             &[
-                "https://primary.example/".to_owned(),
-                "https://fallback.example/".to_owned(),
+                "https://primary.example/".parse::<Url>().unwrap(),
+                "https://fallback.example/".parse::<Url>().unwrap(),
             ],
             "endpoints must be tried in the exact order the user listed them"
         );
@@ -565,7 +552,7 @@ mod tests {
                 "https://second.example/",
                 "https://third.example/",
             ]),
-            |url| async move { Err::<Collateral, _>(anyhow::anyhow!("{url} is down")) },
+            |url: Url| async move { Err::<Collateral, _>(anyhow::anyhow!("{url} is down")) },
         )
         .await
         .unwrap_err()

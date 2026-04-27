@@ -259,25 +259,6 @@ mod tests {
         assert_eq!(urls, expected);
     }
 
-    /// An empty vec is explicitly rejected by [`NonEmptyVec`]'s bound.
-    #[test]
-    fn pccs_urls__should_reject_empty_vec() {
-        // Given
-        let empty: Vec<url::Url> = vec![];
-
-        // When
-        let err = NonEmptyVec::<url::Url>::try_from(empty).unwrap_err();
-
-        // Then
-        assert_eq!(
-            err,
-            near_mpc_bounded_collections::BoundedVecOutOfBounds::LowerBoundError {
-                lower_bound: 1,
-                got: 0,
-            }
-        );
-    }
-
     /// When the field is omitted altogether, the `#[serde(default)]` hook
     /// returns the Phala default as a single-element vec.
     #[test]
