@@ -122,6 +122,10 @@ pub async fn wait_for_presignatures(
 }
 
 /// Wait until every node in `indices` reports the given metric satisfying `predicate`.
+///
+/// Transient metric-scrape failures are retried within `timeout` (previously
+/// they aborted the wait immediately); this matches the behavior of every
+/// other "wait until X" helper in this module.
 pub async fn wait_metric_on_nodes(
     cluster: &e2e_tests::MpcCluster,
     indices: &[usize],
@@ -154,6 +158,10 @@ pub async fn wait_metric_on_nodes(
 
 /// Wait until every node in `alive_nodes` is at least `min_height_diff` blocks
 /// ahead of `faulty_node` according to the indexer block-height metric.
+///
+/// Transient metric-scrape failures are retried within `timeout` (previously
+/// they aborted the wait immediately); this matches the behavior of every
+/// other "wait until X" helper in this module.
 pub async fn wait_for_indexer_lag(
     cluster: &MpcCluster,
     faulty_node: usize,
@@ -269,25 +277,29 @@ pub fn generate_ckd_app_public_key(rng: &mut impl rand::Rng) -> CKDAppPublicKey 
 }
 
 /// Extract the BLS12381 G2 public key for a given domain from running contract state.
-pub fn bls_public_key(
+///
+/// Plumbing helper: the calling test has already set up a BLS domain and is
+/// extracting its key for further use. A missing domain or wrong key type is
+/// a test-setup bug, not a meaningful outcome, so we panic.
+pub fn must_get_bls_public_key(
     running: &RunningContractState,
     domain_id: DomainId,
-) -> anyhow::Result<Bls12381G2PublicKey> {
+) -> Bls12381G2PublicKey {
     let key_for_domain = running
         .keyset
         .domains
         .iter()
         .find(|k| k.domain_id == domain_id)
-        .context("no key found for BLS12381 domain")?;
+        .expect("no key found for BLS12381 domain");
     match &key_for_domain.key {
         PublicKeyExtended::Bls12381 {
             public_key: PublicKey::Bls12381(g2),
-        } => Ok(g2.clone()),
-        other => bail!("expected Bls12381 key, got {other:?}"),
+        } => g2.clone(),
+        other => panic!("expected Bls12381 key, got {other:?}"),
     }
 }
 
-/// Send a sign request and return the network's response.
+/// Send a sign request and assert the network produced a successful response.
 ///
 /// Panics if the request can't be submitted to the contract — the test cannot
 /// proceed without submission. Returns `Err` if the contract response indicates
@@ -317,7 +329,7 @@ pub async fn send_sign_request(
     Ok(())
 }
 
-/// Send a CKD request and return the network's response.
+/// Send a CKD request and assert the network produced a successful response.
 ///
 /// Panics if the request can't be submitted to the contract — the test cannot
 /// proceed without submission. Returns `Err` if the contract response indicates

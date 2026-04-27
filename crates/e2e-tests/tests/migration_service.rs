@@ -132,14 +132,17 @@ impl BackupService {
 
 /// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
 /// (see `build-backup-cli` task in Makefile.toml).
-fn backup_cli_path() -> anyhow::Result<PathBuf> {
+///
+/// Plumbing helper: a missing binary means the test wasn't built correctly,
+/// not that the system under test failed, so we panic.
+fn must_get_backup_cli_path() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/backup-cli");
-    anyhow::ensure!(
+    assert!(
         path.exists(),
         "backup-cli binary not found at {}. Run `cargo make e2e-tests` to build it.",
         path.display()
     );
-    Ok(path)
+    path
 }
 
 async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
@@ -426,7 +429,7 @@ async fn wait_for_migration_completion(
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn migration_service__should_migrate_nodes_via_backup_cli() {
-    let backup_cli = backup_cli_path().expect("failed to resolve backup-cli path");
+    let backup_cli = must_get_backup_cli_path();
 
     // Given: cluster with 2 participants + 2 migration targets. Targets start
     // alongside the participants so their indexers sync before blocks pile up.

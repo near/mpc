@@ -54,7 +54,7 @@ async fn ckd_response__passes_cryptographic_verification() {
         .expect("no Bls12381 CKD domain found")
         .clone();
 
-    let mpc_pk = common::bls_public_key(&running, bls_domain.id).expect("bls_public_key failed");
+    let mpc_pk = common::must_get_bls_public_key(&running, bls_domain.id);
     let user = cluster.default_user_account().clone();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
@@ -106,7 +106,7 @@ async fn ckd_pv_response__passes_cryptographic_verification() {
         .expect("no Bls12381 CKD domain found")
         .clone();
 
-    let mpc_pk = common::bls_public_key(&running, bls_domain.id).expect("bls_public_key failed");
+    let mpc_pk = common::must_get_bls_public_key(&running, bls_domain.id);
     let user = cluster.default_user_account().clone();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(2);
