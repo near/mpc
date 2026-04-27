@@ -190,6 +190,20 @@ let
       # host-specific ISA choices into its object files.
       PORTABLE = "1";
 
+      # Pin jemalloc's compile-time sizing constants. tikv-jemalloc-sys runs
+      # jemalloc's `./configure`, which otherwise auto-detects these on the
+      # build host (CPUID for LG_VADDR, sysconf for LG_PAGE, /proc/meminfo for
+      # LG_HUGEPAGE). When the detected values differ between builders, the
+      # static `emap_global` rtree is sized differently and the binary's .bss
+      # — and a handful of inlined constants in .text — diverges. These are
+      # the standard values for x86_64 Linux with 4 KiB pages and 2 MiB
+      # hugepages; see jemalloc's documentation for the meaning of each:
+      # https://github.com/jemalloc/jemalloc/blob/5.3.0/INSTALL.md#advanced-configuration
+      JEMALLOC_SYS_WITH_LG_VADDR = "48";
+      JEMALLOC_SYS_WITH_LG_PAGE = "12";
+      JEMALLOC_SYS_WITH_LG_HUGEPAGE = "21";
+      JEMALLOC_SYS_WITH_LG_QUANTUM = "4";
+
       # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
       # zstd, ...) and Rust itself. Without this, the cc crate defaults to
       # the build host's CPU and output bytes vary by machine.
