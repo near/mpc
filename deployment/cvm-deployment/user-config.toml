@@ -12,7 +12,7 @@ port_mappings = [
 [mpc_node_config]
 home_dir = "/data"
 # PCCS URLs for TDX attestation collateral, tried in order until one succeeds.
-# At least one URL is required. Defaults to Phala's PCCS if omitted.
+# If set, must contain at least one URL. If omitted, defaults to Phala's PCCS.
 # pccs_urls = ["https://pccs.phala.network"]
 # pccs_urls = ["http://localhost:8081", "https://pccs.phala.network"]
 
