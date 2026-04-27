@@ -197,12 +197,17 @@ let
       # static `emap_global` rtree is sized differently and the binary's .bss
       # — and a handful of inlined constants in .text — diverges. These are
       # the standard values for x86_64 Linux with 4 KiB pages and 2 MiB
-      # hugepages; see jemalloc's documentation for the meaning of each:
-      # https://github.com/jemalloc/jemalloc/blob/5.3.0/INSTALL.md#advanced-configuration
+      # hugepages. Meaning of each option:
+      #   https://github.com/jemalloc/jemalloc/blob/5.3.0/INSTALL.md#advanced-configuration
+      # Authoritative sources for the values themselves (Linux kernel v6.7):
+      #
+      # https://github.com/torvalds/linux/blob/v6.7/Documentation/arch/x86/x86_64/mm.rst
       JEMALLOC_SYS_WITH_LG_VADDR = "48";
+      # https://github.com/torvalds/linux/blob/v6.7/arch/x86/include/asm/page_types.h
       JEMALLOC_SYS_WITH_LG_PAGE = "12";
+      # https://github.com/torvalds/linux/blob/v6.7/arch/x86/include/asm/pgtable_64_types.h
       JEMALLOC_SYS_WITH_LG_HUGEPAGE = "21";
-      JEMALLOC_SYS_WITH_LG_QUANTUM = "4";
+
 
       # Pin the target ISA for both C/C++ (cc-crate for rocksdb, snappy,
       # zstd, ...) and Rust itself. Without this, the cc crate defaults to
