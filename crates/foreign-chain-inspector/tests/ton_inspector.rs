@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
     ton::{
@@ -231,10 +232,7 @@ async fn extract__should_reject_when_mc_block_seqno_is_null() {
         .await;
 
     // then
-    assert!(
-        matches!(result, Err(ForeignChainInspectionError::NotFinalized)),
-        "expected NotFinalized, got {result:?}"
-    );
+    assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
 }
 
 #[tokio::test]
@@ -263,10 +261,7 @@ async fn extract__should_reject_when_description_aborted() {
         .await;
 
     // then
-    assert!(
-        matches!(result, Err(ForeignChainInspectionError::TransactionFailed)),
-        "expected TransactionFailed, got {result:?}"
-    );
+    assert_matches!(result, Err(ForeignChainInspectionError::TransactionFailed));
 }
 
 #[tokio::test]
@@ -293,12 +288,9 @@ async fn extract__should_reject_when_account_in_response_does_not_match_request(
         .await;
 
     // then
-    assert!(
-        matches!(
-            result,
-            Err(ForeignChainInspectionError::AccountMismatch { .. })
-        ),
-        "expected AccountMismatch, got {result:?}"
+    assert_matches!(
+        result,
+        Err(ForeignChainInspectionError::AccountMismatch { .. })
     );
 }
 

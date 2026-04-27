@@ -66,6 +66,8 @@ pub fn normalize_body_boc(body_boc_b64: &str) -> Result<(Vec<u8>, Vec<Vec<u8>>),
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
+    use base64::Engine;
     use tonlib_core::cell::{ArcCell, Cell};
 
     fn cell_from_bytes(data: Vec<u8>, bit_len: usize, refs: Vec<ArcCell>) -> ArcCell {
@@ -73,7 +75,6 @@ mod tests {
     }
 
     fn encode_boc(root: ArcCell) -> String {
-        use base64::Engine;
         base64::engine::general_purpose::STANDARD
             .encode(BagOfCells::new(&[root]).serialize(false).unwrap())
     }
@@ -139,24 +140,20 @@ mod tests {
         let b64 = encode_boc(root);
 
         let err = normalize_body_boc(&b64).unwrap_err();
-        assert!(
-            matches!(err, TonBocError::NonByteAlignedBody { bit_len: 12 }),
-            "got {err:?}"
-        );
+        assert_matches!(err, TonBocError::NonByteAlignedBody { bit_len: 12 });
     }
 
     #[test]
     fn normalize_body_boc__should_reject_malformed_base64() {
         let err = normalize_body_boc("!!!not base64!!!").unwrap_err();
-        assert!(matches!(err, TonBocError::Parse(_)), "got {err:?}");
+        assert_matches!(err, TonBocError::Parse(_));
     }
 
     #[test]
     fn normalize_body_boc__should_reject_non_cell_bytes() {
         // Valid base64 but not a valid BoC.
-        use base64::Engine;
         let garbage = base64::engine::general_purpose::STANDARD.encode([0xff, 0xff, 0xff, 0xff]);
         let err = normalize_body_boc(&garbage).unwrap_err();
-        assert!(matches!(err, TonBocError::Parse(_)), "got {err:?}");
+        assert_matches!(err, TonBocError::Parse(_));
     }
 }

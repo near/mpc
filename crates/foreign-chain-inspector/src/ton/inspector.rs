@@ -222,12 +222,15 @@ mod tests {
     use super::*;
     use crate::RpcAuthentication;
     use crate::ton::rpc_client::{ReqwestTonClient, TonRpcError};
+    use assert_matches::assert_matches;
     use async_trait::async_trait;
+    use base64::Engine;
     use foreign_chain_rpc_interfaces::ton::{
         GetTransactionsResponse, TonCellBoc, TonComputePhase, TonMessage, TonTransaction,
         TonTransactionDescription,
     };
     use std::sync::Mutex;
+    use tonlib_core::cell::{ArcCell, BagOfCells, Cell};
 
     /// In-memory stub client that returns a canned response.
     struct StubClient {
@@ -294,9 +297,7 @@ mod tests {
         }
     }
 
-    fn encode_cell(data: Vec<u8>, bit_len: usize, refs: Vec<tonlib_core::cell::ArcCell>) -> String {
-        use base64::Engine;
-        use tonlib_core::cell::{BagOfCells, Cell};
+    fn encode_cell(data: Vec<u8>, bit_len: usize, refs: Vec<ArcCell>) -> String {
         let cell = std::sync::Arc::new(Cell::new(data, bit_len, refs, false).unwrap());
         base64::engine::general_purpose::STANDARD
             .encode(BagOfCells::new(&[cell]).serialize(false).unwrap())
@@ -351,7 +352,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(err, ForeignChainInspectionError::NotFinalized));
+        assert_matches!(err, ForeignChainInspectionError::NotFinalized);
     }
 
     #[tokio::test]
@@ -386,10 +387,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(
-            err,
-            ForeignChainInspectionError::TransactionFailed
-        ));
+        assert_matches!(err, ForeignChainInspectionError::TransactionFailed);
     }
 
     #[tokio::test]
@@ -408,10 +406,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(
-            err,
-            ForeignChainInspectionError::TransactionFailed
-        ));
+        assert_matches!(err, ForeignChainInspectionError::TransactionFailed);
     }
 
     #[tokio::test]
@@ -428,10 +423,10 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(
+        assert_matches!(
             err,
             ForeignChainInspectionError::TonTransactionNotFound { .. }
-        ));
+        );
     }
 
     #[tokio::test]
@@ -448,10 +443,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(
-            matches!(err, ForeignChainInspectionError::AccountMismatch { .. }),
-            "got {err:?}"
-        );
+        assert_matches!(err, ForeignChainInspectionError::AccountMismatch { .. });
     }
 
     #[tokio::test]
@@ -470,12 +462,9 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(
-            matches!(
-                err,
-                ForeignChainInspectionError::UnsupportedWorkchain { got: -1 }
-            ),
-            "got {err:?}"
+        assert_matches!(
+            err,
+            ForeignChainInspectionError::UnsupportedWorkchain { got: -1 }
         );
     }
 
@@ -491,10 +480,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(
-            err,
-            ForeignChainInspectionError::LogIndexOutOfBounds
-        ));
+        assert_matches!(err, ForeignChainInspectionError::LogIndexOutOfBounds);
     }
 
     #[tokio::test]
@@ -592,10 +578,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(
-            matches!(err, ForeignChainInspectionError::TonMessageMissingCreatedLt),
-            "got {err:?}"
-        );
+        assert_matches!(err, ForeignChainInspectionError::TonMessageMissingCreatedLt);
     }
 
     #[tokio::test]
@@ -612,12 +595,9 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(
-            matches!(
-                err,
-                ForeignChainInspectionError::TonMessageMalformedCreatedLt { .. }
-            ),
-            "got {err:?}"
+        assert_matches!(
+            err,
+            ForeignChainInspectionError::TonMessageMalformedCreatedLt { .. }
         );
     }
 
@@ -650,9 +630,6 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(
-            matches!(err, ForeignChainInspectionError::TonClientError(_)),
-            "got {err:?}"
-        );
+        assert_matches!(err, ForeignChainInspectionError::TonClientError(_));
     }
 }
