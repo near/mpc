@@ -979,7 +979,6 @@ dependencies = [
  "sha2 0.10.9",
  "test-utils",
  "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]
