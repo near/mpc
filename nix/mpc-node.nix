@@ -63,10 +63,68 @@ let
       || (lib.hasInfix "/assets/" path);
   };
 
-  # Pre-compute the vendored cargo deps so we can pass the exact same path to
-  # --remap-path-prefix below. Without an explicit handle, crane picks its own
-  # path and we cannot reference it for the remap.
-  cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
+  # Vendor the cargo lockfile via nixpkgs' importCargoLock instead of crane's
+  # default `cargo package`-based vendoring. Two reasons:
+  #
+  #   1. `cargo package --exclude-lockfile` (used by recent crane) requires
+  #      cargo >= 1.88, but rust-toolchain.toml pins 1.86.0.
+  #   2. `cargo package` only ships files inside a crate's own directory.
+  #      Some git deps (e.g. nearcore's `near-jsonrpc`) pull files from
+  #      sibling directories via `include_bytes!("../../../...")`; those get
+  #      stripped by cargo's packaging rules. `fetchgit` copies the entire
+  #      git checkout, preserving siblings.
+  #
+  # `allowBuiltinFetchGit = true` uses `builtins.fetchGit`, which is
+  # reproducible: the revision fully determines content, no `sha256` needed.
+  importedVendorDir = rustPlatform.importCargoLock {
+    lockFile = ../Cargo.lock;
+    allowBuiltinFetchGit = true;
+  };
+
+  # Repackage `importedVendorDir` into the layout crane expects, with one
+  # extra wrinkle:
+  #
+  #   `near-jsonrpc` (lib.rs) does `include_bytes!("../../../chain/jsonrpc/
+  #   openapi/openapi.json")` — a workspace-relative path that only resolves
+  #   in the original nearcore checkout, where the crate lives at
+  #   `chain/jsonrpc/`. Cargo's vendor format flattens every crate to a
+  #   single directory, so the macro's `..` traversal walks past the vendor
+  #   root and the file is "not found".
+  #
+  # We work around this by laying out the vendor dir so that the `..`
+  # traversal lands somewhere we control:
+  #
+  #   $out/                           ← cargoVendorDir (3 ups from src/lib.rs)
+  #   ├── vendor/                     ← config.toml's `directory = "..."`
+  #   │   ├── near-jsonrpc-2.11.1 ──┐ relative symlink (stays inside $out)
+  #   │   └── (other crates as symlinks into importedVendorDir)
+  #   ├── chain/jsonrpc/  ←──────────┘ real copy of the near-jsonrpc tree
+  #   │   ├── src/lib.rs
+  #   │   └── openapi/openapi.json    ← what the broken macro wants
+  #   └── config.toml                 ← crane reads this
+  #
+  # The relative `../chain/jsonrpc` symlink keeps `..` traversal inside
+  # `$out` (an absolute symlink to importedVendorDir would push it back
+  # into /nix/store and re-break path resolution). The crate has to be a
+  # real directory tree (not symlinks) for `..` to walk through it
+  # correctly, hence `cp -aL`.
+  cargoVendorDir = pkgs.runCommand "vendor-cargo-deps-crane" { } ''
+    mkdir -p $out/vendor $out/chain
+
+    cp -aL ${importedVendorDir}/near-jsonrpc-2.11.1 $out/chain/jsonrpc
+    chmod -R u+w $out/chain/jsonrpc
+    ln -s ../chain/jsonrpc $out/vendor/near-jsonrpc-2.11.1
+
+    for entry in ${importedVendorDir}/*; do
+      name=$(basename "$entry")
+      if [ "$name" != "near-jsonrpc-2.11.1" ]; then
+        ln -s "$entry" "$out/vendor/"
+      fi
+    done
+
+    sed "s|directory = \"cargo-vendor-dir\"|directory = \"$out/vendor\"|" \
+      ${importedVendorDir}/.cargo/config.toml > $out/config.toml
+  '';
 
   commonArgs = {
     inherit pname version src cargoVendorDir;
