@@ -111,13 +111,25 @@ let
   cargoVendorDir = pkgs.runCommand "vendor-cargo-deps-crane" { } ''
     mkdir -p $out/vendor $out/chain
 
-    cp -aL ${importedVendorDir}/near-jsonrpc-2.11.1 $out/chain/jsonrpc
+    set -- ${importedVendorDir}/near-jsonrpc-*
+    if [ "$1" = '${importedVendorDir}/near-jsonrpc-*' ]; then
+      echo "error: could not find vendored near-jsonrpc crate in ${importedVendorDir}" >&2
+      exit 1
+    fi
+    if [ "$#" -ne 1 ]; then
+      echo "error: expected exactly one vendored near-jsonrpc crate in ${importedVendorDir}, found $# matches" >&2
+      exit 1
+    fi
+    near_jsonrpc_entry="$1"
+    near_jsonrpc_name=$(basename "$near_jsonrpc_entry")
+
+    cp -aL "$near_jsonrpc_entry" $out/chain/jsonrpc
     chmod -R u+w $out/chain/jsonrpc
-    ln -s ../chain/jsonrpc $out/vendor/near-jsonrpc-2.11.1
+    ln -s ../chain/jsonrpc "$out/vendor/$near_jsonrpc_name"
 
     for entry in ${importedVendorDir}/*; do
       name=$(basename "$entry")
-      if [ "$name" != "near-jsonrpc-2.11.1" ]; then
+      if [ "$name" != "$near_jsonrpc_name" ]; then
         ln -s "$entry" "$out/vendor/"
       fi
     done
