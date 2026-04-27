@@ -17,6 +17,18 @@ allow = [
   "CDLA-Permissive-2.0",
   "CDDL-1.0",
 ]
+# Per-crate exceptions. Scope these as narrowly as possible — the global
+# `allow` list above is what we accept project-wide; entries here are
+# transitive deps we cannot easily avoid and have evaluated individually.
+exceptions = [
+  # `nacl` (LGPL-3.0-or-later) is pulled in transitively via `tonlib-core`,
+  # which the foreign-chain-inspector uses purely for TON Bag-of-Cells
+  # parsing. We do not link nacl into a binary that we redistribute under
+  # a non-LGPL-compatible licence — the MPC node is internal infrastructure
+  # not shipped to third parties as a closed-source product. If that ever
+  # changes, this exception (and the tonlib-core dep) needs to be revisited.
+  { name = "nacl", allow = ["LGPL-3.0-or-later"] },
+]
 
 [advisories]
 ignore = [
