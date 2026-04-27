@@ -103,11 +103,10 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     )?;
 
     // Generate attestation
-    let tee_authority = config.tee.clone().into_tee_authority(
-        config.pccs_url.clone(),
-        config.pccs_ca_cert_pem.clone(),
-        config.pccs_tls_insecure,
-    )?;
+    let tee_authority = config
+        .tee
+        .clone()
+        .into_tee_authority(config.pccs_url.clone(), config.pccs_tls.clone())?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();

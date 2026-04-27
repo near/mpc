@@ -437,8 +437,7 @@ impl MpcNodeSetup {
                 foreign_chains: self.foreign_chains_config.clone(),
             },
             pccs_url: mpc_node_config::default_pccs_url(),
-            pccs_ca_cert_pem: None,
-            pccs_tls_insecure: false,
+            pccs_tls: None,
         };
 
         let toml_string =

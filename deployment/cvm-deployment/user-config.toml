@@ -14,16 +14,17 @@ home_dir = "/data"
 # Override the PCCS URL for TDX attestation collateral. Defaults to Phala's PCCS if omitted.
 # pccs_url = "https://pccs.phala.network"
 
-# Optional TLS-trust knobs for the PCCS request. Use one of these only when
+# Optional TLS-trust policy for the PCCS request. Set this only when
 # pointing `pccs_url` at a self-signed local PCCS (e.g. the stock Intel
-# `sgx-dcap-pccs` install). Mutually exclusive — the node startup rejects
-# both being set.
+# `sgx-dcap-pccs` install). Configured via the `[mpc_node_config.pccs_tls]`
+# sub-table with `mode = "ca_cert_pem"` or `mode = "insecure"` — the two
+# modes are mutually exclusive *by construction* (single enum field).
 #
 # !! Stock-cert gotcha: the cert that ships in the Ubuntu `sgx-dcap-pccs`
 # package (`/opt/intel/sgx-dcap-pccs/ssl_key/file.crt`) is X.509 v1,
-# expired, has no SAN. Pinning that cert via `pccs_ca_cert_pem` will
-# still fail TLS validation. Regenerate it as a v3 cert with valid
-# dates and a SAN matching your `pccs_url` host before pinning, e.g.:
+# expired, has no SAN. Pinning that cert via `mode = "ca_cert_pem"` will
+# still fail TLS validation. Regenerate it as a v3 cert with valid dates
+# and a SAN matching your `pccs_url` host before pinning, e.g.:
 #
 #   sudo openssl req -x509 -nodes -newkey rsa:2048 \
 #     -keyout /opt/intel/sgx-dcap-pccs/ssl_key/private.pem \
@@ -33,26 +34,30 @@ home_dir = "/data"
 #   sudo chown pccs:pccs /opt/intel/sgx-dcap-pccs/ssl_key/{file.crt,private.pem}
 #   sudo systemctl restart pccs
 #
-#   pccs_ca_cert_pem: pin the PCCS server's certificate as a trust anchor.
-#   Recommended for production-style local-PCCS deployments.
-# pccs_ca_cert_pem = """
+# Mode "ca_cert_pem": pin the PCCS server's certificate as a trust anchor.
+# Recommended for production-style local-PCCS deployments.
+#
+# [mpc_node_config.pccs_tls]
+# mode = "ca_cert_pem"
+# ca_cert_pem = """
 # -----BEGIN CERTIFICATE-----
 # ...
 # -----END CERTIFICATE-----
 # """
 #
-#   pccs_tls_insecure: disable TLS certificate verification entirely.
-#   Loopback only; the node startup rejects this for non-loopback PCCS
-#   hosts. Allowed hosts:
-#     - localhost
-#     - any IPv4 in 127.0.0.0/8
-#     - IPv6 loopback — write `https://[::1]:<port>/` (brackets required)
-#     - QEMU slirp gateway — `10.0.2.2`
-#   Acceptable for production loopback-PCCS deployments — the host is
-#   the trust boundary, so TLS authentication is redundant — but
-#   `pccs_ca_cert_pem` is preferred when a properly-formed cert is
-#   available.
-# pccs_tls_insecure = true
+# Mode "insecure": disable TLS certificate verification entirely.
+# Loopback only; the node startup rejects this for non-loopback PCCS
+# hosts. Allowed hosts:
+#   - localhost
+#   - any IPv4 in 127.0.0.0/8
+#   - IPv6 loopback — write `https://[::1]:<port>/` (brackets required)
+#   - QEMU slirp gateway — `10.0.2.2`
+# Acceptable for production loopback-PCCS deployments — the host is the
+# trust boundary, so TLS authentication is redundant — but `ca_cert_pem`
+# is preferred when a properly-formed cert is available.
+#
+# [mpc_node_config.pccs_tls]
+# mode = "insecure"
 
 [mpc_node_config.log]
 format = "plain"

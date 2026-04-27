@@ -3,6 +3,7 @@ use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::{Constructor, From};
 use dstack_sdk::dstack_client::DstackClient;
+use launcher_interface::types::PccsTlsTrust;
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::Collateral,
@@ -64,15 +65,12 @@ pub struct DstackTeeAuthorityConfig {
     dstack_endpoint: PathBuf,
     /// Base URL of the PCCS server used to fetch TDX attestation collateral.
     pccs_url: Url,
-    /// Optional PEM-encoded root certificate added to the TLS trust anchors
-    /// when fetching collateral. Used to trust a self-signed local PCCS
-    /// without changing the rest of the node's TLS posture.
-    pccs_ca_cert_pem: Option<String>,
-    /// Disable TLS certificate verification for the PCCS request. Loopback
-    /// only — startup validation rejects this with non-loopback `pccs_url`
-    /// hosts. See `mpc_node_config::StartConfig::pccs_tls_insecure` for the
-    /// security rationale.
-    pccs_tls_insecure: bool,
+    /// Operator's PCCS TLS trust policy. `None` means "use the system trust
+    /// roots" — the default for public PCCS endpoints. The two non-default
+    /// modes (pinned-cert vs. insecure) are encoded as variants of
+    /// [`PccsTlsTrust`], which means they are mutually exclusive *by
+    /// construction* — see that type's docs for the rationale.
+    pccs_tls: Option<PccsTlsTrust>,
 }
 
 impl Default for DstackTeeAuthorityConfig {
@@ -82,13 +80,12 @@ impl Default for DstackTeeAuthorityConfig {
             pccs_url: launcher_interface::DEFAULT_PCCS_URL
                 .parse()
                 .expect("default PCCS URL is valid"),
-            pccs_ca_cert_pem: None,
-            pccs_tls_insecure: false,
+            pccs_tls: None,
         }
     }
 }
 
-/// Domain names whitelisted for `pccs_tls_insecure = true`. IP-based hosts
+/// Domain names whitelisted for `PccsTlsTrust::Insecure`. IP-based hosts
 /// are matched separately via [`std::net::IpAddr::is_loopback`] (plus the
 /// `10.0.2.2` slirp gateway). Loopback-only enforcement keeps a copy-pasted
 /// dev config from silently disabling TLS validation against a real
@@ -96,7 +93,7 @@ impl Default for DstackTeeAuthorityConfig {
 const LOOPBACK_PCCS_DOMAINS: &[&str] = &["localhost"];
 
 /// Returns true if the URL's host is loopback-ish enough to honor the
-/// `pccs_tls_insecure` flag. Accepts:
+/// `PccsTlsTrust::Insecure` mode. Accepts:
 /// - `localhost`
 /// - any IPv4 in `127.0.0.0/8` (per `Ipv4Addr::is_loopback`)
 /// - IPv6 loopback `::1`
@@ -110,57 +107,54 @@ fn pccs_host_is_loopback(pccs_url: &Url) -> bool {
     }
 }
 
-/// Validate the PCCS TLS-trust knobs at startup. Runs once during config
+/// Validate the PCCS TLS-trust knob at startup. Runs once during config
 /// conversion and is intended to fail fast on operator config mistakes:
 ///
-/// - `pccs_ca_cert_pem` and `pccs_tls_insecure` are mutually exclusive — the
-///   first explicitly trusts a known cert, the second turns trust off
-///   entirely. Asking for both is a config mistake.
-/// - `pccs_ca_cert_pem`, when set, must be a parseable PEM certificate.
-///   Catching this here means a typo'd cert fails at startup with a clear
-///   message rather than at the first attestation attempt.
-/// - `pccs_tls_insecure` is only honored for loopback-ish PCCS URLs so a
-///   copy-pasted dev config cannot silently disable TLS validation against a
-///   real network endpoint.
+/// - `PccsTlsTrust::CaCertPem`, when set, must contain a parseable PEM
+///   certificate. Catching this here means a typo'd cert fails at startup
+///   with a clear message rather than at the first attestation attempt.
+/// - `PccsTlsTrust::Insecure` is only honored for loopback-ish PCCS URLs
+///   so a copy-pasted dev config cannot silently disable TLS validation
+///   against a real network endpoint.
 ///
-/// Also emits the one-time WARN log when `pccs_tls_insecure = true` is
-/// active, so operators see the security signal at startup rather than
-/// scattered through every collateral fetch.
+/// Note: mutual exclusivity used to be the third check here. It is now a
+/// type-level invariant — `PccsTlsTrust` is a tagged enum, so at most one
+/// variant can be active by construction. (Per pbeza's review on PR #3026.)
+///
+/// Also emits the one-time WARN log when `Insecure` mode is active, so
+/// operators see the security signal at startup rather than scattered
+/// through every collateral fetch.
 pub fn validate_pccs_tls_config(
     pccs_url: &Url,
-    pccs_ca_cert_pem: Option<&str>,
-    pccs_tls_insecure: bool,
+    pccs_tls: Option<&PccsTlsTrust>,
 ) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        !(pccs_tls_insecure && pccs_ca_cert_pem.is_some()),
-        "pccs_tls_insecure=true and pccs_ca_cert_pem are mutually exclusive: \
-         pin a specific cert or disable verification entirely, not both",
-    );
-
-    if let Some(pem) = pccs_ca_cert_pem {
-        // Fail fast on a malformed PEM rather than at the first fetch.
-        // Building a throwaway client here mirrors the work
-        // build_pccs_http_client does at fetch time, so anything that would
-        // make the production fetch fail surfaces at startup instead.
-        let _ = build_pccs_http_client(Some(pem), false)
-            .context("failed to build TLS client with pccs_ca_cert_pem at startup")?;
+    match pccs_tls {
+        None => Ok(()),
+        Some(PccsTlsTrust::CaCertPem { .. }) => {
+            // Fail fast on a malformed PEM rather than at the first fetch.
+            // Building a throwaway client here mirrors the work
+            // build_pccs_http_client does at fetch time, so anything that
+            // would make the production fetch fail surfaces at startup
+            // instead.
+            let _ = build_pccs_http_client(pccs_tls)
+                .context("failed to build TLS client with pccs_tls.ca_cert_pem at startup")?;
+            Ok(())
+        }
+        Some(PccsTlsTrust::Insecure) => {
+            anyhow::ensure!(
+                pccs_host_is_loopback(pccs_url),
+                "pccs_tls.mode = \"insecure\" is only allowed for loopback PCCS URLs \
+                 (localhost, 127.0.0.0/8, ::1, or 10.0.2.2); got {:?}",
+                pccs_url.host_str().unwrap_or(""),
+            );
+            tracing::warn!(
+                "pccs_tls.mode = \"insecure\": PCCS TLS certificate verification is DISABLED. \
+                 Only honored for loopback PCCS hosts; the host is the effective \
+                 trust boundary."
+            );
+            Ok(())
+        }
     }
-
-    if pccs_tls_insecure {
-        anyhow::ensure!(
-            pccs_host_is_loopback(pccs_url),
-            "pccs_tls_insecure=true is only allowed for loopback PCCS URLs \
-             (localhost, 127.0.0.0/8, ::1, or 10.0.2.2); got {:?}",
-            pccs_url.host_str().unwrap_or(""),
-        );
-        tracing::warn!(
-            "pccs_tls_insecure=true: PCCS TLS certificate verification is DISABLED. \
-             Only honored for loopback PCCS hosts; the host is the effective \
-             trust boundary."
-        );
-    }
-
-    Ok(())
 }
 
 /// TeeAuthority is an abstraction over different TEE attestation generator implementations. It
@@ -227,8 +221,7 @@ impl TeeAuthority {
 
         let collateral = Self::fetch_collateral(
             config.pccs_url.as_str(),
-            config.pccs_ca_cert_pem.as_deref(),
-            config.pccs_tls_insecure,
+            config.pccs_tls.as_ref(),
             &quote_bytes,
         )
         .await
@@ -244,11 +237,10 @@ impl TeeAuthority {
     /// Fetches attestation collateral from a PCCS server for the given TDX quote.
     async fn fetch_collateral(
         pccs_url: &str,
-        pccs_ca_cert_pem: Option<&str>,
-        pccs_tls_insecure: bool,
+        pccs_tls: Option<&PccsTlsTrust>,
         quote: &[u8],
     ) -> anyhow::Result<Collateral> {
-        let http = build_pccs_http_client(pccs_ca_cert_pem, pccs_tls_insecure)?;
+        let http = build_pccs_http_client(pccs_tls)?;
         // Use `DefaultConfig` to match the trust posture of `with_default_http`
         // (selected as `RingConfig` when the `ring` feature is on, which we do).
         let client =
@@ -268,43 +260,36 @@ impl TeeAuthority {
 }
 
 /// Build the `reqwest::Client` used to talk to the PCCS server, applying the
-/// operator's TLS-trust knobs. With both knobs unset the result is the
-/// standard `reqwest` client with the trust anchors built into the selected
-/// `reqwest` TLS feature (currently `rustls-tls`, which uses the bundled
-/// Mozilla `webpki-roots`) — same trust posture as `with_default_http`.
+/// operator's TLS-trust policy. With `None` the result is the standard
+/// `reqwest` client with the trust anchors built into the selected `reqwest`
+/// TLS feature (currently `rustls-tls`, which uses the bundled Mozilla
+/// `webpki-roots`) — same trust posture as `with_default_http`.
 ///
-/// The caller is expected to have run [`validate_pccs_tls_config`] first
-/// (which rejects the both-knobs-set combo). This function nonetheless
-/// matches all four input quadrants explicitly so the precedence rule is
-/// local: a future caller that skips validation cannot accidentally land
-/// in a silent precedence rule that disables TLS validation.
-fn build_pccs_http_client(
-    pccs_ca_cert_pem: Option<&str>,
-    pccs_tls_insecure: bool,
-) -> anyhow::Result<reqwest::Client> {
+/// Matching is exhaustive over the [`PccsTlsTrust`] enum, so adding a new
+/// trust mode in the future is a compile error here until the new variant
+/// is handled. (This is the type-system payoff for the enum encoding —
+/// previous code matched four input quadrants that included one impossible
+/// combination guarded only by runtime validation.)
+fn build_pccs_http_client(pccs_tls: Option<&PccsTlsTrust>) -> anyhow::Result<reqwest::Client> {
     let builder = reqwest::Client::builder().timeout(PCCS_REQUEST_TIMEOUT);
 
-    let builder = match (pccs_tls_insecure, pccs_ca_cert_pem) {
-        (true, Some(_)) => anyhow::bail!(
-            "pccs_tls_insecure and pccs_ca_cert_pem are mutually exclusive; \
-             this combination should have been rejected by validate_pccs_tls_config"
-        ),
-        (true, None) => {
+    let builder = match pccs_tls {
+        None => builder,
+        Some(PccsTlsTrust::CaCertPem { ca_cert_pem }) => {
+            let cert = reqwest::Certificate::from_pem(ca_cert_pem.as_bytes())
+                .context("failed to parse pccs_tls.ca_cert_pem as a PEM-encoded certificate")?;
+            builder.add_root_certificate(cert)
+        }
+        Some(PccsTlsTrust::Insecure) => {
             // Disable both cert-chain and hostname verification so the
             // observable behavior matches "TLS authentication off entirely",
-            // matching the doc-comment on `pccs_tls_insecure`. (rustls's
+            // matching the doc-comment on `PccsTlsTrust::Insecure`. (rustls's
             // `NoVerifier` covers both today, but the explicit second flag
             // documents intent and is stable across reqwest backends.)
             builder
                 .danger_accept_invalid_certs(true)
                 .danger_accept_invalid_hostnames(true)
         }
-        (false, Some(pem)) => {
-            let cert = reqwest::Certificate::from_pem(pem.as_bytes())
-                .context("failed to parse pccs_ca_cert_pem as a PEM-encoded certificate")?;
-            builder.add_root_certificate(cert)
-        }
-        (false, None) => builder,
     };
 
     builder.build().context("failed to build PCCS HTTP client")
@@ -390,6 +375,13 @@ mod tests {
         cert.cert.pem()
     }
 
+    /// Convenience constructor for the cert-pem variant in tests.
+    fn pem_trust(pem: impl Into<String>) -> PccsTlsTrust {
+        PccsTlsTrust::CaCertPem {
+            ca_cert_pem: pem.into(),
+        }
+    }
+
     #[rstest]
     #[case::loopback_localhost("https://localhost:8081/")]
     #[case::loopback_127("https://127.0.0.1:8081/")]
@@ -400,7 +392,7 @@ mod tests {
         let url: Url = url.parse().expect("valid URL");
 
         // When
-        let result = validate_pccs_tls_config(&url, None, true);
+        let result = validate_pccs_tls_config(&url, Some(&PccsTlsTrust::Insecure));
 
         // Then
         assert!(result.is_ok(), "expected ok, got {result:?}");
@@ -415,7 +407,7 @@ mod tests {
         let url: Url = url.parse().expect("valid URL");
 
         // When
-        let result = validate_pccs_tls_config(&url, None, true);
+        let result = validate_pccs_tls_config(&url, Some(&PccsTlsTrust::Insecure));
 
         // Then
         assert!(result.is_err(), "expected err for {url}, got {result:?}");
@@ -424,12 +416,12 @@ mod tests {
     #[rstest]
     #[case::public_host("https://pccs.phala.network/")]
     #[case::loopback_localhost("https://localhost:8081/")]
-    fn validate_pccs_tls_config__should_accept_any_host_when_insecure_disabled(#[case] url: &str) {
+    fn validate_pccs_tls_config__should_accept_default_trust_for_any_host(#[case] url: &str) {
         // Given
         let url: Url = url.parse().expect("valid URL");
 
-        // When (no PEM, no insecure)
-        let result = validate_pccs_tls_config(&url, None, false);
+        // When (no [pccs_tls] table at all → default trust roots)
+        let result = validate_pccs_tls_config(&url, None);
 
         // Then
         assert!(result.is_ok(), "expected ok, got {result:?}");
@@ -439,43 +431,33 @@ mod tests {
     #[case::public_host("https://pccs.phala.network/")]
     #[case::intel_host("https://api.trustedservices.intel.com/")]
     #[case::loopback_localhost("https://localhost:8081/")]
-    fn validate_pccs_tls_config__should_accept_pem_only_for_any_host(#[case] url: &str) {
-        // Given a real PEM (validate now parses the cert as a fail-fast
-        // check, so we need a structurally valid PEM).
+    fn validate_pccs_tls_config__should_accept_pem_for_any_host(#[case] url: &str) {
+        // Given a real PEM (validate parses the cert as a fail-fast check,
+        // so we need a structurally valid PEM).
         let url: Url = url.parse().expect("valid URL");
-        let pem = test_cert_pem();
+        let trust = pem_trust(test_cert_pem());
 
         // When
-        let result = validate_pccs_tls_config(&url, Some(&pem), false);
+        let result = validate_pccs_tls_config(&url, Some(&trust));
 
         // Then
         assert!(result.is_ok(), "expected ok for {url}, got {result:?}");
     }
 
-    #[test]
-    fn validate_pccs_tls_config__should_reject_pem_and_insecure_combined() {
-        // Given
-        let url: Url = "https://localhost:8081/".parse().expect("valid URL");
-        let pem = test_cert_pem();
-
-        // When (both knobs set)
-        let result = validate_pccs_tls_config(&url, Some(&pem), true);
-
-        // Then
-        assert!(
-            result.is_err(),
-            "expected err when pccs_ca_cert_pem and pccs_tls_insecure both set, got {result:?}"
-        );
-    }
+    // Note: there is no "both knobs set" test because the type system
+    // forbids it. `PccsTlsTrust` is a tagged enum, so at most one variant
+    // can be active. (Per pbeza's review on PR #3026 — replaces the prior
+    // runtime mutual-exclusivity check with a type-level invariant.)
 
     #[test]
     fn validate_pccs_tls_config__should_reject_invalid_pem() {
         // Given a malformed PEM (spaces in the body break base64 decode).
         let url: Url = "https://pccs.phala.network/".parse().expect("valid URL");
-        let bogus_pem = "-----BEGIN CERTIFICATE-----\nnot really base64\n-----END CERTIFICATE-----";
+        let trust =
+            pem_trust("-----BEGIN CERTIFICATE-----\nnot really base64\n-----END CERTIFICATE-----");
 
         // When
-        let result = validate_pccs_tls_config(&url, Some(bogus_pem), false);
+        let result = validate_pccs_tls_config(&url, Some(&trust));
 
         // Then
         assert!(
@@ -487,10 +469,11 @@ mod tests {
     #[test]
     fn build_pccs_http_client__should_reject_invalid_pem() {
         // Given
-        let bogus_pem = "-----BEGIN CERTIFICATE-----\nnot really base64\n-----END CERTIFICATE-----";
+        let trust =
+            pem_trust("-----BEGIN CERTIFICATE-----\nnot really base64\n-----END CERTIFICATE-----");
 
         // When
-        let result = build_pccs_http_client(Some(bogus_pem), false);
+        let result = build_pccs_http_client(Some(&trust));
 
         // Then
         assert!(
@@ -500,21 +483,21 @@ mod tests {
     }
 
     #[test]
-    fn build_pccs_http_client__should_succeed_with_no_knobs_set() {
+    fn build_pccs_http_client__should_succeed_with_default_trust() {
         // Given default inputs (the no-config path that every existing
         // operator hits on the public Phala / Intel endpoints).
 
         // When
-        let result = build_pccs_http_client(None, false);
+        let result = build_pccs_http_client(None);
 
         // Then
         assert!(result.is_ok(), "expected ok, got {result:?}");
     }
 
     #[test]
-    fn build_pccs_http_client__should_succeed_with_insecure_only() {
+    fn build_pccs_http_client__should_succeed_with_insecure() {
         // When
-        let result = build_pccs_http_client(None, true);
+        let result = build_pccs_http_client(Some(&PccsTlsTrust::Insecure));
 
         // Then
         assert!(result.is_ok(), "expected ok, got {result:?}");
@@ -523,30 +506,18 @@ mod tests {
     #[test]
     fn build_pccs_http_client__should_succeed_with_valid_pem() {
         // Given a real, freshly-generated PEM cert.
-        let pem = test_cert_pem();
+        let trust = pem_trust(test_cert_pem());
 
         // When
-        let result = build_pccs_http_client(Some(&pem), false);
+        let result = build_pccs_http_client(Some(&trust));
 
         // Then
         assert!(result.is_ok(), "expected ok, got {result:?}");
     }
 
-    #[test]
-    fn build_pccs_http_client__should_fail_when_both_knobs_set() {
-        // Given a real PEM (so the failure isn't from PEM parsing).
-        let pem = test_cert_pem();
-
-        // When (both knobs — should have been caught by validation, but
-        // build_pccs_http_client also fails locally as defense in depth).
-        let result = build_pccs_http_client(Some(&pem), true);
-
-        // Then
-        assert!(
-            result.is_err(),
-            "expected err when both knobs set, got {result:?}"
-        );
-    }
+    // Note: build_pccs_http_client__should_fail_when_both_knobs_set has
+    // been removed — the both-set state is no longer representable
+    // (`PccsTlsTrust` is an enum, not a struct of two `Option`s).
 
     #[rstest]
     #[tokio::test]
@@ -725,8 +696,7 @@ mod tests {
             Duration::from_secs(30),
             TeeAuthority::fetch_collateral(
                 config.pccs_url.as_str(),
-                config.pccs_ca_cert_pem.as_deref(),
-                config.pccs_tls_insecure,
+                config.pccs_tls.as_ref(),
                 &quote_bytes,
             ),
         )

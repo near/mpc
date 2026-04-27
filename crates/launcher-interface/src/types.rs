@@ -22,6 +22,36 @@ pub enum TeeAuthorityConfig {
     Dstack { dstack_endpoint: PathBuf },
 }
 
+/// PCCS TLS trust policy.
+///
+/// The two operator-tunable trust modes are mutually exclusive — at most
+/// one can be active. Encoding the choice as a tagged enum (rather than
+/// two `Option`s + runtime validation) makes the mutual-exclusivity a
+/// *type-level* invariant: serde rejects an ill-formed config at parse
+/// time, and downstream code only matches over the variants it has to
+/// handle. Per pbeza's review on PR #3026 — replaces the previous
+/// `pccs_ca_cert_pem` + `pccs_tls_insecure` field pair, which required
+/// runtime mutual-exclusivity validation.
+///
+/// Tagged form (`mode = "..."`) over an untagged enum because tagged
+/// gives clean serde error messages, doesn't need a custom deserializer
+/// for the unit variant, and extends naturally if a third trust mode is
+/// added later (just another variant).
+///
+/// `None` on `StartConfig` (i.e. no `[mpc_node_config.pccs_tls]` table)
+/// means "use the system trust roots" — the default behaviour.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PccsTlsTrust {
+    /// Trust an operator-pinned PEM certificate as an additional root
+    /// anchor. Use when the PCCS uses a self-signed cert. System trust
+    /// roots remain active for any other endpoint.
+    CaCertPem { ca_cert_pem: String },
+    /// Disable TLS certificate verification entirely. Loopback PCCS
+    /// only — startup rejects this for non-loopback hosts.
+    Insecure,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApprovedHashes {
     pub approved_hashes: near_mpc_bounded_collections::NonEmptyVec<DockerSha256Digest>,

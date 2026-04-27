@@ -29,35 +29,27 @@ pub struct StartConfig {
     #[serde(default = "default_pccs_url")]
     pub pccs_url: url::Url,
 
-    /// Optional PEM-encoded TLS root certificate for the PCCS server.
-    /// Set this when pointing at a local PCCS that uses a self-signed cert.
-    /// The cert is added as an additional trust anchor; the default trust
-    /// roots still work for other endpoints.
+    /// PCCS TLS trust policy. When omitted, the node uses the system
+    /// trust roots — the default behaviour for `pccs.phala.network`,
+    /// `api.trustedservices.intel.com`, etc. Set the `[mpc_node_config.pccs_tls]`
+    /// sub-table (with `mode = "ca_cert_pem"` or `mode = "insecure"`)
+    /// when pointing at a local PCCS that uses a self-signed cert.
     ///
-    /// Mutually exclusive with [`pccs_tls_insecure`](Self::pccs_tls_insecure)
-    /// — startup rejects setting both.
+    /// The two operator modes are mutually exclusive *by construction*:
+    /// the underlying type is a tagged enum
+    /// ([`PccsTlsTrust`](launcher_interface::types::PccsTlsTrust)), so
+    /// at most one can be set in any given config. See that type's
+    /// docs for the full mode descriptions and rationale. Per pbeza's
+    /// review on PR #3026 this replaces a previous pair of fields
+    /// (`pccs_ca_cert_pem` + `pccs_tls_insecure`) that required runtime
+    /// mutual-exclusivity validation.
+    ///
+    /// Loopback-only enforcement on the `Insecure` variant still
+    /// happens at startup — that gate is orthogonal to the type
+    /// encoding (it depends on `pccs_url`, which the type doesn't
+    /// know about).
     #[serde(default)]
-    pub pccs_ca_cert_pem: Option<String>,
-
-    /// Disable TLS certificate verification for the PCCS server. **Loopback
-    /// only**: startup rejects this flag for `pccs_url` hosts other than
-    /// `localhost`, anything in `127.0.0.0/8`, IPv6 loopback `::1` (written
-    /// as `https://[::1]:<port>/` in the URL), or the QEMU slirp gateway
-    /// `10.0.2.2`. The guardrail prevents silent disablement of TLS
-    /// validation against a real network endpoint.
-    ///
-    /// Acceptable for production deployments where the PCCS runs on the same
-    /// host as the CVM (the host is the effective trust boundary; an
-    /// attacker capable of swapping the cert already has host-level access).
-    /// Use [`pccs_ca_cert_pem`](Self::pccs_ca_cert_pem) instead when a
-    /// properly-formed cert is available — same security posture on
-    /// loopback, plus a positive operational check that the cert matches
-    /// what the operator expects.
-    ///
-    /// Mutually exclusive with `pccs_ca_cert_pem` — startup rejects setting
-    /// both.
-    #[serde(default)]
-    pub pccs_tls_insecure: bool,
+    pub pccs_tls: Option<launcher_interface::types::PccsTlsTrust>,
 }
 
 pub fn default_pccs_url() -> url::Url {
@@ -209,6 +201,7 @@ pub enum DownloadConfigType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
 
     /// The tee-launcher blocks the "gcp" key in TEE mode using the hardcoded
     /// string "gcp" (see crates/tee-launcher/src/config.rs).
@@ -230,73 +223,78 @@ mod tests {
         );
     }
 
-    /// Two complementary checks on the PCCS-TLS knobs:
+    /// Two complementary checks on the PCCS-TLS knob:
     ///
-    /// 1. `mem::offset_of!` calls on `StartConfig` — these fail to compile
-    ///    if the fields are renamed (or removed) on `StartConfig`. Cheap
+    /// 1. `mem::offset_of!(StartConfig, pccs_tls)` — fails to compile
+    ///    if the field is renamed (or removed) on `StartConfig`. Cheap
     ///    field-existence guarantee for free.
-    /// 2. A local `Probe` struct with the same field names exercises serde
-    ///    deserialization, default values, and serialization-output
-    ///    contains-the-expected-keys. This guards the *probe* against
-    ///    accidental drift in the test itself.
+    /// 2. A local `Probe` struct with the same field name exercises serde
+    ///    deserialization (both variants of `PccsTlsTrust`), default
+    ///    behaviour (no `[pccs_tls]` table → `None`), and that the
+    ///    serialized form keeps the expected `mode` tag.
     ///
     /// What this doesn't catch: a future `#[serde(rename = "...")]` on
-    /// `StartConfig`'s fields would slip past this. To catch that we'd need
+    /// `StartConfig`'s field would slip past this. To catch that we'd need
     /// to round-trip a real `StartConfig` instance, which currently requires
     /// constructing all the non-default fields on `StartConfig` (dstack
     /// endpoint, log config, indexer config, etc.) — significantly more
     /// fixture for marginal value over the `offset_of!` rename guard.
     #[test]
     #[expect(non_snake_case)]
-    fn pccs_tls_fields__should_use_expected_toml_names() {
-        // Compile-time check: a rename on StartConfig fails these lines.
-        let _ = std::mem::offset_of!(StartConfig, pccs_ca_cert_pem);
-        let _ = std::mem::offset_of!(StartConfig, pccs_tls_insecure);
+    fn pccs_tls_field__should_use_expected_toml_names() {
+        use launcher_interface::types::PccsTlsTrust;
 
-        // Given an isolated struct that has only the two fields we care about,
+        // Compile-time check: a rename on StartConfig fails this line.
+        let _ = std::mem::offset_of!(StartConfig, pccs_tls);
+
+        // Given an isolated struct that has only the field we care about,
         // populated from the canonical TOML strings.
-        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        #[derive(Serialize, Deserialize, Debug)]
         struct Probe {
             #[serde(default)]
-            pccs_ca_cert_pem: Option<String>,
-            #[serde(default)]
-            pccs_tls_insecure: bool,
+            pccs_tls: Option<PccsTlsTrust>,
         }
 
-        let toml_input = r#"
-pccs_ca_cert_pem = "-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----"
-pccs_tls_insecure = true
+        // ca_cert_pem variant — TOML form must round-trip.
+        let toml_pem = r#"
+[pccs_tls]
+mode = "ca_cert_pem"
+ca_cert_pem = "-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----"
 "#;
-
-        // When deserializing
-        let probe: Probe = toml::from_str(toml_input).expect("TOML parses");
-
-        // Then both fields are populated as named
-        assert!(probe.pccs_tls_insecure);
-        assert!(
-            probe
-                .pccs_ca_cert_pem
-                .as_deref()
-                .is_some_and(|s| s.contains("BEGIN CERTIFICATE"))
+        let probe: Probe = toml::from_str(toml_pem).expect("TOML parses");
+        assert_matches!(
+            probe.pccs_tls,
+            Some(PccsTlsTrust::CaCertPem { ref ca_cert_pem })
+                if ca_cert_pem.contains("BEGIN CERTIFICATE")
         );
 
-        // And: omitting them yields the documented defaults (None / false).
+        // insecure variant — unit form, no extra fields.
+        let toml_insecure = r#"
+[pccs_tls]
+mode = "insecure"
+"#;
+        let probe: Probe = toml::from_str(toml_insecure).expect("TOML parses");
+        assert_matches!(probe.pccs_tls, Some(PccsTlsTrust::Insecure));
+
+        // Empty TOML yields the documented default (None).
         let probe_default: Probe = toml::from_str("").expect("empty TOML parses");
-        assert_eq!(
-            probe_default,
-            Probe {
-                pccs_ca_cert_pem: None,
-                pccs_tls_insecure: false,
-            }
-        );
+        assert!(probe_default.pccs_tls.is_none());
 
-        // Probe round-trip stays consistent.
+        // Mutual exclusivity is now a parse-time guarantee: setting both
+        // mode-specific fields is rejected by serde because only one
+        // variant can match. We don't need a dedicated test for it —
+        // the type system enforces it.
+
+        // Round-trip stays consistent (struct field name matches the
+        // expected TOML key, after `[pccs_tls]` table header).
         let serialized = toml::to_string(&Probe {
-            pccs_ca_cert_pem: Some("x".into()),
-            pccs_tls_insecure: true,
+            pccs_tls: Some(PccsTlsTrust::CaCertPem {
+                ca_cert_pem: "x".into(),
+            }),
         })
         .unwrap();
-        assert!(serialized.contains("pccs_ca_cert_pem"));
-        assert!(serialized.contains("pccs_tls_insecure"));
+        assert!(serialized.contains("[pccs_tls]"));
+        assert!(serialized.contains("mode = \"ca_cert_pem\""));
+        assert!(serialized.contains("ca_cert_pem"));
     }
 }
