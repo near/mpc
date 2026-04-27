@@ -48,8 +48,7 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
     .await
     .expect("setup_cluster failed");
 
-    let wasm =
-        common::load_parallel_contract_wasm().expect("failed to load parallel contract WASM");
+    let wasm = common::must_load_parallel_contract_wasm();
     let key = ed25519_dalek::SigningKey::from_bytes(&[0xABu8; 32]);
     let parallel_contract = cluster
         .blockchain

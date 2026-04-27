@@ -250,7 +250,7 @@ URLs into the per-node `ForeignChainsConfig` via `MpcClusterConfig`.
 
 Tests live under `crates/e2e-tests/tests/<feature>.rs` and must be declared as
 a module from `tests/e2e.rs`. `tests/common.rs` provides helpers used by most
-tests (`setup_cluster`, `wait_for_presignatures`, `load_contract_wasm`,
+tests (`setup_cluster`, `wait_for_presignatures`, `must_load_contract_wasm`,
 `send_sign_request`, etc.).
 
 ```rust
@@ -307,7 +307,7 @@ The task runner builds three things before tests run: the mpc-node binary
 with the `network-hardship-simulation` feature, the MPC contract WASM, and
 the test parallel contract WASM. Paths are passed to tests via the
 `MPC_CONTRACT_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment variables
-read by `load_contract_wasm` / `load_parallel_contract_wasm` in
+read by `must_load_contract_wasm` / `must_load_parallel_contract_wasm` in
 `tests/common.rs`; if the env var is unset and no pre-built WASM is found,
 `test-utils::contract_build::ContractBuilder` builds it on the fly (useful for
 local iteration).

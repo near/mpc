@@ -59,7 +59,7 @@ pub async fn setup_cluster(
         .try_init()
         .ok();
 
-    let contract_wasm = load_contract_wasm()?;
+    let contract_wasm = must_load_contract_wasm();
     let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
     configure(&mut config);
 
@@ -196,32 +196,41 @@ pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> anyhow::Result<i64>
         .sum())
 }
 
-pub fn load_contract_wasm() -> anyhow::Result<Vec<u8>> {
+/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
+pub fn must_load_contract_wasm() -> Vec<u8> {
     if let Ok(path) = std::env::var("MPC_CONTRACT_WASM") {
         let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path)
-            .with_context(|| format!("failed to read contract WASM at {}", wasm_path.display()));
+        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to read contract WASM at {}: {e}",
+                wasm_path.display()
+            )
+        });
     }
 
     let default_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/near/contract/mpc_contract.wasm");
 
     if default_path.exists() {
-        return std::fs::read(&default_path).with_context(|| {
-            format!("failed to read contract WASM at {}", default_path.display())
+        return std::fs::read(&default_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to read contract WASM at {}: {e}",
+                default_path.display()
+            )
         });
     }
 
     tracing::info!("MPC_CONTRACT_WASM not set and pre-built WASM not found — building contract");
-    Ok(test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build())
+    test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build()
 }
 
-pub fn load_parallel_contract_wasm() -> anyhow::Result<Vec<u8>> {
+/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
+pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
     if let Ok(path) = std::env::var("MPC_PARALLEL_CONTRACT_WASM") {
         let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path).with_context(|| {
-            format!(
-                "failed to read parallel contract WASM at {}",
+        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to read parallel contract WASM at {}: {e}",
                 wasm_path.display()
             )
         });
@@ -230,20 +239,16 @@ pub fn load_parallel_contract_wasm() -> anyhow::Result<Vec<u8>> {
     let default_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/near/test-parallel-contract/test_parallel_contract.wasm");
     if default_path.exists() {
-        return std::fs::read(&default_path).with_context(|| {
-            format!(
-                "failed to read parallel contract WASM at {}",
+        return std::fs::read(&default_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to read parallel contract WASM at {}: {e}",
                 default_path.display()
             )
         });
     }
     tracing::info!("pre-built parallel contract WASM not found — building");
-    Ok(
-        test_utils::contract_build::ContractBuilder::new(
-            "crates/test-parallel-contract/Cargo.toml",
-        )
-        .build(),
-    )
+    test_utils::contract_build::ContractBuilder::new("crates/test-parallel-contract/Cargo.toml")
+        .build()
 }
 
 pub fn generate_ecdsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
@@ -282,6 +287,12 @@ pub fn bls_public_key(
     }
 }
 
+/// Send a sign request and return the network's response.
+///
+/// Panics if the request can't be submitted to the contract — the test cannot
+/// proceed without submission. Returns `Err` if the contract response indicates
+/// the network did not produce a valid signature; only the calling test knows
+/// whether that outcome is expected.
 pub async fn send_sign_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
@@ -293,19 +304,25 @@ pub async fn send_sign_request(
         .domains
         .iter()
         .find(|d| d.curve == Curve::Secp256k1 && d.purpose == DomainPurpose::Sign)
-        .context("no Secp256k1 Sign domain")?;
+        .expect("no Secp256k1 Sign domain in running state");
     let outcome = cluster
         .send_sign_request(domain.id, generate_ecdsa_payload(rng), account_id)
         .await
-        .context("sign request failed")?;
+        .expect("failed to submit sign request");
     anyhow::ensure!(
         outcome.is_success(),
-        "sign request failed: {:?}",
+        "sign request did not produce a successful response: {:?}",
         outcome.failure_message()
     );
     Ok(())
 }
 
+/// Send a CKD request and return the network's response.
+///
+/// Panics if the request can't be submitted to the contract — the test cannot
+/// proceed without submission. Returns `Err` if the contract response indicates
+/// the network did not produce a valid CKD response; only the calling test
+/// knows whether that outcome is expected.
 pub async fn send_ckd_request(
     cluster: &e2e_tests::MpcCluster,
     running: &RunningContractState,
@@ -317,14 +334,14 @@ pub async fn send_ckd_request(
         .domains
         .iter()
         .find(|d| d.purpose == DomainPurpose::CKD)
-        .context("no CKD domain")?;
+        .expect("no CKD domain in running state");
     let outcome = cluster
         .send_ckd_request(domain.id, generate_ckd_app_public_key(rng), account_id)
         .await
-        .context("ckd request failed")?;
+        .expect("failed to submit ckd request");
     anyhow::ensure!(
         outcome.is_success(),
-        "ckd request failed: {:?}",
+        "ckd request did not produce a successful response: {:?}",
         outcome.failure_message()
     );
     Ok(())
