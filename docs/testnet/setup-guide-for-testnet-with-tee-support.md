@@ -234,7 +234,7 @@ export SAM_P2P_KEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r '.nea
 Add keys to each NEAR account:
 
 ```bash
-NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,vote_foreign_chain_policy,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
+NODE_METHODS="respond,respond_ckd,respond_verify_foreign_tx,vote_pk,start_keygen_instance,vote_reshared,register_foreign_chain_config,start_reshare_instance,vote_abort_key_event_instance,verify_tee,submit_participant_info,conclude_node_migration"
 
 near account add-key $FRODO_ACCOUNT grant-function-call-access \
   --allowance '1 NEAR' --contract-account-id $MPC_CONTRACT_ACCOUNT --function-names "$NODE_METHODS" \

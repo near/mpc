@@ -89,7 +89,7 @@ def create_mpc_function_call_access_key_action(
         "vote_pk",
         "start_keygen_instance",
         "vote_reshared",
-        "vote_foreign_chain_policy",
+        "register_foreign_chain_config",
         "start_reshare_instance",
         "vote_abort_key_event_instance",
         "verify_tee",
